@@ -4,7 +4,7 @@
 
 **Plan the route. Prove the work. Ship.**
 
-Boatstack is loop engineering for coding agents: a model-neutral path from a product request to an explicitly approved, tested, reviewed pull request. Its behavior is generated from [Intelligence Flow at `aae685d2513cd25537284e4e68177411ace7ac9a`](https://github.com/operatorstack/intelligence-flow/tree/aae685d2513cd25537284e4e68177411ace7ac9a/examples/12-product-engineering-loop).
+Boatstack is loop engineering for coding agents: a model-neutral path from a product request to an explicitly approved, tested, reviewed pull request. Its behavior is generated from [Intelligence Flow at `fcc2faa55ac3c2332ce4a19293d89023f578784d`](https://github.com/operatorstack/intelligence-flow/tree/fcc2faa55ac3c2332ce4a19293d89023f578784d/examples/12-product-engineering-loop).
 
 It is not a claim that a longer prompt writes better code. Here is what the loop actually does.
 
@@ -72,6 +72,26 @@ BLOCKED: stale or invalid plan lock: plan
 That is the approval boundary in code: conversation cannot silently turn a draft into permission to build.
 
 See the complete, linked [worked example](examples/diagram-json/README.md).
+
+## Bring your own product context
+
+Boatstack does not impose a documentation structure or maintain a second product memory. Keep feature briefs, vision, roadmaps, ADRs, gaps, and engineering rules wherever they already live in the repository. Cursor, Codex, or Claude discovers the relevant surrounding code and documents; Boatstack controls how that context becomes an approved change.
+
+Point the host at an existing product document:
+
+```text
+/auto-plan Build team notification preferences.
+Product brief: docs/features/team-notifications.md
+Relevant decisions: docs/architecture/notifications.md
+```
+
+Or begin with only the request and let the host inspect the smallest relevant repository slice. Boatstack separates discoverable facts from product questions, then produces the consistent handoff:
+
+```text
+existing product docs + code -> questions -> feature spec -> approval -> engineering plan
+```
+
+Product documents define what and why. ADRs record durable technical decisions. Gaps record known incomplete work. Boatstack references these sources without rewriting them. No context map or documentation migration is required in V1; the project config may list useful starting paths when a repository wants stable defaults.
 
 ## Install into a repository
 
