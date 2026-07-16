@@ -44,9 +44,13 @@ jobs:
           python-version: "3.11"
       - name: Verify legacy projection during migration
         if: steps.runtime.outputs.go != 'true'
+        env:
+          PYTHONUTF8: "1"
         run: python3 -m unittest discover -s tests -v
       - name: Compile legacy projection during migration
         if: steps.runtime.outputs.go != 'true'
+        env:
+          PYTHONUTF8: "1"
         run: python3 -m compileall -q boatstack
       - name: Validate Bash installer
         if: steps.runtime.outputs.go == 'true' && runner.os != 'Windows'
