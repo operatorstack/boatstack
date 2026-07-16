@@ -79,7 +79,7 @@ func normalizedAdapters(adapters []string) []string {
 func commandBody(operation, extra string) string {
 	preflight := ""
 	if operation == "auto-plan" {
-		preflight = `Before reading repository context or drafting artifacts, inspect the active host/system conversation for its Plan-mode file path. If present, run the project-local helper with ` + "`check-source-plan --repo . --plan <host-path>`" + `. Otherwise run ` + "`check-source-plan --repo .`" + `. Use its ` + "`SOURCE_PLAN`" + ` result. Fallback discovery searches only bounded Plan-mode locations and succeeds only for exactly one non-empty file. If discovery blocks, stop and show the candidates or ask the user to save the host plan under ` + "`.product-loop/intake/`" + `. Accept ` + "`/auto-plan <plan-file>`" + ` only as an ambiguity override. Do not create the missing source plan inside auto-plan.`
+		preflight = `Before reading repository context or drafting artifacts, inspect the active host/system conversation for its Plan-mode file path. If present, run the project-local helper with ` + "`check-source-plan --repo . --plan <host-path>`" + `. Otherwise run ` + "`check-source-plan --repo .`" + `. Use its ` + "`SOURCE_PLAN`" + ` result. Fallback discovery searches only bounded Plan-mode locations and succeeds only for exactly one non-empty file. If discovery blocks, stop and show the candidates or ask the user to save the host plan under ` + "`.product-loop/intake/`" + `. Accept ` + "`/auto-plan <plan-file>`" + ` only as an ambiguity override. Do not create the missing source plan inside auto-plan. If the host blocks its ordinary Markdown write tool, pass each known planning document on stdin to ` + "`boatstack-helper planning-write`" + `; never bypass the host boundary with arbitrary shell redirection.`
 	}
 	return fmt.Sprintf(`# %s
 
@@ -89,7 +89,7 @@ Run the %s operation from @.product-loop/workflow.md.
 
 Read @.product-loop/project.json, @.product-loop/artifacts.md, and only the minimal repository context relevant to the current feature. %s
 
-Use the gate semantics in the canonical workflow. Do not redefine them in this adapter. Auto-plan and plan-gate may create or update Markdown only. If a structured question tool is unavailable, ask 1-3 plain-text questions, return WAITING_FOR_INPUT, and never silently choose a default. Boatstack leaves implementation tactics open, but completion, approval, and shipping claims require current evidence.
+Use the gate semantics in the canonical workflow. Do not redefine them in this adapter. Auto-plan and plan-gate may create or update Markdown only. Classify authoritative repository facts as DISCOVERED, agent suggestions as PROPOSED, and only explicit human responses as ANSWERED. Every material proposal remains in blocking_questions; never label an agent default as answered. If a structured question tool is unavailable, ask 1-3 plain-text questions, return WAITING_FOR_INPUT, and never silently choose a default. Boatstack leaves implementation tactics open, but completion, approval, and shipping claims require current evidence.
 `, operation, operation, preflight, extra)
 }
 
@@ -149,13 +149,13 @@ func BuildExportBundle(configPath string, config ProjectConfig, rawConfig []byte
 
 	operations := map[string]string{
 		"auto-plan":   "Discover exactly one saved Plan-mode file and refine it into a Markdown-only draft feature package whose canonical structured artifact is plan.md. Run check-plan read-only. Do not implement, create JSON or locks, or imply acceptance.",
-		"plan-gate":   "Run check-plan read-only, present its fingerprint and all open decisions, and require explicit human approval. On approval write only approval.md with the named human, RFC3339 timestamp, and exact fingerprint. Remain in Plan mode; do not compile or request an early mode switch.",
-		"build":       "Before the first product-code edit, locate plan.md and approval.md and run the project-local activate-plan command to compile machine artifacts and create and verify plan.lock.json. Stop if it reports BLOCKED. Implementation tactics remain open inside the approved boundary.",
+		"plan-gate":   "Run check-plan read-only, present its fingerprint and all open decisions, and require explicit human approval. On approval invoke record-approval with the named human, RFC3339 timestamp, and exact displayed fingerprint so it writes only approval.md. Remain in Plan mode; do not compile or request an early mode switch.",
+		"build":       "First confirm the host is in an execution-capable mode. If the mode transition is rejected or product-code writes remain unavailable, return READY_FOR_BUILD without activating the plan, compiling JSON, or writing a lock. Only then locate plan.md and approval.md and run activate-plan before the first product-code edit. Stop if it reports BLOCKED. Implementation tactics remain open inside the approved boundary.",
 		"test-gate":   "Build a requirement-to-evidence matrix and treat self-authored tests as evidence rather than the sole oracle.",
 		"review-gate": "Review the actual diff against approved intent, invariants, risks, gaps, and test evidence.",
-		"ship-gate":   "Prepare a PR only; do not merge or deploy without separate authorization.",
+		"ship-gate":   "Prepare a PR only; do not merge or deploy without separate authorization. If a required check fails on the base branch too, record the evidence and recommend a separate repair PR. Never edit unrelated code in this approved feature branch; a policy-approved bypass requires explicit human authorization.",
 		"review":      "Alias of review-gate: review the actual diff against approved intent, invariants, risks, gaps, and test evidence.",
-		"ship":        "Alias of ship-gate: prepare a PR only; do not merge or deploy without separate authorization.",
+		"ship":        "Alias of ship-gate: prepare a PR only; do not merge or deploy without separate authorization. Keep pre-existing unrelated failures out of the approved feature branch.",
 		"retro":       "Classify evidence and propose a move; never promote it or change durable rules without a paired gate.",
 	}
 
@@ -191,9 +191,11 @@ description: Run Boatstack's evidence-engineered coding node for question-led pl
 
 Read .product-loop/project.json and .product-loop/workflow.md. The requested operation is supplied by the user; valid operations are auto-plan, plan-gate, build, test-gate, review-gate/review, ship-gate/ship, and retro.
 
-Ordinary product intent must first be explored in the host's Plan mode and saved as a file, preferably under .product-loop/intake/. Auto-plan runs bounded discovery before inspecting the repository and records the single result as source_plan_path. If no file exists or multiple candidates remain, auto-plan is BLOCKED; it must not guess or create a substitute. An explicit path is only an ambiguity override. Auto-plan and plan-gate write Markdown only: plan.md remains canonical and approval.md records explicit acceptance. Build activation compiles machine artifacts and the lock before the first product-code edit. The source plan remains required and hash-current through build. Test, review, and ship gates operate from the approved lock, diff, and evidence after build.
+Ordinary product intent must first be explored in the host's Plan mode and saved as a file, preferably under .product-loop/intake/. Auto-plan runs bounded discovery before inspecting the repository and records the single result as source_plan_path. If no file exists or multiple candidates remain, auto-plan is BLOCKED; it must not guess or create a substitute. An explicit path is only an ambiguity override. Auto-plan and plan-gate write Markdown only: plan.md remains canonical and approval.md records explicit acceptance. If the host blocks its normal Markdown writer, use the bounded planning-write helper and never arbitrary shell redirection. Repository facts are DISCOVERED, agent suggestions are PROPOSED, and only human responses are ANSWERED; every material proposal remains blocking. At build, confirm the host can edit product code before activating the plan. A rejected mode transition returns READY_FOR_BUILD and creates no machine artifacts or lock. Once execution is available, activation compiles machine artifacts and the lock before the first product-code edit. The source plan remains required and hash-current through build. Test, review, and ship gates operate from the approved lock, diff, and evidence after build.
 
 Use .product-loop/artifacts.md for document boundaries and .product-loop/failure-moves.md for improvement experiments. If a structured question tool is unavailable, ask 1-3 plain-text questions and return WAITING_FOR_INPUT; never select defaults on the user's behalf. Do not implement from an unapproved or stale plan. Implementation tactics are open; completion, approval, and shipping claims require current evidence. Do not branch on model identity; use observable state and gate evidence.
+
+At ship, prove whether a failing check is pre-existing by checking the base branch. Keep unrelated repairs in a separate PR; do not modify unrelated code under the approved feature lock. A repository-policy bypass requires explicit human authorization and recorded evidence.
 
 If gstack is enabled, use only its namespaced /gstack-* specialist lenses inside Boatstack operations. If Spec Kit is enabled, use it to generate or cross-check artifacts; never invoke speckit.implement to bypass Boatstack's plan approval and build gate.
 `, adapterName)
