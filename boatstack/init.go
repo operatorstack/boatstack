@@ -46,6 +46,9 @@ func ResolveRepository(path string) (string, error) {
 }
 
 func detectTestCommand(repo string) string {
+	if fileExists(filepath.Join(repo, "scripts", "check.sh")) {
+		return "bash scripts/check.sh"
+	}
 	packagePath := filepath.Join(repo, "package.json")
 	if value, err := os.ReadFile(packagePath); err == nil {
 		var packageJSON struct {
@@ -69,6 +72,22 @@ func detectTestCommand(repo string) string {
 	} {
 		if fileExists(filepath.Join(repo, candidate.path)) {
 			return candidate.command
+		}
+	}
+	pyprojectUsesPytest := false
+	if value, err := os.ReadFile(filepath.Join(repo, "pyproject.toml")); err == nil {
+		pyprojectUsesPytest = strings.Contains(strings.ToLower(string(value)), "pytest")
+	}
+	pythonProject := fileExists(filepath.Join(repo, "pytest.ini")) ||
+		fileExists(filepath.Join(repo, "conftest.py")) || pyprojectUsesPytest
+	if pythonProject {
+		switch {
+		case fileExists(filepath.Join(repo, "uv.lock")):
+			return "uv run pytest"
+		case fileExists(filepath.Join(repo, "poetry.lock")):
+			return "poetry run pytest"
+		default:
+			return "python -m pytest"
 		}
 	}
 	return ""
@@ -311,13 +330,23 @@ func RunInit(options InitOptions) error {
 	if err := CheckExport(repo, bundle.Files); err != nil {
 		return err
 	}
+	if err := Doctor(repo); err != nil {
+		return fmt.Errorf("post-install smoke check failed: %w", err)
+	}
 	fmt.Fprintln(options.Output, "\nPASS: Boatstack core installed without a language runtime.")
 	keys := sortedKeys(states)
 	for _, name := range keys {
 		state := states[name]
 		fmt.Fprintf(options.Output, "  %s: %s — %s\n", name, state.Status, state.Detail)
 	}
-	fmt.Fprintln(options.Output, "\nStart in Cursor, Codex, or Claude Plan mode:")
+	fmt.Fprintln(options.Output, "\nBefore product work, commit Boatstack infrastructure in its own PR:")
+	stagePaths := append([]string{".boatstack-project.json"}, paths...)
+	fmt.Fprintln(options.Output, "  git status --short")
+	fmt.Fprintln(options.Output, "  git add -- "+strings.Join(stagePaths, " "))
+	fmt.Fprintln(options.Output, "  git commit -m \"chore: install Boatstack\"")
+	fmt.Fprintln(options.Output, "  git push -u origin chore/install-boatstack")
+	fmt.Fprintln(options.Output, "The platform helper and local install lock under .product-loop/bin/ are ignored; rerun the installer on a fresh clone.")
+	fmt.Fprintln(options.Output, "\nAfter that PR is merged, reload Cursor, Codex, or Claude and start in Plan mode:")
 	fmt.Fprintln(options.Output, "  1. Describe the product change and save the host plan (use .product-loop/intake/ if the host exposes no path).")
 	fmt.Fprintln(options.Output, "  2. Run /auto-plan")
 	return nil

@@ -42,6 +42,11 @@ func TestRuntimeFreeInit(t *testing.T) {
 	if !strings.Contains(output.String(), "PASS: Boatstack core installed without a language runtime") {
 		t.Fatalf("unexpected init output: %s", output.String())
 	}
+	for _, expected := range []string{"commit Boatstack infrastructure in its own PR", "git add -- .boatstack-project.json", "git push -u origin chore/install-boatstack", "reload Cursor, Codex, or Claude"} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("init output is missing %q: %s", expected, output.String())
+		}
+	}
 	configValue, _ := os.ReadFile(filepath.Join(repo, ".boatstack-project.json"))
 	if strings.Contains(string(configValue), `"status"`) {
 		t.Fatal("machine-local integration status leaked into repository configuration")
@@ -49,6 +54,41 @@ func TestRuntimeFreeInit(t *testing.T) {
 	installValue, _ := os.ReadFile(filepath.Join(repo, ".product-loop", "bin", "install.lock.json"))
 	if !strings.Contains(string(installValue), `"binary_sha256"`) || !strings.Contains(string(installValue), `"integrations"`) {
 		t.Fatal("local install lock did not record binary and integration state")
+	}
+}
+
+func TestDetectTestCommandCoversCheckScriptAndPythonProjects(t *testing.T) {
+	for name, setup := range map[string]struct {
+		files map[string]string
+		want  string
+	}{
+		"check script":  {files: map[string]string{"scripts/check.sh": "#!/bin/sh\n"}, want: "bash scripts/check.sh"},
+		"uv pytest":     {files: map[string]string{"pyproject.toml": "[tool.pytest.ini_options]\n", "uv.lock": ""}, want: "uv run pytest"},
+		"poetry pytest": {files: map[string]string{"pyproject.toml": "[tool.pytest.ini_options]\n", "poetry.lock": ""}, want: "poetry run pytest"},
+		"plain pytest":  {files: map[string]string{"pytest.ini": "[pytest]\n"}, want: "python -m pytest"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo := t.TempDir()
+			for relative, value := range setup.files {
+				path := filepath.Join(repo, filepath.FromSlash(relative))
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(value), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got := detectTestCommand(repo); got != setup.want {
+				t.Fatalf("detectTestCommand() = %q, want %q", got, setup.want)
+			}
+		})
+	}
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "pyproject.toml"), []byte("[project]\nname = \"fixture\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := detectTestCommand(repo); got != "" {
+		t.Fatalf("plain pyproject.toml invented a test command: %q", got)
 	}
 }
 

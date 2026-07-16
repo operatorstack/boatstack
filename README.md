@@ -1,14 +1,48 @@
 <!-- Generated from operatorstack/intelligence-flow. Edit the upstream product-loop source, not this file. -->
 
-# Boatstack
+<p align="center">
+  <img src="assets/boatstack-mark.svg" width="96" height="96" alt="Boatstack stacked-node B mark">
+</p>
 
-**Build freely. Prove it. Ship.**
+<h1 align="center">Boatstack</h1>
 
-Boatstack is **evidence-engineered coding**: a model-neutral coding node that turns product intent and repository context into an explicitly approved, tested, reviewable change. It does not prescribe the model, implementation technique, tools, or document structure. It governs what may be claimed, approved, or shipped. Its behavior is generated from [Intelligence Flow at `3cd11c293b3903aeac9ff8d8eacd47840d63a02d`](https://github.com/operatorstack/intelligence-flow/tree/3cd11c293b3903aeac9ff8d8eacd47840d63a02d/examples/12-product-engineering-loop).
+<p align="center"><strong>Build freely. Prove it. Ship.</strong></p>
+
+Boatstack is **evidence-engineered coding**: a model-neutral coding node that turns product intent and repository context into an explicitly approved, tested, reviewable change. It does not prescribe the model, implementation technique, tools, or document structure. It governs what may be claimed, approved, or shipped. Its behavior is generated from [Intelligence Flow at `29f36332e8e249528c6b088473d65e1190ff00b8`](https://github.com/operatorstack/intelligence-flow/tree/29f36332e8e249528c6b088473d65e1190ff00b8/examples/12-product-engineering-loop).
 
 > **You are free in how you build. Only claims of completion require evidence.**
 
 It is not a claim that a longer prompt writes better code. Here is what the node actually makes observable.
+
+## Install in a repository
+
+Install Boatstack on a clean infrastructure branch and merge that PR before starting product work. This keeps the one-time host adapters and repository policy separate from every feature diff.
+
+macOS or Linux:
+
+```bash
+git switch -c chore/install-boatstack
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/operatorstack/boatstack/main/install.sh)"
+```
+
+Windows PowerShell:
+
+```powershell
+git switch -c chore/install-boatstack
+irm https://raw.githubusercontent.com/operatorstack/boatstack/main/install.ps1 | iex
+```
+
+The installer previews the generated paths, verifies the platform helper, asks about optional gstack and Spec Kit integrations, runs a smoke check, and prints the exact infrastructure commit commands. Boatstack core requires no Python, Node, Go, or package manager. The helper is repository-local and ignored; the adapters and policy are committed.
+
+**New here?** [Install and ship your first feature](docs/getting-started.md) · [Understand generated files](docs/generated-files.md) · [Troubleshoot](docs/troubleshooting.md) · [See the real account-recovery walkthrough](docs/account-recovery-walkthrough.md)
+
+**Go deeper:** [Validation and evidence](docs/validation-and-evidence.md) · [gstack and Spec Kit](#use-boatstack-with-gstack-and-github-spec-kit) · [Evidence-engineered coding](docs/evidence-engineered-coding.md)
+
+```text
+idea -> Plan mode -> /auto-plan -> questions -> /plan-gate
+     -> approve -> Build -> /build -> /test-gate
+     -> /review-gate -> /ship-gate -> PR
+```
 
 ## Plan first, then auto-plan
 
@@ -102,6 +136,8 @@ Choose the host's normal Build action.
 
 `/plan-gate` presents a fingerprint over the complete source plan, spec, and `plan.md` and requires a named human. Explicit approval creates only `approval.md`, so the developer remains in Plan mode. The host's normal Build transition then validates and activates the exact approved plan before editing code.
 
+The source plan remains required and hash-checked through `/build`; later gates rely on the resulting lock, actual diff, and accumulated evidence.
+
 <details>
 <summary>Internal deterministic boundary</summary>
 
@@ -162,24 +198,6 @@ existing product docs + code -> questions -> feature spec -> approval -> enginee
 ```
 
 Product documents define what and why. ADRs record durable technical decisions. Gaps record known incomplete work. Boatstack references these sources without replacing them. Any generated spec or plan must remain traceable to its sources and reviewable as a lossy task projection. No context map or documentation migration is required in V1; the project config may list useful starting paths when a repository wants stable defaults.
-
-## Install into a repository
-
-macOS or Linux:
-
-```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/operatorstack/boatstack/main/install.sh)"
-```
-
-Windows PowerShell:
-
-```powershell
-irm https://raw.githubusercontent.com/operatorstack/boatstack/main/install.ps1 | iex
-```
-
-Run the command from the product repository. The installer detects the repository and available coding hosts, previews every generated path, verifies the downloaded helper, and asks whether to add gstack, Spec Kit, both, or core only. Boatstack core requires no Python, Node, Go, or package manager.
-
-After installation, open the chosen host's Plan mode, describe the change, save its plan, and run `/auto-plan`. Boatstack uses the host-exposed active path or discovers exactly one file under `.product-loop/intake/`; an explicit path is only needed to resolve ambiguity. Auto-plan and plan-gate write Markdown only. After explicit approval, use the host's normal Build transition; `/build` activates and locks the plan before its first code edit. The source plan remains required and hash-checked through `/build`; later gates use the lock, actual diff, and evidence.
 
 ## Use Boatstack with gstack and GitHub Spec Kit
 
@@ -283,7 +301,7 @@ Read the [research and design record](docs/research-and-design.md) and [corpus a
 
 ## Context has a budget
 
-The three canonical runtime references currently total approximately **4521 estimated tokens** using `ceil(characters / 4)`. That is a stable compactness signal, not provider billing. Host adapters stay thin and load the operation-specific slice on demand.
+The three canonical runtime references currently total approximately **4625 estimated tokens** using `ceil(characters / 4)`. That is a stable compactness signal, not provider billing. Host adapters stay thin and load the operation-specific slice on demand.
 
 ## Status
 
