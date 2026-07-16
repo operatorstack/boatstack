@@ -8,7 +8,7 @@
 
 <p align="center"><strong>Build freely. Prove it. Ship.</strong></p>
 
-Boatstack is **evidence-engineered coding**: a model-neutral coding node that turns product intent and repository context into an explicitly approved, tested, reviewable change. It does not prescribe the model, implementation technique, tools, or document structure. It governs what may be claimed, approved, or shipped. Its behavior is generated from [Intelligence Flow at `42276418494e1c24383b93ec49e75d38c3be53b2`](https://github.com/operatorstack/intelligence-flow/tree/42276418494e1c24383b93ec49e75d38c3be53b2/examples/12-product-engineering-loop).
+Boatstack is **evidence-engineered coding**: a model-neutral coding node that turns product intent and repository context into an explicitly approved, tested, reviewable change. It does not prescribe the model, implementation technique, tools, or document structure. It governs what may be claimed, approved, or shipped. Its behavior is generated from [Intelligence Flow at `f0e2e942835de000a96d6e2530cc8dc16999728c`](https://github.com/operatorstack/intelligence-flow/tree/f0e2e942835de000a96d6e2530cc8dc16999728c/examples/12-product-engineering-loop).
 
 > **You are free in how you build. Only claims of completion require evidence.**
 
@@ -17,6 +17,18 @@ It is not a claim that a longer prompt writes better code. Here is what the node
 ## Install in a repository
 
 Install Boatstack on a clean infrastructure branch and merge that PR before starting product work. This keeps the one-time host adapters and repository policy separate from every feature diff.
+
+### Install with your coding agent
+
+Copy and paste this into Cursor, Codex, or Claude Code:
+
+```text
+Install Boatstack in this repository from https://github.com/operatorstack/boatstack. Detect whether you are running in Cursor, Codex, or Claude Code; create or use a chore/install-boatstack branch; run the official installer for this operating system; default to core unless I request gstack or Spec Kit; keep all portable host adapters; run Boatstack doctor; show me the generated files and installation diff; and prepare the installation PR without merging it or starting product work.
+```
+
+Active-host detection changes the guidance shown after installation; Boatstack keeps every thin host adapter so the repository remains portable across developers and coding environments.
+
+### Install manually
 
 macOS or Linux:
 
