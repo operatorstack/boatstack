@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "project": {
+    "name": "example-product",
+    "default_branch": "main",
+    "context": [
+      "README.md",
+      "AGENTS.md",
+      "docs/architecture/",
+      "docs/decisions/"
+    ],
+    "commands": {
+      "build": "npm run build",
+      "lint": "npm run lint",
+      "test": "npm test",
+      "typecheck": "npm run typecheck"
+    },
+    "high_risk_paths": [
+      "migrations/**",
+      "auth/**",
+      "billing/**"
+    ]
+  },
+  "workflow": {
+    "human_plan_approval": true,
+    "independent_review_for_high_risk": true,
+    "allow_pass_with_gaps": true
+  },
+  "adapters": ["cursor", "claude", "codex", "github"]
+}

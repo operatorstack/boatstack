@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "feature_id": "<stable-feature-id>",
+  "spec_path": "<path-to-approved-spec>",
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "text": "<observable accepted behavior>"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "T-1",
+      "title": "<bounded implementation operation>",
+      "depends_on": [],
+      "acceptance_criteria": ["AC-1"],
+      "validation": ["<real command or verification procedure>"],
+      "rollback_boundary": "<how to revert this task>"
+    }
+  ]
+}

@@ -1,0 +1,197 @@
+{
+  "feature_id": "diagram-json-v1",
+  "requirements": [
+    {
+      "criterion": "The public serializer returns parseable schema-versioned graph JSON.",
+      "criterion_id": "AC-1",
+      "evidence": null,
+      "result": "BLOCKED",
+      "tasks": [
+        "T-1",
+        "T-3"
+      ],
+      "validations": [
+        {
+          "check": "pnpm typecheck",
+          "task_id": "T-1"
+        },
+        {
+          "check": "pnpm exec tsx examples/05-diagram-printer/json-check.ts",
+          "task_id": "T-1"
+        },
+        {
+          "check": "pnpm exec tsx examples/05-diagram-printer/json-check.ts",
+          "task_id": "T-3"
+        },
+        {
+          "check": "pnpm example:diagram",
+          "task_id": "T-3"
+        },
+        {
+          "check": "diff -u examples/05-diagram-printer/expected-output.txt <(pnpm --silent example:diagram)",
+          "task_id": "T-3"
+        },
+        {
+          "check": "pnpm typecheck",
+          "task_id": "T-3"
+        },
+        {
+          "check": "pnpm build",
+          "task_id": "T-3"
+        }
+      ]
+    },
+    {
+      "criterion": "Serialization is deterministic and preserves ordered graph data.",
+      "criterion_id": "AC-2",
+      "evidence": null,
+      "result": "BLOCKED",
+      "tasks": [
+        "T-1",
+        "T-3"
+      ],
+      "validations": [
+        {
+          "check": "pnpm typecheck",
+          "task_id": "T-1"
+        },
+        {
+          "check": "pnpm exec tsx examples/05-diagram-printer/json-check.ts",
+          "task_id": "T-1"
+        },
+        {
+          "check": "pnpm exec tsx examples/05-diagram-printer/json-check.ts",
+          "task_id": "T-3"
+        },
+        {
+          "check": "pnpm example:diagram",
+          "task_id": "T-3"
+        },
+        {
+          "check": "diff -u examples/05-diagram-printer/expected-output.txt <(pnpm --silent example:diagram)",
+          "task_id": "T-3"
+        },
+        {
+          "check": "pnpm typecheck",
+          "task_id": "T-3"
+        },
+        {
+          "check": "pnpm build",
+          "task_id": "T-3"
+        }
+      ]
+    },
+    {
+      "criterion": "Run serialization exposes only the compact signal and bottleneck overlay.",
+      "criterion_id": "AC-3",
+      "evidence": null,
+      "result": "BLOCKED",
+      "tasks": [
+        "T-1",
+        "T-3"
+      ],
+      "validations": [
+        {
+          "check": "pnpm typecheck",
+          "task_id": "T-1"
+        },
+        {
+          "check": "pnpm exec tsx examples/05-diagram-printer/json-check.ts",
+          "task_id": "T-1"
+        },
+        {
+          "check": "pnpm exec tsx examples/05-diagram-printer/json-check.ts",
+          "task_id": "T-3"
+        },
+        {
+          "check": "pnpm example:diagram",
+          "task_id": "T-3"
+        },
+        {
+          "check": "diff -u examples/05-diagram-printer/expected-output.txt <(pnpm --silent example:diagram)",
+          "task_id": "T-3"
+        },
+        {
+          "check": "pnpm typecheck",
+          "task_id": "T-3"
+        },
+        {
+          "check": "pnpm build",
+          "task_id": "T-3"
+        }
+      ]
+    },
+    {
+      "criterion": "Existing ASCII output remains byte-compatible.",
+      "criterion_id": "AC-4",
+      "evidence": null,
+      "result": "BLOCKED",
+      "tasks": [
+        "T-3"
+      ],
+      "validations": [
+        {
+          "check": "pnpm exec tsx examples/05-diagram-printer/json-check.ts",
+          "task_id": "T-3"
+        },
+        {
+          "check": "pnpm example:diagram",
+          "task_id": "T-3"
+        },
+        {
+          "check": "diff -u examples/05-diagram-printer/expected-output.txt <(pnpm --silent example:diagram)",
+          "task_id": "T-3"
+        },
+        {
+          "check": "pnpm typecheck",
+          "task_id": "T-3"
+        },
+        {
+          "check": "pnpm build",
+          "task_id": "T-3"
+        }
+      ]
+    },
+    {
+      "criterion": "The API and schema types are publicly exported and documented.",
+      "criterion_id": "AC-5",
+      "evidence": null,
+      "result": "BLOCKED",
+      "tasks": [
+        "T-2",
+        "T-3"
+      ],
+      "validations": [
+        {
+          "check": "pnpm typecheck",
+          "task_id": "T-2"
+        },
+        {
+          "check": "pnpm build",
+          "task_id": "T-2"
+        },
+        {
+          "check": "pnpm exec tsx examples/05-diagram-printer/json-check.ts",
+          "task_id": "T-3"
+        },
+        {
+          "check": "pnpm example:diagram",
+          "task_id": "T-3"
+        },
+        {
+          "check": "diff -u examples/05-diagram-printer/expected-output.txt <(pnpm --silent example:diagram)",
+          "task_id": "T-3"
+        },
+        {
+          "check": "pnpm typecheck",
+          "task_id": "T-3"
+        },
+        {
+          "check": "pnpm build",
+          "task_id": "T-3"
+        }
+      ]
+    }
+  ],
+  "schema_version": 1
+}

@@ -1,0 +1,59 @@
+{
+  "canonical_context": {
+    "characters": 13481,
+    "estimated_tokens": 3371,
+    "estimator": "ceil(total characters / 4); compactness signal, not provider billing",
+    "files": [
+      "product-engineering-loop/references/workflow.md",
+      "product-engineering-loop/references/artifacts.md",
+      "product-engineering-loop/references/failure-moves.md"
+    ]
+  },
+  "files": {
+    ".github/workflows/ci.yml": "9480a65a3a4d24b42f7854566ad4a55100b7f2c2b25bffc6bb6b368ba0848104",
+    ".github/workflows/sync-upstream.yml": "f8c84e316e296ac5928bc0222cef64848ea0fda6846a42f540b0747e8c4eb5f7",
+    ".gitignore": "94fa252979321511b0ce5fa598f71905f6dc29c5bef6660ff4498a5a39c167ba",
+    "CONTRIBUTING.md": "217090f78f44da12890d7ad4aa555f1233c64bfe2119877d497e7c13fb4b3f91",
+    "README.md": "adc08d8b50f731f5f9336bc4eaca3ce0a4ebb64c75e94aa6e6f0dabfe26e028c",
+    "boatstack/SKILL.md": "335731973cea2c5d0eb67b9d3870cc332490d1188e3943bb185ab78ab4b4b886",
+    "boatstack/agents/openai.yaml": "8429c65868025e798d345cc2a9bd78f2bc3280ee982f8f7874504395d6d68368",
+    "boatstack/assets/templates/adr.md": "c577a3c1c1319061f61deb053597e6e853657022185fe28b8f733327e2a78565",
+    "boatstack/assets/templates/evidence.md": "12dac552bc5373ab443367d5797f41988f14284bcf46d16dfd72015cfddf9ad1",
+    "boatstack/assets/templates/feature-spec.md": "c7e007cc4295ed4c599642c0587021ef978e729cf0946f6bf3a6c4f01d366ad4",
+    "boatstack/assets/templates/gaps.md": "911cc2f086104d35071b952950c2ec44258641419f10b2355c594f33eb492cbe",
+    "boatstack/assets/templates/move.md": "91bfd9a9b9426ac023eb88fd19f4f638190481c1855f1239acc73830528e50f0",
+    "boatstack/assets/templates/plan-lock.json": "3e44dea05419cf198ee8112e9b9fdff92287edc2480a03fca026560fe929d468",
+    "boatstack/assets/templates/plan.json": "803907480dd150da36337f3ecf46e3617f3e26ace9be282e540032983cb77e86",
+    "boatstack/assets/templates/questions.md": "86c9bcf51172fe222b7b28bffccaf3da3b1ea0633c7a2348272fdbbd8eea6740",
+    "boatstack/assets/templates/test-plan.md": "6db8a9f27dd171fb80222a501cae50eb051e7278c04703fa43b5ff86dd4d2df4",
+    "boatstack/references/artifacts.md": "caaa7337674bf707a53f0854c7d95e58333ac566f2bc67f0d77533230796221a",
+    "boatstack/references/failure-moves.md": "2d7d3988c70718e9cc02104f9899a00208173e2f654d1046edd22079f4d46f41",
+    "boatstack/references/portability.md": "5490a045526c4cd6fd52bcddeb0039119208478fb17656cd2f6b3d5f71698ce6",
+    "boatstack/references/workflow.md": "2c2343b3ef3dd7684dc6a027da4c8e5b1ce927cf3979aca32abea0d0d2028ee7",
+    "boatstack/scripts/approve_plan.py": "92cb14cf0703bd25d053f8939575ab651a0274418d9ec85f3827f4c23c30001c",
+    "boatstack/scripts/compile_plan.py": "523befa52993f5606a5ed7a91678459254ba6cfa074e9aafa9f4010876332968",
+    "boatstack/scripts/export_repo.py": "42444369b2b4d8430b5347761626ac7725aae25aa4726b5bdca5325a4fc80ad0",
+    "docs/benchmark-corpus-audit.md": "f2d206fe8579a514f9da82b2c96c19b343ac004be67617e1bd34f0f8e0e5e6c6",
+    "docs/benchmark-submission-audit.md": "9518abdd17690729c6423f87cab20418ed47b0915b5faa44b9ef975e9e9c3b79",
+    "docs/loop-engineering.md": "2cddb0aa963f15149c69102a8215401d32848d228acbf55c3df20db27b654a34",
+    "docs/research-and-design.md": "543836387090f8dc01381b1e46d1c6760bcbf8119b4004ece8d6f6f68d08db4f",
+    "examples/diagram-json/README.md": "51871b16438cbef2bbdf5077dda0b5b06e77cbe76882d34e4a05c17c8f13a2b3",
+    "examples/diagram-json/compiled/evidence.md": "1ba1c989ade070a8ef9a508fbd788d100d7292f2dbacbb2bce895468019f619d",
+    "examples/diagram-json/compiled/tasks.json": "d66d693df1ba7dd34f65ce93afea54006563c14d642a1bf0d1d9311b3fcfb37b",
+    "examples/diagram-json/compiled/test-matrix.json": "0497cf73f84515cfc493e4904eda4c2be6c0621fc0a11a3b1349803b5acf91cb",
+    "examples/diagram-json/plan.json": "d1208003042a9d10f5efb010fc32fc7ac7bdefa427938260586e90daa0cb4414",
+    "examples/diagram-json/plan.lock.json": "e6f5a6a7d3898eacaeacb1f38d84f34b6c7bee25b1d1eb79cb7ca3157cb897ea",
+    "examples/diagram-json/questions.md": "1a0050041cac0a8d53e6ebfe04cbec4a298cdc8c50efeeb6fa15aeb663c5ec76",
+    "examples/diagram-json/request.md": "0808fc41c36779c404f4a3a121167da6e76cac56df526e70f9ed6d3e0d4c02ed",
+    "examples/diagram-json/spec.md": "a943c81cf2a88d23d5b300e6b9dc1dafc80923a9b6b9ab5297a67b4e2054b9d5",
+    "project.example.json": "2054228f4c824d43385b7732e9f38f17739900d3cec6567bc23c5fe6c890d1be",
+    "tests/test_boatstack.py": "9d61e552a196b9c9fba8bd175b7c3ae1fcfead1f61eb6396df065477086369e1"
+  },
+  "generator": "operatorstack/intelligence-flow:boatstack-distribution",
+  "schema_version": 1,
+  "source": {
+    "commit": "aae685d2513cd25537284e4e68177411ace7ac9a",
+    "path": "examples/12-product-engineering-loop",
+    "repository": "operatorstack/intelligence-flow"
+  }
+}

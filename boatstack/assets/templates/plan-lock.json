@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "status": "APPROVED",
+  "approved_by": "<human identity>",
+  "approved_at": "<ISO-8601 timestamp>",
+  "source_commit": "<git commit>",
+  "spec_sha256": "<sha256>",
+  "plan_sha256": "<sha256>",
+  "task_graph_sha256": "<sha256>",
+  "invalidated_at": null,
+  "invalidation_reason": null
+}
