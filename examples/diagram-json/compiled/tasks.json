@@ -1,0 +1,60 @@
+{
+  "feature_id": "diagram-json-v1",
+  "schema_version": 1,
+  "source_plan_status": "HUMAN_APPROVED",
+  "tasks": [
+    {
+      "acceptance_criteria": [
+        "AC-1",
+        "AC-2",
+        "AC-3"
+      ],
+      "depends_on": [],
+      "id": "T-1",
+      "rollback_boundary": "Revert the serializer and schema types in src/diagram.ts without touching the ASCII renderer.",
+      "title": "Define the v1 schema and pure serializer at the diagram boundary",
+      "validation": [
+        "pnpm typecheck",
+        "pnpm exec tsx examples/05-diagram-printer/json-check.ts"
+      ]
+    },
+    {
+      "acceptance_criteria": [
+        "AC-5"
+      ],
+      "depends_on": [
+        "T-1"
+      ],
+      "id": "T-2",
+      "rollback_boundary": "Remove the new src/index.ts exports and JSON documentation together.",
+      "title": "Expose and document the additive public contract",
+      "validation": [
+        "pnpm typecheck",
+        "pnpm build"
+      ]
+    },
+    {
+      "acceptance_criteria": [
+        "AC-1",
+        "AC-2",
+        "AC-3",
+        "AC-4",
+        "AC-5"
+      ],
+      "depends_on": [
+        "T-1",
+        "T-2"
+      ],
+      "id": "T-3",
+      "rollback_boundary": "Revert the JSON fixture/check and documentation; retain the pre-feature expected ASCII fixture.",
+      "title": "Add contract fixtures and prove text-renderer compatibility",
+      "validation": [
+        "pnpm exec tsx examples/05-diagram-printer/json-check.ts",
+        "pnpm example:diagram",
+        "diff -u examples/05-diagram-printer/expected-output.txt <(pnpm --silent example:diagram)",
+        "pnpm typecheck",
+        "pnpm build"
+      ]
+    }
+  ]
+}

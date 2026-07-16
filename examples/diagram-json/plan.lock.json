@@ -1,0 +1,15 @@
+{
+  "approved_at": "2026-07-16T12:00:00+00:00",
+  "approved_by": "Example Maintainer (simulated walkthrough)",
+  "invalidated_at": null,
+  "invalidation_reason": null,
+  "plan_path": "examples/diagram-json/plan.json",
+  "plan_sha256": "d1208003042a9d10f5efb010fc32fc7ac7bdefa427938260586e90daa0cb4414",
+  "schema_version": 1,
+  "source_commit": "5e1bbedab7d5bae49dd0e5cdda1e4b7804ab057f",
+  "spec_path": "examples/diagram-json/spec.md",
+  "spec_sha256": "a943c81cf2a88d23d5b300e6b9dc1dafc80923a9b6b9ab5297a67b4e2054b9d5",
+  "status": "APPROVED",
+  "task_graph_path": "examples/diagram-json/compiled/tasks.json",
+  "task_graph_sha256": "d66d693df1ba7dd34f65ce93afea54006563c14d642a1bf0d1d9311b3fcfb37b"
+}

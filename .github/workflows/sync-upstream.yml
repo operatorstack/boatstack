@@ -1,0 +1,69 @@
+# Generated from operatorstack/intelligence-flow.
+name: Sync from Intelligence Flow
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-intelligence-flow
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Boatstack
+        uses: actions/checkout@v4
+        with:
+          path: boatstack-repo
+      - name: Check out Intelligence Flow
+        uses: actions/checkout@v4
+        with:
+          repository: operatorstack/intelligence-flow
+          ref: main
+          path: intelligence-flow
+      - name: Generate projection
+        id: generate
+        shell: bash
+        run: |
+          source_commit="$(git -C intelligence-flow rev-parse HEAD)"
+          python3 intelligence-flow/examples/12-product-engineering-loop/scripts/build_boatstack.py \
+            --repo boatstack-repo \
+            --source-commit "$source_commit" \
+            --write
+          echo "source_commit=$source_commit" >> "$GITHUB_OUTPUT"
+      - name: Open generated pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_COMMIT: ${{ steps.generate.outputs.source_commit }}
+        shell: bash
+        run: |
+          cd boatstack-repo
+          if [[ -z "$(git status --porcelain)" ]]; then
+            echo "Boatstack already matches Intelligence Flow."
+            exit 0
+          fi
+          short="${SOURCE_COMMIT:0:12}"
+          branch="sync/intelligence-flow-$short"
+          existing="$(gh pr list --head "$branch" --state open --json url --jq '.[0].url')"
+          if [[ -n "$existing" ]]; then
+            echo "Upstream PR already open: $existing"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add -A
+          git commit -m "Sync Boatstack from Intelligence Flow $short"
+          git push --set-upstream origin "$branch"
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "Sync Boatstack from Intelligence Flow $short" \
+            --body "Generated from operatorstack/intelligence-flow@$SOURCE_COMMIT. Review provenance, tests, examples, and context-cost changes before merging."

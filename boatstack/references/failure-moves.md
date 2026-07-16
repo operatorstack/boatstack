@@ -1,0 +1,50 @@
+# Failure taxonomy and move catalog
+
+Select a move only after locating the failure below its surface symptom. “Timed out,” “tests failed,” and “the agent got confused” are starting observations, not diagnoses.
+
+| Failure class | Evidence | Candidate moves | Main regression risk |
+|---|---|---|---|
+| Unknown requirement | Plausible implementations disagree on product behavior | Ask a targeted human question; record answer and expiry | Invented requirements or stalled delivery |
+| Context miss | Relevant interface/invariant existed but was not loaded | Reload minimal relevant context; add routing reference | Blind truncation removes useful state |
+| Protocol malformed | Invalid JSON/schema/tool call despite recoverable intent | Parse repair; schema validation; constrained retry | Retrying semantic errors as syntax |
+| Tool/transport | API, shell, network, or environment failure | Classify retryability; bounded retry; fallback; resume | Duplicate side effects or retry storms |
+| Step/budget exhaustion | Progress is still converging at cap | Continue from checkpoint; conditional budget increase | More time converts timeout into wrong answer or thrash |
+| Thrashing | Repeated actions without new evidence | Stop after repeated tactic; re-diagnose; stronger planner | Spending more tokens on the same loop |
+| Implementation correctness | Independent tests fail the contract | Local repair from failing evidence; narrower task | Rebuilding and losing near-correct work |
+| Test fidelity | Tests pass wrong code or reject correct code | Contract fixtures; collect/load gate; mutation/differential/human oracle | Treating more model-authored tests as truth |
+| Review miss | Defect found after same-agent review | Independent reviewer; risk checklist; mechanical enforcement | Expensive review everywhere |
+| Scope drift | Diff no longer maps to approved outcomes | Re-scope; split PR; update spec with approval | Hiding product changes in implementation |
+| Security/tenancy | Trust boundary or data scope violated | Specialist review; invariant test; deny-by-default guard | Generic prompt mistaken for enforcement |
+| Integration/deploy | Local pass but runtime fails | Environment parity; canary; health checks; rollback | Treating staging as identical to production |
+| Documentation drift | Durable behavior and docs disagree | Update source-of-truth artifact; drift check | Growing instructions with unverified rules |
+
+## Lessons encoded from the benchmark campaign
+
+- **Parse repair is a protocol move.** It can recover malformed completion without pretending to improve reasoning.
+- **More steps are conditional.** Qwen experiments reduced step exhaustion but largely converted it into confident wrong answers. Increase budget only when trajectories show continuing progress.
+- **Strict self-checking is not monotonic.** A stricter prompt caused collateral rework and regression. Preserve a known-good snapshot and require an oracle with fidelity to the real goal.
+- **Self-authored tests are scaffolding before they are truth.** Spec-first helped a development slice but its frozen oracle agreed poorly with the hidden grader and did not transfer to the full board.
+- **Development promotion is not product promotion.** A +7 point development result became a statistical wash on the full distribution. Representative evaluation and holdout remain mandatory.
+- **Do not discard near-correct work.** Repair attempts can wash or regress, so retain prior evidence and compare states.
+- **Model changes relocate the bottleneck.** The same harness exposed different binding modes on Gemini and Qwen. Route moves by measured failure population, not by a universal “best loop.”
+
+## Move proposal schema
+
+Before experimenting, record:
+
+```yaml
+id: stable-move-name
+target_failure: one-class
+population: observable predicate selecting affected runs
+mechanism: why this intervention should change the outcome
+change: one minimal behavioral delta
+expected_effect: directional metric prediction
+cost: latency, tokens, money, and human attention
+risks: plausible regressions and affected populations
+smoke: cheapest mechanism check
+evaluation: paired sample, representative distribution, holdout
+rollback: identity/default behavior
+decision: PROPOSED | PROMOTE | REJECT | WASH
+```
+
+Never promote from an unpaired anecdote, a mid-run aggregate with mismatched coverage, or a metric produced solely by the model being evaluated.
