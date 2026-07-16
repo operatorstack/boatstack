@@ -25,6 +25,43 @@ Each transition emits an artifact and evidence. A host adapter may change how a 
 
 The `SOURCE_PLAN` file is required from entry through completion of `BUILD`. After build, its path and hash remain recorded for provenance, but `TEST_GATE`, `REVIEW_GATE`, and `SHIP_GATE` do not require the original file to be present.
 
+## User-facing response contract
+
+Helper commands and state labels are internal control machinery. Every normal response uses:
+
+```markdown
+## <Plain-language outcome>
+
+<One or two sentence summary>
+
+<Only the decision-relevant content for this operation>
+
+### Next step
+
+<Exactly one primary action>
+
+<details>
+<summary>Technical details</summary>
+
+Machine status, helper output, fingerprints, paths, receipts, and locks.
+
+</details>
+```
+
+Lead with a plain outcome, never a machine code such as `PASS`, `PLAN_APPROVED`, `BLOCKED`, `READY_FOR_BUILD`, `PASS_WITH_GAPS`, or `WAITING_FOR_INPUT`. Keep approval-relevant scope, non-goals, decisions, risks, and gaps visible. Move internal operations (`check-plan`, `record-approval`, `activate-plan`), hashes, paths, tables, receipts, locks, and raw output into **Technical details**. **Exactly one primary action:** end with the action that advances or unblocks the current state; a secondary option gets one short sentence. Never route past a blocked state.
+
+| State | Outcome -> one next action |
+|---|---|
+| `auto-plan` ready / needs answers | **Plan ready** -> run `/plan-gate`; **I need your input** -> answer 1-3 material questions |
+| `plan-gate` pending / approved | **Ready for your approval** -> reply `approve`; **Approved — ready to build** -> enter execution mode and run `/build` |
+| `build` success / paused | **Build complete** -> run `/test-gate`; **Build needs a decision** -> answer the blocking question |
+| `test-gate` pass / blocked | **Tests passed** -> run `/review-gate`; **Testing found a problem** -> perform or authorize the repair |
+| `review-gate` pass / blocked | **Review passed** -> run `/ship-gate`; **Changes required** -> address the blocking finding |
+| `ship-gate` success | **PR ready** or **PR opened** -> review the PR; never imply merge authorization |
+| `retro` | **Improvement proposed** -> review or authorize the experiment |
+
+Normal approval is `approve`. Resolve `approved_by` from (1) an identity supplied with approval, (2) the authenticated GitHub login from `gh api user --jq .login` when available, or (3) one short identity follow-up. Never infer the approver from a filesystem username, commit history, or the coding agent. If identity is missing after approval, preserve the current fingerprint and approval intent, create no receipt, and ask only for identity; once resolved against the unchanged plan, do not require another `approve`. Keep identity and receipt data inside **Technical details**.
+
 ## State contracts
 
 ### `INTENT -> SOURCE_PLAN`

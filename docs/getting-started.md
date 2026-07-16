@@ -55,7 +55,7 @@ Run:
 /auto-plan
 ```
 
-`/auto-plan` may answer discoverable repository facts, but it cannot answer product decisions for you. If it asks questions, answer them in plain text. Material agent suggestions stay `PROPOSED`; only your responses become `ANSWERED`. Re-run `/auto-plan` until `check-plan` passes and the draft is ready.
+`/auto-plan` may answer discoverable repository facts, but it cannot answer product decisions for you. If it asks questions, answer them in plain text. Material agent suggestions stay `PROPOSED`; only your responses become `ANSWERED`. Re-run `/auto-plan` until the draft is ready.
 
 ## 3. Review and approve the exact plan
 
@@ -65,7 +65,62 @@ Run:
 /plan-gate
 ```
 
-Boatstack presents the intended outcome, non-goals, decisions, known gaps, validation origins, and an exact fingerprint. Request changes or explicitly reply `approve`. Approval records a named human and the displayed fingerprint in `approval.md`; it does not build code.
+Boatstack presents the intended outcome, non-goals, decisions, known gaps, and validation plan. Request changes or explicitly reply `approve`. When available, Boatstack uses your authenticated GitHub username for the internal approval record; it asks for a name or handle only when no trustworthy identity is available. Approval does not build code.
+
+### What Boatstack responses look like
+
+Boatstack leads with the outcome and one action. Internal status codes, helper operations, fingerprints, and artifact paths remain available under **Technical details** instead of dominating the response.
+
+After a successful `/auto-plan`:
+
+```markdown
+## Plan ready
+
+The feature plan is complete, with scope, decisions, and known gaps recorded.
+
+### Next step
+
+Run `/plan-gate`.
+
+<details>
+<summary>Technical details</summary>
+Plan paths, validation output, and fingerprint.
+</details>
+```
+
+When `/plan-gate` needs approval:
+
+```markdown
+## Ready for your approval
+
+This plan builds the agreed slice and keeps the listed non-goals and gaps outside it.
+
+### Next step
+
+Reply `approve`. If something is wrong, describe the change instead.
+
+<details>
+<summary>Technical details</summary>
+Machine status, fingerprint, and artifact paths.
+</details>
+```
+
+After approval:
+
+```markdown
+## Approved — ready to build
+
+The reviewed plan is approved. No product code has changed yet.
+
+### Next step
+
+Enter your host's execution mode and run `/build`.
+
+<details>
+<summary>Technical details</summary>
+Approver, timestamp, fingerprint, and approval-record path.
+</details>
+```
 
 ## 4. Enter the host's execution surface and build
 
