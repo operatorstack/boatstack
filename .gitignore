@@ -1,5 +1,6 @@
-__pycache__/
-*.py[cod]
+boatstack/boatstack-helper
+boatstack/boatstack-helper.exe
+dist/
 .DS_Store
 .venv/
 venv/

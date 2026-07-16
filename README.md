@@ -2,21 +2,29 @@
 
 # Boatstack
 
-**Plan the route. Prove the work. Ship.**
+**Build freely. Prove it. Ship.**
 
-Boatstack is loop engineering for coding agents: a model-neutral path from a product request to an explicitly approved, tested, reviewed pull request. Its behavior is generated from [Intelligence Flow at `fcc2faa55ac3c2332ce4a19293d89023f578784d`](https://github.com/operatorstack/intelligence-flow/tree/fcc2faa55ac3c2332ce4a19293d89023f578784d/examples/12-product-engineering-loop).
+Boatstack is **evidence-engineered coding**: a model-neutral coding node that turns product intent and repository context into an explicitly approved, tested, reviewable change. It does not prescribe the model, implementation technique, tools, or document structure. It governs what may be claimed, approved, or shipped. Its behavior is generated from [Intelligence Flow at `40ebae5dfb3d090812301a438aaac079426edcfc`](https://github.com/operatorstack/intelligence-flow/tree/40ebae5dfb3d090812301a438aaac079426edcfc/examples/12-product-engineering-loop).
 
-It is not a claim that a longer prompt writes better code. Here is what the loop actually does.
+> **You are free in how you build. Only claims of completion require evidence.**
 
-## One request, as executable state
+It is not a claim that a longer prompt writes better code. Here is what the node actually makes observable.
 
-Start with ordinary product intent:
+## Plan first, then auto-plan
+
+Start with ordinary product intent **inside Cursor, Codex, or Claude Plan mode**:
 
 ```text
 Add machine-readable JSON output to the diagram printer while preserving the current text output.
 ```
 
-`/auto-plan` inspects the smallest relevant code boundary and makes contract choices visible:
+Save the host's plan. When the host exposes the active plan path, Boatstack reads it from conversation context; otherwise save it under `.product-loop/intake/`. Then run:
+
+```text
+/auto-plan
+```
+
+`/auto-plan` must validate a real, non-empty source plan before it reads repository context. Its fallback searches only bounded Plan-mode locations and succeeds for exactly one file. When discovery finds none or several, it returns `BLOCKED` and asks for the intended path; it never guesses from recency or creates the missing plan itself. It then inspects the smallest relevant code boundary and makes contract choices visible:
 
 ```text
 Q1  Public API?       sibling serializeFlowGraph() | change printFlowGraph()
@@ -28,6 +36,7 @@ The accepted answers become observable criteria and tasks—not hidden assumptio
 
 ```json
 {
+  "source_plan_path": "source-plan.md",
   "acceptance_criteria": [
     {"id": "AC-1", "text": "Return parseable schema-versioned graph JSON."},
     {"id": "AC-4", "text": "Keep existing ASCII output byte-compatible."}
@@ -36,21 +45,60 @@ The accepted answers become observable criteria and tasks—not hidden assumptio
     "id": "T-3",
     "acceptance_criteria": ["AC-1", "AC-4"],
     "validation": [
-      "pnpm exec tsx examples/05-diagram-printer/json-check.ts",
-      "diff -u expected-output.txt actual-output.txt"
+      {
+        "criteria": ["AC-1"],
+        "run": "pnpm exec tsx examples/05-diagram-printer/json-check.ts",
+        "origin": "AC-1 and the approved v1 JSON contract",
+        "oracle": "parser and schema assertions against the approved contract",
+        "independence": "contract-derived"
+      },
+      {
+        "criteria": ["AC-4"],
+        "run": "diff -u expected-output.txt actual-output.txt",
+        "origin": "AC-4 and the repository's existing ASCII behavior",
+        "oracle": "pre-feature golden fixture",
+        "independence": "pre-existing"
+      }
     ]
   }]
 }
 ```
 
+## Where validation comes from
+
+Boatstack does not choose a command after seeing the implementation and call that proof. Validation is derived before approval:
+
+```text
+product intent or invariant
+  -> observable acceptance claim
+  -> oracle that could falsify the claim
+  -> executable or human procedure
+  -> recorded evidence
+```
+
+`criteria` limits which claims the check can support. The compiler rejects a criterion with no mapped validation and rejects a validation attached to a criterion its task does not serve. The `origin` identifies why the check is required: an acceptance criterion, existing repository invariant, explicit human decision, risk analysis, or external contract. The `oracle` identifies what makes the result meaningful: a pre-existing fixture, approved schema, independent system, measurable threshold, review rubric, or named human judgment. `independence` makes circular evidence visible; an implementation-authored test is useful evidence, but is not automatically an independent oracle.
+
+Ambiguous claims cannot pass unchanged:
+
+| Ambiguous claim | Required resolution before approval |
+|---|---|
+| “It should be fast” | Named workload, environment, metric, and threshold such as p95 under 200 ms |
+| “The design should look good” | Approved reference states, review rubric, named reviewer, and captured evidence |
+| “The migration should be safe” | Enumerated invariants, rehearsal/rollback procedure, and observable failure conditions |
+
+`/auto-plan` asks only the questions needed to establish that resolution. If no defensible oracle or authorized human judgment exists, the criterion remains `BLOCKED`; the model cannot validate its own interpretation by restating it. gstack and Spec Kit may help propose criteria and checks, but Boatstack still requires their provenance and evidence contract.
+
+See [Validation and evidence](docs/validation-and-evidence.md) for validation forms, ambiguity handling, independence levels, gate outcomes, and the benchmark observations behind this contract.
+
 The compiler refuses a criterion with no task or verification. Then `/plan-gate` requires a named human and binds approval to content hashes:
 
 ```bash
-python3 boatstack/scripts/compile_plan.py \
+.product-loop/bin/boatstack-helper compile-plan \
   --plan .product-loop/features/diagram-json/plan.json \
   --out-dir .product-loop/features/diagram-json/compiled
 
-python3 boatstack/scripts/approve_plan.py \
+.product-loop/bin/boatstack-helper approve-plan \
+  --source-plan .product-loop/features/diagram-json/source-plan.md \
   --spec .product-loop/features/diagram-json/spec.md \
   --plan .product-loop/features/diagram-json/plan.json \
   --tasks .product-loop/features/diagram-json/compiled/tasks.json \
@@ -61,11 +109,11 @@ python3 boatstack/scripts/approve_plan.py \
 Build work checks that lock first:
 
 ```console
-$ python3 boatstack/scripts/approve_plan.py ... --check
+$ .product-loop/bin/boatstack-helper approve-plan ... --check
 PASS: approved plan lock matches the current artifacts
 
 # after plan.json changes
-$ python3 boatstack/scripts/approve_plan.py ... --check
+$ .product-loop/bin/boatstack-helper approve-plan ... --check
 BLOCKED: stale or invalid plan lock: plan
 ```
 
@@ -75,45 +123,97 @@ See the complete, linked [worked example](examples/diagram-json/README.md).
 
 ## Bring your own product context
 
-Boatstack does not impose a documentation structure or maintain a second product memory. Keep feature briefs, vision, roadmaps, ADRs, gaps, and engineering rules wherever they already live in the repository. Cursor, Codex, or Claude discovers the relevant surrounding code and documents; Boatstack controls how that context becomes an approved change.
+**Bring your context as it is.** Boatstack does not impose a documentation structure or maintain a second product memory. Keep feature briefs, vision, roadmaps, ADRs, gaps, and engineering rules wherever they already live in the repository. Cursor, Codex, or Claude discovers the relevant surrounding code and documents; Boatstack controls how that context becomes an approved change.
+
+Boatstack treats the repository as canonical and creates only temporary, reviewable, provenance-linked task projections. This matters because a deterministic translation `T` cannot add information about the desired outcome `Y` that was not present in the source context `C`:
+
+```text
+I(Y; T(C)) <= I(Y; C)
+```
+
+This data-processing bound motivates source preservation; it does **not** prove that every transformation is harmful. A well-chosen projection can improve a finite-context model's effective performance by removing irrelevant material. The rule is therefore: **preserve the source; project only the relevant slice.**
 
 Point the host at an existing product document:
 
 ```text
-/auto-plan Build team notification preferences.
+/auto-plan
 Product brief: docs/features/team-notifications.md
 Relevant decisions: docs/architecture/notifications.md
 ```
 
-Or begin with only the request and let the host inspect the smallest relevant repository slice. Boatstack separates discoverable facts from product questions, then produces the consistent handoff:
+If no product document exists, the host Plan-mode file can begin with only the ordinary request. Boatstack then inspects the smallest relevant repository slice, separates discoverable facts from product questions, and produces the consistent handoff:
 
 ```text
 existing product docs + code -> questions -> feature spec -> approval -> engineering plan
 ```
 
-Product documents define what and why. ADRs record durable technical decisions. Gaps record known incomplete work. Boatstack references these sources without rewriting them. No context map or documentation migration is required in V1; the project config may list useful starting paths when a repository wants stable defaults.
+Product documents define what and why. ADRs record durable technical decisions. Gaps record known incomplete work. Boatstack references these sources without replacing them. Any generated spec or plan must remain traceable to its sources and reviewable as a lossy task projection. No context map or documentation migration is required in V1; the project config may list useful starting paths when a repository wants stable defaults.
 
 ## Install into a repository
 
+macOS or Linux:
+
 ```bash
-git clone https://github.com/operatorstack/boatstack.git && cd boatstack
-cp project.example.json /path/to/product/.boatstack-project.json
-# Replace the example paths and commands with facts from the product repository.
-
-python3 boatstack/scripts/export_repo.py \
-  --repo /path/to/product \
-  --config /path/to/product/.boatstack-project.json \
-  --adapter-name boatstack
-
-# Review the dry run, then materialize it on a branch.
-python3 boatstack/scripts/export_repo.py \
-  --repo /path/to/product \
-  --config /path/to/product/.boatstack-project.json \
-  --adapter-name boatstack \
-  --write
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/operatorstack/boatstack/main/install.sh)"
 ```
 
-The exporter creates one canonical `.product-loop/` runtime and thin adapters for:
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/operatorstack/boatstack/main/install.ps1 | iex
+```
+
+Run the command from the product repository. The installer detects the repository and available coding hosts, previews every generated path, verifies the downloaded helper, and asks whether to add gstack, Spec Kit, both, or core only. Boatstack core requires no Python, Node, Go, or package manager.
+
+After installation, open the chosen host's Plan mode, describe the change, save its plan, and run `/auto-plan`. Boatstack uses the host-exposed active path or discovers exactly one file under `.product-loop/intake/`; an explicit path is only needed to resolve ambiguity. The source plan remains required and hash-checked through `/build`; after build, test, review, and ship gates use the approved lock, actual diff, and evidence instead.
+
+## Use Boatstack with gstack and GitHub Spec Kit
+
+Boatstack is primarily a **control and evidence layer** over your coding host and optional planning/review tools. It does not need to reproduce everything those projects already do well:
+
+```text
+product intent + repository context
+                 |
+        [ BOATSTACK CONTRACT ]
+          /                  \
+ gstack review lenses   Spec Kit artifacts
+          \                  /
+       normalized spec + plan + decisions
+                 |
+     approval lock -> open build -> evidence gates -> PR
+```
+
+| Layer | What it contributes | What remains Boatstack-owned |
+|---|---|---|
+| Coding host: Cursor, Codex, or Claude | Plan mode, repository exploration, implementation, tool execution | Cross-host artifact meanings and transition rules |
+| [gstack](https://github.com/garrytan/gstack) | Product/CEO, design, engineering, and developer-experience review lenses; adversarial plan critique | Which findings change the approved plan, validation provenance, approval hashing, and gate outcomes |
+| [GitHub Spec Kit](https://github.com/github/spec-kit) | Constitution, specify, clarify, plan, tasks, analyze, checklist, and related spec-driven artifacts | Normalization into Boatstack's criterion/validation contract and explicit human plan gate |
+| Boatstack core | Source-plan discovery, provenance, question/gap boundaries, deterministic compilation, approval/drift locks, evidence mapping, review/ship gates | The completion and shipping claim itself |
+
+### With gstack
+
+When installed, Boatstack invokes gstack through namespaced `/gstack-*` review skills inside `auto-plan`, review, or retrospective work. gstack can challenge product premises, design states, architecture, failure modes, and developer experience. Its findings are proposals: Boatstack records accepted decisions, maps resulting claims to validation, and re-runs approval when semantics change. gstack never becomes an implicit approval signal.
+
+### With GitHub Spec Kit
+
+Spec Kit can generate or cross-check the constitution, specification, clarification answers, implementation plan, tasks, analysis, and checklists. Boatstack sits above those artifacts as the authority/evidence layer:
+
+```text
+speckit.specify / clarify / plan / tasks / analyze / checklist
+                              |
+                              v
+        Boatstack criteria + oracle + validation normalization
+                              |
+                     explicit /plan-gate
+```
+
+`speckit.implement` does not bypass Boatstack's plan lock or `/build` boundary. If Spec Kit changes accepted semantics, Boatstack invalidates the old lock and returns to approval. This preserves Spec Kit's artifact-generation value without allowing a generator to approve or validate its own output.
+
+### Core only
+
+Both integrations are optional. Boatstack core still performs Plan-mode source discovery, question-led specification, structured planning, deterministic approval locking, validation/evidence mapping, test/review gates, and PR preparation. Integration failure is recorded as partial installation and does not roll back the working core.
+
+The installer creates one canonical `.product-loop/` runtime and thin adapters for:
 
 ```text
 .cursor/commands/{auto-plan,plan-gate,build,test-gate,review,ship,retro}.md
@@ -123,24 +223,35 @@ The exporter creates one canonical `.product-loop/` runtime and thin adapters fo
 .github/PULL_REQUEST_TEMPLATE/boatstack.md
 ```
 
-It refuses to overwrite user-owned host files. Run the same export with `--check` in CI to detect drift.
+It refuses to overwrite user-owned host files. The small platform helper lives under ignored `.product-loop/bin/`; users continue to operate Boatstack through their coding host. Re-run the installer to restore the helper on a fresh clone.
 
-## Why “loop engineering”
+## Freedom inside, evidence at the edges
 
-A coding model is one operator inside a controlled path:
+Boatstack is a mathematically modeled composite node inside an Intelligence Flow graph:
 
 ```text
-intent -> questions -> spec -> plan -> human approval -> build
-       -> test evidence -> review evidence -> PR -> failure analysis
-                                      ^                     |
-                                      +--- promoted moves ---+
+product intent + repository state
+              |
+              v
+         [ BOATSTACK ]
+              |
+              v
+diff + evidence + decisions + known gaps
 ```
 
-- **Optimization:** select the smallest context and ceremony that preserve the required quality and evidence constraints.
-- **Control:** represent state explicitly, gate transitions, verify outputs, preserve known-good progress, and feed observed failures into separately tested improvements.
+Inside the node, a model, developer, team, or tool may use any suitable implementation method. At the edges, Boatstack makes authority, acceptance, evidence, and known gaps explicit.
+
+- A first implementation that passes is a **linear path**.
+- Evidence that causes revision creates a **feedback path**.
+- Multiple agents or approaches form a **branch/merge path**.
+
+Boatstack can participate in a loop, but it is not constrained to one. The graph topology follows the work. The invariant is evidence at transitions, not repeated ceremony.
+
+- **Optimization:** select the smallest context and ceremony that preserve required quality and evidence.
+- **Control:** represent state explicitly and verify approval, acceptance, and shipping transitions.
 - **Model neutrality:** route on ambiguity, risk, convergence, tool results, and evidence—not model brand, price, or a guessed capability tier.
 
-The full mapping from equations to files and checks is in [Loop engineering](docs/loop-engineering.md).
+The full mapping from equations to files and checks is in [Evidence-engineered coding](docs/evidence-engineered-coding.md).
 
 ## Evidence, with boundaries
 
@@ -158,7 +269,7 @@ Read the [research and design record](docs/research-and-design.md) and [corpus a
 
 ## Context has a budget
 
-The three canonical runtime references currently total approximately **3371 estimated tokens** using `ceil(characters / 4)`. That is a stable compactness signal, not provider billing. Host adapters stay thin and load the operation-specific slice on demand.
+The three canonical runtime references currently total approximately **4044 estimated tokens** using `ceil(characters / 4)`. That is a stable compactness signal, not provider billing. Host adapters stay thin and load the operation-specific slice on demand.
 
 ## Status
 

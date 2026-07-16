@@ -1,4 +1,4 @@
 interface:
   display_name: "Boatstack"
-  short_description: "Plan, build, verify, review, and ship with evidence."
-  default_prompt: "Use $boatstack to turn this product request into a question-led, evidence-gated implementation loop."
+  short_description: "Build freely; approve, verify, review, and ship with evidence."
+  default_prompt: "Use $boatstack as an evidence-engineered coding node: keep implementation tactics open and require evidence for approval, completion, review, and shipping."

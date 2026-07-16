@@ -9,6 +9,7 @@ The source of truth is `.product-loop/`:
 - `artifacts.md`: document contract;
 - `failure-moves.md`: failure taxonomy and experimental rules;
 - `templates/`: artifact templates;
+- `bin/boatstack-helper`: ignored, platform-native deterministic helper installed locally;
 - `generated.lock.json`: generator version, config hash, and generated file list.
 
 Host-specific files are compiled adapters:
@@ -45,6 +46,8 @@ An installation or update PR should show:
 - rollout and removal steps.
 
 Generated output is reviewable code. Do not auto-merge it simply because generation succeeded.
+
+The project-local helper is not committed. A fresh clone restores the verified platform binary by re-running the one-command installer; no Python, Node, Go, or package manager is required for Boatstack core.
 
 ## Host notes
 

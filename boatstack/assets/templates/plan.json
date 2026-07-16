@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "feature_id": "<stable-feature-id>",
+  "source_plan_path": "<path-to-plan-mode-file-relative-to-this-structured-plan>",
   "spec_path": "<path-to-approved-spec>",
   "acceptance_criteria": [
     {
@@ -14,7 +15,15 @@
       "title": "<bounded implementation operation>",
       "depends_on": [],
       "acceptance_criteria": ["AC-1"],
-      "validation": ["<real command or verification procedure>"],
+      "validation": [
+        {
+          "criteria": ["AC-1"],
+          "run": "<real command or verification procedure>",
+          "origin": "<criterion, repository invariant, human decision, or external contract>",
+          "oracle": "<independent fact, fixture, threshold, rubric, or named human judgment>",
+          "independence": "<pre-existing, contract-derived, external, human, or implementation-authored>"
+        }
+      ],
       "rollback_boundary": "<how to revert this task>"
     }
   ]

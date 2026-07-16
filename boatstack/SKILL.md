@@ -5,14 +5,14 @@ description: Turn a product request into a question-led, specification-first imp
 
 # Boatstack
 
-Build the smallest complete product slice that can be independently verified. Keep the workflow model-neutral: project facts and gate evidence are canonical; host-specific prompts are adapters.
+Build the smallest complete product slice that can be independently verified. Implementation methods remain open: project facts, approval, and gate evidence are canonical; host-specific prompts are adapters. You are free in how you build. Only claims of completion require evidence.
 
 ## Start by selecting the operation
 
 Map the request to one operation:
 
 - `init`: inspect a repository and create or update `.product-loop/project.json`.
-- `auto-plan`: turn product intent into a reviewable draft feature package.
+- `auto-plan`: refine a saved host Plan-mode file into a reviewable draft feature package; refuse when that file is absent.
 - `plan-gate`: present the draft for explicit human acceptance, then freeze its approved contents and generate the executable package.
 - `build`: implement approved tasks in bounded, reversible slices.
 - `test-gate`: test requirements and relevant regressions using independent evidence.
@@ -35,7 +35,7 @@ For ordinary feature work, define one bounded outcome:
 
 Because this workflow is also a reusable product, maintain delivery and improvement as separate paths:
 
-- **Delivery path:** intent -> questions -> spec -> plan -> code -> gates -> PR.
+- **Delivery path:** intent -> host Plan mode -> saved source plan -> questions -> spec -> approved plan -> code -> gates -> PR.
 - **Improvement path:** traces -> failure classification -> proposed move -> paired evaluation -> promote/reject.
 
 Never mix benchmark observations or speculative harness changes into the delivery path during an active feature. The improvement path may propose an experiment; only a passed promotion gate changes the canonical loop.
@@ -53,37 +53,43 @@ Do not scan the entire repository by default. Record discovered paths and comman
 
 ## Run `auto-plan`
 
-1. Write the bounded outcome definition before proposing architecture.
-2. Separate facts, decisions, unknowns, and safely deferrable gaps.
-3. Answer discoverable code questions by inspection.
-4. Ask the developer only questions whose answers materially change behavior, contracts, risk, or acceptance. Ask 1-3 concise questions at a time, give 2-3 mutually exclusive choices, recommend one, and explain the impact.
-5. Record answers and provenance in the question ledger.
-6. Create the feature spec: problem, users, outcomes, non-goals, acceptance criteria, invariants, interfaces, failure behavior, observability, rollout, and rollback.
-7. Run product, design, engineering, and developer-experience reviews only when applicable. If gstack is installed, its review skills can implement these lenses; do not require it.
-8. If Spec Kit is installed, use its constitution/specify/clarify/plan/tasks/analyze/checklist flow as an artifact generator. The canonical artifact contract remains authoritative.
-9. End with a **draft**, never an implied approval. Do not generate executable task state or start implementation from `auto-plan` alone.
+0. Require exactly one saved plan file created in the active host's Plan mode. First use the active plan path exposed in host/system conversation context, when available, and validate it with `.product-loop/bin/boatstack-helper check-source-plan --repo . --plan <host-path>`. Otherwise run `check-source-plan --repo .` to search only `.product-loop/intake/` and bounded repo-local host plan directories. If the result is missing or ambiguous, return `BLOCKED`; never choose by recency alone. An explicit `/auto-plan <path>` is only the ambiguity fallback. Do not write the missing source plan inside `auto-plan`.
+1. Treat the supplied plan as an initial proposal, not approved truth. Record its path as `source_plan_path` in the structured plan.
+2. Write the bounded outcome definition before proposing architecture.
+3. Separate facts, decisions, unknowns, and safely deferrable gaps.
+4. Answer discoverable code questions by inspection.
+5. Ask the developer only questions whose answers materially change behavior, contracts, risk, or acceptance. Ask 1-3 concise questions at a time, give 2-3 mutually exclusive choices, recommend one, and explain the impact.
+6. Record answers and provenance in the question ledger.
+7. Create the feature spec: problem, users, outcomes, non-goals, acceptance criteria, invariants, interfaces, failure behavior, observability, rollout, and rollback. Translate every accepted claim into an observable condition with a defensible oracle.
+8. Run product, design, engineering, and developer-experience reviews only when applicable. If gstack is installed, its review skills can implement these lenses; do not require it.
+9. If Spec Kit is installed, use its constitution/specify/clarify/plan/tasks/analyze/checklist flow as an artifact generator. The canonical artifact contract remains authoritative.
+10. For every planned validation, record the exact `criteria` it can support plus `run`, `origin`, `oracle`, and `independence`. Commands, automated tests, external checks, and named human review procedures are all valid forms, but an ambiguous claim without a threshold/rubric and authorized decision remains `BLOCKED`.
+11. End with a **draft**, never an implied approval. Do not generate executable task state or start implementation from `auto-plan` alone.
 
 Do not treat an ADR as general project context. ADRs record accepted durable decisions. Use a question ledger for unknowns and a gap ledger for known divergence.
 
+Treat repository-owned product context as canonical. Do not require it to be migrated or rewritten into a Boatstack memory. Specs, plans, summaries, and selected context are temporary task projections: keep them reviewable, link material claims back to their source paths, and never silently replace the source. Preserve the source; project only the relevant slice.
+
 ## Run `plan-gate`
 
-1. Present the draft spec, plan, open decisions, accepted assumptions, gaps, risks, and proposed verification in a reviewable form.
+1. Present the draft spec, plan, open decisions, accepted assumptions, gaps, risks, and proposed verification—including the origin, oracle, and independence of every validation—in a reviewable form.
 2. Ask the developer to approve it or request changes. Silence and continued conversation are not approval.
 3. On changes, return to `auto-plan`, preserve the feedback in the question/decision ledger, and issue a new draft.
 4. On explicit approval, deterministically compile the already-approved structured plan into the task graph, requirement-test traceability rows, evidence skeleton, and expected gate commands. Do not add semantics during compilation.
-5. Calculate content hashes and write `plan.lock.json` with the approver, timestamp, source commit, spec hash, plan hash, and task-graph hash.
-6. If the spec or plan changes later, invalidate the lock and return to this gate.
+5. Calculate content hashes and write `plan.lock.json` with the approver, timestamp, source commit, source-plan hash, spec hash, structured-plan hash, and task-graph hash.
+6. If the source plan, spec, or structured plan changes later, invalidate the lock and return to this gate.
 
-`build` must refuse to run when the plan lock is absent, stale, or does not match the approved artifacts.
+`build` must refuse to run when the source Plan-mode file is absent or when the plan lock is absent, stale, or does not match the source plan and approved artifacts.
 
 The reference implementation performs the post-approval materialization and lock in this order:
 
 ```bash
-python3 .product-loop/tools/compile_plan.py \
+.product-loop/bin/boatstack-helper compile-plan \
   --plan .product-loop/features/<feature>/plan.json \
   --out-dir .product-loop/features/<feature>/compiled
 
-python3 .product-loop/tools/approve_plan.py \
+.product-loop/bin/boatstack-helper approve-plan \
+  --source-plan <path-to-saved-host-plan> \
   --spec .product-loop/features/<feature>/spec.md \
   --plan .product-loop/features/<feature>/plan.json \
   --tasks .product-loop/features/<feature>/compiled/tasks.json \
@@ -95,6 +101,8 @@ The first command validates and compiles already-approved semantics; it must not
 
 ## Build without erasing evidence
 
+- Before the first edit, pass the source plan along with the approved artifacts to `approve-plan --check`. It remains a required, hash-checked input through completion of `build`.
+- Choose any suitable model, tool, or implementation tactic inside the approved boundary. Boatstack controls transitions and claims, not local creativity.
 - Work from approved tasks and acceptance criteria.
 - Preserve the last known-good state; repair locally instead of restarting a near-correct implementation.
 - Re-scope context at task boundaries. Include relevant source, interfaces, invariants, and tests—not arbitrary history.
@@ -108,6 +116,7 @@ Do not branch the workflow on model brand, price, or a guessed capability tier. 
 
 ### Test gate
 
+- After build completes, the source Plan-mode file is no longer a runtime prerequisite. Test, review, and ship use the approved lock, actual diff, and accumulated evidence; provenance remains recorded in the lock.
 - Derive tests from acceptance criteria and affected contracts, not only from the implementation.
 - Run existing relevant tests plus targeted new tests, linters, type checks, builds, and runtime checks.
 - Treat model-authored tests and same-model self-review as evidence, not ground truth.
@@ -147,7 +156,7 @@ More steps, more context, stronger wording, more tests, or more retries are not 
 Read [portability.md](references/portability.md), then use:
 
 ```bash
-python3 boatstack/scripts/export_repo.py --adapter-name boatstack --repo /path/to/repo --config /path/to/project.json --write
+.product-loop/bin/boatstack-helper export --repo /path/to/repo --config /path/to/project.json --write
 ```
 
 Run with `--check` in CI to detect drift. The exporter writes generated files only and refuses to overwrite user-owned files. Review the generated diff in a branch and ship it through a PR.

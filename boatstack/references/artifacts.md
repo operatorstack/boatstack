@@ -4,13 +4,14 @@ Artifacts separate facts, decisions, unknowns, incompleteness, and evidence. Com
 
 | Artifact | Purpose | Create or update when |
 |---|---|---|
+| Source plan | Host Plan-mode interpretation of ordinary product intent; required input and provenance for `auto-plan` | Before invoking `auto-plan`; keep hash-current through build |
 | Project constitution | Stable principles and non-negotiable invariants | A rule should govern most future work |
 | Repository map | Minimal entry points, interfaces, commands, and verification boundaries | The relevant architecture or tooling changes |
 | Feature brief/spec | Product intent, outcomes, scenarios, acceptance criteria, non-goals | A product slice is proposed or its intent changes |
 | Question ledger | Unknowns, choices, human answers, provenance, expiry | The repo cannot answer a material question |
 | ADR | Accepted durable architecture decision and rationale | A meaningful architecture choice is accepted |
 | Plan/tasks | Dependency-ordered implementation operations and checks | A spec is resolved enough to build |
-| Test plan | Requirement-to-evidence mapping and oracle independence | Planning and after discovered failure modes |
+| Test plan | Requirement-to-evidence mapping with each validation's origin, falsifiable oracle, procedure, and independence | Planning and after discovered failure modes |
 | Gap ledger | Known divergence between desired and current state | Work is deferred, partial, incompatible, or intentionally absent |
 | Risk/threat note | Assets, actors, trust boundaries, abuse/failure paths | Security, data, tenancy, billing, auth, or destructive paths change |
 | Runbook | Deploy, observe, recover, and roll back | Operational behavior changes |
@@ -48,6 +49,7 @@ A gap is an explicit difference between the accepted target and the current impl
 
 Every material statement should indicate whether it came from:
 
+- the supplied host Plan-mode file;
 - repository evidence;
 - runtime evidence;
 - a human answer;

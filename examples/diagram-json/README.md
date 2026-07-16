@@ -1,6 +1,6 @@
 # Worked example: JSON output for diagrams
 
-This is a worked demonstration of the product engineering loop. The feature is
+This is a worked demonstration of the evidence-engineered coding node. The feature is
 intentionally small and uses code already in this repository:
 
 > Add machine-readable JSON output to the diagram printer while preserving the
@@ -12,15 +12,25 @@ feature.
 
 ## What a developer does
 
-First, install the loop adapters in a repository and open the coding agent's
-plan mode. The developer can type the product request in ordinary language:
+First, install the Boatstack adapters in a repository and open the coding agent's
+Plan mode. The developer types the product request in ordinary language:
 
 ```text
 Add machine-readable JSON output to the diagram printer while preserving the
 current text output.
 ```
 
-Then run `/auto-plan`. In this repository the agent should inspect only:
+The host explores that intent without implementing it and saves
+[the initial Plan-mode file](source-plan.md). The active host context identifies
+that plan, so the normal command needs no path:
+
+```text
+/auto-plan
+```
+
+If the host does not expose a path, Boatstack checks its bounded plan locations;
+an explicit path is only the ambiguity fallback. If the file is absent or empty,
+`/auto-plan` is `BLOCKED`. With the file present, the agent should inspect only:
 
 - `src/diagram.ts` for the current contract and rendering behavior;
 - `src/index.ts` for the public export boundary;
@@ -30,6 +40,7 @@ Then run `/auto-plan`. In this repository the agent should inspect only:
 The result is a draft, not code:
 
 - [product request](request.md)
+- [source Plan-mode file](source-plan.md)
 - [question and decision ledger](questions.md)
 - [feature specification](spec.md)
 - [structured plan](plan.json)
@@ -50,11 +61,12 @@ Example Maintainer: Approve this demonstration plan.
 Only after that explicit answer does `/plan-gate` compile and lock the plan:
 
 ```bash
-python3 ../../boatstack/scripts/compile_plan.py \
+.product-loop/bin/boatstack-helper compile-plan \
   --plan plan.json \
   --out-dir compiled
 
-python3 ../../boatstack/scripts/approve_plan.py \
+.product-loop/bin/boatstack-helper approve-plan \
+  --source-plan source-plan.md \
   --spec spec.md \
   --plan plan.json \
   --tasks compiled/tasks.json \
@@ -70,10 +82,12 @@ That produces:
 - [content-addressed plan lock](plan.lock.json)
 
 The lock is the deterministic boundary between agreement and implementation.
-Editing `spec.md`, `plan.json`, or the compiled task graph makes its check fail.
+Editing `source-plan.md`, `spec.md`, `plan.json`, or the compiled task graph
+makes its check fail before or during `/build`.
 
 ```bash
-python3 ../../boatstack/scripts/approve_plan.py \
+.product-loop/bin/boatstack-helper approve-plan \
+  --source-plan source-plan.md \
   --spec spec.md \
   --plan plan.json \
   --tasks compiled/tasks.json \
