@@ -1,0 +1,77 @@
+# Boatstack-owned control plane.
+name: Release Boatstack helper
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            asset: boatstack-helper_linux_amd64
+          - goos: linux
+            goarch: arm64
+            asset: boatstack-helper_linux_arm64
+          - goos: darwin
+            goarch: amd64
+            asset: boatstack-helper_darwin_amd64
+          - goos: darwin
+            goarch: arm64
+            asset: boatstack-helper_darwin_arm64
+          - goos: windows
+            goarch: amd64
+            asset: boatstack-helper_windows_amd64.exe
+          - goos: windows
+            goarch: arm64
+            asset: boatstack-helper_windows_arm64.exe
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: boatstack/go.mod
+          cache-dependency-path: boatstack/go.mod
+      - name: Build native helper
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+          ASSET: ${{ matrix.asset }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          source_commit="$(jq -r '.source.commit' UPSTREAM.json)"
+          mkdir -p dist
+          cd boatstack
+          go build -trimpath \
+            -ldflags "-s -w -X github.com/operatorstack/boatstack/boatstack.Version=$VERSION -X github.com/operatorstack/boatstack/boatstack.SourceCommit=$source_commit -X github.com/operatorstack/boatstack/boatstack.ChecksumsSHA256=per-asset-sidecar" \
+            -o "../dist/$ASSET" ./cmd/boatstack-helper
+          cd ../dist
+          sha256sum "$ASSET" > "$ASSET.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}*
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" dist/* --repo "${GITHUB_REPOSITORY}" --generate-notes --verify-tag
