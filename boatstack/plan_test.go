@@ -10,9 +10,11 @@ import (
 
 func validPlan() map[string]any {
 	return map[string]any{
-		"schema_version":   float64(1),
-		"feature_id":       "feature-one",
-		"source_plan_path": "source-plan.md",
+		"schema_version":     float64(1),
+		"feature_id":         "feature-one",
+		"source_plan_path":   "source-plan.md",
+		"spec_path":          "spec.md",
+		"blocking_questions": []any{},
 		"acceptance_criteria": []any{
 			map[string]any{"id": "AC-1", "text": "observable result"},
 		},
@@ -30,54 +32,215 @@ func validPlan() map[string]any {
 	}
 }
 
-func TestPlanCompilationApprovalAndStaleness(t *testing.T) {
-	root := t.TempDir()
+func writeMarkdownPlan(t *testing.T, path string, plan map[string]any, marked bool) {
+	t.Helper()
+	value, err := MarshalJSON(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := "# Structured plan\n\nHuman-readable summary covered by approval.\n\n"
+	if marked {
+		body += planMarkerStart + "\n"
+	}
+	body += "```json\n" + strings.TrimSpace(string(value)) + "\n```\n"
+	if marked {
+		body += planMarkerEnd + "\n"
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeApprovalReceipt(t *testing.T, path, fingerprint string) {
+	t.Helper()
+	body := `# Plan approval
+
+<!-- boatstack-approval:v1 -->
+` + "```json\n" + `{
+  "schema_version": 1,
+  "status": "APPROVED",
+  "approved_by": "Test Human",
+  "approved_at": "2026-07-16T12:00:00Z",
+  "approval_fingerprint": "` + fingerprint + `"
+}
+` + "```\n" + `<!-- /boatstack-approval -->
+`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writePlanInputs(t *testing.T, root string, marked bool) (string, string, string) {
+	t.Helper()
 	sourcePlan := filepath.Join(root, "source-plan.md")
 	spec := filepath.Join(root, "spec.md")
-	planPath := filepath.Join(root, "plan.json")
-	compiled := filepath.Join(root, "compiled")
-	lock := filepath.Join(root, "plan.lock.json")
+	planPath := filepath.Join(root, "plan.md")
 	if err := os.WriteFile(sourcePlan, []byte("# Host Plan-mode proposal\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(spec, []byte("# Accepted spec\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	planJSON, _ := MarshalJSON(validPlan())
-	if err := os.WriteFile(planPath, planJSON, 0o644); err != nil {
+	writeMarkdownPlan(t, planPath, validPlan(), marked)
+	return sourcePlan, spec, planPath
+}
+
+func TestMarkdownPlanActivationAndStaleness(t *testing.T) {
+	root := t.TempDir()
+	sourcePlan, _, planPath := writePlanInputs(t, root, true)
+	approval := filepath.Join(root, "approval.md")
+	compiled := filepath.Join(root, "compiled")
+	lock := filepath.Join(root, "plan.lock.json")
+	check, err := CheckPlan(planPath)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := CompilePlanFiles(planPath, compiled); err != nil {
+	writeApprovalReceipt(t, approval, check.Fingerprint)
+	options := ActivationOptions{PlanPath: planPath, ApprovalPath: approval, OutDir: compiled, OutputPath: lock, SourceCommit: "test"}
+	if err := ActivatePlan(options); err != nil {
 		t.Fatal(err)
 	}
-	tasks := filepath.Join(compiled, "tasks.json")
-	options := ApprovalOptions{
-		SourcePlanPath: sourcePlan,
-		SpecPath:       spec, PlanPath: planPath, TasksPath: tasks,
-		ApprovedBy: "Test Human", ApprovedAt: "2026-07-16T12:00:00Z",
-		SourceCommit: "test", OutputPath: lock,
-	}
-	if err := CreateApprovalLock(options); err != nil {
-		t.Fatal(err)
-	}
-	if err := CheckApprovalLock(options); err != nil {
-		t.Fatal(err)
+	for _, path := range []string{filepath.Join(compiled, "tasks.json"), filepath.Join(compiled, "test-matrix.json"), filepath.Join(compiled, "evidence.md"), lock} {
+		if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+			t.Fatalf("expected activated artifact %s", path)
+		}
 	}
 	if err := os.WriteFile(sourcePlan, []byte("# Changed host plan\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := CheckApprovalLock(options); err == nil || !strings.Contains(err.Error(), "source_plan") {
-		t.Fatalf("expected stale source plan lock, got %v", err)
+	if err := ActivatePlan(options); err == nil || !strings.Contains(err.Error(), "stale approval") {
+		t.Fatalf("expected stale approval after source-plan change, got %v", err)
 	}
 	if err := os.WriteFile(sourcePlan, []byte("# Host Plan-mode proposal\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	value, _ := os.ReadFile(planPath)
-	if err := os.WriteFile(planPath, append(value, '\n'), 0o644); err != nil {
+	if err := os.WriteFile(planPath, append([]byte("Changed human summary.\n"), value...), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := CheckApprovalLock(options); err == nil || !strings.Contains(err.Error(), "stale") {
-		t.Fatalf("expected stale plan lock, got %v", err)
+	if err := ActivatePlan(options); err == nil || !strings.Contains(err.Error(), "stale approval") {
+		t.Fatalf("expected stale approval after plan prose change, got %v", err)
+	}
+}
+
+func TestCurrentCursorSingleJSONFencePlanIsAccepted(t *testing.T) {
+	root := t.TempDir()
+	_, _, planPath := writePlanInputs(t, root, false)
+	if _, err := CheckPlan(planPath); err != nil {
+		t.Fatalf("current Cursor plan.md shape should be accepted: %v", err)
+	}
+}
+
+func TestPlanJSONIsRejected(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "plan.json")
+	value, _ := MarshalJSON(validPlan())
+	if err := os.WriteFile(path, value, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadPlan(path); err == nil || !strings.Contains(err.Error(), "Markdown") {
+		t.Fatalf("expected clean-cut Markdown-only plan contract, got %v", err)
+	}
+}
+
+func TestMarkdownPlanRejectsMissingMultipleMalformedAndOpenQuestions(t *testing.T) {
+	root := t.TempDir()
+	_, _, planPath := writePlanInputs(t, root, true)
+
+	if err := os.WriteFile(planPath, []byte("# no structured block\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CheckPlan(planPath); err == nil {
+		t.Fatal("expected missing block to fail")
+	}
+
+	value, _ := MarshalJSON(validPlan())
+	multiple := "# ambiguous\n\n```json\n" + string(value) + "```\n\n```json\n" + string(value) + "```\n"
+	if err := os.WriteFile(planPath, []byte(multiple), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CheckPlan(planPath); err == nil || !strings.Contains(err.Error(), "exactly one") {
+		t.Fatalf("expected multiple blocks to fail, got %v", err)
+	}
+
+	malformed := planMarkerStart + "\n```json\n{bad}\n```\n" + planMarkerEnd + "\n"
+	if err := os.WriteFile(planPath, []byte(malformed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CheckPlan(planPath); err == nil || !strings.Contains(err.Error(), "invalid structured plan json") {
+		t.Fatalf("expected malformed json to fail, got %v", err)
+	}
+
+	plan := validPlan()
+	plan["blocking_questions"] = []any{"Q-4"}
+	writeMarkdownPlan(t, planPath, plan, true)
+	if _, err := CheckPlan(planPath); err == nil || !strings.Contains(err.Error(), "Q-4") {
+		t.Fatalf("expected open material question to block, got %v", err)
+	}
+}
+
+func TestReadOnlyCheckAndFailedActivationWriteNothing(t *testing.T) {
+	root := t.TempDir()
+	_, _, planPath := writePlanInputs(t, root, true)
+	before, _ := os.ReadDir(root)
+	check, err := CheckPlan(planPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadDir(root)
+	if len(after) != len(before) {
+		t.Fatalf("check-plan wrote files: before=%d after=%d", len(before), len(after))
+	}
+	approval := filepath.Join(root, "approval.md")
+	compiled := filepath.Join(root, "compiled")
+	lock := filepath.Join(root, "plan.lock.json")
+	activation := ActivationOptions{PlanPath: planPath, ApprovalPath: approval, OutDir: compiled, OutputPath: lock}
+	err = ActivatePlan(activation)
+	if err == nil {
+		t.Fatal("expected missing approval receipt to block")
+	}
+	writeApprovalReceipt(t, approval, "wrong-"+check.Fingerprint)
+	err = ActivatePlan(activation)
+	if err == nil || !strings.Contains(err.Error(), "stale approval") {
+		t.Fatalf("expected invalid receipt to block, got %v", err)
+	}
+	if _, err := os.Stat(compiled); !os.IsNotExist(err) {
+		t.Fatal("failed activation created compiled output")
+	}
+	if _, err := os.Stat(lock); !os.IsNotExist(err) {
+		t.Fatal("failed activation created a plan lock")
+	}
+}
+
+func TestApprovalReceiptRequiresMarkersHumanTimestampAndFingerprint(t *testing.T) {
+	root := t.TempDir()
+	_, _, planPath := writePlanInputs(t, root, true)
+	check, err := CheckPlan(planPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	approval := filepath.Join(root, "approval.md")
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "unmarked", body: "```json\n{}\n```\n", want: "markers"},
+		{name: "missing human", body: `{"schema_version":1,"status":"APPROVED","approved_by":"","approved_at":"2026-07-16T12:00:00Z","approval_fingerprint":"` + check.Fingerprint + `"}`, want: "human approver"},
+		{name: "bad timestamp", body: `{"schema_version":1,"status":"APPROVED","approved_by":"Test Human","approved_at":"today","approval_fingerprint":"` + check.Fingerprint + `"}`, want: "RFC3339"},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			body := test.body
+			if test.name != "unmarked" {
+				body = approvalMarkerStart + "\n```json\n" + body + "\n```\n" + approvalMarkerEnd + "\n"
+			}
+			if err := os.WriteFile(approval, []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := CheckApprovalReceipt(approval, check); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("expected %q error, got %v", test.want, err)
+			}
+		})
 	}
 }
 

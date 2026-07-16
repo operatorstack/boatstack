@@ -84,20 +84,20 @@ func exportCommand(arguments []string) int {
 	return 0
 }
 
-func compileCommand(arguments []string) int {
-	flags := flag.NewFlagSet("compile-plan", flag.ContinueOnError)
-	plan := flags.String("plan", "", "approved structured plan")
-	outDir := flags.String("out-dir", "", "compiled artifact directory")
+func checkPlanCommand(arguments []string) int {
+	flags := flag.NewFlagSet("check-plan", flag.ContinueOnError)
+	plan := flags.String("plan", "", "Markdown structured plan")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}
-	if *plan == "" || *outDir == "" {
-		return fail(fmt.Errorf("compile-plan requires --plan and --out-dir"))
+	if *plan == "" {
+		return fail(fmt.Errorf("check-plan requires --plan"))
 	}
-	if err := boatstack.CompilePlanFiles(*plan, *outDir); err != nil {
-		return fail(fmt.Errorf("invalid approved plan: %w", err))
+	check, err := boatstack.CheckPlan(*plan)
+	if err != nil {
+		return fail(fmt.Errorf("invalid Markdown plan: %w", err))
 	}
-	fmt.Printf("PASS: compiled approved plan into %s\n", *outDir)
+	fmt.Printf("PASS: Markdown plan is structurally valid\nPLAN_FINGERPRINT=%s\nSOURCE_PLAN=%s\nSPEC=%s\n", check.Fingerprint, check.SourcePlanPath, check.SpecPath)
 	return 0
 }
 
@@ -116,41 +116,30 @@ func checkSourcePlanCommand(arguments []string) int {
 	return 0
 }
 
-func approveCommand(arguments []string) int {
-	flags := flag.NewFlagSet("approve-plan", flag.ContinueOnError)
-	options := boatstack.ApprovalOptions{}
-	flags.StringVar(&options.SourcePlanPath, "source-plan", "", "plan file created by the host Plan mode")
-	flags.StringVar(&options.SpecPath, "spec", "", "approved spec")
-	flags.StringVar(&options.PlanPath, "plan", "", "approved structured plan")
-	flags.StringVar(&options.TasksPath, "tasks", "", "compiled task graph")
-	flags.StringVar(&options.ApprovedBy, "approved-by", "", "human approver")
-	flags.StringVar(&options.ApprovedAt, "approved-at", "", "approval timestamp")
-	flags.StringVar(&options.SourceCommit, "source-commit", "", "source Git commit")
+func activatePlanCommand(arguments []string) int {
+	flags := flag.NewFlagSet("activate-plan", flag.ContinueOnError)
+	options := boatstack.ActivationOptions{}
+	flags.StringVar(&options.PlanPath, "plan", "", "approved Markdown plan")
+	flags.StringVar(&options.ApprovalPath, "approval", "", "Markdown approval receipt")
+	flags.StringVar(&options.OutDir, "out-dir", "", "compiled artifact directory")
 	flags.StringVar(&options.OutputPath, "output", "", "plan lock path")
-	check := flags.Bool("check", false, "verify an existing plan lock")
+	flags.StringVar(&options.SourceCommit, "source-commit", "", "source Git commit")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}
-	if options.SourcePlanPath == "" || options.SpecPath == "" || options.PlanPath == "" || options.TasksPath == "" || options.OutputPath == "" {
-		return fail(fmt.Errorf("approve-plan requires --source-plan, --spec, --plan, --tasks, and --output"))
+	if options.PlanPath == "" || options.ApprovalPath == "" || options.OutDir == "" || options.OutputPath == "" {
+		return fail(fmt.Errorf("activate-plan requires --plan, --approval, --out-dir, and --output"))
 	}
-	if *check {
-		if err := boatstack.CheckApprovalLock(options); err != nil {
-			return fail(err)
-		}
-		fmt.Println("PASS: approved plan lock matches the current artifacts")
-		return 0
+	if err := boatstack.ActivatePlan(options); err != nil {
+		return fail(fmt.Errorf("plan activation failed: %w", err))
 	}
-	if err := boatstack.CreateApprovalLock(options); err != nil {
-		return fail(err)
-	}
-	fmt.Printf("PASS: wrote approved plan lock: %s\n", options.OutputPath)
+	fmt.Printf("PASS: approved Markdown plan activated and locked: %s\n", options.OutputPath)
 	return 0
 }
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|export|check-source-plan|compile-plan|approve-plan|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|export|check-source-plan|check-plan|activate-plan|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -160,10 +149,10 @@ func run() int {
 		return exportCommand(os.Args[2:])
 	case "check-source-plan":
 		return checkSourcePlanCommand(os.Args[2:])
-	case "compile-plan":
-		return compileCommand(os.Args[2:])
-	case "approve-plan":
-		return approveCommand(os.Args[2:])
+	case "check-plan":
+		return checkPlanCommand(os.Args[2:])
+	case "activate-plan":
+		return activatePlanCommand(os.Args[2:])
 	case "version":
 		fmt.Printf("Boatstack %s (%s)\n", boatstack.Version, boatstack.SourceCommit)
 		return 0

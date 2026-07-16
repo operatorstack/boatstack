@@ -10,6 +10,8 @@ INTENT
   -> SPEC
   -> PLAN
   -> PLAN_GATE
+  -> PLAN_APPROVED
+  -> BUILD_ACTIVATION
   -> PLAN_LOCKED
   -> BUILD
   -> TEST_GATE
@@ -101,6 +103,8 @@ Run only relevant review lenses:
 
 If gstack is installed, its review skills can execute these lenses. If Spec Kit is installed, it can generate and cross-check the spec, plan, tasks, and checklists. Their output is normalized into this artifact contract.
 
+`plan.md` is the canonical structured plan. Its human-readable prose and one marked JSON block are a single approval surface. Until `BUILD_ACTIVATION`, feature artifacts are Markdown only; no compiled task graph, machine lock, or executable state exists.
+
 Validation must be derived before implementation. Each check records:
 
 - `run`: an executable command or a specific human/external procedure;
@@ -113,19 +117,25 @@ Subjective work is not exempt from validation. Convert ambiguity into an approve
 
 ### `PLAN -> PLAN_GATE`
 
-Present the full draft and require an explicit human `approve` or a change request. Do not interpret silence, a new implementation question, or a tool permission as plan approval.
+Run `boatstack-helper check-plan --plan <feature>/plan.md`, present the full draft and returned fingerprint, then require an explicit human `approve` or a change request. The check is read-only. Do not interpret silence, a new implementation question, a tool permission, or permission to build as plan approval.
 
-### `PLAN_GATE -> PLAN_LOCKED`
+### `PLAN_GATE -> PLAN_APPROVED`
 
-After approval, deterministically:
+After explicit approval, create `approval.md` containing the named human, RFC3339 timestamp, and exact approval fingerprint. This receipt is the only new gate artifact. Remain in the host's Plan mode; do not compile machine artifacts or edit product code.
 
-1. hash the approved spec and plan;
-2. hash the saved source Plan-mode file;
-3. compile the approved structured plan into the task graph, requirement-test traceability rows, evidence skeleton, and expected gate commands without adding semantics;
+If the host lacks a structured question tool, ask 1-3 plain-text questions and return `WAITING_FOR_INPUT`. Never convert an unavailable question UI into permission to choose a default. A repository-derived product choice remains `PROPOSED` until accepted, and material open IDs remain in `blocking_questions`.
+
+### `PLAN_APPROVED -> BUILD_ACTIVATION -> PLAN_LOCKED`
+
+At the host's normal Build transition, before the first product-code edit, `activate-plan` deterministically:
+
+1. parse and validate the marked structured block in `plan.md`;
+2. hash the complete source plan, spec, and `plan.md` and match them to `approval.md`;
+3. compile the task graph, requirement-test traceability rows, and evidence skeleton without adding semantics;
 4. record approver, timestamp, source commit, and all artifact hashes in `plan.lock.json`;
-5. verify every task maps to at least one acceptance criterion or declared enabling dependency.
+5. write the lock last and recheck it before permitting implementation.
 
-Any later change to the source plan, approved spec, or structured plan before build completes invalidates the lock and returns the feature to `PLAN_GATE`.
+Missing approval, unresolved `blocking_questions`, or any change to the source plan, approved spec, or complete `plan.md` blocks activation and returns the feature to `PLAN_GATE`. A failed or partial compilation never creates a valid lock.
 
 ### `PLAN_LOCKED -> BUILD`
 

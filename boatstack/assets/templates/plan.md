@@ -1,8 +1,23 @@
+# Structured plan: <feature>
+
+- This Markdown file is the canonical plan.
+- Prose and structured data are both covered by the approval fingerprint.
+- Approval state is recorded separately in `approval.md`; never edit this file merely to mark it approved.
+
+## Human-readable summary
+
+<Describe the accepted outcome, boundaries, task order, and verification approach.>
+
+## Structured plan
+
+<!-- boatstack-plan:v1 -->
+```json
 {
   "schema_version": 1,
   "feature_id": "<stable-feature-id>",
-  "source_plan_path": "<path-to-plan-mode-file-relative-to-this-structured-plan>",
-  "spec_path": "<path-to-approved-spec>",
+  "source_plan_path": "source-plan.md",
+  "spec_path": "feature-spec.md",
+  "blocking_questions": [],
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -28,3 +43,5 @@
     }
   ]
 }
+```
+<!-- /boatstack-plan -->

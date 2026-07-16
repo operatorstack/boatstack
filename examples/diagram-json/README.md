@@ -43,12 +43,18 @@ The result is a draft, not code:
 - [source Plan-mode file](source-plan.md)
 - [question and decision ledger](questions.md)
 - [feature specification](spec.md)
-- [structured plan](plan.json)
+- [canonical Markdown plan](plan.md)
 
 ## The missing human step
 
-The agent presents the draft with the three contract decisions in
-`questions.md`. A representative exchange is:
+The agent first validates `plan.md` without creating files:
+
+```bash
+.product-loop/bin/boatstack-helper check-plan --plan plan.md
+```
+
+It then presents the draft, its fingerprint, and the three contract decisions
+in `questions.md`. A representative exchange is:
 
 ```text
 Agent: The draft is ready. The recommended contract is an additive serializer,
@@ -58,19 +64,18 @@ Approve this plan or tell me what to revise.
 Example Maintainer: Approve this demonstration plan.
 ```
 
-Only after that explicit answer does `/plan-gate` compile and lock the plan:
+Only after that explicit answer does `/plan-gate` write the Markdown
+[approval receipt](approval.md). No JSON, lock, executable state, or product
+code is created in Plan mode.
+
+When the developer uses the host's normal Build transition, `/build` activates
+the exact approved plan before its first product-code edit:
 
 ```bash
-.product-loop/bin/boatstack-helper compile-plan \
-  --plan plan.json \
-  --out-dir compiled
-
-.product-loop/bin/boatstack-helper approve-plan \
-  --source-plan source-plan.md \
-  --spec spec.md \
-  --plan plan.json \
-  --tasks compiled/tasks.json \
-  --approved-by "Example Maintainer (simulated walkthrough)" \
+.product-loop/bin/boatstack-helper activate-plan \
+  --plan plan.md \
+  --approval approval.md \
+  --out-dir compiled \
   --output plan.lock.json
 ```
 
@@ -81,18 +86,18 @@ That produces:
 - [evidence ledger](compiled/evidence.md)
 - [content-addressed plan lock](plan.lock.json)
 
-The lock is the deterministic boundary between agreement and implementation.
-Editing `source-plan.md`, `spec.md`, `plan.json`, or the compiled task graph
-makes its check fail before or during `/build`.
+The approval receipt is the persisted human boundary; activation turns that
+approved state into deterministic machine artifacts. Editing `source-plan.md`,
+`spec.md`, or any part of `plan.md` changes the fingerprint and blocks before
+implementation.
 
 ```bash
-.product-loop/bin/boatstack-helper approve-plan \
-  --source-plan source-plan.md \
-  --spec spec.md \
-  --plan plan.json \
-  --tasks compiled/tasks.json \
-  --output plan.lock.json \
-  --check
+.product-loop/bin/boatstack-helper activate-plan \
+  --plan plan.md \
+  --approval approval.md \
+  --out-dir compiled \
+  --output plan.lock.json
+# BLOCKED: stale approval receipt
 ```
 
 ## What happens next in a real feature
@@ -100,7 +105,7 @@ makes its check fail before or during `/build`.
 The remaining commands consume the same canonical artifacts regardless of the
 coding model or host:
 
-1. `/build` verifies the lock, implements one task at a time, and stops for any
+1. `/build` activates and verifies the lock, implements one task at a time, and stops for any
    newly discovered product decision.
 2. `/test-gate` runs the matrix and attaches command output or fixture evidence
    to each acceptance criterion.

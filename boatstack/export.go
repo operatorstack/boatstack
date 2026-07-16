@@ -89,7 +89,7 @@ Run the %s operation from @.product-loop/workflow.md.
 
 Read @.product-loop/project.json, @.product-loop/artifacts.md, and only the minimal repository context relevant to the current feature. %s
 
-Use the gate semantics in the canonical workflow. Do not redefine them in this adapter. Boatstack leaves implementation tactics open, but completion, approval, and shipping claims require current evidence.
+Use the gate semantics in the canonical workflow. Do not redefine them in this adapter. Auto-plan and plan-gate may create or update Markdown only. If a structured question tool is unavailable, ask 1-3 plain-text questions, return WAITING_FOR_INPUT, and never silently choose a default. Boatstack leaves implementation tactics open, but completion, approval, and shipping claims require current evidence.
 `, operation, operation, preflight, extra)
 }
 
@@ -148,9 +148,9 @@ func BuildExportBundle(configPath string, config ProjectConfig, rawConfig []byte
 	}
 
 	operations := map[string]string{
-		"auto-plan":   "Discover exactly one saved Plan-mode file, refine it into a draft feature package, and record its path as source_plan_path. Do not implement and do not imply the user accepted it.",
-		"plan-gate":   "Require the source Plan-mode file and explicit human approval. Only then run the project-local Boatstack helper to compile the executable task/evidence package and approval lock.",
-		"build":       "Before editing, locate the source Plan-mode file, feature spec, structured plan, compiled tasks, and plan lock; pass all of them to the project-local Boatstack helper when checking the lock. Stop if it reports BLOCKED. Implementation tactics remain open inside the approved boundary.",
+		"auto-plan":   "Discover exactly one saved Plan-mode file and refine it into a Markdown-only draft feature package whose canonical structured artifact is plan.md. Run check-plan read-only. Do not implement, create JSON or locks, or imply acceptance.",
+		"plan-gate":   "Run check-plan read-only, present its fingerprint and all open decisions, and require explicit human approval. On approval write only approval.md with the named human, RFC3339 timestamp, and exact fingerprint. Remain in Plan mode; do not compile or request an early mode switch.",
+		"build":       "Before the first product-code edit, locate plan.md and approval.md and run the project-local activate-plan command to compile machine artifacts and create and verify plan.lock.json. Stop if it reports BLOCKED. Implementation tactics remain open inside the approved boundary.",
 		"test-gate":   "Build a requirement-to-evidence matrix and treat self-authored tests as evidence rather than the sole oracle.",
 		"review-gate": "Review the actual diff against approved intent, invariants, risks, gaps, and test evidence.",
 		"ship-gate":   "Prepare a PR only; do not merge or deploy without separate authorization.",
@@ -169,7 +169,7 @@ alwaysApply: false
 The source of truth is @.product-loop/workflow.md and @.product-loop/project.json.
 Use @.product-loop/artifacts.md for document meanings and @.product-loop/failure-moves.md for improvement experiments.
 Ordinary product intent starts in the host's Plan mode. Save the completed plan under .product-loop/intake/. Auto-plan discovers exactly one saved plan from bounded host locations, validates it, and must not invent a substitute. Keep the source plan present and current through build.
-Do not start build work until the explicit plan gate has produced a valid plan lock.
+Do not start build work until the explicit plan gate has produced approval.md and build activation has produced a valid plan lock.
 Implementation methods are open. Claims of completion, approval, review, and shipping require evidence.
 Do not branch behavior on model name, provider, or price; branch on observed work state and evidence.
 `
@@ -191,9 +191,9 @@ description: Run Boatstack's evidence-engineered coding node for question-led pl
 
 Read .product-loop/project.json and .product-loop/workflow.md. The requested operation is supplied by the user; valid operations are auto-plan, plan-gate, build, test-gate, review-gate/review, ship-gate/ship, and retro.
 
-Ordinary product intent must first be explored in the host's Plan mode and saved as a file, preferably under .product-loop/intake/. Auto-plan runs bounded discovery before inspecting the repository and records the single result as source_plan_path. If no file exists or multiple candidates remain, auto-plan is BLOCKED; it must not guess or create a substitute. An explicit path is only an ambiguity override. The source plan remains required and hash-current through plan-gate and build. Test, review, and ship gates operate from the approved lock, diff, and evidence after build.
+Ordinary product intent must first be explored in the host's Plan mode and saved as a file, preferably under .product-loop/intake/. Auto-plan runs bounded discovery before inspecting the repository and records the single result as source_plan_path. If no file exists or multiple candidates remain, auto-plan is BLOCKED; it must not guess or create a substitute. An explicit path is only an ambiguity override. Auto-plan and plan-gate write Markdown only: plan.md remains canonical and approval.md records explicit acceptance. Build activation compiles machine artifacts and the lock before the first product-code edit. The source plan remains required and hash-current through build. Test, review, and ship gates operate from the approved lock, diff, and evidence after build.
 
-Use .product-loop/artifacts.md for document boundaries and .product-loop/failure-moves.md for improvement experiments. Do not implement from an unapproved or stale plan. Implementation tactics are open; completion, approval, and shipping claims require current evidence. Do not branch on model identity; use observable state and gate evidence.
+Use .product-loop/artifacts.md for document boundaries and .product-loop/failure-moves.md for improvement experiments. If a structured question tool is unavailable, ask 1-3 plain-text questions and return WAITING_FOR_INPUT; never select defaults on the user's behalf. Do not implement from an unapproved or stale plan. Implementation tactics are open; completion, approval, and shipping claims require current evidence. Do not branch on model identity; use observable state and gate evidence.
 
 If gstack is enabled, use only its namespaced /gstack-* specialist lenses inside Boatstack operations. If Spec Kit is enabled, use it to generate or cross-check artifacts; never invoke speckit.implement to bypass Boatstack's plan approval and build gate.
 `, adapterName)

@@ -4,8 +4,13 @@
   "approved_by": "<human identity>",
   "approved_at": "<ISO-8601 timestamp>",
   "source_commit": "<git commit>",
+  "source_plan_path": "source-plan.md",
+  "source_plan_sha256": "<sha256>",
+  "spec_path": "feature-spec.md",
   "spec_sha256": "<sha256>",
+  "plan_path": "plan.md",
   "plan_sha256": "<sha256>",
+  "task_graph_path": "compiled/tasks.json",
   "task_graph_sha256": "<sha256>",
   "invalidated_at": null,
   "invalidation_reason": null

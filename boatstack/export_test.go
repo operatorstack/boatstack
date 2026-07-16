@@ -45,6 +45,8 @@ func TestExportAndDriftCheck(t *testing.T) {
 		".claude/skills/boatstack/SKILL.md",
 		".agents/skills/boatstack/SKILL.md",
 		".product-loop/.gitignore",
+		".product-loop/templates/plan.md",
+		".product-loop/templates/approval.md",
 	} {
 		if !fileExists(filepath.Join(repo, filepath.FromSlash(path))) {
 			t.Fatalf("expected generated file %s", path)
@@ -52,6 +54,21 @@ func TestExportAndDriftCheck(t *testing.T) {
 	}
 	if _, exists := bundle.Files[".product-loop/tools/approve_plan.py"]; exists {
 		t.Fatal("public export must not contain Python runtime tools")
+	}
+	if _, exists := bundle.Files[".product-loop/templates/plan.json"]; exists {
+		t.Fatal("Markdown-native planning must not export plan.json")
+	}
+	autoPlan := string(bundle.Files[".cursor/commands/auto-plan.md"])
+	planGate := string(bundle.Files[".cursor/commands/plan-gate.md"])
+	build := string(bundle.Files[".cursor/commands/build.md"])
+	if !strings.Contains(autoPlan, "Markdown-only") || !strings.Contains(autoPlan, "never silently choose a default") {
+		t.Fatal("auto-plan adapter does not enforce the Markdown and question boundaries")
+	}
+	if !strings.Contains(planGate, "approval.md") || !strings.Contains(planGate, "Remain in Plan mode") {
+		t.Fatal("plan-gate adapter does not keep approval in Plan mode")
+	}
+	if !strings.Contains(build, "activate-plan") || strings.Contains(build, "compile-plan") {
+		t.Fatal("build adapter must activate the Markdown plan exactly once")
 	}
 	lock := string(bundle.Files[".product-loop/generated.lock.json"])
 	if !strings.Contains(lock, `"source_commit"`) || !strings.Contains(lock, `"integrations"`) {

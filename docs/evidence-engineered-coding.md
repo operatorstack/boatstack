@@ -90,18 +90,19 @@ subject to acceptance criteria pass
            approval is current
 ```
 
-That is why context trimming is not automatically an optimization. If removing state increases rework or false acceptance, total cost rises. The canonical runtime references are approximately **4044 estimated tokens**, while host adapters point to one operation at a time.
+That is why context trimming is not automatically an optimization. If removing state increases rework or false acceptance, total cost rises. The canonical runtime references are approximately **4521 estimated tokens**, while host adapters point to one operation at a time.
 
 ## Control appears at transitions
 
-The plan gate is a concrete controller boundary:
+The Plan-mode approval gate is a concrete controller boundary:
 
 ```text
-if sha256(current_plan) != approval.plan_sha256:
-    BLOCKED: plan changed after approval
+fingerprint = hash(source_plan + spec + complete_plan_md)
+if fingerprint != approval_md.approval_fingerprint:
+    BLOCKED: planning input changed after approval
 ```
 
-The plan compiler is another:
+Build activation adds the machine coverage boundary:
 
 ```text
 uncovered = acceptance_ids - task_acceptance_ids
@@ -139,6 +140,6 @@ Delivery and system improvement also remain separate. A failed task may suggest 
 
 ## What is evidence-backed
 
-The current moves were derived from the Intelligence Flow benchmark corpus and product-repository studies. The generated source commit is [`40ebae5dfb3d090812301a438aaac079426edcfc`](https://github.com/operatorstack/intelligence-flow/tree/40ebae5dfb3d090812301a438aaac079426edcfc/examples/12-product-engineering-loop).
+The current moves were derived from the Intelligence Flow benchmark corpus and product-repository studies. The generated source commit is [`3cd11c293b3903aeac9ff8d8eacd47840d63a02d`](https://github.com/operatorstack/intelligence-flow/tree/3cd11c293b3903aeac9ff8d8eacd47840d63a02d/examples/12-product-engineering-loop).
 
 The evidence supports specific failure mechanisms and guardrails. It does not establish that Boatstack is optimal, that control-theory notation proves software quality, or that one workflow dominates every team. Those are evaluation questions, so the distribution preserves measurements, provenance, gaps, and negative results.

@@ -33,17 +33,17 @@ Value emerges twice. The delivery path reduces assumption-driven code and produc
 ```text
 Cursor/GitHub intent
   -> host Plan mode   saved source plan; no implementation
-  -> /auto-plan       validate source plan, then draft spec + structured plan; no code
+  -> /auto-plan       validate source plan, then Markdown-only draft package; no code
   -> /plan-gate       explicit human approve/change request
-                     after approval: compile tasks/test matrix/evidence + hash lock
-  -> /build           refuses absent or stale lock
+                     after approval: write Markdown approval receipt only
+  -> /build           verify receipt, compile tasks/evidence + lock, then code
   -> /test-gate       requirement-derived independent evidence
   -> /review          diff + intent + invariant + risk + gap review
   -> /ship            PR preparation, not merge/deploy
   -> /retro           propose a harness move; never silently promote it
 ```
 
-`/auto-plan` cannot infer acceptance from silence. `/plan-gate` records the approver and hashes the source Plan-mode file, spec, structured plan, and compiled task graph. Any semantic edit before build completes invalidates the lock and returns to approval. This turns the developer's agreement into a machine-checkable state transition instead of conversational memory.
+`/auto-plan` cannot infer acceptance from silence. The canonical `plan.md` contains human-readable reasoning and one marked structured block. `/plan-gate` records explicit acceptance in `approval.md` using a fingerprint over the source Plan-mode file, spec, and complete plan. At the normal Build transition, Boatstack verifies that receipt, compiles the machine task graph and evidence, then writes and checks the lock before code changes. Any planning edit invalidates the receipt and returns to approval. This turns agreement into a machine-checkable state transition without asking Plan mode to write executable state.
 
 `/auto-plan` is deliberately not the first planning surface. It requires exactly one non-empty file produced by the active host's Plan mode and refuses to invent that input. It resolves the active plan from host/system conversation context first, then checks only bounded plan locations; zero or multiple candidates block instead of silently choosing the newest file. The source file is hash-bound through build; after build, test/review/ship consume the approved lock, diff, and evidence rather than repeatedly loading the exploratory plan.
 

@@ -11,6 +11,13 @@ import (
 	"time"
 )
 
+const (
+	planMarkerStart     = "<!-- boatstack-plan:v1 -->"
+	planMarkerEnd       = "<!-- /boatstack-plan -->"
+	approvalMarkerStart = "<!-- boatstack-approval:v1 -->"
+	approvalMarkerEnd   = "<!-- /boatstack-approval -->"
+)
+
 func stringValue(value any) string {
 	result, _ := value.(string)
 	return result
@@ -73,16 +80,92 @@ func validationSlice(value any) ([]map[string]any, bool) {
 	return result, true
 }
 
-func LoadPlan(path string) (map[string]any, error) {
+func fencedJSONBlocks(value string) ([]string, error) {
+	lines := strings.Split(value, "\n")
+	blocks := []string{}
+	inJSON := false
+	current := []string{}
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !inJSON {
+			if trimmed == "```json" {
+				inJSON = true
+				current = nil
+			}
+			continue
+		}
+		if trimmed == "```" {
+			blocks = append(blocks, strings.Join(current, "\n"))
+			inJSON = false
+			current = nil
+			continue
+		}
+		current = append(current, line)
+	}
+	if inJSON {
+		return nil, fmt.Errorf("unterminated json fence")
+	}
+	return blocks, nil
+}
+
+func markedJSON(value, label, startMarker, endMarker string, allowLegacy bool) ([]byte, error) {
+	startCount := strings.Count(value, startMarker)
+	endCount := strings.Count(value, endMarker)
+	if startCount == 0 && endCount == 0 {
+		if !allowLegacy {
+			return nil, fmt.Errorf("%s is missing %s markers", label, label)
+		}
+		blocks, err := fencedJSONBlocks(value)
+		if err != nil {
+			return nil, fmt.Errorf("invalid %s: %w", label, err)
+		}
+		if len(blocks) != 1 {
+			return nil, fmt.Errorf("%s requires exactly one json fence; found %d", label, len(blocks))
+		}
+		return []byte(blocks[0]), nil
+	}
+	if startCount != 1 || endCount != 1 {
+		return nil, fmt.Errorf("%s requires exactly one marker pair", label)
+	}
+	start := strings.Index(value, startMarker) + len(startMarker)
+	end := strings.Index(value, endMarker)
+	if end <= start {
+		return nil, fmt.Errorf("%s markers are out of order", label)
+	}
+	blocks, err := fencedJSONBlocks(value[start:end])
+	if err != nil {
+		return nil, fmt.Errorf("invalid %s: %w", label, err)
+	}
+	if len(blocks) != 1 {
+		return nil, fmt.Errorf("marked %s requires exactly one json fence; found %d", label, len(blocks))
+	}
+	return []byte(blocks[0]), nil
+}
+
+func loadJSONObject(path, label, startMarker, endMarker string, allowLegacyMarkdown bool) (map[string]any, error) {
 	value, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
+	payload := value
+	if strings.EqualFold(filepath.Ext(path), ".md") {
+		payload, err = markedJSON(string(value), label, startMarker, endMarker, allowLegacyMarkdown)
+		if err != nil {
+			return nil, err
+		}
+	}
 	var plan map[string]any
-	if err := json.Unmarshal(value, &plan); err != nil {
-		return nil, err
+	if err := json.Unmarshal(payload, &plan); err != nil {
+		return nil, fmt.Errorf("invalid %s json: %w", label, err)
 	}
 	return plan, nil
+}
+
+func LoadPlan(path string) (map[string]any, error) {
+	if !strings.EqualFold(filepath.Ext(path), ".md") {
+		return nil, fmt.Errorf("structured plan must be a Markdown file: %s", path)
+	}
+	return loadJSONObject(path, "structured plan", planMarkerStart, planMarkerEnd, true)
 }
 
 func CheckSourcePlan(path string) error {
@@ -189,6 +272,100 @@ func SourcePlanForStructuredPlan(planPath string) (string, error) {
 	return filepath.Clean(sourcePlan), nil
 }
 
+func SpecForStructuredPlan(planPath string) (string, error) {
+	plan, err := LoadPlan(planPath)
+	if err != nil {
+		return "", err
+	}
+	spec := stringValue(plan["spec_path"])
+	if strings.TrimSpace(spec) == "" {
+		return "", fmt.Errorf("spec_path is required")
+	}
+	if !filepath.IsAbs(spec) {
+		spec = filepath.Join(filepath.Dir(planPath), spec)
+	}
+	return filepath.Clean(spec), nil
+}
+
+func checkNonEmptyFile(path, label string) error {
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return fmt.Errorf("%s does not exist as a regular file: %s", label, path)
+	}
+	value, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("%s is unreadable: %w", label, err)
+	}
+	if strings.TrimSpace(string(value)) == "" {
+		return fmt.Errorf("%s is empty: %s", label, path)
+	}
+	return nil
+}
+
+type PlanCheck struct {
+	Plan           map[string]any
+	PlanPath       string
+	SourcePlanPath string
+	SpecPath       string
+	PlanHash       string
+	SourcePlanHash string
+	SpecHash       string
+	Fingerprint    string
+}
+
+func CheckPlan(planPath string) (PlanCheck, error) {
+	plan, err := LoadPlan(planPath)
+	if err != nil {
+		return PlanCheck{}, err
+	}
+	if err := ValidatePlan(plan); err != nil {
+		return PlanCheck{}, err
+	}
+	sourcePlan, err := SourcePlanForStructuredPlan(planPath)
+	if err != nil {
+		return PlanCheck{}, err
+	}
+	if err := CheckSourcePlan(sourcePlan); err != nil {
+		return PlanCheck{}, err
+	}
+	spec, err := SpecForStructuredPlan(planPath)
+	if err != nil {
+		return PlanCheck{}, err
+	}
+	if err := checkNonEmptyFile(spec, "feature spec"); err != nil {
+		return PlanCheck{}, err
+	}
+	planHash, err := SHA256File(planPath)
+	if err != nil {
+		return PlanCheck{}, err
+	}
+	sourcePlanHash, err := SHA256File(sourcePlan)
+	if err != nil {
+		return PlanCheck{}, err
+	}
+	specHash, err := SHA256File(spec)
+	if err != nil {
+		return PlanCheck{}, err
+	}
+	fingerprintInput, err := MarshalJSON(map[string]any{
+		"schema_version":     1,
+		"plan_path":          filepath.Base(planPath),
+		"plan_sha256":        planHash,
+		"source_plan_path":   filepath.ToSlash(filepath.Clean(stringValue(plan["source_plan_path"]))),
+		"source_plan_sha256": sourcePlanHash,
+		"spec_path":          filepath.ToSlash(filepath.Clean(stringValue(plan["spec_path"]))),
+		"spec_sha256":        specHash,
+	})
+	if err != nil {
+		return PlanCheck{}, err
+	}
+	return PlanCheck{
+		Plan: plan, PlanPath: filepath.Clean(planPath), SourcePlanPath: sourcePlan, SpecPath: spec,
+		PlanHash: planHash, SourcePlanHash: sourcePlanHash, SpecHash: specHash,
+		Fingerprint: SHA256Bytes(fingerprintInput),
+	}, nil
+}
+
 func checkApprovalSourcePlan(options ApprovalOptions) error {
 	expected, err := SourcePlanForStructuredPlan(options.PlanPath)
 	if err != nil {
@@ -217,6 +394,15 @@ func ValidatePlan(plan map[string]any) error {
 	}
 	if stringValue(plan["source_plan_path"]) == "" {
 		return fmt.Errorf("source_plan_path is required")
+	}
+	if questions, present := plan["blocking_questions"]; present {
+		values, ok := stringSlice(questions)
+		if !ok {
+			return fmt.Errorf("blocking_questions must be a list of question ids")
+		}
+		if len(values) > 0 {
+			return fmt.Errorf("unresolved blocking questions: %s", strings.Join(values, ", "))
+		}
 	}
 	criteria, ok := objectSlice(plan["acceptance_criteria"])
 	if !ok || len(criteria) == 0 {
@@ -446,6 +632,103 @@ type ApprovalOptions struct {
 	ApprovedAt     string
 	SourceCommit   string
 	OutputPath     string
+}
+
+type ApprovalReceipt struct {
+	SchemaVersion int
+	Status        string
+	ApprovedBy    string
+	ApprovedAt    string
+	Fingerprint   string
+}
+
+func LoadApprovalReceipt(path string) (ApprovalReceipt, error) {
+	if !strings.EqualFold(filepath.Ext(path), ".md") {
+		return ApprovalReceipt{}, fmt.Errorf("approval receipt must be a Markdown file: %s", path)
+	}
+	value, err := loadJSONObject(path, "approval receipt", approvalMarkerStart, approvalMarkerEnd, false)
+	if err != nil {
+		return ApprovalReceipt{}, err
+	}
+	receipt := ApprovalReceipt{
+		SchemaVersion: intValue(value["schema_version"]),
+		Status:        stringValue(value["status"]),
+		ApprovedBy:    stringValue(value["approved_by"]),
+		ApprovedAt:    stringValue(value["approved_at"]),
+		Fingerprint:   stringValue(value["approval_fingerprint"]),
+	}
+	if receipt.SchemaVersion != 1 {
+		return ApprovalReceipt{}, fmt.Errorf("approval receipt schema_version must be 1")
+	}
+	if receipt.Status != "APPROVED" {
+		return ApprovalReceipt{}, fmt.Errorf("approval receipt status must be APPROVED")
+	}
+	if strings.TrimSpace(receipt.ApprovedBy) == "" {
+		return ApprovalReceipt{}, fmt.Errorf("approval receipt must name the human approver")
+	}
+	if _, err := time.Parse(time.RFC3339, receipt.ApprovedAt); err != nil {
+		return ApprovalReceipt{}, fmt.Errorf("approval receipt approved_at must be RFC3339: %w", err)
+	}
+	if strings.TrimSpace(receipt.Fingerprint) == "" {
+		return ApprovalReceipt{}, fmt.Errorf("approval receipt fingerprint is required")
+	}
+	return receipt, nil
+}
+
+func intValue(value any) int {
+	number, ok := value.(float64)
+	if !ok {
+		return 0
+	}
+	return int(number)
+}
+
+func CheckApprovalReceipt(path string, planCheck PlanCheck) (ApprovalReceipt, error) {
+	receipt, err := LoadApprovalReceipt(path)
+	if err != nil {
+		return ApprovalReceipt{}, err
+	}
+	if receipt.Fingerprint != planCheck.Fingerprint {
+		return ApprovalReceipt{}, fmt.Errorf("stale approval receipt: fingerprint does not match the current source plan, spec, and plan")
+	}
+	return receipt, nil
+}
+
+type ActivationOptions struct {
+	PlanPath     string
+	ApprovalPath string
+	OutDir       string
+	OutputPath   string
+	SourceCommit string
+}
+
+func ActivatePlan(options ActivationOptions) error {
+	check, err := CheckPlan(options.PlanPath)
+	if err != nil {
+		return err
+	}
+	receipt, err := CheckApprovalReceipt(options.ApprovalPath, check)
+	if err != nil {
+		return err
+	}
+	if err := CompilePlanFiles(options.PlanPath, options.OutDir); err != nil {
+		return err
+	}
+	tasksPath := filepath.Join(options.OutDir, "tasks.json")
+	approval := ApprovalOptions{
+		SourcePlanPath: check.SourcePlanPath,
+		SpecPath:       check.SpecPath,
+		PlanPath:       options.PlanPath,
+		TasksPath:      tasksPath,
+		ApprovedBy:     receipt.ApprovedBy,
+		ApprovedAt:     receipt.ApprovedAt,
+		SourceCommit:   options.SourceCommit,
+		OutputPath:     options.OutputPath,
+	}
+	if err := CreateApprovalLock(approval); err != nil {
+		return err
+	}
+	return CheckApprovalLock(approval)
 }
 
 func gitCommit(directory string) string {
