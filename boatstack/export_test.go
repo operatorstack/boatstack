@@ -61,14 +61,18 @@ func TestExportAndDriftCheck(t *testing.T) {
 	autoPlan := string(bundle.Files[".cursor/commands/auto-plan.md"])
 	planGate := string(bundle.Files[".cursor/commands/plan-gate.md"])
 	build := string(bundle.Files[".cursor/commands/build.md"])
-	if !strings.Contains(autoPlan, "Markdown-only") || !strings.Contains(autoPlan, "never silently choose a default") {
+	if !strings.Contains(autoPlan, "Markdown-only") || !strings.Contains(autoPlan, "never silently choose a default") || !strings.Contains(autoPlan, "planning-write") || !strings.Contains(autoPlan, "PROPOSED") {
 		t.Fatal("auto-plan adapter does not enforce the Markdown and question boundaries")
 	}
-	if !strings.Contains(planGate, "approval.md") || !strings.Contains(planGate, "Remain in Plan mode") {
+	if !strings.Contains(planGate, "approval.md") || !strings.Contains(planGate, "Remain in Plan mode") || !strings.Contains(planGate, "record-approval") {
 		t.Fatal("plan-gate adapter does not keep approval in Plan mode")
 	}
-	if !strings.Contains(build, "activate-plan") || strings.Contains(build, "compile-plan") {
+	if !strings.Contains(build, "activate-plan") || !strings.Contains(build, "READY_FOR_BUILD") || !strings.Contains(build, "without activating") || strings.Contains(build, "compile-plan") {
 		t.Fatal("build adapter must activate the Markdown plan exactly once")
+	}
+	ship := string(bundle.Files[".cursor/commands/ship-gate.md"])
+	if !strings.Contains(ship, "separate repair PR") || !strings.Contains(ship, "Never edit unrelated code") {
+		t.Fatal("ship adapter permits unrelated scope expansion")
 	}
 	lock := string(bundle.Files[".product-loop/generated.lock.json"])
 	if !strings.Contains(lock, `"source_commit"`) || !strings.Contains(lock, `"integrations"`) {

@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -137,9 +138,70 @@ func activatePlanCommand(arguments []string) int {
 	return 0
 }
 
+func planningWriteCommand(arguments []string) int {
+	flags := flag.NewFlagSet("planning-write", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository containing the feature package")
+	feature := flags.String("feature", "", "lowercase kebab-case feature slug")
+	artifact := flags.String("artifact", "", "known Markdown planning artifact name")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if *feature == "" || *artifact == "" {
+		return fail(fmt.Errorf("planning-write requires --feature and --artifact; Markdown content is read from stdin"))
+	}
+	content, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return fail(err)
+	}
+	path, err := boatstack.WritePlanningArtifact(boatstack.PlanningWriteOptions{
+		Repo: *repo, Feature: *feature, Artifact: *artifact, Content: content,
+	})
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Printf("PASS: wrote bounded planning Markdown: %s\n", path)
+	return 0
+}
+
+func recordApprovalCommand(arguments []string) int {
+	flags := flag.NewFlagSet("record-approval", flag.ContinueOnError)
+	plan := flags.String("plan", "", "approved Markdown plan")
+	output := flags.String("output", "", "approval.md path; defaults beside plan.md")
+	approvedBy := flags.String("approved-by", "", "named human approver")
+	approvedAt := flags.String("approved-at", "", "RFC3339 approval timestamp")
+	fingerprint := flags.String("fingerprint", "", "exact fingerprint displayed before approval")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if *plan == "" || *approvedBy == "" || *approvedAt == "" || *fingerprint == "" {
+		return fail(fmt.Errorf("record-approval requires --plan, --approved-by, --approved-at, and --fingerprint"))
+	}
+	if err := boatstack.RecordApproval(boatstack.ApprovalRecordOptions{
+		PlanPath: *plan, OutputPath: *output, ApprovedBy: *approvedBy,
+		ApprovedAt: *approvedAt, Fingerprint: *fingerprint,
+	}); err != nil {
+		return fail(err)
+	}
+	fmt.Println("PASS: exact Markdown plan approval recorded")
+	return 0
+}
+
+func doctorCommand(arguments []string) int {
+	flags := flag.NewFlagSet("doctor", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository whose Boatstack installation should be checked")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if err := boatstack.DoctorRepairHint(boatstack.Doctor(*repo)); err != nil {
+		return fail(err)
+	}
+	fmt.Printf("PASS: Boatstack %s installation and generated adapters are healthy\n", boatstack.Version)
+	return 0
+}
+
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|export|check-source-plan|check-plan|activate-plan|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -151,8 +213,14 @@ func run() int {
 		return checkSourcePlanCommand(os.Args[2:])
 	case "check-plan":
 		return checkPlanCommand(os.Args[2:])
+	case "planning-write":
+		return planningWriteCommand(os.Args[2:])
+	case "record-approval":
+		return recordApprovalCommand(os.Args[2:])
 	case "activate-plan":
 		return activatePlanCommand(os.Args[2:])
+	case "doctor":
+		return doctorCommand(os.Args[2:])
 	case "version":
 		fmt.Printf("Boatstack %s (%s)\n", boatstack.Version, boatstack.SourceCommit)
 		return 0

@@ -79,6 +79,33 @@ func SHA256File(path string) (string, error) {
 	return SHA256Bytes(value), nil
 }
 
+func repositoryRelativePath(repo, target string) (string, error) {
+	relative, err := filepath.Rel(repo, target)
+	if err != nil {
+		return "", fmt.Errorf("cannot make path repository-relative: %w", err)
+	}
+	if _, err := resolveRepositoryRelativePath(repo, filepath.ToSlash(relative)); err != nil {
+		return "", err
+	}
+	return filepath.ToSlash(filepath.Clean(relative)), nil
+}
+
+func resolveRepositoryRelativePath(repo, relative string) (string, error) {
+	relative = strings.TrimSpace(relative)
+	if relative == "" {
+		return "", fmt.Errorf("repository-relative path is empty")
+	}
+	native := filepath.FromSlash(relative)
+	if filepath.IsAbs(native) || filepath.VolumeName(native) != "" {
+		return "", fmt.Errorf("path must be repository-relative: %s", relative)
+	}
+	native = filepath.Clean(native)
+	if native == "." || native == ".." || strings.HasPrefix(native, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path escapes repository boundary: %s", relative)
+	}
+	return filepath.Join(repo, native), nil
+}
+
 func MarshalJSON(value any) ([]byte, error) {
 	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {

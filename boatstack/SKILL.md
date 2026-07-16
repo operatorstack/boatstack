@@ -59,12 +59,12 @@ Do not scan the entire repository by default. Record discovered paths and comman
 3. Separate facts, decisions, unknowns, and safely deferrable gaps.
 4. Answer discoverable code questions by inspection.
 5. Ask the developer only questions whose answers materially change behavior, contracts, risk, or acceptance. Ask 1-3 concise questions at a time, give 2-3 mutually exclusive choices, recommend one, and explain the impact. If the host has no structured question tool, ask the same questions as plain text, return `WAITING_FOR_INPUT`, and do not select a default.
-6. Record answers and provenance in the question ledger. A repository-derived choice is `PROPOSED`, not `ANSWERED`, until a human accepts it. Copy material open question IDs into `plan.md` as `blocking_questions`.
+6. Record answers and provenance in the question ledger. An authoritative repository fact is `DISCOVERED`, an agent suggestion or inferred choice is `PROPOSED`, and only an explicit human response is `ANSWERED`. Every material proposal remains in `plan.md` as a `blocking_questions` ID until the human answers it. Never use labels such as “answered by plan default.”
 7. Create the feature spec: problem, users, outcomes, non-goals, acceptance criteria, invariants, interfaces, failure behavior, observability, rollout, and rollback. Translate every accepted claim into an observable condition with a defensible oracle.
 8. Run product, design, engineering, and developer-experience reviews only when applicable. If gstack is installed, its review skills can implement these lenses; do not require it.
 9. If Spec Kit is installed, use its constitution/specify/clarify/plan/tasks/analyze/checklist flow as an artifact generator. The canonical artifact contract remains authoritative.
 10. For every planned validation, record the exact `criteria` it can support plus `run`, `origin`, `oracle`, and `independence`. Commands, automated tests, external checks, and named human review procedures are all valid forms, but an ambiguous claim without a threshold/rubric and authorized decision remains `BLOCKED`.
-11. Write only Markdown feature artifacts, including the canonical structured `plan.md`. Put its authoritative JSON inside the marked Boatstack block and run `boatstack-helper check-plan --plan <feature>/plan.md`; this command is read-only.
+11. Write only Markdown feature artifacts, including the canonical structured `plan.md`. Put its authoritative JSON inside the marked Boatstack block and run `boatstack-helper check-plan --plan <feature>/plan.md`; this command is read-only. If the host blocks its ordinary Markdown writer, pass the document to `boatstack-helper planning-write --repo . --feature <feature> --artifact <known-name>` on stdin. Never use arbitrary shell redirection to evade a host write boundary.
 12. End with a **draft**, never an implied approval. Do not generate executable task state, JSON artifacts, locks, or implementation changes from `auto-plan`.
 
 Do not treat an ADR as general project context. ADRs record accepted durable decisions. Use a question ledger for unknowns and a gap ledger for known divergence.
@@ -83,13 +83,14 @@ Treat repository-owned product context as canonical. Do not require it to be mig
 2. Present the draft spec, plan, open decisions, accepted assumptions, gaps, risks, validation provenance, and `PLAN_FINGERPRINT` in a reviewable form.
 3. Ask the developer to approve it or request changes. Silence, continued conversation, tool permission, and permission to build are not approval.
 4. On changes, return to `auto-plan`, preserve the feedback in the question ledger, and issue a new draft.
-5. On explicit approval, create only `approval.md` from its template. Record the named human, an RFC3339 timestamp, and the exact fingerprint returned before approval.
+5. On explicit approval, invoke `boatstack-helper record-approval` with the plan, named human, RFC3339 timestamp, and exact fingerprint returned before approval. It verifies the current plan and creates only `approval.md`.
 6. End in Plan mode and tell the developer the feature is approved and ready for the host's normal Build transition. Do not compile tasks, create a lock, request Agent mode merely to write a file, or edit product code.
 
 All files created or updated by `auto-plan` and `plan-gate` must be Markdown. gstack and Spec Kit may help produce those documents, but their implementation stages and non-Markdown executable state are deferred to `build`.
 
 ## Build without erasing evidence
 
+- First confirm the host is in an execution-capable mode. If a requested transition is rejected or product-code writes remain unavailable, return `READY_FOR_BUILD` and stop without activating, compiling, or writing a lock.
 - Before the first product-code edit, activate the exact approved Markdown plan:
 
 ```bash
@@ -135,6 +136,7 @@ Do not branch the workflow on model brand, price, or a guessed capability tier. 
 - Require a clean, intentional diff; passing required checks; a filled evidence ledger; explicit known gaps; and rollout/rollback notes.
 - Create a PR, but keep merge and deploy as separate authorized actions.
 - Never hide failed experiments, skipped checks, or `PASS_WITH_GAPS` behind a green summary.
+- If a required check also fails on the base branch, record that comparison and recommend a separate repair PR. Do not edit unrelated code in the approved feature branch. A bypass is valid only when repository policy permits it and the human explicitly authorizes it; otherwise return to planning for any scope expansion.
 
 Gate statuses are `PASS`, `PASS_WITH_GAPS`, and `BLOCKED`. Critical safety, correctness, or product-acceptance gaps always produce `BLOCKED`.
 
