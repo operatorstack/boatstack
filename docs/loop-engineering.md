@@ -87,6 +87,6 @@ A failed task can suggest a better move, but one anecdote cannot silently rewrit
 
 ## What is evidence-backed
 
-The current moves were derived from the Intelligence Flow benchmark corpus and product-repository studies. The generated source commit is [`5e1bbedab7d5bae49dd0e5cdda1e4b7804ab057f`](https://github.com/operatorstack/intelligence-flow/tree/5e1bbedab7d5bae49dd0e5cdda1e4b7804ab057f/examples/12-product-engineering-loop).
+The current moves were derived from the Intelligence Flow benchmark corpus and product-repository studies. The generated source commit is [`aae685d2513cd25537284e4e68177411ace7ac9a`](https://github.com/operatorstack/intelligence-flow/tree/aae685d2513cd25537284e4e68177411ace7ac9a/examples/12-product-engineering-loop).
 
 The evidence supports specific failure mechanisms and guardrails. It does not establish that Boatstack is optimal, that control-theory notation proves software quality, or that one workflow dominates every team. Those are evaluation questions, so the distribution preserves measurements, provenance, gaps, and negative results.

@@ -4,7 +4,7 @@
 
 **Plan the route. Prove the work. Ship.**
 
-Boatstack is loop engineering for coding agents: a model-neutral path from a product request to an explicitly approved, tested, reviewed pull request. Its behavior is generated from [Intelligence Flow at `5e1bbedab7d5bae49dd0e5cdda1e4b7804ab057f`](https://github.com/operatorstack/intelligence-flow/tree/5e1bbedab7d5bae49dd0e5cdda1e4b7804ab057f/examples/12-product-engineering-loop).
+Boatstack is loop engineering for coding agents: a model-neutral path from a product request to an explicitly approved, tested, reviewed pull request. Its behavior is generated from [Intelligence Flow at `aae685d2513cd25537284e4e68177411ace7ac9a`](https://github.com/operatorstack/intelligence-flow/tree/aae685d2513cd25537284e4e68177411ace7ac9a/examples/12-product-engineering-loop).
 
 It is not a claim that a longer prompt writes better code. Here is what the loop actually does.
 
