@@ -8,7 +8,7 @@
 
 <p align="center"><strong>Build freely. Prove it. Ship.</strong></p>
 
-Boatstack is **evidence-engineered coding**: a model-neutral coding node that turns product intent and repository context into an explicitly approved, tested, reviewable change. It does not prescribe the model, implementation technique, tools, or document structure. It governs what may be claimed, approved, or shipped. Its behavior is generated from [Intelligence Flow at `f0e2e942835de000a96d6e2530cc8dc16999728c`](https://github.com/operatorstack/intelligence-flow/tree/f0e2e942835de000a96d6e2530cc8dc16999728c/examples/12-product-engineering-loop).
+Boatstack is **evidence-engineered coding**: a model-neutral coding node that turns product intent and repository context into an explicitly approved, tested, reviewable change. It does not prescribe the model, implementation technique, tools, or document structure. It governs what may be claimed, approved, or shipped. Its behavior is generated from [Intelligence Flow at `46be4fd2d8ebbc00e28c10e78685b721b2c62fe8`](https://github.com/operatorstack/intelligence-flow/tree/46be4fd2d8ebbc00e28c10e78685b721b2c62fe8/examples/12-product-engineering-loop).
 
 > **You are free in how you build. Only claims of completion require evidence.**
 
@@ -313,7 +313,7 @@ Read the [research and design record](docs/research-and-design.md) and [corpus a
 
 ## Context has a budget
 
-The three canonical runtime references currently total approximately **4625 estimated tokens** using `ceil(characters / 4)`. That is a stable compactness signal, not provider billing. Host adapters stay thin and load the operation-specific slice on demand.
+The three canonical runtime references currently total approximately **5250 estimated tokens** using `ceil(characters / 4)`. That is a stable compactness signal, not provider billing. Host adapters stay thin and load the operation-specific slice on demand.
 
 ## Status
 

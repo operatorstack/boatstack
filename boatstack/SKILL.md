@@ -51,6 +51,12 @@ Inspect only the minimal relevant code and documentation. Look for:
 
 Do not scan the entire repository by default. Record discovered paths and commands in `.product-loop/project.json`; preserve existing host configuration rather than replacing it.
 
+## Respond to the developer
+
+Follow the **User-facing response contract** in `references/workflow.md` for every operation. Lead with the mapped plain-language outcome, show only decision-relevant content, end with one `### Next step`, and put machine status, helper output, fingerprints, artifact paths, receipts, and locks inside collapsed **Technical details**. Internal operations such as `check-plan`, `record-approval`, and `activate-plan` must not appear in the primary response.
+
+Normal approval is simply `approve`. Use an explicit supplied identity first; otherwise use the authenticated GitHub login when available. Ask once for a name or handle only when no trustworthy identity can be resolved. Never infer the approver from the filesystem username, commit history, or agent identity. If identity is missing after approval, preserve the current approval intent and ask only for identity; do not make the human approve the unchanged plan again.
+
 ## Run `auto-plan`
 
 0. Require exactly one saved plan file created in the active host's Plan mode. First use the active plan path exposed in host/system conversation context, when available, and validate it with `.product-loop/bin/boatstack-helper check-source-plan --repo . --plan <host-path>`. Otherwise run `check-source-plan --repo .` to search only `.product-loop/intake/` and bounded repo-local host plan directories. If the result is missing or ambiguous, return `BLOCKED`; never choose by recency alone. An explicit `/auto-plan <path>` is only the ambiguity fallback. Do not write the missing source plan inside `auto-plan`.
