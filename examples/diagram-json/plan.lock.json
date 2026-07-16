@@ -4,12 +4,14 @@
   "invalidated_at": null,
   "invalidation_reason": null,
   "plan_path": "examples/diagram-json/plan.json",
-  "plan_sha256": "d1208003042a9d10f5efb010fc32fc7ac7bdefa427938260586e90daa0cb4414",
+  "plan_sha256": "df1b205517cf7dbdf5c5db65a342622922bd959a5ba885326888f6dd2b9c50d3",
   "schema_version": 1,
-  "source_commit": "fcc2faa55ac3c2332ce4a19293d89023f578784d",
+  "source_commit": "40ebae5dfb3d090812301a438aaac079426edcfc",
+  "source_plan_path": "source-plan.md",
+  "source_plan_sha256": "e10593ddaa7522ab80cc991d0a09399257139799e37f737794cd49d68a39985b",
   "spec_path": "examples/diagram-json/spec.md",
   "spec_sha256": "a943c81cf2a88d23d5b300e6b9dc1dafc80923a9b6b9ab5297a67b4e2054b9d5",
   "status": "APPROVED",
   "task_graph_path": "examples/diagram-json/compiled/tasks.json",
-  "task_graph_sha256": "d66d693df1ba7dd34f65ce93afea54006563c14d642a1bf0d1d9311b3fcfb37b"
+  "task_graph_sha256": "f040696f1f8bcedc4a8ed9816a61a49edbda970ec0cc3b28175ba37b73bbc896"
 }

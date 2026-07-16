@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "feature_id": "diagram-json-v1",
+  "source_plan_path": "source-plan.md",
   "spec_path": "examples/diagram-json/spec.md",
   "acceptance_criteria": [
     {
@@ -35,8 +36,28 @@
         "AC-3"
       ],
       "validation": [
-        "pnpm typecheck",
-        "pnpm exec tsx examples/05-diagram-printer/json-check.ts"
+        {
+          "criteria": [
+            "AC-1",
+            "AC-2",
+            "AC-3"
+          ],
+          "run": "pnpm typecheck",
+          "origin": "Public schema types required by AC-1, AC-2, and AC-3",
+          "oracle": "The repository's existing TypeScript compiler configuration",
+          "independence": "pre-existing"
+        },
+        {
+          "criteria": [
+            "AC-1",
+            "AC-2",
+            "AC-3"
+          ],
+          "run": "pnpm exec tsx examples/05-diagram-printer/json-check.ts",
+          "origin": "The approved JSON contract in AC-1, AC-2, and AC-3",
+          "oracle": "Parser, schema-version, ordering, and compact-overlay assertions derived from the approved contract",
+          "independence": "contract-derived"
+        }
       ],
       "rollback_boundary": "Revert the serializer and schema types in src/diagram.ts without touching the ASCII renderer."
     },
@@ -50,8 +71,24 @@
         "AC-5"
       ],
       "validation": [
-        "pnpm typecheck",
-        "pnpm build"
+        {
+          "criteria": [
+            "AC-5"
+          ],
+          "run": "pnpm typecheck",
+          "origin": "The public type-export requirement in AC-5",
+          "oracle": "The repository's existing TypeScript compiler configuration",
+          "independence": "pre-existing"
+        },
+        {
+          "criteria": [
+            "AC-5"
+          ],
+          "run": "pnpm build",
+          "origin": "The package export and documentation contract in AC-5",
+          "oracle": "The repository's existing production build",
+          "independence": "pre-existing"
+        }
       ],
       "rollback_boundary": "Remove the new src/index.ts exports and JSON documentation together."
     },
@@ -70,11 +107,56 @@
         "AC-5"
       ],
       "validation": [
-        "pnpm exec tsx examples/05-diagram-printer/json-check.ts",
-        "pnpm example:diagram",
-        "diff -u examples/05-diagram-printer/expected-output.txt <(pnpm --silent example:diagram)",
-        "pnpm typecheck",
-        "pnpm build"
+        {
+          "criteria": [
+            "AC-1",
+            "AC-2",
+            "AC-3"
+          ],
+          "run": "pnpm exec tsx examples/05-diagram-printer/json-check.ts",
+          "origin": "The approved JSON behaviors in AC-1, AC-2, and AC-3",
+          "oracle": "Contract-derived parser and fixture assertions",
+          "independence": "contract-derived"
+        },
+        {
+          "criteria": [
+            "AC-4"
+          ],
+          "run": "pnpm example:diagram",
+          "origin": "The existing diagram behavior protected by AC-4",
+          "oracle": "The repository's pre-feature executable example",
+          "independence": "pre-existing"
+        },
+        {
+          "criteria": [
+            "AC-4"
+          ],
+          "run": "diff -u examples/05-diagram-printer/expected-output.txt <(pnpm --silent example:diagram)",
+          "origin": "The byte-compatibility decision in AC-4",
+          "oracle": "The pre-feature expected ASCII fixture",
+          "independence": "pre-existing"
+        },
+        {
+          "criteria": [
+            "AC-1",
+            "AC-2",
+            "AC-3",
+            "AC-5"
+          ],
+          "run": "pnpm typecheck",
+          "origin": "The public type contracts in AC-1 through AC-5",
+          "oracle": "The repository's existing TypeScript compiler configuration",
+          "independence": "pre-existing"
+        },
+        {
+          "criteria": [
+            "AC-5"
+          ],
+          "run": "pnpm build",
+          "origin": "The distributable package contract in AC-5",
+          "oracle": "The repository's existing production build",
+          "independence": "pre-existing"
+        }
       ],
       "rollback_boundary": "Revert the JSON fixture/check and documentation; retain the pre-feature expected ASCII fixture."
     }
