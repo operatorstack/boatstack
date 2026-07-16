@@ -1,4 +1,4 @@
-# Generated from operatorstack/intelligence-flow.
+# Boatstack-owned control plane.
 name: Verify Boatstack distribution
 
 on:
@@ -11,11 +11,55 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Detect projected runtime
+        id: runtime
+        shell: bash
+        run: |
+          if [[ -f boatstack/go.mod ]]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-go@v5
+        if: steps.runtime.outputs.go == 'true'
+        with:
+          go-version-file: boatstack/go.mod
+          cache-dependency-path: boatstack/go.mod
+      - run: go test ./...
+        if: steps.runtime.outputs.go == 'true'
+        working-directory: boatstack
+      - run: go build ./cmd/boatstack-helper
+        if: steps.runtime.outputs.go == 'true'
+        working-directory: boatstack
       - uses: actions/setup-python@v5
+        if: steps.runtime.outputs.go != 'true'
         with:
           python-version: "3.11"
-      - run: python3 -m unittest discover -s tests -v
-      - run: python3 -m compileall -q boatstack
+      - name: Verify legacy projection during migration
+        if: steps.runtime.outputs.go != 'true'
+        run: python3 -m unittest discover -s tests -v
+      - name: Compile legacy projection during migration
+        if: steps.runtime.outputs.go != 'true'
+        run: python3 -m compileall -q boatstack
+      - name: Validate Bash installer
+        if: steps.runtime.outputs.go == 'true' && runner.os != 'Windows'
+        shell: bash
+        run: bash -n install.sh
+      - name: Validate PowerShell installer
+        if: steps.runtime.outputs.go == 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path install.ps1), [ref]$tokens, [ref]$errors) > $null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_ }
+            exit 1
+          }
