@@ -4,7 +4,7 @@
 
 **Build freely. Prove it. Ship.**
 
-Boatstack is **evidence-engineered coding**: a model-neutral coding node that turns product intent and repository context into an explicitly approved, tested, reviewable change. It does not prescribe the model, implementation technique, tools, or document structure. It governs what may be claimed, approved, or shipped. Its behavior is generated from [Intelligence Flow at `40ebae5dfb3d090812301a438aaac079426edcfc`](https://github.com/operatorstack/intelligence-flow/tree/40ebae5dfb3d090812301a438aaac079426edcfc/examples/12-product-engineering-loop).
+Boatstack is **evidence-engineered coding**: a model-neutral coding node that turns product intent and repository context into an explicitly approved, tested, reviewable change. It does not prescribe the model, implementation technique, tools, or document structure. It governs what may be claimed, approved, or shipped. Its behavior is generated from [Intelligence Flow at `3cd11c293b3903aeac9ff8d8eacd47840d63a02d`](https://github.com/operatorstack/intelligence-flow/tree/3cd11c293b3903aeac9ff8d8eacd47840d63a02d/examples/12-product-engineering-loop).
 
 > **You are free in how you build. Only claims of completion require evidence.**
 
@@ -32,11 +32,13 @@ Q2  Stability?        versioned schema            | internal object dump
 Q3  Run data?         compact overlay              | entire execution trace
 ```
 
-The accepted answers become observable criteria and tasks—not hidden assumptions:
+The accepted answers become observable criteria and tasks—not hidden assumptions. They live in the single marked structured block inside human-readable `plan.md`:
 
 ```json
 {
   "source_plan_path": "source-plan.md",
+  "spec_path": "feature-spec.md",
+  "blocking_questions": [],
   "acceptance_criteria": [
     {"id": "AC-1", "text": "Return parseable schema-versioned graph JSON."},
     {"id": "AC-4", "text": "Keep existing ASCII output byte-compatible."}
@@ -90,34 +92,46 @@ Ambiguous claims cannot pass unchanged:
 
 See [Validation and evidence](docs/validation-and-evidence.md) for validation forms, ambiguity handling, independence levels, gate outcomes, and the benchmark observations behind this contract.
 
-The compiler refuses a criterion with no task or verification. Then `/plan-gate` requires a named human and binds approval to content hashes:
+The developer-facing transition stays inside the coding host:
+
+```text
+/plan-gate
+Approve the displayed plan.
+Choose the host's normal Build action.
+```
+
+`/plan-gate` presents a fingerprint over the complete source plan, spec, and `plan.md` and requires a named human. Explicit approval creates only `approval.md`, so the developer remains in Plan mode. The host's normal Build transition then validates and activates the exact approved plan before editing code.
+
+<details>
+<summary>Internal deterministic boundary</summary>
+
+The generated adapter invokes the repository-local helper; users do not need to learn these commands:
 
 ```bash
-.product-loop/bin/boatstack-helper compile-plan \
-  --plan .product-loop/features/diagram-json/plan.json \
-  --out-dir .product-loop/features/diagram-json/compiled
+.product-loop/bin/boatstack-helper check-plan \
+  --plan .product-loop/features/diagram-json/plan.md
 
-.product-loop/bin/boatstack-helper approve-plan \
-  --source-plan .product-loop/features/diagram-json/source-plan.md \
-  --spec .product-loop/features/diagram-json/spec.md \
-  --plan .product-loop/features/diagram-json/plan.json \
-  --tasks .product-loop/features/diagram-json/compiled/tasks.json \
-  --approved-by "Boateng Opoku-Yeboah" \
+.product-loop/bin/boatstack-helper activate-plan \
+  --plan .product-loop/features/diagram-json/plan.md \
+  --approval .product-loop/features/diagram-json/approval.md \
+  --out-dir .product-loop/features/diagram-json/compiled \
   --output .product-loop/features/diagram-json/plan.lock.json
 ```
 
-Build work checks that lock first:
+Activation compiles the machine task graph and writes the lock last. A changed planning input cannot reuse the receipt:
 
 ```console
-$ .product-loop/bin/boatstack-helper approve-plan ... --check
-PASS: approved plan lock matches the current artifacts
+$ .product-loop/bin/boatstack-helper activate-plan ...
+PASS: approved Markdown plan activated and locked
 
-# after plan.json changes
-$ .product-loop/bin/boatstack-helper approve-plan ... --check
-BLOCKED: stale or invalid plan lock: plan
+# after plan.md prose, its structured block, the spec, or source plan changes
+$ .product-loop/bin/boatstack-helper activate-plan ...
+BLOCKED: stale approval receipt
 ```
 
-That is the approval boundary in code: conversation cannot silently turn a draft into permission to build.
+</details>
+
+That is the approval boundary in code: conversation cannot silently turn a draft into permission to build, and Plan mode never needs to write JSON or executable state.
 
 See the complete, linked [worked example](examples/diagram-json/README.md).
 
@@ -165,7 +179,7 @@ irm https://raw.githubusercontent.com/operatorstack/boatstack/main/install.ps1 |
 
 Run the command from the product repository. The installer detects the repository and available coding hosts, previews every generated path, verifies the downloaded helper, and asks whether to add gstack, Spec Kit, both, or core only. Boatstack core requires no Python, Node, Go, or package manager.
 
-After installation, open the chosen host's Plan mode, describe the change, save its plan, and run `/auto-plan`. Boatstack uses the host-exposed active path or discovers exactly one file under `.product-loop/intake/`; an explicit path is only needed to resolve ambiguity. The source plan remains required and hash-checked through `/build`; after build, test, review, and ship gates use the approved lock, actual diff, and evidence instead.
+After installation, open the chosen host's Plan mode, describe the change, save its plan, and run `/auto-plan`. Boatstack uses the host-exposed active path or discovers exactly one file under `.product-loop/intake/`; an explicit path is only needed to resolve ambiguity. Auto-plan and plan-gate write Markdown only. After explicit approval, use the host's normal Build transition; `/build` activates and locks the plan before its first code edit. The source plan remains required and hash-checked through `/build`; later gates use the lock, actual diff, and evidence.
 
 ## Use Boatstack with gstack and GitHub Spec Kit
 
@@ -180,7 +194,7 @@ product intent + repository context
           \                  /
        normalized spec + plan + decisions
                  |
-     approval lock -> open build -> evidence gates -> PR
+  Markdown approval -> build activation -> evidence gates -> PR
 ```
 
 | Layer | What it contributes | What remains Boatstack-owned |
@@ -188,7 +202,7 @@ product intent + repository context
 | Coding host: Cursor, Codex, or Claude | Plan mode, repository exploration, implementation, tool execution | Cross-host artifact meanings and transition rules |
 | [gstack](https://github.com/garrytan/gstack) | Product/CEO, design, engineering, and developer-experience review lenses; adversarial plan critique | Which findings change the approved plan, validation provenance, approval hashing, and gate outcomes |
 | [GitHub Spec Kit](https://github.com/github/spec-kit) | Constitution, specify, clarify, plan, tasks, analyze, checklist, and related spec-driven artifacts | Normalization into Boatstack's criterion/validation contract and explicit human plan gate |
-| Boatstack core | Source-plan discovery, provenance, question/gap boundaries, deterministic compilation, approval/drift locks, evidence mapping, review/ship gates | The completion and shipping claim itself |
+| Boatstack core | Source-plan discovery, provenance, question/gap boundaries, Markdown approval, deterministic build activation, drift locks, evidence mapping, review/ship gates | The completion and shipping claim itself |
 
 ### With gstack
 
@@ -207,11 +221,11 @@ speckit.specify / clarify / plan / tasks / analyze / checklist
                      explicit /plan-gate
 ```
 
-`speckit.implement` does not bypass Boatstack's plan lock or `/build` boundary. If Spec Kit changes accepted semantics, Boatstack invalidates the old lock and returns to approval. This preserves Spec Kit's artifact-generation value without allowing a generator to approve or validate its own output.
+`speckit.implement` does not bypass Boatstack's approval receipt, build activation, or `/build` boundary. If Spec Kit changes accepted semantics, Boatstack invalidates the receipt and returns to approval. This preserves Spec Kit's artifact-generation value without allowing a generator to approve or validate its own output.
 
 ### Core only
 
-Both integrations are optional. Boatstack core still performs Plan-mode source discovery, question-led specification, structured planning, deterministic approval locking, validation/evidence mapping, test/review gates, and PR preparation. Integration failure is recorded as partial installation and does not roll back the working core.
+Both integrations are optional. Boatstack core still performs Plan-mode source discovery, question-led specification, structured Markdown planning, explicit approval receipts, deterministic build activation, validation/evidence mapping, test/review gates, and PR preparation. Integration failure is recorded as partial installation and does not roll back the working core.
 
 The installer creates one canonical `.product-loop/` runtime and thin adapters for:
 
@@ -269,8 +283,8 @@ Read the [research and design record](docs/research-and-design.md) and [corpus a
 
 ## Context has a budget
 
-The three canonical runtime references currently total approximately **4044 estimated tokens** using `ceil(characters / 4)`. That is a stable compactness signal, not provider billing. Host adapters stay thin and load the operation-specific slice on demand.
+The three canonical runtime references currently total approximately **4521 estimated tokens** using `ceil(characters / 4)`. That is a stable compactness signal, not provider billing. Host adapters stay thin and load the operation-specific slice on demand.
 
 ## Status
 
-Boatstack is an alpha research distribution. It can generate host adapters, compile traceable task/test artifacts, hash-lock explicit approval, detect stale plans, and preserve provenance. The next proof boundary is a paired feature-development evaluation against a plain host harness.
+Boatstack is an alpha research distribution. It can generate host adapters, keep planning and approval Markdown-native, compile traceable task/test artifacts at Build, detect stale approvals, and preserve provenance. The next proof boundary is a paired feature-development evaluation against a plain host harness.

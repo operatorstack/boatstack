@@ -13,8 +13,8 @@ Map the request to one operation:
 
 - `init`: inspect a repository and create or update `.product-loop/project.json`.
 - `auto-plan`: refine a saved host Plan-mode file into a reviewable draft feature package; refuse when that file is absent.
-- `plan-gate`: present the draft for explicit human acceptance, then freeze its approved contents and generate the executable package.
-- `build`: implement approved tasks in bounded, reversible slices.
+- `plan-gate`: validate the Markdown draft, present it for explicit human acceptance, and record that acceptance in Markdown.
+- `build`: activate the approved Markdown plan, then implement its tasks in bounded, reversible slices.
 - `test-gate`: test requirements and relevant regressions using independent evidence.
 - `review-gate`: review the diff against the spec, project invariants, risks, and known gaps.
 - `ship-gate`: prepare a reviewable PR with evidence, rollback notes, and explicit gaps.
@@ -58,13 +58,14 @@ Do not scan the entire repository by default. Record discovered paths and comman
 2. Write the bounded outcome definition before proposing architecture.
 3. Separate facts, decisions, unknowns, and safely deferrable gaps.
 4. Answer discoverable code questions by inspection.
-5. Ask the developer only questions whose answers materially change behavior, contracts, risk, or acceptance. Ask 1-3 concise questions at a time, give 2-3 mutually exclusive choices, recommend one, and explain the impact.
-6. Record answers and provenance in the question ledger.
+5. Ask the developer only questions whose answers materially change behavior, contracts, risk, or acceptance. Ask 1-3 concise questions at a time, give 2-3 mutually exclusive choices, recommend one, and explain the impact. If the host has no structured question tool, ask the same questions as plain text, return `WAITING_FOR_INPUT`, and do not select a default.
+6. Record answers and provenance in the question ledger. A repository-derived choice is `PROPOSED`, not `ANSWERED`, until a human accepts it. Copy material open question IDs into `plan.md` as `blocking_questions`.
 7. Create the feature spec: problem, users, outcomes, non-goals, acceptance criteria, invariants, interfaces, failure behavior, observability, rollout, and rollback. Translate every accepted claim into an observable condition with a defensible oracle.
 8. Run product, design, engineering, and developer-experience reviews only when applicable. If gstack is installed, its review skills can implement these lenses; do not require it.
 9. If Spec Kit is installed, use its constitution/specify/clarify/plan/tasks/analyze/checklist flow as an artifact generator. The canonical artifact contract remains authoritative.
 10. For every planned validation, record the exact `criteria` it can support plus `run`, `origin`, `oracle`, and `independence`. Commands, automated tests, external checks, and named human review procedures are all valid forms, but an ambiguous claim without a threshold/rubric and authorized decision remains `BLOCKED`.
-11. End with a **draft**, never an implied approval. Do not generate executable task state or start implementation from `auto-plan` alone.
+11. Write only Markdown feature artifacts, including the canonical structured `plan.md`. Put its authoritative JSON inside the marked Boatstack block and run `boatstack-helper check-plan --plan <feature>/plan.md`; this command is read-only.
+12. End with a **draft**, never an implied approval. Do not generate executable task state, JSON artifacts, locks, or implementation changes from `auto-plan`.
 
 Do not treat an ADR as general project context. ADRs record accepted durable decisions. Use a question ledger for unknowns and a gap ledger for known divergence.
 
@@ -72,36 +73,35 @@ Treat repository-owned product context as canonical. Do not require it to be mig
 
 ## Run `plan-gate`
 
-1. Present the draft spec, plan, open decisions, accepted assumptions, gaps, risks, and proposed verification—including the origin, oracle, and independence of every validation—in a reviewable form.
-2. Ask the developer to approve it or request changes. Silence and continued conversation are not approval.
-3. On changes, return to `auto-plan`, preserve the feedback in the question/decision ledger, and issue a new draft.
-4. On explicit approval, deterministically compile the already-approved structured plan into the task graph, requirement-test traceability rows, evidence skeleton, and expected gate commands. Do not add semantics during compilation.
-5. Calculate content hashes and write `plan.lock.json` with the approver, timestamp, source commit, source-plan hash, spec hash, structured-plan hash, and task-graph hash.
-6. If the source plan, spec, or structured plan changes later, invalidate the lock and return to this gate.
-
-`build` must refuse to run when the source Plan-mode file is absent or when the plan lock is absent, stale, or does not match the source plan and approved artifacts.
-
-The reference implementation performs the post-approval materialization and lock in this order:
+1. Run the read-only Markdown preflight and retain its exact fingerprint:
 
 ```bash
-.product-loop/bin/boatstack-helper compile-plan \
-  --plan .product-loop/features/<feature>/plan.json \
-  --out-dir .product-loop/features/<feature>/compiled
-
-.product-loop/bin/boatstack-helper approve-plan \
-  --source-plan <path-to-saved-host-plan> \
-  --spec .product-loop/features/<feature>/spec.md \
-  --plan .product-loop/features/<feature>/plan.json \
-  --tasks .product-loop/features/<feature>/compiled/tasks.json \
-  --approved-by "<human identity>" \
-  --output .product-loop/features/<feature>/plan.lock.json
+.product-loop/bin/boatstack-helper check-plan \
+  --plan .product-loop/features/<feature>/plan.md
 ```
 
-The first command validates and compiles already-approved semantics; it must not invent new tasks or acceptance criteria.
+2. Present the draft spec, plan, open decisions, accepted assumptions, gaps, risks, validation provenance, and `PLAN_FINGERPRINT` in a reviewable form.
+3. Ask the developer to approve it or request changes. Silence, continued conversation, tool permission, and permission to build are not approval.
+4. On changes, return to `auto-plan`, preserve the feedback in the question ledger, and issue a new draft.
+5. On explicit approval, create only `approval.md` from its template. Record the named human, an RFC3339 timestamp, and the exact fingerprint returned before approval.
+6. End in Plan mode and tell the developer the feature is approved and ready for the host's normal Build transition. Do not compile tasks, create a lock, request Agent mode merely to write a file, or edit product code.
+
+All files created or updated by `auto-plan` and `plan-gate` must be Markdown. gstack and Spec Kit may help produce those documents, but their implementation stages and non-Markdown executable state are deferred to `build`.
 
 ## Build without erasing evidence
 
-- Before the first edit, pass the source plan along with the approved artifacts to `approve-plan --check`. It remains a required, hash-checked input through completion of `build`.
+- Before the first product-code edit, activate the exact approved Markdown plan:
+
+```bash
+.product-loop/bin/boatstack-helper activate-plan \
+  --plan .product-loop/features/<feature>/plan.md \
+  --approval .product-loop/features/<feature>/approval.md \
+  --out-dir .product-loop/features/<feature>/compiled \
+  --output .product-loop/features/<feature>/plan.lock.json
+```
+
+- Activation verifies the approval fingerprint, compiles `tasks.json`, `test-matrix.json`, and the evidence skeleton, writes the content-addressed lock last, and rechecks it. It adds no semantics. Missing approval, open blocking questions, or any change to the source plan, spec, or complete `plan.md` returns `BLOCKED`.
+- Keep the source plan present and hash-current through completion of `build`.
 - Choose any suitable model, tool, or implementation tactic inside the approved boundary. Boatstack controls transitions and claims, not local creativity.
 - Work from approved tasks and acceptance criteria.
 - Preserve the last known-good state; repair locally instead of restarting a near-correct implementation.
