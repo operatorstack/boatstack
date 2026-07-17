@@ -8,7 +8,7 @@
 
 <p align="center"><strong>Build freely. Prove it. Ship.</strong></p>
 
-Boatstack is **evidence-engineered coding**: a model-neutral coding node that turns product intent and repository context into an explicitly approved, tested, reviewable change. It does not prescribe the model, implementation technique, tools, or document structure. It governs what may be claimed, approved, or shipped. Its behavior is generated from [Intelligence Flow at `15c2f1faa8f0a0e133dea89983ca08b3aec4787c`](https://github.com/operatorstack/intelligence-flow/tree/15c2f1faa8f0a0e133dea89983ca08b3aec4787c/examples/12-product-engineering-loop).
+Boatstack is **evidence-engineered coding**: a model-neutral coding node that turns product intent and repository context into an explicitly approved, tested, reviewable change. It does not prescribe the model, implementation technique, tools, or document structure. It governs what may be claimed, approved, or shipped. Its behavior is generated from [Intelligence Flow at `593a10ce11eee415a06a6383cc9e4b91b58aace6`](https://github.com/operatorstack/intelligence-flow/tree/593a10ce11eee415a06a6383cc9e4b91b58aace6/examples/12-product-engineering-loop).
 
 > **You are free in how you build. Only claims of completion require evidence.**
 
