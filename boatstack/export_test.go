@@ -100,6 +100,26 @@ func TestExportAndDriftCheck(t *testing.T) {
 		t.Fatal("build adapter must activate the Markdown plan exactly once")
 	}
 	ship := string(bundle.Files[".cursor/commands/ship-gate.md"])
+	for _, expected := range []string{"separate repair PR", "Never edit unrelated code", "exact title", "Reply open PR", "Reply update PR", "preview fingerprint"} {
+		if !strings.Contains(ship, expected) {
+			t.Fatalf("ship adapter is missing reviewer-ready PR rule %q", expected)
+		}
+	}
+	if _, exists := bundle.Files[".cursor/commands/pr-brief.md"]; exists {
+		t.Fatal("PR brief must remain natural-language behavior, not a public command")
+	}
+	cursorRule := string(bundle.Files[".cursor/rules/boatstack.mdc"])
+	for _, expected := range []string{"naturally asks Boatstack", "evidence-limited ad-hoc PR brief", "not a /pr-brief command", "NOT_VERIFIED"} {
+		if !strings.Contains(cursorRule, expected) {
+			t.Fatalf("Cursor rule is missing ad-hoc PR behavior %q", expected)
+		}
+	}
+	prTemplate := string(bundle.Files[".github/PULL_REQUEST_TEMPLATE/boatstack.md"])
+	for _, expected := range []string{"## Why this change", "## What changed", "## Review order", "## Evidence", "## Known gaps and risks", "## Rollout and rollback", "<summary>Boatstack provenance</summary>"} {
+		if !strings.Contains(prTemplate, expected) {
+			t.Fatalf("generated PR template is missing %q", expected)
+		}
+	}
 	if !strings.Contains(ship, "separate repair PR") || !strings.Contains(ship, "Never edit unrelated code") {
 		t.Fatal("ship adapter permits unrelated scope expansion")
 	}
@@ -115,7 +135,7 @@ func TestExportAndDriftCheck(t *testing.T) {
 	}
 	for _, path := range []string{".agents/skills/boatstack/SKILL.md", ".claude/skills/boatstack/SKILL.md"} {
 		adapter := string(bundle.Files[path])
-		for _, expected := range []string{"User-facing response contract", "exactly one Next step", "Normal approval is simply approve", "filesystem username"} {
+		for _, expected := range []string{"User-facing response contract", "exactly one Next step", "Normal approval is simply approve", "filesystem username", "Never create or advertise a /pr-brief command", "Reply open PR", "Reply update PR"} {
 			if !strings.Contains(adapter, expected) {
 				t.Fatalf("%s is missing response-DX rule %q", path, expected)
 			}

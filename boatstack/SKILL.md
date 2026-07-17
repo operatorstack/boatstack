@@ -17,7 +17,7 @@ Map the request to one operation:
 - `build`: activate the approved Markdown plan, then implement its tasks in bounded, reversible slices.
 - `test-gate`: test requirements and relevant regressions using independent evidence.
 - `review-gate`: review the diff against the spec, project invariants, risks, and known gaps.
-- `ship-gate`: prepare a reviewable PR with evidence, rollback notes, and explicit gaps.
+- `ship-gate`: preview, then explicitly open or update, a reviewer-ready PR grounded in the approved diff and evidence.
 - `retro`: classify failures, propose a harness move, and gate it before promotion.
 - `export`: generate thin Cursor, Claude Code, Codex, and GitHub adapters.
 
@@ -140,11 +140,33 @@ Do not branch the workflow on model brand, price, or a guessed capability tier. 
 ### Ship gate
 
 - Require a clean, intentional diff; passing required checks; a filled evidence ledger; explicit known gaps; and rollout/rollback notes.
-- Create a PR, but keep merge and deploy as separate authorized actions.
+- Project only review-relevant context into `.product-loop/features/<feature>/pr.md`: why, changed behavior, review order, decisions, acceptance evidence, gaps, risks, rollout, rollback, and collapsed provenance.
+- Treat the actual committed diff as what changed, approved artifacts as why it changed, and evidence as the only support for completion claims.
+- In the visible Evidence table, link each managed claim to the current repository-relative evidence ledger using a readable link label; do not expose hashes or absolute paths.
+- Always include why, what changed, review order, evidence, gaps/risks, rollout/rollback, and collapsed provenance. Add UI evidence, security/privacy, migration, or operations sections only when relevant.
+- Internally generate the normalized context and preview skeleton with `pr-context --repo . --feature <feature>`, write `pr.md`, and validate it with `check-pr --repo . --preview <pr.md>`. Keep these helper names and their fingerprints out of the primary response.
+- Inspect the projected changed files, diff stat, high-risk matches, and actual diff before composing the brief. Commit messages are navigation aids, not proof of what changed.
+- Show the exact title and rendered body before any GitHub mutation. If no PR exists, make `Reply open PR` the one next action; if one exists, use `Reply update PR`.
+- After that exact confirmation, commit only the reviewed `pr.md`, rerun the preview check, require the same preview fingerprint, then invoke the internal publisher with the selected open/update action. It rechecks the current committed diff, approval, lock, and evidence and performs only a normal push. Any intervening change invalidates the preview and requires regeneration; never force-push.
+- Keep model attribution inside collapsed provenance. Create or update the PR, but keep merge and deploy as separate authorized actions.
 - Never hide failed experiments, skipped checks, or `PASS_WITH_GAPS` behind a green summary.
 - If a required check also fails on the base branch, record that comparison and recommend a separate repair PR. Do not edit unrelated code in the approved feature branch. A bypass is valid only when repository policy permits it and the human explicitly authorizes it; otherwise return to planning for any scope expansion.
 
 Gate statuses are `PASS`, `PASS_WITH_GAPS`, and `BLOCKED`. Critical safety, correctness, or product-acceptance gaps always produce `BLOCKED`.
+
+## Improve an existing PR without a public command
+
+When the user naturally asks Boatstack to prepare, improve, summarize, or update a PR and no managed feature package is available:
+
+1. Do not invent a `/pr-brief` command or require the user to learn another operation.
+2. Project the current committed branch diff, commits, observed checks, and relevant repository context into `.product-loop/pr-briefs/<branch>/pr.md`.
+3. Use the same reviewer-first title/body contract as `ship-gate`, but label missing approval or gate evidence `NOT_VERIFIED`. Never imply Boatstack approved the plan or passed a gate that did not run.
+4. Add conditional security/privacy, migration, UI evidence, or operations sections only when the diff makes them relevant.
+5. Preview the exact title and rendered body. Ask for only `Reply open PR` or `Reply update PR`, as appropriate.
+6. Internally run `pr-context --repo .` without a feature, validate with `check-pr`, and keep those mechanics out of the primary response.
+7. After confirmation, commit only `pr.md`, recheck the exact preview fingerprint and committed diff, then publish with the selected open/update action. If anything changed, regenerate instead of publishing stale text.
+
+This is a two-slice ZCA projection: the reviewer brief minimizes review effort, while collapsed provenance preserves the evidence boundary. The projection must not become a dump of every generated artifact.
 
 ## Learn without overfitting
 

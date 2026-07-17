@@ -32,8 +32,13 @@ The installation manifest `.product-loop/generated.lock.json` describes generate
 | `compiled/` | Build-time task graph, test matrix, and evidence skeleton. |
 | `plan.lock.json` | Content-addressed build activation record. |
 | `evidence.md` | Commands, results, findings, runtime checks, and gate status. |
+| `pr.md` | Exact reviewer-ready title/body preview, bound to the committed product diff and current evidence. |
 
 These files travel with the product diff because they explain what was approved and why completion is defensible. Changes to the source plan, spec, or `plan.md` invalidate approval until the plan gate runs again.
+
+For an existing or ad-hoc branch, Boatstack stores the same exact preview under `.product-loop/pr-briefs/<branch>/pr.md`. It is committed with that branch but does not create approval, lock, or gate provenance. Missing evidence stays visibly `NOT_VERIFIED`.
+
+The `pr.md` frontmatter is non-rendered publication metadata; the remaining Markdown is the exact GitHub body. Edit the reviewer narrative through Boatstack, preview it, then explicitly reply `open PR` or `update PR`. Any product diff or evidence change makes the preview stale. The preview artifact itself is excluded from the product-diff fingerprint so committing it does not invalidate itself.
 
 ## Fresh clones and updates
 
