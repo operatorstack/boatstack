@@ -67,6 +67,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -74,4 +77,47 @@ jobs:
       - name: Publish release assets
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" dist/* --repo "${GITHUB_REPOSITORY}" --generate-notes --verify-tag
+        shell: bash
+        run: |
+          previous_tag="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          if [[ -n "$previous_tag" ]]; then
+            rewritten_notes=()
+            while IFS= read -r note; do
+              rewritten_notes+=("$note")
+            done < <(git diff --name-only --diff-filter=MD --no-renames \
+              "$previous_tag" "$GITHUB_REF_NAME" -- 'release-notes/*.md')
+            release_notes=()
+            while IFS= read -r note; do
+              release_notes+=("$note")
+            done < <(git diff --name-only --diff-filter=A --no-renames \
+              "$previous_tag" "$GITHUB_REF_NAME" -- 'release-notes/*.md' | LC_ALL=C sort)
+          else
+            rewritten_notes=()
+            release_notes=()
+            while IFS= read -r note; do
+              release_notes+=("$note")
+            done < <(git ls-tree -r --name-only "$GITHUB_REF_NAME" -- \
+              'release-notes/*.md' | LC_ALL=C sort)
+          fi
+          if (( ${#rewritten_notes[@]} > 0 )); then
+            echo "BLOCKED: Boatstack release notes are append-only:" >&2
+            printf '  %s\n' "${rewritten_notes[@]}" >&2
+            exit 1
+          fi
+          if (( ${#release_notes[@]} == 0 )); then
+            echo "BLOCKED: this tag contains no release-level Boatstack message." >&2
+            exit 1
+          fi
+          release_body="$(mktemp)"
+          {
+            echo "## What's in this release"
+            echo
+            for note in "${release_notes[@]}"; do
+              cat "$note"
+              echo
+            done
+          } > "$release_body"
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --notes-file "$release_body" \
+            --verify-tag
