@@ -38,7 +38,7 @@ Install Boatstack in this repository from https://github.com/operatorstack/boats
 Install Boatstack in its own infrastructure PR and merge that PR before starting a feature. This keeps one-time repository setup out of later product diffs.
 
 <p align="center">
-  <img src="assets/boatstack-journey.svg" width="960" alt="Boatstack journey from idea through planning, approval, building, proof, review, and pull request, with failed checks returning to revision">
+  <img src="assets/boatstack-journey.svg" width="960" alt="One feature moves from idea through planning, approval, building, tests, review, and pull request; its retained plans, decisions, gaps, evidence, and code state combine with the next idea to create the next plan">
 </p>
 
 ## From idea to PR

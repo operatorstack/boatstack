@@ -1,27 +1,45 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 580" role="img" aria-labelledby="title description">
-  <title id="title">Boatstack product journey</title>
-  <desc id="description">A continuous path from idea to plan, questions, approval, build, tests, review, and pull request. Failed tests return to build, and review changes return to the plan.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 760" role="img" aria-labelledby="title desc">
+  <title id="title">Boatstack episode handoff</title>
+  <desc id="desc">A complete feature turns an idea into a pull request. Decisions, gaps, evidence, and code state are retained, then combine with the next idea to create the next plan.</desc>
   <style>
-    .ink{fill:#0F172A}.muted{fill:#475569}.surface{fill:#F8FAFC}.rule{stroke:#CBD5E1}.path{stroke:#2563EB}.node{fill:#FFFFFF;stroke:#0F172A}.accent{fill:#2563EB}.paper{fill:#FFFFFF}
-    .label{font:700 24px "Avenir Next","Segoe UI",sans-serif;letter-spacing:.02em}.small{font:500 16px "Avenir Next","Segoe UI",sans-serif}.step{font:700 14px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.12em}
-    @media(prefers-color-scheme:dark){.ink{fill:#E2E8F0}.muted{fill:#94A3B8}.surface{fill:#172033}.rule{stroke:#475569}.node{fill:#0F172A;stroke:#E2E8F0}.paper{fill:#0B1220}}
+    .paper{fill:#fff}.ink{fill:#0F172A}.muted{fill:#475569}.quiet{fill:#64748B}.node{fill:#fff;stroke:#0F172A}.soft{fill:#F8FAFC;stroke:#CBD5E1}.context{fill:#E8F0FF;stroke:#2563EB}.blue{stroke:#2563EB}.gray{stroke:#94A3B8}.accent{fill:#2563EB}
+    .title{font:700 28px "Avenir Next","Segoe UI",sans-serif}.label{font:700 17px "Avenir Next","Segoe UI",sans-serif}.body{font:600 15px "Avenir Next","Segoe UI",sans-serif}.small{font:600 13px "Avenir Next","Segoe UI",sans-serif;letter-spacing:.08em}.mono{font:700 13px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.1em}
+    @media(prefers-color-scheme:dark){.paper,.node{fill:#0F172A}.soft{fill:#172033;stroke:#475569}.context{fill:#172A4D}.ink{fill:#E2E8F0}.muted,.quiet{fill:#94A3B8}.node{stroke:#E2E8F0}}
   </style>
   <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="accent" d="M0 0 10 5 0 10z"/></marker>
-    <marker id="muted-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="muted" d="M0 0 10 5 0 10z"/></marker>
+    <marker id="blue-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="accent" d="M0 0 10 5 0 10z"/></marker>
+    <marker id="gray-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="quiet" d="M0 0 10 5 0 10z"/></marker>
   </defs>
-  <rect class="paper" width="1200" height="580" rx="24"/>
-  <path class="path" d="M100 150H1100V420H100" fill="none" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
-  <g transform="translate(100 150)"><circle class="node" r="52" stroke-width="4"/><circle class="accent" r="13"/><text class="step muted" x="0" y="-78" text-anchor="middle">01</text><text class="label ink" x="0" y="88" text-anchor="middle">Idea</text></g>
-  <g transform="translate(430 150)"><circle class="node" r="52" stroke-width="4"/><path class="accent" d="M-20-19h40v8h-40zm0 15h40v8h-40zm0 15h27v8h-27z"/><text class="step muted" x="0" y="-78" text-anchor="middle">02</text><text class="label ink" x="0" y="88" text-anchor="middle">Plan</text></g>
-  <g transform="translate(770 150)"><circle class="node" r="52" stroke-width="4"/><path class="accent" d="M-22-22h44v34h-20l-12 12v-12h-12zm11 10v7h7v-7zm15 0v7h7v-7z"/><text class="step muted" x="0" y="-78" text-anchor="middle">03</text><text class="label ink" x="0" y="88" text-anchor="middle">Questions</text></g>
-  <g transform="translate(1100 150)"><circle class="node" r="52" stroke-width="4"/><path class="accent" d="m-24 1 15 15 33-35 8 8-41 43-23-23z"/><text class="step muted" x="0" y="-78" text-anchor="middle">04</text><text class="label ink" x="0" y="88" text-anchor="middle">Approve</text></g>
-  <g transform="translate(1100 420)"><circle class="node" r="52" stroke-width="4"/><path class="accent" d="M-25-19h50v38h-50zm9 9v20h32v-20z"/><text class="label ink" x="0" y="88" text-anchor="middle">Build</text><text class="step muted" x="0" y="-78" text-anchor="middle">05</text></g>
-  <g transform="translate(770 420)"><circle class="node" r="52" stroke-width="4"/><path class="accent" d="m-26 0 18 18 35-38 8 8-43 46-26-26z"/><text class="label ink" x="0" y="88" text-anchor="middle">Tests</text><text class="step muted" x="0" y="-78" text-anchor="middle">06</text></g>
-  <g transform="translate(430 420)"><circle class="node" r="52" stroke-width="4"/><path class="accent" d="M-28-20h44v32h-44zm9 9v6h26v-6zm0 12v6h18v-6zm39 19 17 17-7 7-17-17z"/><text class="label ink" x="0" y="88" text-anchor="middle">Review</text><text class="step muted" x="0" y="-78" text-anchor="middle">07</text></g>
-  <g transform="translate(100 420)"><circle class="node" r="52" stroke-width="4"/><path class="accent" d="M-23-25h32l18 18v32h-50zm31 5v14h14zM-12 5v8h28V5z"/><text class="label ink" x="0" y="88" text-anchor="middle">PR</text><text class="step muted" x="0" y="-78" text-anchor="middle">08</text></g>
-  <path class="rule" d="M770 360V300h330v60" fill="none" stroke-width="3" stroke-dasharray="7 8" marker-end="url(#muted-arrow)"/>
-  <text class="small muted" x="935" y="288" text-anchor="middle">a failed check returns to the change</text>
-  <path class="rule" d="M430 360V210" fill="none" stroke-width="3" stroke-dasharray="7 8" marker-end="url(#muted-arrow)"/>
-  <text class="small muted" x="410" y="292" text-anchor="end">a changed decision returns to the plan</text>
+  <rect class="paper" width="1400" height="760" rx="24"/>
+  <text class="title ink" x="70" y="70">One feature improves the starting point of the next</text>
+  <text class="small muted" x="70" y="108">FEATURE EPISODE 1</text>
+  <g class="blue" fill="none" stroke-width="4" marker-end="url(#blue-arrow)">
+    <path d="M190 190H235"/><path d="M365 190H410"/><path d="M550 190H595"/><path d="M725 190H770"/><path d="M900 190H945"/><path d="M1075 190H1120"/>
+  </g>
+  <g transform="translate(70 156)"><rect class="node" width="120" height="68" rx="34" stroke-width="3"/><text class="mono muted" x="60" y="-18" text-anchor="middle">01</text><text class="label ink" x="60" y="42" text-anchor="middle">Idea 1</text></g>
+  <g transform="translate(235 156)"><rect class="node" width="130" height="68" rx="18" stroke-width="3"/><text class="mono muted" x="65" y="-18" text-anchor="middle">02</text><text class="label ink" x="65" y="42" text-anchor="middle">Plan 1</text></g>
+  <g transform="translate(410 156)"><rect class="node" width="140" height="68" rx="18" stroke-width="3"/><text class="mono muted" x="70" y="-18" text-anchor="middle">03</text><text class="label ink" x="70" y="42" text-anchor="middle">Approve</text></g>
+  <g transform="translate(595 156)"><rect class="node" width="130" height="68" rx="18" stroke-width="3"/><text class="mono muted" x="65" y="-18" text-anchor="middle">04</text><text class="label ink" x="65" y="42" text-anchor="middle">Build</text></g>
+  <g transform="translate(770 156)"><rect class="node" width="130" height="68" rx="18" stroke-width="3"/><text class="mono muted" x="65" y="-18" text-anchor="middle">05</text><text class="label ink" x="65" y="42" text-anchor="middle">Tests</text></g>
+  <g transform="translate(945 156)"><rect class="node" width="130" height="68" rx="18" stroke-width="3"/><text class="mono muted" x="65" y="-18" text-anchor="middle">06</text><text class="label ink" x="65" y="42" text-anchor="middle">Review</text></g>
+  <g transform="translate(1120 156)"><rect class="node" width="130" height="68" rx="34" stroke-width="3"/><text class="mono muted" x="65" y="-18" text-anchor="middle">07</text><text class="label ink" x="65" y="42" text-anchor="middle">PR 1</text></g>
+  <path class="gray" d="M835 224C835 300 660 300 660 224" fill="none" stroke-width="3" stroke-dasharray="7 8" marker-end="url(#gray-arrow)"/>
+  <rect class="soft" x="676" y="265" width="144" height="34" rx="17"/><text class="body muted" x="748" y="287" text-anchor="middle">failed → revise</text>
+  <path class="gray" d="M1010 224V346" fill="none" stroke-width="3" stroke-dasharray="7 8" marker-end="url(#gray-arrow)"/>
+  <path class="gray" d="M1185 224V320H1070V346" fill="none" stroke-width="3" stroke-dasharray="7 8" marker-end="url(#gray-arrow)"/>
+  <g transform="translate(670 350)">
+    <rect class="context" width="470" height="112" rx="20" stroke-width="3"/>
+    <text class="small" x="235" y="31" text-anchor="middle" fill="#2563EB">RETAINED PROJECT CONTEXT</text>
+    <text class="label ink" x="235" y="63" text-anchor="middle">plans · decisions · gaps · evidence · code state</text>
+    <text class="body muted" x="235" y="90" text-anchor="middle">The feature ends. Its useful state does not.</text>
+  </g>
+  <text class="small muted" x="70" y="548">FEATURE EPISODE 2</text>
+  <g transform="translate(70 575)"><rect class="node" width="150" height="72" rx="36" stroke-width="3"/><text class="label ink" x="75" y="44" text-anchor="middle">Next idea</text></g>
+  <path class="blue" d="M220 611H456" fill="none" stroke-width="4" marker-end="url(#blue-arrow)"/>
+  <path class="blue" d="M905 462V515H490V572" fill="none" stroke-width="4" marker-end="url(#blue-arrow)"/>
+  <circle class="context" cx="490" cy="611" r="38" stroke-width="3"/><text class="title" x="490" y="620" text-anchor="middle" fill="#2563EB">+</text>
+  <path class="blue" d="M528 611H610" fill="none" stroke-width="4" marker-end="url(#blue-arrow)"/>
+  <g transform="translate(610 575)"><rect class="node" width="160" height="72" rx="18" stroke-width="3"/><text class="label ink" x="80" y="44" text-anchor="middle">Next Plan</text></g>
+  <path class="blue" d="M770 611H930" fill="none" stroke-width="4" marker-end="url(#blue-arrow)"/>
+  <text class="title muted" x="976" y="620">…</text><text class="body muted" x="1020" y="616">the next feature starts better informed</text>
 </svg>
