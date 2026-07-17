@@ -47,6 +47,9 @@ var irreversiblePatterns = []struct {
 
 var operationalPathPattern = regexp.MustCompile(`(?i)(?:^|/)(?:scripts?|migrations?|schema|database|db|deploy|infra|ops|terraform|k8s)(?:/|$)|\.(?:sql|ps1|sh|bash|py)$`)
 var mutationStatementPattern = regexp.MustCompile(`(?is)\b(?:delete\s+from|update\s+[^\s;]+)\b[^;]*`)
+var directPublicationPattern = regexp.MustCompile(`(?i)(?:\bgit\b[^\n;&|]*\bpush\b|\bgh\s+pr\s+(?:create|edit|ready|merge)\b|\bgh\s+api\b[^\n;&|]*(?:/pulls\b|/pull-requests\b)|\bhub\s+pull-request\b|\bcurl\b[^\n;&|]*(?:api\.github\.com|/pulls\b)[^\n;&|]*(?:\s-X\s*(?:POST|PATCH)|--request\s+(?:POST|PATCH)))`)
+var approvedPublisherPattern = regexp.MustCompile(`(?i)^\s*(?:[^\s]*/)?boatstack-helper\s+publish-pr\b[^\n;&|]*$`)
+var deliveryStatePathPattern = regexp.MustCompile(`(?i)(?:boatstack[/\\]deliveries|\.git[/\\](?:worktrees[/\\][^/\\]+[/\\])?boatstack(?:[/\\]|$))`)
 
 func classifySafetyText(value, source string) []SafetyFinding {
 	if isPureReadOnlyCommand(value) {
@@ -172,6 +175,18 @@ func ClassifyCommand(repo, command string) []SafetyFinding {
 	if strings.TrimSpace(command) == "" {
 		return []SafetyFinding{{Category: "malformed-tool-input", Reason: "empty shell input is denied by the fail-closed guard", Source: "tool-input"}}
 	}
+	if deliveryStatePathPattern.MatchString(command) && !isPureReadOnlyCommand(command) {
+		return []SafetyFinding{{Category: "workflow-state-tamper", Reason: "managed delivery state may be changed only by Boatstack transitions", Source: "delivery-state"}}
+	}
+	if directPublicationPattern.MatchString(command) && !approvedPublisherPattern.MatchString(command) {
+		active, activeErr := ActiveManagedDeliveries(repo)
+		if activeErr != nil {
+			return []SafetyFinding{{Category: "workflow-state-invalid", Reason: "publication is denied because managed delivery state cannot be verified", Source: "delivery-state"}}
+		}
+		if len(active) > 0 {
+			return []SafetyFinding{{Category: "workflow-publication-bypass", Reason: "direct push or PR mutation is denied while a managed delivery slice is active", Source: "tool-input"}}
+		}
+	}
 	findings := classifySafetyText(command, "command")
 	if regexp.MustCompile(`(?i)\b(?:rm\s+-[^\n;]*(?:r[^\n;]*f|f[^\n;]*r)|remove-item\s+[^\n;]*-recurse[^\n;]*-force)\b`).MatchString(command) && strings.Contains(command, repo) {
 		findings = append(findings, SafetyFinding{Category: "filesystem-destruction", Reason: "recursive deletion of the repository is denied", Source: "command"})
@@ -219,6 +234,19 @@ func ClassifyTool(repo, name string, input any) []SafetyFinding {
 	combined := name + " " + string(value)
 	findings := classifySafetyText(combined, "tool-input")
 	nameLower := strings.ToLower(name)
+	publicationText := strings.ToLower(combined)
+	if deliveryStatePathPattern.MatchString(combined) && regexp.MustCompile(`(?:write|edit|delete|remove|move|rename|create|update)`).MatchString(nameLower) {
+		findings = append(findings, SafetyFinding{Category: "workflow-state-tamper", Reason: "managed delivery state may be changed only by Boatstack transitions", Source: "delivery-state"})
+	}
+	if (strings.Contains(publicationText, "pull_request") || strings.Contains(publicationText, "pull request")) &&
+		regexp.MustCompile(`(?:create|update|edit|merge|publish)`).MatchString(publicationText) {
+		active, activeErr := ActiveManagedDeliveries(repo)
+		if activeErr != nil {
+			findings = append(findings, SafetyFinding{Category: "workflow-state-invalid", Reason: "publication is denied because managed delivery state cannot be verified", Source: "delivery-state"})
+		} else if len(active) > 0 {
+			findings = append(findings, SafetyFinding{Category: "workflow-publication-bypass", Reason: "direct PR mutation is denied while a managed delivery slice is active", Source: "tool-input"})
+		}
+	}
 	if regexp.MustCompile(`(?:delete|destroy|reset|drop|truncate|terminate)`).MatchString(nameLower) && regexp.MustCompile(`(?:database|schema|project|cluster|namespace|volume|bucket|backup|snapshot|instance)`).MatchString(strings.ToLower(combined)) {
 		findings = append(findings, SafetyFinding{Category: "external-resource-destruction", Reason: "destructive external-resource tools are operator-only", Source: "tool-input"})
 	}
@@ -281,6 +309,15 @@ func hookToolInput(host string, value []byte) (string, any, error) {
 }
 
 func denialMessage(finding SafetyFinding) string {
+	if finding.Category == "workflow-state-invalid" {
+		return "Boatstack denied publication because managed delivery state cannot be verified. Re-run the active Boatstack operation or repair the installation before publishing."
+	}
+	if finding.Category == "workflow-state-tamper" {
+		return "Boatstack denied direct delivery-state mutation. Use the active build, test, review, or ship transition instead of editing runtime authority."
+	}
+	if finding.Category == "workflow-publication-bypass" {
+		return "Boatstack denied a publication bypass. Finish the active slice's test and review gates, then use ship-gate and the confirmed Boatstack publisher."
+	}
 	return "Boatstack denied an irreversible operation (" + finding.Category + "). Preserve the current state and use read-only diagnosis or fix-forward recovery; destructive recovery is operator-only outside the agent workflow."
 }
 

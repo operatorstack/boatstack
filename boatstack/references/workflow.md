@@ -140,6 +140,14 @@ Create tasks in dependency order. Each task names:
 - rollback boundary;
 - unknowns that would stop implementation.
 
+Tasks describe implementation, never publication authority. Internal phases remain
+tasks inside one delivery slice. If the accepted product change intentionally needs
+multiple PRs, `plan.md` declares ordered `delivery_slices`. Every task belongs to
+exactly one slice; dependencies may point within the slice or to an earlier slice,
+never forward. Optional base/head branch names are constraints, not permission to
+create or push those branches. Approval accepts the delivery structure but does not
+authorize any PR mutation.
+
 An external-write task also names `affected_paths` and a compact `side_effects` record: operation kind, immutable target identity, reversibility, failure policy, and `destructive: false`. Ambiguous targets such as “local database” and rollback text such as “reset local DB” block approval. Ordinary tasks do not need side-effect ceremony.
 
 Run only relevant review lenses:
@@ -183,17 +191,28 @@ At the host's normal Build transition, first confirm the host is in an execution
 4. record approver, timestamp, source commit, and all artifact hashes in `plan.lock.json`;
 5. write the lock last and recheck it before permitting implementation.
 
+Activation also initializes ignored, worktree-local Git delivery state bound to the lock.
+One implicit `delivery` slice preserves the ordinary one-feature/one-PR flow. An
+explicit multi-slice plan starts only its first slice in `BUILD`; later slices remain
+`PENDING`.
+
 Missing approval, unresolved `blocking_questions`, or any change to the source plan, approved spec, or complete `plan.md` blocks activation and returns the feature to `PLAN_GATE`. A failed or partial compilation never creates a valid lock.
 
 ### `PLAN_LOCKED -> BUILD`
 
-Implement one coherent task slice at a time. After each slice:
+Read the active delivery state and implement only that slice's `task_ids`. Within it,
+implement one coherent task slice at a time. After each task slice:
 
 1. run the cheapest relevant check;
 2. compare the diff to the task contract;
 3. preserve the known-good state;
 4. record deviations or new unknowns;
 5. continue, ask, or re-plan explicitly.
+
+Commits are allowed during build. Direct `git push`, `gh pr create/edit/ready/merge`,
+and equivalent GitHub mutations are not implementation tactics: the host hook denies
+them while managed delivery is active. Do not route a managed branch through the
+ad-hoc PR path.
 
 Scan operational changes and configured `high_risk_paths` before activation and after relevant edits. A dangerous capability may remain visible as source for review, but it cannot execute and blocks progression until removed or isolated behind the operator boundary.
 
@@ -214,9 +233,18 @@ The riskier the slice, the less acceptable same-model, self-authored tests are a
 
 External-write evidence must establish immutable target identity, transactional or fix-forward behavior, and an independent safety oracle. A dry run that only prints the intended command does not prove the live target or failure behavior.
 
+Before passing the gate, commit the intentional active-slice product and evidence diff
+and invoke the deterministic delivery-gate recorder for `test`. It captures the slice,
+base/head branches, HEAD, product-diff hash, and evidence hash. A `PASS` string edited
+into Markdown is evidence content, not a state transition.
+
 ### `TEST_GATE -> REVIEW_GATE`
 
 Review only after required mechanical checks pass, unless reviewing a failure is the goal. The reviewer inspects the actual diff and reports findings by severity with file/line evidence, consequence, and correction.
+
+On pass, invoke the same recorder for `review`. It accepts only the active slice and
+only when the test receipt matches the current diff. Any product or evidence change
+afterward makes the receipts stale and routes back through test and review.
 
 ### `REVIEW_GATE -> SHIP_GATE`
 
@@ -245,6 +273,11 @@ Project the approved feature and actual committed diff into a reviewer-ready tit
 Store the exact preview at `.product-loop/features/<feature>/pr.md`. Its non-rendered frontmatter records the title, base/head branches, managed feature, and context fingerprint; the remaining Markdown is the exact GitHub body. The preview artifact itself is excluded from the product-diff fingerprint so committing it does not create a self-referential hash.
 
 Before publication, show the exact title and rendered body. Use **PR ready** and exactly one action: `Reply open PR` when no PR exists, or `Reply update PR` when one exists. Only that explicit reply authorizes opening or updating the PR. After confirmation, commit only the reviewed `pr.md`, recheck the same preview fingerprint, committed product diff, plan approval, build lock, test evidence, and review evidence, then perform a normal push and the selected GitHub action. Any drift blocks publication and requires a new preview; never force-push.
+
+For managed work, publication also requires current test and review receipts for the
+active delivery slice. Successful publication marks only that slice `PUBLISHED` and
+activates the next slice as `BUILD`. No parent-plan approval, prior phase receipt, or
+context summary can skip these transitions.
 
 Opening or updating a PR does not authorize merge or deployment.
 

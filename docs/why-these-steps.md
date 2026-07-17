@@ -65,6 +65,16 @@ Those labels prevent an implementation test from being presented as proof that t
 
 **Status:** product-workflow problem observed; projection behavior verified. Reviewer speed and acceptance quality still need blinded product-delivery evaluation.
 
+## Phase-scoped delivery
+
+**What happened.** A coding host received an approved plan describing several implementation phases and PRs. During `/build`, it treated that parent-plan approval as standing authority to commit, push, and open each PR. After context compression, “already-approved five-PR plan” became the surviving instruction and the test, review, and ship transitions were skipped.
+
+**What Boatstack does.** Internal phases remain tasks in one delivery slice. A plan that intentionally requires multiple PRs must partition every task into ordered delivery slices with explicit affected paths. Only one slice is active. Test and review create machine-local receipts bound to that slice's branches, commit, product diff, and evidence. The hook denies direct pushes and PR mutations while managed delivery is active; only the confirmed publisher can advance one slice and activate the next.
+
+**How we check it.** Plan tests reject missing, duplicate, and forward task assignments. Delivery tests reject review before test, stale diffs, out-of-slice paths, reuse of a prior slice, direct shell pushes, direct GitHub CLI PR creation, and equivalent GitHub tool mutations.
+
+**Status:** bypass trajectory observed; phase partitioning, receipt ordering, and publication interception verified in automated tests. Host hooks remain defense in depth and still depend on supported host event coverage.
+
 ## Model choice and budget
 
 **What happened.** Across the audited benchmark runs, changing the model relocated the dominant bottleneck instead of removing failure. Gemini runs were dominated by near misses in one comparison, while Qwen runs exposed step exhaustion. Other recorded failures involved malformed protocol responses, context loss, unsupported verification claims, and unsafe recovery. A model name, provider, or price was not itself a reliable description of the active engineering problem.

@@ -14,7 +14,7 @@ Map the request to one operation:
 - `init`: inspect a repository and create or update `.product-loop/project.json`.
 - `auto-plan`: refine a saved host Plan-mode file into a reviewable draft feature package; refuse when that file is absent.
 - `plan-gate`: validate the Markdown draft, present it for explicit human acceptance, and record that acceptance in Markdown.
-- `build`: activate the approved Markdown plan, then implement its tasks in bounded, reversible slices.
+- `build`: activate the approved Markdown plan, then implement only the active delivery slice's tasks.
 - `test-gate`: test requirements and relevant regressions using independent evidence.
 - `review-gate`: review the diff against the spec, project invariants, risks, and known gaps.
 - `ship-gate`: preview, then explicitly open or update, a reviewer-ready PR grounded in the approved diff and evidence.
@@ -79,7 +79,8 @@ Normal approval is simply `approve`. Use an explicit supplied identity first; ot
 10. For every planned validation, record the exact `criteria` it can support plus `run`, `origin`, `oracle`, and `independence`. Commands, automated tests, external checks, and named human review procedures are all valid forms, but an ambiguous claim without a threshold/rubric and authorized decision remains `BLOCKED`.
 11. For every external write, record `affected_paths` plus side-effect kind, immutable target identity, reversibility, failure policy, and `destructive: false`. Reject ambiguous reset rollback or target names.
 12. Write only Markdown feature artifacts, including the canonical structured `plan.md`. Put its authoritative JSON inside the marked Boatstack block and run `boatstack-helper check-plan --plan <feature>/plan.md`; this command is read-only. If the host blocks its ordinary Markdown writer, pass the document to `boatstack-helper planning-write --repo . --feature <feature> --artifact <known-name>` on stdin. Never use arbitrary shell redirection to evade a host write boundary.
-13. End with a **draft**, never an implied approval. Do not generate executable task state, JSON artifacts, locks, or implementation changes from `auto-plan`.
+13. Keep implementation tasks separate from publication authority. Internal phases remain tasks inside one delivery slice. When the accepted outcome explicitly requires multiple PRs, declare ordered `delivery_slices`; assign every task exactly once and give each slice its own optional base/head branch contract. Plan approval approves this structure but never authorizes a push or PR.
+14. End with a **draft**, never an implied approval. Do not generate executable task state, JSON artifacts, locks, or implementation changes from `auto-plan`.
 
 Do not treat an ADR as general project context. ADRs record accepted durable decisions. Use a question ledger for unknowns and a gap ledger for known divergence.
 
@@ -116,9 +117,11 @@ All files created or updated by `auto-plan` and `plan-gate` must be Markdown. gs
 ```
 
 - Activation verifies the approval fingerprint, compiles `tasks.json`, `test-matrix.json`, and the evidence skeleton, writes the content-addressed lock last, and rechecks it. It adds no semantics. Missing approval, open blocking questions, or any change to the source plan, spec, or complete `plan.md` returns `BLOCKED`.
+- Activation also creates ignored delivery state bound to the plan lock. Read it with `delivery-status`; implement only the active slice's `task_ids`. A multi-slice plan advances only after the current slice publishes through `ship-gate`.
 - Keep the source plan present and hash-current through completion of `build`.
 - Choose any suitable model, tool, or implementation tactic inside the approved boundary. Boatstack controls transitions and claims, not local creativity.
 - Work from approved tasks and acceptance criteria.
+- Never push, open, update, ready, or merge a PR during `build`. The host hook denies direct publication while managed delivery is active; publication is reachable only through the confirmed `ship-gate` publisher.
 - Preserve the last known-good state; repair locally instead of restarting a near-correct implementation.
 - Re-scope context at task boundaries. Include relevant source, interfaces, invariants, and tests—not arbitrary history.
 - Stop and ask when implementation exposes a new product decision or a high-impact irreversible choice.
@@ -137,6 +140,7 @@ Do not branch the workflow on model brand, price, or a guessed capability tier. 
 - Treat model-authored tests and same-model self-review as evidence, not ground truth.
 - Validate that tests load and exercise the intended interface. For high-risk code, add an independent oracle such as contract fixtures, mutation testing, differential checks, staging verification, or human acceptance.
 - A failing check blocks the gate. A skipped check must include a reason and risk owner.
+- Commit the intentional active-slice product and evidence diff, then record the test result with `record-delivery-gate --feature <feature> --slice <slice> --gate test`. The receipt is bound to the base/head branches, commit, product diff, and evidence hash. Editing an evidence status is not a gate transition.
 
 ### Review gate
 
@@ -144,6 +148,7 @@ Do not branch the workflow on model brand, price, or a guessed capability tier. 
 - Check spec traceability, invariants, data/security/tenancy boundaries, failure behavior, backward compatibility, migrations, observability, tests, docs, and gaps.
 - Use an independent reviewer for high-risk changes, repeated failures, or when the existing review evidence is circular.
 - Convert actionable findings into tasks. Do not pass while critical findings are open.
+- On pass, record `record-delivery-gate --feature <feature> --slice <slice> --gate review`. Review is rejected unless the same diff already has a test receipt; any later product change makes both receipts stale.
 
 ### Ship gate
 
@@ -156,6 +161,7 @@ Do not branch the workflow on model brand, price, or a guessed capability tier. 
 - Inspect the projected changed files, diff stat, high-risk matches, and actual diff before composing the brief. Commit messages are navigation aids, not proof of what changed.
 - Show the exact title and rendered body before any GitHub mutation. If no PR exists, make `Reply open PR` the one next action; if one exists, use `Reply update PR`.
 - After that exact confirmation, commit only the reviewed `pr.md`, rerun the preview check, require the same preview fingerprint, then invoke the internal publisher with the selected open/update action. It rechecks the current committed diff, approval, lock, and evidence and performs only a normal push. Any intervening change invalidates the preview and requires regeneration; never force-push.
+- The publisher additionally requires current test and review receipts for the active slice. Successful publication marks only that slice published and activates the next slice. Plan approval, a prose phase label, or a previous slice's receipts cannot authorize a later slice.
 - Keep model attribution inside collapsed provenance. Create or update the PR, but keep merge and deploy as separate authorized actions.
 - Only after successful PR publication, perform the bounded cached release check. If a newer stable Boatstack release should be announced, keep `Review the PR` as the one next action and put the no-mutation update notice in collapsed details. Release lookup failure never changes the ship result.
 - Never hide failed experiments, skipped checks, or `PASS_WITH_GAPS` behind a green summary.

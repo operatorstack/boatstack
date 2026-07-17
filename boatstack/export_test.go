@@ -110,6 +110,12 @@ func TestExportAndDriftCheck(t *testing.T) {
 	if !strings.Contains(build, "activate-plan") || !strings.Contains(build, "READY_FOR_BUILD") || !strings.Contains(build, "without activating") || strings.Contains(build, "compile-plan") {
 		t.Fatal("build adapter must activate the Markdown plan exactly once")
 	}
+	if !strings.Contains(build, "delivery-status") || !strings.Contains(build, "push and PR mutation are never build tactics") {
+		t.Fatal("build adapter does not confine work to the active delivery slice")
+	}
+	if !strings.Contains(string(bundle.Files[".cursor/commands/test-gate.md"]), "record-delivery-gate") || !strings.Contains(string(bundle.Files[".cursor/commands/review-gate.md"]), "record-delivery-gate") {
+		t.Fatal("test and review adapters do not record slice-scoped gate receipts")
+	}
 	ship := string(bundle.Files[".cursor/commands/ship-gate.md"])
 	for _, expected := range []string{"separate repair PR", "Never edit unrelated code", "exact title", "Reply open PR", "Reply update PR", "preview fingerprint"} {
 		if !strings.Contains(ship, expected) {
@@ -139,6 +145,11 @@ func TestExportAndDriftCheck(t *testing.T) {
 		}
 	}
 	cursorRule := string(bundle.Files[".cursor/rules/boatstack.mdc"])
+	for _, expected := range []string{"delivery_slices", "active slice", "Direct push and PR mutation", "plan approval is never publication authority"} {
+		if !strings.Contains(cursorRule, expected) {
+			t.Fatalf("Cursor rule is missing phase-scoped delivery rule %q", expected)
+		}
+	}
 	for _, expected := range []string{"naturally asks Boatstack", "evidence-limited ad-hoc PR brief", "not a /pr-brief command", "NOT_VERIFIED"} {
 		if !strings.Contains(cursorRule, expected) {
 			t.Fatalf("Cursor rule is missing ad-hoc PR behavior %q", expected)

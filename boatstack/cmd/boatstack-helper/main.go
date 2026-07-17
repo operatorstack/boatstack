@@ -226,6 +226,52 @@ func recordApprovalCommand(arguments []string) int {
 	return 0
 }
 
+func recordDeliveryGateCommand(arguments []string) int {
+	flags := flag.NewFlagSet("record-delivery-gate", flag.ContinueOnError)
+	options := boatstack.DeliveryGateOptions{}
+	flags.StringVar(&options.Repo, "repo", ".", "repository containing the managed delivery")
+	flags.StringVar(&options.Feature, "feature", "", "managed Boatstack feature slug")
+	flags.StringVar(&options.SliceID, "slice", "", "active delivery slice id")
+	flags.StringVar(&options.Gate, "gate", "", "test or review")
+	flags.StringVar(&options.Status, "status", "", "PASS or PASS_WITH_GAPS")
+	flags.StringVar(&options.BaseBranch, "base", "", "delivery base branch; defaults from the active slice or project")
+	flags.StringVar(&options.EvidencePath, "evidence", "", "current evidence ledger")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if options.Feature == "" || options.SliceID == "" || options.Gate == "" || options.Status == "" {
+		return fail(fmt.Errorf("record-delivery-gate requires --feature, --slice, --gate, and --status"))
+	}
+	receipt, err := boatstack.RecordDeliveryGate(options)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Printf("PASS: %s gate recorded for delivery slice %s\nSLICE=%s\nGATE=%s\nSTATUS=%s\nHEAD_COMMIT=%s\nDIFF_SHA256=%s\n", strings.ToUpper(receipt.Gate), receipt.SliceID, receipt.SliceID, receipt.Gate, receipt.Status, receipt.HeadCommit, receipt.DiffSHA256)
+	return 0
+}
+
+func deliveryStatusCommand(arguments []string) int {
+	flags := flag.NewFlagSet("delivery-status", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository containing the managed delivery")
+	feature := flags.String("feature", "", "managed Boatstack feature slug")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if *feature == "" {
+		return fail(fmt.Errorf("delivery-status requires --feature"))
+	}
+	state, err := boatstack.CurrentDeliveryState(*repo, *feature)
+	if err != nil {
+		return fail(err)
+	}
+	value, err := boatstack.MarshalJSON(state)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Print(string(value))
+	return 0
+}
+
 func doctorCommand(arguments []string) int {
 	flags := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository whose Boatstack installation should be checked")
@@ -306,12 +352,13 @@ func prContextCommand(arguments []string) int {
 	flags := flag.NewFlagSet("pr-context", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository whose branch should be projected")
 	feature := flags.String("feature", "", "managed Boatstack feature slug; omit for evidence-limited ad-hoc mode")
+	slice := flags.String("slice", "", "active managed delivery slice")
 	base := flags.String("base", "", "base branch; defaults to the Boatstack project configuration")
 	format := flags.String("format", "json", "json or template")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}
-	context, err := boatstack.PreparePRContext(boatstack.PRContextOptions{Repo: *repo, Feature: *feature, Base: *base})
+	context, err := boatstack.PreparePRContext(boatstack.PRContextOptions{Repo: *repo, Feature: *feature, SliceID: *slice, Base: *base})
 	if err != nil {
 		return fail(err)
 	}
@@ -387,7 +434,7 @@ func publishPRCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|check-safety|safety-hook|pr-context|check-pr|publish-pr|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|record-delivery-gate|check-safety|safety-hook|pr-context|check-pr|publish-pr|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -409,6 +456,10 @@ func run() int {
 		return recordApprovalCommand(os.Args[2:])
 	case "activate-plan":
 		return activatePlanCommand(os.Args[2:])
+	case "delivery-status":
+		return deliveryStatusCommand(os.Args[2:])
+	case "record-delivery-gate":
+		return recordDeliveryGateCommand(os.Args[2:])
 	case "pr-context":
 		return prContextCommand(os.Args[2:])
 	case "check-pr":

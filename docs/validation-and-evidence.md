@@ -99,3 +99,5 @@ These observations motivate—not mathematically prove—the separation between 
 ## ZCA translation
 
 For ordinary work, Boatstack projects the smallest implementation-relevant slice. For something shipped as an SDK, API, CLI, or reusable product, it also requires a representative verifier/consumer slice. Value emerges where the implementation claim meets an oracle capable of disproving it—not from adding ceremony to the implementation itself.
+
+The same rule applies to phased delivery. Internal phases stay inside one delivery slice. Multiple PRs require explicit ordered delivery slices, and each slice gets fresh test and review receipts bound to its own committed diff before a separately confirmed ship action. A parent-plan approval or previous slice receipt cannot authorize the next PR.

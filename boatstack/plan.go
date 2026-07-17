@@ -521,6 +521,9 @@ func ValidatePlan(plan map[string]any) error {
 			return err
 		}
 	}
+	if _, err := deliveryDefinitions(plan); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -620,12 +623,24 @@ func CompilePlan(plan map[string]any) (map[string]any, map[string]any, string, e
 	}
 	criteria, _ := objectSlice(plan["acceptance_criteria"])
 	tasks, _ := objectSlice(plan["tasks"])
+	deliverySlices, _ := deliveryDefinitions(plan)
 	rows := make([]any, 0, len(criteria))
 	evidence := []string{
 		"# Evidence ledger: " + stringValue(plan["feature_id"]), "",
 		"- Approved plan lock: pending", "- Test gate: `BLOCKED`", "- Review gate: `BLOCKED`", "- Ship gate: `BLOCKED`", "",
-		"## Acceptance evidence", "", "| Criterion | Tasks | Result | Evidence |", "|---|---|---|---|",
 	}
+	if plan["delivery_slices"] != nil {
+		evidence = append(evidence, "## Delivery slices", "")
+		for _, slice := range deliverySlices {
+			evidence = append(evidence,
+				"### "+slice.ID+": "+slice.Title, "",
+				"- Test gate ("+slice.ID+"): `BLOCKED`",
+				"- Review gate ("+slice.ID+"): `BLOCKED`",
+				"- Ship gate ("+slice.ID+"): `BLOCKED`", "",
+			)
+		}
+	}
+	evidence = append(evidence, "## Acceptance evidence", "", "| Criterion | Tasks | Result | Evidence |", "|---|---|---|---|")
 	for _, criterion := range criteria {
 		criterionID := stringValue(criterion["id"])
 		servingIDs := []string{}
@@ -677,6 +692,15 @@ func CompilePlan(plan map[string]any) (map[string]any, map[string]any, string, e
 		"feature_id":     plan["feature_id"],
 		"requirements":   rows,
 	}
+	deliveryValues := make([]any, 0, len(deliverySlices))
+	for _, slice := range deliverySlices {
+		deliveryValues = append(deliveryValues, map[string]any{
+			"id": slice.ID, "title": slice.Title, "task_ids": slice.TaskIDs,
+			"acceptance_criteria": slice.AcceptanceCriteria, "affected_paths": slice.AffectedPaths,
+			"base_branch": slice.BaseBranch, "head_branch": slice.HeadBranch,
+		})
+	}
+	taskGraph["delivery_slices"] = deliveryValues
 	return taskGraph, testMatrix, strings.Join(evidence, "\n"), nil
 }
 
@@ -815,9 +839,6 @@ func ActivatePlan(options ActivationOptions) error {
 	if safety.Status != "PASS" {
 		return fmt.Errorf("operational diff contains an irreversible capability: %s", safety.Findings[0].Category)
 	}
-	if err := CompilePlanFiles(options.PlanPath, options.OutDir); err != nil {
-		return err
-	}
 	tasksPath := filepath.Join(options.OutDir, "tasks.json")
 	approval := ApprovalOptions{
 		SourcePlanPath: check.SourcePlanPath,
@@ -829,10 +850,39 @@ func ActivatePlan(options ActivationOptions) error {
 		SourceCommit:   options.SourceCommit,
 		OutputPath:     options.OutputPath,
 	}
+	if fileExists(options.OutputPath) {
+		if err := CheckApprovalLock(approval); err == nil {
+			return initializeDeliveryState(repo, stringValue(check.Plan["feature_id"]), options.PlanPath, options.OutputPath)
+		}
+		value, readErr := os.ReadFile(options.OutputPath)
+		if readErr != nil {
+			return fmt.Errorf("existing plan lock cannot be verified: %w", readErr)
+		}
+		var existing map[string]any
+		if json.Unmarshal(value, &existing) != nil {
+			return fmt.Errorf("existing plan lock is unreadable; do not overwrite activation state")
+		}
+		currentPlanHash, _ := SHA256File(options.PlanPath)
+		currentSourceHash, _ := SHA256File(check.SourcePlanPath)
+		currentSpecHash, _ := SHA256File(check.SpecPath)
+		if stringValue(existing["plan_sha256"]) == currentPlanHash &&
+			stringValue(existing["source_plan_sha256"]) == currentSourceHash &&
+			stringValue(existing["spec_sha256"]) == currentSpecHash {
+			return fmt.Errorf("existing activation state is invalid for the unchanged approved plan; repair it instead of resetting delivery progress")
+		}
+	} else if statePath, statePathErr := deliveryStatePath(repo, stringValue(check.Plan["feature_id"])); statePathErr == nil && fileExists(statePath) {
+		return fmt.Errorf("managed delivery state exists without its plan lock; do not reset delivery progress")
+	}
+	if err := CompilePlanFiles(options.PlanPath, options.OutDir); err != nil {
+		return err
+	}
 	if err := CreateApprovalLock(approval); err != nil {
 		return err
 	}
-	return CheckApprovalLock(approval)
+	if err := CheckApprovalLock(approval); err != nil {
+		return err
+	}
+	return initializeDeliveryState(repo, stringValue(check.Plan["feature_id"]), options.PlanPath, options.OutputPath)
 }
 
 func gitCommit(directory string) string {

@@ -13,6 +13,8 @@ Artifacts separate facts, decisions, unknowns, incompleteness, and evidence. Com
 | Markdown plan | Human-readable plan plus its one marked structured block; canonical before and during build | A spec is resolved enough to propose tasks and checks |
 | Approval receipt | Named human, timestamp, and fingerprint in Markdown; not executable state | The exact draft is explicitly approved in Plan mode |
 | Compiled tasks | Deterministic dependency graph generated from the approved Markdown plan | Build activation succeeds |
+| Delivery state | Ignored worktree-local Git active-slice state bound to the approved plan lock; never an approval artifact | Build activation and successful slice publication |
+| Gate receipt | Machine-local test or review transition bound to one delivery slice, base/head branches, commit, product diff, and evidence hash | A slice passes test or review |
 | Test plan | Requirement-to-evidence mapping with each validation's origin, falsifiable oracle, procedure, and independence | Planning and after discovered failure modes |
 | Gap ledger | Known divergence between desired and current state | Work is deferred, partial, incompatible, or intentionally absent |
 | Risk/threat note | Assets, actors, trust boundaries, abuse/failure paths | Security, data, tenancy, billing, auth, or destructive paths change |
@@ -68,6 +70,12 @@ Generated artifacts include the canonical loop version and config hash. Human ed
 `pr.md` is a lossy review projection, not a replacement for the feature package. Its visible body contains only why, changed behavior, review order, evidence, gaps/risks, rollout, and rollback. Approval hashes, source paths, and host attribution remain in non-rendered metadata or collapsed provenance.
 
 For managed work it lives under `.product-loop/features/<feature>/pr.md` and may claim only evidence present in the current approved package. For an existing or ad-hoc branch it lives under `.product-loop/pr-briefs/<branch>/pr.md`, uses observed branch facts, and labels missing approval or gate evidence `NOT_VERIFIED`. Both are committed with the branch. The preview file itself is excluded from the product-diff fingerprint.
+
+Managed preview metadata also names the active delivery slice. The ignored delivery
+state and gate receipts live under the current worktree's Git directory so branch
+changes retain control state without blocking unrelated worktrees. They are runtime
+control state, not durable product evidence; the PR links the committed evidence
+ledger while the publisher rechecks the matching receipts.
 
 ## Planning boundary
 
