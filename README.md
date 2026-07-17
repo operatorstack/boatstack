@@ -37,9 +37,42 @@ Install Boatstack in this repository from https://github.com/operatorstack/boats
 
 Install Boatstack in its own infrastructure PR and merge that PR before starting a feature. This keeps one-time repository setup out of later product diffs.
 
+## Start with two moves
+
+1. Create and save a plan in your coding tool's Plan mode.
+2. Run `/auto-plan`.
+
+That is all you need to learn up front. Boatstack shows you one next action at a time through approval, building, tests, review, and PR preparation.
+
+> The diagram below shows what Boatstack guides—not a checklist you need to memorize.
+
 <p align="center">
   <img src="assets/boatstack-journey.svg" width="960" alt="One feature moves from idea through planning, approval, building, tests, review, and pull request; its retained plans, decisions, gaps, evidence, and code state combine with the next idea to create the next plan">
 </p>
+
+## Use the model that fits your budget
+
+Boatstack applies the same planning, approval, testing, review, and shipping requirements whichever coding model you choose. Lower-cost models remain an option without lowering the standard required to call the work complete.
+
+<p align="center">
+  <img src="assets/boatstack-model-choice.svg" width="820" alt="Lower-cost, general, and frontier models enter the same Boatstack completion standard and produce a reviewed change with evidence">
+</p>
+
+> This does not mean every model performs equally. Boatstack makes the process less dependent on the model catching every mistake by itself.
+
+> **Designed for model flexibility · Quality uplift evaluation in progress**
+
+| Without Boatstack | With Boatstack |
+|---|---|
+| Quality depends heavily on the model catching every mistake itself | Planning, approval, tests, and review provide additional checks |
+| Switching to a lower-cost model may also change the development process | The completion standard stays consistent across models |
+| Important context disappears between features | Decisions, gaps, evidence, and code state inform the next feature |
+
+- <!-- boatstack-claim:model-neutral-contract -->**Verified:** Boatstack uses the same completion requirements regardless of model, provider, or price.
+- <!-- boatstack-claim:cross-model-failures -->**Observed:** benchmark runs exposed failures in protocol handling, context, verification, and recovery—not only model capability.
+- <!-- boatstack-claim:lower-cost-outcomes -->**Being evaluated:** whether this measurably improves product quality or cost when using lower-cost models.
+
+[See the evidence and paired evaluation design](docs/why-these-steps.md#model-choice-and-budget).
 
 ## From idea to PR
 

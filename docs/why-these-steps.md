@@ -53,6 +53,18 @@ Those labels prevent an implementation test from being presented as proof that t
 
 **Status:** product-workflow problem observed; projection behavior verified. Reviewer speed and acceptance quality still need blinded product-delivery evaluation.
 
+## Model choice and budget
+
+**What happened.** Across the audited benchmark runs, changing the model relocated the dominant bottleneck instead of removing failure. Gemini runs were dominated by near misses in one comparison, while Qwen runs exposed step exhaustion. Other recorded failures involved malformed protocol responses, context loss, unsupported verification claims, and unsafe recovery. A model name, provider, or price was not itself a reliable description of the active engineering problem.
+
+**What Boatstack does.** Boatstack keeps one planning, approval, validation, review, and shipping contract across models. It reacts to observable conditions such as unanswered decisions, risk, reversibility, tool outcomes, convergence, and evidence. This lets a repository owner choose a lower-cost, general, or frontier model without silently changing what “ready” means.
+
+**How we check it.** Export and projection tests verify the same workflow and gate vocabulary across supported coding hosts. The benchmark audits preserve the recorded trial coverage and the research record traces the model-dependent bottlenecks and failure mechanisms behind this design.
+
+**Status:** the model-neutral contract is verified and the cross-model failure patterns are observed. Whether Boatstack improves correctness, cost, or delivery time for lower-cost models is **still being evaluated**; it is not a claim that models perform equally.
+
+The paired product evaluation will use the same feature, lower-cost model, budget, environment, and coding host with and without Boatstack. An independent evaluator will compare correctness, regressions, review findings, cost, completion time, and the evidence available to support completion claims.
+
 ## What the experiments do and do not support
 
 The current research covers thousands of locally available benchmark result records, preregistered comparisons, product-repository studies, and targeted trajectory inspection. It supports the mechanisms that Boatstack is designed to address. It does **not** yet support a claim that Boatstack improves feature success, cost, or delivery speed.
