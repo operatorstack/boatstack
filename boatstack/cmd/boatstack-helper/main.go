@@ -199,9 +199,89 @@ func doctorCommand(arguments []string) int {
 	return 0
 }
 
+func prContextCommand(arguments []string) int {
+	flags := flag.NewFlagSet("pr-context", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository whose branch should be projected")
+	feature := flags.String("feature", "", "managed Boatstack feature slug; omit for evidence-limited ad-hoc mode")
+	base := flags.String("base", "", "base branch; defaults to the Boatstack project configuration")
+	format := flags.String("format", "json", "json or template")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	context, err := boatstack.PreparePRContext(boatstack.PRContextOptions{Repo: *repo, Feature: *feature, Base: *base})
+	if err != nil {
+		return fail(err)
+	}
+	switch *format {
+	case "json":
+		value, err := boatstack.PRContextJSON(context)
+		if err != nil {
+			return fail(err)
+		}
+		fmt.Print(string(value))
+	case "template":
+		fmt.Print(boatstack.PRPreviewTemplate(context))
+	default:
+		return fail(fmt.Errorf("pr-context format must be json or template"))
+	}
+	return 0
+}
+
+func checkPRCommand(arguments []string) int {
+	flags := flag.NewFlagSet("check-pr", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository containing the PR preview")
+	previewPath := flags.String("preview", "", "reviewed pr.md preview")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if *previewPath == "" {
+		return fail(fmt.Errorf("check-pr requires --preview"))
+	}
+	preview, context, err := boatstack.CheckPRPreview(*repo, *previewPath)
+	if err != nil {
+		return fail(err)
+	}
+	action, url, actionErr := boatstack.RecommendedPRAction(*repo)
+	fmt.Printf("PASS: exact PR preview matches the current branch and evidence\nPR_ACTION=%s\nPR_TITLE=%s\nPREVIEW_FINGERPRINT=%s\nCONTEXT_FINGERPRINT=%s\n", action, preview.Title, preview.Fingerprint, context.ContextFingerprint)
+	if url != "" {
+		fmt.Printf("PR_URL=%s\n", url)
+	}
+	if actionErr != nil {
+		fmt.Printf("PUBLICATION_NOTE=%s\n", actionErr)
+	}
+	fmt.Printf("--- PR BODY ---\n%s\n--- END PR BODY ---\n", string(boatstack.PRBody(preview)))
+	return 0
+}
+
+func publishPRCommand(arguments []string) int {
+	flags := flag.NewFlagSet("publish-pr", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository containing the PR preview")
+	previewPath := flags.String("preview", "", "reviewed pr.md preview")
+	fingerprint := flags.String("preview-fingerprint", "", "exact preview fingerprint confirmed by the human")
+	action := flags.String("action", "", "open or update")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if *previewPath == "" || *fingerprint == "" || *action == "" {
+		return fail(fmt.Errorf("publish-pr requires --preview, --preview-fingerprint, and --action"))
+	}
+	url, err := boatstack.PublishPR(boatstack.PRPublishOptions{
+		Repo: *repo, PreviewPath: *previewPath, ExpectedFingerprint: *fingerprint, Action: *action,
+	})
+	if err != nil {
+		return fail(err)
+	}
+	verb := "opened"
+	if *action == "update" {
+		verb = "updated"
+	}
+	fmt.Printf("PASS: PR %s without merge authorization\nPR_URL=%s\n", verb, url)
+	return 0
+}
+
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|pr-context|check-pr|publish-pr|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -219,6 +299,12 @@ func run() int {
 		return recordApprovalCommand(os.Args[2:])
 	case "activate-plan":
 		return activatePlanCommand(os.Args[2:])
+	case "pr-context":
+		return prContextCommand(os.Args[2:])
+	case "check-pr":
+		return checkPRCommand(os.Args[2:])
+	case "publish-pr":
+		return publishPRCommand(os.Args[2:])
 	case "doctor":
 		return doctorCommand(os.Args[2:])
 	case "version":

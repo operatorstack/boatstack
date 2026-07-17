@@ -152,7 +152,17 @@ Run the gates in order:
 
 - `test-gate` maps every acceptance criterion to current evidence.
 - `review-gate` reviews the actual diff and may send the feature back for a local repair.
-- `ship-gate` prepares and opens the PR; merge and deploy remain separate decisions.
+- `ship-gate` generates a reviewer-ready title and body from the approved intent, actual committed diff, evidence, decisions, and gaps.
+
+Boatstack shows the exact title and rendered body before changing GitHub. Reply `open PR` when the branch has no PR. Reply `update PR` when one already exists. It then rechecks the diff and evidence before publication. If anything changed after the preview, Boatstack regenerates it instead of publishing stale claims. Merge and deploy remain separate decisions.
+
+You do not need another slash command for existing work. Ask naturally:
+
+```text
+Use Boatstack to improve this PR.
+```
+
+Without a managed feature package, Boatstack uses an evidence-limited brief: it summarizes the committed branch and observed checks, while marking unavailable approval or gate evidence `NOT_VERIFIED`. It never pretends the ad-hoc branch passed the full Boatstack workflow.
 
 `PASS_WITH_GAPS` is honest success with explicitly owned, non-critical gaps. `BLOCKED` means the claim cannot progress. After fixing a review finding, rerun the affected gates. A check that already fails on the base branch belongs in a separate repair PR or an explicitly authorized repository-policy bypass—not an unrelated edit hidden in the feature branch.
 

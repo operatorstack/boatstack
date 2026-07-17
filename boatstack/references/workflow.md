@@ -57,7 +57,7 @@ Lead with a plain outcome, never a machine code such as `PASS`, `PLAN_APPROVED`,
 | `build` success / paused | **Build complete** -> run `/test-gate`; **Build needs a decision** -> answer the blocking question |
 | `test-gate` pass / blocked | **Tests passed** -> run `/review-gate`; **Testing found a problem** -> perform or authorize the repair |
 | `review-gate` pass / blocked | **Review passed** -> run `/ship-gate`; **Changes required** -> address the blocking finding |
-| `ship-gate` success | **PR ready** or **PR opened** -> review the PR; never imply merge authorization |
+| `ship-gate` preview / published | **PR ready** -> reply `open PR` or `update PR`; **PR opened** -> review the PR; never imply merge authorization |
 | `retro` | **Improvement proposed** -> review or authorize the experiment |
 
 Normal approval is `approve`. Resolve `approved_by` from (1) an identity supplied with approval, (2) the authenticated GitHub login from `gh api user --jq .login` when available, or (3) one short identity follow-up. Never infer the approver from a filesystem username, commit history, or the coding agent. If identity is missing after approval, preserve the current fingerprint and approval intent, create no receipt, and ask only for identity; once resolved against the unchanged plan, do not require another `approve`. Keep identity and receipt data inside **Technical details**.
@@ -217,7 +217,33 @@ Require:
 
 ### `SHIP_GATE -> PR_OPEN`
 
-Create a PR with the feature spec, decision links, test evidence, review findings, gaps, rollout, and rollback. Opening a PR does not authorize merge or deployment.
+Project the approved feature and actual committed diff into a reviewer-ready title and body:
+
+- why the change exists;
+- what changed, grouped by reviewer concern;
+- the shortest useful review order;
+- decisions that materially shaped the diff;
+- acceptance and check evidence with source references;
+- known gaps, risks, rollout, and rollback;
+- collapsed approval, evidence, and coding-host provenance.
+
+Store the exact preview at `.product-loop/features/<feature>/pr.md`. Its non-rendered frontmatter records the title, base/head branches, managed feature, and context fingerprint; the remaining Markdown is the exact GitHub body. The preview artifact itself is excluded from the product-diff fingerprint so committing it does not create a self-referential hash.
+
+Before publication, show the exact title and rendered body. Use **PR ready** and exactly one action: `Reply open PR` when no PR exists, or `Reply update PR` when one exists. Only that explicit reply authorizes opening or updating the PR. After confirmation, commit only the reviewed `pr.md`, recheck the same preview fingerprint, committed product diff, plan approval, build lock, test evidence, and review evidence, then perform a normal push and the selected GitHub action. Any drift blocks publication and requires a new preview; never force-push.
+
+Opening or updating a PR does not authorize merge or deployment.
+
+## Existing and ad-hoc PRs
+
+There is no public `/pr-brief` operation. When the user asks in natural language for Boatstack to prepare, improve, summarize, or update an existing PR without a managed feature package:
+
+1. project the committed branch diff, commits, observed checks, and minimal relevant repository context;
+2. store the exact preview at `.product-loop/pr-briefs/<branch>/pr.md`;
+3. use the same reviewer-first format, but mark unavailable approval and gate evidence `NOT_VERIFIED`;
+4. never claim that Boatstack approved the work or that an unrun gate passed;
+5. preview first, then require `open PR` or `update PR` and recheck the diff before publication.
+
+Adaptive sections for security/privacy, migrations, UI evidence, or operations appear only when relevant. Model attribution belongs inside collapsed provenance. If GitHub CLI authentication is unavailable, keep the validated preview and provide one manual publication action instead of losing the work.
 
 ### `PR_OPEN -> RETRO`
 

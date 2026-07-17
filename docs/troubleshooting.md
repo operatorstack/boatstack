@@ -44,3 +44,11 @@ Boatstack recognizes common package-manager tests, `scripts/check.sh`, Go, Rust,
 ## A fresh clone has adapters but no helper
 
 This is expected: `.product-loop/bin/` is machine-local and ignored. Rerun the installer from the repository root; the generated diff should remain clean when the committed configuration and installed Boatstack version match.
+
+## The PR preview became stale
+
+Boatstack binds `pr.md` to the current committed product diff and evidence. A new commit, amended evidence, changed approval artifact, or base-branch change invalidates that preview. Ask Boatstack to regenerate the PR; do not copy the old body forward.
+
+## GitHub CLI is missing or signed out
+
+Boatstack keeps the validated `pr.md` instead of discarding the work. Install or authenticate GitHub CLI and rerun the open/update confirmation, or copy the title and rendered body from the preview into GitHub manually. The manual path still does not authorize merge.

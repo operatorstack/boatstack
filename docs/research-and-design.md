@@ -137,7 +137,7 @@ The node does not adopt a universal “boil the ocean” policy. Completeness is
 - [Cursor project rules](https://docs.cursor.com/context/rules) live in `.cursor/rules`; project commands live in [`.cursor/commands`](https://docs.cursor.com/en/agent/chat/commands). Cursor is a first-class exported surface.
 - Claude Code receives a project skill while `CLAUDE.md` stays repository-owned.
 - Codex receives a repo skill under `.agents/skills`; [OpenAI recommends](https://learn.chatgpt.com/docs/customization/overview) keeping durable `AGENTS.md` guidance small and workflows in reusable skills.
-- GitHub receives a PR template that exposes approved-plan hashes, gate status, gaps, evidence, rollout, and rollback.
+- GitHub receives a reviewer-first fallback template. The active adapter generates an exact `pr.md` preview from the committed diff and available evidence, then requires a separate open/update confirmation. Managed work may cite current approval and gates; an ad-hoc branch must label missing evidence `NOT_VERIFIED`.
 
 The exporter refuses to overwrite any non-generated file. Its lock records canonical version, config hash, adapters, and output hashes so a PR can show exactly what changed.
 

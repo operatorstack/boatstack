@@ -155,9 +155,9 @@ func BuildExportBundle(configPath string, config ProjectConfig, rawConfig []byte
 		"build":       "First confirm the host is in an execution-capable mode. If the mode transition is rejected or product-code writes remain unavailable, return READY_FOR_BUILD internally without activating the plan, compiling JSON, or writing a lock. Only then locate plan.md and approval.md and run activate-plan before the first product-code edit. Stop if it reports BLOCKED. Implementation tactics remain open inside the approved boundary. On success respond Build complete and make Run /test-gate the one next action. When a new product decision blocks work, respond Build needs a decision and ask only that question.",
 		"test-gate":   "Build a requirement-to-evidence matrix and treat self-authored tests as evidence rather than the sole oracle. On pass respond Tests passed and make Run /review-gate the one next action. On failure respond Testing found a problem and make the required repair or authorization the one next action.",
 		"review-gate": "Review the actual diff against approved intent, invariants, risks, gaps, and test evidence. On pass respond Review passed and make Run /ship-gate the one next action. When blocked respond Changes required and make the highest-priority blocking repair the one next action.",
-		"ship-gate":   "Prepare a PR only; do not merge or deploy without separate authorization. If a required check fails on the base branch too, record the evidence and recommend a separate repair PR. Never edit unrelated code in this approved feature branch; a policy-approved bypass requires explicit human authorization. On success respond PR ready or PR opened and make Review the PR the one next action; never imply merge authorization.",
+		"ship-gate":   "Prepare a reviewer-ready PR only; do not merge or deploy without separate authorization. Require the current managed feature approval, lock, test evidence, and review evidence, and commit the intentional product/artifact diff before projection. Internally run pr-context --repo . --feature <feature> in json and template formats, project the approved intent, actual committed diff, decisions, evidence, gaps, rollout, and rollback into its required pr.md path, then run check-pr --repo . --preview <pr.md>. Always include why, what changed, review order, evidence, gaps/risks, rollout/rollback, and collapsed provenance; add UI evidence, security/privacy, migration, or operations sections only when the diff makes them relevant. Show the exact title and rendered body before any GitHub mutation. If PR_ACTION is open, respond PR ready with Reply open PR as the one next action; if update, use Reply update PR; if manual, preserve the preview and give one manual publication action. Only after that exact reply: commit only the reviewed pr.md, rerun check-pr and require the same preview fingerprint (PREVIEW_FINGERPRINT), then run publish-pr with --action open or update and that fingerprint. The publisher performs a non-force push and rechecks context before GitHub mutation. If the diff or evidence changes, regenerate instead. If a required check fails on the base branch too, record the evidence and recommend a separate repair PR. Never edit unrelated code in this approved feature branch; a policy-approved bypass requires explicit human authorization. After publication respond PR opened with the link and make Review the PR the one next action; never imply merge authorization.",
 		"review":      "Alias of review-gate: review the actual diff against approved intent, invariants, risks, gaps, and test evidence. Use Review passed or Changes required and the same single-action routing as review-gate.",
-		"ship":        "Alias of ship-gate: prepare a PR only; do not merge or deploy without separate authorization. Keep pre-existing unrelated failures out of the approved feature branch. Use PR ready or PR opened and make Review the PR the one next action.",
+		"ship":        "Alias of ship-gate: prepare and preview the exact reviewer-ready title and body before any GitHub mutation. Require Reply open PR or Reply update PR before publication, recheck the preview against current evidence, and never merge or deploy. Keep pre-existing unrelated failures out of the approved feature branch. Use PR ready before confirmation or PR opened after publication.",
 		"retro":       "Classify evidence and propose a move; never promote it or change durable rules without a paired gate. Respond Improvement proposed and make reviewing or authorizing the experiment the one next action.",
 	}
 
@@ -173,6 +173,7 @@ Use @.product-loop/artifacts.md for document meanings and @.product-loop/failure
 Ordinary product intent starts in the host's Plan mode. Save the completed plan under .product-loop/intake/. Auto-plan discovers exactly one saved plan from bounded host locations, validates it, and must not invent a substitute. Keep the source plan present and current through build.
 Do not start build work until the explicit plan gate has produced approval.md and build activation has produced a valid plan lock.
 Implementation methods are open. Claims of completion, approval, review, and shipping require evidence.
+When the user naturally asks Boatstack to prepare, improve, summarize, or update an existing PR without a managed feature package, generate an evidence-limited ad-hoc PR brief. Use the committed branch diff and observed checks, label missing evidence NOT_VERIFIED, and never imply Boatstack approval or passed gates. This is natural-language behavior, not a /pr-brief command. Preview the exact title and body before asking for one open/update confirmation.
 Do not branch behavior on model name, provider, or price; branch on observed work state and evidence.
 `
 		files[fmt.Sprintf(".cursor/rules/%s.mdc", adapterName)], err = GeneratedFrontmatter(rule)
@@ -203,6 +204,8 @@ Use .product-loop/artifacts.md for document boundaries and .product-loop/failure
 
 At ship, prove whether a failing check is pre-existing by checking the base branch. Keep unrelated repairs in a separate PR; do not modify unrelated code under the approved feature lock. A repository-policy bypass requires explicit human authorization and recorded evidence.
 
+For a managed ship, use the internal pr-context operation with --feature to project the feature spec, accepted decisions, actual committed diff, evidence ledger, review findings, gaps, rollout, and rollback into the required pr.md artifact. Inspect the returned changed files, diff stat, high-risk matches, and the actual diff before writing claims; commits alone are not authoritative. Always include why, what changed, review order, evidence, gaps/risks, rollout/rollback, and collapsed provenance. Add UI evidence, security/privacy, migration, or operations sections only when relevant. For a natural-language request to improve an existing or ad-hoc PR, run pr-context without --feature and use the same reviewer-first format from observed branch facts, but mark unavailable approval or gate evidence as NOT_VERIFIED. Never create or advertise a /pr-brief command. Validate with check-pr and always show the exact title and rendered body before publication. Ask for exactly Reply open PR or Reply update PR. Only after that reply, commit only pr.md, revalidate the unchanged preview fingerprint, and invoke the internal publish-pr operation with the selected action. It may perform a normal push but never force-push. Any intervening product diff or evidence change invalidates the preview. Keep model attribution inside collapsed provenance. Internal helper names and hashes stay out of the primary response.
+
 If gstack is enabled, use only its namespaced /gstack-* specialist lenses inside Boatstack operations. If Spec Kit is enabled, use it to generate or cross-check artifacts; never invoke speckit.implement to bypass Boatstack's plan approval and build gate.
 `, adapterName)
 	if contains(adapters, "claude") {
@@ -218,43 +221,46 @@ If gstack is enabled, use only its namespaced /gstack-* specialist lenses inside
 		}
 	}
 	if contains(adapters, "github") {
-		files[fmt.Sprintf(".github/PULL_REQUEST_TEMPLATE/%s.md", adapterName)] = GeneratedMarkdown(`# Evidence-engineered change
+		files[fmt.Sprintf(".github/PULL_REQUEST_TEMPLATE/%s.md", adapterName)] = GeneratedMarkdown(`# Reviewer-ready change
 
-## Approved intent
+## Why this change
 
-- Feature spec:
-- Approved plan hash:
-- Human approver:
-- Linked ADRs/questions:
+Explain the user or engineering outcome, not merely the files edited.
 
-## Outcome
+## What changed
 
-- User-visible change:
-- Non-goals preserved:
+| Area | Before | After | Reviewer focus |
+|---|---|---|---|
+| | | | |
 
-## Gate evidence
+## Review order
 
-- Test gate: BLOCKED
-- Review gate: BLOCKED
-- Ship gate: BLOCKED
-- Evidence ledger:
+1. Start with the contract, trust boundary, or user-visible behavior.
 
-## Known gaps
+## Evidence
 
-- Gap ledger:
-- PASS_WITH_GAPS rationale, owner, and revisit trigger:
+| Claim | Evidence | Result | Source |
+|---|---|---|---|
+| | | NOT_VERIFIED | |
+
+## Known gaps and risks
+
+List explicit gaps with impact and revisit trigger, or state that no material gaps are known.
 
 ## Rollout and rollback
 
 - Rollout:
 - Observability:
-- Rollback:
+- Smallest safe rollback:
 
-## Generated adapter update
+<details>
+<summary>Boatstack provenance</summary>
 
-- Boatstack version:
-- Config hash:
-- Export check:
+- Mode: managed or evidence-limited ad-hoc
+- Approval and gate evidence:
+- Coding-host attribution:
+
+</details>
 `)
 	}
 

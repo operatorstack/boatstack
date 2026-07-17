@@ -8,7 +8,7 @@
 
 <p align="center"><strong>Build freely. Prove it. Ship.</strong></p>
 
-Boatstack is **evidence-engineered coding**: a model-neutral coding node that turns product intent and repository context into an explicitly approved, tested, reviewable change. It does not prescribe the model, implementation technique, tools, or document structure. It governs what may be claimed, approved, or shipped. Its behavior is generated from [Intelligence Flow at `46be4fd2d8ebbc00e28c10e78685b721b2c62fe8`](https://github.com/operatorstack/intelligence-flow/tree/46be4fd2d8ebbc00e28c10e78685b721b2c62fe8/examples/12-product-engineering-loop).
+Boatstack is **evidence-engineered coding**: a model-neutral coding node that turns product intent and repository context into an explicitly approved, tested, reviewable change. It does not prescribe the model, implementation technique, tools, or document structure. It governs what may be claimed, approved, or shipped. Its behavior is generated from [Intelligence Flow at `4fee357eb535287be4b172b2af4c2e44939ce196`](https://github.com/operatorstack/intelligence-flow/tree/4fee357eb535287be4b172b2af4c2e44939ce196/examples/12-product-engineering-loop).
 
 > **You are free in how you build. Only claims of completion require evidence.**
 
@@ -53,8 +53,10 @@ The installer previews the generated paths, verifies the platform helper, asks a
 ```text
 idea -> Plan mode -> /auto-plan -> questions -> /plan-gate
      -> approve -> Build -> /build -> /test-gate
-     -> /review-gate -> /ship-gate -> PR
+     -> /review-gate -> /ship-gate -> preview -> confirm -> PR
 ```
+
+At ship, Boatstack compiles the approved intent, actual committed diff, evidence, decisions, gaps, rollout, and rollback into a reviewer-ready title and body. It shows the exact preview first; GitHub changes only after `open PR` or `update PR`. For an existing branch, simply ask **“Use Boatstack to improve this PR.”** There is no extra `/pr-brief` command, and missing workflow evidence is labeled `NOT_VERIFIED` rather than invented.
 
 ## Plan first, then auto-plan
 
@@ -313,7 +315,7 @@ Read the [research and design record](docs/research-and-design.md) and [corpus a
 
 ## Context has a budget
 
-The three canonical runtime references currently total approximately **5250 estimated tokens** using `ceil(characters / 4)`. That is a stable compactness signal, not provider billing. Host adapters stay thin and load the operation-specific slice on demand.
+The three canonical runtime references currently total approximately **6039 estimated tokens** using `ceil(characters / 4)`. That is a stable compactness signal, not provider billing. Host adapters stay thin and load the operation-specific slice on demand.
 
 ## Status
 

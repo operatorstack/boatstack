@@ -18,6 +18,7 @@ Artifacts separate facts, decisions, unknowns, incompleteness, and evidence. Com
 | Risk/threat note | Assets, actors, trust boundaries, abuse/failure paths | Security, data, tenancy, billing, auth, or destructive paths change |
 | Runbook | Deploy, observe, recover, and roll back | Operational behavior changes |
 | Evidence ledger | Commands, results, review evidence, screenshots, CI and runtime links | Every gate |
+| PR preview | Exact reviewer-ready title/body plus a hidden fingerprint of the committed diff and evidence | Ship gate, before opening or updating GitHub |
 | Move ledger | Failure class, intervention, prediction, paired result, decision | Improving the loop itself |
 
 ## ADR boundary
@@ -60,6 +61,12 @@ Every material statement should indicate whether it came from:
 - an external source.
 
 Generated artifacts include the canonical loop version and config hash. Human edits to generated adapters are drift and should be moved into project-owned context or canonical source.
+
+## PR projection boundary
+
+`pr.md` is a lossy review projection, not a replacement for the feature package. Its visible body contains only why, changed behavior, review order, evidence, gaps/risks, rollout, and rollback. Approval hashes, source paths, and host attribution remain in non-rendered metadata or collapsed provenance.
+
+For managed work it lives under `.product-loop/features/<feature>/pr.md` and may claim only evidence present in the current approved package. For an existing or ad-hoc branch it lives under `.product-loop/pr-briefs/<branch>/pr.md`, uses observed branch facts, and labels missing approval or gate evidence `NOT_VERIFIED`. Both are committed with the branch. The preview file itself is excluded from the product-diff fingerprint.
 
 ## Planning boundary
 
