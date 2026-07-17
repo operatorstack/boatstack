@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "source_commit": "1a67b309b53d52011909a95b291151afaf575ce7",
+  "source_commit": "9a5fd09f964901236c1e2708a8087f181617e9a9",
   "statuses": ["verified", "observed", "still_being_evaluated"],
   "claims": [
     {
@@ -12,7 +12,7 @@
       "readable_evidence": "why-these-steps.md#human-decisions",
       "implementation": ["../boatstack/references/workflow.md", "../boatstack/plan.go"],
       "verification": ["../boatstack/plan_test.go", "../boatstack/planning_test.go"],
-      "last_verified_version": "source:1a67b309b53d52011909a95b291151afaf575ce7"
+      "last_verified_version": "source:9a5fd09f964901236c1e2708a8087f181617e9a9"
     },
     {
       "id": "validation-provenance",
@@ -23,7 +23,7 @@
       "readable_evidence": "why-these-steps.md#validation-provenance",
       "implementation": ["validation-and-evidence.md", "../boatstack/plan.go"],
       "verification": ["../boatstack/plan_test.go"],
-      "last_verified_version": "source:1a67b309b53d52011909a95b291151afaf575ce7"
+      "last_verified_version": "source:9a5fd09f964901236c1e2708a8087f181617e9a9"
     },
     {
       "id": "irreversible-operations",
@@ -35,7 +35,7 @@
       "readable_evidence": "why-these-steps.md#irreversible-operations",
       "implementation": ["safety.md", "../boatstack/safety.go", "../boatstack/hooks.go"],
       "verification": ["../boatstack/safety_test.go", "../boatstack/hooks_test.go"],
-      "last_verified_version": "source:1a67b309b53d52011909a95b291151afaf575ce7"
+      "last_verified_version": "source:9a5fd09f964901236c1e2708a8087f181617e9a9"
     },
     {
       "id": "reviewer-ready-pr",
@@ -46,7 +46,7 @@
       "readable_evidence": "why-these-steps.md#reviewer-ready-pr",
       "implementation": ["../boatstack/pr.go", "getting-started.md"],
       "verification": ["../boatstack/pr_test.go"],
-      "last_verified_version": "source:1a67b309b53d52011909a95b291151afaf575ce7"
+      "last_verified_version": "source:9a5fd09f964901236c1e2708a8087f181617e9a9"
     }
   ]
 }
