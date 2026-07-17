@@ -24,6 +24,7 @@ They come from real coding failures we observed—not guesses. For every safegua
 | <!-- boatstack-claim:validation-provenance -->“Tests passed” was used to support claims the tests did not cover | It links each promised outcome to the check that can disprove it | Plan compiler and coverage tests |
 | <!-- boatstack-claim:irreversible-operations -->A failed external write led to an invented reset path | It denies high-confidence destructive recovery before execution | Host-hook fixtures; overall benefit still being evaluated |
 | <!-- boatstack-claim:reviewer-ready-pr -->A PR lost the decisions and gaps behind the change | It builds a review brief from the approved scope, actual diff, and recorded evidence | PR projection and stale-preview tests |
+| <!-- boatstack-claim:git-worktree-activation -->A new worktree had the safety hook but not its ignored helper | It restores the verified local runtime from the clone before judging the first command | Real linked-worktree and tamper tests |
 
 [Read what happened, what is tested, and what remains open](docs/why-these-steps.md). The machine-readable [claim record](docs/public-claims.json) keeps the public wording tied to its sources.
 
@@ -36,6 +37,8 @@ Install Boatstack in this repository from https://github.com/operatorstack/boats
 ```
 
 Install Boatstack in its own infrastructure PR and merge that PR before starting a feature. This keeps one-time repository setup out of later product diffs.
+
+Install once per Git clone. Linked Git worktrees reuse the verified runtime and restore their ignored local helper automatically on first use.
 
 ## Start with two moves
 

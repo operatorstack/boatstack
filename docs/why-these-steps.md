@@ -75,6 +75,16 @@ The paired product evaluation will use the same feature, lower-cost model, budge
 
 **Status:** release notification and update preparation behavior are verified in automated tests. This is not a claim that updates install themselves or may be merged without review.
 
+## Git worktree activation
+
+**What happened.** A Claude Code worktree contained the committed fail-closed hook but not `.product-loop/bin/`, which Git intentionally ignores. Every shell call was denied because the helper was absent, including the installer command that could have repaired it.
+
+**What Boatstack does.** One verified, versioned runtime is stored under the clone's Git common directory. On the first guarded call in a linked worktree, that runtime checks the worktree's generated provenance, atomically restores its ignored local helper and lock, and then evaluates the original event. It performs no download and does not share trust across unrelated clones.
+
+**How we check it.** Real linked-worktree tests cover safe first use, destructive first use, paths with spaces, concurrent activation, version and source drift, checksum tampering, symlinks, malformed events, and clean Git state after hydration.
+
+**Status:** bootstrap deadlock observed; repository-family activation behavior verified in automated tests. Fresh independent clones still require one verified installer run.
+
 ## What the experiments do and do not support
 
 The current research covers thousands of locally available benchmark result records, preregistered comparisons, product-repository studies, and targeted trajectory inspection. It supports the mechanisms that Boatstack is designed to address. It does **not** yet support a claim that Boatstack improves feature success, cost, or delivery speed.

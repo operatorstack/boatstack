@@ -16,7 +16,7 @@ Boatstack creates installation state once and feature evidence repeatedly. Keepi
 | `.cursor/`, `.agents/`, and `.claude/` Boatstack adapters | Portable host commands and skills | Commit |
 | `.github/PULL_REQUEST_TEMPLATE/boatstack.md` | Fallback PR structure | Commit |
 | `.cursor/hooks.json`, `.claude/settings.json`, `.codex/hooks.json` | Boatstack fragments merged with existing host settings | Review and commit |
-| `.product-loop/bin/` | Verified machine-local helper | Never commit; it is ignored |
+| `.product-loop/bin/` | Verified worktree-local helper and install lock | Never commit; it is ignored and hydrates automatically |
 
 The installer prints the exact staging command and runs `doctor`. Put this state in `chore/install-boatstack`, review it once, and merge it before feature work.
 
@@ -45,9 +45,11 @@ When Boatstack improves a branch that did not use the full workflow, it stores t
 
 The preview's frontmatter is publication metadata; the remaining Markdown is the exact GitHub body. The preview is excluded from its own product-diff fingerprint, but any other diff or evidence change makes it stale.
 
-## Fresh clones and updates
+## Worktrees, fresh clones, and updates
 
-Committed adapters survive a clone; the ignored helper does not. Rerun the installer to restore it.
+One verified runtime is cached under the clone's Git common directory and keyed by Boatstack version, source commit, operating system, and architecture. Linked worktrees share that cache. Their first guarded command atomically restores the ignored local helper and install lock, then evaluates the original command. Hydration uses no network and produces no tracked diff.
+
+Independent clones do not share a Git common directory. Committed adapters survive a clone, but the ignored helper and repository-family cache do not; run the installer once in the new clone.
 
 For an update, run `/boatstack-update` from a clean, current default branch. Boatstack creates `chore/update-boatstack-v<version>`, verifies the tagged release and checksum, preserves integrations, and shows the exact generated diff before asking for `open update PR`. Release-check state in `.product-loop/bin/update-state.json` and the platform helper remain ignored; the adapters, generated lock, hook fragments, and merged host settings belong in the update PR.
 

@@ -5,7 +5,7 @@
 **For:** a product builder or engineer using Cursor, Codex, or Claude Code.
 **Outcome:** install Boatstack in one infrastructure PR, then take one ordinary request through approval, build, evidence, review, and PR preparation.
 
-Boatstack is repository-local. Install it once and commit the shared workflow before starting product work.
+Boatstack is repository-local. Install it once per Git clone and commit the shared workflow before starting product work. Linked Git worktrees reuse the clone's verified runtime automatically.
 
 ## 1. Install it separately
 
@@ -32,6 +32,12 @@ Choose `core` unless you already want gstack, GitHub Spec Kit, or both. Confirm 
 ```
 
 Review and commit the paths printed by the installer. Merge this infrastructure PR before creating a feature branch. Later feature PRs then contain the product change and its evidence rather than one-time setup noise.
+
+### Git worktrees
+
+The installer keeps a versioned, verified runtime under Git's common directory. A linked worktree still starts without the ignored `.product-loop/bin/` directory, but its first guarded Cursor, Codex, or Claude call restores that local runtime automatically before evaluating the original command. This performs no download and changes no tracked files.
+
+Different Boatstack versions use separate cached runtimes, so an older worktree is not silently run with a newer helper. A separate clone has a different Git common directory and still needs one installer run.
 
 ## 2. Start with the idea
 

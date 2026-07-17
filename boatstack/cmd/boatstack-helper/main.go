@@ -260,6 +260,27 @@ func safetyHookCommand(arguments []string) int {
 	return 0
 }
 
+func bootstrapSafetyHookCommand(arguments []string) int {
+	flags := flag.NewFlagSet("bootstrap-safety-hook", flag.ContinueOnError)
+	host := flags.String("host", "", "cursor, claude, or codex")
+	repo := flags.String("repo", ".", "worktree protected by the hook")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	input, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		input = nil
+	}
+	if err := boatstack.HydrateWorktree(*repo); err != nil {
+		return fail(fmt.Errorf("worktree runtime activation failed: %w", err))
+	}
+	value, _ := boatstack.HookDecision(boatstack.SafetyHookOptions{Host: *host, Repo: *repo, Input: input})
+	if len(value) > 0 {
+		fmt.Print(string(value))
+	}
+	return 0
+}
+
 func checkSafetyCommand(arguments []string) int {
 	flags := flag.NewFlagSet("check-safety", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository whose operational diff should be checked")
@@ -398,6 +419,8 @@ func run() int {
 		return doctorCommand(os.Args[2:])
 	case "safety-hook":
 		return safetyHookCommand(os.Args[2:])
+	case "bootstrap-safety-hook":
+		return bootstrapSafetyHookCommand(os.Args[2:])
 	case "check-safety":
 		return checkSafetyCommand(os.Args[2:])
 	case "version":

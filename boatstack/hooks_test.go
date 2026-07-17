@@ -76,8 +76,30 @@ func TestMissingHelperLauncherFailsClosed(t *testing.T) {
 	command := exec.Command("bash", path, "cursor")
 	command.Dir = repo
 	output, err := command.CombinedOutput()
-	if err == nil || !strings.Contains(string(output), "helper is missing") {
+	if err == nil || !strings.Contains(string(output), "shared runtime is missing") {
 		t.Fatalf("missing helper did not fail closed: err=%v output=%s", err, output)
+	}
+}
+
+func TestGuardRejectsTamperedSharedRuntimeBeforeExecution(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash unavailable")
+	}
+	repo := runtimeTestRepo(t)
+	binaryPath, _, err := sharedRuntimePaths(repo, Version, SourceCommit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(binaryPath, []byte("tampered"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(repo, ".product-loop", "hooks", "guard.sh")
+	command := exec.Command("bash", path, "claude")
+	command.Dir = repo
+	command.Stdin = strings.NewReader(`{"tool_name":"Bash","tool_input":{"command":"git status --short"}}`)
+	output, runErr := command.CombinedOutput()
+	if runErr == nil || !strings.Contains(string(output), "checksum is invalid") {
+		t.Fatalf("tampered shared helper was not denied before execution: err=%v output=%s", runErr, output)
 	}
 }
 
