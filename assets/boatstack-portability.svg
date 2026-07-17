@@ -31,11 +31,10 @@
   </g>
 
   <g class="gray" fill="none" stroke-width="3">
-    <path d="M360 157H410V270H445"/>
-    <path d="M360 259H445"/>
-    <path d="M360 372H410V270"/>
+    <path d="M360 157H405V372H360"/>
+    <path d="M360 259H405"/>
   </g>
-  <path class="blue" d="M410 270H445" fill="none" stroke-width="4" marker-end="url(#arrow)"/>
+  <path class="blue" d="M405 270H447" fill="none" stroke-width="4" marker-end="url(#arrow)"/>
 
   <g transform="translate(456 132)">
     <rect class="core" width="406" height="276" rx="24" stroke-width="3"/>

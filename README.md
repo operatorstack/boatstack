@@ -8,11 +8,13 @@
 
 <p align="center"><strong>Build freely. Prove it. Ship.</strong></p>
 
-## Your product development flow—not your coding agent's
+## A delivery harness for AI coding agents
 
-<!-- boatstack-claim:portable-product-flow -->Boatstack gives your repository one path from idea to PR. Use that path from Cursor, Codex, or Claude Code, with the model and specialist skills that fit the work. Plans, decisions, gaps, evidence, and review findings stay with the project.
+<!-- boatstack-claim:portable-product-flow -->Boatstack connects the work from an idea to a reviewed PR. Keep using Cursor, Codex, or Claude Code, with the models and specialist skills that fit the work. Boatstack keeps the plan, decisions, gaps, tests, review findings, and project context connected along the way.
 
-Change the tool without rebuilding how you ship or redefining what “done” means. Boatstack carries the workflow and saved project state—not an agent's private chat history or a command already in progress.
+The agent remains free to build. Before it says the work is done, Boatstack asks for the approval, tests, review, and recorded evidence appropriate to the change.
+
+**Your product development flow stays with the repository—not the coding agent.** Change tools without rebuilding how you ship or redefining what “done” means. Boatstack carries the workflow and saved project state—not an agent's private chat history or a command already in progress.
 
 <p align="center">
   <img src="assets/boatstack-portability.svg" width="900" alt="Coding agents, models, and specialist skills feed one repository-owned Boatstack flow that produces a reviewed pull request and useful context for the next feature">
@@ -50,25 +52,29 @@ When you are ready, that guidance moves through `/plan-gate` → `/build` → `/
   <img src="assets/boatstack-journey.svg" width="960" alt="One feature moves from idea through planning, approval, building, tests, review, and pull request; its retained plans, decisions, gaps, evidence, and code state combine with the next idea to create the next plan">
 </p>
 
-## What Boatstack guides
+## Features
 
-| Without Boatstack | With Boatstack |
-|---|---|
-| The agent guesses an important product decision | It asks, records your answer, and waits for approval |
-| “Tests passed” is treated as proof of everything | Each promised outcome names the check that can disprove it |
-| A failed external operation leads to a risky reset | High-confidence destructive recovery is stopped before execution |
-| The PR loses the reasoning behind the work | Decisions, evidence, gaps, rollout, and rollback stay attached |
-| Every feature starts from an empty conversation | Useful state from the previous feature informs the next plan |
+- **A guided path from idea to PR.** Start with `/auto-plan`; Boatstack presents one next action at a time through planning, approval, build, validation, review, and PR preparation.
+- **Human decisions stay human.** Material product questions remain open until a person answers them, and implementation waits for explicit approval.
+- **Evidence tied to the promise.** Tests and checks map to the outcomes the change claims to deliver instead of treating one green command as proof of everything.
+- **Context that survives the feature.** Plans, decisions, accepted gaps, evidence, review findings, and code state can inform the next feature rather than disappearing with the chat.
+- **Safer agent execution.** High-confidence destructive recovery is stopped before execution; phased work is gated and published one approved delivery slice at a time.
+- **Reviewer-ready pull requests.** Boatstack carries the reason, actual changes, validation, risks, gaps, rollout, and rollback into a focused PR brief.
+- **Portable across your AI stack.** Cursor, Codex, Claude Code, different model tiers, and specialist skills use the same repository-owned delivery contract.
+- **Repository-friendly maintenance.** Linked worktrees restore their verified runtime automatically, while Boatstack updates stay isolated in reviewable infrastructure PRs.
 
 You remain free to build however the work requires. Boatstack governs claims of approval, completion, review, and shipping—not the implementation technique.
 
-## Use the tools that fit the work
+## How Boatstack fits into your AI stack
 
-- **Cursor, Codex, and Claude Code:** portable repository adapters expose the same workflow.
-- **Models:** choose a lower-cost, general, or frontier model without silently changing the completion standard.
-- **Skills:** add specialist guidance such as React best practices. Boatstack can also use optional gstack and GitHub Spec Kit outputs.
+| Part | Its job |
+|---|---|
+| **Coding agent** — Cursor, Codex, or Claude Code | Executes the work in your repository |
+| **Model** — lower-cost, general, or frontier | Reasons, writes, and evaluates within the agent |
+| **Skill** — React guidance, gstack, Spec Kit, or another specialty | Adds expertise for a particular kind of work |
+| **Boatstack** | Carries the delivery path, saved context, and proof of completion across them |
 
-In technical terms, Boatstack is a repository-local software-delivery harness for AI coding agents. Skills contribute expertise; models perform work; Boatstack keeps the product-development path and evidence contract consistent.
+Boatstack does not replace the agent, model, or skills. It is the repository-local delivery harness that keeps their work connected to the product decision and the standard for calling it complete.
 
 > **Designed for model flexibility · Quality uplift evaluation in progress**
 
