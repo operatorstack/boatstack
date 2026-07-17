@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 360" role="img" aria-labelledby="title desc">
+  <title id="title">One Boatstack completion standard across model choices</title>
+  <desc id="desc">Lower-cost, general, and frontier coding models converge on Boatstack's shared approval, testing, review, and evidence requirements before producing a reviewed change with evidence.</desc>
+  <style>
+    .paper{fill:#fff}.node{fill:#fff;stroke:#0F172A}.core{fill:#E8F0FF;stroke:#2563EB}.ink{fill:#0F172A}.muted{fill:#475569}.blue{stroke:#2563EB}.gray{stroke:#94A3B8}.accent{fill:#2563EB}
+    .title{font:700 25px "Avenir Next","Segoe UI",sans-serif}.label{font:700 18px "Avenir Next","Segoe UI",sans-serif}.body{font:600 15px "Avenir Next","Segoe UI",sans-serif}.small{font:700 14px "Avenir Next","Segoe UI",sans-serif;letter-spacing:.08em}
+    @media(prefers-color-scheme:dark){.paper,.node{fill:#0F172A}.core{fill:#172A4D}.ink{fill:#E2E8F0}.muted{fill:#94A3B8}.node{stroke:#E2E8F0}}
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="accent" d="M0 0 10 5 0 10z"/></marker>
+  </defs>
+  <rect class="paper" width="1000" height="360" rx="22"/>
+  <text class="small muted" x="40" y="34">CHOOSE THE MODEL THAT FITS THE WORK</text>
+  <g transform="translate(40 56)"><rect class="node" width="185" height="56" rx="28" stroke-width="3"/><text class="label ink" x="92.5" y="36" text-anchor="middle">Lower-cost model</text></g>
+  <g transform="translate(40 148)"><rect class="node" width="185" height="56" rx="28" stroke-width="3"/><text class="label ink" x="92.5" y="36" text-anchor="middle">General model</text></g>
+  <g transform="translate(40 240)"><rect class="node" width="185" height="56" rx="28" stroke-width="3"/><text class="label ink" x="92.5" y="36" text-anchor="middle">Frontier model</text></g>
+  <g class="gray" fill="none" stroke-width="3">
+    <path d="M225 84H290V176H335"/>
+    <path d="M225 176H335"/>
+    <path d="M225 268H290V176"/>
+  </g>
+  <path class="blue" d="M290 176H335" fill="none" stroke-width="4" marker-end="url(#arrow)"/>
+  <g transform="translate(345 108)">
+    <rect class="core" width="250" height="136" rx="20" stroke-width="3"/>
+    <text class="title ink" x="125" y="48" text-anchor="middle">BOATSTACK</text>
+    <text class="body muted" x="125" y="78" text-anchor="middle">one completion standard</text>
+    <text class="body ink" x="125" y="107" text-anchor="middle">approval · tests · review · shipping</text>
+  </g>
+  <path class="blue" d="M595 176H670" fill="none" stroke-width="4" marker-end="url(#arrow)"/>
+  <g transform="translate(684 128)">
+    <rect class="node" width="276" height="96" rx="48" stroke-width="3"/>
+    <text class="label ink" x="138" y="42" text-anchor="middle">Reviewed change</text>
+    <text class="body muted" x="138" y="68" text-anchor="middle">with decisions, gaps, and evidence</text>
+  </g>
+  <text class="body muted" x="500" y="334" text-anchor="middle">Same standard does not mean every model performs equally.</text>
+</svg>

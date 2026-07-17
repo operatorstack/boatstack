@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "source_commit": "9a5fd09f964901236c1e2708a8087f181617e9a9",
+  "source_commit": "d37975f8c3960b03c701f029d4815f6d6814ed7c",
   "statuses": ["verified", "observed", "still_being_evaluated"],
   "claims": [
     {
@@ -12,7 +12,7 @@
       "readable_evidence": "why-these-steps.md#human-decisions",
       "implementation": ["../boatstack/references/workflow.md", "../boatstack/plan.go"],
       "verification": ["../boatstack/plan_test.go", "../boatstack/planning_test.go"],
-      "last_verified_version": "source:9a5fd09f964901236c1e2708a8087f181617e9a9"
+      "last_verified_version": "source:d37975f8c3960b03c701f029d4815f6d6814ed7c"
     },
     {
       "id": "validation-provenance",
@@ -23,7 +23,7 @@
       "readable_evidence": "why-these-steps.md#validation-provenance",
       "implementation": ["validation-and-evidence.md", "../boatstack/plan.go"],
       "verification": ["../boatstack/plan_test.go"],
-      "last_verified_version": "source:9a5fd09f964901236c1e2708a8087f181617e9a9"
+      "last_verified_version": "source:d37975f8c3960b03c701f029d4815f6d6814ed7c"
     },
     {
       "id": "irreversible-operations",
@@ -35,7 +35,7 @@
       "readable_evidence": "why-these-steps.md#irreversible-operations",
       "implementation": ["safety.md", "../boatstack/safety.go", "../boatstack/hooks.go"],
       "verification": ["../boatstack/safety_test.go", "../boatstack/hooks_test.go"],
-      "last_verified_version": "source:9a5fd09f964901236c1e2708a8087f181617e9a9"
+      "last_verified_version": "source:d37975f8c3960b03c701f029d4815f6d6814ed7c"
     },
     {
       "id": "reviewer-ready-pr",
@@ -46,7 +46,40 @@
       "readable_evidence": "why-these-steps.md#reviewer-ready-pr",
       "implementation": ["../boatstack/pr.go", "getting-started.md"],
       "verification": ["../boatstack/pr_test.go"],
-      "last_verified_version": "source:9a5fd09f964901236c1e2708a8087f181617e9a9"
+      "last_verified_version": "source:d37975f8c3960b03c701f029d4815f6d6814ed7c"
+    },
+    {
+      "id": "model-neutral-contract",
+      "public_claim": "Boatstack applies the same planning, approval, validation, review, and shipping requirements regardless of model, provider, or price.",
+      "status": "verified",
+      "originating_observation": "Changing models relocated the dominant benchmark bottleneck instead of producing one stable lower-cost-model or frontier-model failure profile.",
+      "safeguard": "One model-neutral workflow that branches on observable decisions, risk, tool outcomes, convergence, and evidence rather than model identity.",
+      "readable_evidence": "why-these-steps.md#model-choice-and-budget",
+      "implementation": ["research-and-design.md", "../boatstack/references/workflow.md"],
+      "verification": ["../boatstack/export_test.go", "../boatstack/planning_test.go"],
+      "last_verified_version": "source:d37975f8c3960b03c701f029d4815f6d6814ed7c"
+    },
+    {
+      "id": "cross-model-failures",
+      "public_claim": "The audited benchmark runs exposed failures in protocol handling, context, verification, and recovery in addition to differences in model capability.",
+      "status": "observed",
+      "originating_observation": "The audited Gemini, Qwen, and submission runs recorded malformed responses, context-window regression, unsupported verification, step exhaustion, near misses, and unsafe recovery behavior.",
+      "safeguard": "Trace safeguards to observed failure mechanics without treating model provider or price as the failure state.",
+      "readable_evidence": "why-these-steps.md#model-choice-and-budget",
+      "implementation": ["research-and-design.md"],
+      "verification": ["benchmark-corpus-audit.md", "benchmark-submission-audit.md"],
+      "last_verified_version": "source:d37975f8c3960b03c701f029d4815f6d6814ed7c"
+    },
+    {
+      "id": "lower-cost-outcomes",
+      "public_claim": "Whether Boatstack improves product correctness, completion cost, or delivery time when using lower-cost models is still being evaluated.",
+      "status": "still_being_evaluated",
+      "originating_observation": "The existing corpus supports specific failure mechanisms but contains no paired product-feature result proving a lower-cost-model outcome uplift.",
+      "safeguard": "Keep the outcome claim unpromoted until the same feature, model, budget, environment, and host are evaluated with and without Boatstack.",
+      "readable_evidence": "why-these-steps.md#model-choice-and-budget",
+      "implementation": ["research-and-design.md"],
+      "verification": ["benchmark-corpus-audit.md", "benchmark-submission-audit.md"],
+      "last_verified_version": "source:d37975f8c3960b03c701f029d4815f6d6814ed7c"
     }
   ]
 }

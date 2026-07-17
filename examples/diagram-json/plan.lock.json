@@ -6,7 +6,7 @@
   "plan_path": "examples/diagram-json/plan.md",
   "plan_sha256": "3ad35cc3cbe48306e7ee401bd9e9047d25e46c8a6fe9679aa1b3f5e96ceea292",
   "schema_version": 1,
-  "source_commit": "9a5fd09f964901236c1e2708a8087f181617e9a9",
+  "source_commit": "d37975f8c3960b03c701f029d4815f6d6814ed7c",
   "source_plan_path": "examples/diagram-json/source-plan.md",
   "source_plan_sha256": "e10593ddaa7522ab80cc991d0a09399257139799e37f737794cd49d68a39985b",
   "spec_path": "examples/diagram-json/spec.md",
