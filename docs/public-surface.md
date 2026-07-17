@@ -8,7 +8,7 @@ Boatstack's README is a product-builder homepage, not the complete manual. Publi
 
 The homepage must answer, in order:
 
-1. What will Boatstack help me achieve?
+1. What is Boatstack, and what will it help me achieve?
 2. What remains portable when I change tools, models, or skills?
 3. How do I install and start it?
 4. What will using it feel like?
@@ -32,6 +32,7 @@ Do not use “proven,” “optimal,” performance uplift, cost reduction, or s
 When Huashu Design is installed, use it to review a public-surface change. The review must still satisfy this portable fallback:
 
 - preserve the stacked-node mark, ink `#0F172A`, and electric blue `#2563EB`;
+- name the delivery-harness category before asking readers to adopt its philosophy;
 - design from real Boatstack content rather than a generic AI landing-page pattern;
 - use one dominant product journey and progressive disclosure;
 - keep portability diagrams subordinate to the product journey and focused on real hosts, models, skills, and repository state;
