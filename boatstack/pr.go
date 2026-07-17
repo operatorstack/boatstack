@@ -47,6 +47,8 @@ type PRContext struct {
 	ProjectCommands    map[string]string `json:"project_commands,omitempty"`
 	HighRiskFiles      []string          `json:"high_risk_files,omitempty"`
 	GateStatus         map[string]string `json:"gate_status,omitempty"`
+	SafetyStatus       string            `json:"safety_status"`
+	SafetyFindings     []SafetyFinding   `json:"safety_findings,omitempty"`
 	Sources            []PRSource        `json:"sources,omitempty"`
 	PreviewPath        string            `json:"preview_path"`
 }
@@ -406,6 +408,13 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 		sources = append(sources, managedSources...)
 		gateStatus = statuses
 	}
+	safety, err := CheckRepositorySafety(repo)
+	if err != nil {
+		return PRContext{}, fmt.Errorf("cannot establish operational safety evidence: %w", err)
+	}
+	if mode == "managed" && safety.Status != "PASS" {
+		return PRContext{}, fmt.Errorf("managed PR is blocked by executable irreversible capability: %s", safety.Findings[0].Category)
+	}
 	sort.Slice(sources, func(i, j int) bool { return sources[i].Path < sources[j].Path })
 	fingerprintPayload, err := MarshalJSON(map[string]any{
 		"schema_version":      prPreviewSchemaVersion,
@@ -417,6 +426,8 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 		"merge_base_commit":   mergeBaseCommit,
 		"product_diff_sha256": SHA256Bytes(diff),
 		"gate_status":         gateStatus,
+		"safety_status":       safety.Status,
+		"safety_findings":     safety.Findings,
 		"sources":             sources,
 	})
 	if err != nil {
@@ -430,6 +441,7 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 		ContextPaths: config.Project.Context, ProjectCommands: config.Project.Commands,
 		HighRiskFiles: highRiskChangedFiles(changed, config.Project.HighRiskPaths),
 		GateStatus:    gateStatus, Sources: sources,
+		SafetyStatus: safety.Status, SafetyFindings: safety.Findings,
 		PreviewPath: previewPath,
 	}, nil
 }
@@ -600,7 +612,7 @@ func ParsePRPreview(path string) (PRPreview, error) {
 	}
 	for _, heading := range []string{
 		"## Why this change", "## What changed", "## Review order", "## Evidence",
-		"## Known gaps and risks", "## Rollout and rollback",
+		"## Operational safety", "## Known gaps and risks", "## Rollout and rollback",
 	} {
 		if section(body, heading) == "" {
 			return PRPreview{}, fmt.Errorf("PR body requires a non-empty %s section", strings.TrimPrefix(heading, "## "))
@@ -787,6 +799,7 @@ func PRPreviewTemplate(context PRContext) string {
 		encoded, _ := json.Marshal(value)
 		return string(encoded)
 	}
+	safetySummary := "Repository safety scan: `" + context.SafetyStatus + "`. Destructive recovery remains operator-only outside Boatstack."
 	return strings.Join([]string{
 		"---",
 		"boatstack_pr_version: 1",
@@ -801,6 +814,7 @@ func PRPreviewTemplate(context PRContext) string {
 		"## What changed", "", "| Area | Before | After | Reviewer focus |", "|---|---|---|---|", "| | | | |", "",
 		"## Review order", "", "1. Start with the contract or boundary that defines the behavior.", "",
 		"## Evidence", "", "| Claim | Evidence | Result | Source |", "|---|---|---|---|", "| | | `NOT_VERIFIED` | |", "",
+		"## Operational safety", "", safetySummary, "",
 		"## Known gaps and risks", "", "List explicit gaps or say that no material gaps are known.", "",
 		"## Rollout and rollback", "", "Describe deployment impact and the smallest safe rollback.", "",
 		"<details>", "<summary>Boatstack provenance</summary>", "", "Summarize mode, approval/evidence availability, and coding-host attribution here.", "", "</details>", "",

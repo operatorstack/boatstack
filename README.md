@@ -8,7 +8,7 @@
 
 <p align="center"><strong>Build freely. Prove it. Ship.</strong></p>
 
-Boatstack is **evidence-engineered coding**: a model-neutral coding node that turns product intent and repository context into an explicitly approved, tested, reviewable change. It does not prescribe the model, implementation technique, tools, or document structure. It governs what may be claimed, approved, or shipped. Its behavior is generated from [Intelligence Flow at `4fee357eb535287be4b172b2af4c2e44939ce196`](https://github.com/operatorstack/intelligence-flow/tree/4fee357eb535287be4b172b2af4c2e44939ce196/examples/12-product-engineering-loop).
+Boatstack is **evidence-engineered coding**: a model-neutral coding node that turns product intent and repository context into an explicitly approved, tested, reviewable change. It does not prescribe the model, implementation technique, tools, or document structure. It governs what may be claimed, approved, or shipped. Its behavior is generated from [Intelligence Flow at `15c2f1faa8f0a0e133dea89983ca08b3aec4787c`](https://github.com/operatorstack/intelligence-flow/tree/15c2f1faa8f0a0e133dea89983ca08b3aec4787c/examples/12-product-engineering-loop).
 
 > **You are free in how you build. Only claims of completion require evidence.**
 
@@ -46,7 +46,7 @@ irm https://raw.githubusercontent.com/operatorstack/boatstack/main/install.ps1 |
 
 The installer previews the generated paths, verifies the platform helper, asks about optional gstack and Spec Kit integrations, runs a smoke check, and prints the exact infrastructure commit commands. Boatstack core requires no Python, Node, Go, or package manager. The helper is repository-local and ignored; the adapters and policy are committed.
 
-**New here?** [Install and ship your first feature](docs/getting-started.md) · [Understand generated files](docs/generated-files.md) · [Troubleshoot](docs/troubleshooting.md) · [See the real account-recovery walkthrough](docs/account-recovery-walkthrough.md)
+**New here?** [Install and ship your first feature](docs/getting-started.md) · [Safety boundary](docs/safety.md) · [Understand generated files](docs/generated-files.md) · [Troubleshoot](docs/troubleshooting.md) · [See the real account-recovery walkthrough](docs/account-recovery-walkthrough.md)
 
 **Go deeper:** [Validation and evidence](docs/validation-and-evidence.md) · [gstack and Spec Kit](#use-boatstack-with-gstack-and-github-spec-kit) · [Evidence-engineered coding](docs/evidence-engineered-coding.md)
 
@@ -57,6 +57,12 @@ idea -> Plan mode -> /auto-plan -> questions -> /plan-gate
 ```
 
 At ship, Boatstack compiles the approved intent, actual committed diff, evidence, decisions, gaps, rollout, and rollback into a reviewer-ready title and body. It shows the exact preview first; GitHub changes only after `open PR` or `update PR`. For an existing branch, simply ask **“Use Boatstack to improve this PR.”** There is no extra `/pr-brief` command, and missing workflow evidence is labeled `NOT_VERIFIED` rather than invented.
+
+## Irreversible operations stop before execution
+
+Boatstack installs fail-closed project hooks for Cursor, Codex, and Claude. High-confidence database resets and drops, broad recursive deletion, destructive Git history changes, cloud-resource destruction, and backup removal are always denied—across ordinary agent tool calls, not only Boatstack commands. There is no in-session bypass. After an external-write failure, the agent must preserve state, diagnose read-only, and use only a proven transactional retry or fix-forward repair.
+
+The hooks are defense in depth, not a security sandbox. Keep least-privilege credentials, service-side destructive approval, and backups. See [Safety boundary](docs/safety.md) for the exact policy, host limitations, and evaluation status.
 
 ## Plan first, then auto-plan
 
@@ -315,7 +321,7 @@ Read the [research and design record](docs/research-and-design.md) and [corpus a
 
 ## Context has a budget
 
-The three canonical runtime references currently total approximately **6039 estimated tokens** using `ceil(characters / 4)`. That is a stable compactness signal, not provider billing. Host adapters stay thin and load the operation-specific slice on demand.
+The three canonical runtime references currently total approximately **7645 estimated tokens** using `ceil(characters / 4)`. That is a stable compactness signal, not provider billing. Host adapters stay thin and load the operation-specific slice on demand.
 
 ## Status
 

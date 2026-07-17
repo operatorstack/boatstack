@@ -14,6 +14,8 @@ Boatstack creates two different kinds of repository state. Keeping them separate
 | `.agents/skills/boatstack/` | Boatstack-generated Codex/open-agent adapter | Commit. |
 | `.claude/skills/boatstack/` | Boatstack-generated Claude adapter | Commit. |
 | `.github/PULL_REQUEST_TEMPLATE/boatstack.md` | Boatstack-generated PR adapter | Commit. |
+| `.product-loop/hooks/` | Boatstack-generated fail-closed Bash/PowerShell launchers and host fragments | Commit; do not weaken or edit directly. |
+| `.cursor/hooks.json`, `.claude/settings.json`, `.codex/hooks.json` | Merged host configuration | Commit the Boatstack fragment alongside preserved unrelated settings. |
 | `.product-loop/bin/` | Machine-local | Do not commit. It contains the verified platform helper and local install lock and is ignored. |
 
 The installation manifest `.product-loop/generated.lock.json` describes generated infrastructure. It is different from a feature's `plan.lock.json`, which proves that a specific approved plan activated without drift.
@@ -45,6 +47,8 @@ The `pr.md` frontmatter is non-rendered publication metadata; the remaining Mark
 Committed adapters remain available after cloning. Restore only the ignored helper by rerunning the installer from the repository root. For an update, create a new `chore/update-boatstack` branch, rerun the installer, inspect the generated diff and version provenance, and merge it as a separate infrastructure PR.
 
 Never delete untracked adapters merely to make a feature diff smaller. If Boatstack was installed without committing its infrastructure, stop and create the installation PR first. Run this read-only check whenever commands disappear or generated state looks suspicious:
+
+`doctor` also verifies that each configured host contains exactly one current Boatstack fragment and that malformed events are denied. Some hosts do not expose whether a repository is trusted or hooks are enabled; confirm that host state separately. The hooks complement, rather than replace, least-privilege external credentials.
 
 ```bash
 .product-loop/bin/boatstack-helper doctor --repo .

@@ -302,6 +302,9 @@ func RunInit(options InitOptions) error {
 	for _, path := range paths {
 		fmt.Fprintln(options.Output, "  "+path)
 	}
+	for _, path := range HostHookPaths(config.Adapters) {
+		fmt.Fprintln(options.Output, "  "+path+" (merge Boatstack safety hook; preserve existing settings)")
+	}
 	if !fileExists(configPath) {
 		fmt.Fprintln(options.Output, "  .boatstack-project.json (editable repository facts)")
 	}
@@ -320,6 +323,9 @@ func RunInit(options InitOptions) error {
 	if err := WriteExport(repo, bundle.Files); err != nil {
 		return err
 	}
+	if err := InstallHostHooks(repo, config.Adapters); err != nil {
+		return err
+	}
 	binaryPath, binaryHash, err := copyHelper(options.BinaryPath, repo)
 	if err != nil {
 		return err
@@ -334,10 +340,15 @@ func RunInit(options InitOptions) error {
 	if err := CheckExport(repo, bundle.Files); err != nil {
 		return err
 	}
+	if err := CheckHostHooks(repo, config.Adapters); err != nil {
+		return err
+	}
 	if err := Doctor(repo); err != nil {
 		return fmt.Errorf("post-install smoke check failed: %w", err)
 	}
 	fmt.Fprintln(options.Output, "\nPASS: Boatstack core installed without a language runtime.")
+	fmt.Fprintln(options.Output, "PASS: fail-closed irreversible-operation hooks verified for installed hosts.")
+	fmt.Fprintln(options.Output, "Hooks are defense in depth; keep least-privilege credentials and service-side destructive approval.")
 	keys := sortedKeys(states)
 	for _, name := range keys {
 		state := states[name]
@@ -345,6 +356,7 @@ func RunInit(options InitOptions) error {
 	}
 	fmt.Fprintln(options.Output, "\nBefore product work, commit Boatstack infrastructure in its own PR:")
 	stagePaths := append([]string{".boatstack-project.json"}, paths...)
+	stagePaths = append(stagePaths, HostHookPaths(config.Adapters)...)
 	fmt.Fprintln(options.Output, "  git status --short")
 	fmt.Fprintln(options.Output, "  git add -- "+strings.Join(stagePaths, " "))
 	fmt.Fprintln(options.Output, "  git commit -m \"chore: install Boatstack\"")

@@ -39,6 +39,12 @@ func TestExportAndDriftCheck(t *testing.T) {
 	if err := CheckExport(repo, bundle.Files); err != nil {
 		t.Fatal(err)
 	}
+	if err := InstallHostHooks(repo, config.Adapters); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckHostHooks(repo, config.Adapters); err != nil {
+		t.Fatal(err)
+	}
 	for _, path := range []string{
 		".cursor/commands/plan-gate.md",
 		".cursor/commands/review.md",
@@ -47,6 +53,9 @@ func TestExportAndDriftCheck(t *testing.T) {
 		".product-loop/.gitignore",
 		".product-loop/templates/plan.md",
 		".product-loop/templates/approval.md",
+		".product-loop/hooks/guard.sh",
+		".product-loop/hooks/guard.ps1",
+		".product-loop/hooks/cursor.fragment.json",
 	} {
 		if !fileExists(filepath.Join(repo, filepath.FromSlash(path))) {
 			t.Fatalf("expected generated file %s", path)
@@ -115,7 +124,7 @@ func TestExportAndDriftCheck(t *testing.T) {
 		}
 	}
 	prTemplate := string(bundle.Files[".github/PULL_REQUEST_TEMPLATE/boatstack.md"])
-	for _, expected := range []string{"## Why this change", "## What changed", "## Review order", "## Evidence", "## Known gaps and risks", "## Rollout and rollback", "<summary>Boatstack provenance</summary>"} {
+	for _, expected := range []string{"## Why this change", "## What changed", "## Review order", "## Evidence", "## Operational safety", "## Known gaps and risks", "## Rollout and rollback", "<summary>Boatstack provenance</summary>"} {
 		if !strings.Contains(prTemplate, expected) {
 			t.Fatalf("generated PR template is missing %q", expected)
 		}
@@ -131,6 +140,11 @@ func TestExportAndDriftCheck(t *testing.T) {
 	for _, expected := range []string{"## User-facing response contract", "Exactly one primary action", "gh api user --jq .login", "Never infer the approver"} {
 		if !strings.Contains(workflow, expected) {
 			t.Fatalf("canonical workflow is missing response contract %q", expected)
+		}
+	}
+	for _, expected := range []string{"irreversible", "operator-only", "fix-forward", "least-privilege"} {
+		if !strings.Contains(strings.ToLower(workflow), strings.ToLower(expected)) {
+			t.Fatalf("canonical workflow is missing safety boundary %q", expected)
 		}
 	}
 	for _, path := range []string{".agents/skills/boatstack/SKILL.md", ".claude/skills/boatstack/SKILL.md"} {

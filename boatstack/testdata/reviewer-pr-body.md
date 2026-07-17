@@ -24,6 +24,10 @@ Repository hooks could not reliably find the project toolchain when an IDE pushe
 | Privacy detection remains active with the compact model | Targeted detector scenario | `NOT_VERIFIED` | Current branch test notes |
 | Static typing remains clean | Project type-check command | `NOT_VERIFIED` | Current branch test notes |
 
+## Operational safety
+
+Repository safety scan passed. Destructive recovery remains operator-only.
+
 ## Security and privacy
 
 The fallback keeps privacy detection enabled and removes an unexpected network/download side effect from the test path.

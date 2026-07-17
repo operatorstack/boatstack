@@ -195,6 +195,26 @@ func Doctor(repoPath string) error {
 	if err := CheckExport(repo, bundle.Files); err != nil {
 		return err
 	}
+	if err := CheckHostHooks(repo, config.Adapters); err != nil {
+		return err
+	}
+	for _, host := range []string{"cursor", "claude", "codex"} {
+		if !contains(config.Adapters, host) {
+			continue
+		}
+		var input []byte
+		if host == "cursor" {
+			input = []byte(`{"command":"git status --short"}`)
+		} else {
+			input = []byte(`{"tool_name":"Bash","tool_input":{"command":"git status --short"}}`)
+		}
+		if _, denied := HookDecision(SafetyHookOptions{Host: host, Repo: repo, Input: input}); denied {
+			return fmt.Errorf("%s safety hook denied its read-only smoke event", host)
+		}
+		if _, denied := HookDecision(SafetyHookOptions{Host: host, Repo: repo, Input: []byte(`{"malformed":true}`)}); !denied {
+			return fmt.Errorf("%s safety hook did not fail closed on malformed input", host)
+		}
+	}
 	lockPath := filepath.Join(repo, ".product-loop", "bin", "install.lock.json")
 	value, err := os.ReadFile(lockPath)
 	if err != nil {

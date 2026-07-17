@@ -27,7 +27,8 @@ func TestRuntimeFreeInit(t *testing.T) {
 	}
 	for _, path := range []string{
 		".boatstack-project.json", ".product-loop/project.json", ".product-loop/generated.lock.json",
-		".product-loop/bin/install.lock.json", ".cursor/commands/auto-plan.md",
+		".product-loop/bin/install.lock.json", ".cursor/commands/auto-plan.md", ".product-loop/hooks/guard.sh",
+		".cursor/hooks.json", ".claude/settings.json", ".codex/hooks.json",
 	} {
 		if !fileExists(filepath.Join(repo, filepath.FromSlash(path))) {
 			t.Fatalf("init did not create %s", path)
@@ -42,6 +43,11 @@ func TestRuntimeFreeInit(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "PASS: Boatstack core installed without a language runtime") {
 		t.Fatalf("unexpected init output: %s", output.String())
+	}
+	for _, expected := range []string{"fail-closed irreversible-operation hooks verified", "least-privilege credentials"} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("init output is missing safety guidance %q: %s", expected, output.String())
+		}
 	}
 	for _, expected := range []string{"commit Boatstack infrastructure in its own PR", "git add -- .boatstack-project.json", "git push -u origin chore/install-boatstack", "reload Cursor, Codex, or Claude"} {
 		if !strings.Contains(output.String(), expected) {

@@ -22,6 +22,8 @@ irm https://raw.githubusercontent.com/operatorstack/boatstack/main/install.ps1 |
 
 Choose `core` unless you already want gstack review lenses, Spec Kit artifact generation, or both. Confirm the real test command when asked. The installer previews every path before writing it, verifies the helper checksum, and runs `doctor` after installation.
 
+The install also merges Boatstack's fail-closed safety fragments into all portable host configurations. Review those fragments in the infrastructure PR. They deny high-confidence irreversible operations on every supported agent call; no approval phrase bypasses them.
+
 Review the printed paths and repository facts:
 
 ```bash
@@ -153,6 +155,8 @@ Run the gates in order:
 - `test-gate` maps every acceptance criterion to current evidence.
 - `review-gate` reviews the actual diff and may send the feature back for a local repair.
 - `ship-gate` generates a reviewer-ready title and body from the approved intent, actual committed diff, evidence, decisions, and gaps.
+
+For external writes, the gates also require immutable target identity, transactional or fix-forward failure behavior, an independent safety oracle, and an operational diff with no executable destructive recovery. Operator-only recovery remains outside the feature branch.
 
 Boatstack shows the exact title and rendered body before changing GitHub. Reply `open PR` when the branch has no PR. Reply `update PR` when one already exists. It then rechecks the diff and evidence before publication. If anything changed after the preview, Boatstack regenerates it instead of publishing stale claims. Merge and deploy remain separate decisions.
 
