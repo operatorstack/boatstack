@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 580" role="img" aria-labelledby="title description">
+  <title id="title">Boatstack product journey</title>
+  <desc id="description">A continuous path from idea to plan, questions, approval, build, tests, review, and pull request. Failed tests return to build, and review changes return to the plan.</desc>
+  <style>
+    .ink{fill:#0F172A}.muted{fill:#475569}.surface{fill:#F8FAFC}.rule{stroke:#CBD5E1}.path{stroke:#2563EB}.node{fill:#FFFFFF;stroke:#0F172A}.accent{fill:#2563EB}.paper{fill:#FFFFFF}
+    .label{font:700 24px "Avenir Next","Segoe UI",sans-serif;letter-spacing:.02em}.small{font:500 16px "Avenir Next","Segoe UI",sans-serif}.step{font:700 14px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.12em}
+    @media(prefers-color-scheme:dark){.ink{fill:#E2E8F0}.muted{fill:#94A3B8}.surface{fill:#172033}.rule{stroke:#475569}.node{fill:#0F172A;stroke:#E2E8F0}.paper{fill:#0B1220}}
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="accent" d="M0 0 10 5 0 10z"/></marker>
+    <marker id="muted-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="muted" d="M0 0 10 5 0 10z"/></marker>
+  </defs>
+  <rect class="paper" width="1200" height="580" rx="24"/>
+  <path class="path" d="M100 150H1100V420H100" fill="none" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+  <g transform="translate(100 150)"><circle class="node" r="52" stroke-width="4"/><circle class="accent" r="13"/><text class="step muted" x="0" y="-78" text-anchor="middle">01</text><text class="label ink" x="0" y="88" text-anchor="middle">Idea</text></g>
+  <g transform="translate(430 150)"><circle class="node" r="52" stroke-width="4"/><path class="accent" d="M-20-19h40v8h-40zm0 15h40v8h-40zm0 15h27v8h-27z"/><text class="step muted" x="0" y="-78" text-anchor="middle">02</text><text class="label ink" x="0" y="88" text-anchor="middle">Plan</text></g>
+  <g transform="translate(770 150)"><circle class="node" r="52" stroke-width="4"/><path class="accent" d="M-22-22h44v34h-20l-12 12v-12h-12zm11 10v7h7v-7zm15 0v7h7v-7z"/><text class="step muted" x="0" y="-78" text-anchor="middle">03</text><text class="label ink" x="0" y="88" text-anchor="middle">Questions</text></g>
+  <g transform="translate(1100 150)"><circle class="node" r="52" stroke-width="4"/><path class="accent" d="m-24 1 15 15 33-35 8 8-41 43-23-23z"/><text class="step muted" x="0" y="-78" text-anchor="middle">04</text><text class="label ink" x="0" y="88" text-anchor="middle">Approve</text></g>
+  <g transform="translate(1100 420)"><circle class="node" r="52" stroke-width="4"/><path class="accent" d="M-25-19h50v38h-50zm9 9v20h32v-20z"/><text class="label ink" x="0" y="88" text-anchor="middle">Build</text><text class="step muted" x="0" y="-78" text-anchor="middle">05</text></g>
+  <g transform="translate(770 420)"><circle class="node" r="52" stroke-width="4"/><path class="accent" d="m-26 0 18 18 35-38 8 8-43 46-26-26z"/><text class="label ink" x="0" y="88" text-anchor="middle">Tests</text><text class="step muted" x="0" y="-78" text-anchor="middle">06</text></g>
+  <g transform="translate(430 420)"><circle class="node" r="52" stroke-width="4"/><path class="accent" d="M-28-20h44v32h-44zm9 9v6h26v-6zm0 12v6h18v-6zm39 19 17 17-7 7-17-17z"/><text class="label ink" x="0" y="88" text-anchor="middle">Review</text><text class="step muted" x="0" y="-78" text-anchor="middle">07</text></g>
+  <g transform="translate(100 420)"><circle class="node" r="52" stroke-width="4"/><path class="accent" d="M-23-25h32l18 18v32h-50zm31 5v14h14zM-12 5v8h28V5z"/><text class="label ink" x="0" y="88" text-anchor="middle">PR</text><text class="step muted" x="0" y="-78" text-anchor="middle">08</text></g>
+  <path class="rule" d="M770 360V300h330v60" fill="none" stroke-width="3" stroke-dasharray="7 8" marker-end="url(#muted-arrow)"/>
+  <text class="small muted" x="935" y="288" text-anchor="middle">a failed check returns to the change</text>
+  <path class="rule" d="M430 360V210" fill="none" stroke-width="3" stroke-dasharray="7 8" marker-end="url(#muted-arrow)"/>
+  <text class="small muted" x="410" y="292" text-anchor="end">a changed decision returns to the plan</text>
+</svg>
