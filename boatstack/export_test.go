@@ -178,6 +178,54 @@ func TestExportAndDriftCheck(t *testing.T) {
 	}
 }
 
+func TestPortableHostAdaptersShareWorkflowAndArtifactContract(t *testing.T) {
+	config := testConfig()
+	raw, err := MarshalJSON(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := BuildExportBundle(".boatstack-project.json", config, raw, "boatstack")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	workflow := string(bundle.Files[".product-loop/workflow.md"])
+	artifacts := string(bundle.Files[".product-loop/artifacts.md"])
+	for _, expected := range []string{"auto-plan", "plan-gate", "build", "test-gate", "review-gate", "ship-gate", "retro"} {
+		if !strings.Contains(workflow, expected) {
+			t.Fatalf("canonical portable workflow is missing %q", expected)
+		}
+		if _, exists := bundle.Files[".cursor/commands/"+expected+".md"]; !exists {
+			t.Fatalf("Cursor does not expose portable operation %q", expected)
+		}
+	}
+	for _, expected := range []string{"source plan", "plan.md", "approval.md", "evidence", "gaps", "review", "pr.md"} {
+		if !strings.Contains(strings.ToLower(artifacts), strings.ToLower(expected)) {
+			t.Fatalf("repository artifact contract is missing %q", expected)
+		}
+	}
+
+	hostSurfaces := map[string]string{
+		"cursor": string(bundle.Files[".cursor/rules/boatstack.mdc"]),
+		"claude": string(bundle.Files[".claude/skills/boatstack/SKILL.md"]),
+		"codex":  string(bundle.Files[".agents/skills/boatstack/SKILL.md"]),
+	}
+	for host, surface := range hostSurfaces {
+		for _, expected := range []string{".product-loop/project.json", ".product-loop/workflow.md"} {
+			if !strings.Contains(surface, expected) {
+				t.Fatalf("%s adapter does not reference shared repository contract %q", host, expected)
+			}
+		}
+	}
+	for _, host := range []string{"claude", "codex"} {
+		for _, operation := range []string{"auto-plan", "plan-gate", "build", "test-gate", "review-gate", "ship-gate", "boatstack-update", "retro"} {
+			if !strings.Contains(hostSurfaces[host], operation) {
+				t.Fatalf("%s adapter does not expose portable operation %q", host, operation)
+			}
+		}
+	}
+}
+
 func TestExportRefusesUserOwnedCollision(t *testing.T) {
 	repo := t.TempDir()
 	path := filepath.Join(repo, ".cursor", "rules", "boatstack.mdc")

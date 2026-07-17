@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 480" role="img" aria-labelledby="title desc">
+  <title id="title">Your product development flow stays with the repository</title>
+  <desc id="desc">Cursor, Codex, Claude Code, different model tiers, and specialist skills feed one repository-owned Boatstack flow. The flow retains plans, decisions, gaps, evidence, and review findings, producing a reviewed pull request and useful context for the next feature.</desc>
+  <style>
+    .paper{fill:#fff}.node{fill:#fff;stroke:#0F172A}.core{fill:#E8F0FF;stroke:#2563EB}.soft{fill:#F8FAFC;stroke:#CBD5E1}.ink{fill:#0F172A}.muted{fill:#475569}.blue{stroke:#2563EB}.gray{stroke:#94A3B8}.accent{fill:#2563EB}
+    .title{font:700 27px "Avenir Next","Segoe UI",sans-serif}.label{font:700 18px "Avenir Next","Segoe UI",sans-serif}.body{font:600 16px "Avenir Next","Segoe UI",sans-serif}.small{font:700 13px "Avenir Next","Segoe UI",sans-serif;letter-spacing:.09em}
+    @media(prefers-color-scheme:dark){.paper,.node{fill:#0F172A}.core{fill:#172A4D}.soft{fill:#172033;stroke:#475569}.ink{fill:#E2E8F0}.muted{fill:#94A3B8}.node{stroke:#E2E8F0}}
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="accent" d="M0 0 10 5 0 10z"/></marker>
+  </defs>
+  <rect class="paper" width="1200" height="480" rx="24"/>
+  <text class="title ink" x="48" y="52">Change the tools. Keep the flow.</text>
+  <text class="body muted" x="48" y="80">The repository owns the working state and the standard for “done.”</text>
+
+  <g transform="translate(48 116)">
+    <rect class="node" width="312" height="82" rx="18" stroke-width="3"/>
+    <text class="small muted" x="22" y="27">CODING AGENT</text>
+    <text class="label ink" x="22" y="57">Cursor · Codex · Claude Code</text>
+  </g>
+  <g transform="translate(48 218)">
+    <rect class="node" width="312" height="82" rx="18" stroke-width="3"/>
+    <text class="small muted" x="22" y="27">MODEL</text>
+    <text class="label ink" x="22" y="57">Lower-cost · General · Frontier</text>
+  </g>
+  <g transform="translate(48 320)">
+    <rect class="node" width="312" height="104" rx="18" stroke-width="3"/>
+    <text class="small muted" x="22" y="27">SPECIALIST SKILLS</text>
+    <text class="label ink" x="22" y="57">React · gstack · Spec Kit</text>
+    <text class="body muted" x="22" y="84">and other repository skills</text>
+  </g>
+
+  <g class="gray" fill="none" stroke-width="3">
+    <path d="M360 157H410V270H445"/>
+    <path d="M360 259H445"/>
+    <path d="M360 372H410V270"/>
+  </g>
+  <path class="blue" d="M410 270H445" fill="none" stroke-width="4" marker-end="url(#arrow)"/>
+
+  <g transform="translate(456 132)">
+    <rect class="core" width="406" height="276" rx="24" stroke-width="3"/>
+    <text class="small" x="203" y="34" text-anchor="middle" fill="#2563EB">YOUR REPOSITORY</text>
+    <text class="title ink" x="203" y="75" text-anchor="middle">BOATSTACK</text>
+    <text class="body muted" x="203" y="104" text-anchor="middle">one product-development flow</text>
+    <g transform="translate(30 132)">
+      <rect class="soft" width="346" height="94" rx="16" stroke-width="2"/>
+      <text class="label ink" x="173" y="37" text-anchor="middle">plan · decisions · gaps</text>
+      <text class="label ink" x="173" y="68" text-anchor="middle">evidence · review</text>
+    </g>
+    <text class="body muted" x="203" y="254" text-anchor="middle">The saved state stays with the project.</text>
+  </g>
+
+  <path class="blue" d="M862 270H914" fill="none" stroke-width="4" marker-end="url(#arrow)"/>
+  <g transform="translate(928 166)">
+    <rect class="node" width="224" height="208" rx="24" stroke-width="3"/>
+    <text class="small muted" x="112" y="34" text-anchor="middle">WHAT LEAVES THE FLOW</text>
+    <text class="label ink" x="112" y="77" text-anchor="middle">Reviewed PR</text>
+    <path class="gray" d="M38 102H186" stroke-width="2"/>
+    <text class="body muted" x="112" y="132" text-anchor="middle">plus useful context</text>
+    <text class="body muted" x="112" y="158" text-anchor="middle">for the next feature</text>
+    <circle class="accent" cx="112" cy="184" r="5"/>
+  </g>
+</svg>

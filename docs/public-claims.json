@@ -1,8 +1,19 @@
 {
   "schema_version": 1,
-  "source_commit": "09388a6c92ece15283a8d0dc2b7edef3d2cc3aba",
+  "source_commit": "f761e7e73e982b0bf5562197519d0b5bc7b937f0",
   "statuses": ["verified", "observed", "still_being_evaluated"],
   "claims": [
+    {
+      "id": "portable-product-flow",
+      "public_claim": "Boatstack exposes one product-development workflow across Cursor, Codex, and Claude Code while keeping its durable planning, decision, gap, evidence, and review state in the repository.",
+      "status": "verified",
+      "originating_observation": "Coding-host configuration, model choice, and specialist skills otherwise become separate places where a product-development process and its working state can fragment.",
+      "safeguard": "Portable host adapters project one workflow contract while canonical feature artifacts remain repository-owned and model-neutral.",
+      "readable_evidence": "why-these-steps.md#portable-workflow-and-state",
+      "implementation": ["../boatstack/export.go", "../boatstack/references/artifacts.md", "../boatstack/references/workflow.md"],
+      "verification": ["../boatstack/export_test.go"],
+      "last_verified_version": "source:f761e7e73e982b0bf5562197519d0b5bc7b937f0"
+    },
     {
       "id": "human-decisions",
       "public_claim": "Boatstack asks for material product decisions, records the human answer, and requires approval before build.",
@@ -12,7 +23,7 @@
       "readable_evidence": "why-these-steps.md#human-decisions",
       "implementation": ["../boatstack/references/workflow.md", "../boatstack/plan.go"],
       "verification": ["../boatstack/plan_test.go", "../boatstack/planning_test.go"],
-      "last_verified_version": "source:09388a6c92ece15283a8d0dc2b7edef3d2cc3aba"
+      "last_verified_version": "source:f761e7e73e982b0bf5562197519d0b5bc7b937f0"
     },
     {
       "id": "validation-provenance",
@@ -23,7 +34,7 @@
       "readable_evidence": "why-these-steps.md#validation-provenance",
       "implementation": ["validation-and-evidence.md", "../boatstack/plan.go"],
       "verification": ["../boatstack/plan_test.go"],
-      "last_verified_version": "source:09388a6c92ece15283a8d0dc2b7edef3d2cc3aba"
+      "last_verified_version": "source:f761e7e73e982b0bf5562197519d0b5bc7b937f0"
     },
     {
       "id": "irreversible-operations",
@@ -35,7 +46,7 @@
       "readable_evidence": "why-these-steps.md#irreversible-operations",
       "implementation": ["safety.md", "../boatstack/safety.go", "../boatstack/hooks.go"],
       "verification": ["../boatstack/safety_test.go", "../boatstack/hooks_test.go"],
-      "last_verified_version": "source:09388a6c92ece15283a8d0dc2b7edef3d2cc3aba"
+      "last_verified_version": "source:f761e7e73e982b0bf5562197519d0b5bc7b937f0"
     },
     {
       "id": "reviewer-ready-pr",
@@ -46,7 +57,7 @@
       "readable_evidence": "why-these-steps.md#reviewer-ready-pr",
       "implementation": ["../boatstack/pr.go", "getting-started.md"],
       "verification": ["../boatstack/pr_test.go"],
-      "last_verified_version": "source:09388a6c92ece15283a8d0dc2b7edef3d2cc3aba"
+      "last_verified_version": "source:f761e7e73e982b0bf5562197519d0b5bc7b937f0"
     },
     {
       "id": "model-neutral-contract",
@@ -57,7 +68,7 @@
       "readable_evidence": "why-these-steps.md#model-choice-and-budget",
       "implementation": ["research-and-design.md", "../boatstack/references/workflow.md"],
       "verification": ["../boatstack/export_test.go", "../boatstack/planning_test.go"],
-      "last_verified_version": "source:09388a6c92ece15283a8d0dc2b7edef3d2cc3aba"
+      "last_verified_version": "source:f761e7e73e982b0bf5562197519d0b5bc7b937f0"
     },
     {
       "id": "cross-model-failures",
@@ -68,7 +79,7 @@
       "readable_evidence": "why-these-steps.md#model-choice-and-budget",
       "implementation": ["research-and-design.md"],
       "verification": ["benchmark-corpus-audit.md", "benchmark-submission-audit.md"],
-      "last_verified_version": "source:09388a6c92ece15283a8d0dc2b7edef3d2cc3aba"
+      "last_verified_version": "source:f761e7e73e982b0bf5562197519d0b5bc7b937f0"
     },
     {
       "id": "lower-cost-outcomes",
@@ -79,7 +90,7 @@
       "readable_evidence": "why-these-steps.md#model-choice-and-budget",
       "implementation": ["research-and-design.md"],
       "verification": ["benchmark-corpus-audit.md", "benchmark-submission-audit.md"],
-      "last_verified_version": "source:09388a6c92ece15283a8d0dc2b7edef3d2cc3aba"
+      "last_verified_version": "source:f761e7e73e982b0bf5562197519d0b5bc7b937f0"
     },
     {
       "id": "git-worktree-activation",
@@ -90,7 +101,7 @@
       "readable_evidence": "why-these-steps.md#git-worktree-activation",
       "implementation": ["../boatstack/runtime_cache.go", "../boatstack/hooks.go"],
       "verification": ["../boatstack/runtime_cache_test.go", "../boatstack/hooks_test.go"],
-      "last_verified_version": "source:09388a6c92ece15283a8d0dc2b7edef3d2cc3aba"
+      "last_verified_version": "source:f761e7e73e982b0bf5562197519d0b5bc7b937f0"
     },
     {
       "id": "visible-updates",
@@ -101,7 +112,7 @@
       "readable_evidence": "why-these-steps.md#visible-updates",
       "implementation": ["../boatstack/update.go", "../boatstack/init.go"],
       "verification": ["../boatstack/update_test.go", "../boatstack/init_test.go", "../boatstack/export_test.go"],
-      "last_verified_version": "source:09388a6c92ece15283a8d0dc2b7edef3d2cc3aba"
+      "last_verified_version": "source:f761e7e73e982b0bf5562197519d0b5bc7b937f0"
     }
   ]
 }
