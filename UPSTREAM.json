@@ -12,7 +12,7 @@
   },
   "files": {
     ".gitignore": "a7079e923a776f14f1bb3a6aa0a11a133a8e1dfb35af020f327623357b7e3957",
-    "CONTRIBUTING.md": "845be08f967dc10b776ffd24ab05cabbd8c4945dc331f9fca5c8047b94ce08ce",
+    "CONTRIBUTING.md": "3c4bc4eb4d2e76c4dda310927f33892d7ebe5c2a9ad1b24928b1459ed6495229",
     "README.md": "fe52800af55f9867f3a7dfeafd17e2ebc3cca6c19a8f787c7eaf6d27f25028fc",
     "assets/boatstack-journey.svg": "c1f7fe2741f5e9ca66bb3fe9b103e6364ba5acbca8b7a8054768ffd85cf325ea",
     "assets/boatstack-mark.svg": "c46e935f06fcfde3b37abfd579c1963b765b2337a0fa993f9538c9b652297e39",
@@ -64,10 +64,10 @@
     "docs/account-recovery-walkthrough.md": "acd3558a95f48004f18a0590670de496e1cc9f0cd1d187f924615497f57e1d6f",
     "docs/benchmark-corpus-audit.md": "f2d206fe8579a514f9da82b2c96c19b343ac004be67617e1bd34f0f8e0e5e6c6",
     "docs/benchmark-submission-audit.md": "9518abdd17690729c6423f87cab20418ed47b0915b5faa44b9ef975e9e9c3b79",
-    "docs/evidence-engineered-coding.md": "4642e600fc527d1583dc13b21f8b132d6222b6fc0bc0f1c2cab8f283f3aab766",
-    "docs/generated-files.md": "33ea0799eb01af6e035fb1322c6a58c39ecc5dcc95169ce0adbd7933a0bfbee1",
+    "docs/evidence-engineered-coding.md": "ad02a921529735ab6733600ac4e002a9cb4645bbc9af3f3ed61ad5b47e64d4db",
+    "docs/generated-files.md": "7b2e8c10a35aa351fb87753492ed3cadb05011002d2fd6ffeb1951c356f6b286",
     "docs/getting-started.md": "9741947c4b072c0838d0ee3a578215d5fac1d72cf5e73075136d0a9c95db2bbb",
-    "docs/public-claims.json": "b67aad3c4aa25bc31caad7d7a910e0632a79d1968dbb07841850f6e92c51610c",
+    "docs/public-claims.json": "d72b759c44c016cf3601ccea67b993dd81fc906224f49c8e0f55d31d847a6f94",
     "docs/public-surface.md": "422696611bdd52fbac2baf6723a277fa8c451601a9f66774bde1529efdc2abab",
     "docs/research-and-design.md": "d65c66e323037bda5d45aacef5d48afa6bf93da55901378891d235aca3a5684f",
     "docs/safety.md": "7b9b5c515d36e683767ec8d3d9d6d119ac93650b2f629d351deadd4c600ed6a6",
@@ -79,7 +79,7 @@
     "examples/diagram-json/compiled/evidence.md": "1ba1c989ade070a8ef9a508fbd788d100d7292f2dbacbb2bce895468019f619d",
     "examples/diagram-json/compiled/tasks.json": "f040696f1f8bcedc4a8ed9816a61a49edbda970ec0cc3b28175ba37b73bbc896",
     "examples/diagram-json/compiled/test-matrix.json": "6c6895c509271e4337f3c91d9f62ee3a2b34e768e78513784cb012506a328ecf",
-    "examples/diagram-json/plan.lock.json": "9dc2698c705f33f4806a0e2b8dca748d0b2eed18b062b10243bff087ae97672a",
+    "examples/diagram-json/plan.lock.json": "a1907589972d8f22bd9bef3adfc9bab2ef81b9827553d6c2f02bb15948311c27",
     "examples/diagram-json/plan.md": "3ad35cc3cbe48306e7ee401bd9e9047d25e46c8a6fe9679aa1b3f5e96ceea292",
     "examples/diagram-json/questions.md": "1a0050041cac0a8d53e6ebfe04cbec4a298cdc8c50efeeb6fa15aeb663c5ec76",
     "examples/diagram-json/request.md": "0808fc41c36779c404f4a3a121167da6e76cac56df526e70f9ed6d3e0d4c02ed",
@@ -87,12 +87,13 @@
     "examples/diagram-json/spec.md": "a943c81cf2a88d23d5b300e6b9dc1dafc80923a9b6b9ab5297a67b4e2054b9d5",
     "install.ps1": "960b2b20b406bb2878a560e9ace53fe7226bc510be6ee8466ce4e608beb5625a",
     "install.sh": "939e604aa153b454e7fa1cbbe50a88be17782ea9df35d1bbb5615c737ed6f86e",
-    "project.example.json": "d1f7aa3cff0b55ede79500bd2ca710bb99cb2ae579f0a058dc00934accf03d33"
+    "project.example.json": "d1f7aa3cff0b55ede79500bd2ca710bb99cb2ae579f0a058dc00934accf03d33",
+    "release-notes/2026-07-17-visible-release-messages.md": "c93e8c812528a983502263e35d66c86a265d6ccba8203f393788c069b3fa6606"
   },
   "generator": "operatorstack/intelligence-flow:boatstack-distribution",
   "schema_version": 1,
   "source": {
-    "commit": "f761e7e73e982b0bf5562197519d0b5bc7b937f0",
+    "commit": "bab232ddd34b39e9e480131a3c967c723f831232",
     "path": "examples/12-product-engineering-loop",
     "repository": "operatorstack/intelligence-flow"
   }

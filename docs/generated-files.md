@@ -17,6 +17,7 @@ Boatstack creates installation state once and feature evidence repeatedly. Keepi
 | `.github/PULL_REQUEST_TEMPLATE/boatstack.md` | Fallback PR structure | Commit |
 | `.cursor/hooks.json`, `.claude/settings.json`, `.codex/hooks.json` | Boatstack fragments merged with existing host settings | Review and commit |
 | `.product-loop/bin/` | Verified worktree-local helper and install lock | Never commit; it is ignored and hydrates automatically |
+| `release-notes/*.md` | Canonical user-facing messages reused by sync PRs and tagged releases | Generated; edit in Intelligence Flow |
 
 The installer prints the exact staging command and runs `doctor`. Put this state in `chore/install-boatstack`, review it once, and merge it before feature work.
 
