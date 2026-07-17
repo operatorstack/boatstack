@@ -13,13 +13,14 @@ import (
 	"strings"
 )
 
-const prPreviewSchemaVersion = 1
+const prPreviewSchemaVersion = 2
 
 var prStatusPattern = regexp.MustCompile(`(?i)^(PASS|PASS_WITH_GAPS|NOT_VERIFIED|BLOCKED)$`)
 
 type PRContextOptions struct {
 	Repo    string
 	Feature string
+	SliceID string
 	Base    string
 }
 
@@ -33,6 +34,7 @@ type PRContext struct {
 	SchemaVersion      int               `json:"schema_version"`
 	Mode               string            `json:"mode"`
 	Feature            string            `json:"feature,omitempty"`
+	SliceID            string            `json:"slice_id,omitempty"`
 	BaseBranch         string            `json:"base_branch"`
 	HeadBranch         string            `json:"head_branch"`
 	BaseCommit         string            `json:"base_commit"`
@@ -58,6 +60,7 @@ type PRPreview struct {
 	Title              string
 	Mode               string
 	Feature            string
+	SliceID            string
 	BaseBranch         string
 	HeadBranch         string
 	ContextFingerprint string
@@ -293,9 +296,18 @@ func managedPRSources(repo, feature string) ([]PRSource, map[string]string, erro
 	if err != nil {
 		return nil, nil, err
 	}
+	deliveryState, err := LoadDeliveryState(repo, feature)
+	if err != nil {
+		return nil, nil, err
+	}
+	activeSlice, err := activeDeliverySlice(deliveryState)
+	if err != nil {
+		return nil, nil, err
+	}
+	explicitSlices := len(deliveryState.Slices) > 1 || deliveryState.Slices[0].ID != "delivery"
 	gateStatus := map[string]string{
-		"test":   evidenceGateStatus(string(evidence), "Test"),
-		"review": evidenceGateStatus(string(evidence), "Review"),
+		"test":   deliveryEvidenceGateStatus(string(evidence), "Test", activeSlice.ID, explicitSlices),
+		"review": deliveryEvidenceGateStatus(string(evidence), "Review", activeSlice.ID, explicitSlices),
 	}
 	for _, gate := range []string{"test", "review"} {
 		status := gateStatus[gate]
@@ -335,6 +347,15 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 	repo, err := ResolveRepository(options.Repo)
 	if err != nil {
 		return PRContext{}, err
+	}
+	if strings.TrimSpace(options.Feature) == "" {
+		active, activeErr := ActiveManagedDeliveries(repo)
+		if activeErr != nil {
+			return PRContext{}, activeErr
+		}
+		if len(active) > 0 {
+			return PRContext{}, fmt.Errorf("ad-hoc PR preparation is disabled while managed delivery is active: %s", strings.Join(active, ", "))
+		}
 	}
 	head, err := gitCommand(repo, "branch", "--show-current")
 	if err != nil || head == "" {
@@ -400,14 +421,7 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 	}
 	sources := []PRSource{configSource}
 	gateStatus := map[string]string{}
-	if mode == "managed" {
-		managedSources, statuses, sourceErr := managedPRSources(repo, options.Feature)
-		if sourceErr != nil {
-			return PRContext{}, sourceErr
-		}
-		sources = append(sources, managedSources...)
-		gateStatus = statuses
-	}
+	sliceID := ""
 	safety, err := CheckRepositorySafety(repo)
 	if err != nil {
 		return PRContext{}, fmt.Errorf("cannot establish operational safety evidence: %w", err)
@@ -415,11 +429,29 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 	if mode == "managed" && safety.Status != "PASS" {
 		return PRContext{}, fmt.Errorf("managed PR is blocked by executable irreversible capability: %s", safety.Findings[0].Category)
 	}
+	if mode == "managed" {
+		managedSources, statuses, sourceErr := managedPRSources(repo, options.Feature)
+		if sourceErr != nil {
+			return PRContext{}, sourceErr
+		}
+		sources = append(sources, managedSources...)
+		gateStatus = statuses
+		_, slice, gateSources, deliveryErr := CheckDeliveryReadyForShip(repo, options.Feature, base, head, SHA256Bytes(diff), changed)
+		if deliveryErr != nil {
+			return PRContext{}, deliveryErr
+		}
+		if options.SliceID != "" && options.SliceID != slice.ID {
+			return PRContext{}, fmt.Errorf("delivery slice %s is not active; current slice is %s", options.SliceID, slice.ID)
+		}
+		sliceID = slice.ID
+		sources = append(sources, gateSources...)
+	}
 	sort.Slice(sources, func(i, j int) bool { return sources[i].Path < sources[j].Path })
 	fingerprintPayload, err := MarshalJSON(map[string]any{
 		"schema_version":      prPreviewSchemaVersion,
 		"mode":                mode,
 		"feature":             options.Feature,
+		"slice_id":            sliceID,
 		"base_branch":         base,
 		"head_branch":         head,
 		"base_commit":         baseCommit,
@@ -434,7 +466,7 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 		return PRContext{}, err
 	}
 	return PRContext{
-		SchemaVersion: prPreviewSchemaVersion, Mode: mode, Feature: options.Feature,
+		SchemaVersion: prPreviewSchemaVersion, Mode: mode, Feature: options.Feature, SliceID: sliceID,
 		BaseBranch: base, HeadBranch: head, BaseCommit: baseCommit, MergeBaseCommit: mergeBaseCommit, HeadCommit: headCommit,
 		ProductDiffSHA256: SHA256Bytes(diff), ContextFingerprint: SHA256Bytes(fingerprintPayload),
 		ChangedFiles: changed, Commits: commits, DiffStat: diffStat,
@@ -459,7 +491,7 @@ func parsePRFrontmatter(value string) (map[string]string, string, error) {
 	fields := map[string]string{}
 	allowed := map[string]bool{
 		"boatstack_pr_version": true, "title": true, "mode": true, "feature": true,
-		"base": true, "head": true, "context_fingerprint": true,
+		"slice": true, "base": true, "head": true, "context_fingerprint": true,
 	}
 	for _, line := range strings.Split(frontmatter, "\n") {
 		key, raw, found := strings.Cut(line, ":")
@@ -484,7 +516,7 @@ func parsePRFrontmatter(value string) (map[string]string, string, error) {
 		}
 		fields[key] = decoded
 	}
-	for key := range allowed {
+	for _, key := range []string{"boatstack_pr_version", "title", "mode", "feature", "base", "head", "context_fingerprint"} {
 		if _, exists := fields[key]; !exists {
 			return nil, "", fmt.Errorf("PR frontmatter is missing %s", key)
 		}
@@ -588,7 +620,7 @@ func ParsePRPreview(path string) (PRPreview, error) {
 	}
 	preview := PRPreview{
 		SchemaVersion: version, Title: strings.TrimSpace(fields["title"]), Mode: fields["mode"],
-		Feature: fields["feature"], BaseBranch: fields["base"], HeadBranch: fields["head"],
+		Feature: fields["feature"], SliceID: fields["slice"], BaseBranch: fields["base"], HeadBranch: fields["head"],
 		ContextFingerprint: fields["context_fingerprint"], Body: body, Path: path,
 		Fingerprint: SHA256Bytes(value),
 	}
@@ -601,8 +633,14 @@ func ParsePRPreview(path string) (PRPreview, error) {
 	if preview.Mode == "managed" && !featureSlugPattern.MatchString(preview.Feature) {
 		return PRPreview{}, fmt.Errorf("managed PR preview requires a lowercase kebab-case feature")
 	}
+	if preview.Mode == "managed" && !featureSlugPattern.MatchString(preview.SliceID) {
+		return PRPreview{}, fmt.Errorf("managed PR preview requires a lowercase kebab-case delivery slice")
+	}
 	if preview.Mode == "ad-hoc" && preview.Feature != "" {
 		return PRPreview{}, fmt.Errorf("ad-hoc PR preview must not claim a managed feature")
+	}
+	if preview.Mode == "ad-hoc" && preview.SliceID != "" {
+		return PRPreview{}, fmt.Errorf("ad-hoc PR preview must not claim a managed delivery slice")
 	}
 	if strings.TrimSpace(preview.BaseBranch) == "" || strings.TrimSpace(preview.HeadBranch) == "" {
 		return PRPreview{}, fmt.Errorf("PR preview requires base and head branches")
@@ -648,7 +686,7 @@ func CheckPRPreview(repoPath, previewPath string) (PRPreview, PRContext, error) 
 	if err != nil {
 		return PRPreview{}, PRContext{}, err
 	}
-	context, err := PreparePRContext(PRContextOptions{Repo: repo, Feature: preview.Feature, Base: preview.BaseBranch})
+	context, err := PreparePRContext(PRContextOptions{Repo: repo, Feature: preview.Feature, SliceID: preview.SliceID, Base: preview.BaseBranch})
 	if err != nil {
 		return PRPreview{}, PRContext{}, err
 	}
@@ -669,7 +707,7 @@ func CheckPRPreview(repoPath, previewPath string) (PRPreview, PRContext, error) 
 	if filepath.Clean(expectedPath) != filepath.Clean(actualPath) {
 		return PRPreview{}, PRContext{}, fmt.Errorf("PR preview must be stored at %s", context.PreviewPath)
 	}
-	if preview.Mode != context.Mode || preview.BaseBranch != context.BaseBranch || preview.HeadBranch != context.HeadBranch || preview.ContextFingerprint != context.ContextFingerprint {
+	if preview.Mode != context.Mode || preview.SliceID != context.SliceID || preview.BaseBranch != context.BaseBranch || preview.HeadBranch != context.HeadBranch || preview.ContextFingerprint != context.ContextFingerprint {
 		return PRPreview{}, PRContext{}, fmt.Errorf("PR preview is stale or does not match the current branch context; regenerate it")
 	}
 	if context.Mode == "managed" {
@@ -786,10 +824,20 @@ func PublishPR(options PRPublishOptions) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		if context.Mode == "managed" {
+			if err := MarkDeliveryPublished(repo, context.Feature, context.SliceID, strings.TrimSpace(url)); err != nil {
+				return "", fmt.Errorf("PR opened but delivery state could not advance: %w", err)
+			}
+		}
 		return strings.TrimSpace(url), nil
 	}
 	if _, err := commandOutput(repo, "gh", "pr", "edit", existingURL, "--title", preview.Title, "--body-file", temporaryPath); err != nil {
 		return "", err
+	}
+	if context.Mode == "managed" {
+		if err := MarkDeliveryPublished(repo, context.Feature, context.SliceID, existingURL); err != nil {
+			return "", fmt.Errorf("PR updated but delivery state could not advance: %w", err)
+		}
 	}
 	return existingURL, nil
 }
@@ -802,10 +850,11 @@ func PRPreviewTemplate(context PRContext) string {
 	safetySummary := "Repository safety scan: `" + context.SafetyStatus + "`. Destructive recovery remains operator-only outside Boatstack."
 	return strings.Join([]string{
 		"---",
-		"boatstack_pr_version: 1",
+		"boatstack_pr_version: 2",
 		"title: " + quote("Describe the reviewer-visible outcome"),
 		"mode: " + quote(context.Mode),
 		"feature: " + quote(context.Feature),
+		"slice: " + quote(context.SliceID),
 		"base: " + quote(context.BaseBranch),
 		"head: " + quote(context.HeadBranch),
 		"context_fingerprint: " + quote(context.ContextFingerprint),

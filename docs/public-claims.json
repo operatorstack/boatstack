@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "source_commit": "bab232ddd34b39e9e480131a3c967c723f831232",
+  "source_commit": "16e771775417be997b7fc17e1b1b28d700780899",
   "statuses": ["verified", "observed", "still_being_evaluated"],
   "claims": [
     {
@@ -12,7 +12,7 @@
       "readable_evidence": "why-these-steps.md#portable-workflow-and-state",
       "implementation": ["../boatstack/export.go", "../boatstack/references/artifacts.md", "../boatstack/references/workflow.md"],
       "verification": ["../boatstack/export_test.go"],
-      "last_verified_version": "source:bab232ddd34b39e9e480131a3c967c723f831232"
+      "last_verified_version": "source:16e771775417be997b7fc17e1b1b28d700780899"
     },
     {
       "id": "human-decisions",
@@ -23,7 +23,7 @@
       "readable_evidence": "why-these-steps.md#human-decisions",
       "implementation": ["../boatstack/references/workflow.md", "../boatstack/plan.go"],
       "verification": ["../boatstack/plan_test.go", "../boatstack/planning_test.go"],
-      "last_verified_version": "source:bab232ddd34b39e9e480131a3c967c723f831232"
+      "last_verified_version": "source:16e771775417be997b7fc17e1b1b28d700780899"
     },
     {
       "id": "validation-provenance",
@@ -34,7 +34,7 @@
       "readable_evidence": "why-these-steps.md#validation-provenance",
       "implementation": ["validation-and-evidence.md", "../boatstack/plan.go"],
       "verification": ["../boatstack/plan_test.go"],
-      "last_verified_version": "source:bab232ddd34b39e9e480131a3c967c723f831232"
+      "last_verified_version": "source:16e771775417be997b7fc17e1b1b28d700780899"
     },
     {
       "id": "irreversible-operations",
@@ -46,7 +46,7 @@
       "readable_evidence": "why-these-steps.md#irreversible-operations",
       "implementation": ["safety.md", "../boatstack/safety.go", "../boatstack/hooks.go"],
       "verification": ["../boatstack/safety_test.go", "../boatstack/hooks_test.go"],
-      "last_verified_version": "source:bab232ddd34b39e9e480131a3c967c723f831232"
+      "last_verified_version": "source:16e771775417be997b7fc17e1b1b28d700780899"
     },
     {
       "id": "reviewer-ready-pr",
@@ -57,7 +57,18 @@
       "readable_evidence": "why-these-steps.md#reviewer-ready-pr",
       "implementation": ["../boatstack/pr.go", "getting-started.md"],
       "verification": ["../boatstack/pr_test.go"],
-      "last_verified_version": "source:bab232ddd34b39e9e480131a3c967c723f831232"
+      "last_verified_version": "source:16e771775417be997b7fc17e1b1b28d700780899"
+    },
+    {
+      "id": "phase-scoped-delivery",
+      "public_claim": "When an approved plan intentionally contains multiple PR-sized delivery slices, Boatstack requires a fresh test, review, preview, and publication confirmation for each slice.",
+      "status": "verified",
+      "originating_observation": "A coding host treated an approved multi-phase plan as standing permission to open several PRs during build without returning through the gates.",
+      "safeguard": "Explicit task-to-slice partitioning, affected-path scope, diff-bound gate receipts, active-slice publication, and direct push/PR hook denial.",
+      "readable_evidence": "why-these-steps.md#phase-scoped-delivery",
+      "implementation": ["../boatstack/delivery.go", "../boatstack/safety.go", "../boatstack/hooks.go", "../boatstack/references/workflow.md"],
+      "verification": ["../boatstack/delivery_test.go", "../boatstack/pr_test.go"],
+      "last_verified_version": "source:16e771775417be997b7fc17e1b1b28d700780899"
     },
     {
       "id": "model-neutral-contract",
@@ -68,7 +79,7 @@
       "readable_evidence": "why-these-steps.md#model-choice-and-budget",
       "implementation": ["research-and-design.md", "../boatstack/references/workflow.md"],
       "verification": ["../boatstack/export_test.go", "../boatstack/planning_test.go"],
-      "last_verified_version": "source:bab232ddd34b39e9e480131a3c967c723f831232"
+      "last_verified_version": "source:16e771775417be997b7fc17e1b1b28d700780899"
     },
     {
       "id": "cross-model-failures",
@@ -79,7 +90,7 @@
       "readable_evidence": "why-these-steps.md#model-choice-and-budget",
       "implementation": ["research-and-design.md"],
       "verification": ["benchmark-corpus-audit.md", "benchmark-submission-audit.md"],
-      "last_verified_version": "source:bab232ddd34b39e9e480131a3c967c723f831232"
+      "last_verified_version": "source:16e771775417be997b7fc17e1b1b28d700780899"
     },
     {
       "id": "lower-cost-outcomes",
@@ -90,7 +101,7 @@
       "readable_evidence": "why-these-steps.md#model-choice-and-budget",
       "implementation": ["research-and-design.md"],
       "verification": ["benchmark-corpus-audit.md", "benchmark-submission-audit.md"],
-      "last_verified_version": "source:bab232ddd34b39e9e480131a3c967c723f831232"
+      "last_verified_version": "source:16e771775417be997b7fc17e1b1b28d700780899"
     },
     {
       "id": "git-worktree-activation",
@@ -101,7 +112,7 @@
       "readable_evidence": "why-these-steps.md#git-worktree-activation",
       "implementation": ["../boatstack/runtime_cache.go", "../boatstack/hooks.go"],
       "verification": ["../boatstack/runtime_cache_test.go", "../boatstack/hooks_test.go"],
-      "last_verified_version": "source:bab232ddd34b39e9e480131a3c967c723f831232"
+      "last_verified_version": "source:16e771775417be997b7fc17e1b1b28d700780899"
     },
     {
       "id": "visible-updates",
@@ -112,7 +123,7 @@
       "readable_evidence": "why-these-steps.md#visible-updates",
       "implementation": ["../boatstack/update.go", "../boatstack/init.go"],
       "verification": ["../boatstack/update_test.go", "../boatstack/init_test.go", "../boatstack/export_test.go"],
-      "last_verified_version": "source:bab232ddd34b39e9e480131a3c967c723f831232"
+      "last_verified_version": "source:16e771775417be997b7fc17e1b1b28d700780899"
     }
   ]
 }

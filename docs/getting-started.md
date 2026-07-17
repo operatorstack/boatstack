@@ -126,7 +126,7 @@ Approver, timestamp, fingerprint, and approval-record path.
 
 ## 4. Build the approved change
 
-Use Cursor, Codex, or Claude's normal transition out of Plan mode, then run `/build`. Boatstack verifies the approval, creates the machine task/evidence state, and locks it to the reviewed inputs before the first product edit.
+Use Cursor, Codex, or Claude's normal transition out of Plan mode, then run `/build`. Boatstack verifies the approval, creates the machine task/evidence state, and locks it to the reviewed inputs before the first product edit. Internal plan phases remain tasks in one delivery. If the approved plan explicitly declares multiple PR-sized `delivery_slices`, Boatstack activates only the first slice; approval of the parent plan is not permission to publish any slice.
 
 | Host | Planning surface | Build transition |
 |---|---|---|
@@ -146,11 +146,11 @@ Run the remaining gates:
 /ship-gate
 ```
 
-- **Test gate:** connects every promised outcome to current evidence.
-- **Review gate:** checks the actual diff against the approved intent, risks, invariants, and gaps.
-- **Ship gate:** creates a reviewer-first title and body from the committed change and recorded evidence.
+- **Test gate:** connects the active slice's promised outcomes to current evidence and records a receipt bound to its committed diff.
+- **Review gate:** checks that same diff against the approved intent, risks, invariants, and gaps, then records a second receipt.
+- **Ship gate:** requires both current receipts and creates a reviewer-first title and body for that slice.
 
-Boatstack shows the exact PR preview before changing GitHub. Reply `open PR` for a new PR. Reply `update PR` for an existing one. Any changed commit or evidence makes the preview stale and forces regeneration. Merge and deploy remain separate human decisions.
+Boatstack shows the exact PR preview before changing GitHub. Reply `open PR` for a new PR. Reply `update PR` for an existing one. Any changed product diff or evidence makes the preview and gate receipts stale. A successful publication activates the next declared delivery slice. Direct pushes, direct PR mutations, and the ad-hoc PR route are denied while managed delivery is active. Merge and deploy remain separate human decisions.
 
 After successful publication, Boatstack may show a collapsed notice when a newer stable release is available. The check is cached, never changes the feature branch, and never blocks shipping.
 

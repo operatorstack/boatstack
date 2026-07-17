@@ -143,7 +143,7 @@ func desiredHostHookForEvent(host, event string) map[string]any {
 			"matcher": "Bash|Shell|mcp__.*",
 			"hooks": []any{map[string]any{
 				"type": "command", "command": hookCommand(host),
-				"timeout": 10, "statusMessage": "Checking irreversible-operation policy",
+				"timeout": 10, "statusMessage": "Checking Boatstack execution policy",
 			}},
 		}
 	case "codex":
@@ -151,7 +151,7 @@ func desiredHostHookForEvent(host, event string) map[string]any {
 			"matcher": "Bash|Shell|mcp__.*",
 			"hooks": []any{map[string]any{
 				"type": "command", "command": hookCommand(host), "commandWindows": hookCommandWindows(host),
-				"timeout": 10, "statusMessage": "Checking irreversible-operation policy",
+				"timeout": 10, "statusMessage": "Checking Boatstack execution policy",
 			}},
 		}
 	default:

@@ -68,10 +68,11 @@ func quoted(value string) string {
 func previewDocument(context PRContext, title, body string) string {
 	return strings.Join([]string{
 		"---",
-		"boatstack_pr_version: 1",
+		"boatstack_pr_version: 2",
 		"title: " + quoted(title),
 		"mode: " + quoted(context.Mode),
 		"feature: " + quoted(context.Feature),
+		"slice: " + quoted(context.SliceID),
 		"base: " + quoted(context.BaseBranch),
 		"head: " + quoted(context.HeadBranch),
 		"context_fingerprint: " + quoted(context.ContextFingerprint),
@@ -211,6 +212,18 @@ No migration; revert the feature commit.
 	}
 	runGit(t, repo, "add", ".product-loop/features/"+feature)
 	runGit(t, repo, "commit", "-m", "record approved feature evidence")
+	for _, gate := range []string{"test", "review"} {
+		status := "PASS"
+		if gate == "review" {
+			status = "PASS_WITH_GAPS"
+		}
+		if _, err := RecordDeliveryGate(DeliveryGateOptions{
+			Repo: repo, Feature: feature, SliceID: "delivery", Gate: gate,
+			Status: status, EvidencePath: filepath.Join(directory, "evidence.md"),
+		}); err != nil {
+			t.Fatalf("record %s delivery gate: %v", gate, err)
+		}
+	}
 	return directory
 }
 

@@ -82,6 +82,15 @@ Boatstack found an installed generated file that no longer matches its previous 
 
 A new commit, changed evidence, changed approval artifact, or base-branch update invalidated the preview. Ask Boatstack to regenerate it. Do not copy the old body forward.
 
+## A phased plan cannot push or open its next PR
+
+Plan approval is not publication authority. Run `delivery-status` through the active
+Boatstack operation and confirm that the intended delivery slice is active. Commit
+only that slice's declared affected paths, then run `/test-gate`, `/review-gate`, and
+`/ship-gate`. Direct pushes, GitHub CLI PR mutations, GitHub tool mutations, and the
+ad-hoc PR route are denied until the managed publisher receives the explicit open or
+update confirmation. Successful publication activates the next declared slice.
+
 ## GitHub CLI is unavailable
 
 Boatstack retains the validated `pr.md`. Authenticate or install GitHub CLI and repeat the open/update confirmation, or copy the exact preview into GitHub manually. Neither path authorizes merge.

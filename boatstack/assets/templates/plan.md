@@ -43,6 +43,15 @@
       ],
       "rollback_boundary": "<how to revert this task>"
     }
+  ],
+  "delivery_slices": [
+    {
+      "id": "delivery",
+      "title": "<reviewer-visible outcome for this PR>",
+      "task_ids": ["T-1"],
+      "base_branch": "<optional base branch>",
+      "head_branch": "<optional required head branch>"
+    }
   ]
 }
 ```
@@ -62,3 +71,9 @@ For an external write, replace the empty `side_effects` list with entries such a
 
 Boatstack rejects ambiguous targets, automated resets, and destructive rollback. Use
 `stop-and-fix-forward` when a transaction cannot contain the full operation.
+
+`delivery_slices` is the only place a plan may declare multiple PR-sized phases.
+Every task belongs to exactly one delivery slice. Each slice receives its own
+build, test, review, ship confirmation, and PR; plan approval never authorizes
+publication by itself. Internal implementation phases should remain ordinary tasks
+inside one delivery slice.
