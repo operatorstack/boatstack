@@ -66,6 +66,7 @@ Lead with a plain outcome, never a machine code such as `PASS`, `PLAN_APPROVED`,
 | `test-gate` pass / blocked | **Tests passed** -> run `/review-gate`; **Testing found a problem** -> perform or authorize the repair |
 | `review-gate` pass / blocked | **Review passed** -> run `/ship-gate`; **Changes required** -> address the blocking finding |
 | `ship-gate` preview / published | **PR ready** -> reply `open PR` or `update PR`; **PR opened** -> review the PR; never imply merge authorization |
+| `boatstack-update` current / postponed / prepared / published / blocked | **Boatstack is current** -> no action required; **Update postponed** -> finish feature work and rerun from the clean default branch; **Boatstack update ready** -> reply `open update PR`; **Update PR opened** -> review the PR; **Update needs attention** -> address the one reported collision or health failure |
 | `retro` | **Improvement proposed** -> review or authorize the experiment |
 
 Normal approval is `approve`. Resolve `approved_by` from (1) an identity supplied with approval, (2) the authenticated GitHub login from `gh api user --jq .login` when available, or (3) one short identity follow-up. Never infer the approver from a filesystem username, commit history, or the coding agent. If identity is missing after approval, preserve the current fingerprint and approval intent, create no receipt, and ask only for identity; once resolved against the unchanged plan, do not require another `approve`. Keep identity and receipt data inside **Technical details**.
@@ -246,6 +247,16 @@ Store the exact preview at `.product-loop/features/<feature>/pr.md`. Its non-ren
 Before publication, show the exact title and rendered body. Use **PR ready** and exactly one action: `Reply open PR` when no PR exists, or `Reply update PR` when one exists. Only that explicit reply authorizes opening or updating the PR. After confirmation, commit only the reviewed `pr.md`, recheck the same preview fingerprint, committed product diff, plan approval, build lock, test evidence, and review evidence, then perform a normal push and the selected GitHub action. Any drift blocks publication and requires a new preview; never force-push.
 
 Opening or updating a PR does not authorize merge or deployment.
+
+After successful publication only, the publisher may use the ignored 24-hour release cache to report an available stable Boatstack version. The primary response and next action remain **PR opened -> Review the PR**. Put the maintenance notice in collapsed details, state that no files changed, and direct the user to run `/boatstack-update` from the clean default branch after the feature PR merges. Suppress repeated notices for seven days unless a different release appears. Release lookup failure never changes the ship result.
+
+## Boatstack updates
+
+`boatstack-update` is an infrastructure operation, not part of a feature plan. It first forces release discovery and proves the current installation is healthy. If the repository is not on its clean, current default branch, it changes nothing and returns **Update postponed**.
+
+For an available version, create `chore/update-boatstack-v<version>`, run the installer pinned to that release in update mode, preserve the repository configuration, adapters, integrations, and unrelated host settings, then run `doctor`. Show the release notes and link, exact generated diff, checksums, changed paths, integration state, rollout, and rollback. Product paths or generated-state drift are blocking.
+
+Use **Boatstack update ready** and exactly one action: `Reply open update PR`. Only that reply authorizes staging the reported infrastructure paths, committing, pushing normally, and opening the update PR. The PR body records old/new versions, release provenance, changed generated files, doctor result, integration state, rollout, and revert instructions. If publication is unavailable, retain the prepared branch and provide one manual action. Never merge automatically.
 
 ## Existing and ad-hoc PRs
 

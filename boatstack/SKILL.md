@@ -1,6 +1,6 @@
 ---
 name: boatstack
-description: Turn a product request into a question-led, specification-first implementation with test, review, and ship gates, then learn from the evidence without silently changing project rules. Use when planning or building a feature, creating an implementation PR, reviewing work against product intent, diagnosing repeated coding-agent failures, or exporting the same engineering loop to Cursor, Claude Code, Codex, and GitHub.
+description: Turn a product request into a question-led, specification-first implementation with test, review, and ship gates, then learn from the evidence without silently changing project rules. Use when planning or building a feature, creating an implementation PR, reviewing work against product intent, diagnosing repeated coding-agent failures, updating Boatstack itself, or exporting the same engineering loop to Cursor, Claude Code, Codex, and GitHub.
 ---
 
 # Boatstack
@@ -18,6 +18,7 @@ Map the request to one operation:
 - `test-gate`: test requirements and relevant regressions using independent evidence.
 - `review-gate`: review the diff against the spec, project invariants, risks, and known gaps.
 - `ship-gate`: preview, then explicitly open or update, a reviewer-ready PR grounded in the approved diff and evidence.
+- `boatstack-update`: check for a stable Boatstack release and prepare its infrastructure-only update branch and PR after explicit confirmation.
 - `retro`: classify failures, propose a harness move, and gate it before promotion.
 - `export`: generate thin Cursor, Claude Code, Codex, and GitHub adapters.
 
@@ -156,10 +157,24 @@ Do not branch the workflow on model brand, price, or a guessed capability tier. 
 - Show the exact title and rendered body before any GitHub mutation. If no PR exists, make `Reply open PR` the one next action; if one exists, use `Reply update PR`.
 - After that exact confirmation, commit only the reviewed `pr.md`, rerun the preview check, require the same preview fingerprint, then invoke the internal publisher with the selected open/update action. It rechecks the current committed diff, approval, lock, and evidence and performs only a normal push. Any intervening change invalidates the preview and requires regeneration; never force-push.
 - Keep model attribution inside collapsed provenance. Create or update the PR, but keep merge and deploy as separate authorized actions.
+- Only after successful PR publication, perform the bounded cached release check. If a newer stable Boatstack release should be announced, keep `Review the PR` as the one next action and put the no-mutation update notice in collapsed details. Release lookup failure never changes the ship result.
 - Never hide failed experiments, skipped checks, or `PASS_WITH_GAPS` behind a green summary.
 - If a required check also fails on the base branch, record that comparison and recommend a separate repair PR. Do not edit unrelated code in the approved feature branch. A bypass is valid only when repository policy permits it and the human explicitly authorizes it; otherwise return to planning for any scope expansion.
 
 Gate statuses are `PASS`, `PASS_WITH_GAPS`, and `BLOCKED`. Critical safety, correctness, or product-acceptance gaps always produce `BLOCKED`.
+
+## Update Boatstack separately
+
+Treat `boatstack-update` as infrastructure maintenance, never as feature work:
+
+1. Run the current local helper's `doctor`, then force the cached stable-release check. If Boatstack is current, return **Boatstack is current** with no action required.
+2. Fetch the configured default branch without editing product files. Require that branch to be current and clean; otherwise return **Update postponed** and change nothing.
+3. Create only `chore/update-boatstack-v<version>`. Run the installer fetched from the exact release tag in update mode with the exact version, repository path, and non-interactive preview acceptance.
+4. Preserve `.boatstack-project.json`, all portable adapters, optional integration selections, and unrelated host settings. Block on generated drift, collisions, missing provenance, a failed checksum, a failed `doctor`, or any product-file change.
+5. Show the version transition, release notes, integration state, changed infrastructure paths, exact diff, checksums, rollout, and rollback. Respond **Boatstack update ready** with exactly `Reply open update PR` as the next action.
+6. Only that exact reply authorizes staging the reviewed infrastructure paths, committing, normally pushing, and opening the update PR. Never merge it. If GitHub publication is unavailable, retain the prepared branch and provide one manual action.
+
+Natural requests such as “Update Boatstack” use this operation. `doctor` may display a cached notice but must remain offline. Do not perform release discovery during planning, approval, build, test, review, or PR preview.
 
 ## Improve an existing PR without a public command
 
