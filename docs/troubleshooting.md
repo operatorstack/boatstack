@@ -19,7 +19,9 @@ If a safe diagnostic was denied, keep the denial output and report the smallest 
 
 ## The safety helper or hook is missing
 
-The hook fails closed. Rerun the official installer, run `doctor`, reload the coding host, and confirm the repository is trusted and hooks are enabled. Keep least-privilege external credentials; hooks are defense in depth, not a complete sandbox.
+The hook fails closed. In a linked worktree, the first guarded call should restore the ignored local helper from the verified repository-family cache. If Boatstack reports that the shared runtime is missing, run the official installer once from any checkout belonging to that Git clone, run `doctor`, and reload the coding host. Do not copy an executable without its verified runtime manifest.
+
+If the worktree expects a different Boatstack version or source commit, update or rebase its committed Boatstack infrastructure. Boatstack will not run a newer cached helper against an older worktree contract.
 
 ## Cursor cannot find a slash command
 
@@ -62,7 +64,7 @@ Boatstack detects common package-manager tests, `scripts/check.sh`, Go, Rust, Ma
 
 ## A fresh clone has no helper
 
-This is expected: `.product-loop/bin/` is machine-local and ignored. Rerun the installer from the repository root. A matching version and configuration should restore the helper without changing committed adapters.
+This is expected: the repository-family cache lives inside that clone's Git common directory and `.product-loop/bin/` is ignored. Run the installer once from the repository root. Future linked worktrees of that clone hydrate automatically without another download.
 
 ## `/boatstack-update` is postponed
 

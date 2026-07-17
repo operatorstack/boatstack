@@ -186,12 +186,8 @@ func copyHelper(source, repo string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	name := "boatstack-helper"
-	if runtime.GOOS == "windows" {
-		name += ".exe"
-	}
-	destination := filepath.Join(repo, ".product-loop", "bin", name)
-	if err := writeFile(destination, value, 0o755); err != nil {
+	destination := filepath.Join(repo, ".product-loop", "bin", helperName())
+	if err := atomicWriteMode(destination, value, 0o755); err != nil {
 		return "", "", err
 	}
 	return destination, SHA256Bytes(value), nil
@@ -216,7 +212,7 @@ func writeInstallLock(repo, binaryPath, binaryHash string, integrations map[stri
 	if err != nil {
 		return err
 	}
-	return writeFile(filepath.Join(repo, ".product-loop", "bin", "install.lock.json"), value, 0o644)
+	return atomicWriteMode(filepath.Join(repo, ".product-loop", "bin", "install.lock.json"), value, 0o644)
 }
 
 func readInstalledIntegrations(repo string, config ProjectConfig) (map[string]IntegrationState, error) {
@@ -400,6 +396,16 @@ func RunInit(options InitOptions) error {
 			return fmt.Errorf("installation cancelled before writing files")
 		}
 	}
+	helperSource := options.BinaryPath
+	if helperSource == "" {
+		helperSource, err = os.Executable()
+		if err != nil {
+			return err
+		}
+	}
+	if _, err := installSharedRuntime(helperSource, repo, config.Integrations); err != nil {
+		return fmt.Errorf("cannot install the repository-family Boatstack runtime: %w", err)
+	}
 	if err := os.WriteFile(configPath, rawConfig, 0o644); err != nil {
 		return err
 	}
@@ -409,7 +415,7 @@ func RunInit(options InitOptions) error {
 	if err := InstallHostHooks(repo, config.Adapters); err != nil {
 		return err
 	}
-	binaryPath, binaryHash, err := copyHelper(options.BinaryPath, repo)
+	binaryPath, binaryHash, err := copyHelper(helperSource, repo)
 	if err != nil {
 		return err
 	}
@@ -421,6 +427,9 @@ func RunInit(options InitOptions) error {
 	}
 	if err != nil {
 		return err
+	}
+	if _, err := installSharedRuntime(helperSource, repo, states); err != nil {
+		return fmt.Errorf("cannot finalize the repository-family Boatstack runtime: %w", err)
 	}
 	if err := writeInstallLock(repo, binaryPath, binaryHash, states); err != nil {
 		return err
@@ -482,7 +491,8 @@ func RunInit(options InitOptions) error {
 		fmt.Fprintln(options.Output, "  git commit -m \"chore: install Boatstack\"")
 		fmt.Fprintln(options.Output, "  git push -u origin chore/install-boatstack")
 	}
-	fmt.Fprintln(options.Output, "The platform helper and local install lock under .product-loop/bin/ are ignored; rerun the installer on a fresh clone.")
+	fmt.Fprintln(options.Output, "The verified runtime is shared by worktrees in this Git clone; each worktree hydrates its ignored .product-loop/bin/ files automatically on first use.")
+	fmt.Fprintln(options.Output, "A separate fresh clone still requires one verified installer run.")
 	if options.Update {
 		fmt.Fprintln(options.Output, "\nAfter the update PR is merged, reload Cursor, Codex, or Claude.")
 	} else {

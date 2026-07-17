@@ -1,7 +1,6 @@
 package boatstack
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -53,7 +52,7 @@ func rejectSymlinkComponents(root, target string) error {
 			return statErr
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("refusing symlinked planning path: %s", current)
+			return fmt.Errorf("refusing symlinked path: %s", current)
 		}
 	}
 	return nil
@@ -174,6 +173,7 @@ func RecordApproval(options ApprovalRecordOptions) error {
 type installLock struct {
 	BoatstackVersion string                      `json:"boatstack_version"`
 	SourceCommit     string                      `json:"source_commit"`
+	Platform         string                      `json:"platform"`
 	BinaryPath       string                      `json:"binary_path"`
 	BinarySHA256     string                      `json:"binary_sha256"`
 	Integrations     map[string]IntegrationState `json:"integrations,omitempty"`
@@ -199,6 +199,12 @@ func Doctor(repoPath string) error {
 	if err := CheckHostHooks(repo, config.Adapters); err != nil {
 		return err
 	}
+	if err := verifyGeneratedRuntime(repo); err != nil {
+		return err
+	}
+	if _, _, err := loadSharedRuntime(repo); err != nil {
+		return err
+	}
 	for _, host := range []string{"cursor", "claude", "codex"} {
 		if !contains(config.Adapters, host) {
 			continue
@@ -216,38 +222,12 @@ func Doctor(repoPath string) error {
 			return fmt.Errorf("%s safety hook did not fail closed on malformed input", host)
 		}
 	}
-	lockPath := filepath.Join(repo, ".product-loop", "bin", "install.lock.json")
-	value, err := os.ReadFile(lockPath)
-	if err != nil {
-		return fmt.Errorf("missing local install lock: %w", err)
-	}
-	var lock installLock
-	if err := json.Unmarshal(value, &lock); err != nil {
-		return fmt.Errorf("invalid local install lock: %w", err)
-	}
-	if lock.BoatstackVersion != Version || lock.SourceCommit != SourceCommit {
-		return fmt.Errorf("helper version drift: installed %s (%s), expected %s (%s)", lock.BoatstackVersion, lock.SourceCommit, Version, SourceCommit)
-	}
-	binaryPath, err := resolveRepositoryRelativePath(repo, lock.BinaryPath)
-	if err != nil {
-		return fmt.Errorf("invalid Boatstack helper path in install lock: %w", err)
-	}
-	if err := checkNonEmptyFile(binaryPath, "Boatstack helper"); err != nil {
-		return err
-	}
-	hash, err := SHA256File(binaryPath)
-	if err != nil {
-		return err
-	}
-	if hash != lock.BinarySHA256 {
-		return fmt.Errorf("Boatstack helper checksum does not match the install lock")
-	}
-	return nil
+	return verifyLocalRuntime(repo)
 }
 
 func DoctorRepairHint(err error) error {
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf("%w; repair: rerun the Boatstack installer from the repository root, then reload the coding host", err)
+	return fmt.Errorf("%w; repair: rerun the verified Boatstack installer once from any checkout in this Git clone, then reload the coding host", err)
 }

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "source_commit": "9bfb96de291e2552d307fa3c1b23e67771bcb86d",
+  "source_commit": "09388a6c92ece15283a8d0dc2b7edef3d2cc3aba",
   "statuses": ["verified", "observed", "still_being_evaluated"],
   "claims": [
     {
@@ -12,7 +12,7 @@
       "readable_evidence": "why-these-steps.md#human-decisions",
       "implementation": ["../boatstack/references/workflow.md", "../boatstack/plan.go"],
       "verification": ["../boatstack/plan_test.go", "../boatstack/planning_test.go"],
-      "last_verified_version": "source:9bfb96de291e2552d307fa3c1b23e67771bcb86d"
+      "last_verified_version": "source:09388a6c92ece15283a8d0dc2b7edef3d2cc3aba"
     },
     {
       "id": "validation-provenance",
@@ -23,7 +23,7 @@
       "readable_evidence": "why-these-steps.md#validation-provenance",
       "implementation": ["validation-and-evidence.md", "../boatstack/plan.go"],
       "verification": ["../boatstack/plan_test.go"],
-      "last_verified_version": "source:9bfb96de291e2552d307fa3c1b23e67771bcb86d"
+      "last_verified_version": "source:09388a6c92ece15283a8d0dc2b7edef3d2cc3aba"
     },
     {
       "id": "irreversible-operations",
@@ -35,7 +35,7 @@
       "readable_evidence": "why-these-steps.md#irreversible-operations",
       "implementation": ["safety.md", "../boatstack/safety.go", "../boatstack/hooks.go"],
       "verification": ["../boatstack/safety_test.go", "../boatstack/hooks_test.go"],
-      "last_verified_version": "source:9bfb96de291e2552d307fa3c1b23e67771bcb86d"
+      "last_verified_version": "source:09388a6c92ece15283a8d0dc2b7edef3d2cc3aba"
     },
     {
       "id": "reviewer-ready-pr",
@@ -46,7 +46,7 @@
       "readable_evidence": "why-these-steps.md#reviewer-ready-pr",
       "implementation": ["../boatstack/pr.go", "getting-started.md"],
       "verification": ["../boatstack/pr_test.go"],
-      "last_verified_version": "source:9bfb96de291e2552d307fa3c1b23e67771bcb86d"
+      "last_verified_version": "source:09388a6c92ece15283a8d0dc2b7edef3d2cc3aba"
     },
     {
       "id": "model-neutral-contract",
@@ -57,7 +57,7 @@
       "readable_evidence": "why-these-steps.md#model-choice-and-budget",
       "implementation": ["research-and-design.md", "../boatstack/references/workflow.md"],
       "verification": ["../boatstack/export_test.go", "../boatstack/planning_test.go"],
-      "last_verified_version": "source:9bfb96de291e2552d307fa3c1b23e67771bcb86d"
+      "last_verified_version": "source:09388a6c92ece15283a8d0dc2b7edef3d2cc3aba"
     },
     {
       "id": "cross-model-failures",
@@ -68,7 +68,7 @@
       "readable_evidence": "why-these-steps.md#model-choice-and-budget",
       "implementation": ["research-and-design.md"],
       "verification": ["benchmark-corpus-audit.md", "benchmark-submission-audit.md"],
-      "last_verified_version": "source:9bfb96de291e2552d307fa3c1b23e67771bcb86d"
+      "last_verified_version": "source:09388a6c92ece15283a8d0dc2b7edef3d2cc3aba"
     },
     {
       "id": "lower-cost-outcomes",
@@ -79,7 +79,18 @@
       "readable_evidence": "why-these-steps.md#model-choice-and-budget",
       "implementation": ["research-and-design.md"],
       "verification": ["benchmark-corpus-audit.md", "benchmark-submission-audit.md"],
-      "last_verified_version": "source:9bfb96de291e2552d307fa3c1b23e67771bcb86d"
+      "last_verified_version": "source:09388a6c92ece15283a8d0dc2b7edef3d2cc3aba"
+    },
+    {
+      "id": "git-worktree-activation",
+      "public_claim": "Boatstack installs one verified runtime per Git clone and automatically restores ignored local runtime state for linked worktrees before evaluating their first guarded command.",
+      "status": "verified",
+      "originating_observation": "A linked Claude Code worktree inherited committed fail-closed hooks but not the ignored helper, causing every shell call—including installation—to be denied.",
+      "safeguard": "Versioned Git-common-directory runtime cache, generated provenance selection, atomic local hydration, and fail-closed mismatch handling.",
+      "readable_evidence": "why-these-steps.md#git-worktree-activation",
+      "implementation": ["../boatstack/runtime_cache.go", "../boatstack/hooks.go"],
+      "verification": ["../boatstack/runtime_cache_test.go", "../boatstack/hooks_test.go"],
+      "last_verified_version": "source:09388a6c92ece15283a8d0dc2b7edef3d2cc3aba"
     },
     {
       "id": "visible-updates",
@@ -90,7 +101,7 @@
       "readable_evidence": "why-these-steps.md#visible-updates",
       "implementation": ["../boatstack/update.go", "../boatstack/init.go"],
       "verification": ["../boatstack/update_test.go", "../boatstack/init_test.go", "../boatstack/export_test.go"],
-      "last_verified_version": "source:9bfb96de291e2552d307fa3c1b23e67771bcb86d"
+      "last_verified_version": "source:09388a6c92ece15283a8d0dc2b7edef3d2cc3aba"
     }
   ]
 }
