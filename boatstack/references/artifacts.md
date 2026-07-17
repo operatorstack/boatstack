@@ -16,6 +16,7 @@ Artifacts separate facts, decisions, unknowns, incompleteness, and evidence. Com
 | Test plan | Requirement-to-evidence mapping with each validation's origin, falsifiable oracle, procedure, and independence | Planning and after discovered failure modes |
 | Gap ledger | Known divergence between desired and current state | Work is deferred, partial, incompatible, or intentionally absent |
 | Risk/threat note | Assets, actors, trust boundaries, abuse/failure paths | Security, data, tenancy, billing, auth, or destructive paths change |
+| Side-effect declaration | Affected paths, immutable external target, reversibility, failure policy, and destructive flag | A task can write outside the repository |
 | Runbook | Deploy, observe, recover, and roll back | Operational behavior changes |
 | Evidence ledger | Commands, results, review evidence, screenshots, CI and runtime links | Every gate |
 | PR preview | Exact reviewer-ready title/body plus a hidden fingerprint of the committed diff and evidence | Ship gate, before opening or updating GitHub |
@@ -71,6 +72,10 @@ For managed work it lives under `.product-loop/features/<feature>/pr.md` and may
 ## Planning boundary
 
 `auto-plan` and `plan-gate` create or update Markdown only. `plan.md` is the canonical structured input and `approval.md` is the human-approval receipt. Compiled JSON and `plan.lock.json` begin only at `build` activation, after the receipt is verified. This keeps planning compatible with hosts that intentionally restrict Plan mode to documents.
+
+## Safety boundary
+
+The generated host hook fragments and launchers are committed installation infrastructure. Their policy is immutable in project configuration. The machine-local helper is ignored and restored by the installer. Safety evidence belongs in the feature evidence ledger: target identity, failure behavior, independent oracle, operational-diff scan, and the operator-only recovery boundary. A source edit is reviewable evidence, not permission to execute it.
 
 ## Templates
 

@@ -61,11 +61,17 @@ func exportCommand(arguments []string) int {
 		if err := boatstack.CheckExport(*repo, bundle.Files); err != nil {
 			return fail(err)
 		}
+		if err := boatstack.CheckHostHooks(*repo, bundle.Config.Adapters); err != nil {
+			return fail(err)
+		}
 		fmt.Printf("PASS: %d generated files match Boatstack %s\n", len(bundle.Files), boatstack.Version)
 		return 0
 	}
 	if *write {
 		if err := boatstack.WriteExport(*repo, bundle.Files); err != nil {
+			return fail(err)
+		}
+		if err := boatstack.InstallHostHooks(*repo, bundle.Config.Adapters); err != nil {
 			return fail(err)
 		}
 		fmt.Printf("PASS: wrote %d generated files to %s\n", len(bundle.Files), *repo)
@@ -81,6 +87,9 @@ func exportCommand(arguments []string) int {
 		return paths
 	}() {
 		fmt.Println("  " + path)
+	}
+	for _, path := range boatstack.HostHookPaths(bundle.Config.Adapters) {
+		fmt.Println("  " + path + " (merge safety hook)")
 	}
 	return 0
 }
@@ -199,6 +208,45 @@ func doctorCommand(arguments []string) int {
 	return 0
 }
 
+func safetyHookCommand(arguments []string) int {
+	flags := flag.NewFlagSet("safety-hook", flag.ContinueOnError)
+	host := flags.String("host", "", "cursor, claude, or codex")
+	repo := flags.String("repo", ".", "repository protected by the hook")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	input, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		input = nil
+	}
+	value, _ := boatstack.HookDecision(boatstack.SafetyHookOptions{Host: *host, Repo: *repo, Input: input})
+	if len(value) > 0 {
+		fmt.Print(string(value))
+	}
+	return 0
+}
+
+func checkSafetyCommand(arguments []string) int {
+	flags := flag.NewFlagSet("check-safety", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository whose operational diff should be checked")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	report, err := boatstack.CheckRepositorySafety(*repo)
+	if err != nil {
+		return fail(err)
+	}
+	value, err := boatstack.MarshalJSON(report)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Print(string(value))
+	if report.Status != "PASS" {
+		return 1
+	}
+	return 0
+}
+
 func prContextCommand(arguments []string) int {
 	flags := flag.NewFlagSet("pr-context", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository whose branch should be projected")
@@ -281,7 +329,7 @@ func publishPRCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|pr-context|check-pr|publish-pr|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|check-safety|safety-hook|pr-context|check-pr|publish-pr|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -307,6 +355,10 @@ func run() int {
 		return publishPRCommand(os.Args[2:])
 	case "doctor":
 		return doctorCommand(os.Args[2:])
+	case "safety-hook":
+		return safetyHookCommand(os.Args[2:])
+	case "check-safety":
+		return checkSafetyCommand(os.Args[2:])
 	case "version":
 		fmt.Printf("Boatstack %s (%s)\n", boatstack.Version, boatstack.SourceCommit)
 		return 0

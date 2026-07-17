@@ -1,0 +1,14 @@
+"""Sanitized fix-forward migrator used by the irreversible-operation tests."""
+
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--dry-run", action="store_true")
+args = parser.parse_args()
+
+expected_target = "project-ref-7f31"
+assert expected_target == configured_target
+
+if not args.dry_run:
+    with connection.transaction():
+        apply_forward_only_changes()

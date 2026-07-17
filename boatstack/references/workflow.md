@@ -25,6 +25,14 @@ Each transition emits an artifact and evidence. A host adapter may change how a 
 
 The `SOURCE_PLAN` file is required from entry through completion of `BUILD`. After build, its path and hash remain recorded for provenance, but `TEST_GATE`, `REVIEW_GATE`, and `SHIP_GATE` do not require the original file to be present.
 
+## Irreversible-operation boundary
+
+Every installed host routes supported shell and MCP events through Boatstack's immutable safety guard. High-confidence database, filesystem, Git-history, cloud-resource, and recovery destruction is always denied before execution. There is no prompt, approval reply, break-glass token, or in-session override. Source may be edited for review, but executable destructive capability blocks activation and gate progression until it is removed or moved to an operator-owned process.
+
+After an external-write failure, preserve state and use only read-only diagnosis. Do not escalate privileges, broaden the target, or invent a reset. Use a transactional retry only when retry safety is demonstrated; otherwise stop and fix forward. Destructive recovery is operator-only outside Boatstack. See `irreversible-operation-boundary.md` for the classified operations and evaluation status.
+
+Hooks are defense in depth rather than a complete sandbox. Protected systems still require least-privilege credentials, scoped service roles, backups, and service-side destructive approval. A missing, drifted, or failing helper denies execution and requires reinstall or repair.
+
 ## User-facing response contract
 
 Helper commands and state labels are internal control machinery. Every normal response uses:
@@ -131,6 +139,8 @@ Create tasks in dependency order. Each task names:
 - rollback boundary;
 - unknowns that would stop implementation.
 
+An external-write task also names `affected_paths` and a compact `side_effects` record: operation kind, immutable target identity, reversibility, failure policy, and `destructive: false`. Ambiguous targets such as “local database” and rollback text such as “reset local DB” block approval. Ordinary tasks do not need side-effect ceremony.
+
 Run only relevant review lenses:
 
 - product/taste: value, scope, user journey, non-goals;
@@ -184,6 +194,8 @@ Implement one coherent task slice at a time. After each slice:
 4. record deviations or new unknowns;
 5. continue, ask, or re-plan explicitly.
 
+Scan operational changes and configured `high_risk_paths` before activation and after relevant edits. A dangerous capability may remain visible as source for review, but it cannot execute and blocks progression until removed or isolated behind the operator boundary.
+
 ### `BUILD -> TEST_GATE`
 
 Crossing this boundary ends the requirement to keep loading or checking the source Plan-mode file. Its recorded path and hash preserve provenance. Subsequent gates judge the approved intent against the actual diff and evidence.
@@ -198,6 +210,8 @@ Create requirement-to-evidence traceability. Use this evidence ladder:
 6. human acceptance for product behavior.
 
 The riskier the slice, the less acceptable same-model, self-authored tests are as the only oracle.
+
+External-write evidence must establish immutable target identity, transactional or fix-forward behavior, and an independent safety oracle. A dry run that only prints the intended command does not prove the live target or failure behavior.
 
 ### `TEST_GATE -> REVIEW_GATE`
 

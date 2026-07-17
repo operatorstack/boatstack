@@ -98,8 +98,11 @@ Those are **summary-only evidence** in this design. They are not represented as 
 | The development result did not transfer | Spec-first was a statistical wash on the full board | Promotion requires representative distribution/holdout, not only a tuned dev slice |
 | Model change relocated the bottleneck | Same harness exposed near-miss dominance on Gemini and step exhaustion on Qwen | Diagnose the active population each time; do not encode model-specific recipes |
 | Mid-run aggregates changed direction | Qwen board interpretation moved as task coverage deepened | Compare paired completed coverage and uncertainty, not early aggregate rank |
+| External failure invited destructive recovery | A sanitized partial schema apply failure led to an invented reset path before review removed it | Treat recovery authority as a deterministic boundary: preserve state, diagnose read-only, transact or fix forward |
 
 Sources: [`RESEARCH_LOG.md`](../11-harbor-submit/RESEARCH_LOG.md), [`EXPERIMENT_GEMINI20_2026-07-15.md`](../11-harbor-submit/EXPERIMENT_GEMINI20_2026-07-15.md), [`ZERO_TO_QWEN.md`](../11-harbor-submit/ZERO_TO_QWEN.md), and [`docs/12-self-verification-fidelity.md`](../../docs/12-self-verification-fidelity.md).
+
+The irreversible-operation boundary is a **PROPOSED** Move. The incident supports the target failure mechanism, while the benchmark campaign supports deterministic enforcement over stronger wording. Neither proves the new guard's net effect. Promotion requires a paired unguarded baseline, destructive and safe corpora, real host events, bounded latency, secret-free denials, and no workflow regression.
 
 ## What two example repositories add
 

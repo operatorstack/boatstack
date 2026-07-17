@@ -88,6 +88,11 @@ func writePlanInputs(t *testing.T, root string, marked bool) (string, string, st
 func TestMarkdownPlanActivationAndStaleness(t *testing.T) {
 	root := t.TempDir()
 	sourcePlan, _, planPath := writePlanInputs(t, root, true)
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.name", "Boatstack Test")
+	runGit(t, root, "config", "user.email", "boatstack@example.invalid")
+	runGit(t, root, "add", ".")
+	runGit(t, root, "commit", "-m", "record approved planning inputs")
 	approval := filepath.Join(root, "approval.md")
 	compiled := filepath.Join(root, "compiled")
 	lock := filepath.Join(root, "plan.lock.json")
@@ -175,6 +180,38 @@ func TestMarkdownPlanRejectsMissingMultipleMalformedAndOpenQuestions(t *testing.
 	writeMarkdownPlan(t, planPath, plan, true)
 	if _, err := CheckPlan(planPath); err == nil || !strings.Contains(err.Error(), "Q-4") {
 		t.Fatalf("expected open material question to block, got %v", err)
+	}
+}
+
+func TestExternalWritePlanRequiresSafeExplicitSideEffects(t *testing.T) {
+	root := t.TempDir()
+	_, _, planPath := writePlanInputs(t, root, true)
+	plan := validPlan()
+	task := plan["tasks"].([]any)[0].(map[string]any)
+	task["title"] = "apply database schema migration"
+	task["affected_paths"] = []any{"scripts/apply_schema.py"}
+	task["rollback_boundary"] = "reset local DB"
+	writeMarkdownPlan(t, planPath, plan, true)
+	if _, err := CheckPlan(planPath); err == nil || !strings.Contains(err.Error(), "destructive rollback") {
+		t.Fatalf("ambiguous destructive rollback did not block planning: %v", err)
+	}
+	task["rollback_boundary"] = "stop and fix forward"
+	writeMarkdownPlan(t, planPath, plan, true)
+	if _, err := CheckPlan(planPath); err == nil || !strings.Contains(err.Error(), "structured side_effects") {
+		t.Fatalf("missing external side-effect declaration did not block: %v", err)
+	}
+	task["side_effects"] = []any{map[string]any{
+		"kind": "database-schema-write", "target": "project-ref-7f31",
+		"reversibility": "transactional", "failure_policy": "rollback-transaction", "destructive": false,
+	}}
+	writeMarkdownPlan(t, planPath, plan, true)
+	if _, err := CheckPlan(planPath); err != nil {
+		t.Fatalf("safe explicit external-write plan should pass: %v", err)
+	}
+	task["side_effects"].([]any)[0].(map[string]any)["target"] = "local database"
+	writeMarkdownPlan(t, planPath, plan, true)
+	if _, err := CheckPlan(planPath); err == nil || !strings.Contains(err.Error(), "immutable target identity") {
+		t.Fatalf("ambiguous external target did not block: %v", err)
 	}
 }
 

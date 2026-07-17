@@ -2,6 +2,10 @@
 
 # Validation and evidence
 
+## External-write safety evidence
+
+External-write claims require more than a successful happy path. Record the immutable target identity, transaction or fix-forward behavior, and an oracle independent of the implementation. The operational diff must contain no agent-executable reset, drop, broad delete, or destructive recovery. A `--dry-run` is useful, but cannot by itself prove which live target was selected or how a partial failure recovers.
+
 Boatstack separates producing a change from proving a claim about that change. A successful command is evidence only when its relationship to an approved requirement and a falsifiable oracle is explicit.
 
 ```text

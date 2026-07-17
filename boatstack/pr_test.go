@@ -236,6 +236,10 @@ Reviewers need a concise, evidence-backed view of the approved outcome.
 | Approved behavior is implemented | Contract assertions passed | ` + "`PASS`" + ` | [Evidence ledger](.product-loop/features/reviewer-ready/evidence.md) |
 | Review found no blocking issue | Independent diff review | ` + "`PASS_WITH_GAPS`" + ` | [Evidence ledger](.product-loop/features/reviewer-ready/evidence.md) |
 
+## Operational safety
+
+Repository safety scan passed. Destructive recovery remains operator-only.
+
 ## Known gaps and risks
 
 One non-critical portability gap remains recorded with an owner.
@@ -253,6 +257,23 @@ No migration is required; revert the feature commit to roll back.
 
 </details>
 `
+}
+
+func TestManagedPRBlocksCommittedIrreversibleCapability(t *testing.T) {
+	repo := prTestRepo(t)
+	activateManagedFeature(t, repo, "reviewer-ready")
+	path := filepath.Join(repo, "scripts", "recover.sql")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("DROP SCHEMA public CASCADE;\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "add", "scripts/recover.sql")
+	runGit(t, repo, "commit", "-m", "add unsafe recovery")
+	if _, err := PreparePRContext(PRContextOptions{Repo: repo, Feature: "reviewer-ready"}); err == nil || !strings.Contains(err.Error(), "irreversible capability") {
+		t.Fatalf("managed PR did not block committed destructive code: %v", err)
+	}
 }
 
 func TestManagedPRRequiresCurrentApprovalLockAndGateEvidence(t *testing.T) {

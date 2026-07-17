@@ -2,6 +2,16 @@
 
 # Troubleshooting Boatstack
 
+## An operation is denied as irreversible
+
+Boatstack has no in-session override. Preserve the current external state and use read-only diagnosis. Remove the destructive capability, replace it with transactional or fix-forward behavior, or move intentional recovery into a separately controlled operator runbook. Do not rename or wrap the command to evade classification.
+
+If a safe diagnostic is denied, retain the denial evidence and report the smallest reproducible command as a false-positive candidate. The Move remains proposed until its false-denial evaluation passes.
+
+## The safety helper or hook is missing or drifted
+
+The hook fails closed. Rerun the official installer from the repository root, run `.product-loop/bin/boatstack-helper doctor --repo .`, reload the host, and inspect its trust/hook enablement. Do not delete the hook to unblock work.
+
 ## Cursor does not recognize a slash command
 
 Cursor discovers project commands from `.cursor/commands/*.md`. Check the installation:

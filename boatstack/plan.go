@@ -471,6 +471,9 @@ func ValidatePlan(plan map[string]any) error {
 		if len(mapped) == 0 && stringValue(task["enabling_reason"]) == "" {
 			return fmt.Errorf("task %s must map acceptance criteria or state an enabling_reason", id)
 		}
+		if err := validateTaskSafety(task); err != nil {
+			return fmt.Errorf("task %s safety: %w", id, err)
+		}
 		graph[id] = dependencies
 	}
 	uncovered := []string{}
@@ -516,6 +519,96 @@ func ValidatePlan(plan map[string]any) error {
 	for id := range taskIDs {
 		if err := visit(id); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func taskSafetyText(task map[string]any) string {
+	parts := []string{stringValue(task["title"]), stringValue(task["rollback_boundary"])}
+	if validations, ok := objectSlice(task["validation"]); ok {
+		for _, validation := range validations {
+			parts = append(parts, stringValue(validation["run"]), stringValue(validation["origin"]))
+		}
+	}
+	if paths, ok := stringSlice(task["affected_paths"]); ok {
+		parts = append(parts, paths...)
+	}
+	return strings.ToLower(strings.Join(parts, " "))
+}
+
+func taskHasExternalWrite(task map[string]any) bool {
+	text := taskSafetyText(task)
+	for _, marker := range []string{
+		"database", "migration", "migrate", "seed database", "deploy", "supabase", "postgres",
+		"terraform", "pulumi", "kubectl", "cloud", "production", "staging", "external write",
+	} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func destructiveRollback(value string) bool {
+	text := strings.ToLower(strings.TrimSpace(value))
+	if text == "" {
+		return false
+	}
+	for _, safePrefix := range []string{"no reset", "never reset", "do not reset", "operator-only", "operator only"} {
+		if strings.Contains(text, safePrefix) {
+			return false
+		}
+	}
+	for _, marker := range []string{"reset database", "reset db", "reset local db", "drop schema", "drop database", "truncate", "wipe database", "destroy infrastructure"} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func validateTaskSafety(task map[string]any) error {
+	if destructiveRollback(stringValue(task["rollback_boundary"])) {
+		return fmt.Errorf("destructive rollback is not executable authority; use transactional rollback, fix-forward recovery, or an operator-only runbook")
+	}
+	if !taskHasExternalWrite(task) {
+		return nil
+	}
+	paths, pathsOK := stringSlice(task["affected_paths"])
+	if !pathsOK || len(paths) == 0 {
+		return fmt.Errorf("external-write tasks require affected_paths")
+	}
+	effects, effectsOK := objectSlice(task["side_effects"])
+	if !effectsOK || len(effects) == 0 {
+		return fmt.Errorf("external-write tasks require structured side_effects")
+	}
+	for index, effect := range effects {
+		for _, field := range []string{"kind", "target", "reversibility", "failure_policy"} {
+			if strings.TrimSpace(stringValue(effect[field])) == "" {
+				return fmt.Errorf("side_effects[%d].%s is required", index, field)
+			}
+		}
+		target := strings.ToLower(strings.TrimSpace(stringValue(effect["target"])))
+		for _, ambiguous := range []string{"unknown", "tbd", "database", "staging", "production", "local database"} {
+			if target == ambiguous {
+				return fmt.Errorf("side_effects[%d].target must use an immutable target identity", index)
+			}
+		}
+		destructive, ok := effect["destructive"].(bool)
+		if !ok {
+			return fmt.Errorf("side_effects[%d].destructive must be boolean", index)
+		}
+		if destructive {
+			return fmt.Errorf("side_effects[%d] requests a destructive operation; move it to an operator-owned surface", index)
+		}
+		reversibility := strings.ToLower(stringValue(effect["reversibility"]))
+		if reversibility != "transactional" && reversibility != "fix-forward" && reversibility != "reversible" {
+			return fmt.Errorf("side_effects[%d].reversibility must be transactional, fix-forward, or reversible", index)
+		}
+		failurePolicy := strings.ToLower(stringValue(effect["failure_policy"]))
+		if failurePolicy != "rollback-transaction" && failurePolicy != "stop-and-fix-forward" {
+			return fmt.Errorf("side_effects[%d].failure_policy must be rollback-transaction or stop-and-fix-forward", index)
 		}
 	}
 	return nil
@@ -570,7 +663,7 @@ func CompilePlan(plan map[string]any) (map[string]any, map[string]any, string, e
 		rows = append(rows, row)
 		evidence = append(evidence, fmt.Sprintf("| %s: %s | %s | `BLOCKED` | |", criterionID, stringValue(criterion["text"]), strings.Join(servingIDs, ", ")))
 	}
-	evidence = append(evidence, "", "## Commands and checks", "", "## Review findings", "", "## Known gaps", "", "## Rollout and rollback", "")
+	evidence = append(evidence, "", "## Safety evidence", "", "- Operational diff safety: `BLOCKED`", "- External target and recovery evidence: pending", "", "## Commands and checks", "", "## Review findings", "", "## Known gaps", "", "## Rollout and rollback", "")
 	taskGraph := map[string]any{
 		"schema_version":         1,
 		"feature_id":             plan["feature_id"],
@@ -710,6 +803,17 @@ func ActivatePlan(options ActivationOptions) error {
 	receipt, err := CheckApprovalReceipt(options.ApprovalPath, check)
 	if err != nil {
 		return err
+	}
+	repo, err := ResolveRepository(filepath.Dir(options.PlanPath))
+	if err != nil {
+		return err
+	}
+	safety, err := CheckRepositorySafety(repo)
+	if err != nil {
+		return err
+	}
+	if safety.Status != "PASS" {
+		return fmt.Errorf("operational diff contains an irreversible capability: %s", safety.Findings[0].Category)
 	}
 	if err := CompilePlanFiles(options.PlanPath, options.OutDir); err != nil {
 		return err

@@ -17,6 +17,7 @@ Select a move only after locating the failure below its surface symptom. “Time
 | Security/tenancy | Trust boundary or data scope violated | Specialist review; invariant test; deny-by-default guard | Generic prompt mistaken for enforcement |
 | Integration/deploy | Local pass but runtime fails | Environment parity; canary; health checks; rollback | Treating staging as identical to production |
 | Documentation drift | Durable behavior and docs disagree | Update source-of-truth artifact; drift check | Growing instructions with unverified rules |
+| Irreversible recovery escalation | A failed external operation causes authority/target broadening or an invented reset | Immutable pre-execution deny; preserve state; read-only diagnosis; transactional retry or fix forward | False denial of legitimate isolated development operations |
 
 ## Lessons encoded from the benchmark campaign
 
@@ -27,6 +28,7 @@ Select a move only after locating the failure below its surface symptom. “Time
 - **Development promotion is not product promotion.** A +7 point development result became a statistical wash on the full distribution. Representative evaluation and holdout remain mandatory.
 - **Do not discard near-correct work.** Repair attempts can wash or regress, so retain prior evidence and compare states.
 - **Model changes relocate the bottleneck.** The same harness exposed different binding modes on Gemini and Qwen. Route moves by measured failure population, not by a universal “best loop.”
+- **Tool failure must not create recovery authority.** The sanitized database incident moved from a partial schema apply failure to an invented reset path. The irreversible-operation guard is `PROPOSED`, not promoted: evaluate its deny corpus, safe corpus, latency, and workflow regressions against the unguarded baseline.
 
 ## Move proposal schema
 
