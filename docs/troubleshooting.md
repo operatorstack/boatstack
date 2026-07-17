@@ -64,6 +64,18 @@ Boatstack detects common package-manager tests, `scripts/check.sh`, Go, Rust, Ma
 
 This is expected: `.product-loop/bin/` is machine-local and ignored. Rerun the installer from the repository root. A matching version and configuration should restore the helper without changing committed adapters.
 
+## `/boatstack-update` is postponed
+
+Updates never share a feature branch. Finish and merge the current feature PR, switch to the configured default branch, pull its current remote state, confirm the worktree is clean, and rerun `/boatstack-update`. Boatstack does not stash, switch away from, or modify active product work.
+
+## The update check is unavailable
+
+Release discovery uses a short, unauthenticated request to GitHub and a 24-hour ignored cache. A timeout, rate limit, or malformed response never blocks `/ship-gate`. Retry `/boatstack-update` later; do not bypass checksum verification or install from an unverified asset.
+
+## The update reports generated drift
+
+Boatstack found an installed generated file that no longer matches its previous lock. Review the named path and move durable project-owned content into `.boatstack-project.json` or repository documentation. Do not overwrite the drift merely to make the update pass.
+
 ## The PR preview is stale
 
 A new commit, changed evidence, changed approval artifact, or base-branch update invalidated the preview. Ask Boatstack to regenerate it. Do not copy the old body forward.

@@ -110,6 +110,12 @@ Boatstack does not replace your product context or force a new documentation sys
 
 These tools may propose content. They do not approve their own proposal or bypass Boatstack's evidence checks.
 
+## Updates stay out of product work
+
+<!-- boatstack-claim:visible-updates -->After a PR is published, Boatstack can quietly report that a new stable release exists. It does not change the feature branch. From a clean default branch, `/boatstack-update` prepares a versioned infrastructure branch, shows the exact diff, and waits for `open update PR` before changing GitHub. It never merges the update.
+
+[See how updates remain visible and separate](docs/getting-started.md#keeping-boatstack-current).
+
 <details>
 <summary><strong>Install manually</strong></summary>
 

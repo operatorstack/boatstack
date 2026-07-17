@@ -46,6 +46,7 @@ func TestExportAndDriftCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, path := range []string{
+		".cursor/commands/boatstack-update.md",
 		".cursor/commands/plan-gate.md",
 		".cursor/commands/review.md",
 		".claude/skills/boatstack/SKILL.md",
@@ -71,15 +72,16 @@ func TestExportAndDriftCheck(t *testing.T) {
 	planGate := string(bundle.Files[".cursor/commands/plan-gate.md"])
 	build := string(bundle.Files[".cursor/commands/build.md"])
 	responseOutcomes := map[string][]string{
-		"auto-plan":   {"Plan ready", "I need your input"},
-		"plan-gate":   {"Ready for your approval", "Approved — ready to build"},
-		"build":       {"Build complete", "Build needs a decision"},
-		"test-gate":   {"Tests passed", "Testing found a problem"},
-		"review-gate": {"Review passed", "Changes required"},
-		"review":      {"Review passed", "Changes required"},
-		"ship-gate":   {"PR ready", "PR opened"},
-		"ship":        {"PR ready", "PR opened"},
-		"retro":       {"Improvement proposed"},
+		"auto-plan":        {"Plan ready", "I need your input"},
+		"plan-gate":        {"Ready for your approval", "Approved — ready to build"},
+		"build":            {"Build complete", "Build needs a decision"},
+		"test-gate":        {"Tests passed", "Testing found a problem"},
+		"review-gate":      {"Review passed", "Changes required"},
+		"review":           {"Review passed", "Changes required"},
+		"ship-gate":        {"PR ready", "PR opened"},
+		"ship":             {"PR ready", "PR opened"},
+		"retro":            {"Improvement proposed"},
+		"boatstack-update": {"Boatstack is current", "Update postponed", "Boatstack update ready", "Update PR opened", "Update needs attention"},
 	}
 	for operation, outcomes := range responseOutcomes {
 		command := string(bundle.Files[".cursor/commands/"+operation+".md"])
@@ -117,6 +119,25 @@ func TestExportAndDriftCheck(t *testing.T) {
 	if _, exists := bundle.Files[".cursor/commands/pr-brief.md"]; exists {
 		t.Fatal("PR brief must remain natural-language behavior, not a public command")
 	}
+	update := string(bundle.Files[".cursor/commands/boatstack-update.md"])
+	for _, expected := range []string{"check-update", "chore/update-boatstack-v", "BOATSTACK_MODE=update", "Reply open update PR", "Never merge"} {
+		if !strings.Contains(update, expected) {
+			t.Fatalf("update adapter is missing %q", expected)
+		}
+	}
+	for _, operation := range []string{"auto-plan", "plan-gate", "build", "test-gate", "review-gate", "review", "retro"} {
+		if strings.Contains(string(bundle.Files[".cursor/commands/"+operation+".md"]), "check-update") {
+			t.Fatalf("%s must not check for Boatstack releases", operation)
+		}
+	}
+	if strings.Contains(ship, "check-update") {
+		t.Fatal("ship preview must not initiate a release check")
+	}
+	for _, expected := range []string{"UPDATE_AVAILABLE", "collapsed update notice", "Review the PR"} {
+		if !strings.Contains(ship, expected) {
+			t.Fatalf("ship adapter is missing post-publication update behavior %q", expected)
+		}
+	}
 	cursorRule := string(bundle.Files[".cursor/rules/boatstack.mdc"])
 	for _, expected := range []string{"naturally asks Boatstack", "evidence-limited ad-hoc PR brief", "not a /pr-brief command", "NOT_VERIFIED"} {
 		if !strings.Contains(cursorRule, expected) {
@@ -149,7 +170,7 @@ func TestExportAndDriftCheck(t *testing.T) {
 	}
 	for _, path := range []string{".agents/skills/boatstack/SKILL.md", ".claude/skills/boatstack/SKILL.md"} {
 		adapter := string(bundle.Files[path])
-		for _, expected := range []string{"User-facing response contract", "exactly one Next step", "Normal approval is simply approve", "filesystem username", "Never create or advertise a /pr-brief command", "Reply open PR", "Reply update PR"} {
+		for _, expected := range []string{"User-facing response contract", "exactly one Next step", "Normal approval is simply approve", "filesystem username", "Never create or advertise a /pr-brief command", "Reply open PR", "Reply update PR", "boatstack-update", "open update PR"} {
 			if !strings.Contains(adapter, expected) {
 				t.Fatalf("%s is missing response-DX rule %q", path, expected)
 			}

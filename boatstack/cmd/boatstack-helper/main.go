@@ -32,6 +32,37 @@ func initCommand(arguments []string) int {
 	return 0
 }
 
+func updateCommand(arguments []string) int {
+	flags := flag.NewFlagSet("update", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository to update")
+	binary := flags.String("binary", "", "verified replacement helper binary")
+	yes := flags.Bool("yes", false, "accept the generated-file preview")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	err := boatstack.RunUpdate(boatstack.InitOptions{Repo: *repo, BinaryPath: *binary, Yes: *yes})
+	if err != nil {
+		return fail(err)
+	}
+	return 0
+}
+
+func checkUpdateCommand(arguments []string) int {
+	flags := flag.NewFlagSet("check-update", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository whose Boatstack release should be checked")
+	force := flags.Bool("force", false, "ignore the 24-hour release cache")
+	notify := flags.Bool("notify", false, "record a bounded post-ship notification")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	result, err := boatstack.CheckForUpdate(boatstack.UpdateCheckOptions{Repo: *repo, Force: *force, Notify: *notify})
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Printf("UPDATE_STATUS=%s\nCURRENT_VERSION=%s\nLATEST_VERSION=%s\nRELEASE_NAME=%q\nRELEASE_NOTES=%q\nRELEASE_URL=%s\nUPDATE_NOTIFY=%t\nUPDATE_FROM_CACHE=%t\n", result.Status, result.CurrentVersion, result.LatestVersion, result.ReleaseName, result.ReleaseNotes, result.ReleaseURL, result.ShouldNotify, result.FromCache)
+	return 0
+}
+
 func exportCommand(arguments []string) int {
 	flags := flag.NewFlagSet("export", flag.ContinueOnError)
 	repo := flags.String("repo", "", "repository to export into")
@@ -205,6 +236,9 @@ func doctorCommand(arguments []string) int {
 		return fail(err)
 	}
 	fmt.Printf("PASS: Boatstack %s installation and generated adapters are healthy\n", boatstack.Version)
+	if update, ok := boatstack.CachedUpdate(*repo); ok {
+		fmt.Printf("UPDATE_AVAILABLE=%s\nRELEASE_URL=%s\n", update.LatestVersion, update.ReleaseURL)
+	}
 	return 0
 }
 
@@ -324,17 +358,24 @@ func publishPRCommand(arguments []string) int {
 		verb = "updated"
 	}
 	fmt.Printf("PASS: PR %s without merge authorization\nPR_URL=%s\n", verb, url)
+	if update, ok := boatstack.PostShipUpdateNotice(*repo); ok {
+		fmt.Printf("UPDATE_AVAILABLE=%s\nUPDATE_RELEASE_URL=%s\n", update.LatestVersion, update.ReleaseURL)
+	}
 	return 0
 }
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|check-safety|safety-hook|pr-context|check-pr|publish-pr|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|check-safety|safety-hook|pr-context|check-pr|publish-pr|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
 	case "init":
 		return initCommand(os.Args[2:])
+	case "update":
+		return updateCommand(os.Args[2:])
+	case "check-update":
+		return checkUpdateCommand(os.Args[2:])
 	case "export":
 		return exportCommand(os.Args[2:])
 	case "check-source-plan":

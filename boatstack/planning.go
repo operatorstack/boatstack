@@ -172,10 +172,11 @@ func RecordApproval(options ApprovalRecordOptions) error {
 }
 
 type installLock struct {
-	BoatstackVersion string `json:"boatstack_version"`
-	SourceCommit     string `json:"source_commit"`
-	BinaryPath       string `json:"binary_path"`
-	BinarySHA256     string `json:"binary_sha256"`
+	BoatstackVersion string                      `json:"boatstack_version"`
+	SourceCommit     string                      `json:"source_commit"`
+	BinaryPath       string                      `json:"binary_path"`
+	BinarySHA256     string                      `json:"binary_sha256"`
+	Integrations     map[string]IntegrationState `json:"integrations,omitempty"`
 }
 
 func Doctor(repoPath string) error {
