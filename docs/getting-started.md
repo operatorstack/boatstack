@@ -146,6 +146,8 @@ Run the remaining gates:
 
 Boatstack shows the exact PR preview before changing GitHub. Reply `open PR` for a new PR. Reply `update PR` for an existing one. Any changed commit or evidence makes the preview stale and forces regeneration. Merge and deploy remain separate human decisions.
 
+After successful publication, Boatstack may show a collapsed notice when a newer stable release is available. The check is cached, never changes the feature branch, and never blocks shipping.
+
 For an existing branch, ask naturally:
 
 ```text
@@ -153,6 +155,40 @@ Use Boatstack to improve this PR.
 ```
 
 Boatstack summarizes what it can observe and labels unavailable approval or gate evidence `NOT_VERIFIED`; it does not invent a history the branch never had.
+
+## Keeping Boatstack current
+
+After the feature PR is merged, switch to a clean, current default branch and run:
+
+```text
+/boatstack-update
+```
+
+You may also ask, “Update Boatstack.” Boatstack checks the latest stable release, creates `chore/update-boatstack-v<version>`, preserves the current configuration and integrations, runs `doctor`, and shows the exact infrastructure diff. Product files are outside the allowed update scope.
+
+When the preview is correct, reply:
+
+```text
+open update PR
+```
+
+Only that reply authorizes the update commit, push, and PR. Review and merge remain normal human decisions. If the command is run during feature work, Boatstack changes nothing and asks you to rerun it from the clean default branch after the feature PR merges.
+
+Users on `v0.4.0` do not have this command yet. After `v0.5.0` is released, make the clean update branch yourself and run the installer pinned to that tag once:
+
+```bash
+git switch -c chore/update-boatstack-v0.5.0
+BOATSTACK_MODE=update BOATSTACK_VERSION=v0.5.0 BOATSTACK_REPO="$PWD" BOATSTACK_YES=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/operatorstack/boatstack/v0.5.0/install.sh)"
+```
+
+Windows PowerShell:
+
+```powershell
+git switch -c chore/update-boatstack-v0.5.0
+$env:BOATSTACK_MODE="update"; $env:BOATSTACK_VERSION="v0.5.0"; $env:BOATSTACK_REPO=(Get-Location).Path; $env:BOATSTACK_YES="1"; irm https://raw.githubusercontent.com/operatorstack/boatstack/v0.5.0/install.ps1 | iex
+```
+
+Review the diff and open the update PR normally. After that bootstrap, future releases use `/boatstack-update`.
 
 ## When something blocks
 

@@ -65,6 +65,16 @@ Those labels prevent an implementation test from being presented as proof that t
 
 The paired product evaluation will use the same feature, lower-cost model, budget, environment, and coding host with and without Boatstack. An independent evaluator will compare correctness, regressions, review findings, cost, completion time, and the evidence available to support completion claims.
 
+## Visible updates
+
+**What happened.** Boatstack updates were possible by rerunning the installer, but users had to remember the command and could accidentally mix regenerated infrastructure into product work. A non-interactive rerun could also silently select core instead of preserving optional integrations.
+
+**What Boatstack does.** Release discovery occurs only after successful PR publication and is cached outside Git. An available release is informational; it never mutates the feature branch. `/boatstack-update` requires a clean current default branch, prepares a versioned infrastructure branch, preserves integration choices, verifies the release, runs `doctor`, and shows the exact diff before a separate `open update PR` confirmation.
+
+**How we check it.** Update tests cover release parsing, bounded caching and reminders, failed-network isolation, branch and drift rejection, integration preservation, generated-file scope, checksums, and the publication confirmation boundary.
+
+**Status:** release notification and update preparation behavior are verified in automated tests. This is not a claim that updates install themselves or may be merged without review.
+
 ## What the experiments do and do not support
 
 The current research covers thousands of locally available benchmark result records, preregistered comparisons, product-repository studies, and targeted trajectory inspection. It supports the mechanisms that Boatstack is designed to address. It does **not** yet support a claim that Boatstack improves feature success, cost, or delivery speed.

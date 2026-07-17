@@ -49,7 +49,7 @@ func TestRuntimeFreeInit(t *testing.T) {
 			t.Fatalf("init output is missing safety guidance %q: %s", expected, output.String())
 		}
 	}
-	for _, expected := range []string{"commit Boatstack infrastructure in its own PR", "git add -- .boatstack-project.json", "git push -u origin chore/install-boatstack", "reload Cursor, Codex, or Claude"} {
+	for _, expected := range []string{"commit Boatstack infrastructure in its own PR", ".boatstack-project.json", "git push -u origin chore/install-boatstack", "reload Cursor, Codex, or Claude"} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("init output is missing %q: %s", expected, output.String())
 		}

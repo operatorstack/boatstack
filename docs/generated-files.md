@@ -47,7 +47,11 @@ The preview's frontmatter is publication metadata; the remaining Markdown is the
 
 ## Fresh clones and updates
 
-Committed adapters survive a clone; the ignored helper does not. Rerun the installer to restore it. For an update, use a separate `chore/update-boatstack` branch, inspect the generated diff and version provenance, and merge it before unrelated product work.
+Committed adapters survive a clone; the ignored helper does not. Rerun the installer to restore it.
+
+For an update, run `/boatstack-update` from a clean, current default branch. Boatstack creates `chore/update-boatstack-v<version>`, verifies the tagged release and checksum, preserves integrations, and shows the exact generated diff before asking for `open update PR`. Release-check state in `.product-loop/bin/update-state.json` and the platform helper remain ignored; the adapters, generated lock, hook fragments, and merged host settings belong in the update PR.
+
+An update refuses feature branches, dirty worktrees, stale default branches, changed generated files, and user-owned collisions. It never merges its own PR.
 
 If generated state looks wrong, run:
 

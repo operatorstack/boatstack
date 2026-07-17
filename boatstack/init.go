@@ -17,6 +17,7 @@ type InitOptions struct {
 	BinaryPath        string
 	IntegrationChoice string
 	Yes               bool
+	Update            bool
 	Input             io.Reader
 	Output            io.Writer
 }
@@ -218,6 +219,66 @@ func writeInstallLock(repo, binaryPath, binaryHash string, integrations map[stri
 	return writeFile(filepath.Join(repo, ".product-loop", "bin", "install.lock.json"), value, 0o644)
 }
 
+func readInstalledIntegrations(repo string, config ProjectConfig) (map[string]IntegrationState, error) {
+	value, err := os.ReadFile(filepath.Join(repo, ".product-loop", "bin", "install.lock.json"))
+	if err != nil {
+		return nil, fmt.Errorf("missing previous local install lock: %w", err)
+	}
+	var lock struct {
+		Integrations map[string]IntegrationState `json:"integrations"`
+	}
+	if err := json.Unmarshal(value, &lock); err != nil {
+		return nil, fmt.Errorf("invalid previous local install lock: %w", err)
+	}
+	if len(lock.Integrations) > 0 {
+		return lock.Integrations, nil
+	}
+	states := map[string]IntegrationState{}
+	for name, configured := range config.Integrations {
+		configured.Status = "preserved"
+		configured.Detail = "selection preserved during Boatstack core update"
+		states[name] = configured
+	}
+	return states, nil
+}
+
+func updateChangedPaths(repo string) []string {
+	seen := map[string]bool{}
+	for _, arguments := range [][]string{{"diff", "--name-only"}, {"ls-files", "--others", "--exclude-standard"}} {
+		for _, path := range strings.Split(gitOutput(repo, arguments...), "\n") {
+			path = strings.TrimSpace(path)
+			if path != "" {
+				seen[filepath.ToSlash(path)] = true
+			}
+		}
+	}
+	return sortedKeys(seen)
+}
+
+func checkUpdateDiffScope(repo string, currentFiles map[string][]byte, previous map[string]string, hookPaths []string) ([]string, error) {
+	allowed := map[string]bool{".boatstack-project.json": true}
+	for path := range currentFiles {
+		allowed[filepath.ToSlash(path)] = true
+	}
+	for path := range previous {
+		allowed[filepath.ToSlash(path)] = true
+	}
+	for _, path := range hookPaths {
+		allowed[filepath.ToSlash(path)] = true
+	}
+	changed := updateChangedPaths(repo)
+	unexpected := []string{}
+	for _, path := range changed {
+		if !allowed[path] {
+			unexpected = append(unexpected, path)
+		}
+	}
+	if len(unexpected) > 0 {
+		return changed, fmt.Errorf("update touched non-Boatstack paths: %s", strings.Join(unexpected, ", "))
+	}
+	return changed, nil
+}
+
 func RunInit(options InitOptions) error {
 	if options.Input == nil {
 		options.Input = os.Stdin
@@ -231,9 +292,13 @@ func RunInit(options InitOptions) error {
 	}
 	reader := bufio.NewReader(options.Input)
 	configPath := filepath.Join(repo, ".boatstack-project.json")
+	configExists := fileExists(configPath)
+	if options.Update && !configExists {
+		return fmt.Errorf("Boatstack update requires an existing .boatstack-project.json")
+	}
 	var config ProjectConfig
 	var rawConfig []byte
-	if fileExists(configPath) {
+	if configExists {
 		config, rawConfig, err = LoadConfig(configPath)
 		if err != nil {
 			return fmt.Errorf("existing Boatstack config is invalid: %w", err)
@@ -251,6 +316,18 @@ func RunInit(options InitOptions) error {
 		}
 		config = defaultConfig(repo, testCommand)
 	}
+	if options.Update {
+		if err := ValidateUpdateWorkspace(repo, config); err != nil {
+			return err
+		}
+	}
+	var preservedStates map[string]IntegrationState
+	if options.Update {
+		preservedStates, err = readInstalledIntegrations(repo, config)
+		if err != nil {
+			return err
+		}
+	}
 
 	detected := DetectHosts(repo)
 	if len(detected) == 0 {
@@ -260,7 +337,10 @@ func RunInit(options InitOptions) error {
 	}
 
 	choice := options.IntegrationChoice
-	if choice == "" {
+	if options.Update && choice != "" {
+		return fmt.Errorf("Boatstack update preserves existing integrations; change integrations separately")
+	}
+	if !options.Update && choice == "" {
 		if options.Yes {
 			choice = "core"
 		} else {
@@ -278,18 +358,21 @@ func RunInit(options InitOptions) error {
 			}
 		}
 	}
-	wantGStack, wantSpecKit, err := RequestedIntegrations(choice)
-	if err != nil {
-		return err
+	if !options.Update {
+		wantGStack, wantSpecKit, choiceErr := RequestedIntegrations(choice)
+		if choiceErr != nil {
+			return choiceErr
+		}
+		config.Integrations = map[string]IntegrationState{
+			"gstack":   {Requested: wantGStack, Version: GStackRef},
+			"spec-kit": {Requested: wantSpecKit, Version: SpecKitVersion},
+		}
+		rawConfig, err = MarshalJSON(config)
+		if err != nil {
+			return err
+		}
 	}
-	config.Integrations = map[string]IntegrationState{
-		"gstack":   {Requested: wantGStack, Version: GStackRef},
-		"spec-kit": {Requested: wantSpecKit, Version: SpecKitVersion},
-	}
-	rawConfig, err = MarshalJSON(config)
-	if err != nil {
-		return err
-	}
+	previousGenerated := previousFiles(repo)
 	bundle, err := BuildExportBundle(configPath, config, rawConfig, "boatstack")
 	if err != nil {
 		return err
@@ -305,7 +388,7 @@ func RunInit(options InitOptions) error {
 	for _, path := range HostHookPaths(config.Adapters) {
 		fmt.Fprintln(options.Output, "  "+path+" (merge Boatstack safety hook; preserve existing settings)")
 	}
-	if !fileExists(configPath) {
+	if !configExists {
 		fmt.Fprintln(options.Output, "  .boatstack-project.json (editable repository facts)")
 	}
 	if !options.Yes {
@@ -330,7 +413,12 @@ func RunInit(options InitOptions) error {
 	if err != nil {
 		return err
 	}
-	states, err := InstallIntegrations(choice, repo, config.Adapters)
+	var states map[string]IntegrationState
+	if options.Update {
+		states = preservedStates
+	} else {
+		states, err = InstallIntegrations(choice, repo, config.Adapters)
+	}
 	if err != nil {
 		return err
 	}
@@ -346,7 +434,20 @@ func RunInit(options InitOptions) error {
 	if err := Doctor(repo); err != nil {
 		return fmt.Errorf("post-install smoke check failed: %w", err)
 	}
-	fmt.Fprintln(options.Output, "\nPASS: Boatstack core installed without a language runtime.")
+	if options.Update {
+		changed, scopeErr := checkUpdateDiffScope(repo, bundle.Files, previousGenerated, HostHookPaths(config.Adapters))
+		if scopeErr != nil {
+			return scopeErr
+		}
+		fmt.Fprintf(options.Output, "\nPASS: Boatstack updated to %s on a dedicated infrastructure branch.\n", Version)
+		fmt.Fprintln(options.Output, "PASS: no product files changed.")
+		fmt.Fprintln(options.Output, "Changed Boatstack paths:")
+		for _, path := range changed {
+			fmt.Fprintln(options.Output, "  "+path)
+		}
+	} else {
+		fmt.Fprintln(options.Output, "\nPASS: Boatstack core installed without a language runtime.")
+	}
 	fmt.Fprintln(options.Output, "PASS: fail-closed irreversible-operation hooks verified for installed hosts.")
 	fmt.Fprintln(options.Output, "Hooks are defense in depth; keep least-privilege credentials and service-side destructive approval.")
 	keys := sortedKeys(states)
@@ -354,16 +455,45 @@ func RunInit(options InitOptions) error {
 		state := states[name]
 		fmt.Fprintf(options.Output, "  %s: %s — %s\n", name, state.Status, state.Detail)
 	}
-	fmt.Fprintln(options.Output, "\nBefore product work, commit Boatstack infrastructure in its own PR:")
+	if options.Update {
+		fmt.Fprintln(options.Output, "\nReview the generated diff before publishing the update PR:")
+	} else {
+		fmt.Fprintln(options.Output, "\nBefore product work, commit Boatstack infrastructure in its own PR:")
+	}
 	stagePaths := append([]string{".boatstack-project.json"}, paths...)
+	if options.Update {
+		for path := range previousGenerated {
+			stagePaths = append(stagePaths, path)
+		}
+	}
 	stagePaths = append(stagePaths, HostHookPaths(config.Adapters)...)
+	stageSet := map[string]bool{}
+	for _, path := range stagePaths {
+		stageSet[path] = true
+	}
+	stagePaths = sortedKeys(stageSet)
 	fmt.Fprintln(options.Output, "  git status --short")
 	fmt.Fprintln(options.Output, "  git add -- "+strings.Join(stagePaths, " "))
-	fmt.Fprintln(options.Output, "  git commit -m \"chore: install Boatstack\"")
-	fmt.Fprintln(options.Output, "  git push -u origin chore/install-boatstack")
+	if options.Update {
+		fmt.Fprintf(options.Output, "  git commit -m \"chore: update Boatstack to %s\"\n", Version)
+		fmt.Fprintf(options.Output, "  git push -u origin chore/update-boatstack-%s\n", Version)
+		fmt.Fprintln(options.Output, "Do not publish until the human replies `open update PR`; never merge automatically.")
+	} else {
+		fmt.Fprintln(options.Output, "  git commit -m \"chore: install Boatstack\"")
+		fmt.Fprintln(options.Output, "  git push -u origin chore/install-boatstack")
+	}
 	fmt.Fprintln(options.Output, "The platform helper and local install lock under .product-loop/bin/ are ignored; rerun the installer on a fresh clone.")
-	fmt.Fprintln(options.Output, "\nAfter that PR is merged, reload Cursor, Codex, or Claude and start in Plan mode:")
-	fmt.Fprintln(options.Output, "  1. Describe the product change and save the host plan (use .product-loop/intake/ if the host exposes no path).")
-	fmt.Fprintln(options.Output, "  2. Run /auto-plan")
+	if options.Update {
+		fmt.Fprintln(options.Output, "\nAfter the update PR is merged, reload Cursor, Codex, or Claude.")
+	} else {
+		fmt.Fprintln(options.Output, "\nAfter that PR is merged, reload Cursor, Codex, or Claude and start in Plan mode:")
+		fmt.Fprintln(options.Output, "  1. Describe the product change and save the host plan (use .product-loop/intake/ if the host exposes no path).")
+		fmt.Fprintln(options.Output, "  2. Run /auto-plan")
+	}
 	return nil
+}
+
+func RunUpdate(options InitOptions) error {
+	options.Update = true
+	return RunInit(options)
 }

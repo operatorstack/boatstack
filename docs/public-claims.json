@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "source_commit": "d37975f8c3960b03c701f029d4815f6d6814ed7c",
+  "source_commit": "4bc614dd6355dcc408e2a49955cb53b868d5dee8",
   "statuses": ["verified", "observed", "still_being_evaluated"],
   "claims": [
     {
@@ -12,7 +12,7 @@
       "readable_evidence": "why-these-steps.md#human-decisions",
       "implementation": ["../boatstack/references/workflow.md", "../boatstack/plan.go"],
       "verification": ["../boatstack/plan_test.go", "../boatstack/planning_test.go"],
-      "last_verified_version": "source:d37975f8c3960b03c701f029d4815f6d6814ed7c"
+      "last_verified_version": "source:4bc614dd6355dcc408e2a49955cb53b868d5dee8"
     },
     {
       "id": "validation-provenance",
@@ -23,7 +23,7 @@
       "readable_evidence": "why-these-steps.md#validation-provenance",
       "implementation": ["validation-and-evidence.md", "../boatstack/plan.go"],
       "verification": ["../boatstack/plan_test.go"],
-      "last_verified_version": "source:d37975f8c3960b03c701f029d4815f6d6814ed7c"
+      "last_verified_version": "source:4bc614dd6355dcc408e2a49955cb53b868d5dee8"
     },
     {
       "id": "irreversible-operations",
@@ -35,7 +35,7 @@
       "readable_evidence": "why-these-steps.md#irreversible-operations",
       "implementation": ["safety.md", "../boatstack/safety.go", "../boatstack/hooks.go"],
       "verification": ["../boatstack/safety_test.go", "../boatstack/hooks_test.go"],
-      "last_verified_version": "source:d37975f8c3960b03c701f029d4815f6d6814ed7c"
+      "last_verified_version": "source:4bc614dd6355dcc408e2a49955cb53b868d5dee8"
     },
     {
       "id": "reviewer-ready-pr",
@@ -46,7 +46,7 @@
       "readable_evidence": "why-these-steps.md#reviewer-ready-pr",
       "implementation": ["../boatstack/pr.go", "getting-started.md"],
       "verification": ["../boatstack/pr_test.go"],
-      "last_verified_version": "source:d37975f8c3960b03c701f029d4815f6d6814ed7c"
+      "last_verified_version": "source:4bc614dd6355dcc408e2a49955cb53b868d5dee8"
     },
     {
       "id": "model-neutral-contract",
@@ -57,7 +57,7 @@
       "readable_evidence": "why-these-steps.md#model-choice-and-budget",
       "implementation": ["research-and-design.md", "../boatstack/references/workflow.md"],
       "verification": ["../boatstack/export_test.go", "../boatstack/planning_test.go"],
-      "last_verified_version": "source:d37975f8c3960b03c701f029d4815f6d6814ed7c"
+      "last_verified_version": "source:4bc614dd6355dcc408e2a49955cb53b868d5dee8"
     },
     {
       "id": "cross-model-failures",
@@ -68,7 +68,7 @@
       "readable_evidence": "why-these-steps.md#model-choice-and-budget",
       "implementation": ["research-and-design.md"],
       "verification": ["benchmark-corpus-audit.md", "benchmark-submission-audit.md"],
-      "last_verified_version": "source:d37975f8c3960b03c701f029d4815f6d6814ed7c"
+      "last_verified_version": "source:4bc614dd6355dcc408e2a49955cb53b868d5dee8"
     },
     {
       "id": "lower-cost-outcomes",
@@ -79,7 +79,18 @@
       "readable_evidence": "why-these-steps.md#model-choice-and-budget",
       "implementation": ["research-and-design.md"],
       "verification": ["benchmark-corpus-audit.md", "benchmark-submission-audit.md"],
-      "last_verified_version": "source:d37975f8c3960b03c701f029d4815f6d6814ed7c"
+      "last_verified_version": "source:4bc614dd6355dcc408e2a49955cb53b868d5dee8"
+    },
+    {
+      "id": "visible-updates",
+      "public_claim": "Boatstack reports available stable releases after successful PR publication and prepares accepted updates in a separate reviewable infrastructure branch without merging them.",
+      "status": "verified",
+      "originating_observation": "Installer-based updates depended on remembered commands and could be mixed into feature work or reset optional integration choices.",
+      "safeguard": "Cached post-ship discovery, clean-default-branch enforcement, exact release verification, integration preservation, diff preview, and explicit update-PR publication.",
+      "readable_evidence": "why-these-steps.md#visible-updates",
+      "implementation": ["../boatstack/update.go", "../boatstack/init.go"],
+      "verification": ["../boatstack/update_test.go", "../boatstack/init_test.go", "../boatstack/export_test.go"],
+      "last_verified_version": "source:4bc614dd6355dcc408e2a49955cb53b868d5dee8"
     }
   ]
 }

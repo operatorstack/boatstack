@@ -5,6 +5,12 @@ set -euo pipefail
 repository="operatorstack/boatstack"
 version="${BOATSTACK_VERSION:-latest}"
 target_repo="${BOATSTACK_REPO:-$PWD}"
+mode="${BOATSTACK_MODE:-install}"
+
+case "$mode" in
+  install|update) ;;
+  *) echo "BLOCKED: BOATSTACK_MODE must be install or update" >&2; exit 1 ;;
+esac
 
 case "$(uname -s)" in
   Darwin) os_name="darwin" ;;
@@ -25,6 +31,11 @@ command -v git >/dev/null 2>&1 || { echo "BLOCKED: Git is required because Boats
 extension=""
 [ "$os_name" = "windows" ] && extension=".exe"
 asset="boatstack-helper_${os_name}_${arch}${extension}"
+if [ "$mode" = "update" ]; then
+  current_helper="$target_repo/.product-loop/bin/boatstack-helper${extension}"
+  [ -x "$current_helper" ] || { echo "BLOCKED: current Boatstack helper is missing; repair the installation before updating" >&2; exit 1; }
+  "$current_helper" doctor --repo "$target_repo"
+fi
 if [ "$version" = "latest" ]; then
   base="https://github.com/${repository}/releases/latest/download"
 else
@@ -51,8 +62,10 @@ fi
 [ "$expected" = "$actual" ] || { echo "BLOCKED: Boatstack binary checksum mismatch" >&2; exit 1; }
 chmod +x "$binary"
 
-arguments=(init --repo "$target_repo" --binary "$binary")
-if [ -n "${BOATSTACK_INTEGRATIONS:-}" ]; then
+command_name="init"
+[ "$mode" = "update" ] && command_name="update"
+arguments=("$command_name" --repo "$target_repo" --binary "$binary")
+if [ "$mode" = "install" ] && [ -n "${BOATSTACK_INTEGRATIONS:-}" ]; then
   arguments+=(--integrations "$BOATSTACK_INTEGRATIONS")
 fi
 if [ "${BOATSTACK_YES:-0}" = "1" ]; then
