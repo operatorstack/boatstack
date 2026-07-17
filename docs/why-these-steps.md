@@ -13,6 +13,18 @@ Boatstack was not designed by writing a long list of ideal engineering practices
 
 Those labels prevent an implementation test from being presented as proof that the whole product improves engineering performance.
 
+## Portable workflow and state
+
+**What happened.** Coding hosts, model choices, and specialist skills can each become a separate place where the development process fragments. Plans and decisions that exist only in one agent conversation are difficult for another supported host—or the next feature—to inspect and continue.
+
+**What Boatstack does.** Cursor, Codex, and Claude Code receive adapters for the same path from planning through PR preparation. The durable state behind that path—source plan, specification, human answers, accepted gaps, approval, evidence, and review findings—lives in the repository instead of belonging to one model or chat session. Models and skills may contribute work without changing the completion requirements.
+
+**How we check it.** Export tests verify that all supported host adapters expose the same lifecycle and reference the same canonical repository artifact contract. Projection tests verify that the public workflow, adapters, and artifact definitions are generated from one upstream source.
+
+**What it does not mean.** Boatstack does not copy private chat history or move a command already in progress between agents. Portability covers the workflow and saved repository state available at the next transition.
+
+**Status:** cross-host workflow and artifact portability verified in automated tests. The effect on product-delivery outcomes remains part of the planned paired evaluation.
+
 ## Human decisions
 
 **What happened.** A product request asked for a password-reset button in a passwordless product. A literal implementation would have created an interface for a capability that did not exist. Repository inspection could discover the conflict, but only a human could choose whether to introduce passwords or preserve the existing model.

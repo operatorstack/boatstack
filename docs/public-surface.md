@@ -9,10 +9,11 @@ Boatstack's README is a product-builder homepage, not the complete manual. Publi
 The homepage must answer, in order:
 
 1. What will Boatstack help me achieve?
-2. Why do these steps exist?
-3. How do I install it?
+2. What remains portable when I change tools, models, or skills?
+3. How do I install and start it?
 4. What will using it feel like?
-5. Where can I inspect the details?
+5. Why do these steps exist?
+6. Where can I inspect the details?
 
 Keep the README under 1,500 words. Put equations, schemas, internal helper commands, long artifact examples, and benchmark methodology in linked technical documents.
 
@@ -33,6 +34,7 @@ When Huashu Design is installed, use it to review a public-surface change. The r
 - preserve the stacked-node mark, ink `#0F172A`, and electric blue `#2563EB`;
 - design from real Boatstack content rather than a generic AI landing-page pattern;
 - use one dominant product journey and progressive disclosure;
+- keep portability diagrams subordinate to the product journey and focused on real hosts, models, skills, and repository state;
 - add no invented statistics, testimonials, decorative icons, or unsupported badges;
 - keep diagrams accessible, readable in light and dark themes, and useful without decoration;
 - render and inspect changed SVGs or public pages before approval.
