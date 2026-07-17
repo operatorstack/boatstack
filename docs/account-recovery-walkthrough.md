@@ -1,59 +1,61 @@
-<!-- Generated from operatorstack/intelligence-flow. Edit the upstream product-loop source, not this file. -->
+<!-- Generated from operatorstack/intelligence-flow. Edit the upstream public source, not this file. -->
 
-# Walkthrough: account recovery in a passwordless product
+# Example: account recovery in a passwordless product
 
-This sanitized real-world sequence shows why Boatstack asks questions before it turns a request into code.
+**For:** someone who wants to see why Boatstack asks questions before code.
+**Outcome:** follow a real product conflict through decision, approval, repair, and PR preparation.
 
-## Intent collides with repository reality
+This is a sanitized product-repository sequence. It demonstrates observed behavior, not a benchmark claim about Boatstack's overall performance.
 
-The product request was:
+## The request conflicts with the product
+
+The request was:
 
 ```text
 Add a password reset button on the homepage.
 ```
 
-Minimal repository inspection found passwordless email-code authentication, no password reset route, and copy promising that users needed no password. A literal implementation would have produced a button for a capability that did not exist.
+The repository used passwordless email-code authentication, had no password-reset route, and promised that users needed no password. A literal implementation would have created a button for a capability that did not exist.
 
-`/auto-plan` therefore stopped and asked two product questions in plain text:
+Boatstack therefore stopped and asked:
 
 ```text
 Q-1  Clarify email-code recovery, introduce passwords, or choose another behavior?
 Q-2  If passwords are introduced, do they replace email codes or sit alongside them?
 ```
 
-The human chose password authentication alongside the existing passwordless flow. Those responses became `ANSWERED`; the repository facts were `DISCOVERED`. Boatstack did not treat its own recommendation as an answer.
+The human chose password authentication alongside the existing passwordless flow. Repository facts were recorded as discovered; only the human responses became answered decisions.
 
-## Approval turns the choice into a bounded change
+## Approval defines the change
 
-The refined plan kept passwordless login, added password login and recovery routes, preserved passwordless signup, updated misleading copy, and required route and authentication tests. `/plan-gate` displayed the exact scope, non-goals, operational redirect gap, and fingerprint. An explicit `approve` created only `approval.md`.
+The revised plan kept passwordless login, added password login and recovery routes, preserved passwordless signup, updated misleading copy, and required route and authentication tests. It also kept an operational redirect gap visible rather than implying it was solved.
 
-After the host entered its execution-capable mode, `/build` activated that exact plan and implemented the feature. The targeted suite initially passed.
+The plan gate displayed the outcome, exclusions, decisions, checks, gaps, and exact fingerprint. The human replied `approve`. No product code changed until the host entered its execution mode and build activated that approved plan.
 
-## Review falsifies a completion claim
+## Review finds what the tests missed
 
-`/review-gate` inspected the actual diff and found that the reset screen accepted any authenticated session as proof of password recovery. A normally signed-in user could reach a form intended only for a recovery event.
+The targeted suite initially passed. Review then found that the reset screen accepted any authenticated session as proof of password recovery. An ordinarily signed-in user could reach a form intended only for a recovery event.
 
-The gate returned `BLOCKED`. The implementation was repaired to unlock the form only for the recovery event, a regression test was added, and `/review-gate` then passed with the separate operator redirect gap still explicit.
+Boatstack blocked progression. The implementation was repaired to unlock the form only for the recovery event, a regression test was added, and review passed with the separate operational gap still visible.
 
-## Shipping respects repository boundaries
+## Shipping keeps unrelated work separate
 
-At `/ship-gate`, a pre-push type check failed in code unrelated to the approved feature. The correct response is to prove whether the failure exists on the base branch and then either:
+At ship time, a pre-push type check failed in code unrelated to the feature. The correct choices were to prove it existed on the base branch and then either repair it separately or use a repository-policy bypass with explicit human authorization.
 
-1. repair it in a separate PR; or
-2. use a repository-policy bypass only with explicit human authorization and recorded evidence.
+Silently editing unrelated code would have widened the approved feature and made the PR harder to review.
 
-Changing unrelated code in the feature branch would silently widen the approved scope.
-
-## What this demonstrates
+## What the sequence shows
 
 ```text
-vague intent
-  -> discover conflicting repository fact
-  -> ask the product owner
-  -> approve one observable slice
-  -> build freely inside that boundary
-  -> let evidence force a local repair
-  -> keep unrelated repository failures outside the feature
+vague request
+  -> discover a product conflict
+  -> ask the person responsible
+  -> approve one clear change
+  -> build
+  -> let evidence force a repair
+  -> keep unrelated failures outside the feature
 ```
 
-The value did not come from a larger prompt. It came from preserving the original intent, separating discovered facts from human decisions, and requiring the implementation to survive an evidence boundary before shipping.
+The safeguard behavior is covered by planning, approval, review, and PR-projection tests. Whether the complete Boatstack workflow improves product-delivery success remains a separate paired evaluation.
+
+Next: [install and ship a first feature](getting-started.md) or read [why these steps exist](why-these-steps.md).

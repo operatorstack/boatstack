@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "source_commit": "1a67b309b53d52011909a95b291151afaf575ce7",
+  "statuses": ["verified", "observed", "still_being_evaluated"],
+  "claims": [
+    {
+      "id": "human-decisions",
+      "public_claim": "Boatstack asks for material product decisions, records the human answer, and requires approval before build.",
+      "status": "verified",
+      "originating_observation": "A password-reset request conflicted with a passwordless product model and required a human product choice.",
+      "safeguard": "Question states, explicit Markdown approval, approval fingerprints, and stale-plan rejection.",
+      "readable_evidence": "why-these-steps.md#human-decisions",
+      "implementation": ["../boatstack/references/workflow.md", "../boatstack/plan.go"],
+      "verification": ["../boatstack/plan_test.go", "../boatstack/planning_test.go"],
+      "last_verified_version": "source:1a67b309b53d52011909a95b291151afaf575ce7"
+    },
+    {
+      "id": "validation-provenance",
+      "public_claim": "Boatstack links every planned acceptance criterion to a validation procedure and records why that check can support the claim.",
+      "status": "verified",
+      "originating_observation": "Stronger verification wording and same-model checks did not reliably distinguish correct completion from unsupported claims.",
+      "safeguard": "Criterion coverage, validation origin, named falsifier, and independence level.",
+      "readable_evidence": "why-these-steps.md#validation-provenance",
+      "implementation": ["validation-and-evidence.md", "../boatstack/plan.go"],
+      "verification": ["../boatstack/plan_test.go"],
+      "last_verified_version": "source:1a67b309b53d52011909a95b291151afaf575ce7"
+    },
+    {
+      "id": "irreversible-operations",
+      "public_claim": "Boatstack denies high-confidence destructive recovery operations before supported hosts execute them.",
+      "status": "verified",
+      "evaluation_status": "still_being_evaluated",
+      "originating_observation": "A failed external schema apply led to an invented reset path before human review removed it.",
+      "safeguard": "Fail-closed host hooks, immutable destructive classes, and read-only diagnosis after failure.",
+      "readable_evidence": "why-these-steps.md#irreversible-operations",
+      "implementation": ["safety.md", "../boatstack/safety.go", "../boatstack/hooks.go"],
+      "verification": ["../boatstack/safety_test.go", "../boatstack/hooks_test.go"],
+      "last_verified_version": "source:1a67b309b53d52011909a95b291151afaf575ce7"
+    },
+    {
+      "id": "reviewer-ready-pr",
+      "public_claim": "Boatstack previews a reviewer-first PR body derived from the committed diff and available evidence before changing GitHub.",
+      "status": "verified",
+      "originating_observation": "A generated PR summary omitted product decisions, accepted gaps, review findings, rollout, and rollback context.",
+      "safeguard": "Managed and evidence-limited PR projection, stale-preview checks, and explicit open or update confirmation.",
+      "readable_evidence": "why-these-steps.md#reviewer-ready-pr",
+      "implementation": ["../boatstack/pr.go", "getting-started.md"],
+      "verification": ["../boatstack/pr_test.go"],
+      "last_verified_version": "source:1a67b309b53d52011909a95b291151afaf575ce7"
+    }
+  ]
+}
