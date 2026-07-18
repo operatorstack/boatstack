@@ -14,6 +14,7 @@ INTENT
   -> BUILD_ACTIVATION
   -> PLAN_LOCKED
   -> BUILD
+  -> REPAIR (when ordinary conversation reveals a change)
   -> TEST_GATE
   -> REVIEW_GATE
   -> SHIP_GATE
@@ -22,6 +23,10 @@ INTENT
 ```
 
 Each transition emits an artifact and evidence. A host adapter may change how a command is invoked, but it must not skip a transition or redefine a gate.
+
+After build activation, persistent host adapters route ordinary change language through `REPAIR` before product edits. Same-intent implementation, verification, and review repairs resume at the earliest affected stage and supersede only downstream receipts. Changed or ambiguous intent enters `AMENDMENT_REQUIRED` and cannot pass a gate until a newly approved plan revision is activated. Existing `/test-gate` and `/review-gate` operations remain rerunnable; there are no repair-specific gates.
+
+A published delivery cannot be reset. Its correction uses a new feature id and declares `parent_delivery` as the published feature, producing a separate plan lock, delivery state, receipts, and PR while preserving the original evidence.
 
 The `SOURCE_PLAN` file is required from entry through completion of `BUILD`. After build, its path and hash remain recorded for provenance, but `TEST_GATE`, `REVIEW_GATE`, and `SHIP_GATE` do not require the original file to be present.
 
@@ -63,6 +68,7 @@ Lead with a plain outcome, never a machine code such as `PASS`, `PLAN_APPROVED`,
 | `auto-plan` ready / needs answers | **Plan ready** -> run `/plan-gate`; **I need your input** -> answer with the displayed choice keys or `r` for all recommendations |
 | `plan-gate` pending / approved | **Ready for your approval** -> reply `a` to approve; **Approved — ready to build** -> enter execution mode and run `/build` |
 | `build` success / paused | **Build complete** -> run `/test-gate`; **Build needs a decision** -> answer the blocking question |
+| `repair` same intent / amendment | **Repair recorded** -> perform the reported resume stage; **Plan amendment required** -> review the proposed intent delta |
 | `test-gate` pass / blocked | **Tests passed** -> run `/review-gate`; **Testing found a problem** -> perform or authorize the repair |
 | `review-gate` pass / blocked | **Review passed** -> run `/ship-gate`; **Changes required** -> address the blocking finding |
 | `ship-gate` preview / published | **PR ready** -> reply `o` to open or `u` to update the previewed PR; **PR opened** -> review the PR; never imply merge authorization |

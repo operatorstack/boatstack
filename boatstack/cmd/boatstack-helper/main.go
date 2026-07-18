@@ -302,6 +302,31 @@ func deliveryStatusCommand(arguments []string) int {
 	return 0
 }
 
+func recordChangeCommand(arguments []string) int {
+	flags := flag.NewFlagSet("record-change", flag.ContinueOnError)
+	options := boatstack.ChangeObservationOptions{}
+	flags.StringVar(&options.Repo, "repo", ".", "repository containing the managed delivery")
+	flags.StringVar(&options.Feature, "feature", "", "managed Boatstack feature slug")
+	flags.StringVar(&options.Message, "message", "", "exact user change request")
+	flags.StringVar(&options.SourceStage, "source-stage", "", "stage where the change was observed")
+	flags.StringVar(&options.Expected, "expected", "", "approved or requested expected behavior")
+	flags.StringVar(&options.Actual, "actual", "", "observed behavior")
+	flags.StringVar(&options.Evidence, "evidence", "", "bounded evidence or reproduction reference")
+	flags.StringVar(&options.Classification, "classification", "", "implementation_repair, verification_repair, review_repair, requirement_amendment, or needs_clarification")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if options.Feature == "" || options.Message == "" || options.SourceStage == "" || options.Classification == "" {
+		return fail(fmt.Errorf("record-change requires --feature, --message, --source-stage, and --classification"))
+	}
+	observation, state, err := boatstack.RecordChangeObservation(options)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Printf("PASS: change observation recorded\nOBSERVATION_ID=%s\nCLASSIFICATION=%s\nMODE=%s\nRESUME_STAGE=%s\n", observation.ID, observation.Classification, state.Mode, state.ResumeStage)
+	return 0
+}
+
 func doctorCommand(arguments []string) int {
 	flags := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository whose Boatstack installation should be checked")
@@ -464,7 +489,7 @@ func publishPRCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|record-delivery-gate|check-safety|safety-hook|pr-context|check-pr|publish-pr|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|record-change|record-delivery-gate|check-safety|safety-hook|pr-context|check-pr|publish-pr|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -492,6 +517,8 @@ func run() int {
 		return activatePlanCommand(os.Args[2:])
 	case "delivery-status":
 		return deliveryStatusCommand(os.Args[2:])
+	case "record-change":
+		return recordChangeCommand(os.Args[2:])
 	case "record-delivery-gate":
 		return recordDeliveryGateCommand(os.Args[2:])
 	case "pr-context":

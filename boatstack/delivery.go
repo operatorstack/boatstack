@@ -25,26 +25,36 @@ type DeliverySlice struct {
 }
 
 type DeliveryState struct {
-	SchemaVersion int             `json:"schema_version"`
-	Feature       string          `json:"feature"`
-	PlanLockHash  string          `json:"plan_lock_sha256"`
-	ActiveIndex   int             `json:"active_index"`
-	Slices        []DeliverySlice `json:"slices"`
+	SchemaVersion       int             `json:"schema_version"`
+	Feature             string          `json:"feature"`
+	PlanLockHash        string          `json:"plan_lock_sha256"`
+	PreviousPlanLocks   []string        `json:"previous_plan_lock_sha256,omitempty"`
+	ActiveIndex         int             `json:"active_index"`
+	Slices              []DeliverySlice `json:"slices"`
+	Mode                string          `json:"mode,omitempty"`
+	ResumeStage         string          `json:"resume_stage,omitempty"`
+	ActiveObservationID string          `json:"active_observation_id,omitempty"`
+	RepairAttempt       int             `json:"repair_attempt,omitempty"`
+	SupersededReceipts  []string        `json:"superseded_receipts,omitempty"`
+	ParentDelivery      string          `json:"parent_delivery,omitempty"`
 }
 
 type DeliveryGateReceipt struct {
-	SchemaVersion int    `json:"schema_version"`
-	Feature       string `json:"feature"`
-	SliceID       string `json:"slice_id"`
-	Gate          string `json:"gate"`
-	Status        string `json:"status"`
-	BaseBranch    string `json:"base_branch"`
-	HeadBranch    string `json:"head_branch"`
-	HeadCommit    string `json:"head_commit"`
-	DiffSHA256    string `json:"diff_sha256"`
-	EvidencePath  string `json:"evidence_path"`
-	EvidenceHash  string `json:"evidence_sha256"`
-	RecordedAt    string `json:"recorded_at"`
+	SchemaVersion        int    `json:"schema_version"`
+	Feature              string `json:"feature"`
+	SliceID              string `json:"slice_id"`
+	Gate                 string `json:"gate"`
+	Status               string `json:"status"`
+	BaseBranch           string `json:"base_branch"`
+	HeadBranch           string `json:"head_branch"`
+	HeadCommit           string `json:"head_commit"`
+	DiffSHA256           string `json:"diff_sha256"`
+	EvidencePath         string `json:"evidence_path"`
+	EvidenceHash         string `json:"evidence_sha256"`
+	RecordedAt           string `json:"recorded_at"`
+	Attempt              int    `json:"attempt,omitempty"`
+	TriggerObservationID string `json:"trigger_observation_id,omitempty"`
+	Supersedes           string `json:"supersedes,omitempty"`
 }
 
 type DeliveryGateOptions struct {
@@ -55,6 +65,31 @@ type DeliveryGateOptions struct {
 	Status       string
 	BaseBranch   string
 	EvidencePath string
+}
+
+type ChangeObservationOptions struct {
+	Repo           string
+	Feature        string
+	Message        string
+	SourceStage    string
+	Expected       string
+	Actual         string
+	Evidence       string
+	Classification string
+}
+
+type ChangeObservation struct {
+	ID             string `json:"id"`
+	Feature        string `json:"feature"`
+	SliceID        string `json:"slice_id,omitempty"`
+	SourceStage    string `json:"source_stage"`
+	Expected       string `json:"expected,omitempty"`
+	Actual         string `json:"actual,omitempty"`
+	Evidence       string `json:"evidence,omitempty"`
+	Message        string `json:"message"`
+	Classification string `json:"classification"`
+	ResumeStage    string `json:"resume_stage,omitempty"`
+	RecordedAt     string `json:"recorded_at"`
 }
 
 func deliveryEvidenceGateStatus(value, gate, sliceID string, explicit bool) string {
@@ -259,13 +294,138 @@ func initializeDeliveryState(repo, feature, planPath, lockPath string) error {
 	if err != nil {
 		return err
 	}
-	if existing, loadErr := LoadDeliveryState(repo, feature); loadErr == nil && existing.PlanLockHash == lockHash {
-		return nil
+	previousLocks := []string{}
+	repairAttempt := 0
+	if existing, loadErr := LoadDeliveryState(repo, feature); loadErr == nil {
+		if existing.PlanLockHash == lockHash {
+			return nil
+		}
+		if existing.ActiveIndex >= len(existing.Slices) {
+			return fmt.Errorf("published delivery %s is immutable; activate the correction under a new feature id with parent_delivery=%s", feature, feature)
+		}
+		previousLocks = append(previousLocks, existing.PreviousPlanLocks...)
+		if existing.PlanLockHash != "" {
+			previousLocks = append(previousLocks, existing.PlanLockHash)
+		}
+		repairAttempt = existing.RepairAttempt
 	}
 	return saveDeliveryState(repo, DeliveryState{
 		SchemaVersion: deliveryStateSchemaVersion, Feature: feature, PlanLockHash: lockHash,
-		ActiveIndex: 0, Slices: slices,
+		PreviousPlanLocks: previousLocks, ActiveIndex: 0, Slices: slices, Mode: "NORMAL", RepairAttempt: repairAttempt,
+		ParentDelivery: strings.TrimSpace(stringValue(plan["parent_delivery"])),
 	})
+}
+
+func archiveDeliveryReceipt(repo, feature, sliceID, gate, observationID string) (string, error) {
+	path, err := deliveryReceiptPath(repo, feature, sliceID, gate)
+	if err != nil {
+		return "", err
+	}
+	value, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	archive := filepath.Join(filepath.Dir(filepath.Dir(path)), "superseded", observationID, gate+".json")
+	if err := atomicWriteMode(archive, value, 0o644); err != nil {
+		return "", err
+	}
+	if err := os.Remove(path); err != nil {
+		return "", err
+	}
+	return ".git/boatstack/deliveries/" + feature + "/receipts/superseded/" + observationID + "/" + gate + ".json", nil
+}
+
+func appendChangeObservation(repo string, observation ChangeObservation) error {
+	path := filepath.Join(repo, ".product-loop", "features", observation.Feature, "changes.md")
+	existing, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if len(existing) == 0 {
+		existing = []byte("# Change observations\n\nAppend-only observations recorded after build activation.\n")
+	}
+	block := fmt.Sprintf("\n## %s\n\n- Recorded: `%s`\n- Source stage: `%s`\n- Classification: `%s`\n- Resume stage: `%s`\n- User message: %s\n- Expected: %s\n- Actual: %s\n- Evidence: %s\n- Resolution: pending\n",
+		observation.ID, observation.RecordedAt, observation.SourceStage, observation.Classification,
+		observation.ResumeStage, observation.Message, observation.Expected, observation.Actual, observation.Evidence)
+	return atomicWriteMode(path, append(existing, []byte(block)...), 0o644)
+}
+
+func RecordChangeObservation(options ChangeObservationOptions) (ChangeObservation, DeliveryState, error) {
+	repo, err := ResolveRepository(options.Repo)
+	if err != nil {
+		return ChangeObservation{}, DeliveryState{}, err
+	}
+	state, err := LoadDeliveryState(repo, options.Feature)
+	if err != nil {
+		return ChangeObservation{}, DeliveryState{}, err
+	}
+	if err := checkDeliveryPlanLock(repo, options.Feature, state); err != nil {
+		return ChangeObservation{}, DeliveryState{}, err
+	}
+	classification := strings.ToLower(strings.TrimSpace(options.Classification))
+	resume := map[string]string{
+		"implementation_repair": "BUILD", "verification_repair": "TEST_GATE",
+		"review_repair": "REVIEW_GATE", "requirement_amendment": "PLAN_GATE",
+		"needs_clarification": "",
+	}[classification]
+	if _, ok := map[string]bool{"implementation_repair": true, "verification_repair": true, "review_repair": true, "requirement_amendment": true, "needs_clarification": true}[classification]; !ok {
+		return ChangeObservation{}, DeliveryState{}, fmt.Errorf("unsupported change classification %q", classification)
+	}
+	if strings.TrimSpace(options.Message) == "" || strings.TrimSpace(options.SourceStage) == "" {
+		return ChangeObservation{}, DeliveryState{}, fmt.Errorf("change observation requires the user message and source stage")
+	}
+	state.RepairAttempt++
+	id := fmt.Sprintf("CHG-%03d", state.RepairAttempt)
+	observation := ChangeObservation{
+		ID: id, Feature: options.Feature, SourceStage: strings.ToUpper(strings.TrimSpace(options.SourceStage)),
+		Expected: strings.TrimSpace(options.Expected), Actual: strings.TrimSpace(options.Actual), Evidence: strings.TrimSpace(options.Evidence),
+		Message: strings.TrimSpace(options.Message), Classification: classification, ResumeStage: resume,
+		RecordedAt: time.Now().UTC().Truncate(time.Second).Format(time.RFC3339),
+	}
+	if state.ActiveIndex < len(state.Slices) {
+		observation.SliceID = state.Slices[state.ActiveIndex].ID
+	} else if classification != "requirement_amendment" {
+		return ChangeObservation{}, DeliveryState{}, fmt.Errorf("published delivery changes require requirement_amendment and a corrective child delivery")
+	}
+	if err := appendChangeObservation(repo, observation); err != nil {
+		return ChangeObservation{}, DeliveryState{}, err
+	}
+	state.ActiveObservationID = id
+	state.ResumeStage = resume
+	if classification == "needs_clarification" || classification == "requirement_amendment" {
+		state.Mode = "AMENDMENT_REQUIRED"
+		if classification == "needs_clarification" {
+			state.ResumeStage = ""
+		}
+	} else {
+		state.Mode = "REWORK"
+		slice := &state.Slices[state.ActiveIndex]
+		gates := []string{"review"}
+		if resume == "BUILD" || resume == "TEST_GATE" {
+			gates = []string{"test", "review"}
+		}
+		for _, gate := range gates {
+			archived, archiveErr := archiveDeliveryReceipt(repo, options.Feature, slice.ID, gate, id)
+			if archiveErr != nil {
+				return ChangeObservation{}, DeliveryState{}, archiveErr
+			}
+			if archived != "" {
+				state.SupersededReceipts = append(state.SupersededReceipts, archived)
+			}
+		}
+		if resume == "REVIEW_GATE" {
+			slice.Status = "TEST_PASSED"
+		} else {
+			slice.Status = "BUILD"
+		}
+	}
+	if err := saveDeliveryState(repo, state); err != nil {
+		return ChangeObservation{}, DeliveryState{}, err
+	}
+	return observation, state, nil
 }
 
 func activeDeliverySlice(state DeliveryState) (DeliverySlice, error) {
@@ -413,6 +573,9 @@ func RecordDeliveryGate(options DeliveryGateOptions) (DeliveryGateReceipt, error
 	if err := checkDeliveryPlanLock(repo, options.Feature, state); err != nil {
 		return DeliveryGateReceipt{}, err
 	}
+	if state.Mode == "AMENDMENT_REQUIRED" {
+		return DeliveryGateReceipt{}, fmt.Errorf("delivery requires an approved plan amendment before gates may continue")
+	}
 	slice, err := activeDeliverySlice(state)
 	if err != nil {
 		return DeliveryGateReceipt{}, err
@@ -476,11 +639,18 @@ func RecordDeliveryGate(options DeliveryGateOptions) (DeliveryGateReceipt, error
 	if err != nil {
 		return DeliveryGateReceipt{}, err
 	}
+	previous, _ := readDeliveryReceipt(repo, options.Feature, slice.ID, gate)
 	receipt := DeliveryGateReceipt{
 		SchemaVersion: deliveryStateSchemaVersion, Feature: options.Feature, SliceID: slice.ID,
 		Gate: gate, Status: status, BaseBranch: base, HeadBranch: head, HeadCommit: headCommit,
 		DiffSHA256: diffHash, EvidencePath: relEvidence, EvidenceHash: evidenceHash,
 		RecordedAt: time.Now().UTC().Truncate(time.Second).Format(time.RFC3339),
+		Attempt:    state.RepairAttempt + 1, TriggerObservationID: state.ActiveObservationID,
+	}
+	if previous.RecordedAt != "" {
+		receipt.Supersedes = previous.RecordedAt
+	} else if state.ActiveObservationID != "" && len(state.SupersededReceipts) > 0 {
+		receipt.Supersedes = state.SupersededReceipts[len(state.SupersededReceipts)-1]
 	}
 	path, _ := deliveryReceiptPath(repo, options.Feature, slice.ID, gate)
 	value, _ := MarshalJSON(receipt)
@@ -496,6 +666,9 @@ func RecordDeliveryGate(options DeliveryGateOptions) (DeliveryGateReceipt, error
 		}
 	} else {
 		state.Slices[state.ActiveIndex].Status = "REVIEW_PASSED"
+		state.Mode = "NORMAL"
+		state.ResumeStage = ""
+		state.ActiveObservationID = ""
 	}
 	if err := saveDeliveryState(repo, state); err != nil {
 		return DeliveryGateReceipt{}, err
@@ -510,6 +683,9 @@ func CheckDeliveryReadyForShip(repo, feature, base, head, diffHash string, chang
 	}
 	if err := checkDeliveryPlanLock(repo, feature, state); err != nil {
 		return DeliveryState{}, DeliverySlice{}, nil, err
+	}
+	if state.Mode != "" && state.Mode != "NORMAL" {
+		return DeliveryState{}, DeliverySlice{}, nil, fmt.Errorf("delivery has unresolved repair state %s", state.Mode)
 	}
 	slice, err := activeDeliverySlice(state)
 	if err != nil {
@@ -582,7 +758,7 @@ func ActiveManagedDeliveries(repo string) ([]string, error) {
 		if loadErr != nil {
 			return nil, fmt.Errorf("invalid managed delivery state for %s: %w", entry.Name(), loadErr)
 		}
-		if state.ActiveIndex < len(state.Slices) {
+		if state.ActiveIndex < len(state.Slices) || (state.Mode != "" && state.Mode != "NORMAL") {
 			active = append(active, entry.Name())
 		}
 	}

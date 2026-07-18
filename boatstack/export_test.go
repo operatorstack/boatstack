@@ -99,6 +99,7 @@ func TestExportAndDriftCheck(t *testing.T) {
 	}
 	for _, path := range []string{
 		".cursor/commands/boatstack-update.md",
+		".cursor/commands/repair.md",
 		".cursor/commands/plan-gate.md",
 		".cursor/commands/review.md",
 		".claude/skills/boatstack/SKILL.md",
@@ -170,6 +171,7 @@ func TestExportAndDriftCheck(t *testing.T) {
 		"auto-plan":        {"Plan ready", "I need your input"},
 		"plan-gate":        {"Ready for your approval", "Approved — ready to build"},
 		"build":            {"Build complete", "Build needs a decision"},
+		"repair":           {},
 		"test-gate":        {"Tests passed", "Testing found a problem"},
 		"review-gate":      {"Review passed", "Changes required"},
 		"review":           {"Review passed", "Changes required"},
@@ -254,6 +256,11 @@ func TestExportAndDriftCheck(t *testing.T) {
 		}
 	}
 	cursorRule := string(bundle.Files[".cursor/rules/boatstack.mdc"])
+	for _, expected := range []string{"alwaysApply: true", "Before modifying product code", "active managed delivery", "repair operation", "ordinary language"} {
+		if !strings.Contains(cursorRule, expected) {
+			t.Fatalf("Cursor rule is missing conversational repair routing %q", expected)
+		}
+	}
 	for _, expected := range []string{"delivery_slices", "active slice", "Direct push and PR mutation", "plan approval is never publication authority"} {
 		if !strings.Contains(cursorRule, expected) {
 			t.Fatalf("Cursor rule is missing phase-scoped delivery rule %q", expected)
@@ -262,6 +269,18 @@ func TestExportAndDriftCheck(t *testing.T) {
 	for _, expected := range []string{"naturally asks Boatstack", "evidence-limited ad-hoc PR brief", "not a /pr-brief command", "NOT_VERIFIED"} {
 		if !strings.Contains(cursorRule, expected) {
 			t.Fatalf("Cursor rule is missing ad-hoc PR behavior %q", expected)
+		}
+	}
+	repair := string(bundle.Files[".cursor/commands/repair.md"])
+	for _, expected := range []string{"record-change", "implementation_repair", "verification_repair", "requirement_amendment", "needs_clarification", "/test-gate", "/review-gate"} {
+		if !strings.Contains(repair, expected) {
+			t.Fatalf("repair adapter is missing %q", expected)
+		}
+	}
+	for _, path := range []string{".claude/skills/boatstack/SKILL.md", ".agents/skills/boatstack/SKILL.md"} {
+		router := string(bundle.Files[path])
+		if !strings.Contains(router, "automatically use repair") || !strings.Contains(router, "active managed delivery") {
+			t.Fatalf("%s does not auto-route free-form delivery changes", path)
 		}
 	}
 	prTemplate := string(bundle.Files[".github/PULL_REQUEST_TEMPLATE/boatstack.md"])
