@@ -65,6 +65,7 @@ Lead with a plain outcome, never a machine code such as `PASS`, `PLAN_APPROVED`,
 
 | State | Outcome -> one next action |
 |---|---|
+| `next`, `/boatstack-next`, `$boatstack next` active / complete / ambiguous | **Next Boatstack stage** -> run the one repository-backed operation; **Feature complete** -> no action required; **Boatstack state needs attention** -> resolve the named ambiguity |
 | `auto-plan` ready / needs answers | **Plan ready** -> run `/plan-gate`; **I need your input** -> answer with the displayed choice keys or `r` for all recommendations |
 | `plan-gate` pending / approved | **Ready for your approval** -> reply `a` to approve; **Approved — ready to build** -> enter execution mode and run `/build` |
 | `build` success / paused | **Build complete** -> run `/test-gate`; **Build needs a decision** -> answer the blocking question |

@@ -56,6 +56,7 @@ func TestRuntimeFreeInit(t *testing.T) {
 	}
 	for _, expected := range []string{
 		"Boatstack start command by host:",
+		"Codex: $boatstack next",
 		"Claude Code: /auto-plan",
 		"Cursor: /auto-plan",
 		"Codex: $boatstack auto-plan",

@@ -37,6 +37,10 @@ type claudeSkillSpec struct {
 
 var claudeVisibleSkills = []claudeSkillSpec{
 	{
+		Name:        "boatstack-next",
+		Description: "Report the verified Boatstack stage and exactly one next action without changing state.",
+	},
+	{
 		Name:         "auto-plan",
 		Description:  "Refine one saved Plan-mode proposal into a reviewable Boatstack feature plan.",
 		ArgumentHint: "[plan-file]",
@@ -226,6 +230,7 @@ func BuildExportBundle(configPath string, config ProjectConfig, rawConfig []byte
 	}
 
 	operations := map[string]string{
+		"boatstack-next":   "Run the project-local helper next-status --repo . --json. This operation is strictly read-only: do not run the reported operation, edit artifacts, contact GitHub, or advance a gate. Translate the structured result into the canonical response contract. Show the verified feature and active slice when present. If observed_stage is FEATURE_COMPLETE, respond Feature complete and make No action required the one next action. If verification_status is BLOCKED, name the ambiguity and make resolving it the one action. Conversation, terminal, worktree, or process observations may be included as clearly labeled context only and must never override the repository-backed result. Otherwise make the returned next_operation the one next action.",
 		"auto-plan":        "Discover exactly one saved Plan-mode file and refine it into a Markdown-only draft feature package whose canonical structured artifact is plan.md. Run check-plan read-only. Record affected_paths and structured side_effects for external writes; use an immutable target identity, transactional or fix-forward recovery, and destructive=false. Keep internal phases as tasks in one delivery slice. Only when the accepted outcome explicitly needs multiple PRs, declare ordered delivery_slices and assign every task exactly once; plan approval never authorizes publication. Do not implement, create JSON or locks, or imply acceptance. If ready, respond with Plan ready and make Run /plan-gate the one next action. If decisions remain, respond with I need your input and ask only 1-3 material questions.",
 		"plan-gate":        "Run check-plan read-only, present its fingerprint and all open decisions, and require explicit human approval. While plan approval is pending, the normal user action is the exact standalone reply a. Trim surrounding whitespace and match a case-insensitively; do not treat [a] or an a embedded in other text as approval. Continue accepting the full reply approve for compatibility, but do not advertise it in the user-facing response. Resolve approved_by from an explicit supplied identity, otherwise from the authenticated GitHub login when available; ask one short identity follow-up only when neither exists, and never infer it from a filesystem username, commit history, or agent identity. On approval invoke record-approval with the resolved human, RFC3339 timestamp, and exact displayed fingerprint so it writes only approval.md. While pending, respond Ready for your approval and render the one next action as: Reply `a` to approve. After recording, respond Approved — ready to build and make entering the host execution mode and running /build the one next action. Remain in Plan mode; do not compile or request an early mode switch.",
 		"build":            "First confirm the host is in an execution-capable mode. If the mode transition is rejected or product-code writes remain unavailable, return READY_FOR_BUILD internally without activating the plan, compiling JSON, or writing a lock. Only then locate plan.md and approval.md and run activate-plan before the first product-code edit. Stop if it reports BLOCKED. Read delivery-status and implement only the active delivery slice task_ids. Run the internal repository safety check after operational or high-risk edits; a destructive capability blocks execution and gate progression but does not block reviewable source editing. Implementation tactics remain open inside the approved boundary, but push and PR mutation are never build tactics and are denied while managed delivery is active. On success respond Build complete and make Run /test-gate the one next action. When a new product decision blocks work, respond Build needs a decision and ask only that question.",
@@ -269,12 +274,12 @@ Boatstack's repository hooks deny high-confidence irreversible operations across
 
 	adapterSkill := fmt.Sprintf(`---
 name: %s
-description: Use when the user asks Boatstack to auto-plan, approve a plan, build, repair or modify an active delivery, test, review, ship, update Boatstack, or run a retrospective. Also use automatically when ordinary free-form change language targets an active managed delivery.
+	description: Use when the user asks what is next in Boatstack, or asks Boatstack to auto-plan, repair, approve a plan, build, test, review, ship, update Boatstack, or run a retrospective. Also use automatically when ordinary free-form change language targets an active managed delivery.
 ---
 
 # Boatstack adapter
 
-Read .product-loop/project.json and .product-loop/workflow.md. Valid operations are auto-plan, plan-gate, build, repair, test-gate, review-gate/review, ship-gate/ship, boatstack-update, and retro. Before any product edit, check for an active managed delivery. If one exists and ordinary user language reports a problem or asks for a modification, automatically use repair even when the user did not name the operation.
+	Read .product-loop/project.json and .product-loop/workflow.md. The requested operation is supplied by the user; valid operations are next, boatstack-next, auto-plan, plan-gate, build, repair, test-gate, review-gate/review, ship-gate/ship, boatstack-update, and retro. Route next and natural-language questions such as "what's next in Boatstack?" to the read-only boatstack-next operation. Before any product edit, check for an active managed delivery. If one exists and ordinary user language reports a problem or asks for a modification, automatically use repair even when the user did not name the operation.
 
 Follow the User-facing response contract in .product-loop/workflow.md for every operation. Lead with the mapped plain-language outcome, show only decision-relevant content, end with exactly one Next step, and move machine statuses, helper output, fingerprints, artifact paths, receipts, and locks into collapsed Technical details. Internal helper names must not appear in the primary response.
 

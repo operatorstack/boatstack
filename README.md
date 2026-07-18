@@ -50,6 +50,8 @@ Install Boatstack in its own infrastructure PR and merge it before starting a fe
 
 That is all you need to learn up front. Boatstack shows one next action at a time through approval, building, tests, review, and PR preparation.
 
+When you return after an interruption, run `/boatstack-next` in Claude Code or Cursor, or `$boatstack next` in Codex. Boatstack reports the repository-verified stage and one next action without changing state; if nothing remains active, it reports **Feature complete**.
+
 In Claude Code and Cursor, that guidance moves through `/plan-gate` → `/build` → `/test-gate` → `/review-gate` → `/ship-gate`. In Codex, use the same operation names after `$boatstack`.
 
 > The diagram shows what Boatstack guides—not a checklist you need to memorize.
@@ -72,6 +74,7 @@ Receipts remain as history; published corrections become linked deliveries.
 ## Features
 
 - **A guided path from idea to PR.** Start with `/auto-plan`; Boatstack presents one next action at a time through planning, approval, build, validation, review, and PR preparation.
+- **Instant orientation after a break.** `boatstack next` reconstructs the verified stage without treating chat or a running process as workflow evidence.
 - **Human decisions stay human.** Material product questions remain open until a person answers them, and implementation waits for explicit approval.
 - **Evidence tied to the promise.** Tests and checks map to the outcomes the change claims to deliver instead of treating one green command as proof of everything.
 - **Context that survives the feature.** Plans, decisions, accepted gaps, evidence, review findings, and code state can inform the next feature rather than disappearing with the chat.
