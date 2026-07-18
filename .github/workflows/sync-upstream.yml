@@ -124,11 +124,11 @@ jobs:
           git config user.name "${{ steps.app-token.outputs.app-slug }}[bot]"
           git config user.email "${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com"
           git switch -c "$branch"
-          git commit -m "Sync Boatstack from Intelligence Flow $short"
+          git commit -m "Sync Boatstack from Intelligence Flow Labs @ $short"
           git push --set-upstream origin "$branch"
           pr_url="$(gh pr create \
             --base main \
             --head "$branch" \
-            --title "Sync Boatstack from Intelligence Flow $short" \
+            --title "Sync Boatstack from Intelligence Flow Labs @ $short" \
             --body-file "$body_file")"
           echo "Opened generated PR: $pr_url"
