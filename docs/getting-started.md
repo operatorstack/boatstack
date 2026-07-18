@@ -18,6 +18,8 @@ Ask Boatstack for the next verified stage without changing anything:
 
 Boatstack reads repository-owned plans, approvals, delivery state, and gate receipts, then returns exactly one next action. Chat, terminal, worktree, and running-process observations may add context but never establish a workflow stage. If no managed work remains, Boatstack reports **Feature complete** and **No action required**.
 
+For a small verified feature, `/boatstack-run` in Cursor or Claude Code and `$boatstack run` in Codex drive every declared delivery slice through PR publication. The command fetches `origin` before mutation and pauses for required plan approval, product decisions, and the exact PR open/update confirmation. Merge and deploy remain separate.
+
 ## 1. Install it separately
 
 The easiest path is to paste the [agent installation prompt](../README.md#install-with-your-coding-agent) into your coding host. It asks the agent to create `chore/install-boatstack`, run the official installer, explain the generated files, run `doctor`, and prepare the installation PR without merging it.

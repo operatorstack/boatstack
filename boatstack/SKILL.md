@@ -13,6 +13,7 @@ Map the request to one operation:
 
 - `init`: inspect a repository and create or update `.product-loop/project.json`.
 - `next`: report the verified current stage and exactly one next action without changing workflow or repository state.
+- `run`: drive the verified feature through every delivery slice and PR publication, pausing at approval, product-decision, and publication boundaries.
 - `auto-plan`: refine a saved host Plan-mode file into a reviewable draft feature package; refuse when that file is absent.
 - `plan-gate`: validate the Markdown draft, present it for explicit human acceptance, and record that acceptance in Markdown.
 - `build`: activate the approved Markdown plan, then implement only the active delivery slice's tasks.
@@ -29,6 +30,12 @@ For the full state machine, read [workflow.md](references/workflow.md). For arti
 ## Report what is next
 
 Run the project-local helper's read-only `next-status --repo . --json` inspection. Repository artifacts, managed delivery state, and gate receipts are evidence; conversation, terminal, worktree, and process observations are context only. Never run the returned operation automatically. If nothing remains active in an initialized repository, report **Feature complete** with **No action required**. If state is ambiguous or stale, name the blocker instead of choosing by recency.
+
+## Run through ship
+
+For `$boatstack run`, `/boatstack-run`, or natural language such as “run Boatstack through ship,” first run the read-only `next-status --repo . --json`. Return **Feature complete** immediately when nothing remains active, and stop on unverified, ambiguous, or stale state. Before executing a mutating next operation, run `run-preflight --repo . --json`. It fetches `origin` and verifies the current named branch contains the fetched delivery base and is not behind or diverged from its upstream. A failed fetch, missing remote/base, stale base, upstream drift, or constrained branch mismatch blocks before product or workflow mutation. Never repair freshness by merging, rebasing, switching or creating a constrained branch, discarding changes, force-pushing, or broadening permissions.
+
+After preflight, repeatedly run `next-status --repo . --json`, execute only its verified next operation using the canonical semantics below, verify the resulting repository state, and resolve again. Continue across all declared slices. Pause for explicit `a` plan approval, material product questions, and the exact `o` or `u` PR confirmation; a valid answer resumes the foreground run in the current host session. The run invocation itself is never approval or publication authority. Same-intent test/review failures may be recorded and repaired for at most three complete repair-and-gate cycles per active slice in one invocation. Stop on amendments, ambiguity, safety failures, stale evidence, unsupported recovery, branch mismatch, or an exhausted budget. Do not persist autopilot state or use conversation as workflow evidence. Completion means every slice PR is published for review, never merged or deployed.
 
 ## Enforce the irreversible-operation boundary
 

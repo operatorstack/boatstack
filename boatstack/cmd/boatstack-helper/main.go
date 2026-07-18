@@ -325,6 +325,29 @@ func nextStatusCommand(arguments []string) int {
 	return 0
 }
 
+func runPreflightCommand(arguments []string) int {
+	flags := flag.NewFlagSet("run-preflight", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository whose Git state should be verified before boatstack run")
+	jsonOutput := flags.Bool("json", false, "print the versioned structured preflight")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	status := boatstack.CheckRunPreflight(*repo)
+	if *jsonOutput {
+		value, err := boatstack.MarshalJSON(status)
+		if err != nil {
+			return fail(err)
+		}
+		fmt.Print(string(value))
+	} else {
+		fmt.Printf("Boatstack run preflight: %s\nReason: %s\n", status.VerificationStatus, status.Reason)
+	}
+	if status.VerificationStatus != "VERIFIED" {
+		return 1
+	}
+	return 0
+}
+
 func recordChangeCommand(arguments []string) int {
 	flags := flag.NewFlagSet("record-change", flag.ContinueOnError)
 	options := boatstack.ChangeObservationOptions{}
@@ -512,7 +535,7 @@ func publishPRCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|record-change|record-delivery-gate|check-safety|safety-hook|pr-context|check-pr|publish-pr|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|run-preflight|record-change|record-delivery-gate|check-safety|safety-hook|pr-context|check-pr|publish-pr|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -542,6 +565,8 @@ func run() int {
 		return deliveryStatusCommand(os.Args[2:])
 	case "next-status":
 		return nextStatusCommand(os.Args[2:])
+	case "run-preflight":
+		return runPreflightCommand(os.Args[2:])
 	case "record-change":
 		return recordChangeCommand(os.Args[2:])
 	case "record-delivery-gate":

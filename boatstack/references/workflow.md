@@ -66,6 +66,7 @@ Lead with a plain outcome, never a machine code such as `PASS`, `PLAN_APPROVED`,
 | State | Outcome -> one next action |
 |---|---|
 | `next`, `/boatstack-next`, `$boatstack next` active / complete / ambiguous | **Next Boatstack stage** -> run the one repository-backed operation; **Feature complete** -> no action required; **Boatstack state needs attention** -> resolve the named ambiguity |
+| `run`, `/boatstack-run`, `$boatstack run` complete / paused / blocked | **Feature ready for review** -> review the published PRs; **Boatstack run paused** -> provide the one required approval, confirmation, or product answer; **Boatstack run needs attention** -> resolve the named freshness, safety, state, or repair blocker |
 | `auto-plan` ready / needs answers | **Plan ready** -> run `/plan-gate`; **I need your input** -> answer with the displayed choice keys or `r` for all recommendations |
 | `plan-gate` pending / approved | **Ready for your approval** -> reply `a` to approve; **Approved — ready to build** -> enter execution mode and run `/build` |
 | `build` success / paused | **Build complete** -> run `/test-gate`; **Build needs a decision** -> answer the blocking question |
@@ -75,6 +76,12 @@ Lead with a plain outcome, never a machine code such as `PASS`, `PLAN_APPROVED`,
 | `ship-gate` preview / published | **PR ready** -> reply `o` to open or `u` to update the previewed PR; **PR opened** -> review the PR; never imply merge authorization |
 | `boatstack-update` current / postponed / prepared / published / blocked | **Boatstack is current** -> no action required; **Update postponed** -> finish feature work and rerun from the clean default branch; **Boatstack update ready** -> reply `o` to open the update PR; **Update PR opened** -> review the PR; **Update needs attention** -> address the one reported collision or health failure |
 | `retro` | **Improvement proposed** -> review or authorize the experiment |
+
+### Foreground run coordinator
+
+`run` is an opt-in foreground coordinator over the existing operations, not a second state machine. It first resolves the read-only repository state, returns **Feature complete** without requiring a remote when no work remains, and stops on unverified or blocked state. Before any workflow or product mutation it runs the versioned Git preflight, which fetches `origin`, requires the fetched remote base, verifies that the current named branch contains that base, rejects a behind or diverged upstream, and enforces any active slice branch constraints. It never merges, rebases, switches or creates constrained branches, discards changes, force-pushes, merges a PR, or deploys.
+
+After preflight, resolve the repository-backed next operation, execute exactly that canonical operation, verify the resulting state, and resolve again through all declared delivery slices. Pause for `a`, a material product answer, and `o` or `u`; after the valid state-scoped reply, continue in the current host session. The invocation does not replace either human authorization. Automatically record and repair same-intent test or review failures for at most three complete repair-and-gate cycles per active slice per invocation. Stop immediately for requirement amendments, ambiguous or stale state, unsafe capability, unsupported recovery, branch mismatch, or exhausted repairs. Store no durable run/autopilot mode; re-invocation reconstructs progress from canonical repository state.
 
 ### Reply shortcuts
 

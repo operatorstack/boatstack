@@ -169,6 +169,7 @@ func TestExportAndDriftCheck(t *testing.T) {
 	planGate := string(bundle.Files[".cursor/commands/plan-gate.md"])
 	build := string(bundle.Files[".cursor/commands/build.md"])
 	responseOutcomes := map[string][]string{
+		"boatstack-run":    {"Feature complete"},
 		"auto-plan":        {"Plan ready", "I need your input"},
 		"plan-gate":        {"Ready for your approval", "Approved — ready to build"},
 		"build":            {"Build complete", "Build needs a decision"},
@@ -236,6 +237,12 @@ func TestExportAndDriftCheck(t *testing.T) {
 	}
 	if _, exists := bundle.Files[".cursor/commands/pr-brief.md"]; exists {
 		t.Fatal("PR brief must remain natural-language behavior, not a public command")
+	}
+	run := string(bundle.Files[".cursor/commands/boatstack-run.md"])
+	for _, expected := range []string{"run-preflight --repo . --json", "fetch", "next-status --repo . --json", "three complete automated repair-and-gate cycles", "automatically continue the run", "never merge or deploy"} {
+		if !strings.Contains(run, expected) {
+			t.Fatalf("boatstack-run adapter is missing %q", expected)
+		}
 	}
 	update := string(bundle.Files[".cursor/commands/boatstack-update.md"])
 	for _, expected := range []string{"check-update", "chore/update-boatstack-v", "BOATSTACK_MODE=update", "Reply `o` to open update PR.", "full reply open update PR for compatibility", "Never merge"} {
@@ -357,7 +364,7 @@ func TestPortableHostAdaptersShareWorkflowAndArtifactContract(t *testing.T) {
 
 	workflow := string(bundle.Files[".product-loop/workflow.md"])
 	artifacts := string(bundle.Files[".product-loop/artifacts.md"])
-	for _, expected := range []string{"boatstack-next", "auto-plan", "plan-gate", "build", "test-gate", "review-gate", "ship-gate", "boatstack-update", "retro"} {
+	for _, expected := range []string{"boatstack-next", "boatstack-run", "auto-plan", "plan-gate", "build", "test-gate", "review-gate", "ship-gate", "boatstack-update", "retro"} {
 		if !strings.Contains(workflow, expected) {
 			t.Fatalf("canonical portable workflow is missing %q", expected)
 		}
@@ -388,7 +395,7 @@ func TestPortableHostAdaptersShareWorkflowAndArtifactContract(t *testing.T) {
 			}
 		}
 	}
-	for _, operation := range []string{"next", "boatstack-next", "auto-plan", "plan-gate", "build", "test-gate", "review-gate", "ship-gate", "boatstack-update", "retro"} {
+	for _, operation := range []string{"next", "boatstack-next", "run", "boatstack-run", "auto-plan", "plan-gate", "build", "test-gate", "review-gate", "ship-gate", "boatstack-update", "retro"} {
 		if !strings.Contains(hostSurfaces["codex"], operation) {
 			t.Fatalf("Codex router does not declare portable operation %q", operation)
 		}
