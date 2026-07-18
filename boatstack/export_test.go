@@ -1,11 +1,63 @@
 package boatstack
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+type fixtureDirEntry struct{ name string }
+
+func (entry fixtureDirEntry) Name() string               { return entry.name }
+func (entry fixtureDirEntry) IsDir() bool                { return false }
+func (entry fixtureDirEntry) Type() fs.FileMode          { return 0 }
+func (entry fixtureDirEntry) Info() (fs.FileInfo, error) { return nil, nil }
+
+func TestBuildExportBundleNamesMalformedEmbeddedJSONTemplate(t *testing.T) {
+	oldRead := readCanonical
+	oldReadDir := readCanonicalDir
+	defer func() { readCanonical, readCanonicalDir = oldRead, oldReadDir }()
+	readCanonicalDir = func(path string) ([]fs.DirEntry, error) {
+		entries, err := oldReadDir(path)
+		return append(entries, fixtureDirEntry{name: "nul-fixture.json"}), err
+	}
+	readCanonical = func(path string) ([]byte, error) {
+		if path == "assets/templates/nul-fixture.json" {
+			return []byte{'{', 0, '}'}, nil
+		}
+		return oldRead(path)
+	}
+	config := testConfig()
+	raw, err := MarshalJSON(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = BuildExportBundle(".boatstack-project.json", config, raw, "boatstack")
+	if err == nil || !strings.Contains(err.Error(), "build export bundle from JSON template") || !strings.Contains(err.Error(), "assets/templates/nul-fixture.json") {
+		t.Fatalf("malformed template error lacks operation or exact asset: %v", err)
+	}
+}
+
+func TestDecodeJSONAlwaysNamesOperationAndSource(t *testing.T) {
+	for _, test := range []struct {
+		operation string
+		source    string
+	}{
+		{"load project configuration", "/repo/.boatstack-project.json"},
+		{"validate generated export bundle", ".product-loop/generated.lock.json"},
+		{"look up latest release", "GitHub releases/latest response"},
+	} {
+		t.Run(test.operation, func(t *testing.T) {
+			var decoded any
+			err := DecodeJSON(test.operation, test.source, []byte{'{', 0, '}'}, &decoded)
+			if err == nil || !strings.Contains(err.Error(), "operation "+test.operation) || !strings.Contains(err.Error(), "parse JSON "+test.source) {
+				t.Fatalf("JSON diagnostic lacks operation or source: %v", err)
+			}
+		})
+	}
+}
 
 func testConfig() ProjectConfig {
 	return ProjectConfig{

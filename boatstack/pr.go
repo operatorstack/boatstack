@@ -511,8 +511,8 @@ func parsePRFrontmatter(value string) (map[string]string, string, error) {
 			continue
 		}
 		var decoded string
-		if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
-			return nil, "", fmt.Errorf("PR frontmatter field %s must be a JSON-quoted string", key)
+		if err := DecodeJSON("parse PR frontmatter", "field "+key, []byte(raw), &decoded); err != nil {
+			return nil, "", fmt.Errorf("%w; value must be a JSON-quoted string", err)
 		}
 		fields[key] = decoded
 	}

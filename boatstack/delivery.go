@@ -1,7 +1,6 @@
 package boatstack
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -238,8 +237,8 @@ func LoadDeliveryState(repo, feature string) (DeliveryState, error) {
 		return DeliveryState{}, fmt.Errorf("managed delivery state is missing: %w", err)
 	}
 	var state DeliveryState
-	if err := json.Unmarshal(value, &state); err != nil {
-		return DeliveryState{}, fmt.Errorf("managed delivery state is invalid: %w", err)
+	if err := DecodeJSON("load managed delivery state", path, value, &state); err != nil {
+		return DeliveryState{}, err
 	}
 	if state.SchemaVersion != deliveryStateSchemaVersion || state.Feature != feature || len(state.Slices) == 0 || state.ActiveIndex < 0 || state.ActiveIndex > len(state.Slices) {
 		return DeliveryState{}, fmt.Errorf("managed delivery state is invalid")
@@ -385,7 +384,10 @@ func readDeliveryReceipt(repo, feature, sliceID, gate string) (DeliveryGateRecei
 		return DeliveryGateReceipt{}, fmt.Errorf("%s gate receipt is missing for delivery slice %s", gate, sliceID)
 	}
 	var receipt DeliveryGateReceipt
-	if err := json.Unmarshal(value, &receipt); err != nil || receipt.SchemaVersion != deliveryStateSchemaVersion || receipt.Feature != feature || receipt.SliceID != sliceID || receipt.Gate != gate {
+	if err := DecodeJSON("load delivery gate receipt", path, value, &receipt); err != nil {
+		return DeliveryGateReceipt{}, err
+	}
+	if receipt.SchemaVersion != deliveryStateSchemaVersion || receipt.Feature != feature || receipt.SliceID != sliceID || receipt.Gate != gate {
 		return DeliveryGateReceipt{}, fmt.Errorf("%s gate receipt is invalid for delivery slice %s", gate, sliceID)
 	}
 	return receipt, nil

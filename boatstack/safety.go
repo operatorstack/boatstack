@@ -278,8 +278,8 @@ func dedupeFindings(values []SafetyFinding) []SafetyFinding {
 
 func hookToolInput(host string, value []byte) (string, any, error) {
 	var event map[string]any
-	if err := json.Unmarshal(value, &event); err != nil {
-		return "", nil, fmt.Errorf("invalid hook JSON")
+	if err := DecodeJSON("parse "+host+" hook event", "stdin", value, &event); err != nil {
+		return "", nil, err
 	}
 	if host == "cursor" {
 		command := stringValue(event["command"])

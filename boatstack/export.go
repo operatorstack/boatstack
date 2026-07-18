@@ -19,6 +19,11 @@ var allowedAdapters = map[string]bool{
 	"github": true,
 }
 
+var (
+	readCanonical    = ReadCanonical
+	readCanonicalDir = ReadCanonicalDir
+)
+
 type ExportBundle struct {
 	Files  map[string][]byte
 	Config ProjectConfig
@@ -68,7 +73,7 @@ func LoadConfig(path string) (ProjectConfig, []byte, error) {
 		return ProjectConfig{}, nil, err
 	}
 	var config ProjectConfig
-	if err := json.Unmarshal(raw, &config); err != nil {
+	if err := DecodeJSON("load project configuration", path, raw, &config); err != nil {
 		return ProjectConfig{}, nil, err
 	}
 	if err := ValidateConfig(config); err != nil {
@@ -181,14 +186,14 @@ func BuildExportBundle(configPath string, config ProjectConfig, rawConfig []byte
 	}
 
 	for _, name := range []string{"workflow.md", "artifacts.md", "failure-moves.md", "irreversible-operation-boundary.md"} {
-		value, err := ReadCanonical("references/" + name)
+		value, err := readCanonical("references/" + name)
 		if err != nil {
 			return ExportBundle{}, err
 		}
 		files[".product-loop/"+name] = GeneratedMarkdown(string(value))
 	}
 
-	entries, err := ReadCanonicalDir("assets/templates")
+	entries, err := readCanonicalDir("assets/templates")
 	if err != nil {
 		return ExportBundle{}, err
 	}
@@ -196,19 +201,20 @@ func BuildExportBundle(configPath string, config ProjectConfig, rawConfig []byte
 		if entry.IsDir() {
 			continue
 		}
-		value, err := ReadCanonical("assets/templates/" + entry.Name())
+		value, err := readCanonical("assets/templates/" + entry.Name())
 		if err != nil {
 			return ExportBundle{}, err
 		}
 		path := ".product-loop/templates/" + entry.Name()
 		if strings.HasSuffix(entry.Name(), ".json") {
 			var decoded any
-			if err := json.Unmarshal(value, &decoded); err != nil {
+			templateName := "assets/templates/" + entry.Name()
+			if err := DecodeJSON("build export bundle from JSON template", templateName, value, &decoded); err != nil {
 				return ExportBundle{}, err
 			}
 			files[path], err = GeneratedJSON(decoded)
 			if err != nil {
-				return ExportBundle{}, err
+				return ExportBundle{}, fmt.Errorf("generate JSON output %s from %s: %w", path, templateName, err)
 			}
 		} else {
 			files[path] = GeneratedMarkdown(string(value))
@@ -388,6 +394,13 @@ List explicit gaps with impact and revisit trigger, or state that no material ga
 	files[".product-loop/generated.lock.json"], err = GeneratedJSON(lock)
 	if err != nil {
 		return ExportBundle{}, err
+	}
+	for _, path := range sortedKeys(files) {
+		if strings.HasSuffix(path, ".json") {
+			if err := ValidateJSON("validate generated export bundle", path, files[path]); err != nil {
+				return ExportBundle{}, err
+			}
+		}
 	}
 	return ExportBundle{Files: files, Config: config}, nil
 }

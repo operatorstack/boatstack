@@ -2,7 +2,6 @@ package boatstack
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -131,8 +130,12 @@ func defaultFetchLatestRelease() (ReleaseInfo, error) {
 		Draft      bool   `json:"draft"`
 		Prerelease bool   `json:"prerelease"`
 	}
-	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&payload); err != nil {
-		return ReleaseInfo{}, fmt.Errorf("invalid latest release response: %w", err)
+	responseJSON, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	if err != nil {
+		return ReleaseInfo{}, fmt.Errorf("read latest GitHub release response: %w", err)
+	}
+	if err := DecodeJSON("look up latest release", "GitHub releases/latest response", responseJSON, &payload); err != nil {
+		return ReleaseInfo{}, err
 	}
 	if payload.Draft || payload.Prerelease {
 		return ReleaseInfo{}, fmt.Errorf("latest release response is not a stable published release")
@@ -160,7 +163,8 @@ func loadUpdateState(repo string) (UpdateState, error) {
 		return UpdateState{}, err
 	}
 	var state UpdateState
-	if err := json.Unmarshal(value, &state); err != nil {
+	path := updateStatePath(repo)
+	if err := DecodeJSON("load Boatstack update state", path, value, &state); err != nil {
 		return UpdateState{}, err
 	}
 	if state.SchemaVersion != 1 {
@@ -280,7 +284,11 @@ func CheckPreviousGeneratedState(repo string) error {
 	var lock struct {
 		Files map[string]string `json:"files"`
 	}
-	if err := json.Unmarshal(value, &lock); err != nil || len(lock.Files) == 0 {
+	path := filepath.Join(repo, ".product-loop", "generated.lock.json")
+	if err := DecodeJSON("check previous generated provenance", path, value, &lock); err != nil {
+		return err
+	}
+	if len(lock.Files) == 0 {
 		return fmt.Errorf("invalid generated provenance")
 	}
 	problems := []string{}
@@ -303,8 +311,9 @@ func CheckExistingInstallProvenance(repo string) error {
 		return fmt.Errorf("missing previous local install lock: %w", err)
 	}
 	var lock installLock
-	if err := json.Unmarshal(value, &lock); err != nil {
-		return fmt.Errorf("invalid previous local install lock: %w", err)
+	path := filepath.Join(repo, ".product-loop", "bin", "install.lock.json")
+	if err := DecodeJSON("check existing install provenance", path, value, &lock); err != nil {
+		return err
 	}
 	if _, err := parseStableVersion(lock.BoatstackVersion); err != nil || strings.TrimSpace(lock.SourceCommit) == "" {
 		return fmt.Errorf("previous local install lock has invalid release provenance")
