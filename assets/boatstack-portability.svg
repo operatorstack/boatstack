@@ -34,9 +34,9 @@
     <path d="M360 157H405V372H360"/>
     <path d="M360 259H405"/>
   </g>
-  <path class="blue" d="M405 270H447" fill="none" stroke-width="4" marker-end="url(#arrow)"/>
+  <path class="blue" d="M405 259H447" fill="none" stroke-width="3" marker-end="url(#arrow)"/>
 
-  <g transform="translate(456 132)">
+  <g transform="translate(456 121)">
     <rect class="core" width="406" height="276" rx="24" stroke-width="3"/>
     <text class="small" x="203" y="34" text-anchor="middle" fill="#2563EB">YOUR REPOSITORY</text>
     <text class="title ink" x="203" y="75" text-anchor="middle">BOATSTACK</text>
@@ -49,8 +49,8 @@
     <text class="body muted" x="203" y="254" text-anchor="middle">The saved state stays with the project.</text>
   </g>
 
-  <path class="blue" d="M862 270H914" fill="none" stroke-width="4" marker-end="url(#arrow)"/>
-  <g transform="translate(928 166)">
+  <path class="blue" d="M862 259H914" fill="none" stroke-width="3" marker-end="url(#arrow)"/>
+  <g transform="translate(928 155)">
     <rect class="node" width="224" height="208" rx="24" stroke-width="3"/>
     <text class="small muted" x="112" y="34" text-anchor="middle">WHAT LEAVES THE FLOW</text>
     <text class="label ink" x="112" y="77" text-anchor="middle">Reviewed PR</text>

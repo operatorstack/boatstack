@@ -31,7 +31,7 @@ Do not use “proven,” “optimal,” performance uplift, cost reduction, or s
 
 When Huashu Design is installed, use it to review a public-surface change. The review must still satisfy this portable fallback:
 
-- preserve the stacked-node mark, ink `#0F172A`, and electric blue `#2563EB`;
+- preserve the stacked-bar mark (ink field with blue/cutout stack), ink `#0F172A`, and electric blue `#2563EB`;
 - name the delivery-harness category before asking readers to adopt its philosophy;
 - design from real Boatstack content rather than a generic AI landing-page pattern;
 - use one dominant product journey and progressive disclosure;
