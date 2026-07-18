@@ -23,6 +23,18 @@ The hook fails closed. In a linked worktree, the first guarded call should resto
 
 If the worktree expects a different Boatstack version or source commit, update or rebase its committed Boatstack infrastructure. Boatstack will not run a newer cached helper against an older worktree contract.
 
+## Cursor reports `MainThreadShellExec not initialized`
+
+This is a Cursor host initialization failure: Boatstack's hook process did not start. Keep the hook fail-closed, run **Developer: Reload Window** in Cursor, and retry the Boatstack operation. Do not reinstall Boatstack for this error alone. Reinstall only when Boatstack itself reports a missing, drifted, unsafe, or checksum-invalid helper or shared runtime.
+
+## `/repair` says there is no active delivery
+
+Repair compares an exact requested change with an activated, approved baseline. If no Boatstack feature has started, save the host Plan-mode file and run `/auto-plan`. If a draft or approved feature already exists, run the one planning or build operation reported by `/boatstack-next`; do not create or clear delivery state manually.
+
+## Boatstack reports invalid or orphaned delivery state
+
+Preserve the named plan, lock, preview, receipts, and managed state. A missing `plan.lock.json`, stale lock hash, or orphan `pr.md` cannot be repaired by choosing the newest artifact or deleting state. Restore the missing tracked evidence from version control or the originating feature branch, then rerun `/boatstack-next`. If the evidence cannot be restored, stop and prepare a separately reviewed recovery rather than resetting progress in place.
+
 ## Cursor cannot find a slash command
 
 Cursor reads project commands from `.cursor/commands/*.md`:

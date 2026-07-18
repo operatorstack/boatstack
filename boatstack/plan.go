@@ -185,27 +185,11 @@ func CheckSourcePlan(path string) error {
 	return nil
 }
 
-func DiscoverSourcePlan(repo, explicit string) (string, error) {
+func sourcePlanCandidates(repo string) ([]string, error) {
 	repoAbsolute, err := filepath.Abs(repo)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	if strings.TrimSpace(explicit) != "" {
-		candidate := explicit
-		if !filepath.IsAbs(candidate) {
-			candidate = filepath.Join(repoAbsolute, candidate)
-		}
-		candidate = filepath.Clean(candidate)
-		if err := CheckSourcePlan(candidate); err != nil {
-			return "", err
-		}
-		relative, err := filepath.Rel(repoAbsolute, candidate)
-		if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-			return filepath.ToSlash(relative), nil
-		}
-		return candidate, nil
-	}
-
 	roots := []string{
 		".product-loop/intake",
 		".cursor/plans",
@@ -220,7 +204,7 @@ func DiscoverSourcePlan(repo, explicit string) (string, error) {
 			if os.IsNotExist(err) {
 				continue
 			}
-			return "", err
+			return nil, err
 		}
 		err := filepath.WalkDir(absoluteRoot, func(path string, entry os.DirEntry, walkErr error) error {
 			if walkErr != nil {
@@ -243,10 +227,38 @@ func DiscoverSourcePlan(repo, explicit string) (string, error) {
 			return nil
 		})
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 	}
 	sort.Strings(candidates)
+	return candidates, nil
+}
+
+func DiscoverSourcePlan(repo, explicit string) (string, error) {
+	repoAbsolute, err := filepath.Abs(repo)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(explicit) != "" {
+		candidate := explicit
+		if !filepath.IsAbs(candidate) {
+			candidate = filepath.Join(repoAbsolute, candidate)
+		}
+		candidate = filepath.Clean(candidate)
+		if err := CheckSourcePlan(candidate); err != nil {
+			return "", err
+		}
+		relative, err := filepath.Rel(repoAbsolute, candidate)
+		if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return filepath.ToSlash(relative), nil
+		}
+		return candidate, nil
+	}
+
+	candidates, err := sourcePlanCandidates(repoAbsolute)
+	if err != nil {
+		return "", err
+	}
 	if len(candidates) == 0 {
 		return "", fmt.Errorf("no saved Plan-mode file found; save the current host plan under .product-loop/intake/ and run auto-plan again")
 	}

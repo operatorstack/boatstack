@@ -50,9 +50,9 @@ Install Boatstack in its own infrastructure PR and merge it before starting a fe
 
 That is all you need to learn up front. Boatstack shows one next action at a time through approval, building, tests, review, and PR preparation.
 
-When you return after an interruption, run `/boatstack-next` in Claude Code or Cursor, or `$boatstack next` in Codex. Boatstack reports the repository-verified stage and one next action without changing state; if nothing remains active, it reports **Feature complete**.
+When you return after an interruption, run `/boatstack-next` in Claude Code or Cursor, or `$boatstack next` in Codex. Boatstack reports the repository-verified stage and one next action without changing state. It distinguishes a feature that has not started from one that is complete.
 
-`$boatstack run` in Codex or `/boatstack-run` in Claude Code and Cursor drives every verified slice through PR publication. It fetches `origin`, checks branch freshness, and pauses for `a`, product decisions, and `o` or `u`; it never merges or deploys.
+`$boatstack run` in Codex or `/boatstack-run` in Claude Code and Cursor starts from one saved plan and continues through publication, pausing for approvals and product decisions. It checks branch freshness before delivery; it never merges or deploys.
 
 In Claude Code and Cursor, that guidance moves through `/plan-gate` → `/build` → `/test-gate` → `/review-gate` → `/ship-gate`. In Codex, use the same operation names after `$boatstack`.
 
@@ -65,6 +65,8 @@ In Claude Code and Cursor, that guidance moves through `/plan-gate` → `/build`
 ## Change course without losing the delivery
 
 After Build, describe changes normally. Boatstack records them, preserves valid work, and resumes at the earliest boundary.
+
+Invoke `/repair` in Claude Code or Cursor, or `$boatstack repair` in Codex. It needs an active delivery and the exact change; earlier work routes to planning or Build.
 
 ```text
 “This is wrong” → record → repair → test → review
@@ -97,7 +99,7 @@ You remain free to build however the work requires. Boatstack governs claims of 
 | **Skill** — React guidance, gstack, Spec Kit, or another specialty | Adds expertise for a particular kind of work |
 | **Boatstack** | Carries the delivery path, saved context, and proof of completion across them |
 
-Boatstack does not replace the agent, model, or skills. It is the repository-local delivery harness that keeps their work connected to the product decision and the standard for calling it complete.
+Boatstack is a repository-local delivery harness.
 
 > **Designed for model flexibility · Quality uplift evaluation in progress**
 
