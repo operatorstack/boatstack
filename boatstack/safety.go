@@ -46,7 +46,11 @@ var irreversiblePatterns = []struct {
 }
 
 var operationalPathPattern = regexp.MustCompile(`(?i)(?:^|/)(?:scripts?|migrations?|schema|database|db|deploy|infra|ops|terraform|k8s)(?:/|$)|\.(?:sql|ps1|sh|bash|py)$`)
-var mutationStatementPattern = regexp.MustCompile(`(?is)\b(?:delete\s+from|update\s+[^\s;]+)\b[^;]*`)
+
+// Match SQL mutation grammar rather than isolated English or command tokens.
+// Requiring DELETE FROM or UPDATE <target> SET keeps executable SQL visible
+// without treating names such as check-update or API method labels as queries.
+var mutationStatementPattern = regexp.MustCompile(`(?is)\b(?:delete\s+from\s+(?:[a-z_][a-z0-9_$.-]*|"[^"]+")|update\s+(?:[a-z_][a-z0-9_$.-]*|"[^"]+")\s+set\b)[^;]*`)
 var directPublicationPattern = regexp.MustCompile(`(?i)(?:\bgit\b[^\n;&|]*\bpush\b|\bgh\s+pr\s+(?:create|edit|ready|merge)\b|\bgh\s+api\b[^\n;&|]*(?:/pulls\b|/pull-requests\b)|\bhub\s+pull-request\b|\bcurl\b[^\n;&|]*(?:api\.github\.com|/pulls\b)[^\n;&|]*(?:\s-X\s*(?:POST|PATCH)|--request\s+(?:POST|PATCH)))`)
 var approvedPublisherPattern = regexp.MustCompile(`(?i)^\s*(?:[^\s]*/)?boatstack-helper\s+publish-pr\b[^\n;&|]*$`)
 var deliveryStatePathPattern = regexp.MustCompile(`(?i)(?:boatstack[/\\]deliveries|\.git[/\\](?:worktrees[/\\][^/\\]+[/\\])?boatstack(?:[/\\]|$))`)
