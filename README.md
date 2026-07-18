@@ -1,7 +1,7 @@
 <!-- Generated from operatorstack/intelligence-flow. Edit the upstream public source, not this file. -->
 
 <p align="center">
-  <img src="assets/boatstack-mark.svg" width="96" height="96" alt="Boatstack stacked-node B mark">
+  <img src="assets/boatstack-mark.svg" width="96" height="96" alt="Boatstack stacked-bar mark">
 </p>
 
 <h1 align="center">Boatstack</h1>

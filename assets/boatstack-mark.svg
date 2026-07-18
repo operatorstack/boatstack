@@ -1,9 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title description">
   <title id="title">Boatstack</title>
-  <desc id="description">A geometric letter B constructed from stacked connected nodes.</desc>
-  <style>.ink{fill:#0F172A}@media(prefers-color-scheme:dark){.ink{fill:#E2E8F0}}</style>
-  <path class="ink" d="M10 8a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v48a4 4 0 0 1-4 4h-6a4 4 0 0 1-4-4z"/>
-  <path fill="#2563EB" d="M20 4h20c9.94 0 18 8.06 18 18 0 4.66-1.77 8.91-4.68 12.11A17.94 17.94 0 0 1 58 46c0 9.94-8.06 18-18 18H20V50h20a4 4 0 0 0 0-8H20V28h20a4 4 0 0 0 0-8H20z"/>
-  <circle class="ink" cx="40" cy="20" r="4"/>
-  <circle class="ink" cx="40" cy="46" r="4"/>
+  <desc id="description">A rounded ink field with three stacked bars — the repository-owned delivery stack.</desc>
+  <style>
+    .ink{fill:#0F172A}
+    .blue{fill:#2563EB}
+    .cut{fill:#FFFFFF}
+    @media(prefers-color-scheme:dark){
+      .ink{fill:#E2E8F0}
+      .cut{fill:#0F172A}
+    }
+  </style>
+  <rect class="ink" x="2" y="2" width="60" height="60" rx="16"/>
+  <rect class="blue" x="14" y="15" width="36" height="8" rx="2.5"/>
+  <rect class="cut" x="14" y="28" width="36" height="8" rx="2.5"/>
+  <rect class="blue" x="14" y="41" width="36" height="8" rx="2.5"/>
 </svg>
