@@ -88,11 +88,47 @@ func TestSafeDiagnosticsAndFixForwardCommandsRemainAllowed(t *testing.T) {
 		`git diff -- scripts/apply_schema.py | head -20`,
 		`python scripts/apply_schema.py --dry-run`,
 		`psql -c "SELECT current_database()"`,
+		`.product-loop/bin/boatstack-helper check-update --repo . --force`,
+		`psql -c "UPDATE accounts SET active = false WHERE id = 7"`,
 	}
 	for _, command := range commands {
 		if findings := ClassifyCommand(repo, command); len(findings) != 0 {
 			t.Fatalf("safe command %q was denied: %#v", command, findings)
 		}
+	}
+}
+
+func TestAPIMethodNamesDoNotMasqueradeAsSQLMutations(t *testing.T) {
+	repo := safetyTestRepo(t)
+	path := filepath.Join(repo, "api", "main.py")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	value := []byte("" +
+		"from fastapi import FastAPI\n" +
+		"from fastapi.middleware.cors import CORSMiddleware\n\n" +
+		"app = FastAPI()\n" +
+		"app.add_middleware(\n" +
+		"    CORSMiddleware,\n" +
+		"    allow_methods=[\"GET\", \"POST\", \"PUT\", \"PATCH\", \"DELETE\"],\n" +
+		")\n" +
+		"metadata.update({\"supported_method\": \"DELETE\"})\n")
+	if err := os.WriteFile(path, value, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if findings := ClassifyCommand(repo, "python api/main.py"); len(findings) != 0 {
+		t.Fatalf("ordinary API method configuration was denied: %#v", findings)
+	}
+
+	runGit(t, repo, "add", "api/main.py")
+	runGit(t, repo, "commit", "-m", "add API")
+	runGit(t, repo, "switch", "-c", "feat/cors")
+	if err := os.WriteFile(path, append(value, []byte("# localhost ports 3000-3010\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	report, err := CheckRepositorySafety(repo)
+	if err != nil || report.Status != "PASS" {
+		t.Fatalf("CORS operational diff was denied: %#v %v", report, err)
 	}
 }
 
