@@ -34,6 +34,17 @@ ls .cursor/commands
 
 Rerun the installer and reload Cursor when files are missing. Commit the restored adapter in a dedicated infrastructure PR.
 
+## Claude Code cannot find a slash command
+
+Claude Code reads Boatstack's user-facing workflow skills from `.claude/skills/<operation>/SKILL.md`. The central `.claude/skills/boatstack/SKILL.md` router is intentionally hidden from slash suggestions and remains available for natural-language requests.
+
+```bash
+ls .claude/skills
+.product-loop/bin/boatstack-helper doctor --repo .
+```
+
+If Boatstack created `.claude/skills/` while Claude Code was already running, reload Claude Code once. Rerun the installer when `doctor` reports a missing generated skill, and never replace a user-owned skill with the same name without reviewing the collision.
+
 ## `/auto-plan` cannot find a source plan
 
 Finish the host's Plan-mode exploration and save it. If the host does not expose the path, put exactly one non-empty plan under `.product-loop/intake/`, then rerun `/auto-plan`. Supply an explicit path only when Boatstack reports multiple candidates.

@@ -40,11 +40,17 @@ Install Boatstack in its own infrastructure PR and merge it before starting a fe
 ## Start with two moves
 
 1. Create and save a plan in your coding tool's Plan mode.
-2. Run `/auto-plan`.
+2. Start Boatstack with the entry point for your host.
+
+| Host | Start command |
+|---|---|
+| Claude Code | `/auto-plan` |
+| Cursor | `/auto-plan` |
+| Codex | `$boatstack auto-plan` |
 
 That is all you need to learn up front. Boatstack shows one next action at a time through approval, building, tests, review, and PR preparation.
 
-When you are ready, that guidance moves through `/plan-gate` → `/build` → `/test-gate` → `/review-gate` → `/ship-gate`.
+In Claude Code and Cursor, that guidance moves through `/plan-gate` → `/build` → `/test-gate` → `/review-gate` → `/ship-gate`. In Codex, use the same operation names after `$boatstack`.
 
 > The diagram shows what Boatstack guides—not a checklist you need to memorize.
 

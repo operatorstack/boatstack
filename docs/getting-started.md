@@ -49,11 +49,17 @@ Add account recovery without removing the existing passwordless sign-in flow.
 
 Let the host inspect the relevant repository slice and save its plan. Boatstack uses a host-exposed path when available; otherwise save exactly one non-empty plan under `.product-loop/intake/`.
 
-Run:
+Start Boatstack with the entry point for your host:
 
-```text
-/auto-plan
-```
+| Host | Start command |
+|---|---|
+| Claude Code | `/auto-plan` |
+| Cursor | `/auto-plan` |
+| Codex | `$boatstack auto-plan` |
+
+The examples below use the Claude Code and Cursor slash-command form. In Codex, use the same operation name after `$boatstack`, such as `$boatstack plan-gate`.
+
+If Boatstack was installed while Claude Code was already open and the project did not previously have `.claude/skills/`, reload Claude Code once so it can discover the new slash commands.
 
 Boatstack can discover repository facts. It cannot choose product behavior for you. When different answers would materially change the feature, it asks in plain language and waits for your answer.
 

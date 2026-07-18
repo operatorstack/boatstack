@@ -498,8 +498,12 @@ func RunInit(options InitOptions) error {
 	} else {
 		fmt.Fprintln(options.Output, "\nAfter that PR is merged, reload Cursor, Codex, or Claude and start in Plan mode:")
 		fmt.Fprintln(options.Output, "  1. Describe the product change and save the host plan (use .product-loop/intake/ if the host exposes no path).")
-		fmt.Fprintln(options.Output, "  2. Run /auto-plan")
 	}
+	fmt.Fprintln(options.Output, "Boatstack start command by host:")
+	fmt.Fprintln(options.Output, "  Claude Code: /auto-plan")
+	fmt.Fprintln(options.Output, "  Cursor: /auto-plan")
+	fmt.Fprintln(options.Output, "  Codex: $boatstack auto-plan")
+	fmt.Fprintln(options.Output, "If Boatstack created .claude/skills during an active Claude Code session, reload Claude Code before using its slash commands.")
 	return nil
 }
 
