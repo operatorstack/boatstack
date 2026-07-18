@@ -5,6 +5,11 @@ on:
   schedule:
     - cron: "17 */6 * * *"
   workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Exact Intelligence Flow commit to project (defaults to main)
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -18,29 +23,53 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
+      - name: Create repository automation token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.BOATSTACK_APP_CLIENT_ID }}
+          private-key: ${{ secrets.BOATSTACK_APP_PRIVATE_KEY }}
+          owner: operatorstack
+          repositories: |
+            intelligence-flow
+            boatstack
+          permission-contents: write
+          permission-pull-requests: write
       - name: Check out Boatstack
         uses: actions/checkout@v4
         with:
           path: boatstack-repo
+          token: ${{ steps.app-token.outputs.token }}
       - name: Check out Intelligence Flow
         uses: actions/checkout@v4
         with:
           repository: operatorstack/intelligence-flow
-          ref: main
+          ref: ${{ inputs.source_commit || 'main' }}
+          fetch-depth: 0
           path: intelligence-flow
+          token: ${{ steps.app-token.outputs.token }}
       - name: Generate projection
         id: generate
         shell: bash
         run: |
           source_commit="$(git -C intelligence-flow log -1 --format=%H -- examples/12-product-engineering-loop)"
+          current_commit="$(jq -r '.source.commit // empty' boatstack-repo/UPSTREAM.json)"
+          if [[ -n "$current_commit" ]] &&
+             ! git -C intelligence-flow merge-base --is-ancestor "$current_commit" "$source_commit"; then
+            echo "Ignoring stale projection request $source_commit; Boatstack already records $current_commit."
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           python3 intelligence-flow/examples/12-product-engineering-loop/scripts/build_boatstack.py \
             --repo boatstack-repo \
             --source-commit "$source_commit" \
             --write
           echo "source_commit=$source_commit" >> "$GITHUB_OUTPUT"
+          echo "stale=false" >> "$GITHUB_OUTPUT"
       - name: Open generated pull request
+        if: steps.generate.outputs.stale != 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           SOURCE_COMMIT: ${{ steps.generate.outputs.source_commit }}
         shell: bash
         run: |
@@ -92,13 +121,14 @@ jobs:
             echo "Upstream PR already open: $existing"
             exit 0
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "${{ steps.app-token.outputs.app-slug }}[bot]"
+          git config user.email "${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com"
           git switch -c "$branch"
           git commit -m "Sync Boatstack from Intelligence Flow $short"
           git push --set-upstream origin "$branch"
-          gh pr create \
+          pr_url="$(gh pr create \
             --base main \
             --head "$branch" \
             --title "Sync Boatstack from Intelligence Flow $short" \
-            --body-file "$body_file"
+            --body-file "$body_file")"
+          echo "Opened generated PR: $pr_url"
