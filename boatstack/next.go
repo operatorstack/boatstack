@@ -24,6 +24,14 @@ type NextStatus struct {
 	BlockingAmbiguity  []string `json:"blocking_ambiguity,omitempty"`
 }
 
+func blockedNextStatus(stage, operation, reason string, ambiguity ...string) NextStatus {
+	return NextStatus{
+		SchemaVersion: nextStatusSchemaVersion, VerificationStatus: "BLOCKED",
+		ObservedStage: stage, NextOperation: operation, Reason: reason,
+		BlockingAmbiguity: ambiguity,
+	}
+}
+
 func featurePlanCandidates(repo string) ([]string, error) {
 	root := filepath.Join(repo, ".product-loop", "features")
 	entries, err := os.ReadDir(root)
@@ -35,12 +43,85 @@ func featurePlanCandidates(repo string) ([]string, error) {
 	}
 	features := []string{}
 	for _, entry := range entries {
-		if entry.IsDir() && featureSlugPattern.MatchString(entry.Name()) && fileExists(filepath.Join(root, entry.Name(), "plan.md")) {
+		if !entry.IsDir() || !featureSlugPattern.MatchString(entry.Name()) || !fileExists(filepath.Join(root, entry.Name(), "plan.md")) {
+			continue
+		}
+		statePath, stateErr := deliveryStatePath(repo, entry.Name())
+		if stateErr != nil {
+			return nil, stateErr
+		}
+		if !fileExists(statePath) {
 			features = append(features, entry.Name())
 		}
 	}
 	sort.Strings(features)
 	return features, nil
+}
+
+func unclaimedSourcePlanCandidates(repo string) ([]string, error) {
+	candidates, err := sourcePlanCandidates(repo)
+	if err != nil {
+		return nil, err
+	}
+	claimed := map[string]bool{}
+	root := filepath.Join(repo, ".product-loop", "features")
+	entries, readErr := os.ReadDir(root)
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return nil, readErr
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || !featureSlugPattern.MatchString(entry.Name()) {
+			continue
+		}
+		planPath := filepath.Join(root, entry.Name(), "plan.md")
+		sourcePath, sourceErr := SourcePlanForStructuredPlan(planPath)
+		if sourceErr != nil {
+			continue
+		}
+		absolute, absoluteErr := filepath.Abs(sourcePath)
+		if absoluteErr != nil {
+			return nil, absoluteErr
+		}
+		claimed[filepath.Clean(absolute)] = true
+	}
+	unclaimed := []string{}
+	for _, candidate := range candidates {
+		absolute := candidate
+		if !filepath.IsAbs(absolute) {
+			absolute = filepath.Join(repo, filepath.FromSlash(candidate))
+		}
+		absolute, err = filepath.Abs(absolute)
+		if err != nil {
+			return nil, err
+		}
+		if !claimed[filepath.Clean(absolute)] {
+			unclaimed = append(unclaimed, candidate)
+		}
+	}
+	return unclaimed, nil
+}
+
+func orphanedFeatureArtifacts(repo string) ([]string, error) {
+	root := filepath.Join(repo, ".product-loop", "features")
+	entries, err := os.ReadDir(root)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	orphans := []string{}
+	for _, entry := range entries {
+		if !entry.IsDir() || !featureSlugPattern.MatchString(entry.Name()) {
+			continue
+		}
+		directory := filepath.Join(root, entry.Name())
+		if fileExists(filepath.Join(directory, "pr.md")) && !fileExists(filepath.Join(directory, "plan.lock.json")) {
+			orphans = append(orphans, entry.Name())
+		}
+	}
+	sort.Strings(orphans)
+	return orphans, nil
 }
 
 func nextForDelivery(repo, feature string) (NextStatus, error) {
@@ -125,7 +206,7 @@ func ResolveNext(repoPath string) (NextStatus, error) {
 
 	active, err := ActiveManagedDeliveries(repo)
 	if err != nil {
-		return NextStatus{}, err
+		return blockedNextStatus("INVALID_STATE", "repair-state", "Boatstack found invalid managed delivery state. Preserve the artifacts and restore the missing or stale evidence before continuing: "+err.Error()), nil
 	}
 	if len(active) > 1 {
 		base.VerificationStatus = "BLOCKED"
@@ -136,26 +217,11 @@ func ResolveNext(repoPath string) (NextStatus, error) {
 		return base, nil
 	}
 	if len(active) == 1 {
-		return nextForDelivery(repo, active[0])
-	}
-	completed, err := completedManagedStates(repo)
-	if err != nil {
-		return NextStatus{}, err
-	}
-	if len(completed) > 0 {
-		base.VerificationStatus = "VERIFIED"
-		base.ObservedStage = "FEATURE_COMPLETE"
-		base.NextOperation = "none"
-		if len(completed) == 1 {
-			base.Feature = completed[0].Feature
-			if len(completed[0].Slices) > 0 {
-				base.ActiveSlice = completed[0].Slices[len(completed[0].Slices)-1].ID
-			}
-			base.Reason = fmt.Sprintf("All managed slices for feature %q are already published.", completed[0].Feature)
-		} else {
-			base.Reason = "All managed delivery states are already published."
+		status, deliveryErr := nextForDelivery(repo, active[0])
+		if deliveryErr != nil {
+			return blockedNextStatus("INVALID_STATE", "repair-state", "Boatstack could not verify the active managed delivery. Preserve the artifacts and restore its evidence before continuing: "+deliveryErr.Error()), nil
 		}
-		return base, nil
+		return status, nil
 	}
 
 	candidates, err := featurePlanCandidates(repo)
@@ -187,10 +253,58 @@ func ResolveNext(repoPath string) (NextStatus, error) {
 		return base, nil
 	}
 
+	orphans, err := orphanedFeatureArtifacts(repo)
+	if err != nil {
+		return NextStatus{}, err
+	}
+	if len(orphans) > 0 {
+		return blockedNextStatus("INVALID_STATE", "repair-state", "Boatstack found a PR preview without the plan lock required to verify it. Preserve the artifacts and restore the feature evidence before continuing.", orphans...), nil
+	}
+
+	sourcePlans, sourceErr := unclaimedSourcePlanCandidates(repo)
+	if sourceErr != nil {
+		return NextStatus{}, sourceErr
+	}
+	if len(sourcePlans) == 1 {
+		base.VerificationStatus = "VERIFIED"
+		base.ObservedStage = "SOURCE_PLAN_READY"
+		base.NextOperation = "auto-plan"
+		base.Reason = fmt.Sprintf("Saved Plan-mode file %q is ready to become a Boatstack feature.", sourcePlans[0])
+		return base, nil
+	}
+	if len(sourcePlans) > 1 {
+		base.VerificationStatus = "BLOCKED"
+		base.ObservedStage = "AMBIGUOUS"
+		base.NextOperation = "resolve-ambiguity"
+		base.Reason = "Multiple unclaimed Plan-mode files are available; Boatstack will not choose by recency."
+		base.BlockingAmbiguity = sourcePlans
+		return base, nil
+	}
+
+	completed, err := completedManagedStates(repo)
+	if err != nil {
+		return blockedNextStatus("INVALID_STATE", "repair-state", "Boatstack found invalid completed delivery state. Preserve the artifacts and restore its evidence before continuing: "+err.Error()), nil
+	}
+	if len(completed) > 0 {
+		base.VerificationStatus = "VERIFIED"
+		base.ObservedStage = "FEATURE_COMPLETE"
+		base.NextOperation = "none"
+		if len(completed) == 1 {
+			base.Feature = completed[0].Feature
+			if len(completed[0].Slices) > 0 {
+				base.ActiveSlice = completed[0].Slices[len(completed[0].Slices)-1].ID
+			}
+			base.Reason = fmt.Sprintf("All managed slices for feature %q are already published.", completed[0].Feature)
+		} else {
+			base.Reason = "All managed delivery states are already published."
+		}
+		return base, nil
+	}
+
 	base.VerificationStatus = "VERIFIED"
-	base.ObservedStage = "FEATURE_COMPLETE"
-	base.NextOperation = "none"
-	base.Reason = "No managed Boatstack plan or delivery remains active."
+	base.ObservedStage = "NOT_STARTED"
+	base.NextOperation = "auto-plan"
+	base.Reason = "No Boatstack feature has started and no saved Plan-mode file is available."
 	return base, nil
 }
 

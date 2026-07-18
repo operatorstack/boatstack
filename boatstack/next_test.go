@@ -45,13 +45,31 @@ func writeNextDelivery(t *testing.T, repo, feature, status string, activeIndex i
 	}
 }
 
-func TestResolveNextReportsFeatureCompleteWhenNothingIsActive(t *testing.T) {
+func TestResolveNextReportsNotStartedWhenNoFeatureExists(t *testing.T) {
 	repo := nextTestRepo(t)
 	status, err := ResolveNext(repo)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.VerificationStatus != "VERIFIED" || status.ObservedStage != "FEATURE_COMPLETE" || status.NextOperation != "none" {
+	if status.VerificationStatus != "VERIFIED" || status.ObservedStage != "NOT_STARTED" || status.NextOperation != "auto-plan" {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+}
+
+func TestResolveNextReportsSavedSourcePlan(t *testing.T) {
+	repo := nextTestRepo(t)
+	intake := filepath.Join(repo, ".product-loop", "intake")
+	if err := os.MkdirAll(intake, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(intake, "feature.md"), []byte("# Feature\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	status, err := ResolveNext(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.ObservedStage != "SOURCE_PLAN_READY" || status.NextOperation != "auto-plan" {
 		t.Fatalf("unexpected status: %+v", status)
 	}
 }
@@ -111,6 +129,17 @@ func TestResolveNextDeliveryTransitions(t *testing.T) {
 func TestResolveNextReportsFeatureCompleteAfterPublication(t *testing.T) {
 	repo := nextTestRepo(t)
 	writeNextDelivery(t, repo, "recovery", "PUBLISHED", 1)
+	intake := filepath.Join(repo, ".product-loop", "intake")
+	if err := os.MkdirAll(intake, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(intake, "source-plan.md"), []byte("# Source plan\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := validPlan()
+	plan["feature_id"] = "recovery"
+	plan["source_plan_path"] = "../../intake/source-plan.md"
+	writeMarkdownPlan(t, filepath.Join(repo, ".product-loop", "features", "recovery", "plan.md"), plan, true)
 	status, err := ResolveNext(repo)
 	if err != nil {
 		t.Fatal(err)
@@ -123,6 +152,25 @@ func TestResolveNextReportsFeatureCompleteAfterPublication(t *testing.T) {
 	}
 	if status.ActiveSlice != "delivery" {
 		t.Fatalf("expected final delivery slice to be surfaced: %+v", status)
+	}
+}
+
+func TestResolveNextPrefersNewDraftOverCompletedHistory(t *testing.T) {
+	repo := nextTestRepo(t)
+	writeNextDelivery(t, repo, "published", "PUBLISHED", 1)
+	directory := filepath.Join(repo, ".product-loop", "features", "new-feature")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "plan.md"), []byte("# Plan\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	status, err := ResolveNext(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.ObservedStage != "DRAFT_PLAN" || status.Feature != "new-feature" || status.NextOperation != "plan-gate" {
+		t.Fatalf("completed history masked newer work: %+v", status)
 	}
 }
 
@@ -150,14 +198,63 @@ func TestResolveNextBlocksMultipleActiveFeaturesWithoutMutation(t *testing.T) {
 	}
 }
 
-func TestResolveNextRejectsStaleManagedState(t *testing.T) {
+func TestResolveNextBlocksStaleManagedState(t *testing.T) {
 	repo := nextTestRepo(t)
 	writeNextDelivery(t, repo, "recovery", "BUILD", 0)
 	lockPath := filepath.Join(repo, ".product-loop", "features", "recovery", "plan.lock.json")
 	if err := os.WriteFile(lockPath, []byte("changed\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ResolveNext(repo); err == nil {
-		t.Fatal("stale managed state was accepted")
+	status, err := ResolveNext(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.VerificationStatus != "BLOCKED" || status.ObservedStage != "INVALID_STATE" || status.NextOperation != "repair-state" {
+		t.Fatalf("stale managed state was accepted: %+v", status)
+	}
+}
+
+func TestResolveNextBlocksMissingLockAndOrphanPreview(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		withState bool
+	}{
+		{name: "managed state missing lock", withState: true},
+		{name: "orphan preview", withState: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repo := nextTestRepo(t)
+			directory := filepath.Join(repo, ".product-loop", "features", "orphan")
+			if test.withState {
+				writeNextDelivery(t, repo, "orphan", "BUILD", 0)
+				if err := os.Remove(filepath.Join(directory, "plan.lock.json")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.MkdirAll(directory, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(directory, "pr.md"), []byte("# Preview\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(filepath.Join(directory, "pr.md"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			status, err := ResolveNext(repo)
+			if err != nil {
+				t.Fatal(err)
+			}
+			after, err := os.ReadFile(filepath.Join(directory, "pr.md"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if status.VerificationStatus != "BLOCKED" || status.ObservedStage != "INVALID_STATE" || status.NextOperation != "repair-state" {
+				t.Fatalf("unexpected invalid state: %+v", status)
+			}
+			if !reflect.DeepEqual(before, after) {
+				t.Fatal("invalid-state inspection modified the orphan preview")
+			}
+		})
 	}
 }

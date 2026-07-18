@@ -36,7 +36,7 @@ Every installed host routes supported shell and MCP events through Boatstack's i
 
 After an external-write failure, preserve state and use only read-only diagnosis. Do not escalate privileges, broaden the target, or invent a reset. Use a transactional retry only when retry safety is demonstrated; otherwise stop and fix forward. Destructive recovery is operator-only outside Boatstack. See `irreversible-operation-boundary.md` for the classified operations and evaluation status.
 
-Hooks are defense in depth rather than a complete sandbox. Protected systems still require least-privilege credentials, scoped service roles, backups, and service-side destructive approval. A missing, drifted, or failing helper denies execution and requires reinstall or repair.
+Hooks are defense in depth rather than a complete sandbox. Protected systems still require least-privilege credentials, scoped service roles, backups, and service-side destructive approval. A missing, drifted, or failing helper denies execution and requires reinstall or repair. Cursor's exact `MainThreadShellExec not initialized` error occurs before the Boatstack hook starts; preserve fail-closed behavior, reload the Cursor window, and retry before diagnosing the Boatstack installation.
 
 ## User-facing response contract
 
@@ -65,12 +65,12 @@ Lead with a plain outcome, never a machine code such as `PASS`, `PLAN_APPROVED`,
 
 | State | Outcome -> one next action |
 |---|---|
-| `next`, `/boatstack-next`, `$boatstack next` active / complete / ambiguous | **Next Boatstack stage** -> run the one repository-backed operation; **Feature complete** -> no action required; **Boatstack state needs attention** -> resolve the named ambiguity |
-| `run`, `/boatstack-run`, `$boatstack run` complete / paused / blocked | **Feature ready for review** -> review the published PRs; **Boatstack run paused** -> provide the one required approval, confirmation, or product answer; **Boatstack run needs attention** -> resolve the named freshness, safety, state, or repair blocker |
+| `next`, `/boatstack-next`, `$boatstack next` not started / active / complete / ambiguous | **Start a Boatstack feature** -> save a Plan-mode file or run `auto-plan`; **Next Boatstack stage** -> run the one repository-backed operation; **Feature complete** -> no action required; **Boatstack state needs attention** -> resolve the named ambiguity or invalid evidence |
+| `run`, `/boatstack-run`, `$boatstack run` not started / complete / paused / blocked | **Start a Boatstack feature** -> save a Plan-mode file; **Feature ready for review** -> review the published PRs; **Boatstack run paused** -> provide the one required approval, confirmation, or product answer; **Boatstack run needs attention** -> resolve the named freshness, safety, state, or repair blocker |
 | `auto-plan` ready / needs answers | **Plan ready** -> run `/plan-gate`; **I need your input** -> answer with the displayed choice keys or `r` for all recommendations |
 | `plan-gate` pending / approved | **Ready for your approval** -> reply `a` to approve; **Approved — ready to build** -> enter execution mode and run `/build` |
 | `build` success / paused | **Build complete** -> run `/test-gate`; **Build needs a decision** -> answer the blocking question |
-| `repair` same intent / amendment | **Repair recorded** -> perform the reported resume stage; **Plan amendment required** -> review the proposed intent delta |
+| `repair`, `/repair`, `$boatstack repair` not started / pre-build / same intent / amendment | **No active delivery to repair** -> run `auto-plan` or the verified pre-build gate; **Repair recorded** -> perform the reported resume stage; **Plan amendment required** -> review the proposed intent delta |
 | `test-gate` pass / blocked | **Tests passed** -> run `/review-gate`; **Testing found a problem** -> perform or authorize the repair |
 | `review-gate` pass / blocked | **Review passed** -> run `/ship-gate`; **Changes required** -> address the blocking finding |
 | `ship-gate` preview / published | **PR ready** -> reply `o` to open or `u` to update the previewed PR; **PR opened** -> review the PR; never imply merge authorization |
@@ -79,7 +79,7 @@ Lead with a plain outcome, never a machine code such as `PASS`, `PLAN_APPROVED`,
 
 ### Foreground run coordinator
 
-`run` is an opt-in foreground coordinator over the existing operations, not a second state machine. It first resolves the read-only repository state, returns **Feature complete** without requiring a remote when no work remains, and stops on unverified or blocked state. Before any workflow or product mutation it runs the versioned Git preflight, which fetches `origin`, requires the fetched remote base, verifies that the current named branch contains that base, rejects a behind or diverged upstream, and enforces any active slice branch constraints. It never merges, rebases, switches or creates constrained branches, discards changes, force-pushes, merges a PR, or deploys.
+`run` is an opt-in foreground coordinator over the existing operations, not a second state machine. It first resolves the read-only repository state, enters `auto-plan` when one saved source plan exists, asks for a saved Plan-mode file when none exists, returns **Feature complete** without requiring a remote only for completed work, and stops on unverified or blocked state. Before the first delivery-stage mutation it runs the versioned Git preflight, which fetches `origin`, requires the fetched remote base, verifies that the current named branch contains that base, rejects a behind or diverged upstream, and enforces any active slice branch constraints. Planning and approval remain local and do not require a remote. It never merges, rebases, switches or creates constrained branches, discards changes, force-pushes, merges a PR, or deploys.
 
 After preflight, resolve the repository-backed next operation, execute exactly that canonical operation, verify the resulting state, and resolve again through all declared delivery slices. Pause for `a`, a material product answer, and `o` or `u`; after the valid state-scoped reply, continue in the current host session. The invocation does not replace either human authorization. Automatically record and repair same-intent test or review failures for at most three complete repair-and-gate cycles per active slice per invocation. Stop immediately for requirement amendments, ambiguous or stale state, unsafe capability, unsupported recovery, branch mismatch, or exhausted repairs. Store no durable run/autopilot mode; re-invocation reconstructs progress from canonical repository state.
 

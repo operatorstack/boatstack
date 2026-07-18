@@ -169,7 +169,7 @@ func TestExportAndDriftCheck(t *testing.T) {
 	planGate := string(bundle.Files[".cursor/commands/plan-gate.md"])
 	build := string(bundle.Files[".cursor/commands/build.md"])
 	responseOutcomes := map[string][]string{
-		"boatstack-run":    {"Feature complete"},
+		"boatstack-run":    {"Start a Boatstack feature", "Feature complete"},
 		"auto-plan":        {"Plan ready", "I need your input"},
 		"plan-gate":        {"Ready for your approval", "Approved — ready to build"},
 		"build":            {"Build complete", "Build needs a decision"},
@@ -280,9 +280,15 @@ func TestExportAndDriftCheck(t *testing.T) {
 		}
 	}
 	repair := string(bundle.Files[".cursor/commands/repair.md"])
-	for _, expected := range []string{"record-change", "implementation_repair", "verification_repair", "requirement_amendment", "needs_clarification", "/test-gate", "/review-gate"} {
+	for _, expected := range []string{"next-status", "No active delivery to repair", "NOT_STARTED", "DRAFT_PLAN", "APPROVED", "record-change", "implementation_repair", "verification_repair", "requirement_amendment", "needs_clarification", "/test-gate", "/review-gate", "MainThreadShellExec not initialized", "Developer: Reload Window"} {
 		if !strings.Contains(repair, expected) {
 			t.Fatalf("repair adapter is missing %q", expected)
+		}
+	}
+	runCommand := string(bundle.Files[".cursor/commands/boatstack-run.md"])
+	for _, expected := range []string{"SOURCE_PLAN_READY", "NOT_STARTED", "auto-plan", "planning and plan-gate do not require", "MainThreadShellExec not initialized", "Developer: Reload Window"} {
+		if !strings.Contains(runCommand, expected) {
+			t.Fatalf("run adapter is missing startup recovery rule %q", expected)
 		}
 	}
 	for _, path := range []string{".claude/skills/boatstack/SKILL.md", ".agents/skills/boatstack/SKILL.md"} {
