@@ -18,6 +18,21 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Verify upstream sync source path
+        shell: bash
+        run: |
+          workflow=".github/workflows/sync-upstream.yml"
+          current="labs/12-product-engineering-loop"
+          retired="examples/12-product-engineering-loop"
+          count="$(grep -cF "$current" "$workflow")"
+          if [[ "$count" != "2" ]]; then
+            echo "Expected exactly two sync references to $current; found $count." >&2
+            exit 1
+          fi
+          if grep -Fq "$retired" "$workflow"; then
+            echo "Sync workflow still references retired path $retired." >&2
+            exit 1
+          fi
       - name: Detect projected runtime
         id: runtime
         shell: bash

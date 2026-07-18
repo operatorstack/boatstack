@@ -4,25 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 )
-
-func TestSyncWorkflowUsesCurrentUpstreamLabPath(t *testing.T) {
-	workflow, err := os.ReadFile(filepath.Join("..", ".github", "workflows", "sync-upstream.yml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	content := string(workflow)
-	current := "labs/12-product-engineering-loop"
-	if count := strings.Count(content, current); count != 2 {
-		t.Fatalf("sync workflow contains %q %d times, want 2", current, count)
-	}
-	retired := "examples/12-product-engineering-loop"
-	if strings.Contains(content, retired) {
-		t.Fatalf("sync workflow still references retired upstream path %q", retired)
-	}
-}
 
 func TestClassifyReleasePaths(t *testing.T) {
 	documentation := []string{
