@@ -52,6 +52,8 @@ That is all you need to learn up front. Boatstack shows one next action at a tim
 
 When you return after an interruption, run `/boatstack-next` in Claude Code or Cursor, or `$boatstack next` in Codex. Boatstack reports the repository-verified stage and one next action without changing state; if nothing remains active, it reports **Feature complete**.
 
+`$boatstack run` in Codex or `/boatstack-run` in Claude Code and Cursor drives every verified slice through PR publication. It fetches `origin`, checks branch freshness, and pauses for `a`, product decisions, and `o` or `u`; it never merges or deploys.
+
 In Claude Code and Cursor, that guidance moves through `/plan-gate` → `/build` → `/test-gate` → `/review-gate` → `/ship-gate`. In Codex, use the same operation names after `$boatstack`.
 
 > The diagram shows what Boatstack guides—not a checklist you need to memorize.

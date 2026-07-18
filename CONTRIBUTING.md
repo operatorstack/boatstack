@@ -2,7 +2,7 @@
 
 # Contributing
 
-Boatstack is a generated content distribution. Propose changes to workflow semantics, templates, evidence rules, or generated presentation in [Intelligence Flow](https://github.com/operatorstack/intelligence-flow/tree/569709dad427c28f7e866a1bd72ca0312d7b2f1b/labs/12-product-engineering-loop).
+Boatstack is a generated content distribution. Propose changes to workflow semantics, templates, evidence rules, or generated presentation in [Intelligence Flow](https://github.com/operatorstack/intelligence-flow/tree/ae167a3ce7759793d4dfbd710eea7ecbbf577058/labs/12-product-engineering-loop).
 
 The Boatstack repository receives product/runtime changes through a generated pull request. Review the PR's `UPSTREAM.json`, tests, adapter diff, and context-size change; do not hand-edit generated output on `main`. `.github/workflows` is the exception: it is Boatstack's executable control plane, excluded from scheduled projection and changed only through a separate manually reviewed Boatstack PR.
 
