@@ -1,0 +1,80 @@
+# Boatstack-owned control plane.
+name: Publish verified Boatstack release
+
+on:
+  workflow_run:
+    workflows: ["Verify Boatstack distribution"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auto-release-boatstack
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create repository automation token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.BOATSTACK_APP_CLIENT_ID }}
+          private-key: ${{ secrets.BOATSTACK_APP_PRIVATE_KEY }}
+          owner: operatorstack
+          repositories: boatstack
+          permission-contents: write
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: boatstack/go.mod
+          cache-dependency-path: boatstack/go.mod
+      - name: Detect release-bearing projection
+        id: classify
+        shell: bash
+        run: |
+          if [[ ! -f boatstack/release.go ]]; then
+            echo "The release classifier is not projected yet; no tag will be created."
+            echo "release_required=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          latest_tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)"
+          if [[ -z "$latest_tag" ]]; then
+            echo "BLOCKED: automatic patch releases require an existing stable tag." >&2
+            exit 1
+          fi
+          classification="$(cd boatstack && go run ./cmd/boatstack-helper \
+            release-classify --repo .. --base "$latest_tag" --head HEAD)"
+          printf '%s\n' "$classification" >> "$GITHUB_OUTPUT"
+          echo "latest_tag=$latest_tag" >> "$GITHUB_OUTPUT"
+      - name: Create next verified patch tag
+        if: steps.classify.outputs.release_required == 'true'
+        env:
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          LATEST_TAG: ${{ steps.classify.outputs.latest_tag }}
+        shell: bash
+        run: |
+          next_tag="$(cd boatstack && go run ./cmd/boatstack-helper \
+            next-patch --version "$LATEST_TAG")"
+          if git rev-parse --verify --quiet "refs/tags/$next_tag"; then
+            echo "BLOCKED: tag already exists: $next_tag" >&2
+            exit 1
+          fi
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${APP_SLUG}[bot]@users.noreply.github.com"
+          git tag -a "$next_tag" -m "Boatstack $next_tag"
+          git push origin "$next_tag"
+          echo "Published verified release tag $next_tag."
+      - name: Report documentation-only sync
+        if: steps.classify.outputs.release_required != 'true'
+        run: echo "Boatstack content is current; this merge does not require new binaries."
