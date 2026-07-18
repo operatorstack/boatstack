@@ -345,7 +345,7 @@ func ValidateUpdateWorkspace(repo string, config ProjectConfig) error {
 	if err := CheckPreviousGeneratedState(repo); err != nil {
 		return err
 	}
-	if err := CheckHostHooks(repo, config.Adapters); err != nil {
+	if err := CheckInstalledHostHooks(repo, config.Adapters); err != nil {
 		return fmt.Errorf("host-hook drift blocks update: %w", err)
 	}
 	return CheckExistingInstallProvenance(repo)

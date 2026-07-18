@@ -60,6 +60,52 @@ func TestHostHookMergeRejectsAmbiguousCollisionAndDrift(t *testing.T) {
 	}
 }
 
+func TestInstalledHookValidationAllowsTemplateMigrationButRejectsUserDrift(t *testing.T) {
+	repo := t.TempDir()
+	adapters := []string{"claude"}
+	if err := InstallHostHooks(repo, adapters); err != nil {
+		t.Fatal(err)
+	}
+
+	fragment, err := hookFragmentJSON("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fragment = []byte(strings.ReplaceAll(string(fragment), "Checking Boatstack execution policy", "Checking irreversible-operation policy"))
+	fragmentPath := filepath.Join(repo, ".product-loop", "hooks", "claude.fragment.json")
+	if err := os.MkdirAll(filepath.Dir(fragmentPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fragmentPath, fragment, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	hookPath := filepath.Join(repo, ".claude", "settings.json")
+	hookValue, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hookValue = []byte(strings.ReplaceAll(string(hookValue), "Checking Boatstack execution policy", "Checking irreversible-operation policy"))
+	if err := os.WriteFile(hookPath, hookValue, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := CheckHostHooks(repo, adapters); err == nil || !strings.Contains(err.Error(), "drifted") {
+		t.Fatalf("incoming template unexpectedly accepted the installed hook: %v", err)
+	}
+	if err := CheckInstalledHostHooks(repo, adapters); err != nil {
+		t.Fatalf("healthy installed hook blocked template migration: %v", err)
+	}
+
+	hookValue = []byte(strings.ReplaceAll(string(hookValue), `"timeout": 10`, `"timeout": 99`))
+	if err := os.WriteFile(hookPath, hookValue, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckInstalledHostHooks(repo, adapters); err == nil || !strings.Contains(err.Error(), "drifted") {
+		t.Fatalf("user drift was not rejected against the installed fragment: %v", err)
+	}
+}
+
 func TestMissingHelperLauncherFailsClosed(t *testing.T) {
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash unavailable")

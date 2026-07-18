@@ -299,6 +299,42 @@ func InstallHostHooks(repo string, adapters []string) error {
 }
 
 func CheckHostHooks(repo string, adapters []string) error {
+	return checkHostHooks(repo, adapters, func(host, event string) (any, error) {
+		return desiredHostHookForEvent(host, event), nil
+	})
+}
+
+// CheckInstalledHostHooks validates merged host settings against the committed
+// fragment from the installed release. Update preflight must use this boundary:
+// comparing an old, healthy hook with the incoming release template would
+// misclassify an intentional template migration as user drift.
+func CheckInstalledHostHooks(repo string, adapters []string) error {
+	fragments := map[string]map[string]any{}
+	return checkHostHooks(repo, adapters, func(host, event string) (any, error) {
+		fragment := fragments[host]
+		if fragment == nil {
+			path := filepath.Join(repo, ".product-loop", "hooks", host+".fragment.json")
+			value, err := os.ReadFile(path)
+			if err != nil {
+				return nil, fmt.Errorf("cannot read installed %s hook fragment: %w", host, err)
+			}
+			if err := json.Unmarshal(value, &fragment); err != nil {
+				return nil, fmt.Errorf("invalid installed %s hook fragment: %w", host, err)
+			}
+			if fragment["schema_version"] != float64(1) || fragment["host"] != host {
+				return nil, fmt.Errorf("invalid installed %s hook fragment identity", host)
+			}
+			fragments[host] = fragment
+		}
+		events, ok := fragment["events"].(map[string]any)
+		if !ok || events[event] == nil {
+			return nil, fmt.Errorf("installed %s hook fragment is missing %s", host, event)
+		}
+		return events[event], nil
+	})
+}
+
+func checkHostHooks(repo string, adapters []string, expectedForEvent func(host, event string) (any, error)) error {
 	for _, host := range []string{"cursor", "claude", "codex"} {
 		if !contains(adapters, host) {
 			continue
@@ -313,6 +349,10 @@ func CheckHostHooks(repo string, adapters []string) error {
 			return fmt.Errorf("missing %s hooks in %s", host, path)
 		}
 		for _, event := range hookEvents(host) {
+			expectedEntry, err := expectedForEvent(host, event)
+			if err != nil {
+				return err
+			}
 			entries, ok := hooks[event].([]any)
 			if !ok {
 				return fmt.Errorf("missing %s safety event %s in %s", host, event, path)
@@ -322,7 +362,7 @@ func CheckHostHooks(repo string, adapters []string) error {
 				if containsBoatstackHook(entry) {
 					matches++
 					current, _ := json.Marshal(entry)
-					expected, _ := json.Marshal(desiredHostHookForEvent(host, event))
+					expected, _ := json.Marshal(expectedEntry)
 					if string(current) != string(expected) {
 						return fmt.Errorf("drifted %s Boatstack safety hook", host)
 					}
