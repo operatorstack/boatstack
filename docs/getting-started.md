@@ -57,6 +57,23 @@ Run:
 
 Boatstack can discover repository facts. It cannot choose product behavior for you. When different answers would materially change the feature, it asks in plain language and waits for your answer.
 
+Finite questions use compact choice keys and mark one recommendation:
+
+```markdown
+## I need your input
+
+### Q1. How should the new behavior roll out?
+
+- `1a` Gradually, with a rollback checkpoint (Recommended)
+- `1b` Enable it for everyone immediately
+
+### Next step
+
+Reply `1a`, or `r` to use the recommendation.
+```
+
+When several questions are shown, `r` accepts every displayed recommendation. Boatstack echoes those selections before recording them as your answers. Identity, permissions, safety exceptions, and other free-text inputs never use this shortcut.
+
 ### What a ready plan looks like
 
 ```markdown
@@ -85,7 +102,7 @@ Run:
 Read the intended outcome, exclusions, decisions, gaps, and planned checks. Request corrections when anything is wrong. When it matches what you want, reply:
 
 ```text
-approve
+a
 ```
 
 Boatstack uses an explicit identity or your authenticated GitHub username for the approval record. Approval does not edit product code.
@@ -99,7 +116,7 @@ This plan builds the agreed slice and keeps the listed non-goals outside it.
 
 ### Next step
 
-Reply `approve`. If something is wrong, describe the change instead.
+Reply `a` to approve.
 
 <details>
 <summary>Technical details</summary>
@@ -150,7 +167,7 @@ Run the remaining gates:
 - **Review gate:** checks that same diff against the approved intent, risks, invariants, and gaps, then records a second receipt.
 - **Ship gate:** requires both current receipts and creates a reviewer-first title and body for that slice.
 
-Boatstack shows the exact PR preview before changing GitHub. Reply `open PR` for a new PR. Reply `update PR` for an existing one. Any changed product diff or evidence makes the preview and gate receipts stale. A successful publication activates the next declared delivery slice. Direct pushes, direct PR mutations, and the ad-hoc PR route are denied while managed delivery is active. Merge and deploy remain separate human decisions.
+Boatstack shows the exact PR preview before changing GitHub. Reply `o` to open a new PR or `u` to update an existing one. Any changed product diff or evidence makes the preview and gate receipts stale. A successful publication activates the next declared delivery slice. Direct pushes, direct PR mutations, and the ad-hoc PR route are denied while managed delivery is active. Merge and deploy remain separate human decisions.
 
 After successful publication, Boatstack may show a collapsed notice when a newer stable release is available. The check is cached, never changes the feature branch, and never blocks shipping.
 
@@ -175,10 +192,10 @@ You may also ask, “Update Boatstack.” Boatstack checks the latest stable rel
 When the preview is correct, reply:
 
 ```text
-open update PR
+o
 ```
 
-Only that reply authorizes the update commit, push, and PR. Review and merge remain normal human decisions. If the command is run during feature work, Boatstack changes nothing and asks you to rerun it from the clean default branch after the feature PR merges.
+Only that state-scoped reply authorizes the update commit, push, and PR. Review and merge remain normal human decisions. If the command is run during feature work, Boatstack changes nothing and asks you to rerun it from the clean default branch after the feature PR merges.
 
 Users on `v0.4.0` do not have this command yet. After `v0.5.0` is released, make the clean update branch yourself and run the installer pinned to that tag once:
 

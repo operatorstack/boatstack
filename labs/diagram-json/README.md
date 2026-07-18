@@ -34,7 +34,7 @@ an explicit path is only the ambiguity fallback. If the file is absent or empty,
 
 - `src/diagram.ts` for the current contract and rendering behavior;
 - `src/index.ts` for the public export boundary;
-- `examples/05-diagram-printer/` for executable examples and regression output;
+- `labs/05-diagram-printer/` for executable examples and regression output;
 - `package.json` and TypeScript configs for real validation commands.
 
 The result is a draft, not code:

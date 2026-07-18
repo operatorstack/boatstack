@@ -60,16 +60,33 @@ Lead with a plain outcome, never a machine code such as `PASS`, `PLAN_APPROVED`,
 
 | State | Outcome -> one next action |
 |---|---|
-| `auto-plan` ready / needs answers | **Plan ready** -> run `/plan-gate`; **I need your input** -> answer 1-3 material questions |
-| `plan-gate` pending / approved | **Ready for your approval** -> reply `approve`; **Approved — ready to build** -> enter execution mode and run `/build` |
+| `auto-plan` ready / needs answers | **Plan ready** -> run `/plan-gate`; **I need your input** -> answer with the displayed choice keys or `r` for all recommendations |
+| `plan-gate` pending / approved | **Ready for your approval** -> reply `a` to approve; **Approved — ready to build** -> enter execution mode and run `/build` |
 | `build` success / paused | **Build complete** -> run `/test-gate`; **Build needs a decision** -> answer the blocking question |
 | `test-gate` pass / blocked | **Tests passed** -> run `/review-gate`; **Testing found a problem** -> perform or authorize the repair |
 | `review-gate` pass / blocked | **Review passed** -> run `/ship-gate`; **Changes required** -> address the blocking finding |
-| `ship-gate` preview / published | **PR ready** -> reply `open PR` or `update PR`; **PR opened** -> review the PR; never imply merge authorization |
-| `boatstack-update` current / postponed / prepared / published / blocked | **Boatstack is current** -> no action required; **Update postponed** -> finish feature work and rerun from the clean default branch; **Boatstack update ready** -> reply `open update PR`; **Update PR opened** -> review the PR; **Update needs attention** -> address the one reported collision or health failure |
+| `ship-gate` preview / published | **PR ready** -> reply `o` to open or `u` to update the previewed PR; **PR opened** -> review the PR; never imply merge authorization |
+| `boatstack-update` current / postponed / prepared / published / blocked | **Boatstack is current** -> no action required; **Update postponed** -> finish feature work and rerun from the clean default branch; **Boatstack update ready** -> reply `o` to open the update PR; **Update PR opened** -> review the PR; **Update needs attention** -> address the one reported collision or health failure |
 | `retro` | **Improvement proposed** -> review or authorize the experiment |
 
-Normal approval is `approve`. Resolve `approved_by` from (1) an identity supplied with approval, (2) the authenticated GitHub login from `gh api user --jq .login` when available, or (3) one short identity follow-up. Never infer the approver from a filesystem username, commit history, or the coding agent. If identity is missing after approval, preserve the current fingerprint and approval intent, create no receipt, and ask only for identity; once resolved against the unchanged plan, do not require another `approve`. Keep identity and receipt data inside **Technical details**.
+### Reply shortcuts
+
+Finite input uses one global, state-scoped reply grammar:
+
+| Reply | Valid pending state | Meaning | Compatible full reply |
+|---|---|---|---|
+| `a` | Reviewed plan awaiting approval | Approve the exact plan fingerprint | `approve` |
+| `o` | New feature, ad-hoc, or Boatstack-update PR preview | Open the exact previewed PR | `open PR` or `open update PR` |
+| `u` | Existing PR preview | Update the exact previewed PR | `update PR` |
+| `r` | One or more finite questions with exactly one marked recommendation each | Accept every recommendation displayed in that response | Explicitly name the recommended choices |
+
+Trim surrounding whitespace and match shortcuts case-insensitively against the complete reply. Bracketed forms such as `[o]`, embedded letters, and shortcuts from another state are ordinary text. Continue accepting the full replies for compatibility, but do not advertise them in user-facing responses.
+
+Shortcuts never bypass gate prerequisites. Before `o` or `u` mutates GitHub, recheck the preview fingerprint, committed diff, evidence, authentication, and any required manual commit or push. Never interpret `r` as plan approval, PR publication, identity, secret input, permission escalation, policy bypass, destructive recovery authorization, or another exceptional safety decision. Free-text and operation-command prompts remain explicit.
+
+For each finite product question, show 2-3 mutually exclusive choices with compact inline-code keys and exactly one label suffixed `(Recommended)`. With one question, use `1a`, `1b`, and `1c`; with multiple questions, continue with `2a`, `2b`, and so on. End with one reply hint using the keys and `r`. A standalone `r` is valid only when every displayed question has exactly one recommendation; echo the question-to-answer mapping before recording each answer as `ANSWERED` with explicit human provenance. Otherwise ask again without choosing.
+
+For plan approval, resolve `approved_by` from (1) an identity supplied with approval, (2) the authenticated GitHub login from `gh api user --jq .login` when available, or (3) one short identity follow-up. Never infer the approver from a filesystem username, commit history, or the coding agent. If identity is missing after approval, preserve the current fingerprint and approval intent, create no receipt, and ask only for identity; once resolved against the unchanged plan, do not require approval again. Keep identity and receipt data inside **Technical details**.
 
 ## State contracts
 
@@ -173,13 +190,13 @@ Subjective work is not exempt from validation. Convert ambiguity into an approve
 
 ### `PLAN -> PLAN_GATE`
 
-Run `boatstack-helper check-plan --plan <feature>/plan.md`, present the full draft and returned fingerprint, then require an explicit human `approve` or a change request. The check is read-only. Do not interpret silence, a new implementation question, a tool permission, or permission to build as plan approval.
+Run `boatstack-helper check-plan --plan <feature>/plan.md`, present the full draft and returned fingerprint, then require an exact standalone `a`, the compatible full reply `approve`, or a change request. End the pending user-facing response with exactly this Markdown: Reply `a` to approve. The check is read-only. Do not interpret silence, `[a]`, an `a` embedded in other text, a new implementation question, a tool permission, or permission to build as plan approval.
 
 ### `PLAN_GATE -> PLAN_APPROVED`
 
 After explicit approval, invoke the deterministic `record-approval` operation with the named human, RFC3339 timestamp, and exact approval fingerprint. It rechecks the plan and creates only `approval.md`. This receipt is the only new gate artifact. Remain in the host's Plan mode; do not compile machine artifacts or edit product code.
 
-If the host lacks a structured question tool, ask 1-3 plain-text questions and return `WAITING_FOR_INPUT`. Never convert an unavailable question UI into permission to choose a default. Authoritative repository facts are `DISCOVERED`; agent suggestions and repository-derived product choices are `PROPOSED`; only explicit human responses are `ANSWERED`. Every material proposal remains in `blocking_questions` until answered.
+Ask 1-3 finite questions using the global keyed-choice format whether the host renders them through a structured question tool or plain text, then return `WAITING_FOR_INPUT`. Never convert an unavailable question UI into permission to choose a default. A standalone `r` is an explicit human acceptance of all recommendations displayed in that response, not an agent-selected default. Authoritative repository facts are `DISCOVERED`; agent suggestions and repository-derived product choices are `PROPOSED`; only explicit human responses are `ANSWERED`. Every material proposal remains in `blocking_questions` until answered.
 
 ### `PLAN_APPROVED -> BUILD_ACTIVATION -> PLAN_LOCKED`
 
@@ -272,7 +289,7 @@ Project the approved feature and actual committed diff into a reviewer-ready tit
 
 Store the exact preview at `.product-loop/features/<feature>/pr.md`. Its non-rendered frontmatter records the title, base/head branches, managed feature, and context fingerprint; the remaining Markdown is the exact GitHub body. The preview artifact itself is excluded from the product-diff fingerprint so committing it does not create a self-referential hash.
 
-Before publication, show the exact title and rendered body. Use **PR ready** and exactly one action: `Reply open PR` when no PR exists, or `Reply update PR` when one exists. Only that explicit reply authorizes opening or updating the PR. After confirmation, commit only the reviewed `pr.md`, recheck the same preview fingerprint, committed product diff, plan approval, build lock, test evidence, and review evidence, then perform a normal push and the selected GitHub action. Any drift blocks publication and requires a new preview; never force-push.
+Before publication, show the exact title and rendered body. Use **PR ready** and exactly one action. When no PR exists, render: Reply `o` to open PR. When one exists, render: Reply `u` to update PR. Only the corresponding state-scoped shortcut or compatible full reply authorizes opening or updating the PR. After confirmation, commit only the reviewed `pr.md`, recheck the same preview fingerprint, committed product diff, plan approval, build lock, test evidence, and review evidence, then perform a normal push and the selected GitHub action. Any drift blocks publication and requires a new preview; never force-push.
 
 For managed work, publication also requires current test and review receipts for the
 active delivery slice. Successful publication marks only that slice `PUBLISHED` and
@@ -289,7 +306,7 @@ After successful publication only, the publisher may use the ignored 24-hour rel
 
 For an available version, create `chore/update-boatstack-v<version>`, run the installer pinned to that release in update mode, preserve the repository configuration, adapters, integrations, and unrelated host settings, then run `doctor`. Show the release notes and link, exact generated diff, checksums, changed paths, integration state, rollout, and rollback. Product paths or generated-state drift are blocking.
 
-Use **Boatstack update ready** and exactly one action: `Reply open update PR`. Only that reply authorizes staging the reported infrastructure paths, committing, pushing normally, and opening the update PR. The PR body records old/new versions, release provenance, changed generated files, doctor result, integration state, rollout, and revert instructions. If publication is unavailable, retain the prepared branch and provide one manual action. Never merge automatically.
+Use **Boatstack update ready** and exactly one action: Reply `o` to open update PR. Only the state-scoped `o` or compatible full reply authorizes staging the reported infrastructure paths, committing, pushing normally, and opening the update PR. The PR body records old/new versions, release provenance, changed generated files, doctor result, integration state, rollout, and revert instructions. If publication is unavailable, retain the prepared branch and provide one manual action. Never merge automatically.
 
 ## Existing and ad-hoc PRs
 
@@ -299,7 +316,7 @@ There is no public `/pr-brief` operation. When the user asks in natural language
 2. store the exact preview at `.product-loop/pr-briefs/<branch>/pr.md`;
 3. use the same reviewer-first format, but mark unavailable approval and gate evidence `NOT_VERIFIED`;
 4. never claim that Boatstack approved the work or that an unrun gate passed;
-5. preview first, then require `open PR` or `update PR` and recheck the diff before publication.
+5. preview first, then require `o` to open or `u` to update the PR and recheck the diff before publication.
 
 Adaptive sections for security/privacy, migrations, UI evidence, or operations appear only when relevant. Model attribution belongs inside collapsed provenance. If GitHub CLI authentication is unavailable, keep the validated preview and provide one manual publication action instead of losing the work.
 

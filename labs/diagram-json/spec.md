@@ -40,7 +40,7 @@ overlay without changing the text-rendering contract.
   and optional bottleneck summary, respects the existing cost visibility option,
   and does not expose the raw trace.
 - **AC-4:** all existing `printFlowGraph` outputs remain byte-compatible with
-  `examples/05-diagram-printer/expected-output.txt`.
+  `labs/05-diagram-printer/expected-output.txt`.
 - **AC-5:** the serializer and its public schema types are exported from
   `src/index.ts` and demonstrated in the diagram example documentation.
 

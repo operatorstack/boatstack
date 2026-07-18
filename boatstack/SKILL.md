@@ -62,7 +62,9 @@ Do not scan the entire repository by default. Record discovered paths and comman
 
 Follow the **User-facing response contract** in `references/workflow.md` for every operation. Lead with the mapped plain-language outcome, show only decision-relevant content, end with one `### Next step`, and put machine status, helper output, fingerprints, artifact paths, receipts, and locks inside collapsed **Technical details**. Internal operations such as `check-plan`, `record-approval`, and `activate-plan` must not appear in the primary response.
 
-Normal approval is simply `approve`. Use an explicit supplied identity first; otherwise use the authenticated GitHub login when available. Ask once for a name or handle only when no trustworthy identity can be resolved. Never infer the approver from the filesystem username, commit history, or agent identity. If identity is missing after approval, preserve the current approval intent and ask only for identity; do not make the human approve the unchanged plan again.
+Use the global, state-scoped reply shortcuts for finite input: `a` approves the pending plan, `o` opens the currently previewed feature/ad-hoc/update PR, `u` updates the currently previewed existing PR, and `r` accepts every recommendation displayed in the current finite-question response. Trim surrounding whitespace and match the complete reply case-insensitively. Bracketed forms such as `[o]`, embedded letters, and shortcuts from another state are ordinary text. Continue accepting `approve`, `open PR`, `update PR`, and `open update PR` for compatibility, but do not advertise them in user-facing responses.
+
+Shortcuts do not bypass fingerprints, committed-diff checks, evidence, authentication, or manual commit/push prerequisites. Never interpret `r` as approval, publication, identity, secret input, permission escalation, policy bypass, destructive recovery authorization, or another safety exception. Free-text and operation-command prompts remain explicit. Use an explicit approval identity first; otherwise use the authenticated GitHub login when available. Ask once for a name or handle only when no trustworthy identity can be resolved. Never infer the approver from the filesystem username, commit history, or agent identity. If identity is missing after approval, preserve the current approval intent and ask only for identity; do not make the human approve the unchanged plan again.
 
 ## Run `auto-plan`
 
@@ -71,8 +73,8 @@ Normal approval is simply `approve`. Use an explicit supplied identity first; ot
 2. Write the bounded outcome definition before proposing architecture.
 3. Separate facts, decisions, unknowns, and safely deferrable gaps.
 4. Answer discoverable code questions by inspection.
-5. Ask the developer only questions whose answers materially change behavior, contracts, risk, or acceptance. Ask 1-3 concise questions at a time, give 2-3 mutually exclusive choices, recommend one, and explain the impact. If the host has no structured question tool, ask the same questions as plain text, return `WAITING_FOR_INPUT`, and do not select a default.
-6. Record answers and provenance in the question ledger. An authoritative repository fact is `DISCOVERED`, an agent suggestion or inferred choice is `PROPOSED`, and only an explicit human response is `ANSWERED`. Every material proposal remains in `plan.md` as a `blocking_questions` ID until the human answers it. Never use labels such as “answered by plan default.”
+5. Ask the developer only questions whose answers materially change behavior, contracts, risk, or acceptance. Ask 1-3 concise questions at a time and give each 2-3 mutually exclusive choices with compact inline-code keys (`1a`, `1b`, `1c`, then `2a`, `2b`, and so on). Suffix exactly one choice per question with `(Recommended)`, explain the impact, and end with one reply hint naming the keys or `r` for all recommendations. Use this format with structured question tools and plain text alike, then return `WAITING_FOR_INPUT`.
+6. Treat a standalone `r` as explicit human acceptance only when every displayed question has exactly one recommendation. Echo the selected question-to-answer mapping before recording each as `ANSWERED`; otherwise ask again without choosing. An authoritative repository fact is `DISCOVERED`, an agent suggestion or inferred choice is `PROPOSED`, and only an explicit human response is `ANSWERED`. Every material proposal remains in `plan.md` as a `blocking_questions` ID until the human answers it. Never use labels such as “answered by plan default.”
 7. Create the feature spec: problem, users, outcomes, non-goals, acceptance criteria, invariants, interfaces, failure behavior, observability, rollout, and rollback. Translate every accepted claim into an observable condition with a defensible oracle.
 8. Run product, design, engineering, and developer-experience reviews only when applicable. If gstack is installed, its review skills can implement these lenses; do not require it.
 9. If Spec Kit is installed, use its constitution/specify/clarify/plan/tasks/analyze/checklist flow as an artifact generator. The canonical artifact contract remains authoritative.
@@ -96,7 +98,7 @@ Treat repository-owned product context as canonical. Do not require it to be mig
 ```
 
 2. Present the draft spec, plan, open decisions, accepted assumptions, gaps, risks, validation provenance, and `PLAN_FINGERPRINT` in a reviewable form.
-3. Ask the developer to approve it or request changes. Silence, continued conversation, tool permission, and permission to build are not approval.
+3. Ask the developer to approve it or request changes. End the pending response with exactly this Markdown: Reply `a` to approve. Silence, continued conversation, tool permission, permission to build, `[a]`, and an `a` embedded in other text are not approval.
 4. On changes, return to `auto-plan`, preserve the feedback in the question ledger, and issue a new draft.
 5. On explicit approval, invoke `boatstack-helper record-approval` with the plan, named human, RFC3339 timestamp, and exact fingerprint returned before approval. It verifies the current plan and creates only `approval.md`.
 6. End in Plan mode and tell the developer the feature is approved and ready for the host's normal Build transition. Do not compile tasks, create a lock, request Agent mode merely to write a file, or edit product code.
@@ -159,7 +161,7 @@ Do not branch the workflow on model brand, price, or a guessed capability tier. 
 - Always include why, what changed, review order, evidence, gaps/risks, rollout/rollback, and collapsed provenance. Add UI evidence, security/privacy, migration, or operations sections only when relevant.
 - Internally generate the normalized context and preview skeleton with `pr-context --repo . --feature <feature>`, write `pr.md`, and validate it with `check-pr --repo . --preview <pr.md>`. Keep these helper names and their fingerprints out of the primary response.
 - Inspect the projected changed files, diff stat, high-risk matches, and actual diff before composing the brief. Commit messages are navigation aids, not proof of what changed.
-- Show the exact title and rendered body before any GitHub mutation. If no PR exists, make `Reply open PR` the one next action; if one exists, use `Reply update PR`.
+- Show the exact title and rendered body before any GitHub mutation. If no PR exists, render the one next action as: Reply `o` to open PR. If one exists, render: Reply `u` to update PR.
 - After that exact confirmation, commit only the reviewed `pr.md`, rerun the preview check, require the same preview fingerprint, then invoke the internal publisher with the selected open/update action. It rechecks the current committed diff, approval, lock, and evidence and performs only a normal push. Any intervening change invalidates the preview and requires regeneration; never force-push.
 - The publisher additionally requires current test and review receipts for the active slice. Successful publication marks only that slice published and activates the next slice. Plan approval, a prose phase label, or a previous slice's receipts cannot authorize a later slice.
 - Keep model attribution inside collapsed provenance. Create or update the PR, but keep merge and deploy as separate authorized actions.
@@ -177,8 +179,8 @@ Treat `boatstack-update` as infrastructure maintenance, never as feature work:
 2. Fetch the configured default branch without editing product files. Require that branch to be current and clean; otherwise return **Update postponed** and change nothing.
 3. Create only `chore/update-boatstack-v<version>`. Run the installer fetched from the exact release tag in update mode with the exact version, repository path, and non-interactive preview acceptance.
 4. Preserve `.boatstack-project.json`, all portable adapters, optional integration selections, and unrelated host settings. Block on generated drift, collisions, missing provenance, a failed checksum, a failed `doctor`, or any product-file change.
-5. Show the version transition, release notes, integration state, changed infrastructure paths, exact diff, checksums, rollout, and rollback. Respond **Boatstack update ready** with exactly `Reply open update PR` as the next action.
-6. Only that exact reply authorizes staging the reviewed infrastructure paths, committing, normally pushing, and opening the update PR. Never merge it. If GitHub publication is unavailable, retain the prepared branch and provide one manual action.
+5. Show the version transition, release notes, integration state, changed infrastructure paths, exact diff, checksums, rollout, and rollback. Respond **Boatstack update ready** and render the one next action as: Reply `o` to open update PR.
+6. Only the state-scoped `o` or compatible full reply authorizes staging the reviewed infrastructure paths, committing, normally pushing, and opening the update PR. Never merge it. If GitHub publication is unavailable, retain the prepared branch and provide one manual action.
 
 Natural requests such as “Update Boatstack” use this operation. `doctor` may display a cached notice but must remain offline. Do not perform release discovery during planning, approval, build, test, review, or PR preview.
 
@@ -190,7 +192,7 @@ When the user naturally asks Boatstack to prepare, improve, summarize, or update
 2. Project the current committed branch diff, commits, observed checks, and relevant repository context into `.product-loop/pr-briefs/<branch>/pr.md`.
 3. Use the same reviewer-first title/body contract as `ship-gate`, but label missing approval or gate evidence `NOT_VERIFIED`. Never imply Boatstack approved the plan or passed a gate that did not run.
 4. Add conditional security/privacy, migration, UI evidence, or operations sections only when the diff makes them relevant.
-5. Preview the exact title and rendered body. Ask for only `Reply open PR` or `Reply update PR`, as appropriate.
+5. Preview the exact title and rendered body. Render only Reply `o` to open PR. or Reply `u` to update PR., as appropriate.
 6. Internally run `pr-context --repo .` without a feature, validate with `check-pr`, and keep those mechanics out of the primary response.
 7. After confirmation, commit only `pr.md`, recheck the exact preview fingerprint and committed diff, then publish with the selected open/update action. If anything changed, regenerate instead of publishing stale text.
 

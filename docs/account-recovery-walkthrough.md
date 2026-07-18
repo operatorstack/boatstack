@@ -20,17 +20,22 @@ The repository used passwordless email-code authentication, had no password-rese
 Boatstack therefore stopped and asked:
 
 ```text
-Q-1  Clarify email-code recovery, introduce passwords, or choose another behavior?
-Q-2  If passwords are introduced, do they replace email codes or sit alongside them?
+Q1  Clarify email-code recovery or introduce passwords?
+1a  Keep email-code recovery
+1b  Introduce passwords (Recommended)
+
+Q2  If passwords are introduced, how should they relate to email codes?
+2a  Replace email codes
+2b  Keep both methods (Recommended)
 ```
 
-The human chose password authentication alongside the existing passwordless flow. Repository facts were recorded as discovered; only the human responses became answered decisions.
+The human replied `r`. Boatstack echoed `Q1 -> Introduce passwords` and `Q2 -> Keep both methods`, then recorded those recommendations as explicit human answers. Repository facts remained discovered rather than becoming inferred decisions.
 
 ## Approval defines the change
 
 The revised plan kept passwordless login, added password login and recovery routes, preserved passwordless signup, updated misleading copy, and required route and authentication tests. It also kept an operational redirect gap visible rather than implying it was solved.
 
-The plan gate displayed the outcome, exclusions, decisions, checks, gaps, and exact fingerprint. The human replied `approve`. No product code changed until the host entered its execution mode and build activated that approved plan.
+The plan gate displayed the outcome, exclusions, decisions, checks, gaps, and exact fingerprint. The human replied `a`. No product code changed until the host entered its execution mode and build activated that approved plan.
 
 ## Review finds what the tests missed
 

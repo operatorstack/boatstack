@@ -96,13 +96,27 @@ func TestExportAndDriftCheck(t *testing.T) {
 			}
 		}
 	}
-	if !strings.Contains(autoPlan, "Markdown-only") || !strings.Contains(autoPlan, "never silently choose a default") || !strings.Contains(autoPlan, "planning-write") || !strings.Contains(autoPlan, "PROPOSED") {
+	if !strings.Contains(autoPlan, "Markdown-only") || !strings.Contains(autoPlan, "Never silently choose a default") || !strings.Contains(autoPlan, "planning-write") || !strings.Contains(autoPlan, "PROPOSED") {
 		t.Fatal("auto-plan adapter does not enforce the Markdown and question boundaries")
+	}
+	for _, expected := range []string{"compact keys such as 1a/1b", "exactly one choice per question with (Recommended)", "offer r to accept all displayed recommendations", "echo the selected mapping"} {
+		if !strings.Contains(autoPlan, expected) {
+			t.Fatalf("auto-plan adapter is missing finite-question shortcut rule %q", expected)
+		}
 	}
 	if !strings.Contains(planGate, "approval.md") || !strings.Contains(planGate, "Remain in Plan mode") || !strings.Contains(planGate, "record-approval") {
 		t.Fatal("plan-gate adapter does not keep approval in Plan mode")
 	}
-	for _, expected := range []string{"normal user action is simply approve", "authenticated GitHub login", "never infer it from a filesystem username"} {
+	for _, expected := range []string{
+		"normal user action is the exact standalone reply a",
+		"Trim surrounding whitespace and match a case-insensitively",
+		"do not treat [a] or an a embedded in other text as approval",
+		"Continue accepting the full reply approve for compatibility",
+		"do not advertise it in the user-facing response",
+		"Reply `a` to approve.",
+		"authenticated GitHub login",
+		"never infer it from a filesystem username",
+	} {
 		if !strings.Contains(planGate, expected) {
 			t.Fatalf("plan-gate adapter is missing approval identity rule %q", expected)
 		}
@@ -117,7 +131,7 @@ func TestExportAndDriftCheck(t *testing.T) {
 		t.Fatal("test and review adapters do not record slice-scoped gate receipts")
 	}
 	ship := string(bundle.Files[".cursor/commands/ship-gate.md"])
-	for _, expected := range []string{"separate repair PR", "Never edit unrelated code", "exact title", "Reply open PR", "Reply update PR", "preview fingerprint"} {
+	for _, expected := range []string{"separate repair PR", "Never edit unrelated code", "exact title", "Reply `o` to open PR.", "Reply `u` to update PR.", "full replies open PR and update PR for compatibility", "preview fingerprint"} {
 		if !strings.Contains(ship, expected) {
 			t.Fatalf("ship adapter is missing reviewer-ready PR rule %q", expected)
 		}
@@ -126,7 +140,7 @@ func TestExportAndDriftCheck(t *testing.T) {
 		t.Fatal("PR brief must remain natural-language behavior, not a public command")
 	}
 	update := string(bundle.Files[".cursor/commands/boatstack-update.md"])
-	for _, expected := range []string{"check-update", "chore/update-boatstack-v", "BOATSTACK_MODE=update", "Reply open update PR", "Never merge"} {
+	for _, expected := range []string{"check-update", "chore/update-boatstack-v", "BOATSTACK_MODE=update", "Reply `o` to open update PR.", "full reply open update PR for compatibility", "Never merge"} {
 		if !strings.Contains(update, expected) {
 			t.Fatalf("update adapter is missing %q", expected)
 		}
@@ -169,7 +183,27 @@ func TestExportAndDriftCheck(t *testing.T) {
 		t.Fatal("generated lock must record runtime provenance and integrations")
 	}
 	workflow := string(bundle.Files[".product-loop/workflow.md"])
-	for _, expected := range []string{"## User-facing response contract", "Exactly one primary action", "gh api user --jq .login", "Never infer the approver"} {
+	for _, expected := range []string{
+		"## User-facing response contract",
+		"Exactly one primary action",
+		"### Reply shortcuts",
+		"| `a` | Reviewed plan awaiting approval",
+		"| `o` | New feature, ad-hoc, or Boatstack-update PR preview",
+		"| `u` | Existing PR preview",
+		"| `r` | One or more finite questions",
+		"match shortcuts case-insensitively against the complete reply",
+		"Bracketed forms such as `[o]`, embedded letters, and shortcuts from another state",
+		"Continue accepting the full replies for compatibility",
+		"do not advertise them in user-facing responses",
+		"Never interpret `r` as plan approval, PR publication, identity, secret input, permission escalation, policy bypass, destructive recovery authorization",
+		"`1a`, `1b`, and `1c`",
+		"exactly one recommendation",
+		"echo the question-to-answer mapping",
+		"Otherwise ask again without choosing",
+		"Reply `a` to approve.",
+		"gh api user --jq .login",
+		"Never infer the approver",
+	} {
 		if !strings.Contains(workflow, expected) {
 			t.Fatalf("canonical workflow is missing response contract %q", expected)
 		}
@@ -181,10 +215,16 @@ func TestExportAndDriftCheck(t *testing.T) {
 	}
 	for _, path := range []string{".agents/skills/boatstack/SKILL.md", ".claude/skills/boatstack/SKILL.md"} {
 		adapter := string(bundle.Files[path])
-		for _, expected := range []string{"User-facing response contract", "exactly one Next step", "Normal approval is simply approve", "filesystem username", "Never create or advertise a /pr-brief command", "Reply open PR", "Reply update PR", "boatstack-update", "open update PR"} {
+		for _, expected := range []string{"User-facing response contract", "exactly one Next step", "a approves the pending plan", "o opens the currently previewed feature/ad-hoc/update PR", "u updates the currently previewed existing PR", "r accepts every recommendation", "Bracketed forms such as [o]", "Continue accepting approve, open PR, update PR, and open update PR for compatibility", "do not advertise them in user-facing responses", "Never interpret r as plan approval, PR publication, identity, secret input, permission escalation, policy bypass, destructive recovery authorization", "1a/1b/1c and 2a/2b/2c", "exactly one recommendation", "Echo the selected question-to-answer mapping", "filesystem username", "Never create or advertise a /pr-brief command", "state-scoped o to open or u to update", "boatstack-update"} {
 			if !strings.Contains(adapter, expected) {
 				t.Fatalf("%s is missing response-DX rule %q", path, expected)
 			}
+		}
+	}
+	questions := string(bundle.Files[".product-loop/templates/questions.md"])
+	for _, expected := range []string{"`1a`, `1b`, `1c`", "(Recommended)", "use `r` to accept all displayed recommendations", "question-to-answer mapping is echoed", "never an agent-selected default"} {
+		if !strings.Contains(questions, expected) {
+			t.Fatalf("question template is missing shortcut rule %q", expected)
 		}
 	}
 }
