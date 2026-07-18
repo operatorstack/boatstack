@@ -1,7 +1,6 @@
 package boatstack
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -181,8 +180,8 @@ func loadSharedRuntime(repo string) (runtimeManifest, string, error) {
 		return runtimeManifest{}, "", fmt.Errorf("shared Boatstack runtime is missing; run the verified installer once from any checkout in this Git clone: %w", err)
 	}
 	var manifest runtimeManifest
-	if err := json.Unmarshal(value, &manifest); err != nil {
-		return runtimeManifest{}, "", fmt.Errorf("shared Boatstack runtime manifest is invalid: %w", err)
+	if err := DecodeJSON("load shared Boatstack runtime manifest", manifestPath, value, &manifest); err != nil {
+		return runtimeManifest{}, "", err
 	}
 	if manifest.SchemaVersion != 1 || manifest.BoatstackVersion != Version ||
 		manifest.SourceCommit != SourceCommit || manifest.Platform != platformKey() {
@@ -207,8 +206,9 @@ func verifyGeneratedRuntime(repo string) error {
 		return fmt.Errorf("missing generated Boatstack runtime provenance: %w", err)
 	}
 	var lock generatedRuntimeLock
-	if err := json.Unmarshal(value, &lock); err != nil {
-		return fmt.Errorf("invalid generated Boatstack runtime provenance: %w", err)
+	lockPath := filepath.Join(repo, ".product-loop", "generated.lock.json")
+	if err := DecodeJSON("verify generated Boatstack runtime provenance", lockPath, value, &lock); err != nil {
+		return err
 	}
 	if lock.BoatstackVersion != Version || lock.Runtime.SourceCommit != SourceCommit {
 		return fmt.Errorf("this worktree expects Boatstack %s (%s), but the runtime is %s (%s); update or rebase its Boatstack infrastructure",
@@ -310,8 +310,8 @@ func verifyLocalRuntime(repo string) error {
 		return fmt.Errorf("missing local install lock: %w", err)
 	}
 	var lock installLock
-	if err := json.Unmarshal(value, &lock); err != nil {
-		return fmt.Errorf("invalid local install lock: %w", err)
+	if err := DecodeJSON("verify local Boatstack runtime", lockPath, value, &lock); err != nil {
+		return err
 	}
 	if lock.BoatstackVersion != Version || lock.SourceCommit != SourceCommit {
 		return fmt.Errorf("helper version drift: installed %s (%s), expected %s (%s)", lock.BoatstackVersion, lock.SourceCommit, Version, SourceCommit)

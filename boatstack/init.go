@@ -22,6 +22,11 @@ type InitOptions struct {
 	Output            io.Writer
 }
 
+var (
+	initDoctor     = Doctor
+	initCheckpoint = func(string) error { return nil }
+)
+
 func gitOutput(repo string, arguments ...string) string {
 	command := exec.Command("git", append([]string{"-C", repo}, arguments...)...)
 	value, err := command.Output()
@@ -194,9 +199,17 @@ func copyHelper(source, repo string) (string, string, error) {
 }
 
 func writeInstallLock(repo, binaryPath, binaryHash string, integrations map[string]IntegrationState) error {
+	value, err := buildInstallLock(repo, binaryPath, binaryHash, integrations)
+	if err != nil {
+		return err
+	}
+	return atomicWriteMode(filepath.Join(repo, ".product-loop", "bin", "install.lock.json"), value, 0o644)
+}
+
+func buildInstallLock(repo, binaryPath, binaryHash string, integrations map[string]IntegrationState) ([]byte, error) {
 	relativeBinaryPath, err := repositoryRelativePath(repo, binaryPath)
 	if err != nil {
-		return fmt.Errorf("invalid Boatstack helper path: %w", err)
+		return nil, fmt.Errorf("invalid Boatstack helper path: %w", err)
 	}
 	lock := map[string]any{
 		"schema_version":           1,
@@ -210,9 +223,13 @@ func writeInstallLock(repo, binaryPath, binaryHash string, integrations map[stri
 	}
 	value, err := MarshalJSON(lock)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return atomicWriteMode(filepath.Join(repo, ".product-loop", "bin", "install.lock.json"), value, 0o644)
+	lockPath := filepath.Join(repo, ".product-loop", "bin", "install.lock.json")
+	if err := ValidateJSON("validate generated install lock", lockPath, value); err != nil {
+		return nil, err
+	}
+	return value, nil
 }
 
 func readInstalledIntegrations(repo string, config ProjectConfig) (map[string]IntegrationState, error) {
@@ -223,8 +240,9 @@ func readInstalledIntegrations(repo string, config ProjectConfig) (map[string]In
 	var lock struct {
 		Integrations map[string]IntegrationState `json:"integrations"`
 	}
-	if err := json.Unmarshal(value, &lock); err != nil {
-		return nil, fmt.Errorf("invalid previous local install lock: %w", err)
+	lockPath := filepath.Join(repo, ".product-loop", "bin", "install.lock.json")
+	if err := DecodeJSON("load previous local install lock", lockPath, value, &lock); err != nil {
+		return nil, err
 	}
 	if len(lock.Integrations) > 0 {
 		return lock.Integrations, nil
@@ -275,7 +293,7 @@ func checkUpdateDiffScope(repo string, currentFiles map[string][]byte, previous 
 	return changed, nil
 }
 
-func RunInit(options InitOptions) error {
+func RunInit(options InitOptions) (returnErr error) {
 	if options.Input == nil {
 		options.Input = os.Stdin
 	}
@@ -373,6 +391,12 @@ func RunInit(options InitOptions) error {
 	if err != nil {
 		return err
 	}
+	if err := ValidateJSON("validate project configuration before initialization", configPath, rawConfig); err != nil {
+		return err
+	}
+	if _, err := PrepareHostHooks(repo, config.Adapters); err != nil {
+		return err
+	}
 	if problems := ExportCollisions(repo, bundle.Files); len(problems) > 0 {
 		return fmt.Errorf("refusing to overwrite user-owned files: %s", strings.Join(problems, ", "))
 	}
@@ -403,21 +427,19 @@ func RunInit(options InitOptions) error {
 			return err
 		}
 	}
-	if _, err := installSharedRuntime(helperSource, repo, config.Integrations); err != nil {
-		return fmt.Errorf("cannot install the repository-family Boatstack runtime: %w", err)
-	}
-	if err := os.WriteFile(configPath, rawConfig, 0o644); err != nil {
-		return err
-	}
-	if err := WriteExport(repo, bundle.Files); err != nil {
-		return err
-	}
-	if err := InstallHostHooks(repo, config.Adapters); err != nil {
-		return err
-	}
-	binaryPath, binaryHash, err := copyHelper(helperSource, repo)
+	snapshot, err := beginRepositorySnapshot(repo)
 	if err != nil {
 		return err
+	}
+	defer func() {
+		if returnErr != nil {
+			if rollbackErr := snapshot.rollback(); rollbackErr != nil {
+				returnErr = fmt.Errorf("%v; initialization rollback failed: %w", returnErr, rollbackErr)
+			}
+		}
+	}()
+	if _, err := installSharedRuntime(helperSource, repo, config.Integrations); err != nil {
+		return fmt.Errorf("cannot install the repository-family Boatstack runtime: %w", err)
 	}
 	var states map[string]IntegrationState
 	if options.Update {
@@ -428,11 +450,47 @@ func RunInit(options InitOptions) error {
 	if err != nil {
 		return err
 	}
+	helperValue, err := os.ReadFile(helperSource)
+	if err != nil {
+		return fmt.Errorf("read Boatstack helper before initialization commit: %w", err)
+	}
+	prospectiveBinaryPath := filepath.Join(repo, ".product-loop", "bin", helperName())
+	if _, err := buildInstallLock(repo, prospectiveBinaryPath, SHA256Bytes(helperValue), states); err != nil {
+		return err
+	}
+	if err := os.WriteFile(configPath, rawConfig, 0o644); err != nil {
+		return err
+	}
+	if err := initCheckpoint("config-written"); err != nil {
+		return fmt.Errorf("initialization checkpoint config-written: %w", err)
+	}
+	if err := WriteExport(repo, bundle.Files); err != nil {
+		return err
+	}
+	if err := initCheckpoint("export-written"); err != nil {
+		return fmt.Errorf("initialization checkpoint export-written: %w", err)
+	}
+	if err := InstallHostHooks(repo, config.Adapters); err != nil {
+		return err
+	}
+	if err := initCheckpoint("hooks-written"); err != nil {
+		return fmt.Errorf("initialization checkpoint hooks-written: %w", err)
+	}
+	binaryPath, binaryHash, err := copyHelper(helperSource, repo)
+	if err != nil {
+		return err
+	}
+	if err := initCheckpoint("helper-written"); err != nil {
+		return fmt.Errorf("initialization checkpoint helper-written: %w", err)
+	}
 	if _, err := installSharedRuntime(helperSource, repo, states); err != nil {
 		return fmt.Errorf("cannot finalize the repository-family Boatstack runtime: %w", err)
 	}
 	if err := writeInstallLock(repo, binaryPath, binaryHash, states); err != nil {
 		return err
+	}
+	if err := initCheckpoint("install-lock-written"); err != nil {
+		return fmt.Errorf("initialization checkpoint install-lock-written: %w", err)
 	}
 	if err := CheckExport(repo, bundle.Files); err != nil {
 		return err
@@ -440,7 +498,7 @@ func RunInit(options InitOptions) error {
 	if err := CheckHostHooks(repo, config.Adapters); err != nil {
 		return err
 	}
-	if err := Doctor(repo); err != nil {
+	if err := initDoctor(repo); err != nil {
 		return fmt.Errorf("post-install smoke check failed: %w", err)
 	}
 	if options.Update {
@@ -504,6 +562,9 @@ func RunInit(options InitOptions) error {
 	fmt.Fprintln(options.Output, "  Cursor: /auto-plan")
 	fmt.Fprintln(options.Output, "  Codex: $boatstack auto-plan")
 	fmt.Fprintln(options.Output, "If Boatstack created .claude/skills during an active Claude Code session, reload Claude Code before using its slash commands.")
+	if err := snapshot.commit(); err != nil {
+		return fmt.Errorf("remove initialization rollback snapshot: %w", err)
+	}
 	return nil
 }
 

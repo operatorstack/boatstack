@@ -230,8 +230,8 @@ func loadHookConfig(path string) (map[string]any, error) {
 		return nil, err
 	}
 	config := map[string]any{}
-	if err := json.Unmarshal(value, &config); err != nil {
-		return nil, fmt.Errorf("invalid host hook config %s: %w", path, err)
+	if err := DecodeJSON("load host hook configuration", path, value, &config); err != nil {
+		return nil, err
 	}
 	return config, nil
 }
@@ -275,6 +275,22 @@ func mergeHostHook(config map[string]any, host string) error {
 }
 
 func InstallHostHooks(repo string, adapters []string) error {
+	prepared, err := PrepareHostHooks(repo, adapters)
+	if err != nil {
+		return err
+	}
+	for _, path := range sortedKeys(prepared) {
+		if err := atomicWrite(path, prepared[path]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// PrepareHostHooks renders and validates every selected host document without
+// writing, allowing initialization to fail before entering its commit phase.
+func PrepareHostHooks(repo string, adapters []string) (map[string][]byte, error) {
+	prepared := map[string][]byte{}
 	for _, host := range []string{"cursor", "claude", "codex"} {
 		if !contains(adapters, host) {
 			continue
@@ -282,20 +298,21 @@ func InstallHostHooks(repo string, adapters []string) error {
 		path := hostHookConfigPath(repo, host)
 		config, err := loadHookConfig(path)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if err := mergeHostHook(config, host); err != nil {
-			return err
+			return nil, fmt.Errorf("prepare %s host hooks in %s: %w", host, path, err)
 		}
 		value, err := MarshalJSON(config)
 		if err != nil {
-			return err
+			return nil, fmt.Errorf("serialize merged host hook configuration %s: %w", path, err)
 		}
-		if err := atomicWrite(path, value); err != nil {
-			return err
+		if err := ValidateJSON("validate merged host hook configuration", path, value); err != nil {
+			return nil, err
 		}
+		prepared[path] = value
 	}
-	return nil
+	return prepared, nil
 }
 
 func CheckHostHooks(repo string, adapters []string) error {
@@ -318,8 +335,8 @@ func CheckInstalledHostHooks(repo string, adapters []string) error {
 			if err != nil {
 				return nil, fmt.Errorf("cannot read installed %s hook fragment: %w", host, err)
 			}
-			if err := json.Unmarshal(value, &fragment); err != nil {
-				return nil, fmt.Errorf("invalid installed %s hook fragment: %w", host, err)
+			if err := DecodeJSON("load installed host hook fragment", path, value, &fragment); err != nil {
+				return nil, err
 			}
 			if fragment["schema_version"] != float64(1) || fragment["host"] != host {
 				return nil, fmt.Errorf("invalid installed %s hook fragment identity", host)

@@ -1,7 +1,6 @@
 package boatstack
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -155,7 +154,7 @@ func loadJSONObject(path, label, startMarker, endMarker string, allowLegacyMarkd
 		}
 	}
 	var plan map[string]any
-	if err := json.Unmarshal(payload, &plan); err != nil {
+	if err := DecodeJSON("load "+label, path, payload, &plan); err != nil {
 		return nil, fmt.Errorf("invalid %s json: %w", label, err)
 	}
 	return plan, nil
@@ -859,8 +858,8 @@ func ActivatePlan(options ActivationOptions) error {
 			return fmt.Errorf("existing plan lock cannot be verified: %w", readErr)
 		}
 		var existing map[string]any
-		if json.Unmarshal(value, &existing) != nil {
-			return fmt.Errorf("existing plan lock is unreadable; do not overwrite activation state")
+		if err := DecodeJSON("inspect existing plan lock", options.OutputPath, value, &existing); err != nil {
+			return fmt.Errorf("%w; do not overwrite activation state", err)
 		}
 		currentPlanHash, _ := SHA256File(options.PlanPath)
 		currentSourceHash, _ := SHA256File(check.SourcePlanPath)
@@ -951,8 +950,8 @@ func CheckApprovalLock(options ApprovalOptions) error {
 		return fmt.Errorf("plan lock is missing or unreadable: %w", err)
 	}
 	lock := map[string]any{}
-	if err := json.Unmarshal(value, &lock); err != nil {
-		return fmt.Errorf("plan lock is unreadable: %w", err)
+	if err := DecodeJSON("check plan approval lock", options.OutputPath, value, &lock); err != nil {
+		return err
 	}
 	mismatches := []string{}
 	paths := map[string]string{"source_plan": options.SourcePlanPath, "spec": options.SpecPath, "plan": options.PlanPath, "task_graph": options.TasksPath}
