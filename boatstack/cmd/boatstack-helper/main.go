@@ -63,6 +63,36 @@ func checkUpdateCommand(arguments []string) int {
 	return 0
 }
 
+func releaseClassifyCommand(arguments []string) int {
+	flags := flag.NewFlagSet("release-classify", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "projected Boatstack repository")
+	base := flags.String("base", "", "latest released tag or commit")
+	head := flags.String("head", "HEAD", "candidate release commit")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	classification, err := boatstack.ClassifyReleaseDiff(*repo, *base, *head)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Printf("release_required=%t\nrelease_paths=%s\n", classification.Required, strings.Join(classification.Paths, ","))
+	return 0
+}
+
+func nextPatchCommand(arguments []string) int {
+	flags := flag.NewFlagSet("next-patch", flag.ContinueOnError)
+	version := flags.String("version", "", "current stable vMAJOR.MINOR.PATCH version")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	next, err := boatstack.NextPatchVersion(*version)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Println(next)
+	return 0
+}
+
 func exportCommand(arguments []string) int {
 	flags := flag.NewFlagSet("export", flag.ContinueOnError)
 	repo := flags.String("repo", "", "repository to export into")
@@ -434,7 +464,7 @@ func publishPRCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|record-delivery-gate|check-safety|safety-hook|pr-context|check-pr|publish-pr|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|record-delivery-gate|check-safety|safety-hook|pr-context|check-pr|publish-pr|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -444,6 +474,10 @@ func run() int {
 		return updateCommand(os.Args[2:])
 	case "check-update":
 		return checkUpdateCommand(os.Args[2:])
+	case "release-classify":
+		return releaseClassifyCommand(os.Args[2:])
+	case "next-patch":
+		return nextPatchCommand(os.Args[2:])
 	case "export":
 		return exportCommand(os.Args[2:])
 	case "check-source-plan":
