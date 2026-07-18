@@ -48,7 +48,7 @@ This is the canonical human-readable and machine-checkable plan used by the work
         },
         {
           "criteria": ["AC-1", "AC-2", "AC-3"],
-          "run": "pnpm exec tsx examples/05-diagram-printer/json-check.ts",
+          "run": "pnpm exec tsx labs/05-diagram-printer/json-check.ts",
           "origin": "The approved JSON contract in AC-1, AC-2, and AC-3",
           "oracle": "Parser, schema-version, ordering, and compact-overlay assertions derived from the approved contract",
           "independence": "contract-derived"
@@ -87,21 +87,21 @@ This is the canonical human-readable and machine-checkable plan used by the work
       "validation": [
         {
           "criteria": ["AC-1", "AC-2", "AC-3"],
-          "run": "pnpm exec tsx examples/05-diagram-printer/json-check.ts",
+          "run": "pnpm exec tsx labs/05-diagram-printer/json-check.ts",
           "origin": "The approved JSON behaviors in AC-1, AC-2, and AC-3",
           "oracle": "Contract-derived parser and fixture assertions",
           "independence": "contract-derived"
         },
         {
           "criteria": ["AC-4"],
-          "run": "pnpm example:diagram",
+          "run": "pnpm lab:diagram",
           "origin": "The existing diagram behavior protected by AC-4",
           "oracle": "The repository's pre-feature executable example",
           "independence": "pre-existing"
         },
         {
           "criteria": ["AC-4"],
-          "run": "diff -u examples/05-diagram-printer/expected-output.txt <(pnpm --silent example:diagram)",
+          "run": "diff -u labs/05-diagram-printer/expected-output.txt <(pnpm --silent example:diagram)",
           "origin": "The byte-compatibility decision in AC-4",
           "oracle": "The pre-feature expected ASCII fixture",
           "independence": "pre-existing"

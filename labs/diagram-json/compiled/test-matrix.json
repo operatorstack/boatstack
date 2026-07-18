@@ -19,14 +19,14 @@
           "task_id": "T-1"
         },
         {
-          "check": "pnpm exec tsx examples/05-diagram-printer/json-check.ts",
+          "check": "pnpm exec tsx labs/05-diagram-printer/json-check.ts",
           "independence": "contract-derived",
           "oracle": "Parser, schema-version, ordering, and compact-overlay assertions derived from the approved contract",
           "origin": "The approved JSON contract in AC-1, AC-2, and AC-3",
           "task_id": "T-1"
         },
         {
-          "check": "pnpm exec tsx examples/05-diagram-printer/json-check.ts",
+          "check": "pnpm exec tsx labs/05-diagram-printer/json-check.ts",
           "independence": "contract-derived",
           "oracle": "Contract-derived parser and fixture assertions",
           "origin": "The approved JSON behaviors in AC-1, AC-2, and AC-3",
@@ -59,14 +59,14 @@
           "task_id": "T-1"
         },
         {
-          "check": "pnpm exec tsx examples/05-diagram-printer/json-check.ts",
+          "check": "pnpm exec tsx labs/05-diagram-printer/json-check.ts",
           "independence": "contract-derived",
           "oracle": "Parser, schema-version, ordering, and compact-overlay assertions derived from the approved contract",
           "origin": "The approved JSON contract in AC-1, AC-2, and AC-3",
           "task_id": "T-1"
         },
         {
-          "check": "pnpm exec tsx examples/05-diagram-printer/json-check.ts",
+          "check": "pnpm exec tsx labs/05-diagram-printer/json-check.ts",
           "independence": "contract-derived",
           "oracle": "Contract-derived parser and fixture assertions",
           "origin": "The approved JSON behaviors in AC-1, AC-2, and AC-3",
@@ -99,14 +99,14 @@
           "task_id": "T-1"
         },
         {
-          "check": "pnpm exec tsx examples/05-diagram-printer/json-check.ts",
+          "check": "pnpm exec tsx labs/05-diagram-printer/json-check.ts",
           "independence": "contract-derived",
           "oracle": "Parser, schema-version, ordering, and compact-overlay assertions derived from the approved contract",
           "origin": "The approved JSON contract in AC-1, AC-2, and AC-3",
           "task_id": "T-1"
         },
         {
-          "check": "pnpm exec tsx examples/05-diagram-printer/json-check.ts",
+          "check": "pnpm exec tsx labs/05-diagram-printer/json-check.ts",
           "independence": "contract-derived",
           "oracle": "Contract-derived parser and fixture assertions",
           "origin": "The approved JSON behaviors in AC-1, AC-2, and AC-3",
@@ -131,14 +131,14 @@
       ],
       "validations": [
         {
-          "check": "pnpm example:diagram",
+          "check": "pnpm lab:diagram",
           "independence": "pre-existing",
           "oracle": "The repository's pre-feature executable example",
           "origin": "The existing diagram behavior protected by AC-4",
           "task_id": "T-3"
         },
         {
-          "check": "diff -u examples/05-diagram-printer/expected-output.txt \u003c(pnpm --silent example:diagram)",
+          "check": "diff -u labs/05-diagram-printer/expected-output.txt \u003c(pnpm --silent example:diagram)",
           "independence": "pre-existing",
           "oracle": "The pre-feature expected ASCII fixture",
           "origin": "The byte-compatibility decision in AC-4",
