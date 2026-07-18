@@ -58,12 +58,24 @@ In Claude Code and Cursor, that guidance moves through `/plan-gate` → `/build`
   <img src="assets/boatstack-journey.svg" width="960" alt="One feature moves from idea through planning, approval, building, tests, review, and pull request; its retained plans, decisions, gaps, evidence, and code state combine with the next idea to create the next plan">
 </p>
 
+## Change course without losing the delivery
+
+After Build, describe changes normally. Boatstack records them, preserves valid work, and resumes at the earliest boundary.
+
+```text
+“This is wrong” → record → repair → test → review
+                         ↘ changed intent → approve delta
+```
+
+Receipts remain as history; published corrections become linked deliveries.
+
 ## Features
 
 - **A guided path from idea to PR.** Start with `/auto-plan`; Boatstack presents one next action at a time through planning, approval, build, validation, review, and PR preparation.
 - **Human decisions stay human.** Material product questions remain open until a person answers them, and implementation waits for explicit approval.
 - **Evidence tied to the promise.** Tests and checks map to the outcomes the change claims to deliver instead of treating one green command as proof of everything.
 - **Context that survives the feature.** Plans, decisions, accepted gaps, evidence, review findings, and code state can inform the next feature rather than disappearing with the chat.
+- **Conversational repair after Build.** Describe what changed; Boatstack preserves valid work and reruns only affected boundaries.
 - **Safer agent execution.** High-confidence destructive recovery is stopped before execution; phased work is gated and published one approved delivery slice at a time.
 - **Reviewer-ready pull requests.** Boatstack carries the reason, actual changes, validation, risks, gaps, rollout, and rollback into a focused PR brief.
 - **Portable across your AI stack.** Cursor, Codex, Claude Code, different model tiers, and specialist skills use the same repository-owned delivery contract.

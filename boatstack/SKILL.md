@@ -15,6 +15,7 @@ Map the request to one operation:
 - `auto-plan`: refine a saved host Plan-mode file into a reviewable draft feature package; refuse when that file is absent.
 - `plan-gate`: validate the Markdown draft, present it for explicit human acceptance, and record that acceptance in Markdown.
 - `build`: activate the approved Markdown plan, then implement only the active delivery slice's tasks.
+- `repair`: classify a free-form post-build change, record it durably, and resume from the earliest affected stage without silently changing approved intent.
 - `test-gate`: test requirements and relevant regressions using independent evidence.
 - `review-gate`: review the diff against the spec, project invariants, risks, and known gaps.
 - `ship-gate`: preview, then explicitly open or update, a reviewer-ready PR grounded in the approved diff and evidence.
@@ -131,6 +132,14 @@ All files created or updated by `auto-plan` and `plan-gate` must be Markdown. gs
 - Do not repeat the same failed tactic more than twice without re-diagnosing the failure class.
 
 Do not branch the workflow on model brand, price, or a guessed capability tier. Branch only on observable work state: unresolved ambiguity, risk, convergence, repeated tactics, tool results, test fidelity, and gate evidence. A repository may choose any implementation model; the contract and gates stay the same.
+
+## Repair from ordinary conversation
+
+Before any product edit, read managed delivery status. If a delivery is active and the user reports a problem or requests a modification, use `repair` even when they do not name Boatstack or a slash command. Compare the exact request with the current lock, acceptance criteria, diff, evidence, and receipts. Classify it as `implementation_repair`, `verification_repair`, `review_repair`, `requirement_amendment`, or `needs_clarification`, then invoke `record-change` before editing.
+
+Same-intent repair resumes at the helper-reported stage and reuses the existing gates. A requirement amendment or ambiguous expected behavior blocks product edits and returns to a concise Plan Gate delta. Never edit `changes.md`, ignored delivery state, or receipts directly; those are emitted by controlled transitions. Conversation history is never workflow authority.
+
+A published delivery is immutable. Record the observation against it, then plan the correction under a new feature id whose structured plan sets `parent_delivery` to the published feature. Activation refuses to reset published slices; the corrective child receives its own lock and full gates.
 
 ## Enforce the gates
 

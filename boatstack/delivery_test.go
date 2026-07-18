@@ -136,6 +136,121 @@ func TestDeliveryGateReceiptsBindTheActiveSliceAndAdvanceOnce(t *testing.T) {
 	}
 }
 
+func TestRepairObservationPersistsAndSupersedesAffectedGates(t *testing.T) {
+	repo, feature := activateTwoSliceDelivery(t)
+	for _, gate := range []string{"test", "review"} {
+		if _, err := RecordDeliveryGate(DeliveryGateOptions{Repo: repo, Feature: feature, SliceID: "phase-one", Gate: gate, Status: "PASS"}); err != nil {
+			t.Fatalf("record %s gate: %v", gate, err)
+		}
+	}
+	observation, state, err := RecordChangeObservation(ChangeObservationOptions{
+		Repo: repo, Feature: feature, Message: "the modal remains stuck on Gathering",
+		SourceStage: "review_gate", Expected: "close after success", Actual: "stays pending",
+		Evidence: "manual reproduction", Classification: "implementation_repair",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observation.ID != "CHG-001" || state.Mode != "REWORK" || state.ResumeStage != "BUILD" || state.Slices[0].Status != "BUILD" {
+		t.Fatalf("unexpected repair state: observation=%#v state=%#v", observation, state)
+	}
+	if len(state.SupersededReceipts) != 2 {
+		t.Fatalf("expected both receipts to be superseded: %#v", state.SupersededReceipts)
+	}
+	changes, err := os.ReadFile(filepath.Join(repo, ".product-loop", "features", feature, "changes.md"))
+	if err != nil || !strings.Contains(string(changes), "CHG-001") || !strings.Contains(string(changes), "the modal remains stuck") {
+		t.Fatalf("change observation was not durably recorded: %v %s", err, changes)
+	}
+	if _, err := readDeliveryReceipt(repo, feature, "phase-one", "test"); err == nil {
+		t.Fatal("superseded test receipt remained current")
+	}
+}
+
+func TestRequirementAmendmentBlocksGates(t *testing.T) {
+	repo, feature := activateTwoSliceDelivery(t)
+	_, state, err := RecordChangeObservation(ChangeObservationOptions{
+		Repo: repo, Feature: feature, Message: "keep the modal open and show a summary",
+		SourceStage: "build", Expected: "new summary state", Classification: "requirement_amendment",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Mode != "AMENDMENT_REQUIRED" || state.ResumeStage != "PLAN_GATE" {
+		t.Fatalf("amendment did not block: %#v", state)
+	}
+	if _, err := RecordDeliveryGate(DeliveryGateOptions{Repo: repo, Feature: feature, SliceID: "phase-one", Gate: "test", Status: "PASS"}); err == nil || !strings.Contains(err.Error(), "approved plan amendment") {
+		t.Fatalf("gate accepted stale intent: %v", err)
+	}
+}
+
+func TestPublishedChangeRemainsDiscoverableAndCannotResetOriginalDelivery(t *testing.T) {
+	repo, feature := activateTwoSliceDelivery(t)
+	for _, gate := range []string{"test", "review"} {
+		if _, err := RecordDeliveryGate(DeliveryGateOptions{Repo: repo, Feature: feature, SliceID: "phase-one", Gate: gate, Status: "PASS"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := MarkDeliveryPublished(repo, feature, "phase-one", "https://example.invalid/pr/1"); err != nil {
+		t.Fatal(err)
+	}
+	// Collapse the unused second fixture slice; publication behavior itself is
+	// already covered above and the correction boundary only needs a completed parent.
+	completed, err := LoadDeliveryState(repo, feature)
+	if err != nil {
+		t.Fatal(err)
+	}
+	completed.Slices[1].Status = "PUBLISHED"
+	completed.ActiveIndex = len(completed.Slices)
+	if err := saveDeliveryState(repo, completed); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := RecordChangeObservation(ChangeObservationOptions{
+		Repo: repo, Feature: feature, Message: "production needs a different success state",
+		SourceStage: "published", Classification: "requirement_amendment",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	active, err := ActiveManagedDeliveries(repo)
+	if err != nil || len(active) != 1 || active[0] != feature {
+		t.Fatalf("published correction was not discoverable: %#v %v", active, err)
+	}
+	lockPath := filepath.Join(repo, ".product-loop", "features", feature, "plan.lock.json")
+	if err := os.WriteFile(lockPath, []byte("replacement-lock"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := initializeDeliveryState(repo, feature, filepath.Join(repo, ".product-loop", "features", feature, "plan.md"), lockPath); err == nil || !strings.Contains(err.Error(), "published delivery") {
+		t.Fatalf("published parent was reset instead of requiring a child: %v", err)
+	}
+}
+
+func TestVerificationRepairPreservesImplementationAndRerunsGates(t *testing.T) {
+	repo, feature := activateTwoSliceDelivery(t)
+	for _, gate := range []string{"test", "review"} {
+		if _, err := RecordDeliveryGate(DeliveryGateOptions{Repo: repo, Feature: feature, SliceID: "phase-one", Gate: gate, Status: "PASS"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, state, err := RecordChangeObservation(ChangeObservationOptions{
+		Repo: repo, Feature: feature, Message: "the test checks the wrong success state",
+		SourceStage: "review_gate", Classification: "verification_repair",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.ResumeStage != "TEST_GATE" || state.Slices[0].Status != "BUILD" {
+		t.Fatalf("verification repair resumed incorrectly: %#v", state)
+	}
+	runGit(t, repo, "add", ".product-loop/features/"+feature+"/changes.md")
+	runGit(t, repo, "commit", "-m", "record verification repair")
+	if _, err := RecordDeliveryGate(DeliveryGateOptions{Repo: repo, Feature: feature, SliceID: "phase-one", Gate: "test", Status: "PASS"}); err != nil {
+		t.Fatalf("rerun test gate failed: %v", err)
+	}
+	receipt, err := readDeliveryReceipt(repo, feature, "phase-one", "test")
+	if err != nil || receipt.TriggerObservationID != "CHG-001" || receipt.Attempt != 2 {
+		t.Fatalf("repair lineage missing from receipt: %#v %v", receipt, err)
+	}
+}
+
 func TestDeliveryGateRejectsChangesOwnedByALaterSlice(t *testing.T) {
 	repo, feature := activateTwoSliceDelivery(t)
 	if err := os.WriteFile(filepath.Join(repo, "second.go"), []byte("package fixture\n"), 0o644); err != nil {

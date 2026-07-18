@@ -14,6 +14,8 @@ Artifacts separate facts, decisions, unknowns, incompleteness, and evidence. Com
 | Approval receipt | Named human, timestamp, and fingerprint in Markdown; not executable state | The exact draft is explicitly approved in Plan mode |
 | Compiled tasks | Deterministic dependency graph generated from the approved Markdown plan | Build activation succeeds |
 | Delivery state | Ignored worktree-local Git active-slice state bound to the approved plan lock; never an approval artifact | Build activation and successful slice publication |
+| `changes.md` | Append-only, reviewable post-build observations with exact user message, expected/actual behavior, classification, evidence, and resolution | Controlled `record-change` transition |
+| Repair state | Ignored delivery mode, resume stage, active observation, attempt count, and superseded receipt references | Controlled repair and gate transitions |
 | Gate receipt | Machine-local test or review transition bound to one delivery slice, base/head branches, commit, product diff, and evidence hash | A slice passes test or review |
 | Test plan | Requirement-to-evidence mapping with each validation's origin, falsifiable oracle, procedure, and independence | Planning and after discovered failure modes |
 | Gap ledger | Known divergence between desired and current state | Work is deferred, partial, incompatible, or intentionally absent |
