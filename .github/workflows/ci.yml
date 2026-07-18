@@ -96,7 +96,7 @@ jobs:
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         shell: bash
         run: |
-          source_repo="$(jq -r '.source.repo' UPSTREAM.json)"
+          source_repo="$(jq -r '.source.repository' UPSTREAM.json)"
           source_commit="$(jq -r '.source.commit' UPSTREAM.json)"
           short="${source_commit:0:12}"
           [[ "$PR_AUTHOR" == "${APP_SLUG}[bot]" ]]
