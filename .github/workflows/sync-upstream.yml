@@ -52,7 +52,7 @@ jobs:
         id: generate
         shell: bash
         run: |
-          source_commit="$(git -C intelligence-flow log -1 --format=%H -- examples/12-product-engineering-loop)"
+          source_commit="$(git -C intelligence-flow log -1 --format=%H -- labs/12-product-engineering-loop)"
           current_commit="$(jq -r '.source.commit // empty' boatstack-repo/UPSTREAM.json)"
           if [[ -n "$current_commit" ]] &&
              ! git -C intelligence-flow merge-base --is-ancestor "$current_commit" "$source_commit"; then
@@ -60,7 +60,7 @@ jobs:
             echo "stale=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          python3 intelligence-flow/examples/12-product-engineering-loop/scripts/build_boatstack.py \
+          python3 intelligence-flow/labs/12-product-engineering-loop/scripts/build_boatstack.py \
             --repo boatstack-repo \
             --source-commit "$source_commit" \
             --write
