@@ -302,6 +302,29 @@ func deliveryStatusCommand(arguments []string) int {
 	return 0
 }
 
+func nextStatusCommand(arguments []string) int {
+	flags := flag.NewFlagSet("next-status", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository whose Boatstack stage should be inspected")
+	jsonOutput := flags.Bool("json", false, "print the versioned structured status")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	status, err := boatstack.ResolveNext(*repo)
+	if err != nil {
+		return fail(err)
+	}
+	if *jsonOutput {
+		value, marshalErr := boatstack.MarshalJSON(status)
+		if marshalErr != nil {
+			return fail(marshalErr)
+		}
+		fmt.Print(string(value))
+	} else {
+		fmt.Print(boatstack.FormatNextStatus(status))
+	}
+	return 0
+}
+
 func recordChangeCommand(arguments []string) int {
 	flags := flag.NewFlagSet("record-change", flag.ContinueOnError)
 	options := boatstack.ChangeObservationOptions{}
@@ -489,7 +512,7 @@ func publishPRCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|record-change|record-delivery-gate|check-safety|safety-hook|pr-context|check-pr|publish-pr|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|record-change|record-delivery-gate|check-safety|safety-hook|pr-context|check-pr|publish-pr|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -517,6 +540,8 @@ func run() int {
 		return activatePlanCommand(os.Args[2:])
 	case "delivery-status":
 		return deliveryStatusCommand(os.Args[2:])
+	case "next-status":
+		return nextStatusCommand(os.Args[2:])
 	case "record-change":
 		return recordChangeCommand(os.Args[2:])
 	case "record-delivery-gate":

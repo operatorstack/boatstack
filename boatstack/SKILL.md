@@ -12,6 +12,7 @@ Build the smallest complete product slice that can be independently verified. Im
 Map the request to one operation:
 
 - `init`: inspect a repository and create or update `.product-loop/project.json`.
+- `next`: report the verified current stage and exactly one next action without changing workflow or repository state.
 - `auto-plan`: refine a saved host Plan-mode file into a reviewable draft feature package; refuse when that file is absent.
 - `plan-gate`: validate the Markdown draft, present it for explicit human acceptance, and record that acceptance in Markdown.
 - `build`: activate the approved Markdown plan, then implement only the active delivery slice's tasks.
@@ -24,6 +25,10 @@ Map the request to one operation:
 - `export`: generate thin Cursor, Claude Code, Codex, and GitHub adapters.
 
 For the full state machine, read [workflow.md](references/workflow.md). For artifact meanings and templates, read [artifacts.md](references/artifacts.md).
+
+## Report what is next
+
+Run the project-local helper's read-only `next-status --repo . --json` inspection. Repository artifacts, managed delivery state, and gate receipts are evidence; conversation, terminal, worktree, and process observations are context only. Never run the returned operation automatically. If nothing remains active in an initialized repository, report **Feature complete** with **No action required**. If state is ambiguous or stale, name the blocker instead of choosing by recency.
 
 ## Enforce the irreversible-operation boundary
 

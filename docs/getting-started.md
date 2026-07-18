@@ -7,6 +7,17 @@
 
 Boatstack is repository-local. Install it once per Git clone and commit the shared workflow before starting product work. Linked Git worktrees reuse the clone's verified runtime automatically.
 
+## Return after an interruption
+
+Ask Boatstack for the next verified stage without changing anything:
+
+| Host | Command |
+|---|---|
+| Codex | `$boatstack next` |
+| Cursor or Claude Code | `/boatstack-next` |
+
+Boatstack reads repository-owned plans, approvals, delivery state, and gate receipts, then returns exactly one next action. Chat, terminal, worktree, and running-process observations may add context but never establish a workflow stage. If no managed work remains, Boatstack reports **Feature complete** and **No action required**.
+
 ## 1. Install it separately
 
 The easiest path is to paste the [agent installation prompt](../README.md#install-with-your-coding-agent) into your coding host. It asks the agent to create `chore/install-boatstack`, run the official installer, explain the generated files, run `doctor`, and prepare the installation PR without merging it.

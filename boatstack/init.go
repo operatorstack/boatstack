@@ -561,6 +561,8 @@ func RunInit(options InitOptions) (returnErr error) {
 	fmt.Fprintln(options.Output, "  Claude Code: /auto-plan")
 	fmt.Fprintln(options.Output, "  Cursor: /auto-plan")
 	fmt.Fprintln(options.Output, "  Codex: $boatstack auto-plan")
+	fmt.Fprintln(options.Output, "Return later with Claude Code or Cursor: /boatstack-next")
+	fmt.Fprintln(options.Output, "Return later with Codex: $boatstack next")
 	fmt.Fprintln(options.Output, "If Boatstack created .claude/skills during an active Claude Code session, reload Claude Code before using its slash commands.")
 	if err := snapshot.commit(); err != nil {
 		return fmt.Errorf("remove initialization rollback snapshot: %w", err)
