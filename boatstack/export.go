@@ -24,6 +24,44 @@ type ExportBundle struct {
 	Config ProjectConfig
 }
 
+type claudeSkillSpec struct {
+	Name         string
+	Description  string
+	ArgumentHint string
+}
+
+var claudeVisibleSkills = []claudeSkillSpec{
+	{
+		Name:         "auto-plan",
+		Description:  "Refine one saved Plan-mode proposal into a reviewable Boatstack feature plan.",
+		ArgumentHint: "[plan-file]",
+	},
+	{
+		Name:        "plan-gate",
+		Description: "Review and explicitly approve a Boatstack feature plan before implementation.",
+	},
+	{
+		Name:        "build",
+		Description: "Implement the currently approved Boatstack delivery slice.",
+	},
+	{
+		Name:        "test-gate",
+		Description: "Validate the active Boatstack delivery slice and record current test evidence.",
+	},
+	{
+		Name:        "review-gate",
+		Description: "Review the active Boatstack delivery slice against approved intent and evidence.",
+	},
+	{
+		Name:        "ship-gate",
+		Description: "Prepare and, after confirmation, publish the active Boatstack delivery slice as a pull request.",
+	},
+	{
+		Name:        "boatstack-update",
+		Description: "Prepare a separate reviewed update of Boatstack's repository infrastructure.",
+	},
+}
+
 func LoadConfig(path string) (ProjectConfig, []byte, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -93,6 +131,23 @@ Use the gate semantics in the canonical workflow. Do not redefine them in this a
 
 Follow the User-facing response contract in @.product-loop/workflow.md. Lead with its mapped plain-language outcome, show only decision-relevant content, end with exactly one `+"`### Next step`"+`, and put machine status, helper output, fingerprints, artifact paths, receipts, and locks inside collapsed `+"`Technical details`"+`. Treat helper names in this command as internal control machinery; do not expose them in the primary response.
 `, operation, operation, preflight, extra)
+}
+
+func claudeOperationSkill(spec claudeSkillSpec, operationBody string) string {
+	argumentHint := ""
+	arguments := ""
+	if spec.ArgumentHint != "" {
+		argumentHint = fmt.Sprintf("argument-hint: %q\n", spec.ArgumentHint)
+		arguments = "\n\nUser arguments: $ARGUMENTS"
+	}
+	return fmt.Sprintf(`---
+name: %s
+description: %s
+%sdisable-model-invocation: true
+---
+
+%s%s
+`, spec.Name, spec.Description, argumentHint, strings.TrimSpace(operationBody), arguments)
 }
 
 func BuildExportBundle(configPath string, config ProjectConfig, rawConfig []byte, adapterName string) (ExportBundle, error) {
@@ -202,7 +257,7 @@ Boatstack's repository hooks deny high-confidence irreversible operations across
 
 	adapterSkill := fmt.Sprintf(`---
 name: %s
-description: Run Boatstack's evidence-engineered coding node for question-led planning, explicit approval, open implementation, evidence gates, and PR preparation.
+description: Use when the user asks Boatstack to auto-plan, approve a plan, build, test, review, ship, update Boatstack, or run a retrospective.
 ---
 
 # Boatstack adapter
@@ -232,11 +287,30 @@ When the user asks to update Boatstack, run the boatstack-update operation. Neve
 For a managed ship, use the internal pr-context operation with --feature to project the feature spec, accepted decisions, actual committed diff, evidence ledger, review findings, gaps, rollout, and rollback into the required pr.md artifact. Inspect the returned changed files, diff stat, high-risk matches, and the actual diff before writing claims; commits alone are not authoritative. Always include why, what changed, review order, evidence, gaps/risks, rollout/rollback, and collapsed provenance. Add UI evidence, security/privacy, migration, or operations sections only when relevant. For a natural-language request to improve an existing or ad-hoc PR, run pr-context without --feature and use the same reviewer-first format from observed branch facts, but mark unavailable approval or gate evidence as NOT_VERIFIED. Never create or advertise a /pr-brief command. Validate with check-pr and always show the exact title and rendered body before publication. Ask for state-scoped o to open or u to update the PR. Only after the matching shortcut or compatible full reply, commit only pr.md, revalidate the unchanged preview fingerprint, and invoke the internal publish-pr operation with the selected action. It may perform a normal push but never force-push. Any intervening product diff or evidence change invalidates the preview. Keep model attribution inside collapsed provenance. Internal helper names and hashes stay out of the primary response.
 
 If gstack is enabled, use only its namespaced /gstack-* specialist lenses inside Boatstack operations. If Spec Kit is enabled, use it to generate or cross-check artifacts; never invoke speckit.implement to bypass Boatstack's plan approval and build gate.
-`, adapterName)
+	`, adapterName)
 	if contains(adapters, "claude") {
-		files[fmt.Sprintf(".claude/skills/%s/SKILL.md", adapterName)], err = GeneratedFrontmatter(adapterSkill)
+		claudeAdapterSkill := strings.Replace(
+			adapterSkill,
+			"\n---\n\n# Boatstack adapter",
+			"\nuser-invocable: false\n---\n\n# Boatstack adapter",
+			1,
+		)
+		files[fmt.Sprintf(".claude/skills/%s/SKILL.md", adapterName)], err = GeneratedFrontmatter(claudeAdapterSkill)
 		if err != nil {
 			return ExportBundle{}, err
+		}
+		for _, spec := range claudeVisibleSkills {
+			extra, ok := operations[spec.Name]
+			if !ok {
+				return ExportBundle{}, fmt.Errorf("missing operation instructions for Claude skill %s", spec.Name)
+			}
+			path := fmt.Sprintf(".claude/skills/%s/SKILL.md", spec.Name)
+			files[path], err = GeneratedFrontmatter(
+				claudeOperationSkill(spec, commandBody(spec.Name, extra)),
+			)
+			if err != nil {
+				return ExportBundle{}, err
+			}
 		}
 	}
 	if contains(adapters, "codex") {

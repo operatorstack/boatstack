@@ -146,6 +146,16 @@ func TestDoctorDetectsMissingConfigAdapterAndVersionDrift(t *testing.T) {
 	if err := WriteExport(repo, bundle.Files); err != nil {
 		t.Fatal(err)
 	}
+	claudeSkill := filepath.Join(repo, ".claude", "skills", "auto-plan", "SKILL.md")
+	if err := os.Remove(claudeSkill); err != nil {
+		t.Fatal(err)
+	}
+	if err := Doctor(repo); err == nil || !strings.Contains(err.Error(), "missing .claude/skills/auto-plan/SKILL.md") {
+		t.Fatalf("expected missing Claude skill diagnosis, got %v", err)
+	}
+	if err := WriteExport(repo, bundle.Files); err != nil {
+		t.Fatal(err)
+	}
 	lockPath := filepath.Join(repo, ".product-loop", "bin", "install.lock.json")
 	lockValue, _ := os.ReadFile(lockPath)
 	var lock map[string]any

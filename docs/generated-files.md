@@ -13,7 +13,7 @@ Boatstack creates installation state once and feature evidence repeatedly. Keepi
 |---|---|---|
 | `.boatstack-project.json` | Project-owned repository facts and commands | Review and edit |
 | `.product-loop/` references, templates, hooks, and generated lock | Shared Boatstack runtime | Commit; regenerate rather than hand-edit |
-| `.cursor/`, `.agents/`, and `.claude/` Boatstack adapters | Portable host commands and skills | Commit |
+| `.cursor/`, `.agents/`, and `.claude/` Boatstack adapters | Cursor commands, the Codex router, and Claude's visible workflow skills plus hidden natural-language router | Commit |
 | `.github/PULL_REQUEST_TEMPLATE/boatstack.md` | Fallback PR structure | Commit |
 | `.cursor/hooks.json`, `.claude/settings.json`, `.codex/hooks.json` | Boatstack fragments merged with existing host settings | Review and commit |
 | `.product-loop/bin/` | Verified worktree-local helper and install lock | Never commit; it is ignored and hydrates automatically |

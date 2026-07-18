@@ -50,6 +50,8 @@ func TestExportAndDriftCheck(t *testing.T) {
 		".cursor/commands/plan-gate.md",
 		".cursor/commands/review.md",
 		".claude/skills/boatstack/SKILL.md",
+		".claude/skills/auto-plan/SKILL.md",
+		".claude/skills/boatstack-update/SKILL.md",
 		".agents/skills/boatstack/SKILL.md",
 		".product-loop/.gitignore",
 		".product-loop/templates/plan.md",
@@ -60,6 +62,47 @@ func TestExportAndDriftCheck(t *testing.T) {
 	} {
 		if !fileExists(filepath.Join(repo, filepath.FromSlash(path))) {
 			t.Fatalf("expected generated file %s", path)
+		}
+	}
+	claudeSkillPaths := map[string]bool{}
+	for path := range bundle.Files {
+		if strings.HasPrefix(path, ".claude/skills/") && strings.HasSuffix(path, "/SKILL.md") {
+			claudeSkillPaths[path] = true
+		}
+	}
+	if len(claudeSkillPaths) != len(claudeVisibleSkills)+1 {
+		t.Fatalf("generated %d Claude skills, want %d: %#v", len(claudeSkillPaths), len(claudeVisibleSkills)+1, claudeSkillPaths)
+	}
+	for _, spec := range claudeVisibleSkills {
+		path := ".claude/skills/" + spec.Name + "/SKILL.md"
+		skill := string(bundle.Files[path])
+		for _, expected := range []string{
+			"name: " + spec.Name,
+			"description: " + spec.Description,
+			"disable-model-invocation: true",
+			"Run the " + spec.Name + " operation",
+			".product-loop/workflow.md",
+			"User-facing response contract",
+		} {
+			if !strings.Contains(skill, expected) {
+				t.Fatalf("%s is missing %q", path, expected)
+			}
+		}
+	}
+	claudeAutoPlan := string(bundle.Files[".claude/skills/auto-plan/SKILL.md"])
+	for _, expected := range []string{`argument-hint: "[plan-file]"`, "$ARGUMENTS", "/auto-plan <plan-file>"} {
+		if !strings.Contains(claudeAutoPlan, expected) {
+			t.Fatalf("Claude auto-plan skill is missing argument behavior %q", expected)
+		}
+	}
+	claudeRouter := string(bundle.Files[".claude/skills/boatstack/SKILL.md"])
+	if !strings.Contains(claudeRouter, "user-invocable: false") || strings.Contains(claudeRouter, "disable-model-invocation: true") {
+		t.Fatal("Claude Boatstack router must be hidden from users but available to the model")
+	}
+	for _, operation := range []string{"retro", "review", "ship"} {
+		path := ".claude/skills/" + operation + "/SKILL.md"
+		if claudeSkillPaths[path] {
+			t.Fatalf("internal or alias operation must not be a visible Claude skill: %s", path)
 		}
 	}
 	if _, exists := bundle.Files[".product-loop/tools/approve_plan.py"]; exists {
@@ -242,12 +285,17 @@ func TestPortableHostAdaptersShareWorkflowAndArtifactContract(t *testing.T) {
 
 	workflow := string(bundle.Files[".product-loop/workflow.md"])
 	artifacts := string(bundle.Files[".product-loop/artifacts.md"])
-	for _, expected := range []string{"auto-plan", "plan-gate", "build", "test-gate", "review-gate", "ship-gate", "retro"} {
+	for _, expected := range []string{"auto-plan", "plan-gate", "build", "test-gate", "review-gate", "ship-gate", "boatstack-update", "retro"} {
 		if !strings.Contains(workflow, expected) {
 			t.Fatalf("canonical portable workflow is missing %q", expected)
 		}
 		if _, exists := bundle.Files[".cursor/commands/"+expected+".md"]; !exists {
 			t.Fatalf("Cursor does not expose portable operation %q", expected)
+		}
+	}
+	for _, spec := range claudeVisibleSkills {
+		if _, exists := bundle.Files[".claude/skills/"+spec.Name+"/SKILL.md"]; !exists {
+			t.Fatalf("Claude does not expose user operation %q", spec.Name)
 		}
 	}
 	for _, expected := range []string{"source plan", "plan.md", "approval.md", "evidence", "gaps", "review", "pr.md"} {
@@ -268,36 +316,44 @@ func TestPortableHostAdaptersShareWorkflowAndArtifactContract(t *testing.T) {
 			}
 		}
 	}
-	for _, host := range []string{"claude", "codex"} {
-		for _, operation := range []string{"auto-plan", "plan-gate", "build", "test-gate", "review-gate", "ship-gate", "boatstack-update", "retro"} {
-			if !strings.Contains(hostSurfaces[host], operation) {
-				t.Fatalf("%s adapter does not expose portable operation %q", host, operation)
-			}
+	for _, operation := range []string{"auto-plan", "plan-gate", "build", "test-gate", "review-gate", "ship-gate", "boatstack-update", "retro"} {
+		if !strings.Contains(hostSurfaces["codex"], operation) {
+			t.Fatalf("Codex router does not declare portable operation %q", operation)
+		}
+		if !strings.Contains(hostSurfaces["claude"], operation) {
+			t.Fatalf("Claude natural-language router does not declare portable operation %q", operation)
 		}
 	}
 }
 
 func TestExportRefusesUserOwnedCollision(t *testing.T) {
-	repo := t.TempDir()
-	path := filepath.Join(repo, ".cursor", "rules", "boatstack.mdc")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte("user owned\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	config := testConfig()
-	raw, _ := MarshalJSON(config)
-	bundle, err := BuildExportBundle("config.json", config, raw, "boatstack")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := WriteExport(repo, bundle.Files); err == nil || !strings.Contains(err.Error(), "user-owned") {
-		t.Fatalf("expected user-owned collision, got %v", err)
-	}
-	value, _ := os.ReadFile(path)
-	if string(value) != "user owned\n" {
-		t.Fatal("collision handling modified the user-owned file")
+	for _, relative := range []string{
+		".cursor/rules/boatstack.mdc",
+		".claude/skills/auto-plan/SKILL.md",
+	} {
+		t.Run(relative, func(t *testing.T) {
+			repo := t.TempDir()
+			path := filepath.Join(repo, filepath.FromSlash(relative))
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("user owned\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			config := testConfig()
+			raw, _ := MarshalJSON(config)
+			bundle, err := BuildExportBundle("config.json", config, raw, "boatstack")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := WriteExport(repo, bundle.Files); err == nil || !strings.Contains(err.Error(), "user-owned") || !strings.Contains(err.Error(), relative) {
+				t.Fatalf("expected named user-owned collision, got %v", err)
+			}
+			value, _ := os.ReadFile(path)
+			if string(value) != "user owned\n" {
+				t.Fatal("collision handling modified the user-owned file")
+			}
+		})
 	}
 }
 
