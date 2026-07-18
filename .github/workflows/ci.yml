@@ -18,7 +18,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: Verify upstream sync source path
+      - name: Verify upstream sync contract
         shell: bash
         run: |
           workflow=".github/workflows/sync-upstream.yml"
@@ -31,6 +31,12 @@ jobs:
           fi
           if grep -Fq "$retired" "$workflow"; then
             echo "Sync workflow still references retired path $retired." >&2
+            exit 1
+          fi
+          title='Sync Boatstack from Intelligence Flow Labs @ $short'
+          title_count="$(grep -cF "$title" "$workflow")"
+          if [[ "$title_count" != "2" ]]; then
+            echo "Expected commit and PR titles to use $title; found $title_count." >&2
             exit 1
           fi
       - name: Detect projected runtime
