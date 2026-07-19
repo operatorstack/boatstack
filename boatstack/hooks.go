@@ -1,14 +1,95 @@
 package boatstack
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"time"
 )
 
 const hookCommandMarker = ".product-loop/hooks/guard"
+
+type HookDiagnostic struct {
+	Host              string
+	ContractStatus    string
+	LiveEventObserved bool
+}
+
+func canonicalHookEvent(host string) ([]byte, error) {
+	switch host {
+	case "cursor":
+		return []byte(`{"hook_event_name":"beforeShellExecution","command":"git status --short"}`), nil
+	case "claude", "codex":
+		return []byte(`{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git status --short"}}`), nil
+	default:
+		return nil, fmt.Errorf("unsupported hook host %q; expected cursor, claude, or codex", host)
+	}
+}
+
+func validateCanonicalHookOutput(host string, output []byte) error {
+	if host == "cursor" {
+		var decision map[string]any
+		if err := json.Unmarshal(bytes.TrimSpace(output), &decision); err != nil || stringValue(decision["permission"]) != "allow" {
+			return fmt.Errorf("cursor hook diagnostic returned a malformed or non-allow response")
+		}
+		return nil
+	}
+	if len(bytes.TrimSpace(output)) != 0 {
+		return fmt.Errorf("%s hook diagnostic returned unexpected allow output", host)
+	}
+	return nil
+}
+
+var hookDiagnosticRunner = runInstalledHookDiagnostic
+
+func runInstalledHookDiagnostic(ctx context.Context, repo, host string, input []byte) ([]byte, error) {
+	var command *exec.Cmd
+	if runtime.GOOS == "windows" {
+		path := filepath.Join(repo, ".product-loop", "hooks", "guard.ps1")
+		command = exec.CommandContext(ctx, "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path, "-HostName", host)
+	} else {
+		path := filepath.Join(repo, ".product-loop", "hooks", "guard.sh")
+		command = exec.CommandContext(ctx, "bash", path, host)
+	}
+	command.Dir = repo
+	command.Stdin = bytes.NewReader(append(input, '\n'))
+	return command.CombinedOutput()
+}
+
+// DiagnoseHook runs the installed guard with a canonical, read-only event. It
+// proves the generated wrapper, shared runtime, decoder, and allow contract; it
+// deliberately cannot observe the coding host's live event payload.
+func DiagnoseHook(repoPath, hostName string) (HookDiagnostic, error) {
+	host := strings.ToLower(strings.TrimSpace(hostName))
+	input, err := canonicalHookEvent(host)
+	if err != nil {
+		return HookDiagnostic{}, err
+	}
+	repo, err := ResolveRepository(repoPath)
+	if err != nil {
+		return HookDiagnostic{}, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	output, runErr := hookDiagnosticRunner(ctx, repo, host, input)
+	if ctx.Err() != nil {
+		return HookDiagnostic{}, fmt.Errorf("%s hook diagnostic timed out", host)
+	}
+	if runErr != nil {
+		return HookDiagnostic{}, fmt.Errorf("%s hook diagnostic failed: %s", host, strings.TrimSpace(string(output)))
+	}
+	if err := validateCanonicalHookOutput(host, output); err != nil {
+		return HookDiagnostic{}, err
+	}
+	return HookDiagnostic{Host: host, ContractStatus: "PASS", LiveEventObserved: false}, nil
+}
 
 func guardShellScript() []byte {
 	return []byte(fmt.Sprintf(`#!/usr/bin/env bash

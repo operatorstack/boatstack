@@ -432,6 +432,27 @@ func doctorCommand(arguments []string) int {
 	return 0
 }
 
+func diagnoseHookCommand(arguments []string) int {
+	flags := flag.NewFlagSet("diagnose-hook", flag.ContinueOnError)
+	host := flags.String("host", "", "cursor, claude, or codex")
+	repo := flags.String("repo", ".", "repository whose installed hook should be probed")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	diagnostic, err := boatstack.DiagnoseHook(*repo, *host)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Printf("HOOK_CONTRACT_%s=%s\nLIVE_HOST_EVENT=NOT_OBSERVED\n", strings.ToUpper(diagnostic.Host), diagnostic.ContractStatus)
+	if diagnostic.Host == "cursor" {
+		fmt.Println("NEXT=If Cursor still reports HOST_PAYLOAD_MALFORMED, preserve edits and start a new Cursor task; this probe cannot inspect Cursor's live event.")
+	} else {
+		name := strings.ToUpper(diagnostic.Host[:1]) + diagnostic.Host[1:]
+		fmt.Printf("NEXT=If %s still reports HOST_PAYLOAD_MALFORMED, preserve edits and start a new host session; this probe cannot inspect the live event.\n", name)
+	}
+	return 0
+}
+
 func safetyHookCommand(arguments []string) int {
 	flags := flag.NewFlagSet("safety-hook", flag.ContinueOnError)
 	host := flags.String("host", "", "cursor, claude, or codex")
@@ -578,7 +599,7 @@ func publishPRCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|run-preflight|record-change|record-delivery-gate|check-safety|safety-hook|pr-context|check-pr|publish-pr|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|run-preflight|record-change|record-delivery-gate|check-safety|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -622,6 +643,8 @@ func run() int {
 		return publishPRCommand(os.Args[2:])
 	case "doctor":
 		return doctorCommand(os.Args[2:])
+	case "diagnose-hook":
+		return diagnoseHookCommand(os.Args[2:])
 	case "safety-hook":
 		return safetyHookCommand(os.Args[2:])
 	case "bootstrap-safety-hook":

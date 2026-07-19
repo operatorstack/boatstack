@@ -2,7 +2,7 @@ package boatstack
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,6 +28,16 @@ type SafetyHookOptions struct {
 	Host  string
 	Repo  string
 	Input []byte
+}
+
+type hookDecodeError struct {
+	code string
+}
+
+func (err hookDecodeError) Error() string { return err.code }
+
+func malformedHookInput(code string) error {
+	return hookDecodeError{code: code}
 }
 
 var readOnlyStage = regexp.MustCompile(`(?i)^\s*(?:env\s+[^ ]+\s+)*(?:rg|grep|git\s+(?:grep|diff|status|show|log)|cat|sed|head|tail|less|find\s+[^\n]*-(?:print|ls)|psql\s+[^\n]*\s-c\s+["']?\s*select\b)`)
@@ -177,7 +187,7 @@ func invokedRepositoryFiles(repo, command string) []string {
 
 func ClassifyCommand(repo, command string) []SafetyFinding {
 	if strings.TrimSpace(command) == "" {
-		return []SafetyFinding{{Category: "malformed-tool-input", Reason: "empty shell input is denied by the fail-closed guard", Source: "tool-input"}}
+		return []SafetyFinding{{Category: "malformed-tool-input", Reason: "empty-command", Source: "tool-input"}}
 	}
 	if deliveryStatePathPattern.MatchString(command) && !isPureReadOnlyCommand(command) {
 		return []SafetyFinding{{Category: "workflow-state-tamper", Reason: "managed delivery state may be changed only by Boatstack transitions", Source: "delivery-state"}}
@@ -233,7 +243,7 @@ func ClassifyTool(repo, name string, input any) []SafetyFinding {
 	}
 	value, err := json.Marshal(input)
 	if err != nil {
-		return []SafetyFinding{{Category: "malformed-tool-input", Reason: "tool arguments could not be inspected", Source: "tool-input"}}
+		return []SafetyFinding{{Category: "malformed-tool-input", Reason: "invalid-tool-input", Source: "tool-input"}}
 	}
 	combined := name + " " + string(value)
 	findings := classifySafetyText(combined, "tool-input")
@@ -283,9 +293,12 @@ type hookHostContract struct {
 }
 
 func decodeJSONObject(host string, value []byte) (map[string]any, error) {
+	if len(strings.TrimSpace(string(value))) == 0 {
+		return nil, malformedHookInput("empty-input")
+	}
 	var event map[string]any
 	if err := DecodeJSON("parse "+host+" hook event", "stdin", value, &event); err != nil {
-		return nil, err
+		return nil, malformedHookInput("invalid-json")
 	}
 	return event, nil
 }
@@ -293,16 +306,16 @@ func decodeJSONObject(host string, value []byte) (map[string]any, error) {
 func cursorMCPInput(value any) (any, error) {
 	if text, ok := value.(string); ok {
 		if strings.TrimSpace(text) == "" {
-			return nil, fmt.Errorf("Cursor beforeMCPExecution tool_input is empty")
+			return nil, malformedHookInput("empty-tool-input")
 		}
 		var decoded any
 		if err := json.Unmarshal([]byte(text), &decoded); err != nil {
-			return nil, fmt.Errorf("Cursor beforeMCPExecution tool_input is not valid JSON: %w", err)
+			return nil, malformedHookInput("invalid-tool-input-json")
 		}
 		return decoded, nil
 	}
 	if value == nil {
-		return nil, fmt.Errorf("Cursor beforeMCPExecution is missing tool_input")
+		return nil, malformedHookInput("missing-tool-input")
 	}
 	return value, nil
 }
@@ -319,13 +332,19 @@ func decodeCursorHook(value []byte) (string, any, error) {
 
 	switch eventName {
 	case "beforeShellExecution":
-		if command == "" {
-			return "", nil, fmt.Errorf("Cursor beforeShellExecution is missing command")
+		if _, present := event["command"]; !present {
+			return "", nil, malformedHookInput("missing-command")
+		}
+		if strings.TrimSpace(command) == "" {
+			return "", nil, malformedHookInput("empty-command")
 		}
 		return "Bash", map[string]any{"command": command}, nil
 	case "beforeMCPExecution":
-		if toolName == "" {
-			return "", nil, fmt.Errorf("Cursor beforeMCPExecution is missing tool_name")
+		if _, present := event["tool_name"]; !present {
+			return "", nil, malformedHookInput("missing-tool-name")
+		}
+		if strings.TrimSpace(toolName) == "" {
+			return "", nil, malformedHookInput("empty-tool-name")
 		}
 		input, inputErr := cursorMCPInput(toolInput)
 		if inputErr != nil {
@@ -338,7 +357,7 @@ func decodeCursorHook(value []byte) (string, any, error) {
 		// as the requested tool operation.
 		if toolName != "" && toolInput != nil {
 			if command != "" {
-				return "", nil, fmt.Errorf("legacy Cursor hook input is ambiguous between shell and MCP execution")
+				return "", nil, malformedHookInput("ambiguous-event")
 			}
 			input, inputErr := cursorMCPInput(toolInput)
 			if inputErr != nil {
@@ -349,9 +368,9 @@ func decodeCursorHook(value []byte) (string, any, error) {
 		if command != "" && toolName == "" {
 			return "Bash", map[string]any{"command": command}, nil
 		}
-		return "", nil, fmt.Errorf("legacy Cursor hook input has no unambiguous shell command or MCP tool")
+		return "", nil, malformedHookInput("missing-command-or-tool")
 	default:
-		return "", nil, fmt.Errorf("unsupported Cursor hook event %s", eventName)
+		return "", nil, malformedHookInput("unsupported-event")
 	}
 }
 
@@ -362,18 +381,24 @@ func decodePreToolUseHook(host string, value []byte) (string, any, error) {
 	}
 	eventName := stringValue(event["hook_event_name"])
 	if eventName != "" && eventName != "PreToolUse" {
-		return "", nil, fmt.Errorf("unsupported %s hook event %s", host, eventName)
+		return "", nil, malformedHookInput("unsupported-event")
 	}
 	name := stringValue(event["tool_name"])
 	input := event["tool_input"]
-	if name == "" || input == nil {
-		return "", nil, fmt.Errorf("%s hook input is missing tool_name or tool_input", host)
+	if _, present := event["tool_name"]; !present {
+		return "", nil, malformedHookInput("missing-tool-name")
+	}
+	if strings.TrimSpace(name) == "" {
+		return "", nil, malformedHookInput("empty-tool-name")
+	}
+	if input == nil {
+		return "", nil, malformedHookInput("missing-tool-input")
 	}
 	return name, input, nil
 }
 
-func structuredHookDeny(finding SafetyFinding) ([]byte, error) {
-	message := denialMessage(finding)
+func structuredHookDeny(host string, finding SafetyFinding) ([]byte, error) {
+	message := denialMessage(host, finding)
 	value, err := json.Marshal(map[string]any{
 		"hookSpecificOutput": map[string]any{
 			"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": message,
@@ -390,7 +415,7 @@ var hookHostContracts = map[string]hookHostContract{
 			return append(value, '\n'), err
 		},
 		deny: func(finding SafetyFinding) ([]byte, error) {
-			message := denialMessage(finding)
+			message := denialMessage("cursor", finding)
 			value, err := json.Marshal(map[string]any{
 				"continue": true, "permission": "deny", "user_message": message, "agent_message": message,
 			})
@@ -399,15 +424,30 @@ var hookHostContracts = map[string]hookHostContract{
 	},
 	"claude": {
 		decode: func(value []byte) (string, any, error) { return decodePreToolUseHook("claude", value) },
-		allow:  func() ([]byte, error) { return nil, nil }, deny: structuredHookDeny,
+		allow:  func() ([]byte, error) { return nil, nil },
+		deny:   func(finding SafetyFinding) ([]byte, error) { return structuredHookDeny("claude", finding) },
 	},
 	"codex": {
 		decode: func(value []byte) (string, any, error) { return decodePreToolUseHook("codex", value) },
-		allow:  func() ([]byte, error) { return nil, nil }, deny: structuredHookDeny,
+		allow:  func() ([]byte, error) { return nil, nil },
+		deny:   func(finding SafetyFinding) ([]byte, error) { return structuredHookDeny("codex", finding) },
 	},
 }
 
-func denialMessage(finding SafetyFinding) string {
+func denialMessage(host string, finding SafetyFinding) string {
+	if finding.Category == "malformed-tool-input" {
+		name := strings.ToUpper(strings.TrimSpace(host))
+		if name == "" {
+			name = "HOST"
+		}
+		message := "Boatstack could not inspect the " + name + " hook event (HOST_PAYLOAD_MALFORMED:" + finding.Reason + "). No unsafe operation was detected; execution is denied because the intended command or tool call is unavailable. Retry once with an explicit non-empty command. If this repeats, stop shell and tool retries and preserve current edits."
+		if strings.EqualFold(host, "cursor") {
+			message += " Start a new Cursor task and run `.product-loop/bin/boatstack-helper diagnose-hook --host cursor --repo .` from an external terminal. Do not reinstall Boatstack unless it separately reports a missing, drifted, unsafe, or checksum-invalid runtime."
+		} else {
+			message += " Run `.product-loop/bin/boatstack-helper diagnose-hook --host " + strings.ToLower(host) + " --repo .` from an external terminal before changing the installation."
+		}
+		return message
+	}
 	if finding.Category == "workflow-state-invalid" {
 		return "Boatstack denied publication because managed delivery state cannot be verified. Re-run the active Boatstack operation or repair the installation before publishing."
 	}
@@ -425,7 +465,7 @@ func HookDecision(options SafetyHookOptions) ([]byte, bool) {
 	contract, supported := hookHostContracts[host]
 	if !supported {
 		finding := SafetyFinding{Category: "unsupported-host", Reason: "unknown host is denied by the fail-closed guard", Source: "hook"}
-		value, _ := structuredHookDeny(finding)
+		value, _ := structuredHookDeny("codex", finding)
 		return value, true
 	}
 	repo, err := ResolveRepository(options.Repo)
@@ -436,7 +476,12 @@ func HookDecision(options SafetyHookOptions) ([]byte, bool) {
 	}
 	name, input, err := contract.decode(options.Input)
 	if err != nil {
-		finding := SafetyFinding{Category: "malformed-tool-input", Reason: err.Error(), Source: "hook"}
+		reason := "invalid-event"
+		var decodeErr hookDecodeError
+		if errors.As(err, &decodeErr) {
+			reason = decodeErr.code
+		}
+		finding := SafetyFinding{Category: "malformed-tool-input", Reason: reason, Source: "hook"}
 		value, _ := contract.deny(finding)
 		return value, true
 	}
