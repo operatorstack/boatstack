@@ -279,7 +279,7 @@ Boatstack's repository hooks deny high-confidence irreversible operations across
 
 	adapterSkill := fmt.Sprintf(`---
 name: %s
-	description: Use when the user asks what is next in Boatstack, asks Boatstack to run a feature through ship, or asks Boatstack to auto-plan, repair, approve a plan, build, test, review, ship, update Boatstack, or run a retrospective. Also use automatically when ordinary free-form change language targets an active managed delivery.
+description: Use when the user asks what is next in Boatstack, asks Boatstack to run a feature through ship, or asks Boatstack to auto-plan, repair, approve a plan, build, test, review, ship, update Boatstack, or run a retrospective. Also use automatically when ordinary free-form change language targets an active managed delivery.
 ---
 
 # Boatstack adapter
@@ -387,6 +387,9 @@ List explicit gaps with impact and revisit trigger, or state that no material ga
 
 </details>
 `)
+	}
+	if err := validateGeneratedSkills(files); err != nil {
+		return ExportBundle{}, err
 	}
 
 	hashes := map[string]string{}
