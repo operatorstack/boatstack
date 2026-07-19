@@ -223,6 +223,11 @@ func TestExportAndDriftCheck(t *testing.T) {
 	if !strings.Contains(build, "activate-plan") || !strings.Contains(build, "READY_FOR_BUILD") || !strings.Contains(build, "without activating") || strings.Contains(build, "compile-plan") {
 		t.Fatal("build adapter must activate the Markdown plan exactly once")
 	}
+	for _, expected := range []string{"## [Unreleased] - YYYY-MM-DD", "do not add empty category headings", "without rewriting its history or layout"} {
+		if !strings.Contains(build, expected) {
+			t.Fatalf("build adapter is missing changelog authoring rule %q", expected)
+		}
+	}
 	if !strings.Contains(build, "delivery-status") || !strings.Contains(build, "push and PR mutation are never build tactics") {
 		t.Fatal("build adapter does not confine work to the active delivery slice")
 	}

@@ -276,33 +276,93 @@ func dedupeFindings(values []SafetyFinding) []SafetyFinding {
 	return result
 }
 
-func hookToolInput(host string, value []byte) (string, any, error) {
+type hookHostContract struct {
+	decode func([]byte) (string, any, error)
+	allow  func() ([]byte, error)
+	deny   func(SafetyFinding) ([]byte, error)
+}
+
+func decodeJSONObject(host string, value []byte) (map[string]any, error) {
 	var event map[string]any
 	if err := DecodeJSON("parse "+host+" hook event", "stdin", value, &event); err != nil {
+		return nil, err
+	}
+	return event, nil
+}
+
+func cursorMCPInput(value any) (any, error) {
+	if text, ok := value.(string); ok {
+		if strings.TrimSpace(text) == "" {
+			return nil, fmt.Errorf("Cursor beforeMCPExecution tool_input is empty")
+		}
+		var decoded any
+		if err := json.Unmarshal([]byte(text), &decoded); err != nil {
+			return nil, fmt.Errorf("Cursor beforeMCPExecution tool_input is not valid JSON: %w", err)
+		}
+		return decoded, nil
+	}
+	if value == nil {
+		return nil, fmt.Errorf("Cursor beforeMCPExecution is missing tool_input")
+	}
+	return value, nil
+}
+
+func decodeCursorHook(value []byte) (string, any, error) {
+	event, err := decodeJSONObject("cursor", value)
+	if err != nil {
 		return "", nil, err
 	}
-	if host == "cursor" {
-		command := stringValue(event["command"])
+	eventName := stringValue(event["hook_event_name"])
+	command := stringValue(event["command"])
+	toolName := stringValue(event["tool_name"])
+	toolInput := event["tool_input"]
+
+	switch eventName {
+	case "beforeShellExecution":
 		if command == "" {
-			if input, ok := event["tool_input"].(map[string]any); ok {
-				command = stringValue(input["command"])
-			}
+			return "", nil, fmt.Errorf("Cursor beforeShellExecution is missing command")
 		}
-		if command != "" {
+		return "Bash", map[string]any{"command": command}, nil
+	case "beforeMCPExecution":
+		if toolName == "" {
+			return "", nil, fmt.Errorf("Cursor beforeMCPExecution is missing tool_name")
+		}
+		input, inputErr := cursorMCPInput(toolInput)
+		if inputErr != nil {
+			return "", nil, inputErr
+		}
+		return toolName, input, nil
+	case "":
+		// Older Cursor builds omitted hook_event_name. Preserve only the two
+		// unambiguous shapes; an MCP transport command must never be classified
+		// as the requested tool operation.
+		if toolName != "" && toolInput != nil {
+			if command != "" {
+				return "", nil, fmt.Errorf("legacy Cursor hook input is ambiguous between shell and MCP execution")
+			}
+			input, inputErr := cursorMCPInput(toolInput)
+			if inputErr != nil {
+				return "", nil, inputErr
+			}
+			return toolName, input, nil
+		}
+		if command != "" && toolName == "" {
 			return "Bash", map[string]any{"command": command}, nil
 		}
-		name := stringValue(event["tool_name"])
-		if name == "" {
-			name = stringValue(event["server_name"]) + "_" + stringValue(event["method"])
-		}
-		input := event["tool_input"]
-		if input == nil {
-			input = event["arguments"]
-		}
-		if strings.Trim(name, "_") == "" || input == nil {
-			return "", nil, fmt.Errorf("Cursor hook input has no command or MCP tool arguments")
-		}
-		return name, input, nil
+		return "", nil, fmt.Errorf("legacy Cursor hook input has no unambiguous shell command or MCP tool")
+	default:
+		return "", nil, fmt.Errorf("unsupported Cursor hook event %s", eventName)
+	}
+}
+
+func decodePreToolUseHook(host string, value []byte) (string, any, error) {
+	event, err := decodeJSONObject(host, value)
+	if err != nil {
+		return "", nil, err
+	}
+	eventName := stringValue(event["hook_event_name"])
+	if eventName != "" && eventName != "PreToolUse" {
+		return "", nil, fmt.Errorf("unsupported %s hook event %s", host, eventName)
 	}
 	name := stringValue(event["tool_name"])
 	input := event["tool_input"]
@@ -310,6 +370,41 @@ func hookToolInput(host string, value []byte) (string, any, error) {
 		return "", nil, fmt.Errorf("%s hook input is missing tool_name or tool_input", host)
 	}
 	return name, input, nil
+}
+
+func structuredHookDeny(finding SafetyFinding) ([]byte, error) {
+	message := denialMessage(finding)
+	value, err := json.Marshal(map[string]any{
+		"hookSpecificOutput": map[string]any{
+			"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": message,
+		},
+	})
+	return append(value, '\n'), err
+}
+
+var hookHostContracts = map[string]hookHostContract{
+	"cursor": {
+		decode: decodeCursorHook,
+		allow: func() ([]byte, error) {
+			value, err := json.Marshal(map[string]any{"continue": true, "permission": "allow"})
+			return append(value, '\n'), err
+		},
+		deny: func(finding SafetyFinding) ([]byte, error) {
+			message := denialMessage(finding)
+			value, err := json.Marshal(map[string]any{
+				"continue": true, "permission": "deny", "user_message": message, "agent_message": message,
+			})
+			return append(value, '\n'), err
+		},
+	},
+	"claude": {
+		decode: func(value []byte) (string, any, error) { return decodePreToolUseHook("claude", value) },
+		allow:  func() ([]byte, error) { return nil, nil }, deny: structuredHookDeny,
+	},
+	"codex": {
+		decode: func(value []byte) (string, any, error) { return decodePreToolUseHook("codex", value) },
+		allow:  func() ([]byte, error) { return nil, nil }, deny: structuredHookDeny,
+	},
 }
 
 func denialMessage(finding SafetyFinding) string {
@@ -327,49 +422,31 @@ func denialMessage(finding SafetyFinding) string {
 
 func HookDecision(options SafetyHookOptions) ([]byte, bool) {
 	host := strings.ToLower(strings.TrimSpace(options.Host))
-	if host != "cursor" && host != "claude" && host != "codex" {
+	contract, supported := hookHostContracts[host]
+	if !supported {
 		finding := SafetyFinding{Category: "unsupported-host", Reason: "unknown host is denied by the fail-closed guard", Source: "hook"}
-		value, _ := hookDenyJSON("codex", finding)
+		value, _ := structuredHookDeny(finding)
 		return value, true
 	}
 	repo, err := ResolveRepository(options.Repo)
 	if err != nil {
 		finding := SafetyFinding{Category: "unresolved-repository", Reason: "repository identity could not be established", Source: "hook"}
-		value, _ := hookDenyJSON(host, finding)
+		value, _ := contract.deny(finding)
 		return value, true
 	}
-	name, input, err := hookToolInput(host, options.Input)
+	name, input, err := contract.decode(options.Input)
 	if err != nil {
 		finding := SafetyFinding{Category: "malformed-tool-input", Reason: err.Error(), Source: "hook"}
-		value, _ := hookDenyJSON(host, finding)
+		value, _ := contract.deny(finding)
 		return value, true
 	}
 	findings := ClassifyTool(repo, name, input)
 	if len(findings) == 0 {
-		if host == "cursor" {
-			value, _ := json.Marshal(map[string]any{"continue": true, "permission": "allow"})
-			return append(value, '\n'), false
-		}
-		return nil, false
+		value, _ := contract.allow()
+		return value, false
 	}
-	value, _ := hookDenyJSON(host, findings[0])
+	value, _ := contract.deny(findings[0])
 	return value, true
-}
-
-func hookDenyJSON(host string, finding SafetyFinding) ([]byte, error) {
-	message := denialMessage(finding)
-	if host == "cursor" {
-		value, err := json.Marshal(map[string]any{
-			"continue": true, "permission": "deny", "user_message": message, "agent_message": message,
-		})
-		return append(value, '\n'), err
-	}
-	value, err := json.Marshal(map[string]any{
-		"hookSpecificOutput": map[string]any{
-			"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": message,
-		},
-	})
-	return append(value, '\n'), err
 }
 
 func operationalChangedFiles(repo string, highRisk []string, defaultBranch string) ([]string, error) {

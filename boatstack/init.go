@@ -515,7 +515,8 @@ func RunInit(options InitOptions) (returnErr error) {
 	} else {
 		fmt.Fprintln(options.Output, "\nPASS: Boatstack core installed without a language runtime.")
 	}
-	fmt.Fprintln(options.Output, "PASS: fail-closed irreversible-operation hooks verified for installed hosts.")
+	fmt.Fprintln(options.Output, "PASS: generated irreversible-operation hook contracts verified for installed hosts.")
+	fmt.Fprintln(options.Output, "Host activation remains an operator-visible boundary; run doctor after reload and verify each host reports its hook as active.")
 	fmt.Fprintln(options.Output, "Hooks are defense in depth; keep least-privilege credentials and service-side destructive approval.")
 	keys := sortedKeys(states)
 	for _, name := range keys {
@@ -557,6 +558,10 @@ func RunInit(options InitOptions) (returnErr error) {
 		fmt.Fprintln(options.Output, "\nAfter that PR is merged, reload Cursor, Codex, or Claude and start in Plan mode:")
 		fmt.Fprintln(options.Output, "  1. Describe the product change and save the host plan (use .product-loop/intake/ if the host exposes no path).")
 	}
+	fmt.Fprintln(options.Output, "Host activation checklist:")
+	fmt.Fprintln(options.Output, "  Cursor: reload the window and confirm beforeShellExecution and beforeMCPExecution are enabled; the hook is defense in depth.")
+	fmt.Fprintln(options.Output, "  Claude Code: reload, then use /hooks to confirm the Boatstack PreToolUse hook is active (Bash is required).")
+	fmt.Fprintln(options.Output, "  Codex: trust this exact linked-worktree path, use /hooks to review and trust the Boatstack hook, then start a new task.")
 	fmt.Fprintln(options.Output, "Boatstack start command by host:")
 	fmt.Fprintln(options.Output, "  Claude Code: /auto-plan")
 	fmt.Fprintln(options.Output, "  Cursor: /auto-plan")

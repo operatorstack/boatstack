@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const changelogPath = "CHANGELOG.md"
@@ -20,6 +21,18 @@ var changelogCategories = map[string]bool{
 	"Maintenance":   true,
 }
 
+func isUnreleasedHeading(line string) bool {
+	if line == "## Unreleased" || line == "## [Unreleased]" {
+		return true
+	}
+	const prefix = "## [Unreleased] - "
+	if !strings.HasPrefix(line, prefix) {
+		return false
+	}
+	_, err := time.Parse("2006-01-02", strings.TrimPrefix(line, prefix))
+	return err == nil
+}
+
 // changelogEntries returns the categorized bullets in the Unreleased section.
 // Historical release sections are intentionally ignored: the policy requires a
 // new reader-facing entry for the change being prepared, not rewritten history.
@@ -31,7 +44,7 @@ func changelogEntries(value []byte) (map[string]int, error) {
 	for _, rawLine := range strings.Split(strings.ReplaceAll(string(value), "\r\n", "\n"), "\n") {
 		line := strings.TrimSpace(rawLine)
 		if strings.HasPrefix(line, "## ") {
-			if line == "## Unreleased" {
+			if isUnreleasedHeading(line) {
 				if foundUnreleased {
 					return nil, fmt.Errorf("%s must contain exactly one ## Unreleased section", changelogPath)
 				}

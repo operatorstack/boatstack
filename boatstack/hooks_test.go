@@ -50,13 +50,59 @@ func TestHostHookMergeRejectsAmbiguousCollisionAndDrift(t *testing.T) {
 		t.Fatalf("expected ambiguous collision, got %v", err)
 	}
 	config = map[string]any{"hooks": map[string]any{"PreToolUse": []any{desiredHostHook("codex")}}}
-	config["hooks"].(map[string]any)["PreToolUse"].([]any)[0].(map[string]any)["timeout"] = float64(99)
+	handler := config["hooks"].(map[string]any)["PreToolUse"].([]any)[0].(map[string]any)["hooks"].([]any)[0].(map[string]any)
+	handler["timeout"] = float64(99)
 	value, _ = MarshalJSON(config)
 	if err := os.WriteFile(path, value, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := CheckHostHooks(repo, []string{"codex"}); err == nil || !strings.Contains(err.Error(), "drifted") {
 		t.Fatalf("expected drifted fragment failure, got %v", err)
+	}
+}
+
+func TestGeneratedHostHooksSatisfyHarnessShapes(t *testing.T) {
+	for _, host := range []string{"cursor", "claude", "codex"} {
+		t.Run(host, func(t *testing.T) {
+			for _, event := range hookEvents(host) {
+				entry := desiredHostHookForEvent(host, event)
+				if err := validateBoatstackHookEntry(host, event, entry); err != nil {
+					t.Fatal(err)
+				}
+				if host == "claude" {
+					handler := entry["hooks"].([]any)[0].(map[string]any)
+					if handler["shell"] != "bash" || !strings.Contains(handler["command"].(string), "${CLAUDE_PROJECT_DIR}") {
+						t.Fatalf("Claude hook does not use its documented project Bash harness: %#v", handler)
+					}
+				}
+				if host == "codex" {
+					handler := entry["hooks"].([]any)[0].(map[string]any)
+					if stringValue(handler["commandWindows"]) == "" {
+						t.Fatalf("Codex hook lacks commandWindows: %#v", handler)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestHostHookValidationRejectsUnsupportedBoatstackFields(t *testing.T) {
+	entry := desiredHostHook("claude")
+	handler := entry["hooks"].([]any)[0].(map[string]any)
+	handler["commandWindows"] = "unsupported"
+	if err := validateBoatstackHookEntry("claude", "PreToolUse", entry); err == nil || !strings.Contains(err.Error(), "unsupported") {
+		t.Fatalf("expected unsupported Claude field failure, got %v", err)
+	}
+}
+
+func TestHostHookValidationRejectsWrongEventAndCursorVersion(t *testing.T) {
+	codex := map[string]any{"hooks": map[string]any{"PostToolUse": []any{desiredHostHook("codex")}}}
+	if err := validateHostHookConfig("codex", codex); err == nil || !strings.Contains(err.Error(), "unsupported event") {
+		t.Fatalf("expected wrong Codex event failure, got %v", err)
+	}
+	cursor := map[string]any{"version": float64(2), "hooks": map[string]any{"beforeShellExecution": []any{desiredHostHook("cursor")}}}
+	if err := validateHostHookConfig("cursor", cursor); err == nil || !strings.Contains(err.Error(), "version must be 1") {
+		t.Fatalf("expected Cursor version failure, got %v", err)
 	}
 }
 

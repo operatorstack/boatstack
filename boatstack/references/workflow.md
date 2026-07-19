@@ -252,11 +252,14 @@ ad-hoc PR path.
 Scan operational changes and configured `high_risk_paths` before activation and after relevant edits. A dangerous capability may remain visible as source for review, but it cannot execute and blocks progression until removed or isolated behind the operator boundary.
 
 When `workflow.maintain_changelog` is enabled, update `CHANGELOG.md` before
-recording test evidence. Add a concise bullet under `## Unreleased` and one of
+recording test evidence. Add a concise bullet under the current Unreleased heading and one of
 `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Documentation`, or
 `Maintenance`. Describe the actual reader-visible outcome, not the commit, PR,
-Boatstack artifacts, or test commands. If the file does not exist, create the
-documented skeleton and its first entry.
+Boatstack artifacts, or test commands. Add only the category needed by the entry;
+do not add empty category headings. If the file does not exist, create the
+documented minimal skeleton with `## [Unreleased] - YYYY-MM-DD` and its first
+entry. If it exists, add to the current file without rewriting its released
+history or existing layout.
 
 ### `BUILD -> TEST_GATE`
 
