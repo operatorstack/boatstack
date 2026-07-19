@@ -50,6 +50,8 @@ Review and commit the paths printed by the installer. Merge this infrastructure 
 
 The installer keeps a versioned, verified runtime under Git's common directory. A linked worktree still starts without the ignored `.product-loop/bin/` directory, but its first guarded Cursor, Codex, or Claude call restores that local runtime automatically before evaluating the original command. This performs no download and changes no tracked files.
 
+Host activation is separate from runtime installation. Codex requires the exact linked-worktree project path and hook definition to be reviewed and trusted through `/hooks`; start a new task after trusting it. Claude Code requires Bash and exposes the active `PreToolUse` hook through `/hooks`. Cursor requires a window reload and enabled `beforeShellExecution` and `beforeMCPExecution` hooks.
+
 Different Boatstack versions use separate cached runtimes, so an older worktree is not silently run with a newer helper. A separate clone has a different Git common directory and still needs one installer run.
 
 ## 2. Start with the idea

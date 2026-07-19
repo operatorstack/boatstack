@@ -156,13 +156,14 @@ func TestInvokedRepositoryScriptIsInspected(t *testing.T) {
 
 func TestMCPAndMalformedEventsFailClosedWithoutEchoingSecrets(t *testing.T) {
 	repo := safetyTestRepo(t)
-	event := []byte(`{"tool_name":"mcp__cloud__delete_database","tool_input":{"database":"primary","token":"secret-value"}}`)
+	event := []byte(`{"hook_event_name":"beforeMCPExecution","tool_name":"mcp__cloud__delete_database","tool_input":{"database":"primary","token":"secret-value"}}`)
 	cursorOutput, cursorDenied := HookDecision(SafetyHookOptions{Host: "cursor", Repo: repo, Input: event})
 	if !cursorDenied || !strings.Contains(string(cursorOutput), `"permission":"deny"`) {
 		t.Fatalf("Cursor MCP deletion was not denied: %s", cursorOutput)
 	}
 	for _, host := range []string{"claude", "codex"} {
-		output, denied := HookDecision(SafetyHookOptions{Host: host, Repo: repo, Input: event})
+		preToolEvent := []byte(`{"hook_event_name":"PreToolUse","tool_name":"mcp__cloud__delete_database","tool_input":{"database":"primary","token":"secret-value"}}`)
+		output, denied := HookDecision(SafetyHookOptions{Host: host, Repo: repo, Input: preToolEvent})
 		if !denied || !strings.Contains(string(output), `"permissionDecision":"deny"`) {
 			t.Fatalf("%s MCP deletion was not denied: %s", host, output)
 		}
@@ -173,6 +174,60 @@ func TestMCPAndMalformedEventsFailClosedWithoutEchoingSecrets(t *testing.T) {
 	output, denied := HookDecision(SafetyHookOptions{Host: "cursor", Repo: repo, Input: []byte(`{"bad":true}`)})
 	if !denied || !strings.Contains(string(output), `"permission":"deny"`) {
 		t.Fatalf("malformed Cursor event did not fail closed: %s", output)
+	}
+}
+
+func TestHostContractsNormalizeCanonicalInputs(t *testing.T) {
+	repo := safetyTestRepo(t)
+	cases := []struct {
+		name, host string
+		input      string
+		denied     bool
+		output     string
+	}{
+		{"cursor shell allow", "cursor", `{"hook_event_name":"beforeShellExecution","command":"git status --short"}`, false, `"permission":"allow"`},
+		{"cursor shell deny", "cursor", `{"hook_event_name":"beforeShellExecution","command":"git reset --hard HEAD~1"}`, true, `"permission":"deny"`},
+		{"cursor MCP object deny ignores transport command", "cursor", `{"hook_event_name":"beforeMCPExecution","tool_name":"mcp__cloud__delete_database","tool_input":{"database":"primary"},"command":"docker"}`, true, `"permission":"deny"`},
+		{"cursor MCP string deny ignores transport URL", "cursor", `{"hook_event_name":"beforeMCPExecution","tool_name":"mcp__cloud__delete_database","tool_input":"{\"database\":\"primary\"}","url":"https://example.invalid/mcp"}`, true, `"permission":"deny"`},
+		{"cursor legacy shell allow", "cursor", `{"command":"git status --short"}`, false, `"permission":"allow"`},
+		{"cursor legacy ambiguous deny", "cursor", `{"command":"docker","tool_name":"mcp__status__read","tool_input":{}}`, true, `"permission":"deny"`},
+		{"claude allow", "claude", `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git status --short"}}`, false, ""},
+		{"claude deny", "claude", `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git reset --hard HEAD~1"}}`, true, `"permissionDecision":"deny"`},
+		{"codex allow", "codex", `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git status --short"}}`, false, ""},
+		{"codex deny", "codex", `{"hook_event_name":"PreToolUse","tool_name":"mcp__cloud__delete_database","tool_input":{"database":"primary"}}`, true, `"permissionDecision":"deny"`},
+		{"wrong event deny", "codex", `{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"git status --short"}}`, true, `"permissionDecision":"deny"`},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			output, denied := HookDecision(SafetyHookOptions{Host: test.host, Repo: repo, Input: []byte(test.input)})
+			if denied != test.denied {
+				t.Fatalf("denied = %t, want %t; output=%s", denied, test.denied, output)
+			}
+			if test.output != "" && !strings.Contains(string(output), test.output) {
+				t.Fatalf("output %s does not contain %s", output, test.output)
+			}
+			if test.output == "" && len(output) != 0 {
+				t.Fatalf("expected empty allow output, got %s", output)
+			}
+		})
+	}
+}
+
+func TestMalformedHostPayloadsDenyWithoutLeakingInput(t *testing.T) {
+	repo := safetyTestRepo(t)
+	for _, test := range []struct{ host, input string }{
+		{"cursor", `{"hook_event_name":"beforeMCPExecution","tool_name":"mcp__cloud__delete_database","tool_input":"secret-not-json"}`},
+		{"cursor", `{"hook_event_name":"unknown","command":"secret-command"}`},
+		{"claude", `{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"secret-command"}}`},
+		{"codex", `{"hook_event_name":"PreToolUse","tool_name":"Bash"}`},
+	} {
+		output, denied := HookDecision(SafetyHookOptions{Host: test.host, Repo: repo, Input: []byte(test.input)})
+		if !denied {
+			t.Fatalf("%s malformed payload was allowed", test.host)
+		}
+		if strings.Contains(string(output), "secret") {
+			t.Fatalf("%s denial leaked input: %s", test.host, output)
+		}
 	}
 }
 

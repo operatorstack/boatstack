@@ -44,7 +44,7 @@ func TestRuntimeFreeInit(t *testing.T) {
 	if !strings.Contains(output.String(), "PASS: Boatstack core installed without a language runtime") {
 		t.Fatalf("unexpected init output: %s", output.String())
 	}
-	for _, expected := range []string{"fail-closed irreversible-operation hooks verified", "least-privilege credentials"} {
+	for _, expected := range []string{"generated irreversible-operation hook contracts verified", "Host activation remains an operator-visible boundary", "least-privilege credentials"} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("init output is missing safety guidance %q: %s", expected, output.String())
 		}
@@ -61,6 +61,8 @@ func TestRuntimeFreeInit(t *testing.T) {
 		"Cursor: /auto-plan",
 		"Codex: $boatstack auto-plan",
 		"reload Claude Code before using its slash commands",
+		"trust this exact linked-worktree path",
+		"beforeShellExecution and beforeMCPExecution",
 	} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("init output is missing host start guidance %q: %s", expected, output.String())
