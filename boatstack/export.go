@@ -197,7 +197,7 @@ func BuildExportBundle(configPath string, config ProjectConfig, rawConfig []byte
 		}
 	}
 
-	for _, name := range []string{"workflow.md", "artifacts.md", "failure-moves.md", "irreversible-operation-boundary.md"} {
+	for _, name := range []string{"workflow.md", "artifacts.md", "failure-moves.md", "irreversible-operation-boundary.md", "host-hook-contracts.md"} {
 		value, err := readCanonical("references/" + name)
 		if err != nil {
 			return ExportBundle{}, err

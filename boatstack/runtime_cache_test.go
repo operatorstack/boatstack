@@ -37,6 +37,31 @@ func TestHydrateWorktreeRestoresIgnoredRuntime(t *testing.T) {
 	}
 }
 
+func TestHydrationPrecedesEveryHostContractDecision(t *testing.T) {
+	repo := runtimeTestRepo(t)
+	inputs := map[string][]byte{
+		"cursor": []byte(`{"hook_event_name":"beforeShellExecution","command":"git status --short"}`),
+		"claude": []byte(`{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git status --short"}}`),
+		"codex":  []byte(`{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git status --short"}}`),
+	}
+	for _, host := range []string{"cursor", "claude", "codex"} {
+		t.Run(host, func(t *testing.T) {
+			if err := os.RemoveAll(filepath.Join(repo, ".product-loop", "bin")); err != nil {
+				t.Fatal(err)
+			}
+			if err := HydrateWorktree(repo); err != nil {
+				t.Fatal(err)
+			}
+			if _, denied := HookDecision(SafetyHookOptions{Host: host, Repo: repo, Input: inputs[host]}); denied {
+				t.Fatalf("%s denied its safe first hydrated event", host)
+			}
+			if err := verifyLocalRuntime(repo); err != nil {
+				t.Fatalf("%s did not leave a verified local runtime: %v", host, err)
+			}
+		})
+	}
+}
+
 func TestHydrateWorktreeIsSafeUnderConcurrentFirstUse(t *testing.T) {
 	repo := runtimeTestRepo(t)
 	if err := os.RemoveAll(filepath.Join(repo, ".product-loop", "bin")); err != nil {

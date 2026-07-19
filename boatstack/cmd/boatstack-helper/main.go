@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	boatstack "github.com/operatorstack/boatstack/boatstack"
 )
@@ -14,6 +15,32 @@ import (
 func fail(err error) int {
 	fmt.Fprintln(os.Stderr, "BLOCKED:", err)
 	return 1
+}
+
+const cursorHookSettleDelay = 50 * time.Millisecond
+
+var hookOutputSleep = time.Sleep
+
+func emitHookOutput(writer io.Writer, host string, value []byte) error {
+	if len(value) == 0 {
+		return nil
+	}
+	if _, err := writer.Write(value); err != nil {
+		return err
+	}
+	// Cursor currently has a host-side race that can lose output from compiled
+	// hooks which exit immediately. Keep the workaround isolated to its adapter.
+	if strings.EqualFold(strings.TrimSpace(host), "cursor") {
+		hookOutputSleep(cursorHookSettleDelay)
+	}
+	return nil
+}
+
+func failSafetyHook(err error) int {
+	fmt.Fprintln(os.Stderr, "BLOCKED:", err)
+	// Claude Code and Codex both define exit 2 as a blocking PreToolUse error.
+	// Exit 1 is non-blocking in Claude and must never represent policy failure.
+	return 2
 }
 
 func initCommand(arguments []string) int {
@@ -383,6 +410,22 @@ func doctorCommand(arguments []string) int {
 		return fail(err)
 	}
 	fmt.Printf("PASS: Boatstack %s installation and generated adapters are healthy\n", boatstack.Version)
+	hosts, err := boatstack.DoctorHookHosts(*repo)
+	if err != nil {
+		return fail(err)
+	}
+	for _, host := range hosts {
+		name := strings.ToUpper(host)
+		fmt.Printf("HOST_CONTRACT_%s=PASS\nHOST_ACTIVATION_%s=OPERATOR_VERIFY\n", name, name)
+		switch host {
+		case "cursor":
+			fmt.Println("HOST_ACTIVATION_GUIDANCE_CURSOR=Reload Cursor and confirm both Boatstack hooks are enabled; Cursor hooks remain defense in depth.")
+		case "claude":
+			fmt.Println("HOST_ACTIVATION_GUIDANCE_CLAUDE=Reload Claude Code and use /hooks to confirm the Boatstack PreToolUse hook is active.")
+		case "codex":
+			fmt.Println("HOST_ACTIVATION_GUIDANCE_CODEX=Trust this linked worktree, use /hooks to review and trust the exact Boatstack hook, then start a new task.")
+		}
+	}
 	if update, ok := boatstack.CachedUpdate(*repo); ok {
 		fmt.Printf("UPDATE_AVAILABLE=%s\nRELEASE_URL=%s\n", update.LatestVersion, update.ReleaseURL)
 	}
@@ -401,8 +444,8 @@ func safetyHookCommand(arguments []string) int {
 		input = nil
 	}
 	value, _ := boatstack.HookDecision(boatstack.SafetyHookOptions{Host: *host, Repo: *repo, Input: input})
-	if len(value) > 0 {
-		fmt.Print(string(value))
+	if err := emitHookOutput(os.Stdout, *host, value); err != nil {
+		return failSafetyHook(fmt.Errorf("cannot emit hook decision: %w", err))
 	}
 	return 0
 }
@@ -419,11 +462,11 @@ func bootstrapSafetyHookCommand(arguments []string) int {
 		input = nil
 	}
 	if err := boatstack.HydrateWorktree(*repo); err != nil {
-		return fail(fmt.Errorf("worktree runtime activation failed: %w", err))
+		return failSafetyHook(fmt.Errorf("worktree runtime activation failed: %w", err))
 	}
 	value, _ := boatstack.HookDecision(boatstack.SafetyHookOptions{Host: *host, Repo: *repo, Input: input})
-	if len(value) > 0 {
-		fmt.Print(string(value))
+	if err := emitHookOutput(os.Stdout, *host, value); err != nil {
+		return failSafetyHook(fmt.Errorf("cannot emit hook decision: %w", err))
 	}
 	return 0
 }

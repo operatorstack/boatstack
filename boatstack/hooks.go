@@ -124,6 +124,9 @@ exit $LASTEXITCODE
 }
 
 func hookCommand(host string) string {
+	if host == "claude" {
+		return `bash "${CLAUDE_PROJECT_DIR}/.product-loop/hooks/guard.sh" claude`
+	}
 	return `bash "$(git rev-parse --show-toplevel)/.product-loop/hooks/guard.sh" ` + host
 }
 
@@ -143,7 +146,7 @@ func desiredHostHookForEvent(host, event string) map[string]any {
 			"matcher": "Bash|Shell|mcp__.*",
 			"hooks": []any{map[string]any{
 				"type": "command", "command": hookCommand(host),
-				"timeout": 10, "statusMessage": "Checking Boatstack execution policy",
+				"shell": "bash", "timeout": 10, "statusMessage": "Checking Boatstack execution policy",
 			}},
 		}
 	case "codex":
@@ -221,6 +224,79 @@ func containsBoatstackHook(value any) bool {
 	return false
 }
 
+func validateBoatstackHookEntry(host, event string, value any) error {
+	entry, ok := value.(map[string]any)
+	if !ok {
+		return fmt.Errorf("%s Boatstack hook for %s is not an object", host, event)
+	}
+	allowedOuter := map[string]bool{}
+	if host == "cursor" {
+		allowedOuter = map[string]bool{"command": true, "commandWindows": true, "failClosed": true, "timeout": true}
+		if stringValue(entry["command"]) == "" {
+			return fmt.Errorf("cursor Boatstack hook for %s has no command", event)
+		}
+		if entry["failClosed"] != true {
+			return fmt.Errorf("cursor Boatstack hook for %s must fail closed", event)
+		}
+	} else {
+		allowedOuter = map[string]bool{"matcher": true, "hooks": true}
+		if stringValue(entry["matcher"]) == "" {
+			return fmt.Errorf("%s Boatstack hook for %s has no matcher", host, event)
+		}
+		handlers, ok := entry["hooks"].([]any)
+		if !ok || len(handlers) != 1 {
+			return fmt.Errorf("%s Boatstack hook for %s must contain exactly one command handler", host, event)
+		}
+		handler, ok := handlers[0].(map[string]any)
+		if !ok || handler["type"] != "command" || stringValue(handler["command"]) == "" {
+			return fmt.Errorf("%s Boatstack hook for %s has an invalid command handler", host, event)
+		}
+		allowedHandler := map[string]bool{"type": true, "command": true, "timeout": true, "statusMessage": true}
+		if host == "claude" {
+			allowedHandler["shell"] = true
+			// Older installed Boatstack fragments relied on Claude's Bash default.
+			// Accept that structurally during update preflight, while every newly
+			// generated hook pins the documented shell explicitly.
+			if handler["shell"] != nil && handler["shell"] != "bash" {
+				return fmt.Errorf("claude Boatstack hook for %s must use the bash harness", event)
+			}
+		} else {
+			allowedHandler["commandWindows"] = true
+		}
+		for key := range handler {
+			if !allowedHandler[key] {
+				return fmt.Errorf("%s Boatstack hook for %s contains unsupported handler field %s", host, event, key)
+			}
+		}
+	}
+	for key := range entry {
+		if !allowedOuter[key] {
+			return fmt.Errorf("%s Boatstack hook for %s contains unsupported field %s", host, event, key)
+		}
+	}
+	return nil
+}
+
+func validateHostHookConfig(host string, config map[string]any) error {
+	if host == "cursor" && config["version"] != float64(1) {
+		return fmt.Errorf("Cursor hook config version must be 1")
+	}
+	hooks, ok := config["hooks"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("host hook config has non-object hooks")
+	}
+	expected := map[string]bool{}
+	for _, event := range hookEvents(host) {
+		expected[event] = true
+	}
+	for event, entries := range hooks {
+		if containsBoatstackHook(entries) && !expected[event] {
+			return fmt.Errorf("%s Boatstack hook is attached to unsupported event %s", host, event)
+		}
+	}
+	return nil
+}
+
 func loadHookConfig(path string) (map[string]any, error) {
 	value, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -258,6 +334,9 @@ func mergeHostHook(config map[string]any, host string) error {
 		for _, entry := range entries {
 			if containsBoatstackHook(entry) {
 				found++
+				if err := validateBoatstackHookEntry(host, event, entry); err != nil {
+					return err
+				}
 				continue
 			}
 			kept = append(kept, entry)
@@ -271,7 +350,7 @@ func mergeHostHook(config map[string]any, host string) error {
 	if host == "cursor" && config["version"] == nil {
 		config["version"] = float64(1)
 	}
-	return nil
+	return validateHostHookConfig(host, config)
 }
 
 func InstallHostHooks(repo string, adapters []string) error {
@@ -361,6 +440,9 @@ func checkHostHooks(repo string, adapters []string, expectedForEvent func(host, 
 		if err != nil {
 			return err
 		}
+		if err := validateHostHookConfig(host, config); err != nil {
+			return err
+		}
 		hooks, ok := config["hooks"].(map[string]any)
 		if !ok {
 			return fmt.Errorf("missing %s hooks in %s", host, path)
@@ -368,6 +450,9 @@ func checkHostHooks(repo string, adapters []string, expectedForEvent func(host, 
 		for _, event := range hookEvents(host) {
 			expectedEntry, err := expectedForEvent(host, event)
 			if err != nil {
+				return err
+			}
+			if err := validateBoatstackHookEntry(host, event, expectedEntry); err != nil {
 				return err
 			}
 			entries, ok := hooks[event].([]any)
@@ -378,6 +463,9 @@ func checkHostHooks(repo string, adapters []string, expectedForEvent func(host, 
 			for _, entry := range entries {
 				if containsBoatstackHook(entry) {
 					matches++
+					if err := validateBoatstackHookEntry(host, event, entry); err != nil {
+						return err
+					}
 					current, _ := json.Marshal(entry)
 					expected, _ := json.Marshal(expectedEntry)
 					if string(current) != string(expected) {

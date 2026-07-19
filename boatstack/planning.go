@@ -199,6 +199,12 @@ func Doctor(repoPath string) error {
 	if err := CheckHostHooks(repo, config.Adapters); err != nil {
 		return err
 	}
+	hostAdapters := normalizedAdapters(config.Adapters)
+	if contains(hostAdapters, "claude") {
+		if _, err := lookPath("bash"); err != nil {
+			return fmt.Errorf("Claude Code safety hooks require Bash; install Git Bash or Bash, then rerun doctor")
+		}
+	}
 	if err := verifyGeneratedRuntime(repo); err != nil {
 		return err
 	}
@@ -206,23 +212,46 @@ func Doctor(repoPath string) error {
 		return err
 	}
 	for _, host := range []string{"cursor", "claude", "codex"} {
-		if !contains(config.Adapters, host) {
+		if !contains(hostAdapters, host) {
 			continue
 		}
-		var input []byte
+		inputs := [][]byte{}
 		if host == "cursor" {
-			input = []byte(`{"command":"git status --short"}`)
+			inputs = append(inputs,
+				[]byte(`{"hook_event_name":"beforeShellExecution","command":"git status --short"}`),
+				[]byte(`{"hook_event_name":"beforeMCPExecution","tool_name":"mcp__status__read","tool_input":"{\"scope\":\"local\"}","command":"status-server"}`),
+			)
 		} else {
-			input = []byte(`{"tool_name":"Bash","tool_input":{"command":"git status --short"}}`)
+			inputs = append(inputs, []byte(`{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git status --short"}}`))
 		}
-		if _, denied := HookDecision(SafetyHookOptions{Host: host, Repo: repo, Input: input}); denied {
-			return fmt.Errorf("%s safety hook denied its read-only smoke event", host)
+		for _, input := range inputs {
+			if _, denied := HookDecision(SafetyHookOptions{Host: host, Repo: repo, Input: input}); denied {
+				return fmt.Errorf("%s safety hook denied its read-only smoke event", host)
+			}
 		}
 		if _, denied := HookDecision(SafetyHookOptions{Host: host, Repo: repo, Input: []byte(`{"malformed":true}`)}); !denied {
 			return fmt.Errorf("%s safety hook did not fail closed on malformed input", host)
 		}
 	}
 	return verifyLocalRuntime(repo)
+}
+
+func DoctorHookHosts(repoPath string) ([]string, error) {
+	repo, err := ResolveRepository(repoPath)
+	if err != nil {
+		return nil, err
+	}
+	config, _, err := LoadConfig(filepath.Join(repo, ".boatstack-project.json"))
+	if err != nil {
+		return nil, err
+	}
+	hosts := []string{}
+	for _, host := range []string{"cursor", "claude", "codex"} {
+		if contains(normalizedAdapters(config.Adapters), host) {
+			hosts = append(hosts, host)
+		}
+	}
+	return hosts, nil
 }
 
 func DoctorRepairHint(err error) error {
