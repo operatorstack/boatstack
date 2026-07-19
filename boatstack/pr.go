@@ -403,6 +403,13 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 	if len(changed) == 0 {
 		return PRContext{}, fmt.Errorf("branch has no committed product changes relative to %s", base)
 	}
+	changelogBase, err := changelogComparisonBase(repo, options.Feature, mergeBaseCommit)
+	if err != nil {
+		return PRContext{}, err
+	}
+	if err := validateChangelogChange(repo, changelogBase, config); err != nil {
+		return PRContext{}, err
+	}
 	diffStat, err := productDiffStat(repo, mergeBaseCommit)
 	if err != nil {
 		return PRContext{}, err

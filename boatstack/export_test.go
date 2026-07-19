@@ -357,6 +357,23 @@ func TestExportAndDriftCheck(t *testing.T) {
 	}
 }
 
+func TestExportPreservesOptionalChangelogPolicy(t *testing.T) {
+	config := testConfig()
+	config.Workflow.MaintainChangelog = true
+	raw, err := MarshalJSON(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := BuildExportBundle(".boatstack-project.json", config, raw, "boatstack")
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := string(bundle.Files[".product-loop/project.json"])
+	if !strings.Contains(project, `"maintain_changelog": true`) {
+		t.Fatalf("generated project configuration lost changelog policy: %s", project)
+	}
+}
+
 func TestPortableHostAdaptersShareWorkflowAndArtifactContract(t *testing.T) {
 	config := testConfig()
 	raw, err := MarshalJSON(config)

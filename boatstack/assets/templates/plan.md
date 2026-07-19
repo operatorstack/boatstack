@@ -76,4 +76,5 @@ Boatstack rejects ambiguous targets, automated resets, and destructive rollback.
 Every task belongs to exactly one delivery slice. Each slice receives its own
 build, test, review, ship confirmation, and PR; plan approval never authorizes
 publication by itself. Internal implementation phases should remain ordinary tasks
-inside one delivery slice.
+inside one delivery slice. When `workflow.maintain_changelog` is enabled, include
+`CHANGELOG.md` in the affected paths of tasks assigned to every delivery slice.

@@ -612,6 +612,25 @@ func RecordDeliveryGate(options DeliveryGateOptions) (DeliveryGateReceipt, error
 		if testReceipt.HeadCommit != headCommit || testReceipt.DiffSHA256 != diffHash || testReceipt.BaseBranch != base {
 			return DeliveryGateReceipt{}, fmt.Errorf("delivery diff changed after the test gate; rerun test-gate for slice %s", slice.ID)
 		}
+		config, _, configErr := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+		if configErr != nil {
+			return DeliveryGateReceipt{}, fmt.Errorf("review requires a valid Boatstack project configuration: %w", configErr)
+		}
+		baseCommit, baseErr := resolveBaseCommit(repo, base)
+		if baseErr != nil {
+			return DeliveryGateReceipt{}, baseErr
+		}
+		mergeBase, mergeErr := gitCommand(repo, "merge-base", baseCommit, "HEAD")
+		if mergeErr != nil || mergeBase == "" {
+			return DeliveryGateReceipt{}, fmt.Errorf("cannot determine changelog diff against %s", base)
+		}
+		changelogBase, changelogBaseErr := changelogComparisonBase(repo, options.Feature, mergeBase)
+		if changelogBaseErr != nil {
+			return DeliveryGateReceipt{}, changelogBaseErr
+		}
+		if changelogErr := validateChangelogChange(repo, changelogBase, config); changelogErr != nil {
+			return DeliveryGateReceipt{}, changelogErr
+		}
 	}
 	evidencePath := strings.TrimSpace(options.EvidencePath)
 	if evidencePath == "" {

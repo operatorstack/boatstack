@@ -179,6 +179,10 @@ never forward. Optional base/head branch names are constraints, not permission t
 create or push those branches. Approval accepts the delivery structure but does not
 authorize any PR mutation.
 
+When `workflow.maintain_changelog` is enabled, every delivery slice includes
+`CHANGELOG.md` in its affected paths. This is product-owned reader documentation,
+not a generated Boatstack artifact.
+
 An external-write task also names `affected_paths` and a compact `side_effects` record: operation kind, immutable target identity, reversibility, failure policy, and `destructive: false`. Ambiguous targets such as “local database” and rollback text such as “reset local DB” block approval. Ordinary tasks do not need side-effect ceremony.
 
 Run only relevant review lenses:
@@ -247,6 +251,13 @@ ad-hoc PR path.
 
 Scan operational changes and configured `high_risk_paths` before activation and after relevant edits. A dangerous capability may remain visible as source for review, but it cannot execute and blocks progression until removed or isolated behind the operator boundary.
 
+When `workflow.maintain_changelog` is enabled, update `CHANGELOG.md` before
+recording test evidence. Add a concise bullet under `## Unreleased` and one of
+`Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Documentation`, or
+`Maintenance`. Describe the actual reader-visible outcome, not the commit, PR,
+Boatstack artifacts, or test commands. If the file does not exist, create the
+documented skeleton and its first entry.
+
 ### `BUILD -> TEST_GATE`
 
 Crossing this boundary ends the requirement to keep loading or checking the source Plan-mode file. Its recorded path and hash preserve provenance. Subsequent gates judge the approved intent against the actual diff and evidence.
@@ -276,6 +287,10 @@ Review only after required mechanical checks pass, unless reviewing a failure is
 On pass, invoke the same recorder for `review`. It accepts only the active slice and
 only when the test receipt matches the current diff. Any product or evidence change
 afterward makes the receipts stale and routes back through test and review.
+
+With changelog maintenance enabled, the review recorder also compares the merge-base
+and current `CHANGELOG.md`. It requires a new categorized `Unreleased` bullet and the
+reviewer checks that its wording is supported by the actual diff.
 
 ### `REVIEW_GATE -> SHIP_GATE`
 
@@ -330,7 +345,9 @@ There is no public `/pr-brief` operation. When the user asks in natural language
 2. store the exact preview at `.product-loop/pr-briefs/<branch>/pr.md`;
 3. use the same reviewer-first format, but mark unavailable approval and gate evidence `NOT_VERIFIED`;
 4. never claim that Boatstack approved the work or that an unrun gate passed;
-5. preview first, then require `o` to open or `u` to update the PR and recheck the diff before publication.
+5. when `workflow.maintain_changelog` is enabled, require a new categorized
+   `CHANGELOG.md` entry under `## Unreleased`;
+6. preview first, then require `o` to open or `u` to update the PR and recheck the diff before publication.
 
 Adaptive sections for security/privacy, migrations, UI evidence, or operations appear only when relevant. Model attribution belongs inside collapsed provenance. If GitHub CLI authentication is unavailable, keep the validated preview and provide one manual publication action instead of losing the work.
 

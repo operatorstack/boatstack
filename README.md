@@ -77,18 +77,31 @@ Receipts remain as history; published corrections become linked deliveries.
 
 ## Features
 
-- **A guided path from idea to PR.** Start with `/auto-plan`; Boatstack presents one next action at a time through planning, approval, build, validation, review, and PR preparation.
+- **A guided path from idea to PR.** `/auto-plan` starts a one-action-at-a-time delivery flow.
 - **Instant orientation after a break.** `boatstack next` reconstructs the verified stage without treating chat or a running process as workflow evidence.
 - **Human decisions stay human.** Material product questions remain open until a person answers them, and implementation waits for explicit approval.
 - **Evidence tied to the promise.** Tests and checks map to the outcomes the change claims to deliver instead of treating one green command as proof of everything.
-- **Context that survives the feature.** Plans, decisions, accepted gaps, evidence, review findings, and code state can inform the next feature rather than disappearing with the chat.
+- **Context that survives the feature.** Plans, decisions, gaps, evidence, and code state remain useful beyond the chat.
 - **Conversational repair after Build.** Describe what changed; Boatstack preserves valid work and reruns only affected boundaries.
 - **Safer agent execution.** High-confidence destructive recovery is stopped before execution; phased work is gated and published one approved delivery slice at a time.
-- **Reviewer-ready pull requests.** Boatstack carries the reason, actual changes, validation, risks, gaps, rollout, and rollback into a focused PR brief.
-- **Portable across your AI stack.** Cursor, Codex, Claude Code, different model tiers, and specialist skills use the same repository-owned delivery contract.
-- **Repository-friendly maintenance.** Linked worktrees restore their verified runtime automatically, while Boatstack updates stay isolated in reviewable infrastructure PRs.
+- **Reviewer-ready pull requests.** Actual changes, evidence, risks, rollout, and rollback become a focused PR brief.
+- **Optional repository changelog.** Require readable `CHANGELOG.md` entries grounded in actual changes.
+- **Portable across your AI stack.** Hosts, models, and skills share one repository-owned delivery contract.
+- **Repository-friendly maintenance.** Worktrees restore runtime; updates stay in separate infrastructure PRs.
 
-You remain free to build however the work requires. Boatstack governs claims of approval, completion, review, and shipping—not the implementation technique.
+### Optional changelog
+
+It is disabled by default. Enable it in `.boatstack-project.json`:
+
+```json
+{
+  "workflow": {
+    "maintain_changelog": true
+  }
+}
+```
+
+Enabled repositories require a categorized `CHANGELOG.md` → `Unreleased` entry for every managed slice and Boatstack-prepared ad-hoc PR. The file stays user-owned; install and update never overwrite it. [See the format and first-entry example](docs/getting-started.md#keep-a-repository-changelog).
 
 ## How Boatstack fits into your AI stack
 
