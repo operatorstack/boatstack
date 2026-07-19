@@ -20,6 +20,24 @@ func writeChangelog(t *testing.T, repo, value string) {
 	}
 }
 
+func TestUnreleasedHeadingCompatibility(t *testing.T) {
+	for _, test := range []struct {
+		heading string
+		want    bool
+	}{
+		{heading: "## Unreleased", want: true},
+		{heading: "## [Unreleased]", want: true},
+		{heading: "## [Unreleased] - 2026-07-19", want: true},
+		{heading: "## [Unreleased] - 2026-7-19", want: false},
+		{heading: "## [Unreleased] - not-a-date", want: false},
+		{heading: "## [1.0.0] - 2026-07-19", want: false},
+	} {
+		if got := isUnreleasedHeading(test.heading); got != test.want {
+			t.Errorf("isUnreleasedHeading(%q) = %v, want %v", test.heading, got, test.want)
+		}
+	}
+}
+
 func TestChangelogPolicyAcceptsExistingAndFirstEntries(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -32,8 +50,8 @@ func TestChangelogPolicyAcceptsExistingAndFirstEntries(t *testing.T) {
 			head: "# Changelog\n\n## Unreleased\n\n### Added\n\n- Existing capability.\n- New reader-visible capability.\n\n## 1.0.0\n\n- First release.\n",
 		},
 		{
-			name: "first changelog",
-			head: "# Changelog\n\n## Unreleased\n\n### Maintenance\n\n- Document the supported delivery workflow.\n",
+			name: "first dated changelog",
+			head: "# Changelog\n\n## [Unreleased] - 2026-07-19\n\n### Maintenance\n\n- Document the supported delivery workflow.\n",
 		},
 		{
 			name: "existing legacy changelog adopts policy",
