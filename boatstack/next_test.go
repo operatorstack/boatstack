@@ -45,6 +45,28 @@ func writeNextDelivery(t *testing.T, repo, feature, status string, activeIndex i
 	}
 }
 
+func writeSavedFeaturePlan(t *testing.T, repo, feature string) {
+	t.Helper()
+	directory := filepath.Join(repo, ".product-loop", "features", feature)
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "plan.md"), []byte("# Plan\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeIntakePlan(t *testing.T, repo, name string) {
+	t.Helper()
+	directory := filepath.Join(repo, ".product-loop", "intake")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, name), []byte("# Source plan\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestResolveNextReportsNotStartedWhenNoFeatureExists(t *testing.T) {
 	repo := nextTestRepo(t)
 	status, err := ResolveNext(repo)
@@ -58,19 +80,94 @@ func TestResolveNextReportsNotStartedWhenNoFeatureExists(t *testing.T) {
 
 func TestResolveNextReportsSavedSourcePlan(t *testing.T) {
 	repo := nextTestRepo(t)
-	intake := filepath.Join(repo, ".product-loop", "intake")
-	if err := os.MkdirAll(intake, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(intake, "feature.md"), []byte("# Feature\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeIntakePlan(t, repo, "feature.md")
 	status, err := ResolveNext(repo)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if status.ObservedStage != "SOURCE_PLAN_READY" || status.NextOperation != "auto-plan" {
 		t.Fatalf("unexpected status: %+v", status)
+	}
+}
+
+func TestResolveNextPrefersUniqueSourcePlanOverHistoricalPlans(t *testing.T) {
+	repo := nextTestRepo(t)
+	writeSavedFeaturePlan(t, repo, "historical-one")
+	writeSavedFeaturePlan(t, repo, "historical-two")
+	writeIntakePlan(t, repo, "current.md")
+
+	status, err := ResolveNext(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.VerificationStatus != "VERIFIED" || status.ObservedStage != "SOURCE_PLAN_READY" || status.NextOperation != "auto-plan" {
+		t.Fatalf("new source plan did not outrank historical plans: %+v", status)
+	}
+}
+
+func TestResolveNextBlocksMultipleSourcePlansBeforeHistoricalPlans(t *testing.T) {
+	repo := nextTestRepo(t)
+	writeSavedFeaturePlan(t, repo, "historical-one")
+	writeSavedFeaturePlan(t, repo, "historical-two")
+	writeIntakePlan(t, repo, "first.md")
+	writeIntakePlan(t, repo, "second.md")
+
+	status, err := ResolveNext(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{".product-loop/intake/first.md", ".product-loop/intake/second.md"}
+	if status.VerificationStatus != "BLOCKED" || status.ObservedStage != "AMBIGUOUS" || !reflect.DeepEqual(status.BlockingAmbiguity, want) {
+		t.Fatalf("unexpected source-plan ambiguity: %+v", status)
+	}
+}
+
+func TestResolveNextActiveDeliveryOutranksSourcePlan(t *testing.T) {
+	repo := nextTestRepo(t)
+	writeNextDelivery(t, repo, "active-feature", "BUILD", 0)
+	writeIntakePlan(t, repo, "new-feature.md")
+
+	status, err := ResolveNext(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Feature != "active-feature" || status.ObservedStage != "BUILD" || status.NextOperation != "build" {
+		t.Fatalf("source plan displaced active delivery: %+v", status)
+	}
+}
+
+func TestResolveNextOrphanedEvidenceOutranksSourcePlan(t *testing.T) {
+	repo := nextTestRepo(t)
+	directory := filepath.Join(repo, ".product-loop", "features", "orphan")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "pr.md"), []byte("# Preview\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeIntakePlan(t, repo, "new-feature.md")
+
+	status, err := ResolveNext(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.VerificationStatus != "BLOCKED" || status.ObservedStage != "INVALID_STATE" || status.NextOperation != "repair-state" {
+		t.Fatalf("source plan bypassed orphaned evidence: %+v", status)
+	}
+}
+
+func TestResolveNextBlocksHistoricalPlansWithoutSourceIntent(t *testing.T) {
+	repo := nextTestRepo(t)
+	writeSavedFeaturePlan(t, repo, "historical-one")
+	writeSavedFeaturePlan(t, repo, "historical-two")
+
+	status, err := ResolveNext(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"historical-one", "historical-two"}
+	if status.VerificationStatus != "BLOCKED" || status.ObservedStage != "AMBIGUOUS" || !reflect.DeepEqual(status.BlockingAmbiguity, want) {
+		t.Fatalf("unexpected historical-plan ambiguity: %+v", status)
 	}
 }
 
