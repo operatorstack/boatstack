@@ -40,7 +40,10 @@ Hooks are defense in depth rather than a complete sandbox. Protected systems sti
 
 ## User-facing response contract
 
-Helper commands and state labels are internal control machinery. Every normal response uses:
+Helper commands and state labels are internal control machinery. Every normal response uses
+the structure below, with a host-compatible rendering for **Technical details**.
+
+Cursor and Claude Code use a collapsed disclosure:
 
 ```markdown
 ## <Plain-language outcome>
@@ -60,6 +63,28 @@ Machine status, helper output, fingerprints, paths, receipts, and locks.
 
 </details>
 ```
+
+Codex and any host without verified HTML disclosure support use portable Markdown instead:
+
+```markdown
+## <Plain-language outcome>
+
+<One or two sentence summary>
+
+<Only the decision-relevant content for this operation>
+
+### Next step
+
+<Exactly one primary action>
+
+### Technical details
+
+Machine status, helper output, fingerprints, paths, receipts, and locks.
+```
+
+Never emit raw `<details>` or `<summary>` tags in Codex. Unknown hosts default to the portable Markdown form; rich disclosure is an explicit host capability, not
+an assumption about generic Markdown support. This presentation difference must
+not change the information, ordering, gate semantics, or one-action boundary.
 
 Lead with a plain outcome, never a machine code such as `PASS`, `PLAN_APPROVED`, `BLOCKED`, `READY_FOR_BUILD`, `PASS_WITH_GAPS`, or `WAITING_FOR_INPUT`. Keep approval-relevant scope, non-goals, decisions, risks, and gaps visible. Move internal operations (`check-plan`, `record-approval`, `activate-plan`), hashes, paths, tables, receipts, locks, and raw output into **Technical details**. **Exactly one primary action:** end with the action that advances or unblocks the current state; a secondary option gets one short sentence. Never route past a blocked state.
 

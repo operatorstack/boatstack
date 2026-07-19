@@ -336,7 +336,19 @@ If gstack is enabled, use only its namespaced /gstack-* specialist lenses inside
 		}
 	}
 	if contains(adapters, "codex") {
-		files[fmt.Sprintf(".agents/skills/%s/SKILL.md", adapterName)], err = GeneratedFrontmatter(adapterSkill)
+		codexAdapterSkill := strings.Replace(
+			adapterSkill,
+			"move machine statuses, helper output, fingerprints, artifact paths, receipts, and locks into collapsed Technical details.",
+			"move machine statuses, helper output, fingerprints, artifact paths, receipts, and locks under a plain `### Technical details` Markdown heading. Codex must never emit raw `<details>` or `<summary>` tags; preserve the same content without collapse.",
+			1,
+		)
+		codexAdapterSkill = strings.Replace(
+			codexAdapterSkill,
+			"keep Review the PR as the one next action and append a collapsed informational notice",
+			"keep Review the PR as the one next action and append the informational notice under the plain Technical details heading",
+			1,
+		)
+		files[fmt.Sprintf(".agents/skills/%s/SKILL.md", adapterName)], err = GeneratedFrontmatter(codexAdapterSkill)
 		if err != nil {
 			return ExportBundle{}, err
 		}

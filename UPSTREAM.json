@@ -1,7 +1,7 @@
 {
   "canonical_context": {
-    "characters": 43912,
-    "estimated_tokens": 10978,
+    "characters": 44732,
+    "estimated_tokens": 11183,
     "estimator": "ceil(total characters / 4); compactness signal, not provider billing",
     "files": [
       "product-engineering-loop/references/workflow.md",
@@ -12,7 +12,7 @@
   },
   "files": {
     ".gitignore": "a7079e923a776f14f1bb3a6aa0a11a133a8e1dfb35af020f327623357b7e3957",
-    "CONTRIBUTING.md": "affb9db2bc920f7887ba8873f56bd3173a770db366aad28d877896535ceebaf1",
+    "CONTRIBUTING.md": "4fcfafdf6afd69be63a6b04c847e37dcd5ce225d40269519b06d54c44c09eb98",
     "README.md": "a840004db57a129ecd361bb0421adfe02065d86751736dd91953c8a8b178e5ef",
     "assets/boatstack-journey.svg": "c1f7fe2741f5e9ca66bb3fe9b103e6364ba5acbca8b7a8054768ffd85cf325ea",
     "assets/boatstack-mark.svg": "ec96165583b15cfd446c27049d49217973f3e9b1defa5771cc08eec0c9542ce4",
@@ -37,8 +37,8 @@
     "boatstack/cmd/boatstack-helper/main_test.go": "ff73003b6a5157202fa09ddf1129fb13c3d79702b2e05a8721ce5a11bf5ab779",
     "boatstack/delivery.go": "565bc8465252a798124a29874e1aeffff16e9027d1a86715e11b3e4bc0743bd2",
     "boatstack/delivery_test.go": "2545c26389d330a92c11e7b09fb2342101db5d09a825a2a9e81b4ea9eea9407b",
-    "boatstack/export.go": "786858fbd1a0172371f310937d0f3244cf1f57246e916fdac581e3da8618e67a",
-    "boatstack/export_test.go": "fbe19b8627c9a66d6e5231aa0e275dccb28f85046a3f2f242a2ca306bb6c2665",
+    "boatstack/export.go": "176c8e734ebc9e01d4bbe25b48ede049d9a627452260bc7fc77b6e236987a862",
+    "boatstack/export_test.go": "f5db74fbf344f9286fa5fe19cf591c62343f7754dc55d10129320d00af3e4a9c",
     "boatstack/go.mod": "6086ef1b2a83f5696190dca692c653925f27b61f652f659fd3fca43ed54a1641",
     "boatstack/go.sum": "26c315c867b11b886f3c9402fce7f341f6a9115a5d61f54afbb5e1b1fb5f6017",
     "boatstack/hooks.go": "2b7d899f92efef8a68a160c423a46bcd6fd37daa0eba2ac8ad44ffa3dc5f88c9",
@@ -60,7 +60,7 @@
     "boatstack/references/host-hook-contracts.md": "1382213ad004389de6da5a03af43ec28ace6329c9e7a3f07148566cf2ea12727",
     "boatstack/references/irreversible-operation-boundary.md": "631743991ace65977586e4537f8dd50f8ae88f8e16f27cf7baad93b2791a73df",
     "boatstack/references/portability.md": "fb683095991bb0cb06ec56fb8884c49038b283172a7d2f8b203483b7cacb4bae",
-    "boatstack/references/workflow.md": "a342d519f8420f34b9431c4624fc6f823034218eebb520e74d0cf5f4f3d5a382",
+    "boatstack/references/workflow.md": "e449ebea6b3ff42a9e2a82d8974f3b2056c95b8db8e8069091e39405f11acbf8",
     "boatstack/release.go": "fa2ac926df89c90c5844e938a2e02d4b8dbbaefbf85bb7a1a89fc51690bea520",
     "boatstack/release_test.go": "5cf2d76fe9b836a91ca68eba53d5585e2c4be5b9421aaf939ea0723063a24690",
     "boatstack/run.go": "a9afb239c5e2cb80f96dab594f0dc94852f2f16625b1de05c5110ee85f61cfaa",
@@ -80,10 +80,10 @@
     "docs/account-recovery-walkthrough.md": "676034974594a7d1a559b24dbed31d7ccc429eb81404b203ca07bbdaa19ec3d3",
     "docs/benchmark-corpus-audit.md": "f2d206fe8579a514f9da82b2c96c19b343ac004be67617e1bd34f0f8e0e5e6c6",
     "docs/benchmark-submission-audit.md": "9518abdd17690729c6423f87cab20418ed47b0915b5faa44b9ef975e9e9c3b79",
-    "docs/evidence-engineered-coding.md": "9aca081ae5acded0b8916c7050018adc0ab3b985f822b7364b8cd34a0cfcc9f6",
+    "docs/evidence-engineered-coding.md": "4d8bf35cb94a92f9b3e01872da738201aa8718b49604257300af30f75740a551",
     "docs/generated-files.md": "136422baf0c7fc2bd5100cfe0ebdb3d9d0705dfd7e7d54bf745dd1037e63492c",
     "docs/getting-started.md": "eacc814fdffdfa3c7d8052b7cd99a79c04da5c75d88d8b44f3fb68d9afec0316",
-    "docs/public-claims.json": "811ae32416630876d45c483a24f591a4682deed12403ae3729095081bf7c9eb8",
+    "docs/public-claims.json": "39aadbc4775609b8a1b95fdec54df618d1d5e9c104a0b3985478bc26c9d26afa",
     "docs/public-surface.md": "713f7a050b5f339cf948299103ef3800417dccfecf2cc1a4166397ea6f978907",
     "docs/research-and-design.md": "d65c66e323037bda5d45aacef5d48afa6bf93da55901378891d235aca3a5684f",
     "docs/safety.md": "7b9b5c515d36e683767ec8d3d9d6d119ac93650b2f629d351deadd4c600ed6a6",
@@ -97,7 +97,7 @@
     "labs/diagram-json/compiled/evidence.md": "1ba1c989ade070a8ef9a508fbd788d100d7292f2dbacbb2bce895468019f619d",
     "labs/diagram-json/compiled/tasks.json": "88f60851abf79d851e9fccc754ff3040034ae595306bc87d64784c19eb403e71",
     "labs/diagram-json/compiled/test-matrix.json": "424657ff505768e50fa113801fd8363364a18269d5297480907a993d44063a39",
-    "labs/diagram-json/plan.lock.json": "9ad1050a9a6d35b9a2b89c9df269441cd71ed4ff3895240047940abd743a4a69",
+    "labs/diagram-json/plan.lock.json": "2403efe2031f8c384d177c108837758838bfe27d5b5a4ec33ea7c30112365718",
     "labs/diagram-json/plan.md": "3cc4f533b8d69386deff16b3a594a3ba09d4c0c3db636cccd8c4380084ce6a51",
     "labs/diagram-json/questions.md": "74733b015002c8a6777c558e7e997fa48c94850b9bd39054fe9366c97ecf728d",
     "labs/diagram-json/request.md": "0808fc41c36779c404f4a3a121167da6e76cac56df526e70f9ed6d3e0d4c02ed",
@@ -121,6 +121,7 @@
     "release-notes/2026-07-18-safety-sql-boundaries.md": "32011ca3d02a371e8f3f2899ffb34df3af0843d18d25e7db95fbca32c2dcf18c",
     "release-notes/2026-07-18-stacked-bar-mark.md": "c4d5bd5fb89c280d7fba015384fd795fcb8c31ffe501078aa55a90cbcf66ba7b",
     "release-notes/2026-07-18-startup-recovery-routing.md": "c305a1c2b8347e1bc6d7fcbd4a8e629438cdeb4bcf6f181a7d6fc154a88f4318",
+    "release-notes/2026-07-19-codex-technical-details.md": "b68672216dbb546dd86680216a59bb2869cdf002604917a34987d0ee5a223ffe",
     "release-notes/2026-07-19-cross-harness-hook-conformance.md": "15dc22cc3b534c6d0bd89f34cd69cabf94a3610d445a039ba111fd8bce727e68",
     "release-notes/2026-07-19-cursor-claude-pretooluse.md": "d28e35b734c6b6aa565d93a151fffcd3a940839759efcdc00dd44f8494bb599b",
     "release-notes/2026-07-19-malformed-host-event-recovery.md": "b13835ae0d6cd6310c3de45ebadf47afd297b650e70ef2bf7a335945be305833",
@@ -132,7 +133,7 @@
   "generator": "operatorstack/intelligence-flow:boatstack-distribution",
   "schema_version": 1,
   "source": {
-    "commit": "7d6ae9e63d7a6106ae7bf6a2a26e1257c455932b",
+    "commit": "b5f5cd69a44fdba533c0b821c55eca08c7fd6b4f",
     "path": "labs/12-product-engineering-loop",
     "repository": "operatorstack/intelligence-flow"
   }
