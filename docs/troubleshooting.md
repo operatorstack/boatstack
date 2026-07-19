@@ -29,6 +29,16 @@ If the worktree expects a different Boatstack version or source commit, update o
 
 This is a Cursor host initialization failure: Boatstack's hook process did not start. Keep the hook fail-closed, run **Developer: Reload Window** in Cursor, and retry the Boatstack operation. Do not reinstall Boatstack for this error alone. Reinstall only when Boatstack itself reports a missing, drifted, unsafe, or checksum-invalid helper or shared runtime.
 
+## A host reports `HOST_PAYLOAD_MALFORMED`
+
+Boatstack received a hook event without a decodable command or tool call. It fails closed, but no unsafe operation was detected. Retry once with an explicit non-empty command. If the same code repeats, stop agent shell and tool retries, preserve edits, and run this from a normal terminal outside the blocked agent path:
+
+```bash
+.product-loop/bin/boatstack-helper diagnose-hook --host cursor --repo .
+```
+
+Replace `cursor` with `claude` or `codex` for those hosts. A passing probe proves the installed wrapper, shared runtime, decoder, and canonical allow response; it cannot reveal the live payload emitted by the coding host. For Cursor, start a new task after a passing probe. Do not reinstall or hydrate Boatstack unless it separately reports a missing, drifted, unsafe, or checksum-invalid runtime.
+
 ## `/repair` says there is no active delivery
 
 Repair compares an exact requested change with an activated, approved baseline. If no Boatstack feature has started, save the host Plan-mode file and run `/auto-plan`. If a draft or approved feature already exists, run the one planning or build operation reported by `/boatstack-next`; do not create or clear delivery state manually.

@@ -1,7 +1,9 @@
 package boatstack
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -170,6 +172,89 @@ func TestMissingHelperLauncherFailsClosed(t *testing.T) {
 	output, err := command.CombinedOutput()
 	if err == nil || !strings.Contains(string(output), "shared runtime is missing") {
 		t.Fatalf("missing helper did not fail closed: err=%v output=%s", err, output)
+	}
+}
+
+func TestDiagnoseHookAcceptsCanonicalEventsForEveryHost(t *testing.T) {
+	repo := safetyTestRepo(t)
+	previous := hookDiagnosticRunner
+	defer func() { hookDiagnosticRunner = previous }()
+	hookDiagnosticRunner = func(_ context.Context, _ string, host string, input []byte) ([]byte, error) {
+		if len(input) == 0 {
+			t.Fatal("diagnostic omitted canonical input")
+		}
+		if host == "cursor" {
+			return []byte(`{"continue":true,"permission":"allow"}`), nil
+		}
+		return nil, nil
+	}
+	for _, host := range []string{"cursor", "claude", "codex"} {
+		t.Run(host, func(t *testing.T) {
+			diagnostic, err := DiagnoseHook(repo, host)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diagnostic.Host != host || diagnostic.ContractStatus != "PASS" || diagnostic.LiveEventObserved {
+				t.Fatalf("unexpected diagnostic: %+v", diagnostic)
+			}
+		})
+	}
+}
+
+func TestDiagnoseHookRejectsUnsupportedHost(t *testing.T) {
+	repo := safetyTestRepo(t)
+	if _, err := DiagnoseHook(repo, "other"); err == nil || !strings.Contains(err.Error(), "unsupported hook host") {
+		t.Fatalf("unsupported host was not rejected: %v", err)
+	}
+}
+
+func TestDiagnoseHookSupportsRepositoryPathsWithSpaces(t *testing.T) {
+	repo := safetyTestRepo(t)
+	renamed := repo + " with spaces"
+	if err := os.Rename(repo, renamed); err != nil {
+		t.Fatal(err)
+	}
+	previous := hookDiagnosticRunner
+	defer func() { hookDiagnosticRunner = previous }()
+	hookDiagnosticRunner = func(_ context.Context, observedRepo, _ string, _ []byte) ([]byte, error) {
+		observedInfo, observedErr := os.Stat(observedRepo)
+		wantedInfo, wantedErr := os.Stat(renamed)
+		if observedErr != nil || wantedErr != nil || !os.SameFile(observedInfo, wantedInfo) {
+			t.Fatalf("diagnostic repo = %q, want %q", observedRepo, renamed)
+		}
+		return []byte(`{"continue":true,"permission":"allow"}`), nil
+	}
+	if _, err := DiagnoseHook(renamed, "cursor"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHookDiagnosticRejectsMalformedAllowOutput(t *testing.T) {
+	for _, test := range []struct {
+		host, output string
+	}{
+		{"cursor", `{}`},
+		{"cursor", `not-json`},
+		{"claude", `{}`},
+		{"codex", `unexpected`},
+	} {
+		if err := validateCanonicalHookOutput(test.host, []byte(test.output)); err == nil {
+			t.Fatalf("%s malformed output was accepted: %q", test.host, test.output)
+		}
+	}
+}
+
+func TestDiagnoseHookReportsGuardRuntimeFailures(t *testing.T) {
+	repo := safetyTestRepo(t)
+	previous := hookDiagnosticRunner
+	defer func() { hookDiagnosticRunner = previous }()
+	for _, message := range []string{"Boatstack shared runtime is missing", "Boatstack shared runtime checksum is invalid"} {
+		hookDiagnosticRunner = func(_ context.Context, _ string, _ string, _ []byte) ([]byte, error) {
+			return []byte(message), errors.New("exit status 2")
+		}
+		if _, err := DiagnoseHook(repo, "cursor"); err == nil || !strings.Contains(err.Error(), message) {
+			t.Fatalf("runtime failure %q was not diagnosed: %v", message, err)
+		}
 	}
 }
 

@@ -215,18 +215,62 @@ func TestHostContractsNormalizeCanonicalInputs(t *testing.T) {
 
 func TestMalformedHostPayloadsDenyWithoutLeakingInput(t *testing.T) {
 	repo := safetyTestRepo(t)
-	for _, test := range []struct{ host, input string }{
-		{"cursor", `{"hook_event_name":"beforeMCPExecution","tool_name":"mcp__cloud__delete_database","tool_input":"secret-not-json"}`},
-		{"cursor", `{"hook_event_name":"unknown","command":"secret-command"}`},
-		{"claude", `{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"secret-command"}}`},
-		{"codex", `{"hook_event_name":"PreToolUse","tool_name":"Bash"}`},
+	for _, test := range []struct{ host, input, reason string }{
+		{"cursor", ``, "empty-input"},
+		{"cursor", `{`, "invalid-json"},
+		{"cursor", `{"hook_event_name":"beforeShellExecution"}`, "missing-command"},
+		{"cursor", `{"hook_event_name":"beforeShellExecution","command":""}`, "empty-command"},
+		{"cursor", `{"hook_event_name":"beforeMCPExecution","tool_input":{}}`, "missing-tool-name"},
+		{"cursor", `{"hook_event_name":"beforeMCPExecution","tool_name":"mcp__cloud__delete_database","tool_input":"secret-not-json"}`, "invalid-tool-input-json"},
+		{"cursor", `{"hook_event_name":"unknown","command":"secret-command"}`, "unsupported-event"},
+		{"claude", `{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"secret-command"}}`, "unsupported-event"},
+		{"codex", `{"hook_event_name":"PreToolUse","tool_name":"Bash"}`, "missing-tool-input"},
 	} {
 		output, denied := HookDecision(SafetyHookOptions{Host: test.host, Repo: repo, Input: []byte(test.input)})
 		if !denied {
 			t.Fatalf("%s malformed payload was allowed", test.host)
 		}
+		body := string(output)
+		if !strings.Contains(body, "HOST_PAYLOAD_MALFORMED:"+test.reason) {
+			t.Fatalf("%s malformed payload did not expose safe reason %s: %s", test.host, test.reason, body)
+		}
+		if !strings.Contains(body, "No unsafe operation was detected") || strings.Contains(body, "denied an irreversible operation") {
+			t.Fatalf("%s malformed payload was misattributed: %s", test.host, body)
+		}
+		if strings.Contains(body, "run the verified installer") || strings.Contains(body, "hydrate") {
+			t.Fatalf("%s malformed payload recommended runtime repair: %s", test.host, body)
+		}
 		if strings.Contains(string(output), "secret") {
 			t.Fatalf("%s denial leaked input: %s", test.host, output)
+		}
+	}
+}
+
+func TestCursorMalformedPayloadGuidesOneRetryThenExternalDiagnosis(t *testing.T) {
+	repo := safetyTestRepo(t)
+	output, denied := HookDecision(SafetyHookOptions{Host: "cursor", Repo: repo, Input: []byte(`{"hook_event_name":"beforeShellExecution"}`)})
+	if !denied {
+		t.Fatal("missing Cursor command was allowed")
+	}
+	body := string(output)
+	for _, expected := range []string{"Retry once", "stop shell and tool retries", "preserve current edits", "Start a new Cursor task", "diagnose-hook --host cursor", "Do not reinstall Boatstack"} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("Cursor recovery omitted %q: %s", expected, body)
+		}
+	}
+}
+
+func TestEveryHostUsesStableEmptyCommandReason(t *testing.T) {
+	repo := safetyTestRepo(t)
+	inputs := map[string]string{
+		"cursor": `{"hook_event_name":"beforeShellExecution","command":""}`,
+		"claude": `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":""}}`,
+		"codex":  `{"hook_event_name":"PreToolUse","tool_name":"Shell","tool_input":{"command":""}}`,
+	}
+	for _, host := range []string{"cursor", "claude", "codex"} {
+		output, denied := HookDecision(SafetyHookOptions{Host: host, Repo: repo, Input: []byte(inputs[host])})
+		if !denied || !strings.Contains(string(output), "HOST_PAYLOAD_MALFORMED:empty-command") {
+			t.Fatalf("%s did not return stable empty-command reason: %s", host, output)
 		}
 	}
 }
