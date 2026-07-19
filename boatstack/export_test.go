@@ -302,6 +302,26 @@ func TestExportAndDriftCheck(t *testing.T) {
 			t.Fatalf("%s does not auto-route free-form delivery changes", path)
 		}
 	}
+	codexRouter := string(bundle.Files[".agents/skills/boatstack/SKILL.md"])
+	for _, expected := range []string{
+		"plain `### Technical details` Markdown heading",
+		"Codex must never emit raw `<details>` or `<summary>` tags",
+		"preserve the same content without collapse",
+	} {
+		if !strings.Contains(codexRouter, expected) {
+			t.Fatalf("Codex router is missing portable technical-details rule %q", expected)
+		}
+	}
+	if strings.Contains(codexRouter, "into collapsed Technical details") {
+		t.Fatal("Codex router still requires collapsed user-facing technical details")
+	}
+	claudeRouter = string(bundle.Files[".claude/skills/boatstack/SKILL.md"])
+	if !strings.Contains(claudeRouter, "into collapsed Technical details") {
+		t.Fatal("Claude router must retain collapsed technical details")
+	}
+	if !strings.Contains(string(bundle.Files[".cursor/commands/auto-plan.md"]), "inside collapsed `Technical details`") {
+		t.Fatal("Cursor commands must retain collapsed technical details")
+	}
 	prTemplate := string(bundle.Files[".github/PULL_REQUEST_TEMPLATE/boatstack.md"])
 	for _, expected := range []string{"## Why this change", "## What changed", "## Review order", "## Evidence", "## Operational safety", "## Known gaps and risks", "## Rollout and rollback", "<summary>Boatstack provenance</summary>"} {
 		if !strings.Contains(prTemplate, expected) {
@@ -336,6 +356,9 @@ func TestExportAndDriftCheck(t *testing.T) {
 		"Reply `a` to approve.",
 		"gh api user --jq .login",
 		"Never infer the approver",
+		"Codex and any host without verified HTML disclosure support use portable Markdown instead",
+		"Never emit raw `<details>` or `<summary>` tags in Codex",
+		"Unknown hosts default to the portable Markdown form",
 	} {
 		if !strings.Contains(workflow, expected) {
 			t.Fatalf("canonical workflow is missing response contract %q", expected)
