@@ -21,6 +21,10 @@ func runGit(t *testing.T, repo string, arguments ...string) string {
 }
 
 func prTestRepo(t *testing.T) string {
+	return prTestRepoConfigured(t, nil)
+}
+
+func prTestRepoConfigured(t *testing.T, configure func(*ProjectConfig)) string {
 	t.Helper()
 	repo := t.TempDir()
 	runGit(t, repo, "init", "-b", "main")
@@ -30,6 +34,9 @@ func prTestRepo(t *testing.T) string {
 	config.Project.DefaultBranch = "main"
 	config.Project.Context = []string{"README.md"}
 	config.Project.HighRiskPaths = []string{"feature.go"}
+	if configure != nil {
+		configure(&config)
+	}
 	value, err := MarshalJSON(config)
 	if err != nil {
 		t.Fatal(err)

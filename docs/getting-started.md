@@ -172,6 +172,34 @@ Use Cursor, Codex, or Claude's normal transition out of Plan mode, then run `/bu
 
 If the host is still read-only, Boatstack reports that it is ready for build without creating compiled state. Switch modes and rerun `/build`.
 
+### Keep a repository changelog
+
+This policy is optional and disabled by default. To require readable changelog entries, set this repository-owned configuration in `.boatstack-project.json`, then regenerate the Boatstack export through the normal reviewed configuration update:
+
+```json
+{
+  "workflow": {
+    "maintain_changelog": true
+  }
+}
+```
+
+If `CHANGELOG.md` already exists, keep its released history and add a new bullet under `## Unreleased`. Boatstack compares the branch with its merge base, so editing only an older release does not satisfy the policy.
+
+If the file does not exist, the first managed delivery slice or Boatstack-prepared ad-hoc PR creates it as user-owned Markdown:
+
+```markdown
+# Changelog
+
+## Unreleased
+
+### Added
+
+- Explain the reader-visible capability or outcome.
+```
+
+Supported categories are `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Documentation`, and `Maintenance`. Write about the actual outcome rather than commits, PR numbers, generated artifacts, or test commands. Every slice of a multi-PR delivery needs its own entry. Boatstack installation and update PRs are exempt.
+
 ## 5. Prove, review, and prepare the PR
 
 Run the remaining gates:

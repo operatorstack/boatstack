@@ -24,7 +24,8 @@
   "workflow": {
     "human_plan_approval": true,
     "independent_review_for_high_risk": true,
-    "allow_pass_with_gaps": true
+    "allow_pass_with_gaps": true,
+    "maintain_changelog": false
   },
   "integrations": {
     "gstack": {

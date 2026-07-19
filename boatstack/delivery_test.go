@@ -49,14 +49,27 @@ func TestDeliverySlicesPartitionTasksAndRejectForwardDependencies(t *testing.T) 
 }
 
 func activateTwoSliceDelivery(t *testing.T) (string, string) {
+	return activateTwoSliceDeliveryWithChangelog(t, false)
+}
+
+func activateTwoSliceDeliveryWithChangelog(t *testing.T, maintainChangelog bool) (string, string) {
 	t.Helper()
-	repo := prTestRepo(t)
+	repo := prTestRepoConfigured(t, func(config *ProjectConfig) {
+		config.Workflow.MaintainChangelog = maintainChangelog
+	})
 	feature := "phased-feature"
 	directory := filepath.Join(repo, ".product-loop", "features", feature)
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	plan := twoSlicePlan()
+	if maintainChangelog {
+		for _, task := range plan["tasks"].([]any) {
+			item := task.(map[string]any)
+			paths := item["affected_paths"].([]any)
+			item["affected_paths"] = append(paths, changelogPath)
+		}
+	}
 	plan["feature_id"] = feature
 	plan["spec_path"] = "feature-spec.md"
 	if err := os.WriteFile(filepath.Join(directory, "source-plan.md"), []byte("# Two PR proposal\n"), 0o644); err != nil {
@@ -86,6 +99,43 @@ func activateTwoSliceDelivery(t *testing.T) (string, string) {
 	runGit(t, repo, "add", ".product-loop/features/"+feature)
 	runGit(t, repo, "commit", "-m", "activate phased delivery")
 	return repo, feature
+}
+
+func TestManagedReviewRequiresChangelogEntryAndBindsItToTestEvidence(t *testing.T) {
+	repo, feature := activateTwoSliceDeliveryWithChangelog(t, true)
+	options := DeliveryGateOptions{Repo: repo, Feature: feature, SliceID: "phase-one", Status: "PASS"}
+	options.Gate = "test"
+	if _, err := RecordDeliveryGate(options); err != nil {
+		t.Fatal(err)
+	}
+	options.Gate = "review"
+	if _, err := RecordDeliveryGate(options); err == nil || !strings.Contains(err.Error(), "requires CHANGELOG.md") {
+		t.Fatalf("managed review ignored missing changelog: %v", err)
+	}
+	writeChangelog(t, repo, "# Changelog\n\n## Unreleased\n\n### Added\n\n- Make the first delivery outcome available.\n")
+	runGit(t, repo, "add", changelogPath)
+	runGit(t, repo, "commit", "-m", "add first slice changelog entry")
+	if _, err := RecordDeliveryGate(options); err == nil || !strings.Contains(err.Error(), "changed after the test gate") {
+		t.Fatalf("changelog edit did not invalidate test evidence: %v", err)
+	}
+	options.Gate = "test"
+	if _, err := RecordDeliveryGate(options); err != nil {
+		t.Fatal(err)
+	}
+	options.Gate = "review"
+	if _, err := RecordDeliveryGate(options); err != nil {
+		t.Fatalf("managed review rejected valid changelog entry: %v", err)
+	}
+	if err := MarkDeliveryPublished(repo, feature, "phase-one", "https://example.invalid/pr/1"); err != nil {
+		t.Fatal(err)
+	}
+	base, err := changelogComparisonBase(repo, feature, runGit(t, repo, "merge-base", "main", "HEAD"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateChangelogChange(repo, base, changelogConfig()); err == nil || !strings.Contains(err.Error(), "new categorized entry") {
+		t.Fatalf("second slice reused the first slice changelog entry: %v", err)
+	}
 }
 
 func TestDeliveryGateReceiptsBindTheActiveSliceAndAdvanceOnce(t *testing.T) {

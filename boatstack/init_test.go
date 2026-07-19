@@ -70,6 +70,9 @@ func TestRuntimeFreeInit(t *testing.T) {
 	if strings.Contains(string(configValue), `"status"`) {
 		t.Fatal("machine-local integration status leaked into repository configuration")
 	}
+	if !strings.Contains(string(configValue), `"maintain_changelog": false`) {
+		t.Fatal("fresh initialization did not default changelog maintenance off")
+	}
 	installValue, _ := os.ReadFile(filepath.Join(repo, ".product-loop", "bin", "install.lock.json"))
 	if !strings.Contains(string(installValue), `"binary_sha256"`) || !strings.Contains(string(installValue), `"integrations"`) {
 		t.Fatal("local install lock did not record binary and integration state")
