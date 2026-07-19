@@ -224,6 +224,34 @@ func ResolveNext(repoPath string) (NextStatus, error) {
 		return status, nil
 	}
 
+	orphans, err := orphanedFeatureArtifacts(repo)
+	if err != nil {
+		return NextStatus{}, err
+	}
+	if len(orphans) > 0 {
+		return blockedNextStatus("INVALID_STATE", "repair-state", "Boatstack found a PR preview without the plan lock required to verify it. Preserve the artifacts and restore the feature evidence before continuing.", orphans...), nil
+	}
+
+	sourcePlans, sourceErr := unclaimedSourcePlanCandidates(repo)
+	if sourceErr != nil {
+		return NextStatus{}, sourceErr
+	}
+	if len(sourcePlans) == 1 {
+		base.VerificationStatus = "VERIFIED"
+		base.ObservedStage = "SOURCE_PLAN_READY"
+		base.NextOperation = "auto-plan"
+		base.Reason = fmt.Sprintf("Saved Plan-mode file %q is ready to become a Boatstack feature.", sourcePlans[0])
+		return base, nil
+	}
+	if len(sourcePlans) > 1 {
+		base.VerificationStatus = "BLOCKED"
+		base.ObservedStage = "AMBIGUOUS"
+		base.NextOperation = "resolve-ambiguity"
+		base.Reason = "Multiple unclaimed Plan-mode files are available; Boatstack will not choose by recency."
+		base.BlockingAmbiguity = sourcePlans
+		return base, nil
+	}
+
 	candidates, err := featurePlanCandidates(repo)
 	if err != nil {
 		return NextStatus{}, err
@@ -250,34 +278,6 @@ func ResolveNext(repoPath string) (NextStatus, error) {
 			base.NextOperation = "plan-gate"
 			base.Reason = "The saved feature plan has not been approved."
 		}
-		return base, nil
-	}
-
-	orphans, err := orphanedFeatureArtifacts(repo)
-	if err != nil {
-		return NextStatus{}, err
-	}
-	if len(orphans) > 0 {
-		return blockedNextStatus("INVALID_STATE", "repair-state", "Boatstack found a PR preview without the plan lock required to verify it. Preserve the artifacts and restore the feature evidence before continuing.", orphans...), nil
-	}
-
-	sourcePlans, sourceErr := unclaimedSourcePlanCandidates(repo)
-	if sourceErr != nil {
-		return NextStatus{}, sourceErr
-	}
-	if len(sourcePlans) == 1 {
-		base.VerificationStatus = "VERIFIED"
-		base.ObservedStage = "SOURCE_PLAN_READY"
-		base.NextOperation = "auto-plan"
-		base.Reason = fmt.Sprintf("Saved Plan-mode file %q is ready to become a Boatstack feature.", sourcePlans[0])
-		return base, nil
-	}
-	if len(sourcePlans) > 1 {
-		base.VerificationStatus = "BLOCKED"
-		base.ObservedStage = "AMBIGUOUS"
-		base.NextOperation = "resolve-ambiguity"
-		base.Reason = "Multiple unclaimed Plan-mode files are available; Boatstack will not choose by recency."
-		base.BlockingAmbiguity = sourcePlans
 		return base, nil
 	}
 
