@@ -193,8 +193,11 @@ func TestHostContractsNormalizeCanonicalInputs(t *testing.T) {
 		{"cursor legacy ambiguous deny", "cursor", `{"command":"docker","tool_name":"mcp__status__read","tool_input":{}}`, true, `"permission":"deny"`},
 		{"claude allow", "claude", `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git status --short"}}`, false, ""},
 		{"claude deny", "claude", `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git reset --hard HEAD~1"}}`, true, `"permissionDecision":"deny"`},
+		{"cursor Claude compatibility allow", "claude", `{"hook_event_name":"preToolUse","tool_name":"Shell","tool_input":{"command":"git status --short"}}`, false, ""},
+		{"cursor Claude compatibility deny", "claude", `{"hook_event_name":"preToolUse","tool_name":"Shell","tool_input":{"command":"git reset --hard HEAD~1"}}`, true, `"permissionDecision":"deny"`},
 		{"codex allow", "codex", `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git status --short"}}`, false, ""},
 		{"codex deny", "codex", `{"hook_event_name":"PreToolUse","tool_name":"mcp__cloud__delete_database","tool_input":{"database":"primary"}}`, true, `"permissionDecision":"deny"`},
+		{"codex lowercase PreToolUse deny", "codex", `{"hook_event_name":"preToolUse","tool_name":"Bash","tool_input":{"command":"git status --short"}}`, true, `"permissionDecision":"deny"`},
 		{"wrong event deny", "codex", `{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"git status --short"}}`, true, `"permissionDecision":"deny"`},
 	}
 	for _, test := range cases {
