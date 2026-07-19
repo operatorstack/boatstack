@@ -380,7 +380,7 @@ func decodePreToolUseHook(host string, value []byte) (string, any, error) {
 		return "", nil, err
 	}
 	eventName := stringValue(event["hook_event_name"])
-	if eventName != "" && eventName != "PreToolUse" {
+	if eventName != "" && eventName != "PreToolUse" && !(host == "claude" && eventName == "preToolUse") {
 		return "", nil, malformedHookInput("unsupported-event")
 	}
 	name := stringValue(event["tool_name"])
