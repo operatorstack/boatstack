@@ -33,6 +33,7 @@ type ProjectConfig struct {
 	SchemaVersion int                         `json:"schema_version"`
 	Project       Project                     `json:"project"`
 	Workflow      Workflow                    `json:"workflow"`
+	Workspace     Workspace                   `json:"workspace,omitempty"`
 	Adapters      []string                    `json:"adapters"`
 	Integrations  map[string]IntegrationState `json:"integrations,omitempty"`
 }
@@ -57,6 +58,18 @@ type IntegrationState struct {
 	Status    string `json:"status,omitempty"`
 	Version   string `json:"version,omitempty"`
 	Detail    string `json:"detail,omitempty"`
+}
+
+// Workspace declares how Boatstack manages the per-feature working area: a fresh
+// cut from the up-to-date default branch when a feature starts, and cleanup once
+// the feature ships. The managed unit is a git worktree or an in-place branch;
+// the empty zero value (Enabled=false) preserves Boatstack's prior behavior of
+// never creating or removing worktrees or branches.
+type Workspace struct {
+	Enabled      bool   `json:"enabled,omitempty"`       // master switch; false = Boatstack touches no worktrees/branches
+	Mode         string `json:"mode,omitempty"`          // "worktree" | "branch" (default "worktree")
+	Cleanup      string `json:"cleanup,omitempty"`       // "confirm" | "auto" | "off" (default "confirm")
+	CleanupAfter string `json:"cleanup_after,omitempty"` // "merge" | "ship" (default "merge")
 }
 
 func ReadCanonical(path string) ([]byte, error) {

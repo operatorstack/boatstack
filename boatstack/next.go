@@ -273,6 +273,12 @@ func ResolveNext(repoPath string) (NextStatus, error) {
 			base.ObservedStage = "APPROVED"
 			base.NextOperation = "build"
 			base.Reason = "The saved feature has an approval receipt but no active delivery state."
+			// Cut a fresh workspace before building so work never starts on a
+			// stale base branch. Local-only check; the cut itself fetches origin.
+			if workspaceEnabled(repo) && needsFreshCut(repo, feature) {
+				base.NextOperation = "workspace-cut"
+				base.Reason = fmt.Sprintf("Feature %q is approved; cut a fresh workspace from the default branch before building.", feature)
+			}
 		} else {
 			base.ObservedStage = "DRAFT_PLAN"
 			base.NextOperation = "plan-gate"
@@ -291,10 +297,23 @@ func ResolveNext(repoPath string) (NextStatus, error) {
 		base.NextOperation = "none"
 		if len(completed) == 1 {
 			base.Feature = completed[0].Feature
-			if len(completed[0].Slices) > 0 {
-				base.ActiveSlice = completed[0].Slices[len(completed[0].Slices)-1].ID
+			head := ""
+			if slices := completed[0].Slices; len(slices) > 0 {
+				last := slices[len(slices)-1]
+				base.ActiveSlice = last.ID
+				head = last.HeadBranch
 			}
 			base.Reason = fmt.Sprintf("All managed slices for feature %q are already published.", completed[0].Feature)
+			// When workspace management is on and the shipped feature still has a
+			// linked worktree locally, surface cleanup as the next step. This is a
+			// local-only check; merge confirmation and gating happen in the
+			// workspace-cleanup operation, never here.
+			if head != "" && workspaceEnabled(repo) {
+				if path := worktreePathForBranch(repo, head); path != "" {
+					base.NextOperation = "workspace-cleanup"
+					base.Reason = fmt.Sprintf("Feature %q is published; its workspace on %q can be cleaned up.", completed[0].Feature, head)
+				}
+			}
 		} else {
 			base.Reason = "All managed delivery states are already published."
 		}

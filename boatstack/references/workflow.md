@@ -19,6 +19,7 @@ INTENT
   -> REVIEW_GATE
   -> SHIP_GATE
   -> PR_OPEN
+  -> WORKSPACE_CLEANUP (when workspace management is on and the feature's PR has merged)
   -> RETRO
 ```
 
@@ -101,6 +102,8 @@ Lead with a plain outcome, never a machine code such as `PASS`, `PLAN_APPROVED`,
 | `ship-gate` preview / published | **PR ready** -> reply `o` to open or `u` to update the previewed PR; **PR opened** -> review the PR; never imply merge authorization |
 | `boatstack-update` current / postponed / prepared / published / blocked | **Boatstack is current** -> no action required; **Update postponed** -> finish feature work and rerun from the clean default branch; **Boatstack update ready** -> reply `o` to open the update PR; **Update PR opened** -> review the PR; **Update needs attention** -> address the one reported collision or health failure |
 | `retro` | **Improvement proposed** -> review or authorize the experiment |
+| `workspace-cut` (surfaced by `boatstack-next` at approved -> build) | **Fresh workspace cut** -> build on the new branch/worktree; **Workspace already fresh** -> continue to build |
+| `workspace-cleanup` (surfaced by `boatstack-next` after publication) | **Workspace ready to clean up** -> reply `c` to remove the worktree and branch, or `k` to keep; **Workspace kept** -> no action required; **Workspace still open** -> the PR is not merged yet, keep waiting or override explicitly |
 
 ### Foreground run coordinator
 
@@ -118,8 +121,12 @@ Finite input uses one global, state-scoped reply grammar:
 | `o` | New feature, ad-hoc, or Boatstack-update PR preview | Open the exact previewed PR | `open PR` or `open update PR` |
 | `u` | Existing PR preview | Update the exact previewed PR | `update PR` |
 | `r` | One or more finite questions with exactly one marked recommendation each | Accept every recommendation displayed in that response | Explicitly name the recommended choices |
+| `c` | Published feature whose merged workspace can be reclaimed | Clean up the feature's worktree and branch | `clean up` |
+| `k` | Published feature whose workspace can be reclaimed | Keep the workspace for now | `keep` |
 
 Trim surrounding whitespace and match shortcuts case-insensitively against the complete reply. Bracketed forms such as `[o]`, embedded letters, and shortcuts from another state are ordinary text. Continue accepting the full replies for compatibility, but do not advertise them in user-facing responses.
+
+Before `c` removes a workspace, confirm the merge and safety gates in the `WORKSPACE_CLEANUP` contract. `c` never discards uncommitted or unmerged work and never deletes remote branches or merges anything; it only reclaims the local worktree and branch of an already-published feature.
 
 Shortcuts never bypass gate prerequisites. Before `o` or `u` mutates GitHub, recheck the preview fingerprint, committed diff, evidence, authentication, and any required manual commit or push. Never interpret `r` as plan approval, PR publication, identity, secret input, permission escalation, policy bypass, destructive recovery authorization, or another exceptional safety decision. Free-text and operation-command prompts remain explicit.
 
@@ -378,6 +385,14 @@ There is no public `/pr-brief` operation. When the user asks in natural language
 6. preview first, then require `o` to open or `u` to update the PR and recheck the diff before publication.
 
 Adaptive sections for security/privacy, migrations, UI evidence, or operations appear only when relevant. Model attribution belongs inside collapsed provenance. If GitHub CLI authentication is unavailable, keep the validated preview and provide one manual publication action instead of losing the work.
+
+### `PLAN_APPROVED -> WORKSPACE_CUT`
+
+When `workspace.enabled` is set and an approved feature is still on the default branch with no branch or worktree of its own, `boatstack-next` routes to `workspace-cut` before `build`. The `workspace-cut` operation fetches `origin`, cuts a fresh branch from the up-to-date default branch, and in `worktree` mode adds a linked worktree; in `branch` mode it switches in place. It never rewrites history, reuses an existing branch, or names the workspace after the base branch. Once the feature already has its own branch or worktree, this step is skipped and the flow proceeds straight to `build`, so a workspace you cut yourself is respected.
+
+### `PR_OPEN -> WORKSPACE_CLEANUP`
+
+When `workspace.enabled` is set, `boatstack-next` surfaces `workspace-cleanup` for a published feature whose managed worktree still exists locally. The `workspace-cleanup` operation checks the pull request's merge state (GitHub CLI, falling back to local ancestry) and reports it. When `workspace.cleanup_after` is `merge`, cleanup is offered only once the PR is confirmed merged; while it is still open, the workspace is kept and the human may keep waiting or override explicitly. Cleanup never removes a workspace with uncommitted or unmerged work without an explicit forced override, and it reclaims only the local worktree and branch — it never deletes a remote branch or merges anything. In `confirm` mode the human reclaims the workspace with the exact reply `c` (or keeps it with `k`); `auto` mode reclaims a merged workspace without a prompt; `off` disables cleanup. A fresh feature workspace is likewise cut from the up-to-date default branch when a new feature begins, so work never starts on a stale branch.
 
 ### `PR_OPEN -> RETRO`
 

@@ -597,9 +597,75 @@ func publishPRCommand(arguments []string) int {
 	return 0
 }
 
+func workspaceCutCommand(arguments []string) int {
+	flags := flag.NewFlagSet("workspace-cut", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository to cut the feature workspace in")
+	feature := flags.String("feature", "", "feature slug used to derive the branch name")
+	branch := flags.String("branch", "", "explicit branch name; overrides --feature derivation")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	result, err := boatstack.CutFeatureWorkspace(boatstack.WorkspaceCutOptions{Repo: *repo, Feature: *feature, Branch: *branch})
+	if err != nil {
+		return fail(err)
+	}
+	value, err := boatstack.MarshalJSON(result)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Print(string(value))
+	if result.VerificationStatus != "VERIFIED" {
+		return 1
+	}
+	return 0
+}
+
+func workspaceCleanupCommand(arguments []string) int {
+	flags := flag.NewFlagSet("workspace-cleanup", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository whose finished workspace should be removed")
+	branch := flags.String("branch", "", "branch whose workspace should be cleaned up")
+	confirm := flags.Bool("confirm", false, "human confirmation to remove the workspace")
+	force := flags.Bool("force", false, "override the merge gate and discard uncommitted or unmerged work")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	result, err := boatstack.CleanupFeatureWorkspace(boatstack.WorkspaceCleanupOptions{Repo: *repo, Branch: *branch, Confirm: *confirm, Force: *force})
+	if err != nil {
+		return fail(err)
+	}
+	value, err := boatstack.MarshalJSON(result)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Print(string(value))
+	if result.VerificationStatus == "BLOCKED" {
+		return 1
+	}
+	return 0
+}
+
+func workspaceStatusCommand(arguments []string) int {
+	flags := flag.NewFlagSet("workspace-status", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository to inspect")
+	branch := flags.String("branch", "", "branch whose workspace should be reported")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	result, err := boatstack.FeatureWorkspaceStatus(*repo, *branch)
+	if err != nil {
+		return fail(err)
+	}
+	value, err := boatstack.MarshalJSON(result)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Print(string(value))
+	return 0
+}
+
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|run-preflight|record-change|record-delivery-gate|check-safety|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|run-preflight|record-change|record-delivery-gate|check-safety|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -651,6 +717,12 @@ func run() int {
 		return bootstrapSafetyHookCommand(os.Args[2:])
 	case "check-safety":
 		return checkSafetyCommand(os.Args[2:])
+	case "workspace-cut":
+		return workspaceCutCommand(os.Args[2:])
+	case "workspace-cleanup":
+		return workspaceCleanupCommand(os.Args[2:])
+	case "workspace-status":
+		return workspaceStatusCommand(os.Args[2:])
 	case "version":
 		fmt.Printf("Boatstack %s (%s)\n", boatstack.Version, boatstack.SourceCommit)
 		return 0
