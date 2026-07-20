@@ -268,7 +268,12 @@ func CachedUpdate(repoPath string) (UpdateCheckResult, bool) {
 
 // PostShipUpdateNotice is deliberately best-effort: release discovery can add
 // information after a successful publication, but it cannot change that result.
-func PostShipUpdateNotice(repo string) (UpdateCheckResult, bool) {
+func PostShipUpdateNotice(repo string, feature string) (UpdateCheckResult, bool) {
+	if feature != "" {
+		if state, err := LoadDeliveryState(repo, feature); err == nil && state.ActiveIndex + 1 < len(state.Slices) {
+			return UpdateCheckResult{}, false
+		}
+	}
 	result, err := CheckForUpdate(UpdateCheckOptions{Repo: repo, Notify: true})
 	if err != nil || result.Status != "available" || !result.ShouldNotify {
 		return UpdateCheckResult{}, false

@@ -654,7 +654,12 @@ func publishPRCommand(arguments []string) int {
 		verb = "updated"
 	}
 	fmt.Printf("PASS: PR %s without merge authorization\nPR_URL=%s\n", verb, url)
-	if update, ok := boatstack.PostShipUpdateNotice(*repo); ok {
+	
+	feature := ""
+	if preview, err := boatstack.ParsePRPreview(*previewPath); err == nil {
+		feature = preview.Feature
+	}
+	if update, ok := boatstack.PostShipUpdateNotice(*repo, feature); ok {
 		fmt.Printf("UPDATE_AVAILABLE=%s\nUPDATE_RELEASE_URL=%s\n", update.LatestVersion, update.ReleaseURL)
 	}
 	return 0
