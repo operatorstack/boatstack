@@ -37,5 +37,5 @@
       "version": "v0.12.16"
     }
   },
-  "adapters": ["cursor", "claude", "codex", "github"]
+  "adapters": ["cursor", "claude", "codex", "gemini", "github"]
 }

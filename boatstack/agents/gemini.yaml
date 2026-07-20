@@ -1,0 +1,4 @@
+interface:
+  display_name: "Boatstack (Gemini)"
+  short_description: "Build freely; approve, verify, review, and ship with evidence using Gemini CLI."
+  default_prompt: "Use $boatstack as an evidence-engineered coding node: keep implementation tactics open and require evidence for approval, completion, review, and shipping."

@@ -111,6 +111,8 @@ func skillFieldsForPath(path string) (map[string]string, error) {
 		return codexSkillFields, nil
 	case strings.HasPrefix(path, ".claude/skills/"):
 		return claudeSkillFields, nil
+	case strings.HasPrefix(path, ".gemini/skills/"):
+		return claudeSkillFields, nil
 	default:
 		return nil, fmt.Errorf("unsupported generated skill path")
 	}

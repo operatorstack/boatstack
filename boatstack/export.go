@@ -16,6 +16,7 @@ var allowedAdapters = map[string]bool{
 	"cursor": true,
 	"claude": true,
 	"codex":  true,
+	"gemini": true,
 	"github": true,
 }
 
@@ -114,7 +115,7 @@ func ValidateConfig(config ProjectConfig) error {
 
 func normalizedAdapters(adapters []string) []string {
 	if len(adapters) == 0 {
-		return []string{"claude", "codex", "cursor", "github"}
+		return []string{"claude", "codex", "cursor", "gemini", "github"}
 	}
 	seen := map[string]bool{}
 	for _, adapter := range adapters {
@@ -327,6 +328,31 @@ If gstack is enabled, use only its namespaced /gstack-* specialist lenses inside
 				return ExportBundle{}, fmt.Errorf("missing operation instructions for Claude skill %s", spec.Name)
 			}
 			path := fmt.Sprintf(".claude/skills/%s/SKILL.md", spec.Name)
+			files[path], err = GeneratedFrontmatter(
+				claudeOperationSkill(spec, commandBody(spec.Name, extra)),
+			)
+			if err != nil {
+				return ExportBundle{}, err
+			}
+		}
+	}
+	if contains(adapters, "gemini") {
+		geminiAdapterSkill := strings.Replace(
+			adapterSkill,
+			"\n---\n\n# Boatstack adapter",
+			"\nuser-invocable: false\n---\n\n# Boatstack adapter",
+			1,
+		)
+		files[fmt.Sprintf(".gemini/skills/%s/SKILL.md", adapterName)], err = GeneratedFrontmatter(geminiAdapterSkill)
+		if err != nil {
+			return ExportBundle{}, err
+		}
+		for _, spec := range claudeVisibleSkills {
+			extra, ok := operations[spec.Name]
+			if !ok {
+				return ExportBundle{}, fmt.Errorf("missing operation instructions for Gemini skill %s", spec.Name)
+			}
+			path := fmt.Sprintf(".gemini/skills/%s/SKILL.md", spec.Name)
 			files[path], err = GeneratedFrontmatter(
 				claudeOperationSkill(spec, commandBody(spec.Name, extra)),
 			)
