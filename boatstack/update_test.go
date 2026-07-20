@@ -173,7 +173,7 @@ func TestUpdateCheckCurrentAndFailures(t *testing.T) {
 	if err := os.Remove(updateStatePath(repo)); err != nil {
 		t.Fatal(err)
 	}
-	if notice, ok := PostShipUpdateNotice(repo); ok {
+	if notice, ok := PostShipUpdateNotice(repo, ""); ok {
 		t.Fatalf("release lookup failure changed post-ship behavior: %#v", notice)
 	}
 	if cached, ok := CachedUpdate(repo); ok {

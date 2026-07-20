@@ -18,6 +18,8 @@ type NextStatus struct {
 	VerificationStatus string   `json:"verification_status"`
 	Feature            string   `json:"feature,omitempty"`
 	ActiveSlice        string   `json:"active_slice,omitempty"`
+	SliceIndex         int      `json:"slice_index,omitempty"`
+	TotalSlices        int      `json:"total_slices,omitempty"`
 	ObservedStage      string   `json:"observed_stage"`
 	NextOperation      string   `json:"next_operation"`
 	Reason             string   `json:"reason"`
@@ -136,6 +138,7 @@ func nextForDelivery(repo, feature string) (NextStatus, error) {
 	status := NextStatus{
 		SchemaVersion: nextStatusSchemaVersion, VerificationStatus: "VERIFIED",
 		Feature: feature, ActiveSlice: slice.ID, ObservedStage: slice.Status,
+		SliceIndex: state.ActiveIndex + 1, TotalSlices: len(state.Slices),
 	}
 	switch slice.Status {
 	case "BUILD":
@@ -336,7 +339,11 @@ func FormatNextStatus(status NextStatus) string {
 		parts = append(parts, "Feature: "+status.Feature)
 	}
 	if status.ActiveSlice != "" {
-		parts = append(parts, "Active slice: "+status.ActiveSlice)
+		if status.TotalSlices > 1 {
+			parts = append(parts, fmt.Sprintf("Active slice: %s (PR %d of %d)", status.ActiveSlice, status.SliceIndex, status.TotalSlices))
+		} else {
+			parts = append(parts, "Active slice: "+status.ActiveSlice)
+		}
 	}
 	parts = append(parts, "Reason: "+status.Reason, "Next: "+status.NextOperation)
 	if len(status.BlockingAmbiguity) > 0 {

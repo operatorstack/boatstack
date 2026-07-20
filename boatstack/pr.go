@@ -35,6 +35,8 @@ type PRContext struct {
 	Mode               string            `json:"mode"`
 	Feature            string            `json:"feature,omitempty"`
 	SliceID            string            `json:"slice_id,omitempty"`
+	SliceIndex         int               `json:"slice_index,omitempty"`
+	TotalSlices        int               `json:"total_slices,omitempty"`
 	BaseBranch         string            `json:"base_branch"`
 	HeadBranch         string            `json:"head_branch"`
 	BaseCommit         string            `json:"base_commit"`
@@ -429,6 +431,8 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 	sources := []PRSource{configSource}
 	gateStatus := map[string]string{}
 	sliceID := ""
+	sliceIndex := 0
+	totalSlices := 0
 	safety, err := CheckRepositorySafety(repo)
 	if err != nil {
 		return PRContext{}, fmt.Errorf("cannot establish operational safety evidence: %w", err)
@@ -443,7 +447,7 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 		}
 		sources = append(sources, managedSources...)
 		gateStatus = statuses
-		_, slice, gateSources, deliveryErr := CheckDeliveryReadyForShip(repo, options.Feature, base, head, SHA256Bytes(diff), changed)
+		state, slice, gateSources, deliveryErr := CheckDeliveryReadyForShip(repo, options.Feature, base, head, SHA256Bytes(diff), changed)
 		if deliveryErr != nil {
 			return PRContext{}, deliveryErr
 		}
@@ -451,6 +455,8 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 			return PRContext{}, fmt.Errorf("delivery slice %s is not active; current slice is %s", options.SliceID, slice.ID)
 		}
 		sliceID = slice.ID
+		sliceIndex = state.ActiveIndex + 1
+		totalSlices = len(state.Slices)
 		sources = append(sources, gateSources...)
 	}
 	sort.Slice(sources, func(i, j int) bool { return sources[i].Path < sources[j].Path })
@@ -474,6 +480,7 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 	}
 	return PRContext{
 		SchemaVersion: prPreviewSchemaVersion, Mode: mode, Feature: options.Feature, SliceID: sliceID,
+		SliceIndex: sliceIndex, TotalSlices: totalSlices,
 		BaseBranch: base, HeadBranch: head, BaseCommit: baseCommit, MergeBaseCommit: mergeBaseCommit, HeadCommit: headCommit,
 		ProductDiffSHA256: SHA256Bytes(diff), ContextFingerprint: SHA256Bytes(fingerprintPayload),
 		ChangedFiles: changed, Commits: commits, DiffStat: diffStat,
@@ -855,7 +862,7 @@ func PRPreviewTemplate(context PRContext) string {
 		return string(encoded)
 	}
 	safetySummary := "Repository safety scan: `" + context.SafetyStatus + "`. Destructive recovery remains operator-only outside Boatstack."
-	return strings.Join([]string{
+	lines := []string{
 		"---",
 		"boatstack_pr_version: 2",
 		"title: " + quote("Describe the product or user value of this change (e.g., 'Enable historical data migration')"),
@@ -873,8 +880,12 @@ func PRPreviewTemplate(context PRContext) string {
 		"## Operational safety", "", safetySummary, "",
 		"## Known gaps and risks", "", "List explicit gaps or say that no material gaps are known.", "",
 		"## Rollout and rollback", "", "Describe deployment impact and the smallest safe rollback.", "",
-		"<details>", "<summary>Boatstack provenance</summary>", "", "Summarize mode, approval/evidence availability, and coding-host attribution here.", "", "</details>", "",
-	}, "\n")
+	}
+	if context.TotalSlices > 1 {
+		lines = append(lines, fmt.Sprintf("> *(This is PR %d of %d in the `%s` feature)*", context.SliceIndex, context.TotalSlices, context.Feature), "")
+	}
+	lines = append(lines, "<details>", "<summary>Boatstack provenance</summary>", "", "Summarize mode, approval/evidence availability, and coding-host attribution here.", "", "</details>", "")
+	return strings.Join(lines, "\n")
 }
 
 func PRContextJSON(context PRContext) ([]byte, error) {
