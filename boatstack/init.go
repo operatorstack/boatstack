@@ -161,8 +161,9 @@ func defaultConfig(repo, testCommand string) ProjectConfig {
 			Name: filepath.Base(repo), DefaultBranch: branch, Context: detectContext(repo),
 			Commands: map[string]string{"test": testCommand},
 		},
-		Workflow: Workflow{HumanPlanApproval: true, IndependentReviewForHighRisk: true, AllowPassWithGaps: true},
-		Adapters: []string{"cursor", "claude", "codex", "github"},
+		Workflow:  Workflow{HumanPlanApproval: true, IndependentReviewForHighRisk: true, AllowPassWithGaps: true},
+		Workspace: Workspace{Enabled: true, Mode: "worktree", Cleanup: "confirm", CleanupAfter: "merge"},
+		Adapters:  []string{"cursor", "claude", "codex", "github"},
 		Integrations: map[string]IntegrationState{
 			"gstack":   {Requested: false, Version: GStackRef},
 			"spec-kit": {Requested: false, Version: SpecKitVersion},
