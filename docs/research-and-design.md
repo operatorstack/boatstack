@@ -11,7 +11,7 @@ The proposed product is not a large prompt and not a Codex-, Cursor-, Claude-, o
 
 The initial implementation is in [`product-engineering-loop/`](product-engineering-loop/). Its exporter generates Cursor rules/commands, Claude Code and Codex skills, and a GitHub PR template from one source.
 
-The public [Boatstack](https://github.com/operatorstack/boatstack) repository is a compiled distribution, not a second source of product/runtime truth. `scripts/build_boatstack.py` projects this package into a branded README, evidence-engineered-coding explanation, worked example, tests, and installable skill; `UPSTREAM.json` binds every projected file to its Intelligence Flow commit. A Boatstack-owned scheduled workflow polls this public source and proposes content changes by PR. Boatstack's `.github/workflows` directory is a deliberately separate control-plane slice: it originates and changes in Boatstack through ordinary, manually reviewed PRs and is never emitted, owned, or removed by the Intelligence Flow projector.
+The public [Boatstack](https://github.com/operatorstack/boatstack) repository is a compiled distribution, not a second source of product/runtime truth. `scripts/build_boatstack.py` projects this package into a branded README, evidence-engineered-coding explanation, worked example, tests, and installable skill; `UPSTREAM.json` binds every projected file to its Intelligence Flow commit. The README and beginner guides remain ordinary human-authored Markdown copied byte-for-byte, while the Go helper embeds only install-time workflow references and templates. A machine-readable public claim record keeps homepage wording tied to observations, safeguards, tests, and explicit evaluation status. A Boatstack-owned scheduled workflow polls this public source and proposes content changes by PR. Boatstack's `.github/workflows` directory is a deliberately separate control-plane slice: it originates and changes in Boatstack through ordinary, manually reviewed PRs and is never emitted, owned, or removed by the Intelligence Flow projector.
 
 ## Outcome sizing and where value emerges
 
@@ -98,8 +98,11 @@ Those are **summary-only evidence** in this design. They are not represented as 
 | The development result did not transfer | Spec-first was a statistical wash on the full board | Promotion requires representative distribution/holdout, not only a tuned dev slice |
 | Model change relocated the bottleneck | Same harness exposed near-miss dominance on Gemini and step exhaustion on Qwen | Diagnose the active population each time; do not encode model-specific recipes |
 | Mid-run aggregates changed direction | Qwen board interpretation moved as task coverage deepened | Compare paired completed coverage and uncertainty, not early aggregate rank |
+| External failure invited destructive recovery | A sanitized partial schema apply failure led to an invented reset path before review removed it | Treat recovery authority as a deterministic boundary: preserve state, diagnose read-only, transact or fix forward |
 
 Sources: [`RESEARCH_LOG.md`](../11-harbor-submit/RESEARCH_LOG.md), [`EXPERIMENT_GEMINI20_2026-07-15.md`](../11-harbor-submit/EXPERIMENT_GEMINI20_2026-07-15.md), [`ZERO_TO_QWEN.md`](../11-harbor-submit/ZERO_TO_QWEN.md), and [`docs/12-self-verification-fidelity.md`](../../docs/12-self-verification-fidelity.md).
+
+The irreversible-operation boundary is a **PROPOSED** Move. The incident supports the target failure mechanism, while the benchmark campaign supports deterministic enforcement over stronger wording. Neither proves the new guard's net effect. Promotion requires a paired unguarded baseline, destructive and safe corpora, real host events, bounded latency, secret-free denials, and no workflow regression.
 
 ## What two example repositories add
 
@@ -137,7 +140,7 @@ The node does not adopt a universal “boil the ocean” policy. Completeness is
 - [Cursor project rules](https://docs.cursor.com/context/rules) live in `.cursor/rules`; project commands live in [`.cursor/commands`](https://docs.cursor.com/en/agent/chat/commands). Cursor is a first-class exported surface.
 - Claude Code receives a project skill while `CLAUDE.md` stays repository-owned.
 - Codex receives a repo skill under `.agents/skills`; [OpenAI recommends](https://learn.chatgpt.com/docs/customization/overview) keeping durable `AGENTS.md` guidance small and workflows in reusable skills.
-- GitHub receives a PR template that exposes approved-plan hashes, gate status, gaps, evidence, rollout, and rollback.
+- GitHub receives a reviewer-first fallback template. The active adapter generates an exact `pr.md` preview from the committed diff and available evidence, then requires a separate open/update confirmation. Managed work may cite current approval and gates; an ad-hoc branch must label missing evidence `NOT_VERIFIED`.
 
 The exporter refuses to overwrite any non-generated file. Its lock records canonical version, config hash, adapters, and output hashes so a PR can show exactly what changed.
 

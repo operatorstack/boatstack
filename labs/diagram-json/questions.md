@@ -7,5 +7,5 @@
 | Q-3 | What run data belongs in v1? | Serializing the entire execution trace expands scope and can leak unrelated internals. | Edge signal overlay plus optional bottleneck; entire `FlowRun`; topology only. | Include the compact overlay and bottleneck already exposed by the text renderer. | Use the compact overlay, excluding the raw trace. | Simulated maintainer decision | Accepted for demo |
 
 Discoverable facts were answered from `src/diagram.ts`, `src/index.ts`,
-`examples/05-diagram-printer/`, `package.json`, and the TypeScript configs. No
+`labs/05-diagram-printer/`, `package.json`, and the TypeScript configs. No
 other product choice is hidden as an assumption in this draft.

@@ -1,0 +1,577 @@
+package boatstack
+
+import (
+	"encoding/json"
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+)
+
+// SafetyFinding is intentionally small and secret-free. The guard reports the
+// class and a stable explanation, never the full command or tool arguments.
+type SafetyFinding struct {
+	Category string `json:"category"`
+	Reason   string `json:"reason"`
+	Source   string `json:"source,omitempty"`
+}
+
+type SafetyReport struct {
+	Status   string          `json:"status"`
+	Findings []SafetyFinding `json:"findings"`
+}
+
+type SafetyHookOptions struct {
+	Host  string
+	Repo  string
+	Input []byte
+}
+
+type hookDecodeError struct {
+	code string
+}
+
+func (err hookDecodeError) Error() string { return err.code }
+
+func malformedHookInput(code string) error {
+	return hookDecodeError{code: code}
+}
+
+var readOnlyStage = regexp.MustCompile(`(?i)^\s*(?:env\s+[^ ]+\s+)*(?:rg|grep|git\s+(?:grep|diff|status|show|log)|cat|sed|head|tail|less|find\s+[^\n]*-(?:print|ls)|psql\s+[^\n]*\s-c\s+["']?\s*select\b)`)
+
+var irreversiblePatterns = []struct {
+	category string
+	reason   string
+	pattern  *regexp.Regexp
+}{
+	{"database-destruction", "database or schema destruction is operator-only", regexp.MustCompile(`(?is)\bdrop\s+(?:database|schema|table)\b|\balter\s+table\b[^;\n]*\bdrop\s+(?:column|constraint)\b|\btruncate(?:\s+table)?\b|\bdrop\s+schema\b[^;\n]*\bcascade\b`)},
+	{"database-reset", "database reset, flush, or destructive downgrade is operator-only", regexp.MustCompile(`(?i)(?:--reset-public\b|\b(?:supabase\s+db\s+reset|prisma\s+migrate\s+reset|rails\s+db:(?:drop|reset)|django-admin\s+flush|manage\.py\s+flush|alembic\s+downgrade\s+base|pg_restore\b[^\n]*\s--clean\b))`)},
+	{"filesystem-destruction", "recursive deletion of a broad or protected path is denied", regexp.MustCompile(`(?i)\b(?:rm\s+-[^\n;]*(?:r[^\n;]*f|f[^\n;]*r)|remove-item\s+[^\n;]*-recurse[^\n;]*-force)\s+(?:["']?(?:/|~|\$home|\$HOME|\.|\.\.)["']?\s*(?:;|&&|\|\||$)|[^\s;]*\*[^\s;]*)`)},
+	{"git-history-destruction", "destructive Git cleanup or history replacement is denied", regexp.MustCompile(`(?i)\bgit\s+(?:reset\s+--hard\b|clean\s+-[^\s]*(?:f[^\s]*d|d[^\s]*f|x)[^\s]*|push\b[^\n]*(?:--force(?:-with-lease)?|-f\b))`)},
+	{"infrastructure-destruction", "cloud or infrastructure destruction is operator-only", regexp.MustCompile(`(?i)\b(?:terraform|tofu|pulumi)\s+destroy\b|\bkubectl\s+delete\s+(?:namespace|cluster|persistentvolume|persistentvolumeclaim|pvc)\b|\bdocker\s+volume\s+(?:rm|prune)\b|\bgcloud\s+(?:projects|sql\s+instances|compute\s+(?:instances|disks))\s+delete\b|\baws\s+[^\n]*(?:delete-cluster|delete-db-instance|terminate-instances|delete-volume|delete-bucket)\b`)},
+	{"recovery-destruction", "backup deletion or recovery disablement is operator-only", regexp.MustCompile(`(?i)\b(?:delete|remove|disable)\b[^\n;]*(?:backup|snapshot|point-in-time|pitr|recovery)\b`)},
+}
+
+var operationalPathPattern = regexp.MustCompile(`(?i)(?:^|/)(?:scripts?|migrations?|schema|database|db|deploy|infra|ops|terraform|k8s)(?:/|$)|\.(?:sql|ps1|sh|bash|py)$`)
+
+// Match SQL mutation grammar rather than isolated English or command tokens.
+// Requiring DELETE FROM or UPDATE <target> SET keeps executable SQL visible
+// without treating names such as check-update or API method labels as queries.
+var mutationStatementPattern = regexp.MustCompile(`(?is)\b(?:delete\s+from\s+(?:[a-z_][a-z0-9_$.-]*|"[^"]+")|update\s+(?:[a-z_][a-z0-9_$.-]*|"[^"]+")\s+set\b)[^;]*`)
+var directPublicationPattern = regexp.MustCompile(`(?i)(?:\bgit\b[^\n;&|]*\bpush\b|\bgh\s+pr\s+(?:create|edit|ready|merge)\b|\bgh\s+api\b[^\n;&|]*(?:/pulls\b|/pull-requests\b)|\bhub\s+pull-request\b|\bcurl\b[^\n;&|]*(?:api\.github\.com|/pulls\b)[^\n;&|]*(?:\s-X\s*(?:POST|PATCH)|--request\s+(?:POST|PATCH)))`)
+var approvedPublisherPattern = regexp.MustCompile(`(?i)^\s*(?:[^\s]*/)?boatstack-helper\s+publish-pr\b[^\n;&|]*$`)
+var deliveryStatePathPattern = regexp.MustCompile(`(?i)(?:boatstack[/\\]deliveries|\.git[/\\](?:worktrees[/\\][^/\\]+[/\\])?boatstack(?:[/\\]|$))`)
+
+func classifySafetyText(value, source string) []SafetyFinding {
+	if isPureReadOnlyCommand(value) {
+		return nil
+	}
+	findings := []SafetyFinding{}
+	seen := map[string]bool{}
+	for _, rule := range irreversiblePatterns {
+		if rule.pattern.MatchString(value) && !seen[rule.category] {
+			seen[rule.category] = true
+			findings = append(findings, SafetyFinding{Category: rule.category, Reason: rule.reason, Source: source})
+		}
+	}
+	for _, statement := range mutationStatementPattern.FindAllString(strings.ToLower(value), -1) {
+		normalized := " " + strings.Join(strings.Fields(statement), " ") + " "
+		if !strings.Contains(normalized, " where ") {
+			findings = append(findings, SafetyFinding{Category: "unbounded-data-mutation", Reason: "unbounded data deletion or update is denied", Source: source})
+			break
+		}
+	}
+	return findings
+}
+
+// isPureReadOnlyCommand recognizes a deliberately narrow diagnostic surface.
+// Every pipeline stage must itself be read-only, and compound shell syntax is
+// rejected. Quoted search patterns may name dangerous operations without
+// turning the diagnostic search into an executable capability.
+func isPureReadOnlyCommand(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || strings.ContainsAny(trimmed, "\n`><") || strings.Contains(trimmed, "$(") ||
+		strings.Contains(trimmed, ";") || strings.Contains(trimmed, "&&") || strings.Contains(trimmed, "||") || strings.Contains(trimmed, "<<") {
+		return false
+	}
+	stages, ok := shellPipelineStages(trimmed)
+	if !ok {
+		return false
+	}
+	for _, stage := range stages {
+		if !readOnlyStage.MatchString(strings.TrimSpace(stage)) {
+			return false
+		}
+	}
+	return true
+}
+
+func shellPipelineStages(value string) ([]string, bool) {
+	stages := []string{}
+	start := 0
+	var quote rune
+	escaped := false
+	for index, char := range value {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if char == '\\' && quote != '\'' {
+			escaped = true
+			continue
+		}
+		if quote != 0 {
+			if char == quote {
+				quote = 0
+			}
+			continue
+		}
+		if char == '\'' || char == '"' {
+			quote = char
+			continue
+		}
+		if char == '|' {
+			stages = append(stages, value[start:index])
+			start = index + 1
+		}
+	}
+	if quote != 0 || escaped {
+		return nil, false
+	}
+	stages = append(stages, value[start:])
+	return stages, true
+}
+
+func safeRepositoryPath(repo, candidate string) (string, bool) {
+	candidate = strings.Trim(candidate, "\"'`;,()[]{}")
+	if candidate == "" || strings.HasPrefix(candidate, "-") {
+		return "", false
+	}
+	ext := strings.ToLower(filepath.Ext(candidate))
+	if ext != ".py" && ext != ".sh" && ext != ".bash" && ext != ".ps1" && ext != ".sql" {
+		return "", false
+	}
+	path := candidate
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(repo, filepath.FromSlash(candidate))
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", false
+	}
+	rel, err := filepath.Rel(repo, abs)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	info, err := os.Lstat(abs)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return "", false
+	}
+	return abs, true
+}
+
+func invokedRepositoryFiles(repo, command string) []string {
+	paths := []string{}
+	seen := map[string]bool{}
+	for _, token := range strings.Fields(command) {
+		if path, ok := safeRepositoryPath(repo, token); ok && !seen[path] {
+			seen[path] = true
+			paths = append(paths, path)
+		}
+	}
+	return paths
+}
+
+func ClassifyCommand(repo, command string) []SafetyFinding {
+	if strings.TrimSpace(command) == "" {
+		return []SafetyFinding{{Category: "malformed-tool-input", Reason: "empty-command", Source: "tool-input"}}
+	}
+	if deliveryStatePathPattern.MatchString(command) && !isPureReadOnlyCommand(command) {
+		return []SafetyFinding{{Category: "workflow-state-tamper", Reason: "managed delivery state may be changed only by Boatstack transitions", Source: "delivery-state"}}
+	}
+	if directPublicationPattern.MatchString(command) && !approvedPublisherPattern.MatchString(command) {
+		active, activeErr := ActiveManagedDeliveries(repo)
+		if activeErr != nil {
+			return []SafetyFinding{{Category: "workflow-state-invalid", Reason: "publication is denied because managed delivery state cannot be verified", Source: "delivery-state"}}
+		}
+		if len(active) > 0 {
+			return []SafetyFinding{{Category: "workflow-publication-bypass", Reason: "direct push or PR mutation is denied while a managed delivery slice is active", Source: "tool-input"}}
+		}
+	}
+	findings := classifySafetyText(command, "command")
+	if regexp.MustCompile(`(?i)\b(?:rm\s+-[^\n;]*(?:r[^\n;]*f|f[^\n;]*r)|remove-item\s+[^\n;]*-recurse[^\n;]*-force)\b`).MatchString(command) && strings.Contains(command, repo) {
+		findings = append(findings, SafetyFinding{Category: "filesystem-destruction", Reason: "recursive deletion of the repository is denied", Source: "command"})
+	}
+	if len(findings) > 0 || isPureReadOnlyCommand(command) {
+		return dedupeFindings(findings)
+	}
+	for _, token := range strings.Fields(command) {
+		candidate := strings.Trim(token, "\"'`;,()[]{}")
+		if ext := strings.ToLower(filepath.Ext(candidate)); ext != ".py" && ext != ".sh" && ext != ".bash" && ext != ".ps1" && ext != ".sql" {
+			continue
+		}
+		path := candidate
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(repo, filepath.FromSlash(path))
+		}
+		if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
+			return []SafetyFinding{{Category: "symlink-entrypoint", Reason: "an invoked repository entrypoint is a symlink and cannot be inspected safely", Source: filepath.Base(path)}}
+		}
+	}
+	for _, path := range invokedRepositoryFiles(repo, command) {
+		value, err := os.ReadFile(path)
+		if err != nil {
+			return []SafetyFinding{{Category: "unreadable-entrypoint", Reason: "an invoked repository entrypoint could not be inspected", Source: filepath.Base(path)}}
+		}
+		relative, relErr := filepath.Rel(repo, path)
+		if relErr != nil {
+			relative = filepath.Base(path)
+		}
+		findings = append(findings, classifySafetyText(string(value), filepath.ToSlash(relative))...)
+	}
+	return dedupeFindings(findings)
+}
+
+func ClassifyTool(repo, name string, input any) []SafetyFinding {
+	if strings.EqualFold(name, "Bash") || strings.EqualFold(name, "Shell") || strings.EqualFold(name, "beforeShellExecution") {
+		if object, ok := input.(map[string]any); ok {
+			return ClassifyCommand(repo, stringValue(object["command"]))
+		}
+	}
+	value, err := json.Marshal(input)
+	if err != nil {
+		return []SafetyFinding{{Category: "malformed-tool-input", Reason: "invalid-tool-input", Source: "tool-input"}}
+	}
+	combined := name + " " + string(value)
+	findings := classifySafetyText(combined, "tool-input")
+	nameLower := strings.ToLower(name)
+	publicationText := strings.ToLower(combined)
+	if deliveryStatePathPattern.MatchString(combined) && regexp.MustCompile(`(?:write|edit|delete|remove|move|rename|create|update)`).MatchString(nameLower) {
+		findings = append(findings, SafetyFinding{Category: "workflow-state-tamper", Reason: "managed delivery state may be changed only by Boatstack transitions", Source: "delivery-state"})
+	}
+	if (strings.Contains(publicationText, "pull_request") || strings.Contains(publicationText, "pull request")) &&
+		regexp.MustCompile(`(?:create|update|edit|merge|publish)`).MatchString(publicationText) {
+		active, activeErr := ActiveManagedDeliveries(repo)
+		if activeErr != nil {
+			findings = append(findings, SafetyFinding{Category: "workflow-state-invalid", Reason: "publication is denied because managed delivery state cannot be verified", Source: "delivery-state"})
+		} else if len(active) > 0 {
+			findings = append(findings, SafetyFinding{Category: "workflow-publication-bypass", Reason: "direct PR mutation is denied while a managed delivery slice is active", Source: "tool-input"})
+		}
+	}
+	if regexp.MustCompile(`(?:delete|destroy|reset|drop|truncate|terminate)`).MatchString(nameLower) && regexp.MustCompile(`(?:database|schema|project|cluster|namespace|volume|bucket|backup|snapshot|instance)`).MatchString(strings.ToLower(combined)) {
+		findings = append(findings, SafetyFinding{Category: "external-resource-destruction", Reason: "destructive external-resource tools are operator-only", Source: "tool-input"})
+	}
+	return dedupeFindings(findings)
+}
+
+func dedupeFindings(values []SafetyFinding) []SafetyFinding {
+	seen := map[string]bool{}
+	result := []SafetyFinding{}
+	for _, value := range values {
+		key := value.Category + "\x00" + value.Source
+		if !seen[key] {
+			seen[key] = true
+			result = append(result, value)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Category == result[j].Category {
+			return result[i].Source < result[j].Source
+		}
+		return result[i].Category < result[j].Category
+	})
+	return result
+}
+
+type hookHostContract struct {
+	decode func([]byte) (string, any, error)
+	allow  func() ([]byte, error)
+	deny   func(SafetyFinding) ([]byte, error)
+}
+
+func decodeJSONObject(host string, value []byte) (map[string]any, error) {
+	if len(strings.TrimSpace(string(value))) == 0 {
+		return nil, malformedHookInput("empty-input")
+	}
+	var event map[string]any
+	if err := DecodeJSON("parse "+host+" hook event", "stdin", value, &event); err != nil {
+		return nil, malformedHookInput("invalid-json")
+	}
+	return event, nil
+}
+
+func cursorMCPInput(value any) (any, error) {
+	if text, ok := value.(string); ok {
+		if strings.TrimSpace(text) == "" {
+			return nil, malformedHookInput("empty-tool-input")
+		}
+		var decoded any
+		if err := json.Unmarshal([]byte(text), &decoded); err != nil {
+			return nil, malformedHookInput("invalid-tool-input-json")
+		}
+		return decoded, nil
+	}
+	if value == nil {
+		return nil, malformedHookInput("missing-tool-input")
+	}
+	return value, nil
+}
+
+func decodeCursorHook(value []byte) (string, any, error) {
+	event, err := decodeJSONObject("cursor", value)
+	if err != nil {
+		return "", nil, err
+	}
+	eventName := stringValue(event["hook_event_name"])
+	command := stringValue(event["command"])
+	toolName := stringValue(event["tool_name"])
+	toolInput := event["tool_input"]
+
+	switch eventName {
+	case "beforeShellExecution":
+		if _, present := event["command"]; !present {
+			return "", nil, malformedHookInput("missing-command")
+		}
+		if strings.TrimSpace(command) == "" {
+			return "", nil, malformedHookInput("empty-command")
+		}
+		return "Bash", map[string]any{"command": command}, nil
+	case "beforeMCPExecution":
+		if _, present := event["tool_name"]; !present {
+			return "", nil, malformedHookInput("missing-tool-name")
+		}
+		if strings.TrimSpace(toolName) == "" {
+			return "", nil, malformedHookInput("empty-tool-name")
+		}
+		input, inputErr := cursorMCPInput(toolInput)
+		if inputErr != nil {
+			return "", nil, inputErr
+		}
+		return toolName, input, nil
+	case "":
+		// Older Cursor builds omitted hook_event_name. Preserve only the two
+		// unambiguous shapes; an MCP transport command must never be classified
+		// as the requested tool operation.
+		if toolName != "" && toolInput != nil {
+			if command != "" {
+				return "", nil, malformedHookInput("ambiguous-event")
+			}
+			input, inputErr := cursorMCPInput(toolInput)
+			if inputErr != nil {
+				return "", nil, inputErr
+			}
+			return toolName, input, nil
+		}
+		if command != "" && toolName == "" {
+			return "Bash", map[string]any{"command": command}, nil
+		}
+		return "", nil, malformedHookInput("missing-command-or-tool")
+	default:
+		return "", nil, malformedHookInput("unsupported-event")
+	}
+}
+
+func decodePreToolUseHook(host string, value []byte) (string, any, error) {
+	event, err := decodeJSONObject(host, value)
+	if err != nil {
+		return "", nil, err
+	}
+	eventName := stringValue(event["hook_event_name"])
+	if eventName != "" && eventName != "PreToolUse" && !(host == "claude" && eventName == "preToolUse") {
+		return "", nil, malformedHookInput("unsupported-event")
+	}
+	name := stringValue(event["tool_name"])
+	input := event["tool_input"]
+	if _, present := event["tool_name"]; !present {
+		return "", nil, malformedHookInput("missing-tool-name")
+	}
+	if strings.TrimSpace(name) == "" {
+		return "", nil, malformedHookInput("empty-tool-name")
+	}
+	if input == nil {
+		return "", nil, malformedHookInput("missing-tool-input")
+	}
+	return name, input, nil
+}
+
+func structuredHookDeny(host string, finding SafetyFinding) ([]byte, error) {
+	message := denialMessage(host, finding)
+	value, err := json.Marshal(map[string]any{
+		"hookSpecificOutput": map[string]any{
+			"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": message,
+		},
+	})
+	return append(value, '\n'), err
+}
+
+var hookHostContracts = map[string]hookHostContract{
+	"cursor": {
+		decode: decodeCursorHook,
+		allow: func() ([]byte, error) {
+			value, err := json.Marshal(map[string]any{"continue": true, "permission": "allow"})
+			return append(value, '\n'), err
+		},
+		deny: func(finding SafetyFinding) ([]byte, error) {
+			message := denialMessage("cursor", finding)
+			value, err := json.Marshal(map[string]any{
+				"continue": true, "permission": "deny", "user_message": message, "agent_message": message,
+			})
+			return append(value, '\n'), err
+		},
+	},
+	"claude": {
+		decode: func(value []byte) (string, any, error) { return decodePreToolUseHook("claude", value) },
+		allow:  func() ([]byte, error) { return nil, nil },
+		deny:   func(finding SafetyFinding) ([]byte, error) { return structuredHookDeny("claude", finding) },
+	},
+	"codex": {
+		decode: func(value []byte) (string, any, error) { return decodePreToolUseHook("codex", value) },
+		allow:  func() ([]byte, error) { return nil, nil },
+		deny:   func(finding SafetyFinding) ([]byte, error) { return structuredHookDeny("codex", finding) },
+	},
+}
+
+func denialMessage(host string, finding SafetyFinding) string {
+	if finding.Category == "malformed-tool-input" {
+		name := strings.ToUpper(strings.TrimSpace(host))
+		if name == "" {
+			name = "HOST"
+		}
+		message := "Boatstack could not inspect the " + name + " hook event (HOST_PAYLOAD_MALFORMED:" + finding.Reason + "). No unsafe operation was detected; execution is denied because the intended command or tool call is unavailable. Retry once with an explicit non-empty command. If this repeats, stop shell and tool retries and preserve current edits."
+		if strings.EqualFold(host, "cursor") {
+			message += " Start a new Cursor task and run `.product-loop/bin/boatstack-helper diagnose-hook --host cursor --repo .` from an external terminal. Do not reinstall Boatstack unless it separately reports a missing, drifted, unsafe, or checksum-invalid runtime."
+		} else {
+			message += " Run `.product-loop/bin/boatstack-helper diagnose-hook --host " + strings.ToLower(host) + " --repo .` from an external terminal before changing the installation."
+		}
+		return message
+	}
+	if finding.Category == "workflow-state-invalid" {
+		return "Boatstack denied publication because managed delivery state cannot be verified. Re-run the active Boatstack operation or repair the installation before publishing."
+	}
+	if finding.Category == "workflow-state-tamper" {
+		return "Boatstack denied direct delivery-state mutation. Use the active build, test, review, or ship transition instead of editing runtime authority."
+	}
+	if finding.Category == "workflow-publication-bypass" {
+		return "Boatstack denied a publication bypass. Finish the active slice's test and review gates, then use ship-gate and the confirmed Boatstack publisher."
+	}
+	return "Boatstack denied an irreversible operation (" + finding.Category + "). Preserve the current state and use read-only diagnosis or fix-forward recovery; destructive recovery is operator-only outside the agent workflow."
+}
+
+func HookDecision(options SafetyHookOptions) ([]byte, bool) {
+	host := strings.ToLower(strings.TrimSpace(options.Host))
+	contract, supported := hookHostContracts[host]
+	if !supported {
+		finding := SafetyFinding{Category: "unsupported-host", Reason: "unknown host is denied by the fail-closed guard", Source: "hook"}
+		value, _ := structuredHookDeny("codex", finding)
+		return value, true
+	}
+	repo, err := ResolveRepository(options.Repo)
+	if err != nil {
+		finding := SafetyFinding{Category: "unresolved-repository", Reason: "repository identity could not be established", Source: "hook"}
+		value, _ := contract.deny(finding)
+		return value, true
+	}
+	name, input, err := contract.decode(options.Input)
+	if err != nil {
+		reason := "invalid-event"
+		var decodeErr hookDecodeError
+		if errors.As(err, &decodeErr) {
+			reason = decodeErr.code
+		}
+		finding := SafetyFinding{Category: "malformed-tool-input", Reason: reason, Source: "hook"}
+		value, _ := contract.deny(finding)
+		return value, true
+	}
+	findings := ClassifyTool(repo, name, input)
+	if len(findings) == 0 {
+		value, _ := contract.allow()
+		return value, false
+	}
+	value, _ := contract.deny(findings[0])
+	return value, true
+}
+
+func operationalChangedFiles(repo string, highRisk []string, defaultBranch string) ([]string, error) {
+	diffStart := "HEAD"
+	if strings.TrimSpace(defaultBranch) != "" {
+		if head, headErr := gitCommand(repo, "branch", "--show-current"); headErr == nil && head != defaultBranch {
+			if baseCommit, baseErr := resolveBaseCommit(repo, defaultBranch); baseErr == nil {
+				if mergeBase, mergeErr := gitCommand(repo, "merge-base", baseCommit, "HEAD"); mergeErr == nil && mergeBase != "" {
+					diffStart = mergeBase
+				}
+			}
+		}
+	}
+	command := exec.Command("git", "-C", repo, "diff", "--name-only", "--diff-filter=ACMR", diffStart)
+	value, err := command.Output()
+	if err != nil {
+		return nil, err
+	}
+	untrackedCommand := exec.Command("git", "-C", repo, "ls-files", "--others", "--exclude-standard")
+	untracked, err := untrackedCommand.Output()
+	if err != nil {
+		return nil, err
+	}
+	paths := []string{}
+	seen := map[string]bool{}
+	all := strings.TrimSpace(string(value)) + "\n" + strings.TrimSpace(string(untracked))
+	for _, path := range strings.Split(all, "\n") {
+		path = filepath.ToSlash(strings.TrimSpace(path))
+		if path == "" || seen[path] {
+			continue
+		}
+		seen[path] = true
+		matched := operationalPathPattern.MatchString(path)
+		for _, pattern := range highRisk {
+			if ok, _ := filepath.Match(filepath.FromSlash(pattern), filepath.FromSlash(path)); ok {
+				matched = true
+			}
+			prefix := strings.TrimSuffix(filepath.ToSlash(pattern), "/**")
+			if prefix != pattern && strings.HasPrefix(path, prefix+"/") {
+				matched = true
+			}
+		}
+		if matched {
+			paths = append(paths, path)
+		}
+	}
+	return paths, nil
+}
+
+func CheckRepositorySafety(repoPath string) (SafetyReport, error) {
+	repo, err := ResolveRepository(repoPath)
+	if err != nil {
+		return SafetyReport{}, err
+	}
+	highRisk := []string{}
+	defaultBranch := ""
+	configPath := filepath.Join(repo, ".product-loop", "project.json")
+	if value, readErr := os.ReadFile(configPath); readErr == nil {
+		var config ProjectConfig
+		if json.Unmarshal(value, &config) == nil {
+			highRisk = config.Project.HighRiskPaths
+			defaultBranch = config.Project.DefaultBranch
+		}
+	}
+	paths, err := operationalChangedFiles(repo, highRisk, defaultBranch)
+	if err != nil {
+		return SafetyReport{}, err
+	}
+	findings := []SafetyFinding{}
+	for _, relative := range paths {
+		value, readErr := os.ReadFile(filepath.Join(repo, filepath.FromSlash(relative)))
+		if readErr != nil {
+			return SafetyReport{}, readErr
+		}
+		findings = append(findings, classifySafetyText(string(value), relative)...)
+	}
+	findings = dedupeFindings(findings)
+	status := "PASS"
+	if len(findings) > 0 {
+		status = "BLOCKED"
+	}
+	return SafetyReport{Status: status, Findings: findings}, nil
+}

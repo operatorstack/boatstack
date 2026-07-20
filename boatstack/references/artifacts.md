@@ -13,11 +13,17 @@ Artifacts separate facts, decisions, unknowns, incompleteness, and evidence. Com
 | Markdown plan | Human-readable plan plus its one marked structured block; canonical before and during build | A spec is resolved enough to propose tasks and checks |
 | Approval receipt | Named human, timestamp, and fingerprint in Markdown; not executable state | The exact draft is explicitly approved in Plan mode |
 | Compiled tasks | Deterministic dependency graph generated from the approved Markdown plan | Build activation succeeds |
+| Delivery state | Ignored worktree-local Git active-slice state bound to the approved plan lock; never an approval artifact | Build activation and successful slice publication |
+| `changes.md` | Append-only, reviewable post-build observations with exact user message, expected/actual behavior, classification, evidence, and resolution | Controlled `record-change` transition |
+| Repair state | Ignored delivery mode, resume stage, active observation, attempt count, and superseded receipt references | Controlled repair and gate transitions |
+| Gate receipt | Machine-local test or review transition bound to one delivery slice, base/head branches, commit, product diff, and evidence hash | A slice passes test or review |
 | Test plan | Requirement-to-evidence mapping with each validation's origin, falsifiable oracle, procedure, and independence | Planning and after discovered failure modes |
 | Gap ledger | Known divergence between desired and current state | Work is deferred, partial, incompatible, or intentionally absent |
 | Risk/threat note | Assets, actors, trust boundaries, abuse/failure paths | Security, data, tenancy, billing, auth, or destructive paths change |
+| Side-effect declaration | Affected paths, immutable external target, reversibility, failure policy, and destructive flag | A task can write outside the repository |
 | Runbook | Deploy, observe, recover, and roll back | Operational behavior changes |
 | Evidence ledger | Commands, results, review evidence, screenshots, CI and runtime links | Every gate |
+| PR preview | Exact reviewer-ready title/body plus a hidden fingerprint of the committed diff and evidence | Ship gate, before opening or updating GitHub |
 | Move ledger | Failure class, intervention, prediction, paired result, decision | Improving the loop itself |
 
 ## ADR boundary
@@ -61,9 +67,25 @@ Every material statement should indicate whether it came from:
 
 Generated artifacts include the canonical loop version and config hash. Human edits to generated adapters are drift and should be moved into project-owned context or canonical source.
 
+## PR projection boundary
+
+`pr.md` is a lossy review projection, not a replacement for the feature package. Its visible body contains only why, changed behavior, review order, evidence, gaps/risks, rollout, and rollback. Approval hashes, source paths, and host attribution remain in non-rendered metadata or collapsed provenance.
+
+For managed work it lives under `.product-loop/features/<feature>/pr.md` and may claim only evidence present in the current approved package. For an existing or ad-hoc branch it lives under `.product-loop/pr-briefs/<branch>/pr.md`, uses observed branch facts, and labels missing approval or gate evidence `NOT_VERIFIED`. Both are committed with the branch. The preview file itself is excluded from the product-diff fingerprint.
+
+Managed preview metadata also names the active delivery slice. The ignored delivery
+state and gate receipts live under the current worktree's Git directory so branch
+changes retain control state without blocking unrelated worktrees. They are runtime
+control state, not durable product evidence; the PR links the committed evidence
+ledger while the publisher rechecks the matching receipts.
+
 ## Planning boundary
 
 `auto-plan` and `plan-gate` create or update Markdown only. `plan.md` is the canonical structured input and `approval.md` is the human-approval receipt. Compiled JSON and `plan.lock.json` begin only at `build` activation, after the receipt is verified. This keeps planning compatible with hosts that intentionally restrict Plan mode to documents.
+
+## Safety boundary
+
+The generated host hook fragments and launchers are committed installation infrastructure. Their policy is immutable in project configuration. The machine-local helper is ignored and restored by the installer. Safety evidence belongs in the feature evidence ledger: target identity, failure behavior, independent oracle, operational-diff scan, and the operator-only recovery boundary. A source edit is reviewable evidence, not permission to execute it.
 
 ## Templates
 

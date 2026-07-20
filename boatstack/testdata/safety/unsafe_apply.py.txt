@@ -1,0 +1,9 @@
+"""Sanitized partial-schema migrator that must never be executed by an agent."""
+
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--reset-public", action="store_true")
+
+if parser.parse_args().reset_public:
+    cursor.execute("DROP SCHEMA public CASCADE")

@@ -1,7 +1,6 @@
 package boatstack
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -155,7 +154,7 @@ func loadJSONObject(path, label, startMarker, endMarker string, allowLegacyMarkd
 		}
 	}
 	var plan map[string]any
-	if err := json.Unmarshal(payload, &plan); err != nil {
+	if err := DecodeJSON("load "+label, path, payload, &plan); err != nil {
 		return nil, fmt.Errorf("invalid %s json: %w", label, err)
 	}
 	return plan, nil
@@ -186,27 +185,11 @@ func CheckSourcePlan(path string) error {
 	return nil
 }
 
-func DiscoverSourcePlan(repo, explicit string) (string, error) {
+func sourcePlanCandidates(repo string) ([]string, error) {
 	repoAbsolute, err := filepath.Abs(repo)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	if strings.TrimSpace(explicit) != "" {
-		candidate := explicit
-		if !filepath.IsAbs(candidate) {
-			candidate = filepath.Join(repoAbsolute, candidate)
-		}
-		candidate = filepath.Clean(candidate)
-		if err := CheckSourcePlan(candidate); err != nil {
-			return "", err
-		}
-		relative, err := filepath.Rel(repoAbsolute, candidate)
-		if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-			return filepath.ToSlash(relative), nil
-		}
-		return candidate, nil
-	}
-
 	roots := []string{
 		".product-loop/intake",
 		".cursor/plans",
@@ -221,7 +204,7 @@ func DiscoverSourcePlan(repo, explicit string) (string, error) {
 			if os.IsNotExist(err) {
 				continue
 			}
-			return "", err
+			return nil, err
 		}
 		err := filepath.WalkDir(absoluteRoot, func(path string, entry os.DirEntry, walkErr error) error {
 			if walkErr != nil {
@@ -244,10 +227,38 @@ func DiscoverSourcePlan(repo, explicit string) (string, error) {
 			return nil
 		})
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 	}
 	sort.Strings(candidates)
+	return candidates, nil
+}
+
+func DiscoverSourcePlan(repo, explicit string) (string, error) {
+	repoAbsolute, err := filepath.Abs(repo)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(explicit) != "" {
+		candidate := explicit
+		if !filepath.IsAbs(candidate) {
+			candidate = filepath.Join(repoAbsolute, candidate)
+		}
+		candidate = filepath.Clean(candidate)
+		if err := CheckSourcePlan(candidate); err != nil {
+			return "", err
+		}
+		relative, err := filepath.Rel(repoAbsolute, candidate)
+		if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return filepath.ToSlash(relative), nil
+		}
+		return candidate, nil
+	}
+
+	candidates, err := sourcePlanCandidates(repoAbsolute)
+	if err != nil {
+		return "", err
+	}
 	if len(candidates) == 0 {
 		return "", fmt.Errorf("no saved Plan-mode file found; save the current host plan under .product-loop/intake/ and run auto-plan again")
 	}
@@ -471,6 +482,9 @@ func ValidatePlan(plan map[string]any) error {
 		if len(mapped) == 0 && stringValue(task["enabling_reason"]) == "" {
 			return fmt.Errorf("task %s must map acceptance criteria or state an enabling_reason", id)
 		}
+		if err := validateTaskSafety(task); err != nil {
+			return fmt.Errorf("task %s safety: %w", id, err)
+		}
 		graph[id] = dependencies
 	}
 	uncovered := []string{}
@@ -518,6 +532,99 @@ func ValidatePlan(plan map[string]any) error {
 			return err
 		}
 	}
+	if _, err := deliveryDefinitions(plan); err != nil {
+		return err
+	}
+	return nil
+}
+
+func taskSafetyText(task map[string]any) string {
+	parts := []string{stringValue(task["title"]), stringValue(task["rollback_boundary"])}
+	if validations, ok := objectSlice(task["validation"]); ok {
+		for _, validation := range validations {
+			parts = append(parts, stringValue(validation["run"]), stringValue(validation["origin"]))
+		}
+	}
+	if paths, ok := stringSlice(task["affected_paths"]); ok {
+		parts = append(parts, paths...)
+	}
+	return strings.ToLower(strings.Join(parts, " "))
+}
+
+func taskHasExternalWrite(task map[string]any) bool {
+	text := taskSafetyText(task)
+	for _, marker := range []string{
+		"database", "migration", "migrate", "seed database", "deploy", "supabase", "postgres",
+		"terraform", "pulumi", "kubectl", "cloud", "production", "staging", "external write",
+	} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func destructiveRollback(value string) bool {
+	text := strings.ToLower(strings.TrimSpace(value))
+	if text == "" {
+		return false
+	}
+	for _, safePrefix := range []string{"no reset", "never reset", "do not reset", "operator-only", "operator only"} {
+		if strings.Contains(text, safePrefix) {
+			return false
+		}
+	}
+	for _, marker := range []string{"reset database", "reset db", "reset local db", "drop schema", "drop database", "truncate", "wipe database", "destroy infrastructure"} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func validateTaskSafety(task map[string]any) error {
+	if destructiveRollback(stringValue(task["rollback_boundary"])) {
+		return fmt.Errorf("destructive rollback is not executable authority; use transactional rollback, fix-forward recovery, or an operator-only runbook")
+	}
+	if !taskHasExternalWrite(task) {
+		return nil
+	}
+	paths, pathsOK := stringSlice(task["affected_paths"])
+	if !pathsOK || len(paths) == 0 {
+		return fmt.Errorf("external-write tasks require affected_paths")
+	}
+	effects, effectsOK := objectSlice(task["side_effects"])
+	if !effectsOK || len(effects) == 0 {
+		return fmt.Errorf("external-write tasks require structured side_effects")
+	}
+	for index, effect := range effects {
+		for _, field := range []string{"kind", "target", "reversibility", "failure_policy"} {
+			if strings.TrimSpace(stringValue(effect[field])) == "" {
+				return fmt.Errorf("side_effects[%d].%s is required", index, field)
+			}
+		}
+		target := strings.ToLower(strings.TrimSpace(stringValue(effect["target"])))
+		for _, ambiguous := range []string{"unknown", "tbd", "database", "staging", "production", "local database"} {
+			if target == ambiguous {
+				return fmt.Errorf("side_effects[%d].target must use an immutable target identity", index)
+			}
+		}
+		destructive, ok := effect["destructive"].(bool)
+		if !ok {
+			return fmt.Errorf("side_effects[%d].destructive must be boolean", index)
+		}
+		if destructive {
+			return fmt.Errorf("side_effects[%d] requests a destructive operation; move it to an operator-owned surface", index)
+		}
+		reversibility := strings.ToLower(stringValue(effect["reversibility"]))
+		if reversibility != "transactional" && reversibility != "fix-forward" && reversibility != "reversible" {
+			return fmt.Errorf("side_effects[%d].reversibility must be transactional, fix-forward, or reversible", index)
+		}
+		failurePolicy := strings.ToLower(stringValue(effect["failure_policy"]))
+		if failurePolicy != "rollback-transaction" && failurePolicy != "stop-and-fix-forward" {
+			return fmt.Errorf("side_effects[%d].failure_policy must be rollback-transaction or stop-and-fix-forward", index)
+		}
+	}
 	return nil
 }
 
@@ -527,12 +634,24 @@ func CompilePlan(plan map[string]any) (map[string]any, map[string]any, string, e
 	}
 	criteria, _ := objectSlice(plan["acceptance_criteria"])
 	tasks, _ := objectSlice(plan["tasks"])
+	deliverySlices, _ := deliveryDefinitions(plan)
 	rows := make([]any, 0, len(criteria))
 	evidence := []string{
 		"# Evidence ledger: " + stringValue(plan["feature_id"]), "",
 		"- Approved plan lock: pending", "- Test gate: `BLOCKED`", "- Review gate: `BLOCKED`", "- Ship gate: `BLOCKED`", "",
-		"## Acceptance evidence", "", "| Criterion | Tasks | Result | Evidence |", "|---|---|---|---|",
 	}
+	if plan["delivery_slices"] != nil {
+		evidence = append(evidence, "## Delivery slices", "")
+		for _, slice := range deliverySlices {
+			evidence = append(evidence,
+				"### "+slice.ID+": "+slice.Title, "",
+				"- Test gate ("+slice.ID+"): `BLOCKED`",
+				"- Review gate ("+slice.ID+"): `BLOCKED`",
+				"- Ship gate ("+slice.ID+"): `BLOCKED`", "",
+			)
+		}
+	}
+	evidence = append(evidence, "## Acceptance evidence", "", "| Criterion | Tasks | Result | Evidence |", "|---|---|---|---|")
 	for _, criterion := range criteria {
 		criterionID := stringValue(criterion["id"])
 		servingIDs := []string{}
@@ -570,7 +689,7 @@ func CompilePlan(plan map[string]any) (map[string]any, map[string]any, string, e
 		rows = append(rows, row)
 		evidence = append(evidence, fmt.Sprintf("| %s: %s | %s | `BLOCKED` | |", criterionID, stringValue(criterion["text"]), strings.Join(servingIDs, ", ")))
 	}
-	evidence = append(evidence, "", "## Commands and checks", "", "## Review findings", "", "## Known gaps", "", "## Rollout and rollback", "")
+	evidence = append(evidence, "", "## Safety evidence", "", "- Operational diff safety: `BLOCKED`", "- External target and recovery evidence: pending", "", "## Commands and checks", "", "## Review findings", "", "## Known gaps", "", "## Rollout and rollback", "")
 	taskGraph := map[string]any{
 		"schema_version":         1,
 		"feature_id":             plan["feature_id"],
@@ -584,6 +703,15 @@ func CompilePlan(plan map[string]any) (map[string]any, map[string]any, string, e
 		"feature_id":     plan["feature_id"],
 		"requirements":   rows,
 	}
+	deliveryValues := make([]any, 0, len(deliverySlices))
+	for _, slice := range deliverySlices {
+		deliveryValues = append(deliveryValues, map[string]any{
+			"id": slice.ID, "title": slice.Title, "task_ids": slice.TaskIDs,
+			"acceptance_criteria": slice.AcceptanceCriteria, "affected_paths": slice.AffectedPaths,
+			"base_branch": slice.BaseBranch, "head_branch": slice.HeadBranch,
+		})
+	}
+	taskGraph["delivery_slices"] = deliveryValues
 	return taskGraph, testMatrix, strings.Join(evidence, "\n"), nil
 }
 
@@ -711,8 +839,16 @@ func ActivatePlan(options ActivationOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := CompilePlanFiles(options.PlanPath, options.OutDir); err != nil {
+	repo, err := ResolveRepository(filepath.Dir(options.PlanPath))
+	if err != nil {
 		return err
+	}
+	safety, err := CheckRepositorySafety(repo)
+	if err != nil {
+		return err
+	}
+	if safety.Status != "PASS" {
+		return fmt.Errorf("operational diff contains an irreversible capability: %s", safety.Findings[0].Category)
 	}
 	tasksPath := filepath.Join(options.OutDir, "tasks.json")
 	approval := ApprovalOptions{
@@ -725,10 +861,39 @@ func ActivatePlan(options ActivationOptions) error {
 		SourceCommit:   options.SourceCommit,
 		OutputPath:     options.OutputPath,
 	}
+	if fileExists(options.OutputPath) {
+		if err := CheckApprovalLock(approval); err == nil {
+			return initializeDeliveryState(repo, stringValue(check.Plan["feature_id"]), options.PlanPath, options.OutputPath)
+		}
+		value, readErr := os.ReadFile(options.OutputPath)
+		if readErr != nil {
+			return fmt.Errorf("existing plan lock cannot be verified: %w", readErr)
+		}
+		var existing map[string]any
+		if err := DecodeJSON("inspect existing plan lock", options.OutputPath, value, &existing); err != nil {
+			return fmt.Errorf("%w; do not overwrite activation state", err)
+		}
+		currentPlanHash, _ := SHA256File(options.PlanPath)
+		currentSourceHash, _ := SHA256File(check.SourcePlanPath)
+		currentSpecHash, _ := SHA256File(check.SpecPath)
+		if stringValue(existing["plan_sha256"]) == currentPlanHash &&
+			stringValue(existing["source_plan_sha256"]) == currentSourceHash &&
+			stringValue(existing["spec_sha256"]) == currentSpecHash {
+			return fmt.Errorf("existing activation state is invalid for the unchanged approved plan; repair it instead of resetting delivery progress")
+		}
+	} else if statePath, statePathErr := deliveryStatePath(repo, stringValue(check.Plan["feature_id"])); statePathErr == nil && fileExists(statePath) {
+		return fmt.Errorf("managed delivery state exists without its plan lock; do not reset delivery progress")
+	}
+	if err := CompilePlanFiles(options.PlanPath, options.OutDir); err != nil {
+		return err
+	}
 	if err := CreateApprovalLock(approval); err != nil {
 		return err
 	}
-	return CheckApprovalLock(approval)
+	if err := CheckApprovalLock(approval); err != nil {
+		return err
+	}
+	return initializeDeliveryState(repo, stringValue(check.Plan["feature_id"]), options.PlanPath, options.OutputPath)
 }
 
 func gitCommit(directory string) string {
@@ -797,8 +962,8 @@ func CheckApprovalLock(options ApprovalOptions) error {
 		return fmt.Errorf("plan lock is missing or unreadable: %w", err)
 	}
 	lock := map[string]any{}
-	if err := json.Unmarshal(value, &lock); err != nil {
-		return fmt.Errorf("plan lock is unreadable: %w", err)
+	if err := DecodeJSON("check plan approval lock", options.OutputPath, value, &lock); err != nil {
+		return err
 	}
 	mismatches := []string{}
 	paths := map[string]string{"source_plan": options.SourcePlanPath, "spec": options.SpecPath, "plan": options.PlanPath, "task_graph": options.TasksPath}

@@ -1,34 +1,155 @@
-<!-- Generated from operatorstack/intelligence-flow. Edit the upstream product-loop source, not this file. -->
+<!-- Generated from operatorstack/intelligence-flow. Edit the upstream public source, not this file. -->
 
 <p align="center">
-  <img src="assets/boatstack-mark.svg" width="96" height="96" alt="Boatstack stacked-node B mark">
+  <img src="assets/boatstack-mark.svg" width="96" height="96" alt="Boatstack stacked-bar mark">
 </p>
 
 <h1 align="center">Boatstack</h1>
 
 <p align="center"><strong>Build freely. Prove it. Ship.</strong></p>
 
-Boatstack is **evidence-engineered coding**: a model-neutral coding node that turns product intent and repository context into an explicitly approved, tested, reviewable change. It does not prescribe the model, implementation technique, tools, or document structure. It governs what may be claimed, approved, or shipped. Its behavior is generated from [Intelligence Flow at `46be4fd2d8ebbc00e28c10e78685b721b2c62fe8`](https://github.com/operatorstack/intelligence-flow/tree/46be4fd2d8ebbc00e28c10e78685b721b2c62fe8/examples/12-product-engineering-loop).
+## A delivery harness for AI coding agents
 
-> **You are free in how you build. Only claims of completion require evidence.**
+<!-- boatstack-claim:portable-product-flow -->Boatstack connects the work from an idea to a reviewed PR. Keep using Cursor, Codex, Claude Code, or Gemini CLI, with the models and specialist skills that fit the work. Boatstack keeps the plan, decisions, gaps, tests, review findings, and project context connected along the way.
 
-It is not a claim that a longer prompt writes better code. Here is what the node actually makes observable.
+The agent remains free to build. Before it says the work is done, Boatstack asks for the approval, tests, review, and recorded evidence appropriate to the change.
 
-## Install in a repository
+**Your product development flow stays with the repository—not the coding agent.** Change tools without rebuilding how you ship or redefining what “done” means. Boatstack carries the workflow and saved project state—not an agent's private chat history or a command already in progress.
 
-Install Boatstack on a clean infrastructure branch and merge that PR before starting product work. This keeps the one-time host adapters and repository policy separate from every feature diff.
+<p align="center">
+  <img src="assets/boatstack-portability.svg" width="900" alt="Coding agents, models, and specialist skills feed one repository-owned Boatstack flow that produces a reviewed pull request and useful context for the next feature">
+</p>
 
-### Install with your coding agent
+| You change | Boatstack keeps |
+|---|---|
+| Cursor, Codex, Claude Code, or Gemini CLI | The same path from planning through PR preparation |
+| Lower-cost, general, or frontier model | The same approval, testing, and review requirements |
+| React guidance, gstack, Spec Kit, or another skill | Human approval and evidence remain authoritative |
+| Session, worktree, or feature | Durable decisions, gaps, evidence, and code state in the repository |
 
-Copy and paste this into Cursor, Codex, or Claude Code:
+## Install with your coding agent
+
+Copy this into Cursor, Codex, Claude Code, or Gemini CLI while the repository is open:
 
 ```text
-Install Boatstack in this repository from https://github.com/operatorstack/boatstack. Detect whether you are running in Cursor, Codex, or Claude Code; create or use a chore/install-boatstack branch; run the official installer for this operating system; default to core unless I request gstack or Spec Kit; keep all portable host adapters; run Boatstack doctor; show me the generated files and installation diff; and prepare the installation PR without merging it or starting product work.
+Install Boatstack in this repository from https://github.com/operatorstack/boatstack. Detect whether you are running in Cursor, Codex, Claude Code, or Gemini CLI; create or use a chore/install-boatstack branch; run the official installer for this operating system; default to core unless I request gstack or Spec Kit; keep all portable host adapters; run Boatstack doctor; show me the generated files and installation diff; and prepare the installation PR without merging it or starting product work.
 ```
 
-Active-host detection changes the guidance shown after installation; Boatstack keeps every thin host adapter so the repository remains portable across developers and coding environments.
+Install Boatstack in its own infrastructure PR and merge it before starting a feature. Install once per Git clone; linked worktrees reuse the verified runtime and restore their ignored local helper automatically.
 
-### Install manually
+## Start with two moves
+
+1. Create and save a plan in your coding tool's Plan mode.
+2. Start Boatstack with the entry point for your host.
+
+| Host | Start command |
+|---|---|
+| Claude Code | `/auto-plan` |
+| Cursor | `/auto-plan` |
+| Gemini CLI | `/auto-plan` |
+| Codex | `$boatstack auto-plan` |
+
+That is all you need to learn up front. Boatstack shows one next action at a time through approval, building, tests, review, and PR preparation.
+
+When you return after an interruption, run `/boatstack-next` in Claude Code, Cursor, or Gemini CLI, or `$boatstack next` in Codex. Boatstack reports the repository-verified stage and one next action without changing state. It distinguishes a feature that has not started from one that is complete.
+
+`$boatstack run` in Codex or `/boatstack-run` in Claude Code, Cursor, and Gemini CLI starts from one saved plan and continues through publication, pausing for approvals and product decisions. It checks branch freshness before delivery; it never merges or deploys.
+
+In Claude Code, Cursor, and Gemini CLI, that guidance moves through `/plan-gate` → `/build` → `/test-gate` → `/review-gate` → `/ship-gate`. In Codex, use the same operation names after `$boatstack`.
+
+> The diagram shows what Boatstack guides—not a checklist you need to memorize.
+
+<p align="center">
+  <img src="assets/boatstack-journey.svg" width="960" alt="One feature moves from idea through planning, approval, building, tests, review, and pull request; its retained plans, decisions, gaps, evidence, and code state combine with the next idea to create the next plan">
+</p>
+
+## Change course without losing the delivery
+
+After Build, describe changes normally. Boatstack records them, preserves valid work, and resumes at the earliest boundary.
+
+Invoke `/repair` in Claude Code, Cursor, or Gemini CLI, or `$boatstack repair` in Codex. It needs an active delivery and the exact change; earlier work routes to planning or Build.
+
+```text
+“This is wrong” → record → repair → test → review
+                         ↘ changed intent → approve delta
+```
+
+Receipts remain as history; published corrections become linked deliveries.
+
+## Features
+
+- **A guided path from idea to PR.** `/auto-plan` starts a one-action-at-a-time delivery flow.
+- **Instant orientation after a break.** `boatstack next` reconstructs the verified stage without treating chat or a running process as workflow evidence.
+- **Human decisions stay human.** Material product questions remain open until a person answers them, and implementation waits for explicit approval.
+- **Evidence tied to the promise.** Tests and checks map to the outcomes the change claims to deliver instead of treating one green command as proof of everything.
+- **Context that survives the feature.** Plans, decisions, gaps, evidence, and code state remain useful beyond the chat.
+- **Conversational repair after Build.** Describe what changed; Boatstack preserves valid work and reruns only affected boundaries.
+- **Safer agent execution.** High-confidence destructive recovery is stopped before execution; phased work is gated and published one approved delivery slice at a time.
+- **Reviewer-ready pull requests.** Actual changes, evidence, risks, rollout, and rollback become a focused PR brief.
+- **Optional repository changelog.** Require readable `CHANGELOG.md` entries grounded in actual changes.
+- **Portable across your AI stack.** Hosts, models, and skills share one repository-owned delivery contract.
+- **Repository-friendly maintenance.** Worktrees restore runtime; updates stay in separate infrastructure PRs.
+
+### Optional changelog
+
+It is disabled by default. Enable it in `.boatstack-project.json`:
+
+```json
+{
+  "workflow": {
+    "maintain_changelog": true
+  }
+}
+```
+
+Enabled repositories require a categorized `CHANGELOG.md` → `Unreleased` entry for every managed slice and Boatstack-prepared ad-hoc PR. The file stays user-owned; install and update never overwrite it. [See the format and first-entry example](docs/getting-started.md#keep-a-repository-changelog).
+
+## How Boatstack fits into your AI stack
+
+| Part | Its job |
+|---|---|
+| **Coding agent** — Cursor, Codex, Claude Code, or Gemini CLI | Executes the work in your repository |
+| **Model** — lower-cost, general, or frontier | Reasons, writes, and evaluates within the agent |
+| **Skill** — React guidance, gstack, Spec Kit, or another specialty | Adds expertise for a particular kind of work |
+| **Boatstack** | Carries the delivery path, saved context, and proof of completion across them |
+
+Boatstack is a repository-local delivery harness.
+
+> **Designed for model flexibility · Quality uplift evaluation in progress**
+
+- <!-- boatstack-claim:model-neutral-contract -->**Verified:** the same completion requirements apply regardless of model, provider, or price.
+- <!-- boatstack-claim:cross-model-failures -->**Observed:** benchmark runs exposed failures in protocol handling, context, verification, and recovery—not only model capability.
+- <!-- boatstack-claim:lower-cost-outcomes -->**Being evaluated:** whether this improves product quality, cost, or delivery time with lower-cost models.
+
+This does not mean every model performs equally. [See the evidence and paired evaluation design](docs/why-these-steps.md#model-choice-and-budget).
+
+## Why these steps?
+
+They derive from coding failures observed in benchmark and product work—not guesses. Each link explains what happened, what Boatstack does, and whether that behavior has actually been tested.
+
+| What happened | What Boatstack does | Current evidence |
+|---|---|---|
+| <!-- boatstack-claim:human-decisions -->The agent guessed a product decision | Records a human answer and approval before code | Approval and drift tests |
+| <!-- boatstack-claim:validation-provenance -->A passing test was used to support a broader claim | Links each promised outcome to its validation | Coverage and plan-compiler tests |
+| <!-- boatstack-claim:irreversible-operations -->A failed write led to an invented reset path | Denies high-confidence destructive recovery | Hook behavior verified; outcome benefit still being evaluated |
+| <!-- boatstack-claim:reviewer-ready-pr -->A PR lost decisions and accepted gaps | Builds a review brief from scope, diff, and evidence | Projection and stale-preview tests |
+| <!-- boatstack-claim:phase-scoped-delivery -->A phased plan opened PRs during build | Gates and publishes one delivery slice at a time | Slice-state and bypass tests |
+| <!-- boatstack-claim:git-worktree-activation -->A worktree had the hook but not its ignored helper | Restores the verified local runtime before judging the command | Linked-worktree and tamper tests |
+
+[Read what happened, what is tested, and what remains open](docs/why-these-steps.md). The [claim record](docs/public-claims.json) keeps every material statement tied to its sources.
+
+## A small example
+
+A request asked to “Add a password reset button,” but the product used passwordless sign-in. Boatstack flagged the conflict. The developer chose dual authentication; later, review caught an unsafe recovery assumption and prompted a repair.
+
+[Follow the sanitized walkthrough](docs/account-recovery-walkthrough.md) or [ship your first feature](docs/getting-started.md).
+
+## Updates stay out of product work
+
+<!-- boatstack-claim:visible-updates -->After a PR is published, Boatstack may report a new stable release without changing the feature branch. `/boatstack-update` prepares a separate infrastructure branch, shows the diff, and waits for `open update PR`. It never merges the update.
+
+<details>
+<summary><strong>Install manually</strong></summary>
 
 macOS or Linux:
 
@@ -44,277 +165,20 @@ git switch -c chore/install-boatstack
 irm https://raw.githubusercontent.com/operatorstack/boatstack/main/install.ps1 | iex
 ```
 
-The installer previews the generated paths, verifies the platform helper, asks about optional gstack and Spec Kit integrations, runs a smoke check, and prints the exact infrastructure commit commands. Boatstack core requires no Python, Node, Go, or package manager. The helper is repository-local and ignored; the adapters and policy are committed.
-
-**New here?** [Install and ship your first feature](docs/getting-started.md) · [Understand generated files](docs/generated-files.md) · [Troubleshoot](docs/troubleshooting.md) · [See the real account-recovery walkthrough](docs/account-recovery-walkthrough.md)
-
-**Go deeper:** [Validation and evidence](docs/validation-and-evidence.md) · [gstack and Spec Kit](#use-boatstack-with-gstack-and-github-spec-kit) · [Evidence-engineered coding](docs/evidence-engineered-coding.md)
-
-```text
-idea -> Plan mode -> /auto-plan -> questions -> /plan-gate
-     -> approve -> Build -> /build -> /test-gate
-     -> /review-gate -> /ship-gate -> PR
-```
-
-## Plan first, then auto-plan
-
-Start with ordinary product intent **inside Cursor, Codex, or Claude Plan mode**:
-
-```text
-Add machine-readable JSON output to the diagram printer while preserving the current text output.
-```
-
-Save the host's plan. When the host exposes the active plan path, Boatstack reads it from conversation context; otherwise save it under `.product-loop/intake/`. Then run:
-
-```text
-/auto-plan
-```
-
-`/auto-plan` must validate a real, non-empty source plan before it reads repository context. Its fallback searches only bounded Plan-mode locations and succeeds for exactly one file. When discovery finds none or several, it returns `BLOCKED` and asks for the intended path; it never guesses from recency or creates the missing plan itself. It then inspects the smallest relevant code boundary and makes contract choices visible:
-
-```text
-Q1  Public API?       sibling serializeFlowGraph() | change printFlowGraph()
-Q2  Stability?        versioned schema            | internal object dump
-Q3  Run data?         compact overlay              | entire execution trace
-```
-
-The accepted answers become observable criteria and tasks—not hidden assumptions. They live in the single marked structured block inside human-readable `plan.md`:
-
-```json
-{
-  "source_plan_path": "source-plan.md",
-  "spec_path": "feature-spec.md",
-  "blocking_questions": [],
-  "acceptance_criteria": [
-    {"id": "AC-1", "text": "Return parseable schema-versioned graph JSON."},
-    {"id": "AC-4", "text": "Keep existing ASCII output byte-compatible."}
-  ],
-  "tasks": [{
-    "id": "T-3",
-    "acceptance_criteria": ["AC-1", "AC-4"],
-    "validation": [
-      {
-        "criteria": ["AC-1"],
-        "run": "pnpm exec tsx examples/05-diagram-printer/json-check.ts",
-        "origin": "AC-1 and the approved v1 JSON contract",
-        "oracle": "parser and schema assertions against the approved contract",
-        "independence": "contract-derived"
-      },
-      {
-        "criteria": ["AC-4"],
-        "run": "diff -u expected-output.txt actual-output.txt",
-        "origin": "AC-4 and the repository's existing ASCII behavior",
-        "oracle": "pre-feature golden fixture",
-        "independence": "pre-existing"
-      }
-    ]
-  }]
-}
-```
-
-## Where validation comes from
-
-Boatstack does not choose a command after seeing the implementation and call that proof. Validation is derived before approval:
-
-```text
-product intent or invariant
-  -> observable acceptance claim
-  -> oracle that could falsify the claim
-  -> executable or human procedure
-  -> recorded evidence
-```
-
-`criteria` limits which claims the check can support. The compiler rejects a criterion with no mapped validation and rejects a validation attached to a criterion its task does not serve. The `origin` identifies why the check is required: an acceptance criterion, existing repository invariant, explicit human decision, risk analysis, or external contract. The `oracle` identifies what makes the result meaningful: a pre-existing fixture, approved schema, independent system, measurable threshold, review rubric, or named human judgment. `independence` makes circular evidence visible; an implementation-authored test is useful evidence, but is not automatically an independent oracle.
-
-Ambiguous claims cannot pass unchanged:
-
-| Ambiguous claim | Required resolution before approval |
-|---|---|
-| “It should be fast” | Named workload, environment, metric, and threshold such as p95 under 200 ms |
-| “The design should look good” | Approved reference states, review rubric, named reviewer, and captured evidence |
-| “The migration should be safe” | Enumerated invariants, rehearsal/rollback procedure, and observable failure conditions |
-
-`/auto-plan` asks only the questions needed to establish that resolution. If no defensible oracle or authorized human judgment exists, the criterion remains `BLOCKED`; the model cannot validate its own interpretation by restating it. gstack and Spec Kit may help propose criteria and checks, but Boatstack still requires their provenance and evidence contract.
-
-See [Validation and evidence](docs/validation-and-evidence.md) for validation forms, ambiguity handling, independence levels, gate outcomes, and the benchmark observations behind this contract.
-
-The developer-facing transition stays inside the coding host:
-
-```text
-/plan-gate
-Approve the displayed plan.
-Choose the host's normal Build action.
-```
-
-`/plan-gate` presents a fingerprint over the complete source plan, spec, and `plan.md` and requires a named human. Explicit approval creates only `approval.md`, so the developer remains in Plan mode. The host's normal Build transition then validates and activates the exact approved plan before editing code.
-
-The source plan remains required and hash-checked through `/build`; later gates rely on the resulting lock, actual diff, and accumulated evidence.
-
-<details>
-<summary>Internal deterministic boundary</summary>
-
-The generated adapter invokes the repository-local helper; users do not need to learn these commands:
-
-```bash
-.product-loop/bin/boatstack-helper check-plan \
-  --plan .product-loop/features/diagram-json/plan.md
-
-.product-loop/bin/boatstack-helper activate-plan \
-  --plan .product-loop/features/diagram-json/plan.md \
-  --approval .product-loop/features/diagram-json/approval.md \
-  --out-dir .product-loop/features/diagram-json/compiled \
-  --output .product-loop/features/diagram-json/plan.lock.json
-```
-
-Activation compiles the machine task graph and writes the lock last. A changed planning input cannot reuse the receipt:
-
-```console
-$ .product-loop/bin/boatstack-helper activate-plan ...
-PASS: approved Markdown plan activated and locked
-
-# after plan.md prose, its structured block, the spec, or source plan changes
-$ .product-loop/bin/boatstack-helper activate-plan ...
-BLOCKED: stale approval receipt
-```
+The installer previews generated paths, verifies the platform helper, offers optional integrations, runs a smoke check, and prints the files to commit. Boatstack core requires no Python, Node, Go, or package manager.
 
 </details>
 
-That is the approval boundary in code: conversation cannot silently turn a draft into permission to build, and Plan mode never needs to write JSON or executable state.
+## Find what you need
 
-See the complete, linked [worked example](examples/diagram-json/README.md).
+**Start:** [Getting started](docs/getting-started.md) · [Files](docs/generated-files.md) · [Troubleshooting](docs/troubleshooting.md)
 
-## Bring your own product context
+**Inspect:** [Why these steps](docs/why-these-steps.md) · [Validation and evidence](docs/validation-and-evidence.md) · [Safety](docs/safety.md)
 
-**Bring your context as it is.** Boatstack does not impose a documentation structure or maintain a second product memory. Keep feature briefs, vision, roadmaps, ADRs, gaps, and engineering rules wherever they already live in the repository. Cursor, Codex, or Claude discovers the relevant surrounding code and documents; Boatstack controls how that context becomes an approved change.
+**Go deeper:** [Coding](docs/evidence-engineered-coding.md) · [Design](docs/research-and-design.md) · [Contributing](CONTRIBUTING.md)
 
-Boatstack treats the repository as canonical and creates only temporary, reviewable, provenance-linked task projections. This matters because a deterministic translation `T` cannot add information about the desired outcome `Y` that was not present in the source context `C`:
+## Project status
 
-```text
-I(Y; T(C)) <= I(Y; C)
-```
+Boatstack is an open-source research prototype. Its workflow and enforcement behavior are tested, but the current record does not prove improved delivery success. A paired feature benchmark—same model, task, and budget—is the next evaluation.
 
-This data-processing bound motivates source preservation; it does **not** prove that every transformation is harmful. A well-chosen projection can improve a finite-context model's effective performance by removing irrelevant material. The rule is therefore: **preserve the source; project only the relevant slice.**
-
-Point the host at an existing product document:
-
-```text
-/auto-plan
-Product brief: docs/features/team-notifications.md
-Relevant decisions: docs/architecture/notifications.md
-```
-
-If no product document exists, the host Plan-mode file can begin with only the ordinary request. Boatstack then inspects the smallest relevant repository slice, separates discoverable facts from product questions, and produces the consistent handoff:
-
-```text
-existing product docs + code -> questions -> feature spec -> approval -> engineering plan
-```
-
-Product documents define what and why. ADRs record durable technical decisions. Gaps record known incomplete work. Boatstack references these sources without replacing them. Any generated spec or plan must remain traceable to its sources and reviewable as a lossy task projection. No context map or documentation migration is required in V1; the project config may list useful starting paths when a repository wants stable defaults.
-
-## Use Boatstack with gstack and GitHub Spec Kit
-
-Boatstack is primarily a **control and evidence layer** over your coding host and optional planning/review tools. It does not need to reproduce everything those projects already do well:
-
-```text
-product intent + repository context
-                 |
-        [ BOATSTACK CONTRACT ]
-          /                  \
- gstack review lenses   Spec Kit artifacts
-          \                  /
-       normalized spec + plan + decisions
-                 |
-  Markdown approval -> build activation -> evidence gates -> PR
-```
-
-| Layer | What it contributes | What remains Boatstack-owned |
-|---|---|---|
-| Coding host: Cursor, Codex, or Claude | Plan mode, repository exploration, implementation, tool execution | Cross-host artifact meanings and transition rules |
-| [gstack](https://github.com/garrytan/gstack) | Product/CEO, design, engineering, and developer-experience review lenses; adversarial plan critique | Which findings change the approved plan, validation provenance, approval hashing, and gate outcomes |
-| [GitHub Spec Kit](https://github.com/github/spec-kit) | Constitution, specify, clarify, plan, tasks, analyze, checklist, and related spec-driven artifacts | Normalization into Boatstack's criterion/validation contract and explicit human plan gate |
-| Boatstack core | Source-plan discovery, provenance, question/gap boundaries, Markdown approval, deterministic build activation, drift locks, evidence mapping, review/ship gates | The completion and shipping claim itself |
-
-### With gstack
-
-When installed, Boatstack invokes gstack through namespaced `/gstack-*` review skills inside `auto-plan`, review, or retrospective work. gstack can challenge product premises, design states, architecture, failure modes, and developer experience. Its findings are proposals: Boatstack records accepted decisions, maps resulting claims to validation, and re-runs approval when semantics change. gstack never becomes an implicit approval signal.
-
-### With GitHub Spec Kit
-
-Spec Kit can generate or cross-check the constitution, specification, clarification answers, implementation plan, tasks, analysis, and checklists. Boatstack sits above those artifacts as the authority/evidence layer:
-
-```text
-speckit.specify / clarify / plan / tasks / analyze / checklist
-                              |
-                              v
-        Boatstack criteria + oracle + validation normalization
-                              |
-                     explicit /plan-gate
-```
-
-`speckit.implement` does not bypass Boatstack's approval receipt, build activation, or `/build` boundary. If Spec Kit changes accepted semantics, Boatstack invalidates the receipt and returns to approval. This preserves Spec Kit's artifact-generation value without allowing a generator to approve or validate its own output.
-
-### Core only
-
-Both integrations are optional. Boatstack core still performs Plan-mode source discovery, question-led specification, structured Markdown planning, explicit approval receipts, deterministic build activation, validation/evidence mapping, test/review gates, and PR preparation. Integration failure is recorded as partial installation and does not roll back the working core.
-
-The installer creates one canonical `.product-loop/` runtime and thin adapters for:
-
-```text
-.cursor/commands/{auto-plan,plan-gate,build,test-gate,review,ship,retro}.md
-.cursor/rules/boatstack.mdc
-.agents/skills/boatstack/SKILL.md
-.claude/skills/boatstack/SKILL.md
-.github/PULL_REQUEST_TEMPLATE/boatstack.md
-```
-
-It refuses to overwrite user-owned host files. The small platform helper lives under ignored `.product-loop/bin/`; users continue to operate Boatstack through their coding host. Re-run the installer to restore the helper on a fresh clone.
-
-## Freedom inside, evidence at the edges
-
-Boatstack is a mathematically modeled composite node inside an Intelligence Flow graph:
-
-```text
-product intent + repository state
-              |
-              v
-         [ BOATSTACK ]
-              |
-              v
-diff + evidence + decisions + known gaps
-```
-
-Inside the node, a model, developer, team, or tool may use any suitable implementation method. At the edges, Boatstack makes authority, acceptance, evidence, and known gaps explicit.
-
-- A first implementation that passes is a **linear path**.
-- Evidence that causes revision creates a **feedback path**.
-- Multiple agents or approaches form a **branch/merge path**.
-
-Boatstack can participate in a loop, but it is not constrained to one. The graph topology follows the work. The invariant is evidence at transitions, not repeated ceremony.
-
-- **Optimization:** select the smallest context and ceremony that preserve required quality and evidence.
-- **Control:** represent state explicitly and verify approval, acceptance, and shipping transitions.
-- **Model neutrality:** route on ambiguity, risk, convergence, tool results, and evidence—not model brand, price, or a guessed capability tier.
-
-The full mapping from equations to files and checks is in [Evidence-engineered coding](docs/evidence-engineered-coding.md).
-
-## Evidence, with boundaries
-
-The rules were informed by a mechanically audited local corpus of **4,016 benchmark trial results** and **3,985 signal streams**, plus two real product-repository studies. For example:
-
-| Observed failure | Encoded move |
-|---|---|
-| Restarting discarded partial progress | Preserve known-good state; repair locally |
-| Structured-output errors hid useful work | Validate and perform bounded same-step repair |
-| Stronger verification wording regressed | Treat self-review as evidence, not the oracle |
-| Blind context trimming lost accuracy | Select relevant context without deleting required state |
-| A development-slice gain did not transfer | Require representative gates before promoting a move |
-
-Read the [research and design record](docs/research-and-design.md) and [corpus audit](docs/benchmark-corpus-audit.md). This evidence motivates the loop; it does not prove that every future feature or model will improve.
-
-## Context has a budget
-
-The three canonical runtime references currently total approximately **5250 estimated tokens** using `ceil(characters / 4)`. That is a stable compactness signal, not provider billing. Host adapters stay thin and load the operation-specific slice on demand.
-
-## Status
-
-Boatstack is an alpha research distribution. It can generate host adapters, keep planning and approval Markdown-native, compile traceable task/test artifacts at Build, detect stale approvals, and preserve provenance. The next proof boundary is a paired feature-development evaluation against a plain host harness.
+Exact Intelligence Flow provenance and generated file hashes are recorded in [`UPSTREAM.json`](UPSTREAM.json).

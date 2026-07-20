@@ -49,6 +49,7 @@ type Workflow struct {
 	HumanPlanApproval            bool `json:"human_plan_approval"`
 	IndependentReviewForHighRisk bool `json:"independent_review_for_high_risk"`
 	AllowPassWithGaps            bool `json:"allow_pass_with_gaps"`
+	MaintainChangelog            bool `json:"maintain_changelog"`
 }
 
 type IntegrationState struct {
@@ -114,13 +115,28 @@ func MarshalJSON(value any) ([]byte, error) {
 	return append(data, '\n'), nil
 }
 
+// DecodeJSON is the single diagnostic boundary for JSON consumed by Boatstack.
+// source must name a filesystem path, embedded asset, generated destination, or
+// remote response so malformed input is actionable without a debugger.
+func DecodeJSON(operation, source string, raw []byte, destination any) error {
+	if err := json.Unmarshal(raw, destination); err != nil {
+		return fmt.Errorf("operation %s: parse JSON %s: %w", operation, source, err)
+	}
+	return nil
+}
+
+func ValidateJSON(operation, source string, raw []byte) error {
+	var decoded any
+	return DecodeJSON(operation, source, raw, &decoded)
+}
+
 func GeneratedJSON(value any) ([]byte, error) {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return nil, err
 	}
 	data := map[string]any{}
-	if err := json.Unmarshal(raw, &data); err != nil {
+	if err := DecodeJSON("generate JSON metadata", "marshaled generated value", raw, &data); err != nil {
 		return nil, err
 	}
 	data["_generated_by"] = Generator

@@ -1,46 +1,131 @@
-<!-- Generated from operatorstack/intelligence-flow. Edit the upstream product-loop source, not this file. -->
+<!-- Generated from operatorstack/intelligence-flow. Edit the upstream public source, not this file. -->
 
 # Troubleshooting Boatstack
 
-## Cursor does not recognize a slash command
+**For:** someone blocked during installation or a feature.
+**Outcome:** identify the smallest safe action that restores the intended workflow.
 
-Cursor discovers project commands from `.cursor/commands/*.md`. Check the installation:
+Start with:
 
 ```bash
 .product-loop/bin/boatstack-helper doctor --repo .
-ls .cursor/commands
 ```
 
-If commands are missing, rerun the installer and reload the Cursor window. Commit the restored installation state in a dedicated PR; otherwise a cleanup, branch change, or fresh clone can remove untracked commands again.
+## A command is denied as destructive
 
-## `/auto-plan` says no source plan exists
+Boatstack has no in-session bypass. Preserve the current external state and diagnose with read-only commands. Replace the destructive capability with transactional or fix-forward behavior, or move intentional recovery into a separately controlled operator runbook.
 
-Boatstack will not invent a source plan. Finish the host's Plan-mode exploration and save it. If the host does not expose the active plan path, place exactly one non-empty plan under `.product-loop/intake/`, then rerun `/auto-plan`. Pass an explicit path only when discovery reports multiple candidates.
+If a safe diagnostic was denied, keep the denial output and report the smallest reproducible command. Do not rename or wrap it to evade the check.
 
-## Plan mode blocks the normal Write tool
+## The safety helper or hook is missing
 
-Boatstack planning remains Markdown-only. The adapter may use the bounded `planning-write` helper for known feature documents; it must not use arbitrary redirection to bypass the host or write product code. If the host cannot support even that bounded operation, return `WAITING_FOR_HOST_WRITE_PERMISSION` instead of leaving planning early.
+The hook fails closed. In a linked worktree, the first guarded call should restore the ignored local helper from the verified repository-family cache. If Boatstack reports that the shared runtime is missing, run the official installer once from any checkout belonging to that Git clone, run `doctor`, and reload the coding host. Do not copy an executable without its verified runtime manifest.
 
-## `/build` says `READY_FOR_BUILD`
+`doctor` proves the generated host contract, not host activation. In Codex, trust the exact linked-worktree path, open `/hooks`, review and trust the current Boatstack hook hash, and start a new task. In Claude Code, reload and use `/hooks` to confirm the `PreToolUse` hook; Bash is required. In Cursor, reload the window and confirm both pre-execution hooks are enabled. Cursor hooks remain defense in depth because host-side output handling can change independently of Boatstack.
 
-The plan is approved, but the host is still read-only. Accept the host's normal transition into its execution-capable surface and rerun `/build`. Boatstack does not compile tasks or create a lock until product-code writes are available.
+If the worktree expects a different Boatstack version or source commit, update or rebase its committed Boatstack infrastructure. Boatstack will not run a newer cached helper against an older worktree contract.
+
+## Cursor reports `MainThreadShellExec not initialized`
+
+This is a Cursor host initialization failure: Boatstack's hook process did not start. Keep the hook fail-closed, run **Developer: Reload Window** in Cursor, and retry the Boatstack operation. Do not reinstall Boatstack for this error alone. Reinstall only when Boatstack itself reports a missing, drifted, unsafe, or checksum-invalid helper or shared runtime.
+
+## A host reports `HOST_PAYLOAD_MALFORMED`
+
+Boatstack received a hook event without a decodable command or tool call. It fails closed, but no unsafe operation was detected. Retry once with an explicit non-empty command. If the same code repeats, stop agent shell and tool retries, preserve edits, and run this from a normal terminal outside the blocked agent path:
+
+```bash
+.product-loop/bin/boatstack-helper diagnose-hook --host cursor --repo .
+```
+
+Replace `cursor` with `claude` or `codex` for those hosts. A passing probe proves the installed wrapper, shared runtime, decoder, and canonical allow response; it cannot reveal the live payload emitted by the coding host. For Cursor, start a new task after a passing probe. Do not reinstall or hydrate Boatstack unless it separately reports a missing, drifted, unsafe, or checksum-invalid runtime.
+
+## `/repair` says there is no active delivery
+
+Repair compares an exact requested change with an activated, approved baseline. If no Boatstack feature has started, save the host Plan-mode file and run `/auto-plan`. If a draft or approved feature already exists, run the one planning or build operation reported by `/boatstack-next`; do not create or clear delivery state manually.
+
+## Boatstack reports invalid or orphaned delivery state
+
+Preserve the named plan, lock, preview, receipts, and managed state. A missing `plan.lock.json`, stale lock hash, or orphan `pr.md` cannot be repaired by choosing the newest artifact or deleting state. Restore the missing tracked evidence from version control or the originating feature branch, then rerun `/boatstack-next`. If the evidence cannot be restored, stop and prepare a separately reviewed recovery rather than resetting progress in place.
+
+## Cursor cannot find a slash command
+
+Cursor reads project commands from `.cursor/commands/*.md`:
+
+```bash
+ls .cursor/commands
+.product-loop/bin/boatstack-helper doctor --repo .
+```
+
+Rerun the installer and reload Cursor when files are missing. Commit the restored adapter in a dedicated infrastructure PR.
+
+## Claude Code cannot find a slash command
+
+Claude Code reads Boatstack's user-facing workflow skills from `.claude/skills/<operation>/SKILL.md`. The central `.claude/skills/boatstack/SKILL.md` router is intentionally hidden from slash suggestions and remains available for natural-language requests.
+
+```bash
+ls .claude/skills
+.product-loop/bin/boatstack-helper doctor --repo .
+```
+
+If Boatstack created `.claude/skills/` while Claude Code was already running, reload Claude Code once. Rerun the installer when `doctor` reports a missing generated skill, and never replace a user-owned skill with the same name without reviewing the collision.
+
+## `/auto-plan` cannot find a source plan
+
+Finish the host's Plan-mode exploration and save it. If the host does not expose the path, put exactly one non-empty plan under `.product-loop/intake/`, then rerun `/auto-plan`. Supply an explicit path only when Boatstack reports multiple candidates.
+
+## Plan mode cannot write an artifact
+
+Planning is Markdown-only. The adapter may use Boatstack's bounded planning writer for known feature documents; it must not use arbitrary shell redirection or edit product code. If the host cannot support the bounded write, keep the plan and report the missing permission rather than leaving Plan mode early.
+
+## `/build` says it is ready but cannot start
+
+The plan is approved, but the host remains read-only. Enter the host's normal execution-capable mode and rerun `/build`. Boatstack deliberately creates no compiled state or lock before that transition.
 
 ## Approval is stale
 
-The source plan, feature spec, or complete `plan.md` changed after approval. Return to `/auto-plan`, review the new fingerprint at `/plan-gate`, and approve the revised plan. Never edit the fingerprint in `approval.md` manually.
+The source plan, feature spec, or complete plan changed after approval. Return to `/auto-plan`, review the new plan at `/plan-gate`, and approve it again. Never edit approval metadata manually.
 
-## A gate reports `PASS_WITH_GAPS`
+## A gate passes with gaps
 
-The proven criteria passed, while named non-critical gaps remain. The evidence must identify their impact, owner, reason, affected criteria, and revisit trigger. Any critical safety, correctness, or product-acceptance gap is `BLOCKED`, not `PASS_WITH_GAPS`.
+The proven criteria passed while named non-critical gaps remain. Each gap needs an impact, owner, reason, affected criteria, and revisit trigger. A critical correctness, safety, or acceptance gap blocks instead.
 
-## A pre-push hook fails on unrelated base-branch code
+## An unrelated base-branch check fails
 
-Reproduce the failure against the target branch. If it is pre-existing, keep the repair in a separate PR. A bypass is allowed only when repository policy permits it and the human explicitly authorizes it; record that evidence. Do not quietly add unrelated repairs to the approved feature branch.
+Reproduce the failure against the target branch. Keep its repair in a separate PR. Use a bypass only when repository policy permits it and a human explicitly authorizes it; do not hide unrelated edits in the approved feature.
 
-## Non-interactive installation cannot detect tests
+## Non-interactive installation cannot find the tests
 
-Boatstack recognizes common package-manager tests, `scripts/check.sh`, Go, Rust, Make, and Python/pytest projects. If the repository uses a custom command, run the installer interactively or create `.boatstack-project.json` with the real test command. Boatstack will not invent a command merely to complete installation.
+Boatstack detects common package-manager tests, `scripts/check.sh`, Go, Rust, Make, and Python/pytest projects. For a custom command, install interactively or define the real test command in `.boatstack-project.json`. Boatstack will not invent one merely to complete setup.
 
-## A fresh clone has adapters but no helper
+## A fresh clone has no helper
 
-This is expected: `.product-loop/bin/` is machine-local and ignored. Rerun the installer from the repository root; the generated diff should remain clean when the committed configuration and installed Boatstack version match.
+This is expected: the repository-family cache lives inside that clone's Git common directory and `.product-loop/bin/` is ignored. Run the installer once from the repository root. Future linked worktrees of that clone hydrate automatically without another download.
+
+## `/boatstack-update` is postponed
+
+Updates never share a feature branch. Finish and merge the current feature PR, switch to the configured default branch, pull its current remote state, confirm the worktree is clean, and rerun `/boatstack-update`. Boatstack does not stash, switch away from, or modify active product work.
+
+## The update check is unavailable
+
+Release discovery uses a short, unauthenticated request to GitHub and a 24-hour ignored cache. A timeout, rate limit, or malformed response never blocks `/ship-gate`. Retry `/boatstack-update` later; do not bypass checksum verification or install from an unverified asset.
+
+## The update reports generated drift
+
+Boatstack found an installed generated file that no longer matches its previous lock. Review the named path and move durable project-owned content into `.boatstack-project.json` or repository documentation. Do not overwrite the drift merely to make the update pass.
+
+## The PR preview is stale
+
+A new commit, changed evidence, changed approval artifact, or base-branch update invalidated the preview. Ask Boatstack to regenerate it. Do not copy the old body forward.
+
+## A phased plan cannot push or open its next PR
+
+Plan approval is not publication authority. Run `delivery-status` through the active
+Boatstack operation and confirm that the intended delivery slice is active. Commit
+only that slice's declared affected paths, then run `/test-gate`, `/review-gate`, and
+`/ship-gate`. Direct pushes, GitHub CLI PR mutations, GitHub tool mutations, and the
+ad-hoc PR route are denied until the managed publisher receives the explicit open or
+update confirmation. Successful publication activates the next declared slice.
+
+## GitHub CLI is unavailable
+
+Boatstack retains the validated `pr.md`. Authenticate or install GitHub CLI and repeat the open/update confirmation, or copy the exact preview into GitHub manually. Neither path authorizes merge.

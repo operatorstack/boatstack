@@ -42,6 +42,12 @@ In the repository, those terms are not decorative notation:
 
 ZCA creates immediate value by reducing a vague feature request to one verifiable slice. For a shipped SDK, API, or CLI, Boatstack uses two slices: the implementation boundary and one representative consumer path.
 
+Delivery phases use the same separation. Internal phases are tasks inside one slice.
+If the accepted result truly needs multiple PRs, the plan defines ordered delivery
+slices, but the control state activates only one. Every active slice must produce
+fresh diff-bound test and review receipts and receive its own ship confirmation;
+approval of the parent plan carries scope, not publication authority.
+
 The entry state is not an unstructured chat message. Ordinary product intent is first explored in the active host's Plan mode and saved as a source plan. `auto-plan` resolves the active path from host conversation context or bounded fallback discovery, then requires that file before projecting repository context:
 
 ```text
@@ -90,7 +96,7 @@ subject to acceptance criteria pass
            approval is current
 ```
 
-That is why context trimming is not automatically an optimization. If removing state increases rework or false acceptance, total cost rises. The canonical runtime references are approximately **5250 estimated tokens**, while host adapters point to one operation at a time.
+That is why context trimming is not automatically an optimization. If removing state increases rework or false acceptance, total cost rises. The canonical runtime references are approximately **11183 estimated tokens**, while host adapters point to one operation at a time.
 
 ## Control appears at transitions
 
@@ -140,6 +146,6 @@ Delivery and system improvement also remain separate. A failed task may suggest 
 
 ## What is evidence-backed
 
-The current moves were derived from the Intelligence Flow benchmark corpus and product-repository studies. The generated source commit is [`46be4fd2d8ebbc00e28c10e78685b721b2c62fe8`](https://github.com/operatorstack/intelligence-flow/tree/46be4fd2d8ebbc00e28c10e78685b721b2c62fe8/examples/12-product-engineering-loop).
+The current moves were derived from the Intelligence Flow benchmark corpus and product-repository studies. The generated source commit is [`2b826f39`](https://github.com/operatorstack/intelligence-flow/tree/2b826f39/labs/12-product-engineering-loop).
 
 The evidence supports specific failure mechanisms and guardrails. It does not establish that Boatstack is optimal, that control-theory notation proves software quality, or that one workflow dominates every team. Those are evaluation questions, so the distribution preserves measurements, provenance, gaps, and negative results.

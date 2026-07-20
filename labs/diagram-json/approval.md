@@ -9,7 +9,7 @@ This is a simulated walkthrough receipt, not authorization to implement or ship 
   "status": "APPROVED",
   "approved_by": "Example Maintainer (simulated walkthrough)",
   "approved_at": "2026-07-16T12:00:00Z",
-  "approval_fingerprint": "6f140ee4aa648d76d82ba3af8d9ac6436002cd2ee39d9bcc22337b25005b1015"
+  "approval_fingerprint": "f22a7ace11b3947f070994669754cf38695f555538da8073ffaea76801d4acbd"
 }
 ```
 <!-- /boatstack-approval -->

@@ -1,7 +1,6 @@
 package boatstack
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -53,7 +52,7 @@ func rejectSymlinkComponents(root, target string) error {
 			return statErr
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("refusing symlinked planning path: %s", current)
+			return fmt.Errorf("refusing symlinked path: %s", current)
 		}
 	}
 	return nil
@@ -172,10 +171,12 @@ func RecordApproval(options ApprovalRecordOptions) error {
 }
 
 type installLock struct {
-	BoatstackVersion string `json:"boatstack_version"`
-	SourceCommit     string `json:"source_commit"`
-	BinaryPath       string `json:"binary_path"`
-	BinarySHA256     string `json:"binary_sha256"`
+	BoatstackVersion string                      `json:"boatstack_version"`
+	SourceCommit     string                      `json:"source_commit"`
+	Platform         string                      `json:"platform"`
+	BinaryPath       string                      `json:"binary_path"`
+	BinarySHA256     string                      `json:"binary_sha256"`
+	Integrations     map[string]IntegrationState `json:"integrations,omitempty"`
 }
 
 func Doctor(repoPath string) error {
@@ -195,38 +196,67 @@ func Doctor(repoPath string) error {
 	if err := CheckExport(repo, bundle.Files); err != nil {
 		return err
 	}
-	lockPath := filepath.Join(repo, ".product-loop", "bin", "install.lock.json")
-	value, err := os.ReadFile(lockPath)
-	if err != nil {
-		return fmt.Errorf("missing local install lock: %w", err)
-	}
-	var lock installLock
-	if err := json.Unmarshal(value, &lock); err != nil {
-		return fmt.Errorf("invalid local install lock: %w", err)
-	}
-	if lock.BoatstackVersion != Version || lock.SourceCommit != SourceCommit {
-		return fmt.Errorf("helper version drift: installed %s (%s), expected %s (%s)", lock.BoatstackVersion, lock.SourceCommit, Version, SourceCommit)
-	}
-	binaryPath, err := resolveRepositoryRelativePath(repo, lock.BinaryPath)
-	if err != nil {
-		return fmt.Errorf("invalid Boatstack helper path in install lock: %w", err)
-	}
-	if err := checkNonEmptyFile(binaryPath, "Boatstack helper"); err != nil {
+	if err := CheckHostHooks(repo, config.Adapters); err != nil {
 		return err
 	}
-	hash, err := SHA256File(binaryPath)
-	if err != nil {
+	hostAdapters := normalizedAdapters(config.Adapters)
+	if contains(hostAdapters, "claude") {
+		if _, err := lookPath("bash"); err != nil {
+			return fmt.Errorf("Claude Code safety hooks require Bash; install Git Bash or Bash, then rerun doctor")
+		}
+	}
+	if err := verifyGeneratedRuntime(repo); err != nil {
 		return err
 	}
-	if hash != lock.BinarySHA256 {
-		return fmt.Errorf("Boatstack helper checksum does not match the install lock")
+	if _, _, err := loadSharedRuntime(repo); err != nil {
+		return err
 	}
-	return nil
+	for _, host := range []string{"cursor", "claude", "codex"} {
+		if !contains(hostAdapters, host) {
+			continue
+		}
+		inputs := [][]byte{}
+		if host == "cursor" {
+			inputs = append(inputs,
+				[]byte(`{"hook_event_name":"beforeShellExecution","command":"git status --short"}`),
+				[]byte(`{"hook_event_name":"beforeMCPExecution","tool_name":"mcp__status__read","tool_input":"{\"scope\":\"local\"}","command":"status-server"}`),
+			)
+		} else {
+			inputs = append(inputs, []byte(`{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git status --short"}}`))
+		}
+		for _, input := range inputs {
+			if _, denied := HookDecision(SafetyHookOptions{Host: host, Repo: repo, Input: input}); denied {
+				return fmt.Errorf("%s safety hook denied its read-only smoke event", host)
+			}
+		}
+		if _, denied := HookDecision(SafetyHookOptions{Host: host, Repo: repo, Input: []byte(`{"malformed":true}`)}); !denied {
+			return fmt.Errorf("%s safety hook did not fail closed on malformed input", host)
+		}
+	}
+	return verifyLocalRuntime(repo)
+}
+
+func DoctorHookHosts(repoPath string) ([]string, error) {
+	repo, err := ResolveRepository(repoPath)
+	if err != nil {
+		return nil, err
+	}
+	config, _, err := LoadConfig(filepath.Join(repo, ".boatstack-project.json"))
+	if err != nil {
+		return nil, err
+	}
+	hosts := []string{}
+	for _, host := range []string{"cursor", "claude", "codex"} {
+		if contains(normalizedAdapters(config.Adapters), host) {
+			hosts = append(hosts, host)
+		}
+	}
+	return hosts, nil
 }
 
 func DoctorRepairHint(err error) error {
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf("%w; repair: rerun the Boatstack installer from the repository root, then reload the coding host", err)
+	return fmt.Errorf("%w; repair: rerun the verified Boatstack installer once from any checkout in this Git clone, then reload the coding host", err)
 }
