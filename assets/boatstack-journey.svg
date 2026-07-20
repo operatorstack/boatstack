@@ -4,7 +4,15 @@
   <style>
     .paper{fill:#fff}.ink{fill:#0F172A}.muted{fill:#475569}.quiet{fill:#64748B}.node{fill:#fff;stroke:#0F172A}.soft{fill:#F8FAFC;stroke:#CBD5E1}.context{fill:#E8F0FF;stroke:#2563EB}.blue{stroke:#2563EB}.gray{stroke:#94A3B8}.accent{fill:#2563EB}
     .title{font:700 28px "Avenir Next","Segoe UI",sans-serif}.label{font:700 17px "Avenir Next","Segoe UI",sans-serif}.body{font:600 15px "Avenir Next","Segoe UI",sans-serif}.small{font:600 13px "Avenir Next","Segoe UI",sans-serif;letter-spacing:.08em}.mono{font:700 13px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.1em}
-    @media(prefers-color-scheme:dark){.paper,.node{fill:#0F172A}.soft{fill:#172033;stroke:#475569}.context{fill:#172A4D}.ink{fill:#E2E8F0}.muted,.quiet{fill:#94A3B8}.node{stroke:#E2E8F0}}
+    @media(prefers-color-scheme:dark){
+      .paper{fill:#090D16}
+      .node{fill:#0F172A;stroke:#1E293B}
+      .soft{fill:#1E2033;stroke:#1E293B}
+      .context{fill:#172554;stroke:#2563EB}
+      .ink{fill:#F8FAFC}
+      .muted,.quiet{fill:#64748B}
+      .title, .label, .body, .small, .mono{font-family:"SF Mono",Menlo,Monaco,Consolas,"Liberation Mono",monospace}
+    }
   </style>
   <defs>
     <marker id="blue-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="accent" d="M0 0 10 5 0 10z"/></marker>

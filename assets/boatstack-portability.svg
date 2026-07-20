@@ -1,10 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 480" role="img" aria-labelledby="title desc">
   <title id="title">Your product development flow stays with the repository</title>
-  <desc id="desc">Cursor, Codex, Claude Code, different model tiers, and specialist skills feed one repository-owned Boatstack flow. The flow retains plans, decisions, gaps, evidence, and review findings, producing a reviewed pull request and useful context for the next feature.</desc>
+  <desc id="desc">Cursor, Codex, Claude Code, Gemini CLI, different model tiers, and specialist skills feed one repository-owned Boatstack flow. The flow retains plans, decisions, gaps, evidence, and review findings, producing a reviewed pull request and useful context for the next feature.</desc>
   <style>
     .paper{fill:#fff}.node{fill:#fff;stroke:#0F172A}.core{fill:#E8F0FF;stroke:#2563EB}.soft{fill:#F8FAFC;stroke:#CBD5E1}.ink{fill:#0F172A}.muted{fill:#475569}.blue{stroke:#2563EB}.gray{stroke:#94A3B8}.accent{fill:#2563EB}
     .title{font:700 27px "Avenir Next","Segoe UI",sans-serif}.label{font:700 18px "Avenir Next","Segoe UI",sans-serif}.body{font:600 16px "Avenir Next","Segoe UI",sans-serif}.small{font:700 13px "Avenir Next","Segoe UI",sans-serif;letter-spacing:.09em}
-    @media(prefers-color-scheme:dark){.paper,.node{fill:#0F172A}.core{fill:#172A4D}.soft{fill:#172033;stroke:#475569}.ink{fill:#E2E8F0}.muted{fill:#94A3B8}.node{stroke:#E2E8F0}}
+    @media(prefers-color-scheme:dark){
+      .paper{fill:#090D16}
+      .node{fill:#0F172A;stroke:#1E293B}
+      .core{fill:#172554;stroke:#2563EB}
+      .soft{fill:#0F172A;stroke:#1E293B}
+      .ink{fill:#F8FAFC}
+      .muted{fill:#64748B}
+      .blue{stroke:#2563EB}
+      .gray{stroke:#1E293B}
+      .accent{fill:#2563EB}
+      .title, .label, .body, .small{font-family:"SF Mono",Menlo,Monaco,Consolas,"Liberation Mono",monospace}
+    }
   </style>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="accent" d="M0 0 10 5 0 10z"/></marker>
@@ -16,7 +27,7 @@
   <g transform="translate(48 116)">
     <rect class="node" width="312" height="82" rx="18" stroke-width="3"/>
     <text class="small muted" x="22" y="27">CODING AGENT</text>
-    <text class="label ink" x="22" y="57">Cursor · Codex · Claude Code</text>
+    <text class="label ink" x="22" y="57">Cursor · Codex · Claude · Gemini</text>
   </g>
   <g transform="translate(48 218)">
     <rect class="node" width="312" height="82" rx="18" stroke-width="3"/>

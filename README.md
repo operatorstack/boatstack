@@ -10,7 +10,7 @@
 
 ## A delivery harness for AI coding agents
 
-<!-- boatstack-claim:portable-product-flow -->Boatstack connects the work from an idea to a reviewed PR. Keep using Cursor, Codex, or Claude Code, with the models and specialist skills that fit the work. Boatstack keeps the plan, decisions, gaps, tests, review findings, and project context connected along the way.
+<!-- boatstack-claim:portable-product-flow -->Boatstack connects the work from an idea to a reviewed PR. Keep using Cursor, Codex, Claude Code, or Gemini CLI, with the models and specialist skills that fit the work. Boatstack keeps the plan, decisions, gaps, tests, review findings, and project context connected along the way.
 
 The agent remains free to build. Before it says the work is done, Boatstack asks for the approval, tests, review, and recorded evidence appropriate to the change.
 
@@ -22,17 +22,17 @@ The agent remains free to build. Before it says the work is done, Boatstack asks
 
 | You change | Boatstack keeps |
 |---|---|
-| Cursor, Codex, or Claude Code | The same path from planning through PR preparation |
+| Cursor, Codex, Claude Code, or Gemini CLI | The same path from planning through PR preparation |
 | Lower-cost, general, or frontier model | The same approval, testing, and review requirements |
 | React guidance, gstack, Spec Kit, or another skill | Human approval and evidence remain authoritative |
 | Session, worktree, or feature | Durable decisions, gaps, evidence, and code state in the repository |
 
 ## Install with your coding agent
 
-Copy this into Cursor, Codex, or Claude Code while the repository is open:
+Copy this into Cursor, Codex, Claude Code, or Gemini CLI while the repository is open:
 
 ```text
-Install Boatstack in this repository from https://github.com/operatorstack/boatstack. Detect whether you are running in Cursor, Codex, or Claude Code; create or use a chore/install-boatstack branch; run the official installer for this operating system; default to core unless I request gstack or Spec Kit; keep all portable host adapters; run Boatstack doctor; show me the generated files and installation diff; and prepare the installation PR without merging it or starting product work.
+Install Boatstack in this repository from https://github.com/operatorstack/boatstack. Detect whether you are running in Cursor, Codex, Claude Code, or Gemini CLI; create or use a chore/install-boatstack branch; run the official installer for this operating system; default to core unless I request gstack or Spec Kit; keep all portable host adapters; run Boatstack doctor; show me the generated files and installation diff; and prepare the installation PR without merging it or starting product work.
 ```
 
 Install Boatstack in its own infrastructure PR and merge it before starting a feature. Install once per Git clone; linked worktrees reuse the verified runtime and restore their ignored local helper automatically.
@@ -46,15 +46,16 @@ Install Boatstack in its own infrastructure PR and merge it before starting a fe
 |---|---|
 | Claude Code | `/auto-plan` |
 | Cursor | `/auto-plan` |
+| Gemini CLI | `/auto-plan` |
 | Codex | `$boatstack auto-plan` |
 
 That is all you need to learn up front. Boatstack shows one next action at a time through approval, building, tests, review, and PR preparation.
 
-When you return after an interruption, run `/boatstack-next` in Claude Code or Cursor, or `$boatstack next` in Codex. Boatstack reports the repository-verified stage and one next action without changing state. It distinguishes a feature that has not started from one that is complete.
+When you return after an interruption, run `/boatstack-next` in Claude Code, Cursor, or Gemini CLI, or `$boatstack next` in Codex. Boatstack reports the repository-verified stage and one next action without changing state. It distinguishes a feature that has not started from one that is complete.
 
-`$boatstack run` in Codex or `/boatstack-run` in Claude Code and Cursor starts from one saved plan and continues through publication, pausing for approvals and product decisions. It checks branch freshness before delivery; it never merges or deploys.
+`$boatstack run` in Codex or `/boatstack-run` in Claude Code, Cursor, and Gemini CLI starts from one saved plan and continues through publication, pausing for approvals and product decisions. It checks branch freshness before delivery; it never merges or deploys.
 
-In Claude Code and Cursor, that guidance moves through `/plan-gate` → `/build` → `/test-gate` → `/review-gate` → `/ship-gate`. In Codex, use the same operation names after `$boatstack`.
+In Claude Code, Cursor, and Gemini CLI, that guidance moves through `/plan-gate` → `/build` → `/test-gate` → `/review-gate` → `/ship-gate`. In Codex, use the same operation names after `$boatstack`.
 
 > The diagram shows what Boatstack guides—not a checklist you need to memorize.
 
@@ -66,7 +67,7 @@ In Claude Code and Cursor, that guidance moves through `/plan-gate` → `/build`
 
 After Build, describe changes normally. Boatstack records them, preserves valid work, and resumes at the earliest boundary.
 
-Invoke `/repair` in Claude Code or Cursor, or `$boatstack repair` in Codex. It needs an active delivery and the exact change; earlier work routes to planning or Build.
+Invoke `/repair` in Claude Code, Cursor, or Gemini CLI, or `$boatstack repair` in Codex. It needs an active delivery and the exact change; earlier work routes to planning or Build.
 
 ```text
 “This is wrong” → record → repair → test → review
@@ -107,7 +108,7 @@ Enabled repositories require a categorized `CHANGELOG.md` → `Unreleased` entry
 
 | Part | Its job |
 |---|---|
-| **Coding agent** — Cursor, Codex, or Claude Code | Executes the work in your repository |
+| **Coding agent** — Cursor, Codex, Claude Code, or Gemini CLI | Executes the work in your repository |
 | **Model** — lower-cost, general, or frontier | Reasons, writes, and evaluates within the agent |
 | **Skill** — React guidance, gstack, Spec Kit, or another specialty | Adds expertise for a particular kind of work |
 | **Boatstack** | Carries the delivery path, saved context, and proof of completion across them |
@@ -124,7 +125,7 @@ This does not mean every model performs equally. [See the evidence and paired ev
 
 ## Why these steps?
 
-They come from coding failures observed in benchmark and product-repository work—not guesses. Every safeguard links what happened, what Boatstack now does, and whether that behavior has actually been tested.
+They derive from coding failures observed in benchmark and product work—not guesses. Each link explains what happened, what Boatstack does, and whether that behavior has actually been tested.
 
 | What happened | What Boatstack does | Current evidence |
 |---|---|---|
@@ -139,7 +140,7 @@ They come from coding failures observed in benchmark and product-repository work
 
 ## A small example
 
-A request said, “Add a password reset button,” but the product used passwordless sign-in and had no reset route. Boatstack surfaced the conflict instead of building the button literally. The human chose dual authentication; later, review caught an unsafe recovery-session assumption and returned the change for repair before PR preparation.
+A request asked to “Add a password reset button,” but the product used passwordless sign-in. Boatstack flagged the conflict. The developer chose dual authentication; later, review caught an unsafe recovery assumption and prompted a repair.
 
 [Follow the sanitized walkthrough](docs/account-recovery-walkthrough.md) or [ship your first feature](docs/getting-started.md).
 
@@ -170,14 +171,14 @@ The installer previews generated paths, verifies the platform helper, offers opt
 
 ## Find what you need
 
-**Start:** [Getting started](docs/getting-started.md) · [Generated files](docs/generated-files.md) · [Troubleshooting](docs/troubleshooting.md)
+**Start:** [Getting started](docs/getting-started.md) · [Files](docs/generated-files.md) · [Troubleshooting](docs/troubleshooting.md)
 
 **Inspect:** [Why these steps](docs/why-these-steps.md) · [Validation and evidence](docs/validation-and-evidence.md) · [Safety](docs/safety.md)
 
-**Go deeper:** [Evidence-engineered coding](docs/evidence-engineered-coding.md) · [Research and design](docs/research-and-design.md) · [Contributing](CONTRIBUTING.md)
+**Go deeper:** [Coding](docs/evidence-engineered-coding.md) · [Design](docs/research-and-design.md) · [Contributing](CONTRIBUTING.md)
 
 ## Project status
 
-Boatstack is an open-source research prototype. Its workflow and enforcement behavior are tested, but the current record does not prove improved product-delivery success. A paired feature-building benchmark—same model, task, and budget with and without Boatstack—is the next evaluation.
+Boatstack is an open-source research prototype. Its workflow and enforcement behavior are tested, but the current record does not prove improved delivery success. A paired feature benchmark—same model, task, and budget—is the next evaluation.
 
 Exact Intelligence Flow provenance and generated file hashes are recorded in [`UPSTREAM.json`](UPSTREAM.json).
