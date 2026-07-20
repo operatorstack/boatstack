@@ -131,6 +131,7 @@
     "release-notes/2026-07-19-optional-repository-changelog.md": "7ae6bed436c269335ac5055e04438489451bef00836fecb3e5fcb06a18501853",
     "release-notes/2026-07-19-valid-skill-frontmatter.md": "a0a002f7891474d7d1eea49e3234cae5ddbd941158726b83555dc48474181a92",
     "release-notes/2026-07-20-gemini-cli-integration.md": "d829b4fafb3a02dd766e018558b20bf1bc948dd5e337911d6a7c8b54c83c9942",
+    "release-notes/2026-07-20-portability-diagram-dark-theme.md": "b06bebec1361b21ef6deb8c8f43168d189803a32588aeb803ea4b441525a77e2",
     "release-notes/2026-07-20-speak-software-standards.md": "a8890ed7eb38868bdf3035572d71785ca89abd3ffc3a314a5dc5315150afe397"
   },
   "generator": "operatorstack/intelligence-flow:boatstack-distribution",
