@@ -47,7 +47,7 @@
   "delivery_slices": [
     {
       "id": "delivery",
-      "title": "<reviewer-visible outcome for this PR>",
+      "title": "<product or user value for this PR>",
       "task_ids": ["T-1"],
       "base_branch": "<optional base branch>",
       "head_branch": "<optional required head branch>"
