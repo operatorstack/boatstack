@@ -858,7 +858,7 @@ func PRPreviewTemplate(context PRContext) string {
 	return strings.Join([]string{
 		"---",
 		"boatstack_pr_version: 2",
-		"title: " + quote("Describe the reviewer-visible outcome"),
+		"title: " + quote("Describe the product or user value of this change (e.g., 'Enable historical data migration')"),
 		"mode: " + quote(context.Mode),
 		"feature: " + quote(context.Feature),
 		"slice: " + quote(context.SliceID),
