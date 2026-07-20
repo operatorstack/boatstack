@@ -506,6 +506,23 @@ func TestPortableHostAdaptersShareWorkflowAndArtifactContract(t *testing.T) {
 			t.Fatalf("Gemini natural-language router does not declare portable operation %q", operation)
 		}
 	}
+
+	for host, surface := range hostSurfaces {
+		if !strings.Contains(surface, "Execution Mode Notice:") {
+			t.Fatalf("%s router surface is missing the Execution Mode Notice", host)
+		}
+	}
+
+	for _, path := range []string{
+		".cursor/commands/auto-plan.md",
+		".claude/skills/auto-plan/SKILL.md",
+		".gemini/skills/auto-plan/SKILL.md",
+	} {
+		content := string(bundle.Files[path])
+		if !strings.Contains(content, "Execution Mode Notice:") {
+			t.Fatalf("%s is missing the Execution Mode Notice", path)
+		}
+	}
 }
 
 func TestExportRefusesUserOwnedCollision(t *testing.T) {
