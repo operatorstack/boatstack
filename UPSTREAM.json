@@ -12,7 +12,7 @@
   },
   "files": {
     ".gitignore": "a7079e923a776f14f1bb3a6aa0a11a133a8e1dfb35af020f327623357b7e3957",
-    "CONTRIBUTING.md": "640e496e306313eb79700c7c99d11bca233b75f771779d44280f5c2e638bcc6f",
+    "CONTRIBUTING.md": "e8d62a646c3c1ef92351af39c9fafc0f6a672ff70b89680cce90a82f0d71f7ee",
     "README.md": "590821a4cf3c4b196d3cfb39c972ccbebef7d4d558df817c1f1e88b4fd7ceb07",
     "assets/boatstack-journey.svg": "9f016fbfd2881675551a44dafa282cbc7510a7091131005be490c2dbe5e4e051",
     "assets/boatstack-mark.svg": "ec96165583b15cfd446c27049d49217973f3e9b1defa5771cc08eec0c9542ce4",
@@ -38,8 +38,8 @@
     "boatstack/cmd/boatstack-helper/main_test.go": "ff73003b6a5157202fa09ddf1129fb13c3d79702b2e05a8721ce5a11bf5ab779",
     "boatstack/delivery.go": "565bc8465252a798124a29874e1aeffff16e9027d1a86715e11b3e4bc0743bd2",
     "boatstack/delivery_test.go": "2545c26389d330a92c11e7b09fb2342101db5d09a825a2a9e81b4ea9eea9407b",
-    "boatstack/export.go": "52124d6d813588ff743ce3352c7392b2ef10f9c51c86ae1422e3053c7e0a697c",
-    "boatstack/export_test.go": "b38875e004c1a0003f8e377b25ac14e9f4898cf949e91f3d9bfd9531a2867d76",
+    "boatstack/export.go": "bbed04156778686599f8c4d07b06a01d217660240e0652f651350b705703e243",
+    "boatstack/export_test.go": "27f9895f39d0958b5b4824193865a8a30333db709e5b91788aff3d49304457ed",
     "boatstack/go.mod": "6086ef1b2a83f5696190dca692c653925f27b61f652f659fd3fca43ed54a1641",
     "boatstack/go.sum": "26c315c867b11b886f3c9402fce7f341f6a9115a5d61f54afbb5e1b1fb5f6017",
     "boatstack/hooks.go": "2b7d899f92efef8a68a160c423a46bcd6fd37daa0eba2ac8ad44ffa3dc5f88c9",
@@ -86,10 +86,10 @@
     "docs/account-recovery-walkthrough.md": "676034974594a7d1a559b24dbed31d7ccc429eb81404b203ca07bbdaa19ec3d3",
     "docs/benchmark-corpus-audit.md": "f2d206fe8579a514f9da82b2c96c19b343ac004be67617e1bd34f0f8e0e5e6c6",
     "docs/benchmark-submission-audit.md": "9518abdd17690729c6423f87cab20418ed47b0915b5faa44b9ef975e9e9c3b79",
-    "docs/evidence-engineered-coding.md": "12f3116604c0fe2a60e79463a063161a8f57fa1da0c0f8d0baffb2e915397f6a",
+    "docs/evidence-engineered-coding.md": "f389b30ca57c1df60475574684166ddfedf21e9bb96516ed10ed262590044bd6",
     "docs/generated-files.md": "136422baf0c7fc2bd5100cfe0ebdb3d9d0705dfd7e7d54bf745dd1037e63492c",
     "docs/getting-started.md": "eacc814fdffdfa3c7d8052b7cd99a79c04da5c75d88d8b44f3fb68d9afec0316",
-    "docs/public-claims.json": "c16189d867ffbb18bbee414e2325c15a93d8b0f48b4fa7d8b57f44188f97724d",
+    "docs/public-claims.json": "2b788ae7cd3f9bd330ec7366ae8dad77ff95faf97cfc650c3699a7ba2efbfb4d",
     "docs/public-surface.md": "713f7a050b5f339cf948299103ef3800417dccfecf2cc1a4166397ea6f978907",
     "docs/research-and-design.md": "d65c66e323037bda5d45aacef5d48afa6bf93da55901378891d235aca3a5684f",
     "docs/safety.md": "7b9b5c515d36e683767ec8d3d9d6d119ac93650b2f629d351deadd4c600ed6a6",
@@ -103,7 +103,7 @@
     "labs/diagram-json/compiled/evidence.md": "1ba1c989ade070a8ef9a508fbd788d100d7292f2dbacbb2bce895468019f619d",
     "labs/diagram-json/compiled/tasks.json": "88f60851abf79d851e9fccc754ff3040034ae595306bc87d64784c19eb403e71",
     "labs/diagram-json/compiled/test-matrix.json": "424657ff505768e50fa113801fd8363364a18269d5297480907a993d44063a39",
-    "labs/diagram-json/plan.lock.json": "38a8a7dcb9d432f21f790f5f3c29c09a5209fd799380ae4cf3d3073851481b65",
+    "labs/diagram-json/plan.lock.json": "c4aaf275ed936ee8a38f7ead4b9c62971b6d4536e2ffa963c963ede5d125304a",
     "labs/diagram-json/plan.md": "3cc4f533b8d69386deff16b3a594a3ba09d4c0c3db636cccd8c4380084ce6a51",
     "labs/diagram-json/questions.md": "74733b015002c8a6777c558e7e997fa48c94850b9bd39054fe9366c97ecf728d",
     "labs/diagram-json/request.md": "0808fc41c36779c404f4a3a121167da6e76cac56df526e70f9ed6d3e0d4c02ed",
@@ -137,6 +137,7 @@
     "release-notes/2026-07-19-valid-skill-frontmatter.md": "a0a002f7891474d7d1eea49e3234cae5ddbd941158726b83555dc48474181a92",
     "release-notes/2026-07-20-config-schema-migration.md": "99be8fcc408689f559c78bdf39f7161fa7d948846bfc136e3fceed5015841be0",
     "release-notes/2026-07-20-gemini-cli-integration.md": "d829b4fafb3a02dd766e018558b20bf1bc948dd5e337911d6a7c8b54c83c9942",
+    "release-notes/2026-07-20-generic-execution-mode-dx.md": "e16aa73c4ef8da4acb9f8e24706c7dbaf7d416d27e51d147abee1d0219b6d8e0",
     "release-notes/2026-07-20-managed-workspace-lifecycle.md": "e84e9c5a393ca88f9fc14d1f2a99ee9a2a1c525a16d141e9f9981bc9354d8f73",
     "release-notes/2026-07-20-portability-diagram-dark-theme.md": "b06bebec1361b21ef6deb8c8f43168d189803a32588aeb803ea4b441525a77e2",
     "release-notes/2026-07-20-speak-software-standards.md": "a8890ed7eb38868bdf3035572d71785ca89abd3ffc3a314a5dc5315150afe397"
@@ -144,7 +145,7 @@
   "generator": "operatorstack/intelligence-flow:boatstack-distribution",
   "schema_version": 1,
   "source": {
-    "commit": "aefd94091a7e1e52b2bb6bd8da177905dde07cd7",
+    "commit": "b8bde5fa0b4d3c44a0f78fb9cdb9775361d1bd5d",
     "path": "labs/12-product-engineering-loop",
     "repository": "operatorstack/intelligence-flow"
   }

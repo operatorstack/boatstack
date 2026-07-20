@@ -20,6 +20,8 @@ var allowedAdapters = map[string]bool{
 	"github": true,
 }
 
+const executionModeDX = "\n\n**Execution Mode Notice:** Boatstack requires active tool use (such as shell execution) to run its commands and inspect the workspace. If you are currently operating in a Plan Mode, Read-Only Mode, or a state with restricted tool access, you MUST immediately inform the user that Boatstack requires full execution capabilities and ask them to approve exiting that mode or grant execution permissions before you can proceed. Do not attempt to mock or bypass the operation."
+
 var (
 	readCanonical    = ReadCanonical
 	readCanonicalDir = ReadCanonicalDir
@@ -173,7 +175,7 @@ Read @.product-loop/project.json, @.product-loop/artifacts.md, and only the mini
 Use the gate semantics in the canonical workflow. Do not redefine them in this adapter. Auto-plan and plan-gate may create or update Markdown only. Classify authoritative repository facts as DISCOVERED, agent suggestions as PROPOSED, and only explicit human responses as ANSWERED. Every material proposal remains in blocking_questions; never label an agent default as answered. For 1-3 finite questions, use compact keys such as 1a/1b and 2a/2b, suffix exactly one choice per question with (Recommended), and offer r to accept all displayed recommendations. Treat r as explicit human acceptance only when every displayed question has exactly one recommendation; echo the selected mapping before recording the answers. Use the same format with structured question tools or plain text and return WAITING_FOR_INPUT internally. Never silently choose a default. Boatstack leaves implementation tactics open, but completion, approval, and shipping claims require current evidence. During managed delivery, read the active delivery slice, never push or mutate a PR directly, and require slice-scoped test and review receipts before ship-gate. A successful publication activates the next declared slice; parent-plan approval never skips its gates.
 
 Follow the User-facing response contract in @.product-loop/workflow.md. Lead with its mapped plain-language outcome, show only decision-relevant content, end with exactly one `+"`### Next step`"+`, and put machine status, helper output, fingerprints, artifact paths, receipts, and locks inside collapsed `+"`Technical details`"+`. Treat helper names in this command as internal control machinery; do not expose them in the primary response.
-`, operation, operation, preflight, extra)
+`, operation, operation, preflight, extra) + executionModeDX
 }
 
 func claudeOperationSkill(spec claudeSkillSpec, operationBody string) string {
@@ -296,7 +298,7 @@ When the user asks to update Boatstack itself, use /boatstack-update. Release di
 Do not branch behavior on model name, provider, or price; branch on observed work state and evidence.
 Boatstack's repository hooks deny high-confidence irreversible operations across every agent call. There is no in-session bypass. Preserve failed external state, use read-only diagnosis and fix-forward recovery, and leave intentional destructive recovery to an operator-owned surface outside Boatstack.
 `
-		files[fmt.Sprintf(".cursor/rules/%s.mdc", adapterName)], err = GeneratedFrontmatter(rule)
+		files[fmt.Sprintf(".cursor/rules/%s.mdc", adapterName)], err = GeneratedFrontmatter(rule + executionModeDX)
 		if err != nil {
 			return ExportBundle{}, err
 		}
@@ -337,7 +339,7 @@ When the user asks to update Boatstack, run the boatstack-update operation. Neve
 For a managed ship, use the internal pr-context operation with --feature to project the feature spec, accepted decisions, actual committed diff, evidence ledger, review findings, gaps, rollout, and rollback into the required pr.md artifact. Inspect the returned changed files, diff stat, high-risk matches, and the actual diff before writing claims; commits alone are not authoritative. Always include why, what changed, review order, evidence, gaps/risks, rollout/rollback, and collapsed provenance. Add UI evidence, security/privacy, migration, or operations sections only when relevant. For a natural-language request to improve an existing or ad-hoc PR, run pr-context without --feature and use the same reviewer-first format from observed branch facts, but mark unavailable approval or gate evidence as NOT_VERIFIED. Never create or advertise a /pr-brief command. Validate with check-pr and always show the exact title and rendered body before publication. Ask for state-scoped o to open or u to update the PR. Only after the matching shortcut or compatible full reply, commit only pr.md, revalidate the unchanged preview fingerprint, and invoke the internal publish-pr operation with the selected action. It may perform a normal push but never force-push. Any intervening product diff or evidence change invalidates the preview. Keep model attribution inside collapsed provenance. Internal helper names and hashes stay out of the primary response.
 
 If gstack is enabled, use only its namespaced /gstack-* specialist lenses inside Boatstack operations. If Spec Kit is enabled, use it to generate or cross-check artifacts; never invoke speckit.implement to bypass Boatstack's plan approval and build gate.
-	`, adapterName)
+	`, adapterName) + executionModeDX
 	if contains(adapters, "claude") {
 		claudeAdapterSkill := strings.Replace(
 			adapterSkill,
