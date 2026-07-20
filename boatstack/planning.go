@@ -258,5 +258,12 @@ func DoctorRepairHint(err error) error {
 	if err == nil {
 		return nil
 	}
+	errStr := err.Error()
+	if strings.Contains(errStr, "config schema is behind") {
+		return fmt.Errorf("%s; remediation: run /boatstack-update to migrate project configuration", errStr)
+	}
+	if strings.Contains(errStr, "config was written by a newer Boatstack") {
+		return fmt.Errorf("%s; remediation: update your Boatstack installation to load this configuration", errStr)
+	}
 	return fmt.Errorf("%w; repair: rerun the verified Boatstack installer once from any checkout in this Git clone, then reload the coding host", err)
 }

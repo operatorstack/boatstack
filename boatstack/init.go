@@ -313,9 +313,26 @@ func RunInit(options InitOptions) (returnErr error) {
 	}
 	var config ProjectConfig
 	var rawConfig []byte
+	var migrationFrom, migrationTo int
+	var migrationChanged bool
 	if configExists {
-		config, rawConfig, err = LoadConfig(configPath)
+		var err error
+		rawConfig, err = os.ReadFile(configPath)
 		if err != nil {
+			return err
+		}
+		var upgraded []byte
+		upgraded, migrationFrom, migrationTo, migrationChanged, err = MigrateConfigBytes(rawConfig)
+		if err != nil {
+			return fmt.Errorf("failed to migrate project config: %w", err)
+		}
+		if migrationChanged {
+			rawConfig = upgraded
+		}
+		if err := DecodeJSON("load project configuration", configPath, rawConfig, &config); err != nil {
+			return fmt.Errorf("existing Boatstack config is invalid: %w", err)
+		}
+		if err := ValidateConfig(config); err != nil {
 			return fmt.Errorf("existing Boatstack config is invalid: %w", err)
 		}
 	} else {
@@ -508,7 +525,11 @@ func RunInit(options InitOptions) (returnErr error) {
 			return scopeErr
 		}
 		fmt.Fprintf(options.Output, "\nPASS: Boatstack updated to %s on a dedicated infrastructure branch.\n", Version)
-		fmt.Fprintln(options.Output, "PASS: no product files changed.")
+		if migrationChanged {
+			fmt.Fprintf(options.Output, "PASS: migrated .boatstack-project.json from schema version %d to %d.\n", migrationFrom, migrationTo)
+		} else {
+			fmt.Fprintln(options.Output, "PASS: no product files changed.")
+		}
 		fmt.Fprintln(options.Output, "Changed Boatstack paths:")
 		for _, path := range changed {
 			fmt.Fprintln(options.Output, "  "+path)

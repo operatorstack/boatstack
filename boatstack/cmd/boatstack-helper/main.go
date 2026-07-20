@@ -1,10 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -513,6 +515,67 @@ func checkSafetyCommand(arguments []string) int {
 	return 0
 }
 
+type MigrateConfigReport struct {
+	Status      string `json:"status"`
+	Message     string `json:"message,omitempty"`
+	FromVersion int    `json:"from_version"`
+	ToVersion   int    `json:"to_version"`
+	Changed     bool   `json:"changed"`
+}
+
+func migrateConfigCommand(arguments []string) int {
+	flags := flag.NewFlagSet("migrate-config", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository whose configuration should be migrated")
+	check := flags.Bool("check", false, "dry-run check mode")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	configPath := filepath.Join(*repo, ".boatstack-project.json")
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		report := MigrateConfigReport{
+			Status:  "FAIL",
+			Message: fmt.Sprintf("failed to read config: %v", err),
+		}
+		value, _ := json.Marshal(report)
+		fmt.Print(string(value))
+		return 1
+	}
+	upgraded, fromVer, toVer, changed, err := boatstack.MigrateConfigBytes(raw)
+	if err != nil {
+		report := MigrateConfigReport{
+			Status:  "FAIL",
+			Message: fmt.Sprintf("migration failed: %v", err),
+		}
+		value, _ := json.Marshal(report)
+		fmt.Print(string(value))
+		return 1
+	}
+	if changed && !*check {
+		if err := os.WriteFile(configPath, upgraded, 0o644); err != nil {
+			report := MigrateConfigReport{
+				Status:  "FAIL",
+				Message: fmt.Sprintf("failed to write migrated config: %v", err),
+			}
+			value, _ := json.Marshal(report)
+			fmt.Print(string(value))
+			return 1
+		}
+	}
+	report := MigrateConfigReport{
+		Status:      "PASS",
+		FromVersion: fromVer,
+		ToVersion:   toVer,
+		Changed:     changed,
+	}
+	value, err := json.Marshal(report)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Print(string(value))
+	return 0
+}
+
 func prContextCommand(arguments []string) int {
 	flags := flag.NewFlagSet("pr-context", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository whose branch should be projected")
@@ -665,7 +728,7 @@ func workspaceStatusCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|run-preflight|record-change|record-delivery-gate|check-safety|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|run-preflight|record-change|record-delivery-gate|check-safety|migrate-config|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -723,6 +786,8 @@ func run() int {
 		return workspaceCleanupCommand(os.Args[2:])
 	case "workspace-status":
 		return workspaceStatusCommand(os.Args[2:])
+	case "migrate-config":
+		return migrateConfigCommand(os.Args[2:])
 	case "version":
 		fmt.Printf("Boatstack %s (%s)\n", boatstack.Version, boatstack.SourceCommit)
 		return 0
