@@ -96,8 +96,14 @@ func LoadConfig(path string) (ProjectConfig, []byte, error) {
 }
 
 func ValidateConfig(config ProjectConfig) error {
-	if config.SchemaVersion != 1 {
-		return fmt.Errorf("project config schema_version must be 1")
+	if config.SchemaVersion < 1 {
+		return fmt.Errorf("project config schema_version must be >= 1")
+	}
+	if config.SchemaVersion > currentSchemaVersion() {
+		return fmt.Errorf("config was written by a newer Boatstack; update Boatstack")
+	}
+	if config.SchemaVersion < currentSchemaVersion() {
+		return fmt.Errorf("config schema is behind; run /boatstack-update")
 	}
 	if strings.TrimSpace(config.Project.Name) == "" {
 		return fmt.Errorf("project.name is required")
@@ -217,7 +223,7 @@ func BuildExportBundle(configPath string, config ProjectConfig, rawConfig []byte
 		}
 	}
 
-	for _, name := range []string{"workflow.md", "artifacts.md", "failure-moves.md", "irreversible-operation-boundary.md", "host-hook-contracts.md"} {
+	for _, name := range []string{"workflow.md", "artifacts.md", "failure-moves.md", "irreversible-operation-boundary.md", "host-hook-contracts.md", "config-schema.md"} {
 		value, err := readCanonical("references/" + name)
 		if err != nil {
 			return ExportBundle{}, err

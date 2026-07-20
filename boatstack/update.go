@@ -357,5 +357,12 @@ func ValidateUpdateWorkspace(repo string, config ProjectConfig) error {
 	if err := CheckInstalledHostHooks(repo, config.Adapters); err != nil {
 		return fmt.Errorf("host-hook drift blocks update: %w", err)
 	}
+	var schemaProblems []string
+	if config.SchemaVersion != currentSchemaVersion() {
+		schemaProblems = append(schemaProblems, fmt.Sprintf("schema_version %d is behind current %d", config.SchemaVersion, currentSchemaVersion()))
+	}
+	if len(schemaProblems) > 0 {
+		return fmt.Errorf("config schema is behind; run /boatstack-update: %s", strings.Join(schemaProblems, ", "))
+	}
 	return CheckExistingInstallProvenance(repo)
 }
