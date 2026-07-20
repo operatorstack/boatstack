@@ -26,7 +26,17 @@ func TestGeneratedSkillFrontmatterIsValidYAML(t *testing.T) {
 			t.Errorf("%s has invalid frontmatter: %v", path, err)
 		}
 	}
-	if expected := len(claudeVisibleSkills) + 2; skillCount != expected {
+	expected := 0
+	if contains(config.Adapters, "claude") {
+		expected += len(claudeVisibleSkills) + 1
+	}
+	if contains(config.Adapters, "gemini") {
+		expected += len(claudeVisibleSkills) + 1
+	}
+	if contains(config.Adapters, "codex") {
+		expected += 1
+	}
+	if skillCount != expected {
 		t.Fatalf("validated %d generated skills, want %d", skillCount, expected)
 	}
 }
@@ -45,6 +55,7 @@ func TestBoatstackRoutersHaveUnindentedTopLevelKeys(t *testing.T) {
 	for _, path := range []string{
 		".agents/skills/boatstack/SKILL.md",
 		".claude/skills/boatstack/SKILL.md",
+		".gemini/skills/boatstack/SKILL.md",
 	} {
 		frontmatter := skillFrontmatterForTest(t, bundle.Files[path])
 		if !strings.Contains(frontmatter, "\ndescription: Use when") {

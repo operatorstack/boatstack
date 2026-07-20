@@ -66,7 +66,7 @@ func testConfig() ProjectConfig {
 			Name: "fixture", Commands: map[string]string{"test": "go test ./..."},
 		},
 		Workflow: Workflow{HumanPlanApproval: true, IndependentReviewForHighRisk: true, AllowPassWithGaps: true},
-		Adapters: []string{"cursor", "claude", "codex", "github"},
+		Adapters: []string{"cursor", "claude", "codex", "gemini", "github"},
 		Integrations: map[string]IntegrationState{
 			"gstack":   {Requested: false, Version: GStackRef},
 			"spec-kit": {Requested: false, Version: SpecKitVersion},
@@ -106,6 +106,9 @@ func TestExportAndDriftCheck(t *testing.T) {
 		".claude/skills/boatstack/SKILL.md",
 		".claude/skills/auto-plan/SKILL.md",
 		".claude/skills/boatstack-update/SKILL.md",
+		".gemini/skills/boatstack/SKILL.md",
+		".gemini/skills/auto-plan/SKILL.md",
+		".gemini/skills/boatstack-update/SKILL.md",
 		".agents/skills/boatstack/SKILL.md",
 		".product-loop/.gitignore",
 		".product-loop/templates/plan.md",
@@ -157,6 +160,48 @@ func TestExportAndDriftCheck(t *testing.T) {
 		path := ".claude/skills/" + operation + "/SKILL.md"
 		if claudeSkillPaths[path] {
 			t.Fatalf("internal or alias operation must not be a visible Claude skill: %s", path)
+		}
+	}
+
+	geminiSkillPaths := map[string]bool{}
+	for path := range bundle.Files {
+		if strings.HasPrefix(path, ".gemini/skills/") && strings.HasSuffix(path, "/SKILL.md") {
+			geminiSkillPaths[path] = true
+		}
+	}
+	if len(geminiSkillPaths) != len(claudeVisibleSkills)+1 {
+		t.Fatalf("generated %d Gemini skills, want %d: %#v", len(geminiSkillPaths), len(claudeVisibleSkills)+1, geminiSkillPaths)
+	}
+	for _, spec := range claudeVisibleSkills {
+		path := ".gemini/skills/" + spec.Name + "/SKILL.md"
+		skill := string(bundle.Files[path])
+		for _, expected := range []string{
+			"name: " + spec.Name,
+			"description: " + spec.Description,
+			"disable-model-invocation: true",
+			"Run the " + spec.Name + " operation",
+			".product-loop/workflow.md",
+			"User-facing response contract",
+		} {
+			if !strings.Contains(skill, expected) {
+				t.Fatalf("%s is missing %q", path, expected)
+			}
+		}
+	}
+	geminiAutoPlan := string(bundle.Files[".gemini/skills/auto-plan/SKILL.md"])
+	for _, expected := range []string{`argument-hint: "[plan-file]"`, "$ARGUMENTS", "/auto-plan <plan-file>"} {
+		if !strings.Contains(geminiAutoPlan, expected) {
+			t.Fatalf("Gemini auto-plan skill is missing argument behavior %q", expected)
+		}
+	}
+	geminiRouter := string(bundle.Files[".gemini/skills/boatstack/SKILL.md"])
+	if !strings.Contains(geminiRouter, "user-invocable: false") || strings.Contains(geminiRouter, "disable-model-invocation: true") {
+		t.Fatal("Gemini Boatstack router must be hidden from users but available to the model")
+	}
+	for _, operation := range []string{"retro", "review", "ship"} {
+		path := ".gemini/skills/" + operation + "/SKILL.md"
+		if geminiSkillPaths[path] {
+			t.Fatalf("internal or alias operation must not be a visible Gemini skill: %s", path)
 		}
 	}
 	if _, exists := bundle.Files[".product-loop/tools/approve_plan.py"]; exists {
@@ -296,7 +341,7 @@ func TestExportAndDriftCheck(t *testing.T) {
 			t.Fatalf("run adapter is missing startup recovery rule %q", expected)
 		}
 	}
-	for _, path := range []string{".claude/skills/boatstack/SKILL.md", ".agents/skills/boatstack/SKILL.md"} {
+	for _, path := range []string{".claude/skills/boatstack/SKILL.md", ".gemini/skills/boatstack/SKILL.md", ".agents/skills/boatstack/SKILL.md"} {
 		router := string(bundle.Files[path])
 		if !strings.Contains(router, "automatically use repair") || !strings.Contains(router, "active managed delivery") {
 			t.Fatalf("%s does not auto-route free-form delivery changes", path)
@@ -369,7 +414,7 @@ func TestExportAndDriftCheck(t *testing.T) {
 			t.Fatalf("canonical workflow is missing safety boundary %q", expected)
 		}
 	}
-	for _, path := range []string{".agents/skills/boatstack/SKILL.md", ".claude/skills/boatstack/SKILL.md"} {
+	for _, path := range []string{".agents/skills/boatstack/SKILL.md", ".claude/skills/boatstack/SKILL.md", ".gemini/skills/boatstack/SKILL.md"} {
 		adapter := string(bundle.Files[path])
 		for _, expected := range []string{"User-facing response contract", "exactly one Next step", "a approves the pending plan", "o opens the currently previewed feature/ad-hoc/update PR", "u updates the currently previewed existing PR", "r accepts every recommendation", "Bracketed forms such as [o]", "Continue accepting approve, open PR, update PR, and open update PR for compatibility", "do not advertise them in user-facing responses", "Never interpret r as plan approval, PR publication, identity, secret input, permission escalation, policy bypass, destructive recovery authorization", "1a/1b/1c and 2a/2b/2c", "exactly one recommendation", "Echo the selected question-to-answer mapping", "filesystem username", "Never create or advertise a /pr-brief command", "state-scoped o to open or u to update", "boatstack-update"} {
 			if !strings.Contains(adapter, expected) {
@@ -427,6 +472,9 @@ func TestPortableHostAdaptersShareWorkflowAndArtifactContract(t *testing.T) {
 		if _, exists := bundle.Files[".claude/skills/"+spec.Name+"/SKILL.md"]; !exists {
 			t.Fatalf("Claude does not expose user operation %q", spec.Name)
 		}
+		if _, exists := bundle.Files[".gemini/skills/"+spec.Name+"/SKILL.md"]; !exists {
+			t.Fatalf("Gemini does not expose user operation %q", spec.Name)
+		}
 	}
 	for _, expected := range []string{"source plan", "plan.md", "approval.md", "evidence", "gaps", "review", "pr.md"} {
 		if !strings.Contains(strings.ToLower(artifacts), strings.ToLower(expected)) {
@@ -437,6 +485,7 @@ func TestPortableHostAdaptersShareWorkflowAndArtifactContract(t *testing.T) {
 	hostSurfaces := map[string]string{
 		"cursor": string(bundle.Files[".cursor/rules/boatstack.mdc"]),
 		"claude": string(bundle.Files[".claude/skills/boatstack/SKILL.md"]),
+		"gemini": string(bundle.Files[".gemini/skills/boatstack/SKILL.md"]),
 		"codex":  string(bundle.Files[".agents/skills/boatstack/SKILL.md"]),
 	}
 	for host, surface := range hostSurfaces {
@@ -453,6 +502,9 @@ func TestPortableHostAdaptersShareWorkflowAndArtifactContract(t *testing.T) {
 		if !strings.Contains(hostSurfaces["claude"], operation) {
 			t.Fatalf("Claude natural-language router does not declare portable operation %q", operation)
 		}
+		if !strings.Contains(hostSurfaces["gemini"], operation) {
+			t.Fatalf("Gemini natural-language router does not declare portable operation %q", operation)
+		}
 	}
 }
 
@@ -460,6 +512,7 @@ func TestExportRefusesUserOwnedCollision(t *testing.T) {
 	for _, relative := range []string{
 		".cursor/rules/boatstack.mdc",
 		".claude/skills/auto-plan/SKILL.md",
+		".gemini/skills/auto-plan/SKILL.md",
 	} {
 		t.Run(relative, func(t *testing.T) {
 			repo := t.TempDir()
