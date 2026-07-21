@@ -30,7 +30,7 @@ func blockedRunPreflight(base, head, upstream, relation, reason string) RunPrefl
 	}
 }
 
-func runBranches(repo string) (string, string, error) {
+func runBranches(repo, explicitFeature string) (string, string, error) {
 	base := defaultPRBase(repo)
 	head, err := runGitCommand(repo, "branch", "--show-current")
 	if err != nil || strings.TrimSpace(head) == "" {
@@ -41,6 +41,22 @@ func runBranches(repo string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
+
+	if explicitFeature != "" {
+		found := false
+		for _, f := range active {
+			if f == explicitFeature {
+				found = true
+				break
+			}
+		}
+		if found {
+			active = []string{explicitFeature}
+		} else {
+			return base, head, fmt.Errorf("feature %s is not currently an active managed delivery", explicitFeature)
+		}
+	}
+
 	if len(active) > 1 {
 		return base, head, fmt.Errorf("more than one managed delivery is active; Boatstack run will not choose by recency")
 	}
@@ -69,7 +85,7 @@ func runBranches(repo string) (string, string, error) {
 // CheckRunPreflight fetches origin and proves that the current branch contains
 // the fetched base and is not behind or diverged from its configured upstream.
 // It never merges, rebases, switches branches, discards changes, or pushes.
-func CheckRunPreflight(repoPath string) RunPreflight {
+func CheckRunPreflight(repoPath, explicitFeature string) RunPreflight {
 	repo, err := ResolveRepository(repoPath)
 	if err != nil {
 		return blockedRunPreflight("", "", "", "INVALID_REPOSITORY", err.Error())
@@ -84,7 +100,7 @@ func CheckRunPreflight(repoPath string) RunPreflight {
 		return blockedRunPreflight("", "", "", "FETCH_FAILED", "Boatstack could not fetch origin: "+err.Error())
 	}
 
-	base, head, err := runBranches(repo)
+	base, head, err := runBranches(repo, explicitFeature)
 	if err != nil {
 		return blockedRunPreflight(base, head, "", "BRANCH_MISMATCH", err.Error())
 	}
