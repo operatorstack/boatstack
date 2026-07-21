@@ -211,7 +211,7 @@ func BuildExportBundle(configPath string, config ProjectConfig, rawConfig []byte
 		return ExportBundle{}, err
 	}
 	files[".product-loop/project.json"] = projectJSON
-	files[".product-loop/.gitignore"] = []byte("bin/\n")
+	files[".product-loop/.gitignore"] = []byte("bin/\nworktrees/\n")
 	files[".product-loop/intake/.gitkeep"] = []byte{}
 	files[".product-loop/hooks/guard.sh"] = guardShellScript()
 	files[".product-loop/hooks/guard.ps1"] = guardPowerShellScript()
