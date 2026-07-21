@@ -60,8 +60,8 @@ func TestValidatePlanV2FactMissingEvidenceID(t *testing.T) {
 	opts := &ValidatePlanOptions{PlanPath: "plan.md", RepoRoot: ""}
 
 	err := validateArchitectureGrounding(plan, opts)
-	if err == nil || !strings.Contains(err.Error(), "references unknown evidence ID") {
-		t.Fatalf("expected missing evidence error, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "requires escalate") || !strings.Contains(err.Error(), "unresolved uncertainty requires escalation") {
+		t.Fatalf("expected escalate error due to absent evidence, got: %v", err)
 	}
 }
 
