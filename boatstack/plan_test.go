@@ -339,7 +339,7 @@ func TestSourcePlanDiscoveryUsesOneBoundedCandidateAndBlocksAmbiguity(t *testing
 func TestCompilerRequiresSourcePlanPath(t *testing.T) {
 	plan := validPlan()
 	delete(plan, "source_plan_path")
-	_, _, _, err := CompilePlan(plan)
+	_, _, _, err := CompilePlan(plan, nil)
 	if err == nil || !strings.Contains(err.Error(), "source_plan_path") {
 		t.Fatalf("expected missing source plan path failure, got %v", err)
 	}
@@ -349,7 +349,7 @@ func TestCompilerRejectsValidationWithoutOracleProvenance(t *testing.T) {
 	plan := validPlan()
 	task := plan["tasks"].([]any)[0].(map[string]any)
 	task["validation"] = []any{map[string]any{"criteria": []any{"AC-1"}, "run": "go test ./..."}}
-	_, _, _, err := CompilePlan(plan)
+	_, _, _, err := CompilePlan(plan, nil)
 	if err == nil || !strings.Contains(err.Error(), "origin, oracle, and independence") {
 		t.Fatalf("expected validation provenance failure, got %v", err)
 	}
@@ -373,7 +373,7 @@ func TestValidationsOnlySupportTheirMappedCriteria(t *testing.T) {
 			"origin": "AC-2", "oracle": "second oracle", "independence": "external",
 		},
 	}
-	_, matrix, _, err := CompilePlan(plan)
+	_, matrix, _, err := CompilePlan(plan, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,14 +399,14 @@ func TestCompilerBlocksUncoveredCriterion(t *testing.T) {
 	plan := validPlan()
 	criteria := plan["acceptance_criteria"].([]any)
 	plan["acceptance_criteria"] = append(criteria, map[string]any{"id": "AC-2", "text": "uncovered"})
-	_, _, _, err := CompilePlan(plan)
+	_, _, _, err := CompilePlan(plan, nil)
 	if err == nil || !strings.Contains(err.Error(), "uncovered acceptance criteria") {
 		t.Fatalf("expected uncovered criterion failure, got %v", err)
 	}
 }
 
 func TestCompiledTaskGraphPreservesTaskFields(t *testing.T) {
-	tasks, _, _, err := CompilePlan(validPlan())
+	tasks, _, _, err := CompilePlan(validPlan(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

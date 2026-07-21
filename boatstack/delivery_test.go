@@ -33,17 +33,17 @@ func twoSlicePlan() map[string]any {
 
 func TestDeliverySlicesPartitionTasksAndRejectForwardDependencies(t *testing.T) {
 	plan := twoSlicePlan()
-	if err := ValidatePlan(plan); err != nil {
+	if err := ValidatePlan(plan, nil); err != nil {
 		t.Fatalf("valid two-slice plan rejected: %v", err)
 	}
 	plan["delivery_slices"].([]any)[1].(map[string]any)["task_ids"] = []any{"T-1", "T-2"}
-	if err := ValidatePlan(plan); err == nil || !strings.Contains(err.Error(), "assigned") {
+	if err := ValidatePlan(plan, nil); err == nil || !strings.Contains(err.Error(), "assigned") {
 		t.Fatalf("duplicate task assignment did not block: %v", err)
 	}
 	plan = twoSlicePlan()
 	plan["tasks"].([]any)[0].(map[string]any)["depends_on"] = []any{"T-2"}
 	plan["tasks"].([]any)[1].(map[string]any)["depends_on"] = []any{}
-	if err := ValidatePlan(plan); err == nil || !strings.Contains(err.Error(), "future slice") {
+	if err := ValidatePlan(plan, nil); err == nil || !strings.Contains(err.Error(), "future slice") {
 		t.Fatalf("forward delivery dependency did not block: %v", err)
 	}
 }

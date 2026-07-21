@@ -369,9 +369,10 @@ func RecordChangeObservation(options ChangeObservationOptions) (ChangeObservatio
 	resume := map[string]string{
 		"implementation_repair": "BUILD", "verification_repair": "TEST_GATE",
 		"review_repair": "REVIEW_GATE", "requirement_amendment": "PLAN_GATE",
+		"plan_invalid": "AUTO_PLAN",
 		"needs_clarification": "",
 	}[classification]
-	if _, ok := map[string]bool{"implementation_repair": true, "verification_repair": true, "review_repair": true, "requirement_amendment": true, "needs_clarification": true}[classification]; !ok {
+	if _, ok := map[string]bool{"implementation_repair": true, "verification_repair": true, "review_repair": true, "requirement_amendment": true, "needs_clarification": true, "plan_invalid": true}[classification]; !ok {
 		return ChangeObservation{}, DeliveryState{}, fmt.Errorf("unsupported change classification %q", classification)
 	}
 	if strings.TrimSpace(options.Message) == "" || strings.TrimSpace(options.SourceStage) == "" {
@@ -400,6 +401,9 @@ func RecordChangeObservation(options ChangeObservationOptions) (ChangeObservatio
 		if classification == "needs_clarification" {
 			state.ResumeStage = ""
 		}
+	} else if classification == "plan_invalid" {
+		state.Mode = "PLAN_INVALID"
+		state.ResumeStage = "AUTO_PLAN"
 	} else {
 		state.Mode = "REWORK"
 		slice := &state.Slices[state.ActiveIndex]
@@ -573,7 +577,7 @@ func RecordDeliveryGate(options DeliveryGateOptions) (DeliveryGateReceipt, error
 	if err := checkDeliveryPlanLock(repo, options.Feature, state); err != nil {
 		return DeliveryGateReceipt{}, err
 	}
-	if state.Mode == "AMENDMENT_REQUIRED" {
+	if state.Mode == "AMENDMENT_REQUIRED" || state.Mode == "PLAN_INVALID" {
 		return DeliveryGateReceipt{}, fmt.Errorf("delivery requires an approved plan amendment before gates may continue")
 	}
 	slice, err := activeDeliverySlice(state)

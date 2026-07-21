@@ -13,7 +13,7 @@
 <!-- boatstack-plan:v1 -->
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "feature_id": "<stable-feature-id>",
   "source_plan_path": "source-plan.md",
   "spec_path": "feature-spec.md",
@@ -24,11 +24,28 @@
       "text": "<observable accepted behavior>"
     }
   ],
+  "architecture_facts": [
+    {
+      "id": "fact_example_route_absent",
+      "kind": "route_absent",
+      "subject": "/api/clients",
+      "evidence_ids": ["ev_001"],
+      "summary": "No /api/clients route was found in the repository."
+    }
+  ],
+  "architecture_unknowns": [
+    {
+      "id": "unknown_example",
+      "question": "How are chat responses delivered to the browser?",
+      "blocks": ["T-1"]
+    }
+  ],
   "tasks": [
     {
       "id": "T-1",
       "title": "<bounded implementation operation>",
       "depends_on": [],
+      "requires_facts": ["fact_example_route_absent"],
       "acceptance_criteria": ["AC-1"],
       "affected_paths": ["<repository path or glob>"],
       "side_effects": [],
