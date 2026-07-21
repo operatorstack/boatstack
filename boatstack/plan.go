@@ -329,7 +329,12 @@ func CheckPlan(planPath string) (PlanCheck, error) {
 	if err != nil {
 		return PlanCheck{}, err
 	}
-	if err := ValidatePlan(plan); err != nil {
+	repoRoot, _ := ResolveRepository(filepath.Dir(planPath))
+	opts := &ValidatePlanOptions{
+		PlanPath: planPath,
+		RepoRoot: repoRoot,
+	}
+	if err := ValidatePlan(plan, opts); err != nil {
 		return PlanCheck{}, err
 	}
 	sourcePlan, err := SourcePlanForStructuredPlan(planPath)
@@ -396,10 +401,18 @@ func checkApprovalSourcePlan(options ApprovalOptions) error {
 	return CheckSourcePlan(expected)
 }
 
-func ValidatePlan(plan map[string]any) error {
-	if plan["schema_version"] != float64(1) {
-		return fmt.Errorf("schema_version must be 1")
+func ValidatePlan(plan map[string]any, opts *ValidatePlanOptions) error {
+	version, ok := plan["schema_version"].(float64)
+	if !ok || (version != float64(1) && version != float64(2)) {
+		return fmt.Errorf("schema_version must be 1 or 2")
 	}
+	
+	if version == float64(2) {
+		if err := validateArchitectureGrounding(plan, opts); err != nil {
+			return err
+		}
+	}
+
 	if stringValue(plan["feature_id"]) == "" {
 		return fmt.Errorf("feature_id is required")
 	}
@@ -628,8 +641,8 @@ func validateTaskSafety(task map[string]any) error {
 	return nil
 }
 
-func CompilePlan(plan map[string]any) (map[string]any, map[string]any, string, error) {
-	if err := ValidatePlan(plan); err != nil {
+func CompilePlan(plan map[string]any, opts *ValidatePlanOptions) (map[string]any, map[string]any, string, error) {
+	if err := ValidatePlan(plan, opts); err != nil {
 		return nil, nil, "", err
 	}
 	criteria, _ := objectSlice(plan["acceptance_criteria"])
@@ -727,7 +740,12 @@ func CompilePlanFiles(planPath, outDir string) error {
 	if err := CheckSourcePlan(sourcePlan); err != nil {
 		return err
 	}
-	tasks, matrix, evidence, err := CompilePlan(plan)
+	repoRoot, _ := ResolveRepository(filepath.Dir(planPath))
+	opts := &ValidatePlanOptions{
+		PlanPath: planPath,
+		RepoRoot: repoRoot,
+	}
+	tasks, matrix, evidence, err := CompilePlan(plan, opts)
 	if err != nil {
 		return err
 	}
