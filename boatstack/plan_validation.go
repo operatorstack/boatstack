@@ -44,37 +44,55 @@ func validateArchitectureGrounding(plan map[string]any, opts *ValidatePlanOption
 			return fmt.Errorf("unsupported architecture fact kind: %s", kind)
 		}
 
+		var evidence []EvidenceRecord
+		evidenceLevel := EvidenceVerified
+		premiseStatus := PremiseValid
 		evidenceIDs, ok := stringSlice(fact["evidence_ids"])
+		
 		if !ok || len(evidenceIDs) == 0 {
-			return fmt.Errorf("architecture fact %s requires at least one evidence ID", id)
-		}
-
-		// Validation of evidence against ledger
-		for _, evID := range evidenceIDs {
-			record, exists := ledger[evID]
-			if !exists {
-				return fmt.Errorf("architecture fact %s references unknown evidence ID: %s", id, evID)
-			}
-			if opts != nil && opts.RepoRevision != "" && record.RepositoryRevision != opts.RepoRevision {
-				return fmt.Errorf("evidence %s has stale repository revision: %s", evID, record.RepositoryRevision)
-			}
-			
-			// Basic operation check
-			if kind == "route_absent" && record.Operation != "repository_search" && record.Operation != "route_lookup" {
-				return fmt.Errorf("architecture fact %s requires repository_search evidence", id)
-			}
-
-			if opts != nil && opts.RepoRoot != "" && record.Path != "" {
-				if err := ValidateEvidencePath(opts.RepoRoot, record.Path); err != nil {
-					return fmt.Errorf("invalid evidence path in %s: %w", evID, err)
+			evidenceLevel = EvidenceAbsent
+		} else {
+			// Validation of evidence against ledger
+			for _, evID := range evidenceIDs {
+				record, exists := ledger[evID]
+				if !exists {
+					evidenceLevel = EvidenceAbsent
+					break
 				}
-				if len(record.Anchors) > 0 {
-					targetPath := filepath.Join(opts.RepoRoot, filepath.Clean(record.Path))
-					if err := CheckFileAnchors(targetPath, record.Anchors); err != nil {
-						return fmt.Errorf("evidence %s anchor check failed: %w", evID, err)
+				evidence = append(evidence, record)
+				if opts != nil && opts.RepoRevision != "" && record.RepositoryRevision != opts.RepoRevision {
+					evidenceLevel = EvidenceSupported
+				}
+				
+				// Basic operation check
+				if kind == "route_absent" && record.Operation != "repository_search" && record.Operation != "route_lookup" {
+					premiseStatus = PremiseInvalid
+				}
+
+				if opts != nil && opts.RepoRoot != "" && record.Path != "" {
+					if err := ValidateEvidencePath(opts.RepoRoot, record.Path); err != nil {
+						premiseStatus = PremiseInvalid
+					}
+					if len(record.Anchors) > 0 {
+						targetPath := filepath.Join(opts.RepoRoot, filepath.Clean(record.Path))
+						if err := CheckFileAnchors(targetPath, record.Anchors); err != nil {
+							premiseStatus = PremiseInvalid
+						}
 					}
 				}
 			}
+		}
+
+		resolution := ResolvePlanDecision(PlanDecisionInput{
+			DecisionKind:       "architecture_fact",
+			IsMaterial:         false,
+			RepositoryEvidence: evidence,
+			EvidenceLevel:      evidenceLevel,
+			PremiseStatus:      premiseStatus,
+		})
+
+		if resolution.Operator != OperatorInfer {
+			return fmt.Errorf("architecture fact %s requires %s (%s): %s", id, resolution.Operator, resolution.RuleID, resolution.Reason)
 		}
 	}
 

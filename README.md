@@ -8,24 +8,48 @@
 
 <p align="center"><strong>Build freely. Prove it. Ship.</strong></p>
 
-## A delivery harness for AI coding agents
+## Keep your software delivery process when you change coding agents
 
-<!-- boatstack-claim:portable-product-flow -->An AI coding agent will guess a product decision, call the work "done" on one green check, and lose the reasoning the moment you change tools. Boatstack connects the work from an idea to a reviewed PR so none of that slips: the plan, decisions, gaps, tests, review findings, and project context stay connected along the way. Keep using Cursor, Codex, Claude Code, or Gemini CLI, with the models and specialist skills that fit the work.
+Boatstack is a repository-local delivery harness for Cursor, Codex, Claude Code, and Gemini CLI.
 
-The agent remains free to build. Before it says the work is done, Boatstack asks for the approval, tests, review, and recorded evidence appropriate to the change.
+AI coding agents can write code quickly, but each tool brings its own planning flow, session state, and definition of “done.” Change agents and your delivery process often disappears with the chat.
 
-**Your product development flow stays with the repository—not the coding agent.** Change tools without rebuilding how you ship or redefining what “done” means. Boatstack carries the workflow and saved project state—not an agent's private chat history or a command already in progress.
+<!-- boatstack-claim:portable-product-flow -->Boatstack keeps the delivery process in the repository. Plans, product decisions, tests, review findings, accepted gaps, and completion evidence stay connected from idea to pull request, regardless of which agent or model performs the work. Use Cursor, Codex, Claude Code, or Gemini CLI. Boatstack keeps the same approval, testing, review, and shipping boundaries across them.
+
+**Your product development flow stays with the repository, not the coding agent.** Change agents, models, or specialist skills without rebuilding how your team plans, verifies, reviews, and ships software.
+
+The coding agent executes the work. Boatstack supervises the delivery. Your repository owns the policy and evidence.
 
 <p align="center">
   <img src="assets/boatstack-portability.svg" width="900" alt="Change the tools, keep the flow: coding agents, models, and specialist skills feed one repository-owned Boatstack flow that produces a reviewed pull request and useful context for the next feature">
 </p>
 
-| You change | Boatstack keeps |
+| You change | You keep |
 |---|---|
-| Cursor, Codex, Claude Code, or Gemini CLI | The same path from planning through PR preparation |
-| Lower-cost, general, or frontier model | The same approval, testing, and review requirements |
-| React guidance, gstack, Spec Kit, or another skill | Human approval and evidence remain authoritative |
-| Session, worktree, or feature | Durable decisions, gaps, evidence, and code state in the repository |
+| Cursor, Codex, Claude Code, or Gemini CLI | The same path from approved plan to reviewed PR |
+| Lower-cost, general, or frontier model | The same definition of done and proof requirements |
+| React guidance, gstack, Spec Kit, or another skill | Human product decisions remain authoritative |
+| Session, worktree, or feature | Decisions, open gaps, evidence, and verified delivery state |
+
+## How it works
+
+1. Save a plan in your coding agent.
+2. Boatstack validates the plan and pauses for material product decisions.
+3. The agent builds freely inside the approved scope.
+4. Boatstack checks the promised outcomes against tests and evidence.
+5. Review findings, risks, and accepted gaps become a focused PR brief.
+6. The resulting context stays in the repository for the next feature.
+
+## Each delivery makes the next one easier
+
+Boatstack does not preserve an agent's private reasoning or replay old chats. It keeps the durable parts of delivery:
+- approved product decisions
+- unresolved gaps
+- validation evidence
+- review findings
+- verified repository state
+
+That means the next feature starts from recorded project knowledge instead of reconstructing intent from another agent session.
 
 ## Install with your coding agent
 
@@ -76,7 +100,16 @@ Invoke `/repair` in Claude Code, Cursor, or Gemini CLI, or `$boatstack repair` i
 
 Receipts remain as history; published corrections become linked deliveries.
 
-## Features
+## What you get
+
+- **Change coding agents without changing how you ship.**
+- **Resume work without reconstructing the previous chat.**
+- **Stop agents from guessing material product decisions.**
+- **Require evidence for every outcome the change claims to deliver.**
+- **Create reviewer-ready PRs from the actual scope, changes, risks, and validation.**
+
+<details>
+<summary>Technical Features</summary>
 
 - **A guided path from idea to PR.** `/auto-plan` starts a one-action-at-a-time delivery flow.
 - **Instant orientation after a break.** `boatstack next` reconstructs the verified stage without treating chat or a running process as workflow evidence, so you resume in seconds instead of re-reading history.
@@ -89,6 +122,8 @@ Receipts remain as history; published corrections become linked deliveries.
 - **Optional repository changelog.** Require readable `CHANGELOG.md` entries grounded in actual changes.
 - **Portable across your AI stack.** Hosts, models, and skills share one repository-owned delivery contract.
 - **Repository-friendly maintenance.** Worktrees restore runtime; updates stay in separate infrastructure PRs.
+
+</details>
 
 ### Optional changelog
 
@@ -123,9 +158,9 @@ Boatstack is a repository-local delivery harness.
 
 This does not mean every model performs equally. [See the evidence and paired evaluation design](docs/why-these-steps.md#model-choice-and-budget).
 
-## Why these steps?
+## Built from failures observed in real coding work
 
-They derive from coding failures observed in benchmark and product work—not guesses. Each link explains what happened, what Boatstack does, and whether that behavior has actually been tested.
+They derive from coding failures observed in benchmark and product work—not guesses. When a failure reveals a reusable delivery problem rather than a project-specific mistake, Boatstack turns it into a boundary future runs can enforce. Each link explains what happened, what Boatstack does, and whether that behavior has actually been tested.
 
 | What happened | What Boatstack does | Current evidence |
 |---|---|---|
