@@ -494,6 +494,12 @@ func RunInit(options InitOptions) (returnErr error) {
 	if err := initCheckpoint("hooks-written"); err != nil {
 		return fmt.Errorf("initialization checkpoint hooks-written: %w", err)
 	}
+	if err := InstallExecutionInterceptors(repo, config.Adapters); err != nil {
+		return err
+	}
+	if err := initCheckpoint("interceptors-written"); err != nil {
+		return fmt.Errorf("initialization checkpoint interceptors-written: %w", err)
+	}
 	binaryPath, binaryHash, err := copyHelper(helperSource, repo)
 	if err != nil {
 		return err
@@ -596,6 +602,59 @@ func RunInit(options InitOptions) (returnErr error) {
 	}
 	return nil
 }
+
+const ExecutionBoundaryDX = `
+**Boatstack Execution Boundary:**
+When the user approves a plan within your native Plan Mode, **do not immediately transition to Auto-Edit or begin mutating product files.** Because this repository is managed by Boatstack, execution must pass through verifiable gates. Instead of executing the code:
+1. Save your proposed plan to ` + "`.product-loop/intake/source-plan.md`" + `.
+2. Pause and ask the user: *"I have saved the plan. Should we execute this through Boatstack (` + "`/boatstack run`" + `), or do you want me to write the code directly?"*
+`
+
+const interceptorHeader = "<!-- BEGIN BOATSTACK EXECUTION INTERCEPTOR -->\n"
+const interceptorFooter = "\n<!-- END BOATSTACK EXECUTION INTERCEPTOR -->\n"
+
+func injectExecutionInterceptor(repo, file string) error {
+	path := filepath.Join(repo, file)
+	content, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			content = []byte{}
+		} else {
+			return err
+		}
+	}
+	text := string(content)
+	start := strings.Index(text, interceptorHeader)
+	end := strings.Index(text, interceptorFooter)
+	injection := interceptorHeader + strings.TrimSpace(ExecutionBoundaryDX) + interceptorFooter
+
+	if start >= 0 && end > start {
+		text = text[:start] + injection + text[end+len(interceptorFooter):]
+	} else {
+		text = strings.TrimSpace(text) + "\n\n" + injection
+	}
+	return os.WriteFile(path, []byte(strings.TrimSpace(text)+"\n"), 0o644)
+}
+
+func InstallExecutionInterceptors(repo string, adapters []string) error {
+	for _, adapter := range adapters {
+		if adapter == "gemini" {
+			if err := injectExecutionInterceptor(repo, "GEMINI.md"); err != nil {
+				return err
+			}
+		} else if adapter == "claude" {
+			if err := injectExecutionInterceptor(repo, "CLAUDE.md"); err != nil {
+				return err
+			}
+		} else if adapter == "cursor" {
+			if err := injectExecutionInterceptor(repo, ".cursorrules"); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 
 func RunUpdate(options InitOptions) error {
 	options.Update = true
