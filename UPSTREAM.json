@@ -12,7 +12,7 @@
   },
   "files": {
     ".gitignore": "a7079e923a776f14f1bb3a6aa0a11a133a8e1dfb35af020f327623357b7e3957",
-    "CONTRIBUTING.md": "86afc660200684a246fbdbf72c5e264bb9a7c215b80d3f28230eb3d0428e63b2",
+    "CONTRIBUTING.md": "038386f8aa7deeee581c2b5edbfdc3911aea09e7b6e7a5e1ae798e9fa0bcc951",
     "README.md": "a90ba7af7a9cbf71c858d99187f66e0f3db305b2a76fc98ba5625f78ac7c23a4",
     "assets/boatstack-journey.svg": "e465befc50c8ce30f3e07e8fd97012931beeb053392c8fbf38ad645023b3cc63",
     "assets/boatstack-mark.svg": "be1f984da1bfa69fa5d1f986d8343d21f7e20921b71db888c928b4d2e54b09b5",
@@ -89,10 +89,10 @@
     "docs/account-recovery-walkthrough.md": "676034974594a7d1a559b24dbed31d7ccc429eb81404b203ca07bbdaa19ec3d3",
     "docs/benchmark-corpus-audit.md": "f2d206fe8579a514f9da82b2c96c19b343ac004be67617e1bd34f0f8e0e5e6c6",
     "docs/benchmark-submission-audit.md": "9518abdd17690729c6423f87cab20418ed47b0915b5faa44b9ef975e9e9c3b79",
-    "docs/evidence-engineered-coding.md": "b328d4f5acfe616eed6bf7d0fc70b2a11c07540a866720fec8bc0294e3af973f",
+    "docs/evidence-engineered-coding.md": "f1a9de99e5d708c469887a3e723a1112df79b504f6732e7631086d2f2ee4ffa6",
     "docs/generated-files.md": "136422baf0c7fc2bd5100cfe0ebdb3d9d0705dfd7e7d54bf745dd1037e63492c",
     "docs/getting-started.md": "eacc814fdffdfa3c7d8052b7cd99a79c04da5c75d88d8b44f3fb68d9afec0316",
-    "docs/public-claims.json": "82803e62d6485cbcfc5857871544e74bcdaf8c6aca9fbfc474f7aed236f7fee5",
+    "docs/public-claims.json": "960de2b346a95f996795420e27dfda0eb3e991433d98581eee2357b0c8b33186",
     "docs/public-surface.md": "713f7a050b5f339cf948299103ef3800417dccfecf2cc1a4166397ea6f978907",
     "docs/research-and-design.md": "d65c66e323037bda5d45aacef5d48afa6bf93da55901378891d235aca3a5684f",
     "docs/safety.md": "7b9b5c515d36e683767ec8d3d9d6d119ac93650b2f629d351deadd4c600ed6a6",
@@ -106,7 +106,7 @@
     "labs/diagram-json/compiled/evidence.md": "1ba1c989ade070a8ef9a508fbd788d100d7292f2dbacbb2bce895468019f619d",
     "labs/diagram-json/compiled/tasks.json": "88f60851abf79d851e9fccc754ff3040034ae595306bc87d64784c19eb403e71",
     "labs/diagram-json/compiled/test-matrix.json": "424657ff505768e50fa113801fd8363364a18269d5297480907a993d44063a39",
-    "labs/diagram-json/plan.lock.json": "3de44ef6234a47375511c8cd01d86b2a1379aa584bf9f25587d23c22c7b8926b",
+    "labs/diagram-json/plan.lock.json": "2884dad1e921170c8ee4c8ce279e5dc9ad45e6388ce4dfae0e33db497c002f0c",
     "labs/diagram-json/plan.md": "3cc4f533b8d69386deff16b3a594a3ba09d4c0c3db636cccd8c4380084ce6a51",
     "labs/diagram-json/questions.md": "74733b015002c8a6777c558e7e997fa48c94850b9bd39054fe9366c97ecf728d",
     "labs/diagram-json/request.md": "0808fc41c36779c404f4a3a121167da6e76cac56df526e70f9ed6d3e0d4c02ed",
@@ -149,12 +149,13 @@
     "release-notes/2026-07-21-blueprint-diagrams-value-first-readme.md": "11eb70cb814a99606b4f7761401d3670074fe6bd1af8557f95f573b04a3195af",
     "release-notes/2026-07-21-e2e-architecture-grounding.md": "7fa7e99fc6fd4e0688009bb736e6506830bf0216f3fa19757cbd9f5679c7ac3b",
     "release-notes/2026-07-21-prevent-hallucinated-approver-names.md": "a5fd08bc3d8b983340a2ddd67b71c78b2b34a915fdfe6eb7cdffd0f1d52e3427",
-    "release-notes/2026-07-21-prevent-worktree-dirty-state.md": "d3ebac81a14565461fd7f3c5bd520d881d70b584408ba35a1022cd917c7bf132"
+    "release-notes/2026-07-21-prevent-worktree-dirty-state.md": "d3ebac81a14565461fd7f3c5bd520d881d70b584408ba35a1022cd917c7bf132",
+    "release-notes/2026-07-21-value-translation-readme.md": "8dd16fd08c1591667a1074fc6825dcbf58beda0faa18ede1526647267418c8ea"
   },
   "generator": "operatorstack/intelligence-flow:boatstack-distribution",
   "schema_version": 1,
   "source": {
-    "commit": "f0865c780f0372fb7aa0856eb235d8ae9fc39a38",
+    "commit": "849cdf48cabc60e5331cc7e8b7668a9f72aff1e6",
     "path": "labs/12-product-engineering-loop",
     "repository": "operatorstack/intelligence-flow"
   }
