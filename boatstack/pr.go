@@ -842,6 +842,9 @@ func PublishPR(options PRPublishOptions) (string, error) {
 			if err := MarkDeliveryPublished(repo, context.Feature, context.SliceID, strings.TrimSpace(url)); err != nil {
 				return "", fmt.Errorf("PR opened but delivery state could not advance: %w", err)
 			}
+			if err := extractSystemicBoundaries(repo, context.Feature); err != nil {
+				fmt.Fprintf(os.Stderr, "WARNING: could not extract systemic boundaries: %v\n", err)
+			}
 		}
 		return strings.TrimSpace(url), nil
 	}
@@ -852,8 +855,44 @@ func PublishPR(options PRPublishOptions) (string, error) {
 		if err := MarkDeliveryPublished(repo, context.Feature, context.SliceID, existingURL); err != nil {
 			return "", fmt.Errorf("PR updated but delivery state could not advance: %w", err)
 		}
+		if err := extractSystemicBoundaries(repo, context.Feature); err != nil {
+			fmt.Fprintf(os.Stderr, "WARNING: could not extract systemic boundaries: %v\n", err)
+		}
 	}
 	return existingURL, nil
+}
+
+func extractSystemicBoundaries(repo, feature string) error {
+	lockPath := filepath.Join(repo, ".product-loop", "features", feature, "plan.lock.json")
+	value, err := os.ReadFile(lockPath)
+	if err != nil {
+		return nil // if it doesn't exist, ignore
+	}
+	var lock map[string]any
+	if err := json.Unmarshal(value, &lock); err != nil {
+		return err
+	}
+	boundaries, ok := lock["systemic_boundaries"].([]any)
+	if !ok || len(boundaries) == 0 {
+		return nil
+	}
+	outPath := filepath.Join(repo, ".product-loop", "verified-boundaries.md")
+	f, err := os.OpenFile(outPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	
+	for _, b := range boundaries {
+		boundary, _ := b.(map[string]any)
+		id := stringValue(boundary["id"])
+		failureMode := stringValue(boundary["failure_mode"])
+		enforcement := stringValue(boundary["enforcement_mechanism"])
+		if id != "" && failureMode != "" && enforcement != "" {
+			fmt.Fprintf(f, "- **%s**: Prevents `%s` using `%s`\n", id, failureMode, enforcement)
+		}
+	}
+	return nil
 }
 
 func PRPreviewTemplate(context PRContext) string {

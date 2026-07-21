@@ -51,6 +51,7 @@ type Workflow struct {
 	IndependentReviewForHighRisk bool `json:"independent_review_for_high_risk"`
 	AllowPassWithGaps            bool `json:"allow_pass_with_gaps"`
 	MaintainChangelog            bool `json:"maintain_changelog"`
+	BoundaryAnalysis             bool `json:"boundary_analysis,omitempty"`
 }
 
 type IntegrationState struct {

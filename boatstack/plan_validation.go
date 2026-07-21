@@ -131,3 +131,26 @@ func validateArchitectureGrounding(plan map[string]any, opts *ValidatePlanOption
 
 	return nil
 }
+
+func validateSystemicBoundaries(plan map[string]any) error {
+	boundaries, ok := objectSlice(plan["systemic_boundaries"])
+	if !ok || len(boundaries) == 0 {
+		return nil
+	}
+
+	slices, ok := objectSlice(plan["delivery_slices"])
+	if !ok || len(slices) < 2 {
+		return fmt.Errorf("Programmatic enforcement requires a minimum of 2 delivery_slices (Boundary -> Feature)")
+	}
+
+	for _, boundary := range boundaries {
+		id := stringValue(boundary["id"])
+		if id == "" {
+			return fmt.Errorf("systemic boundary requires an id")
+		}
+		if stringValue(boundary["verification_oracle"]) == "" {
+			return fmt.Errorf("systemic boundary %s requires a verification_oracle", id)
+		}
+	}
+	return nil
+}

@@ -413,6 +413,10 @@ func ValidatePlan(plan map[string]any, opts *ValidatePlanOptions) error {
 		}
 	}
 
+	if err := validateSystemicBoundaries(plan); err != nil {
+		return err
+	}
+
 	if stringValue(plan["feature_id"]) == "" {
 		return fmt.Errorf("feature_id is required")
 	}
