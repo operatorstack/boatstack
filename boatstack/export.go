@@ -298,7 +298,7 @@ When the user asks to update Boatstack itself, use /boatstack-update. Release di
 Do not branch behavior on model name, provider, or price; branch on observed work state and evidence.
 Boatstack's repository hooks deny high-confidence irreversible operations across every agent call. There is no in-session bypass. Preserve failed external state, use read-only diagnosis and fix-forward recovery, and leave intentional destructive recovery to an operator-owned surface outside Boatstack.
 `
-		files[fmt.Sprintf(".cursor/rules/%s.mdc", adapterName)], err = GeneratedFrontmatter(rule + executionModeDX)
+		files[fmt.Sprintf(".cursor/rules/%s.mdc", adapterName)], err = GeneratedFrontmatter(rule + executionModeDX + "\n" + ExecutionBoundaryDX)
 		if err != nil {
 			return ExportBundle{}, err
 		}
