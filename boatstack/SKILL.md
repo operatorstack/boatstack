@@ -79,6 +79,14 @@ Use the global, state-scoped reply shortcuts for finite input: `a` approves the 
 
 Shortcuts do not bypass fingerprints, committed-diff checks, evidence, authentication, or manual commit/push prerequisites. Never interpret `r` as approval, publication, identity, secret input, permission escalation, policy bypass, destructive recovery authorization, or another safety exception. Free-text and operation-command prompts remain explicit. Use an explicit approval identity first; otherwise use the authenticated GitHub login when available. Ask once for a name or handle only when no trustworthy identity can be resolved. Never invent a placeholder name (e.g., Sam, Eve). Never infer the approver from the filesystem username, commit history, or agent identity. If identity is missing after approval, preserve the current approval intent and ask only for identity; do not make the human approve the unchanged plan again.
 
+## Handle new intent during active deliveries
+
+Before starting `/auto-plan` for a new feature, check `next-status --repo . --json`. If there is already an active managed delivery on the current branch (e.g., Status is `BUILD`):
+1. Stop and clarify the developer's intent. Ask: *"You have an active delivery (`<active-feature-slug>`). Are these new ideas amendments to this feature, or a completely separate feature?"*
+2. If the developer confirms it is an **amendment**, do not start a new feature. Route to the `repair` operation, classify it as a `requirement_amendment`, and update the existing plan.
+3. If the developer confirms it is a **completely separate feature**, proactively suggest worktree isolation to avoid branch entanglement. Ask: *"Since `<active-feature-slug>` is still active here, do you want to cut a new worktree (`feat/<new-feature-slug>`) to keep this work isolated? (Recommended)"*
+4. If they accept isolation, route to the `workspace-cut` operation. If they explicitly choose to stack both features on the same branch, only then proceed with `/auto-plan` for the new feature.
+
 ## Run `auto-plan`
 
 0. Require exactly one saved plan file created in the active host's Plan mode. First use the active plan path exposed in host/system conversation context, when available, and validate it with `.product-loop/bin/boatstack-helper check-source-plan --repo . --plan <host-path>`. Otherwise run `check-source-plan --repo .` to search only `.product-loop/intake/` and bounded repo-local host plan directories. If the result is missing or ambiguous, return `BLOCKED`; never choose by recency alone. An explicit `/auto-plan <path>` is only the ambiguity fallback. Do not write the missing source plan inside `auto-plan`.

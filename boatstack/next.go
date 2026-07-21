@@ -14,16 +14,17 @@ const nextStatusSchemaVersion = 1
 // workflow position. Conversation and terminal context are deliberately absent:
 // adapters may present them as context, but they are not workflow evidence.
 type NextStatus struct {
-	SchemaVersion      int      `json:"schema_version"`
-	VerificationStatus string   `json:"verification_status"`
-	Feature            string   `json:"feature,omitempty"`
-	ActiveSlice        string   `json:"active_slice,omitempty"`
-	SliceIndex         int      `json:"slice_index,omitempty"`
-	TotalSlices        int      `json:"total_slices,omitempty"`
-	ObservedStage      string   `json:"observed_stage"`
-	NextOperation      string   `json:"next_operation"`
-	Reason             string   `json:"reason"`
-	BlockingAmbiguity  []string `json:"blocking_ambiguity,omitempty"`
+	SchemaVersion      int              `json:"schema_version"`
+	VerificationStatus string           `json:"verification_status"`
+	Feature            string           `json:"feature,omitempty"`
+	ActiveSlice        string           `json:"active_slice,omitempty"`
+	SliceIndex         int              `json:"slice_index,omitempty"`
+	TotalSlices        int              `json:"total_slices,omitempty"`
+	ObservedStage      string           `json:"observed_stage"`
+	NextOperation      string           `json:"next_operation"`
+	Operator           DecisionOperator `json:"operator,omitempty"`
+	Reason             string           `json:"reason"`
+	BlockingAmbiguity  []string         `json:"blocking_ambiguity,omitempty"`
 }
 
 func blockedNextStatus(stage, operation, reason string, ambiguity ...string) NextStatus {
@@ -193,7 +194,7 @@ func completedManagedStates(repo string) ([]DeliveryState, error) {
 
 // ResolveNext performs bounded, local, read-only state inspection. It never
 // contacts GitHub and never treats process or conversation history as evidence.
-func ResolveNext(repoPath string) (NextStatus, error) {
+func ResolveNext(repoPath, explicitFeature string) (NextStatus, error) {
 	repo, err := ResolveRepository(repoPath)
 	if err != nil {
 		return NextStatus{}, err
@@ -211,10 +212,27 @@ func ResolveNext(repoPath string) (NextStatus, error) {
 	if err != nil {
 		return blockedNextStatus("INVALID_STATE", "repair-state", "Boatstack found invalid managed delivery state. Preserve the artifacts and restore the missing or stale evidence before continuing: "+err.Error()), nil
 	}
+	
+	if explicitFeature != "" {
+		found := false
+		for _, f := range active {
+			if f == explicitFeature {
+				found = true
+				break
+			}
+		}
+		if found {
+			active = []string{explicitFeature}
+		} else {
+			return blockedNextStatus("INVALID_STATE", "repair-state", fmt.Sprintf("Feature %s is not currently an active managed delivery.", explicitFeature)), nil
+		}
+	}
+
 	if len(active) > 1 {
 		base.VerificationStatus = "BLOCKED"
 		base.ObservedStage = "AMBIGUOUS"
 		base.NextOperation = "resolve-ambiguity"
+		base.Operator = OperatorQuery
 		base.Reason = "More than one managed delivery is active; Boatstack will not choose by recency."
 		base.BlockingAmbiguity = active
 		return base, nil

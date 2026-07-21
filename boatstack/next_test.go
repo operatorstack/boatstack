@@ -69,7 +69,7 @@ func writeIntakePlan(t *testing.T, repo, name string) {
 
 func TestResolveNextReportsNotStartedWhenNoFeatureExists(t *testing.T) {
 	repo := nextTestRepo(t)
-	status, err := ResolveNext(repo)
+	status, err := ResolveNext(repo, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestResolveNextReportsNotStartedWhenNoFeatureExists(t *testing.T) {
 func TestResolveNextReportsSavedSourcePlan(t *testing.T) {
 	repo := nextTestRepo(t)
 	writeIntakePlan(t, repo, "feature.md")
-	status, err := ResolveNext(repo)
+	status, err := ResolveNext(repo, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestResolveNextPrefersUniqueSourcePlanOverHistoricalPlans(t *testing.T) {
 	writeSavedFeaturePlan(t, repo, "historical-two")
 	writeIntakePlan(t, repo, "current.md")
 
-	status, err := ResolveNext(repo)
+	status, err := ResolveNext(repo, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestResolveNextBlocksMultipleSourcePlansBeforeHistoricalPlans(t *testing.T)
 	writeIntakePlan(t, repo, "first.md")
 	writeIntakePlan(t, repo, "second.md")
 
-	status, err := ResolveNext(repo)
+	status, err := ResolveNext(repo, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestResolveNextActiveDeliveryOutranksSourcePlan(t *testing.T) {
 	writeNextDelivery(t, repo, "active-feature", "BUILD", 0)
 	writeIntakePlan(t, repo, "new-feature.md")
 
-	status, err := ResolveNext(repo)
+	status, err := ResolveNext(repo, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestResolveNextOrphanedEvidenceOutranksSourcePlan(t *testing.T) {
 	}
 	writeIntakePlan(t, repo, "new-feature.md")
 
-	status, err := ResolveNext(repo)
+	status, err := ResolveNext(repo, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func TestResolveNextBlocksHistoricalPlansWithoutSourceIntent(t *testing.T) {
 	writeSavedFeaturePlan(t, repo, "historical-one")
 	writeSavedFeaturePlan(t, repo, "historical-two")
 
-	status, err := ResolveNext(repo)
+	status, err := ResolveNext(repo, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestResolveNextPlanningStates(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			status, err := ResolveNext(repo)
+			status, err := ResolveNext(repo, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -212,7 +212,7 @@ func TestResolveNextDeliveryTransitions(t *testing.T) {
 		t.Run(test.state, func(t *testing.T) {
 			repo := nextTestRepo(t)
 			writeNextDelivery(t, repo, "recovery", test.state, 0)
-			status, err := ResolveNext(repo)
+			status, err := ResolveNext(repo, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -237,7 +237,7 @@ func TestResolveNextReportsFeatureCompleteAfterPublication(t *testing.T) {
 	plan["feature_id"] = "recovery"
 	plan["source_plan_path"] = "../../intake/source-plan.md"
 	writeMarkdownPlan(t, filepath.Join(repo, ".product-loop", "features", "recovery", "plan.md"), plan, true)
-	status, err := ResolveNext(repo)
+	status, err := ResolveNext(repo, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,7 +262,7 @@ func TestResolveNextPrefersNewDraftOverCompletedHistory(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(directory, "plan.md"), []byte("# Plan\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	status, err := ResolveNext(repo)
+	status, err := ResolveNext(repo, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +279,7 @@ func TestResolveNextBlocksMultipleActiveFeaturesWithoutMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	status, err := ResolveNext(repo)
+	status, err := ResolveNext(repo, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +302,7 @@ func TestResolveNextBlocksStaleManagedState(t *testing.T) {
 	if err := os.WriteFile(lockPath, []byte("changed\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	status, err := ResolveNext(repo)
+	status, err := ResolveNext(repo, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,7 +338,7 @@ func TestResolveNextBlocksMissingLockAndOrphanPreview(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			status, err := ResolveNext(repo)
+			status, err := ResolveNext(repo, "")
 			if err != nil {
 				t.Fatal(err)
 			}

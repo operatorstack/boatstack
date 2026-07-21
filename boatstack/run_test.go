@@ -63,7 +63,7 @@ func TestCheckRunPreflightRequiresOriginBeforeMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	status := CheckRunPreflight(repo)
+	status := CheckRunPreflight(repo, "")
 	after, err := os.ReadFile(filepath.Join(repo, ".product-loop", "project.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -91,7 +91,7 @@ func TestCheckRunPreflightFetchesAndAcceptsFreshUnpublishedBranch(t *testing.T) 
 			t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)
 		}
 	}
-	status := CheckRunPreflight(repo)
+	status := CheckRunPreflight(repo, "")
 	if status.VerificationStatus != "VERIFIED" || status.Relation != "UNPUBLISHED" || status.BaseBranch != "main" || status.HeadBranch != "feature" {
 		t.Fatalf("unexpected preflight: %+v", status)
 	}
@@ -136,7 +136,7 @@ func TestCheckRunPreflightBlocksFetchAndFreshnessFailures(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			repo := runTestRepo(t)
 			withRunGit(t, test.responses)
-			status := CheckRunPreflight(repo)
+			status := CheckRunPreflight(repo, "")
 			if status.VerificationStatus != "BLOCKED" || status.Relation != test.relation {
 				t.Fatalf("unexpected preflight: %+v", status)
 			}
@@ -167,7 +167,7 @@ func TestCheckRunPreflightClassifiesUpstreamRelations(t *testing.T) {
 				"rev-parse --abbrev-ref --symbolic-full-name @{upstream}": {value: "origin/feature"},
 				"rev-list --left-right --count HEAD...@{upstream}":        {value: test.counts},
 			})
-			status := CheckRunPreflight(repo)
+			status := CheckRunPreflight(repo, "")
 			if status.VerificationStatus != test.verification || status.Relation != test.relation {
 				t.Fatalf("unexpected preflight: %+v", status)
 			}
@@ -209,7 +209,7 @@ func TestCheckRunPreflightBlocksConstrainedDeliveryBranchMismatch(t *testing.T) 
 		"fetch origin":          {},
 		"branch --show-current": {value: "wrong-feature"},
 	})
-	status := CheckRunPreflight(repo)
+	status := CheckRunPreflight(repo, "")
 	if status.VerificationStatus != "BLOCKED" || status.Relation != "BRANCH_MISMATCH" || !strings.Contains(status.Reason, "expected-feature") {
 		t.Fatalf("unexpected preflight: %+v", status)
 	}

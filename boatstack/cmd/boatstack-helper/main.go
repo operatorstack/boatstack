@@ -334,11 +334,12 @@ func deliveryStatusCommand(arguments []string) int {
 func nextStatusCommand(arguments []string) int {
 	flags := flag.NewFlagSet("next-status", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository whose Boatstack stage should be inspected")
+	feature := flags.String("feature", "", "optional specific managed feature to inspect")
 	jsonOutput := flags.Bool("json", false, "print the versioned structured status")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}
-	status, err := boatstack.ResolveNext(*repo)
+	status, err := boatstack.ResolveNext(*repo, *feature)
 	if err != nil {
 		return fail(err)
 	}
@@ -357,11 +358,12 @@ func nextStatusCommand(arguments []string) int {
 func runPreflightCommand(arguments []string) int {
 	flags := flag.NewFlagSet("run-preflight", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository whose Git state should be verified before boatstack run")
+	feature := flags.String("feature", "", "optional specific managed feature to verify")
 	jsonOutput := flags.Bool("json", false, "print the versioned structured preflight")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}
-	status := boatstack.CheckRunPreflight(*repo)
+	status := boatstack.CheckRunPreflight(*repo, *feature)
 	if *jsonOutput {
 		value, err := boatstack.MarshalJSON(status)
 		if err != nil {

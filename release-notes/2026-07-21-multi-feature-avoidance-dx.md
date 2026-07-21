@@ -1,0 +1,3 @@
+### Avoid multiple active deliveries via intent clarification
+
+Updated the developer experience to prevent blindly tangling the active branch with multiple concurrent features. When a user presents new ideas while a delivery is active, the agent now clarifies intent: if it's an amendment, it repairs the existing plan; if it's a new feature, it proactively suggests cutting a new worktree. For intentional same-branch stacking, `next-status` and `run-preflight` now accept a `--feature` flag, allowing the agent to resolve ambiguity via an `OperatorQuery` prompt and target a specific delivery without crashing.

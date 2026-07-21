@@ -345,7 +345,7 @@ func writeApprovedFeature(t *testing.T, repo, feature string) {
 func TestResolveNextRoutesToWorkspaceCutWhenApprovedOnBase(t *testing.T) {
 	repo := workspaceRepo(t, defaultWorkspace())
 	writeApprovedFeature(t, repo, "newthing")
-	status, err := ResolveNext(repo)
+	status, err := ResolveNext(repo, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -360,7 +360,7 @@ func TestResolveNextApprovedBuildsWhenWorkspaceExists(t *testing.T) {
 	if _, err := CutFeatureWorkspace(WorkspaceCutOptions{Repo: repo, Feature: "cutdone"}); err != nil {
 		t.Fatal(err)
 	}
-	status, err := ResolveNext(repo)
+	status, err := ResolveNext(repo, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,7 +372,7 @@ func TestResolveNextApprovedBuildsWhenWorkspaceExists(t *testing.T) {
 func TestResolveNextApprovedBuildsWhenWorkspaceDisabled(t *testing.T) {
 	repo := workspaceRepo(t, Workspace{Enabled: false})
 	writeApprovedFeature(t, repo, "plainfeat")
-	status, err := ResolveNext(repo)
+	status, err := ResolveNext(repo, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,7 +410,7 @@ func TestResolveNextRoutesToWorkspaceCleanupAfterPublication(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeCompletedDelivery(t, repo, "shipped", "feat/shipped")
-	status, err := ResolveNext(repo)
+	status, err := ResolveNext(repo, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -422,7 +422,7 @@ func TestResolveNextRoutesToWorkspaceCleanupAfterPublication(t *testing.T) {
 func TestResolveNextFeatureCompleteStaysNoneWithoutWorktree(t *testing.T) {
 	repo := workspaceRepo(t, defaultWorkspace())
 	writeCompletedDelivery(t, repo, "shipped", "feat/no-worktree")
-	status, err := ResolveNext(repo)
+	status, err := ResolveNext(repo, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -436,7 +436,7 @@ func TestResolveNextFeatureCompleteStaysNoneWhenWorkspaceDisabled(t *testing.T) 
 	// A worktree exists on disk, but management is off, so cleanup is not surfaced.
 	workspaceGitDo(t, repo, "worktree", "add", "-b", "feat/manual", filepath.Join(repo, "wt-manual"))
 	writeCompletedDelivery(t, repo, "shipped", "feat/manual")
-	status, err := ResolveNext(repo)
+	status, err := ResolveNext(repo, "")
 	if err != nil {
 		t.Fatal(err)
 	}
