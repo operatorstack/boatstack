@@ -121,3 +121,56 @@ func TestPLAN_INVALIDExitsRepair(t *testing.T) {
 		t.Fatalf("expected plan_invalid to map to AUTO_PLAN, got %v", resume)
 	}
 }
+
+func TestValidateSystemicBoundaries(t *testing.T) {
+	plan := validV2Plan()
+	
+	// Valid configuration
+	plan["systemic_boundaries"] = []any{
+		map[string]any{
+			"id":                  "bnd_1",
+			"verification_oracle": "Negative test confirming boundary blocks invalid input",
+		},
+	}
+	plan["delivery_slices"] = []any{
+		map[string]any{"id": "slice_1", "task_ids": []any{"task_1"}},
+		map[string]any{"id": "slice_2", "task_ids": []any{"task_2"}},
+	}
+	if err := validateSystemicBoundaries(plan); err != nil {
+		t.Fatalf("expected valid systemic boundaries, got: %v", err)
+	}
+
+	// Missing oracle
+	plan["systemic_boundaries"] = []any{
+		map[string]any{
+			"id": "bnd_1",
+		},
+	}
+	if err := validateSystemicBoundaries(plan); err == nil || !strings.Contains(err.Error(), "requires a verification_oracle") {
+		t.Fatalf("expected error for missing oracle, got: %v", err)
+	}
+
+	// Missing ID
+	plan["systemic_boundaries"] = []any{
+		map[string]any{
+			"verification_oracle": "Negative test",
+		},
+	}
+	if err := validateSystemicBoundaries(plan); err == nil || !strings.Contains(err.Error(), "requires an id") {
+		t.Fatalf("expected error for missing id, got: %v", err)
+	}
+
+	// Missing multiple slices
+	plan["systemic_boundaries"] = []any{
+		map[string]any{
+			"id":                  "bnd_1",
+			"verification_oracle": "Negative test",
+		},
+	}
+	plan["delivery_slices"] = []any{
+		map[string]any{"id": "slice_1", "task_ids": []any{"task_1"}},
+	}
+	if err := validateSystemicBoundaries(plan); err == nil || !strings.Contains(err.Error(), "requires a minimum of 2 delivery_slices") {
+		t.Fatalf("expected error for insufficient slices, got: %v", err)
+	}
+}

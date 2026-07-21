@@ -1,0 +1,3 @@
+### Boundary Failure Mode Analysis in Auto-Plan
+
+Introduced an opt-in `boundary_analysis` configuration to `.boatstack-project.json`. When enabled, the `auto-plan` operation actively analyzes requested changes to determine if they are symptoms of missing systemic boundaries (e.g., deficient data normalization or leaky validation). Instead of silently expanding scope, Boatstack presents this as a material product decision with concrete codebase evidence and offers tiered implementation paths: a local symptom patch or a programmatic enforcement lock. If programmatic enforcement is selected, the plan is explicitly split into two delivery slices, ensuring the boundary (hook, trigger, or strict test) is established before the feature is implemented.
