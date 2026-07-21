@@ -2,25 +2,49 @@
   <title id="title">Your product development flow stays with the repository</title>
   <desc id="desc">Cursor, Codex, Claude Code, Gemini CLI, different model tiers, and specialist skills feed one repository-owned Boatstack flow. The flow retains plans, decisions, gaps, evidence, and review findings, producing a reviewed pull request and useful context for the next feature.</desc>
   <style>
-    .paper{fill:#fff}.node{fill:#fff;stroke:#0F172A}.core{fill:#E8F0FF;stroke:#2563EB}.soft{fill:#F8FAFC;stroke:#CBD5E1}.ink{fill:#0F172A}.muted{fill:#475569}.blue{stroke:#2563EB}.gray{stroke:#94A3B8}.accent{fill:#2563EB}
-    .title{font:700 27px "Avenir Next","Segoe UI",sans-serif}.label{font:700 18px "Avenir Next","Segoe UI",sans-serif}.body{font:600 16px "Avenir Next","Segoe UI",sans-serif}.small{font:700 13px "Avenir Next","Segoe UI",sans-serif;letter-spacing:.09em}
+    .paper{fill:#F4F0E7}
+    .grid{stroke:#0F172A;stroke-opacity:.06;stroke-width:1}
+    .gridmaj{stroke:#0F172A;stroke-opacity:.11;stroke-width:1}
+    .frame{fill:none;stroke:#0F172A;stroke-opacity:.35;stroke-width:1.5}
+    .node{fill:#FFFFFF;fill-opacity:.5;stroke:#0F172A}
+    .core{fill:#C2410C;fill-opacity:.06;stroke:#C2410C}
+    .soft{fill:#0F172A;fill-opacity:.03;stroke:#B9B1A3}
+    .ink{fill:#0F172A}.muted{fill:#6B6357}
+    .blue{stroke:#C2410C}.gray{stroke:#B9B1A3}.accent{fill:#C2410C}
+    .tb{fill:#0F172A;fill-opacity:.02;stroke:#0F172A;stroke-opacity:.4}
+    .tbline{stroke:#0F172A;stroke-opacity:.4}
+    .title{font:700 27px ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:-.01em}
+    .label{font:700 14px ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace}
+    .body{font:600 15px ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace}
+    .small{font:700 12px ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.14em}
+    .tbt{font:700 11px ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.1em}
     @media(prefers-color-scheme:dark){
-      .paper{fill:#090D16}
-      .node{fill:#0F172A;stroke:#1E293B}
-      .core{fill:#172554;stroke:#2563EB}
-      .soft{fill:#0F172A;stroke:#1E293B}
-      .ink{fill:#F8FAFC}
-      .muted{fill:#64748B}
-      .blue{stroke:#2563EB}
-      .gray{stroke:#1E293B}
-      .accent{fill:#2563EB}
-      .title, .label, .body, .small{font-family:"SF Mono",Menlo,Monaco,Consolas,"Liberation Mono",monospace}
+      .paper{fill:#0B2138}
+      .grid{stroke:#7AB4E6;stroke-opacity:.10}
+      .gridmaj{stroke:#7AB4E6;stroke-opacity:.20}
+      .frame{stroke:#7AB4E6;stroke-opacity:.5}
+      .node{fill:#0F2C49;fill-opacity:1;stroke:#4C7EA6}
+      .core{fill:#123A5C;fill-opacity:1;stroke:#2563EB}
+      .soft{fill:#10263F;fill-opacity:1;stroke:#35618A}
+      .ink{fill:#E8F2FF}.muted{fill:#93B8D6}
+      .blue{stroke:#5EB1FF}.gray{stroke:#3F6F9C}.accent{fill:#5EB1FF}
+      .tb{fill:#0F2C49;fill-opacity:1;stroke:#4C7EA6}
+      .tbline{stroke:#4C7EA6}
     }
   </style>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="accent" d="M0 0 10 5 0 10z"/></marker>
+    <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><path class="grid" d="M20 0H0V20" fill="none"/></pattern>
+    <pattern id="gridmaj" width="100" height="100" patternUnits="userSpaceOnUse"><path class="gridmaj" d="M100 0H0V100" fill="none"/></pattern>
+    <clipPath id="pageclip"><rect width="1200" height="480" rx="24"/></clipPath>
   </defs>
   <rect class="paper" width="1200" height="480" rx="24"/>
+  <g clip-path="url(#pageclip)">
+    <rect width="1200" height="480" fill="url(#grid)"/>
+    <rect width="1200" height="480" fill="url(#gridmaj)"/>
+  </g>
+  <g class="frame"><path d="M18 32V18H32 M1168 18H1182V32 M18 448V462H32 M1182 448V462H1168"/></g>
+
   <text class="title ink" x="48" y="52">Change the tools. Keep the flow.</text>
   <text class="body muted" x="48" y="80">The repository owns the working state and the standard for “done.”</text>
 
@@ -49,7 +73,7 @@
 
   <g transform="translate(456 121)">
     <rect class="core" width="406" height="276" rx="24" stroke-width="3"/>
-    <text class="small" x="203" y="34" text-anchor="middle" fill="#2563EB">YOUR REPOSITORY</text>
+    <text class="small accent" x="203" y="34" text-anchor="middle">YOUR REPOSITORY</text>
     <text class="title ink" x="203" y="75" text-anchor="middle">BOATSTACK</text>
     <text class="body muted" x="203" y="104" text-anchor="middle">one product-development flow</text>
     <g transform="translate(30 132)">
@@ -69,5 +93,15 @@
     <text class="body muted" x="112" y="132" text-anchor="middle">plus useful context</text>
     <text class="body muted" x="112" y="158" text-anchor="middle">for the next feature</text>
     <circle class="accent" cx="112" cy="184" r="5"/>
+  </g>
+
+  <g transform="translate(954 424)">
+    <rect class="tb" width="230" height="40" rx="4"/>
+    <line class="tbline" x1="0" y1="20" x2="230" y2="20"/>
+    <line class="tbline" x1="140" y1="0" x2="140" y2="40"/>
+    <text class="tbt muted" x="10" y="14">DWG · PORT</text>
+    <text class="tbt ink" x="10" y="33">BOATSTACK</text>
+    <text class="tbt muted" x="150" y="14">REV —</text>
+    <text class="tbt muted" x="150" y="33">SCALE 1:1</text>
   </g>
 </svg>

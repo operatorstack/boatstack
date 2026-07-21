@@ -10,14 +10,14 @@
 
 ## A delivery harness for AI coding agents
 
-<!-- boatstack-claim:portable-product-flow -->Boatstack connects the work from an idea to a reviewed PR. Keep using Cursor, Codex, Claude Code, or Gemini CLI, with the models and specialist skills that fit the work. Boatstack keeps the plan, decisions, gaps, tests, review findings, and project context connected along the way.
+<!-- boatstack-claim:portable-product-flow -->An AI coding agent will guess a product decision, call the work "done" on one green check, and lose the reasoning the moment you change tools. Boatstack connects the work from an idea to a reviewed PR so none of that slips: the plan, decisions, gaps, tests, review findings, and project context stay connected along the way. Keep using Cursor, Codex, Claude Code, or Gemini CLI, with the models and specialist skills that fit the work.
 
 The agent remains free to build. Before it says the work is done, Boatstack asks for the approval, tests, review, and recorded evidence appropriate to the change.
 
 **Your product development flow stays with the repository—not the coding agent.** Change tools without rebuilding how you ship or redefining what “done” means. Boatstack carries the workflow and saved project state—not an agent's private chat history or a command already in progress.
 
 <p align="center">
-  <img src="assets/boatstack-portability.svg" width="900" alt="Coding agents, models, and specialist skills feed one repository-owned Boatstack flow that produces a reviewed pull request and useful context for the next feature">
+  <img src="assets/boatstack-portability.svg" width="900" alt="Change the tools, keep the flow: coding agents, models, and specialist skills feed one repository-owned Boatstack flow that produces a reviewed pull request and useful context for the next feature">
 </p>
 
 | You change | Boatstack keeps |
@@ -79,13 +79,13 @@ Receipts remain as history; published corrections become linked deliveries.
 ## Features
 
 - **A guided path from idea to PR.** `/auto-plan` starts a one-action-at-a-time delivery flow.
-- **Instant orientation after a break.** `boatstack next` reconstructs the verified stage without treating chat or a running process as workflow evidence.
+- **Instant orientation after a break.** `boatstack next` reconstructs the verified stage without treating chat or a running process as workflow evidence, so you resume in seconds instead of re-reading history.
 - **Human decisions stay human.** Material product questions remain open until a person answers them, and implementation waits for explicit approval.
 - **Evidence tied to the promise.** Tests and checks map to the outcomes the change claims to deliver instead of treating one green command as proof of everything.
 - **Context that survives the feature.** Plans, decisions, gaps, evidence, and code state remain useful beyond the chat.
 - **Conversational repair after Build.** Describe what changed; Boatstack preserves valid work and reruns only affected boundaries.
 - **Safer agent execution.** High-confidence destructive recovery is stopped before execution; phased work is gated and published one approved delivery slice at a time.
-- **Reviewer-ready pull requests.** Actual changes, evidence, risks, rollout, and rollback become a focused PR brief.
+- **Reviewer-ready pull requests.** Actual changes, evidence, risks, rollout, and rollback become a focused PR brief, so reviewers spend time on judgment, not reconstruction.
 - **Optional repository changelog.** Require readable `CHANGELOG.md` entries grounded in actual changes.
 - **Portable across your AI stack.** Hosts, models, and skills share one repository-owned delivery contract.
 - **Repository-friendly maintenance.** Worktrees restore runtime; updates stay in separate infrastructure PRs.

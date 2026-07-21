@@ -1,0 +1,3 @@
+### Redesign distribution diagrams as a blueprint system and reframe the README around user value
+
+Reskinned the mark, portability, and journey diagrams into a technical-blueprint system — an ink-on-paper Draft treatment in light mode and a Cyanotype treatment in dark mode via `prefers-color-scheme`, with a construction grid, registration ticks, and a drawing title block. All viewBoxes, labels, arrow paths, and brand hexes are unchanged. Reworded the README to lead with the failure it removes (an agent guessing a decision, calling work "done" on one green check, losing reasoning when tools change) before the transformed state, and made feature descriptions terminate in observable outcomes.

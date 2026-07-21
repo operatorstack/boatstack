@@ -2,23 +2,51 @@
   <title id="title">Boatstack episode handoff</title>
   <desc id="desc">A complete feature turns an idea into a pull request. Decisions, gaps, evidence, and code state are retained, then combine with the next idea to create the next plan.</desc>
   <style>
-    .paper{fill:#fff}.ink{fill:#0F172A}.muted{fill:#475569}.quiet{fill:#64748B}.node{fill:#fff;stroke:#0F172A}.soft{fill:#F8FAFC;stroke:#CBD5E1}.context{fill:#E8F0FF;stroke:#2563EB}.blue{stroke:#2563EB}.gray{stroke:#94A3B8}.accent{fill:#2563EB}
-    .title{font:700 28px "Avenir Next","Segoe UI",sans-serif}.label{font:700 17px "Avenir Next","Segoe UI",sans-serif}.body{font:600 15px "Avenir Next","Segoe UI",sans-serif}.small{font:600 13px "Avenir Next","Segoe UI",sans-serif;letter-spacing:.08em}.mono{font:700 13px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.1em}
+    .paper{fill:#F4F0E7}
+    .grid{stroke:#0F172A;stroke-opacity:.06;stroke-width:1}
+    .gridmaj{stroke:#0F172A;stroke-opacity:.11;stroke-width:1}
+    .frame{fill:none;stroke:#0F172A;stroke-opacity:.35;stroke-width:1.5}
+    .ink{fill:#0F172A}.muted{fill:#6B6357}.quiet{fill:#8A8072}
+    .node{fill:#FFFFFF;fill-opacity:.5;stroke:#0F172A}
+    .soft{fill:#F4F0E7;stroke:#B9B1A3}
+    .context{fill:#C2410C;fill-opacity:.06;stroke:#C2410C}
+    .blue{stroke:#C2410C}.gray{stroke:#B9B1A3}.accent{fill:#C2410C}
+    .tb{fill:#0F172A;fill-opacity:.02;stroke:#0F172A;stroke-opacity:.4}
+    .tbline{stroke:#0F172A;stroke-opacity:.4}
+    .title{font:700 28px ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:-.01em}
+    .label{font:700 17px ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace}
+    .body{font:600 15px ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace}
+    .small{font:700 13px ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.14em}
+    .mono{font:700 12px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.14em}
+    .tbt{font:700 11px ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.1em}
     @media(prefers-color-scheme:dark){
-      .paper{fill:#090D16}
-      .node{fill:#0F172A;stroke:#1E293B}
-      .soft{fill:#1E2033;stroke:#1E293B}
-      .context{fill:#172554;stroke:#2563EB}
-      .ink{fill:#F8FAFC}
-      .muted,.quiet{fill:#64748B}
-      .title, .label, .body, .small, .mono{font-family:"SF Mono",Menlo,Monaco,Consolas,"Liberation Mono",monospace}
+      .paper{fill:#0B2138}
+      .grid{stroke:#7AB4E6;stroke-opacity:.10}
+      .gridmaj{stroke:#7AB4E6;stroke-opacity:.20}
+      .frame{stroke:#7AB4E6;stroke-opacity:.5}
+      .node{fill:#0F2C49;fill-opacity:1;stroke:#4C7EA6}
+      .soft{fill:#10263F;fill-opacity:1;stroke:#35618A}
+      .context{fill:#123A5C;fill-opacity:1;stroke:#2563EB}
+      .ink{fill:#E8F2FF}.muted{fill:#93B8D6}.quiet{fill:#6F9BC0}
+      .blue{stroke:#5EB1FF}.gray{stroke:#3F6F9C}.accent{fill:#5EB1FF}
+      .tb{fill:#0F2C49;fill-opacity:1;stroke:#4C7EA6}
+      .tbline{stroke:#4C7EA6}
     }
   </style>
   <defs>
     <marker id="blue-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="accent" d="M0 0 10 5 0 10z"/></marker>
     <marker id="gray-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="quiet" d="M0 0 10 5 0 10z"/></marker>
+    <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><path class="grid" d="M20 0H0V20" fill="none"/></pattern>
+    <pattern id="gridmaj" width="100" height="100" patternUnits="userSpaceOnUse"><path class="gridmaj" d="M100 0H0V100" fill="none"/></pattern>
+    <clipPath id="pageclip"><rect width="1400" height="760" rx="24"/></clipPath>
   </defs>
   <rect class="paper" width="1400" height="760" rx="24"/>
+  <g clip-path="url(#pageclip)">
+    <rect width="1400" height="760" fill="url(#grid)"/>
+    <rect width="1400" height="760" fill="url(#gridmaj)"/>
+  </g>
+  <g class="frame"><path d="M18 32V18H32 M1370 18H1384V32 M18 728V742H32 M1384 728V742H1370"/></g>
+
   <text class="title ink" x="70" y="70">One feature improves the starting point of the next</text>
   <text class="small muted" x="70" y="108">FEATURE EPISODE 1</text>
   <g class="blue" fill="none" stroke-width="4" marker-end="url(#blue-arrow)">
@@ -37,17 +65,27 @@
   <path class="gray" d="M1185 224V320H1070V346" fill="none" stroke-width="3" stroke-dasharray="7 8" marker-end="url(#gray-arrow)"/>
   <g transform="translate(670 350)">
     <rect class="context" width="470" height="112" rx="20" stroke-width="3"/>
-    <text class="small" x="235" y="31" text-anchor="middle" fill="#2563EB">RETAINED PROJECT CONTEXT</text>
-    <text class="label ink" x="235" y="63" text-anchor="middle">plans · decisions · gaps · evidence · code state</text>
+    <text class="small accent" x="235" y="31" text-anchor="middle">RETAINED PROJECT CONTEXT</text>
+    <text class="label ink" style="font-size:14px" x="235" y="62" text-anchor="middle">plans · decisions · gaps · evidence · code state</text>
     <text class="body muted" x="235" y="90" text-anchor="middle">The feature ends. Its useful state does not.</text>
   </g>
   <text class="small muted" x="70" y="548">FEATURE EPISODE 2</text>
   <g transform="translate(70 575)"><rect class="node" width="150" height="72" rx="36" stroke-width="3"/><text class="label ink" x="75" y="44" text-anchor="middle">Next idea</text></g>
   <path class="blue" d="M220 611H456" fill="none" stroke-width="4" marker-end="url(#blue-arrow)"/>
   <path class="blue" d="M905 462V515H490V572" fill="none" stroke-width="4" marker-end="url(#blue-arrow)"/>
-  <circle class="context" cx="490" cy="611" r="38" stroke-width="3"/><text class="title" x="490" y="620" text-anchor="middle" fill="#2563EB">+</text>
+  <circle class="context" cx="490" cy="611" r="38" stroke-width="3"/><text class="title accent" x="490" y="620" text-anchor="middle">+</text>
   <path class="blue" d="M528 611H610" fill="none" stroke-width="4" marker-end="url(#blue-arrow)"/>
   <g transform="translate(610 575)"><rect class="node" width="160" height="72" rx="18" stroke-width="3"/><text class="label ink" x="80" y="44" text-anchor="middle">Next Plan</text></g>
   <path class="blue" d="M770 611H930" fill="none" stroke-width="4" marker-end="url(#blue-arrow)"/>
   <text class="title muted" x="976" y="620">…</text><text class="body muted" x="1020" y="616">the next feature starts better informed</text>
+
+  <g transform="translate(1154 704)">
+    <rect class="tb" width="230" height="40" rx="4"/>
+    <line class="tbline" x1="0" y1="20" x2="230" y2="20"/>
+    <line class="tbline" x1="140" y1="0" x2="140" y2="40"/>
+    <text class="tbt muted" x="10" y="14">DWG · JRNY</text>
+    <text class="tbt ink" x="10" y="33">BOATSTACK</text>
+    <text class="tbt muted" x="150" y="14">REV —</text>
+    <text class="tbt muted" x="150" y="33">SCALE 1:1</text>
+  </g>
 </svg>

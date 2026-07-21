@@ -1,17 +1,28 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title description">
   <title id="title">Boatstack</title>
-  <desc id="description">A rounded ink field with three stacked bars — the repository-owned delivery stack.</desc>
+  <desc id="description">A rounded ink field with three stacked bars over a faint blueprint grid — the repository-owned delivery stack.</desc>
   <style>
-    .ink{fill:#0F172A}
-    .blue{fill:#2563EB}
-    .cut{fill:#FFFFFF}
+    .field{fill:#0F172A}
+    .bar{fill:#2563EB}
+    .cut{fill:#F4F0E7}
+    .grid{stroke:#FFFFFF;stroke-opacity:.10;stroke-width:.5}
+    .fieldstroke{fill:none;stroke:#0F172A;stroke-width:1;stroke-opacity:0}
     @media(prefers-color-scheme:dark){
-      .ink{fill:#E2E8F0}
-      .cut{fill:#0F172A}
+      .field{fill:#0B2138}
+      .cut{fill:#0B2138}
+      .grid{stroke:#7AB4E6;stroke-opacity:.16}
+      .fieldstroke{stroke:#33608C;stroke-opacity:1}
     }
   </style>
-  <rect class="ink" x="2" y="2" width="60" height="60" rx="16"/>
-  <rect class="blue" x="14" y="15" width="36" height="8" rx="2.5"/>
+  <defs>
+    <clipPath id="fieldclip"><rect x="2" y="2" width="60" height="60" rx="16"/></clipPath>
+  </defs>
+  <rect class="field" x="2" y="2" width="60" height="60" rx="16"/>
+  <g clip-path="url(#fieldclip)">
+    <path class="grid" d="M10 2V62 M18 2V62 M26 2V62 M34 2V62 M42 2V62 M50 2V62 M58 2V62 M2 10H62 M2 18H62 M2 26H62 M2 34H62 M2 42H62 M2 50H62 M2 58H62"/>
+  </g>
+  <rect class="fieldstroke" x="2" y="2" width="60" height="60" rx="16"/>
+  <rect class="bar" x="14" y="15" width="36" height="8" rx="2.5"/>
   <rect class="cut" x="14" y="28" width="36" height="8" rx="2.5"/>
-  <rect class="blue" x="14" y="41" width="36" height="8" rx="2.5"/>
+  <rect class="bar" x="14" y="41" width="36" height="8" rx="2.5"/>
 </svg>
