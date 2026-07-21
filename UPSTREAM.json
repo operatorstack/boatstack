@@ -1,7 +1,7 @@
 {
   "canonical_context": {
-    "characters": 47557,
-    "estimated_tokens": 11890,
+    "characters": 47607,
+    "estimated_tokens": 11902,
     "estimator": "ceil(total characters / 4); compactness signal, not provider billing",
     "files": [
       "product-engineering-loop/references/workflow.md",
@@ -12,12 +12,12 @@
   },
   "files": {
     ".gitignore": "a7079e923a776f14f1bb3a6aa0a11a133a8e1dfb35af020f327623357b7e3957",
-    "CONTRIBUTING.md": "ee0f065bd50ae659d72482a982ae1b24b7833a787591447c810afca1f0abfe71",
+    "CONTRIBUTING.md": "95d6418d1d52e8f5956bd68e61f9ecb10c19aaad72ddf4f5d7b85df4614b1c65",
     "README.md": "590821a4cf3c4b196d3cfb39c972ccbebef7d4d558df817c1f1e88b4fd7ceb07",
     "assets/boatstack-journey.svg": "9f016fbfd2881675551a44dafa282cbc7510a7091131005be490c2dbe5e4e051",
     "assets/boatstack-mark.svg": "ec96165583b15cfd446c27049d49217973f3e9b1defa5771cc08eec0c9542ce4",
     "assets/boatstack-portability.svg": "a621b8f4da5159bbfdfd858013ff3fefc3937d7f6e140612a2c82e84283865f9",
-    "boatstack/SKILL.md": "a63f88eb039c06f34ba018444871b7a0b17c43bdb3ab62f0122732f50345bd6d",
+    "boatstack/SKILL.md": "cf83314c52b381ee0ba4a29c5aeea2d50561463b44d54cb478eed857227c106a",
     "boatstack/agents/gemini.yaml": "cbf43b387399e456fa6178f86d83e6e35567e6142ff800f8de6ffca306fa963e",
     "boatstack/agents/openai.yaml": "68a30a60859556c5a26e16d184594ca243a6043d99c8cf7d66b5dd6d50a93cd1",
     "boatstack/assets/templates/adr.md": "c577a3c1c1319061f61deb053597e6e853657022185fe28b8f733327e2a78565",
@@ -38,7 +38,7 @@
     "boatstack/cmd/boatstack-helper/main_test.go": "ff73003b6a5157202fa09ddf1129fb13c3d79702b2e05a8721ce5a11bf5ab779",
     "boatstack/delivery.go": "565bc8465252a798124a29874e1aeffff16e9027d1a86715e11b3e4bc0743bd2",
     "boatstack/delivery_test.go": "2545c26389d330a92c11e7b09fb2342101db5d09a825a2a9e81b4ea9eea9407b",
-    "boatstack/export.go": "d0c1bfa2f4a48fd578df58d89cad2cfd96109958e08cef4a7136cd237e5f0d5a",
+    "boatstack/export.go": "be598a6ab1546c18cf1dd04f7d210b8fd986073033a20520b494478315096e2f",
     "boatstack/export_test.go": "27f9895f39d0958b5b4824193865a8a30333db709e5b91788aff3d49304457ed",
     "boatstack/go.mod": "6086ef1b2a83f5696190dca692c653925f27b61f652f659fd3fca43ed54a1641",
     "boatstack/go.sum": "26c315c867b11b886f3c9402fce7f341f6a9115a5d61f54afbb5e1b1fb5f6017",
@@ -64,7 +64,7 @@
     "boatstack/references/host-hook-contracts.md": "1382213ad004389de6da5a03af43ec28ace6329c9e7a3f07148566cf2ea12727",
     "boatstack/references/irreversible-operation-boundary.md": "631743991ace65977586e4537f8dd50f8ae88f8e16f27cf7baad93b2791a73df",
     "boatstack/references/portability.md": "fb683095991bb0cb06ec56fb8884c49038b283172a7d2f8b203483b7cacb4bae",
-    "boatstack/references/workflow.md": "664a827a64393c335d3deab15cf1fa2e47e1e27ab507f11b1815c90d93791c1f",
+    "boatstack/references/workflow.md": "410f31698a25fcbf969dd00a28dd48f2f59e1fd3de89ac1cff2e8d513913c6f4",
     "boatstack/release.go": "fa2ac926df89c90c5844e938a2e02d4b8dbbaefbf85bb7a1a89fc51690bea520",
     "boatstack/release_test.go": "5cf2d76fe9b836a91ca68eba53d5585e2c4be5b9421aaf939ea0723063a24690",
     "boatstack/run.go": "a9afb239c5e2cb80f96dab594f0dc94852f2f16625b1de05c5110ee85f61cfaa",
@@ -86,10 +86,10 @@
     "docs/account-recovery-walkthrough.md": "676034974594a7d1a559b24dbed31d7ccc429eb81404b203ca07bbdaa19ec3d3",
     "docs/benchmark-corpus-audit.md": "f2d206fe8579a514f9da82b2c96c19b343ac004be67617e1bd34f0f8e0e5e6c6",
     "docs/benchmark-submission-audit.md": "9518abdd17690729c6423f87cab20418ed47b0915b5faa44b9ef975e9e9c3b79",
-    "docs/evidence-engineered-coding.md": "32a514ed762e771e342e5a8aca31e1ca414adfcb10bc0e2221bf4af3e3c2e751",
+    "docs/evidence-engineered-coding.md": "8814afc6d9df7eeecefc0030e8119d36d020b8c0e4f103b503324efc1ba87863",
     "docs/generated-files.md": "136422baf0c7fc2bd5100cfe0ebdb3d9d0705dfd7e7d54bf745dd1037e63492c",
     "docs/getting-started.md": "eacc814fdffdfa3c7d8052b7cd99a79c04da5c75d88d8b44f3fb68d9afec0316",
-    "docs/public-claims.json": "cd07d38bd2390a87a9e031c2281eb7ec51c6b0393f41aae309dfe3246a9d0188",
+    "docs/public-claims.json": "446b828e75e5d270137b7ec17e364bc075c766d00e0d4fb3c3db4e163f424dc5",
     "docs/public-surface.md": "713f7a050b5f339cf948299103ef3800417dccfecf2cc1a4166397ea6f978907",
     "docs/research-and-design.md": "d65c66e323037bda5d45aacef5d48afa6bf93da55901378891d235aca3a5684f",
     "docs/safety.md": "7b9b5c515d36e683767ec8d3d9d6d119ac93650b2f629d351deadd4c600ed6a6",
@@ -103,7 +103,7 @@
     "labs/diagram-json/compiled/evidence.md": "1ba1c989ade070a8ef9a508fbd788d100d7292f2dbacbb2bce895468019f619d",
     "labs/diagram-json/compiled/tasks.json": "88f60851abf79d851e9fccc754ff3040034ae595306bc87d64784c19eb403e71",
     "labs/diagram-json/compiled/test-matrix.json": "424657ff505768e50fa113801fd8363364a18269d5297480907a993d44063a39",
-    "labs/diagram-json/plan.lock.json": "e181273a6a0c9b782ed6f5067883d0d4bc836215b8eb00bc968b4ffbf2b277c8",
+    "labs/diagram-json/plan.lock.json": "35f8d78b5a6612ee8bf3721a5d8c57b2cfd0e140339dd17d3431146d3582e71a",
     "labs/diagram-json/plan.md": "3cc4f533b8d69386deff16b3a594a3ba09d4c0c3db636cccd8c4380084ce6a51",
     "labs/diagram-json/questions.md": "74733b015002c8a6777c558e7e997fa48c94850b9bd39054fe9366c97ecf728d",
     "labs/diagram-json/request.md": "0808fc41c36779c404f4a3a121167da6e76cac56df526e70f9ed6d3e0d4c02ed",
@@ -142,12 +142,13 @@
     "release-notes/2026-07-20-multi-pr-dx-improvements.md": "7bbefe56c0b0e7fcddeaaca0dfa6fb1b7a6493828c7a023f4e0387e66fbada4e",
     "release-notes/2026-07-20-portability-diagram-dark-theme.md": "b06bebec1361b21ef6deb8c8f43168d189803a32588aeb803ea4b441525a77e2",
     "release-notes/2026-07-20-product-focused-pr-titles.md": "ffb8f58fa4978de81f102ca0bbc7fc09b019293aff24e7c661ae635aa46ac839",
-    "release-notes/2026-07-20-speak-software-standards.md": "a8890ed7eb38868bdf3035572d71785ca89abd3ffc3a314a5dc5315150afe397"
+    "release-notes/2026-07-20-speak-software-standards.md": "a8890ed7eb38868bdf3035572d71785ca89abd3ffc3a314a5dc5315150afe397",
+    "release-notes/2026-07-21-prevent-hallucinated-approver-names.md": "a5fd08bc3d8b983340a2ddd67b71c78b2b34a915fdfe6eb7cdffd0f1d52e3427"
   },
   "generator": "operatorstack/intelligence-flow:boatstack-distribution",
   "schema_version": 1,
   "source": {
-    "commit": "d27760b57f2026608a939c6fe1712d437bc91442",
+    "commit": "dd7890e85129579b941b6bba104d6ccb773b945e",
     "path": "labs/12-product-engineering-loop",
     "repository": "operatorstack/intelligence-flow"
   }
