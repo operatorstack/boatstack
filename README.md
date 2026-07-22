@@ -133,19 +133,9 @@ Receipts remain as history; published corrections become linked deliveries.
 
 </details>
 
-### Optional changelog
+## Configure repository policy
 
-It is disabled by default. Enable it in `.boatstack-project.json`:
-
-```json
-{
-  "workflow": {
-    "maintain_changelog": true
-  }
-}
-```
-
-Enabled repositories require a categorized `CHANGELOG.md` → `Unreleased` entry for every managed slice and Boatstack-prepared ad-hoc PR. The file stays user-owned; install and update never overwrite it. [See the format and first-entry example](docs/getting-started.md#keep-a-repository-changelog).
+`.boatstack-project.json` controls the project commands and context Boatstack uses, which coding hosts it supports, and opt-in policies for changelogs, boundary analysis, high-risk review, and feature workspaces. [Choose the outcomes you want and see every configuration field](docs/configuration.md).
 
 ## How Boatstack fits into your AI stack
 
