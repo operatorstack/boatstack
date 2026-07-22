@@ -14,6 +14,8 @@
   "plan_sha256": "<sha256>",
   "task_graph_path": "compiled/tasks.json",
   "task_graph_sha256": "<sha256>",
+  "baseline_diff_sha256": "<empty only when the product baseline was clean>",
+  "baseline_changed_paths": [],
   "invalidated_at": null,
   "invalidation_reason": null
 }

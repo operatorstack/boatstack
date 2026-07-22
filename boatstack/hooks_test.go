@@ -21,17 +21,17 @@ func TestHostHookMergePreservesUnrelatedConfiguration(t *testing.T) {
 	if err := os.WriteFile(path, []byte(initial), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := InstallHostHooks(repo, []string{"cursor", "claude", "codex"}); err != nil {
+	if err := InstallHostHooks(repo, []string{"cursor", "claude", "codex", "gemini"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := CheckHostHooks(repo, []string{"cursor", "claude", "codex"}); err != nil {
+	if err := CheckHostHooks(repo, []string{"cursor", "claude", "codex", "gemini"}); err != nil {
 		t.Fatal(err)
 	}
 	value, _ := os.ReadFile(path)
 	if !strings.Contains(string(value), `"theme": "kept"`) || !strings.Contains(string(value), "existing-check.sh") {
 		t.Fatalf("hook merge discarded unrelated configuration: %s", value)
 	}
-	if err := InstallHostHooks(repo, []string{"cursor", "claude", "codex"}); err != nil {
+	if err := InstallHostHooks(repo, []string{"cursor", "claude", "codex", "gemini"}); err != nil {
 		t.Fatalf("idempotent reinstall failed: %v", err)
 	}
 }
@@ -64,7 +64,7 @@ func TestHostHookMergeRejectsAmbiguousCollisionAndDrift(t *testing.T) {
 }
 
 func TestGeneratedHostHooksSatisfyHarnessShapes(t *testing.T) {
-	for _, host := range []string{"cursor", "claude", "codex"} {
+	for _, host := range []string{"cursor", "claude", "codex", "gemini"} {
 		t.Run(host, func(t *testing.T) {
 			for _, event := range hookEvents(host) {
 				entry := desiredHostHookForEvent(host, event)
@@ -81,6 +81,15 @@ func TestGeneratedHostHooksSatisfyHarnessShapes(t *testing.T) {
 					handler := entry["hooks"].([]any)[0].(map[string]any)
 					if stringValue(handler["commandWindows"]) == "" {
 						t.Fatalf("Codex hook lacks commandWindows: %#v", handler)
+					}
+				}
+				if host == "cursor" && event == "preToolUse" && !strings.Contains(stringValue(entry["matcher"]), "Write") {
+					t.Fatalf("Cursor preToolUse does not supervise native writes: %#v", entry)
+				}
+				if host == "gemini" {
+					handler := entry["hooks"].([]any)[0].(map[string]any)
+					if entry["sequential"] != true || handler["timeout"] != 10000 {
+						t.Fatalf("Gemini BeforeTool hook has an invalid fail-closed shape: %#v", entry)
 					}
 				}
 			}
@@ -186,9 +195,12 @@ func TestDiagnoseHookAcceptsCanonicalEventsForEveryHost(t *testing.T) {
 		if host == "cursor" {
 			return []byte(`{"continue":true,"permission":"allow"}`), nil
 		}
+		if host == "gemini" {
+			return []byte(`{"decision":"allow"}`), nil
+		}
 		return nil, nil
 	}
-	for _, host := range []string{"cursor", "claude", "codex"} {
+	for _, host := range []string{"cursor", "claude", "codex", "gemini"} {
 		t.Run(host, func(t *testing.T) {
 			diagnostic, err := DiagnoseHook(repo, host)
 			if err != nil {
@@ -237,6 +249,7 @@ func TestHookDiagnosticRejectsMalformedAllowOutput(t *testing.T) {
 		{"cursor", `not-json`},
 		{"claude", `{}`},
 		{"codex", `unexpected`},
+		{"gemini", `{}`},
 	} {
 		if err := validateCanonicalHookOutput(test.host, []byte(test.output)); err == nil {
 			t.Fatalf("%s malformed output was accepted: %q", test.host, test.output)
@@ -281,7 +294,7 @@ func TestGuardRejectsTamperedSharedRuntimeBeforeExecution(t *testing.T) {
 }
 
 func TestHookFragmentsAreValidJSON(t *testing.T) {
-	for _, host := range []string{"cursor", "claude", "codex"} {
+	for _, host := range []string{"cursor", "claude", "codex", "gemini"} {
 		value, err := hookFragmentJSON(host)
 		if err != nil {
 			t.Fatal(err)

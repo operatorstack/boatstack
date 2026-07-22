@@ -1,10 +1,13 @@
 package boatstack
 
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -29,11 +32,128 @@ type PlanningWriteOptions struct {
 }
 
 type ApprovalRecordOptions struct {
-	PlanPath    string
-	OutputPath  string
-	ApprovedBy  string
-	ApprovedAt  string
-	Fingerprint string
+	PlanPath           string
+	OutputPath         string
+	ApprovedBy         string
+	ApprovedAt         string
+	Fingerprint        string
+	BaselineDiffSHA256 string
+}
+
+type PlanningBaseline struct {
+	DiffSHA256   string
+	ChangedPaths []string
+}
+
+func relativeBaselineExclusions(repo string, paths ...string) map[string]bool {
+	excluded := map[string]bool{}
+	for _, path := range paths {
+		if strings.TrimSpace(path) == "" {
+			continue
+		}
+		absolute := path
+		if !filepath.IsAbs(absolute) {
+			absolute = filepath.Join(repo, absolute)
+		}
+		if canonicalParent, err := filepath.EvalSymlinks(filepath.Dir(absolute)); err == nil {
+			absolute = filepath.Join(canonicalParent, filepath.Base(absolute))
+		}
+		if relative, err := filepath.Rel(repo, filepath.Clean(absolute)); err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			excluded[filepath.ToSlash(relative)] = true
+		}
+	}
+	return excluded
+}
+
+func productBaseline(repo string, artifactPaths ...string) (PlanningBaseline, error) {
+	excluded := relativeBaselineExclusions(repo, artifactPaths...)
+	baselineRef := "HEAD"
+	if err := exec.Command("git", "-C", repo, "rev-parse", "--verify", "HEAD").Run(); err != nil {
+		emptyTree := exec.Command("git", "-C", repo, "hash-object", "-t", "tree", "--stdin")
+		emptyTree.Stdin = strings.NewReader("")
+		value, hashErr := emptyTree.Output()
+		if hashErr != nil {
+			return PlanningBaseline{}, fmt.Errorf("resolve empty repository baseline: %w", hashErr)
+		}
+		baselineRef = strings.TrimSpace(string(value))
+	}
+	ignored := func(path string) bool {
+		path = filepath.ToSlash(path)
+		if path == ".product-loop" || strings.HasPrefix(path, ".product-loop/") || excluded[path] {
+			return true
+		}
+		for prefix := range excluded {
+			if strings.HasPrefix(path, strings.TrimSuffix(prefix, "/")+"/") {
+				return true
+			}
+		}
+		return false
+	}
+	changedCommand := exec.Command("git", "-C", repo, "diff", "--name-only", "-z", baselineRef, "--")
+	changedValue, err := changedCommand.Output()
+	if err != nil {
+		return PlanningBaseline{}, fmt.Errorf("inspect tracked planning baseline: %w", err)
+	}
+	paths := []string{}
+	for _, raw := range bytes.Split(changedValue, []byte{0}) {
+		path := filepath.ToSlash(string(raw))
+		if path != "" && !ignored(path) {
+			paths = append(paths, path)
+		}
+	}
+	untrackedCommand := exec.Command("git", "-C", repo, "ls-files", "--others", "--exclude-standard", "-z", "--")
+	untrackedValue, err := untrackedCommand.Output()
+	if err != nil {
+		return PlanningBaseline{}, fmt.Errorf("inspect untracked planning baseline: %w", err)
+	}
+	untracked := []string{}
+	for _, raw := range bytes.Split(untrackedValue, []byte{0}) {
+		path := filepath.ToSlash(string(raw))
+		if path != "" && !ignored(path) {
+			paths = append(paths, path)
+			untracked = append(untracked, path)
+		}
+	}
+	sort.Strings(paths)
+	if len(paths) == 0 {
+		return PlanningBaseline{ChangedPaths: []string{}}, nil
+	}
+	args := []string{"-C", repo, "diff", "--binary", "--no-ext-diff", baselineRef, "--", ".", ":(exclude).product-loop/**"}
+	for path := range excluded {
+		args = append(args, ":(exclude)"+path)
+	}
+	diffValue, err := exec.Command("git", args...).Output()
+	if err != nil {
+		return PlanningBaseline{}, fmt.Errorf("render tracked planning baseline: %w", err)
+	}
+	var canonical bytes.Buffer
+	canonical.Write(diffValue)
+	sort.Strings(untracked)
+	for _, path := range untracked {
+		absolute := filepath.Join(repo, filepath.FromSlash(path))
+		info, statErr := os.Lstat(absolute)
+		if statErr != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return PlanningBaseline{}, fmt.Errorf("untracked planning baseline path is not a regular non-symlink file: %s", path)
+		}
+		value, readErr := os.ReadFile(absolute)
+		if readErr != nil {
+			return PlanningBaseline{}, fmt.Errorf("read untracked planning baseline path %s: %w", path, readErr)
+		}
+		fmt.Fprintf(&canonical, "\nuntracked %s %s\n", path, SHA256Bytes(value))
+	}
+	return PlanningBaseline{DiffSHA256: SHA256Bytes(canonical.Bytes()), ChangedPaths: paths}, nil
+}
+
+func PlanningBaselineForPlan(planPath string) (PlanningBaseline, error) {
+	check, err := CheckPlan(planPath)
+	if err != nil {
+		return PlanningBaseline{}, err
+	}
+	repo, err := ResolveRepository(filepath.Dir(planPath))
+	if err != nil {
+		return PlanningBaseline{}, err
+	}
+	return productBaseline(repo, planPath, check.SourcePlanPath, check.SpecPath, filepath.Join(filepath.Dir(planPath), "approval.md"))
 }
 
 func rejectSymlinkComponents(root, target string) error {
@@ -133,6 +253,10 @@ func RecordApproval(options ApprovalRecordOptions) error {
 	if options.Fingerprint != check.Fingerprint {
 		return fmt.Errorf("approval fingerprint does not match the current plan")
 	}
+	repo, err := ResolveRepository(filepath.Dir(options.PlanPath))
+	if err != nil {
+		return err
+	}
 	expectedOutput := filepath.Join(filepath.Dir(options.PlanPath), "approval.md")
 	output := options.OutputPath
 	if output == "" {
@@ -156,12 +280,24 @@ func RecordApproval(options ApprovalRecordOptions) error {
 	if err := rejectSymlinkComponents(planDirectory, outputAbsolute); err != nil {
 		return err
 	}
+	baseline, err := productBaseline(repo, options.PlanPath, check.SourcePlanPath, check.SpecPath, outputAbsolute)
+	if err != nil {
+		return err
+	}
+	if baseline.DiffSHA256 != strings.TrimSpace(options.BaselineDiffSHA256) {
+		if baseline.DiffSHA256 != "" && strings.TrimSpace(options.BaselineDiffSHA256) == "" {
+			return fmt.Errorf("approval requires the displayed baseline-diff fingerprint because product edits existed when planning began")
+		}
+		return fmt.Errorf("baseline product diff drifted after it was displayed")
+	}
 	payload, err := MarshalJSON(map[string]any{
-		"schema_version":       1,
-		"status":               "APPROVED",
-		"approved_by":          strings.TrimSpace(options.ApprovedBy),
-		"approved_at":          approvedAt.Format(time.RFC3339),
-		"approval_fingerprint": check.Fingerprint,
+		"schema_version":         2,
+		"status":                 "APPROVED",
+		"approved_by":            strings.TrimSpace(options.ApprovedBy),
+		"approved_at":            approvedAt.Format(time.RFC3339),
+		"approval_fingerprint":   check.Fingerprint,
+		"baseline_diff_sha256":   baseline.DiffSHA256,
+		"baseline_changed_paths": baseline.ChangedPaths,
 	})
 	if err != nil {
 		return err

@@ -23,6 +23,8 @@ type SafetyFinding struct {
 	BranchRelation  string `json:"branch_relation,omitempty"`
 	NextOperation   string `json:"next_operation,omitempty"`
 	ParentDelivery  string `json:"parent_delivery,omitempty"`
+	WorkflowStage   string `json:"workflow_stage,omitempty"`
+	AttemptedPath   string `json:"attempted_path,omitempty"`
 }
 
 type SafetyReport struct {
@@ -70,6 +72,144 @@ var mutationStatementPattern = regexp.MustCompile(`(?is)\b(?:delete\s+from\s+(?:
 var directPublicationPattern = regexp.MustCompile(`(?i)(?:\bgit\b[^\n;&|]*\bpush\b|\bgh\s+pr\s+(?:create|edit|ready|merge)\b|\bgh\s+api\b[^\n;&|]*(?:/pulls\b|/pull-requests\b)|\bhub\s+pull-request\b|\bcurl\b[^\n;&|]*(?:api\.github\.com|/pulls\b)[^\n;&|]*(?:\s-X\s*(?:POST|PATCH)|--request\s+(?:POST|PATCH)))`)
 var approvedPublisherPattern = regexp.MustCompile(`(?i)^\s*(?:[^\s]*/)?boatstack-helper\s+publish-pr\b[^\n;&|]*$`)
 var deliveryStatePathPattern = regexp.MustCompile(`(?i)(?:boatstack[/\\]deliveries|\.git[/\\](?:worktrees[/\\][^/\\]+[/\\])?boatstack(?:[/\\]|$))`)
+var mutationToolPattern = regexp.MustCompile(`(?i)(?:write|edit|apply[_-]?patch|create|delete|remove|move|rename|update|insert|upload|install)`)
+var planningMutationToolPattern = regexp.MustCompile(`(?i)(?:write|edit|apply[_-]?patch|create)`)
+var externalReadOnlyToolPattern = regexp.MustCompile(`(?i)(?:^|[_-])(?:get|list|read|search|find|status|inspect|query|fetch|open)(?:[_-]|$)`)
+
+func controlledPhaseTransition(command, stage string) bool {
+	if strings.ContainsAny(command, "\n`><;&|") || strings.Contains(command, "$(") {
+		return false
+	}
+	fields := strings.Fields(strings.TrimSpace(command))
+	if len(fields) < 2 {
+		return false
+	}
+	executable := strings.TrimSuffix(strings.ToLower(filepath.Base(fields[0])), ".exe")
+	if executable != "boatstack-helper" {
+		return false
+	}
+	readOnlyHelpers := map[string]bool{
+		"check-plan": true, "check-source-plan": true, "next-status": true, "delivery-status": true,
+		"recovery-status": true, "check-safety": true, "workspace-status": true, "diagnose-hook": true,
+		"doctor": true, "version": true,
+	}
+	if readOnlyHelpers[fields[1]] {
+		return true
+	}
+	switch stage {
+	case "DRAFT_PLAN":
+		return fields[1] == "planning-write" || fields[1] == "record-approval"
+	case "INVALID_STATE":
+		return fields[1] == "planning-write" || fields[1] == "record-approval"
+	case "APPROVED", "POLICY_READY":
+		return fields[1] == "activate-plan" || fields[1] == "workspace-cut"
+	default:
+		return false
+	}
+}
+
+func attemptedRepositoryPath(repo string, input any) string {
+	keys := map[string]bool{"path": true, "file_path": true, "filepath": true, "target_path": true, "destination": true}
+	var visit func(any) string
+	visit = func(value any) string {
+		switch typed := value.(type) {
+		case map[string]any:
+			for key, child := range typed {
+				if keys[strings.ToLower(key)] {
+					if candidate, ok := child.(string); ok && strings.TrimSpace(candidate) != "" {
+						path := candidate
+						if !filepath.IsAbs(path) {
+							path = filepath.Join(repo, filepath.FromSlash(path))
+						}
+						absolute, err := filepath.Abs(path)
+						if err != nil {
+							return "<invalid-path>"
+						}
+						relative, err := filepath.Rel(repo, absolute)
+						if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+							return "<outside-repository>"
+						}
+						if err := rejectSymlinkComponents(repo, absolute); err != nil {
+							return "<invalid-path>"
+						}
+						return filepath.ToSlash(relative)
+					}
+				}
+			}
+			for _, child := range typed {
+				if found := visit(child); found != "" {
+					return found
+				}
+			}
+		case []any:
+			for _, child := range typed {
+				if found := visit(child); found != "" {
+					return found
+				}
+			}
+		}
+		return ""
+	}
+	return visit(input)
+}
+
+func planningMarkdownPath(path string) bool {
+	if strings.HasPrefix(path, ".product-loop/intake/") && strings.HasSuffix(strings.ToLower(path), ".md") {
+		return true
+	}
+	if !strings.HasPrefix(path, ".product-loop/features/") {
+		return false
+	}
+	parts := strings.Split(filepath.ToSlash(path), "/")
+	return len(parts) == 4 && featureSlugPattern.MatchString(parts[2]) && planningArtifacts[parts[3]]
+}
+
+func preActivationFinding(repo, attemptedPath string) (SafetyFinding, bool) {
+	active, err := ActiveManagedDeliveries(repo)
+	if err != nil {
+		return SafetyFinding{Category: "workflow-state-invalid", Reason: "managed delivery state cannot be verified", Source: "delivery-state", NextOperation: "repair-state"}, true
+	}
+	if len(active) > 0 {
+		return SafetyFinding{}, false
+	}
+	candidates, err := featurePlanCandidates(repo)
+	if err != nil {
+		return SafetyFinding{Category: "workflow-state-invalid", Reason: "saved feature plans cannot be verified", Source: "planning-state", NextOperation: "repair-state"}, true
+	}
+	if len(candidates) == 0 {
+		return SafetyFinding{}, false
+	}
+	status, err := ResolveNext(repo, "")
+	if err != nil {
+		return SafetyFinding{Category: "workflow-state-invalid", Reason: "workflow state cannot be resolved", Source: "planning-state", NextOperation: "repair-state"}, true
+	}
+	if status.ObservedStage != "DRAFT_PLAN" && status.ObservedStage != "APPROVED" && status.ObservedStage != "POLICY_READY" && status.ObservedStage != "AMBIGUOUS" && status.ObservedStage != "INVALID_STATE" {
+		return SafetyFinding{}, false
+	}
+	if len(candidates) == 1 && status.ObservedStage != "AMBIGUOUS" {
+		planPath := filepath.Join(repo, ".product-loop", "features", candidates[0], "plan.md")
+		check, checkErr := CheckPlan(planPath)
+		if checkErr != nil {
+			return SafetyFinding{
+				Category: "workflow-phase-bypass", Reason: "saved plan state is invalid", Source: "planning-state",
+				BlockingFeature: candidates[0], WorkflowStage: "INVALID_STATE", AttemptedPath: attemptedPath, NextOperation: "repair-state",
+			}, true
+		}
+		if status.ObservedStage == "APPROVED" {
+			approvalPath := filepath.Join(filepath.Dir(planPath), "approval.md")
+			if _, approvalErr := CheckApprovalReceipt(approvalPath, check); approvalErr != nil {
+				return SafetyFinding{
+					Category: "workflow-phase-bypass", Reason: "approval or product baseline is stale", Source: "planning-state",
+					BlockingFeature: candidates[0], WorkflowStage: "INVALID_STATE", AttemptedPath: attemptedPath, NextOperation: "plan-gate",
+				}, true
+			}
+		}
+	}
+	return SafetyFinding{
+		Category: "workflow-phase-bypass", Reason: "product mutation is denied until the saved plan reaches its controlled activation boundary", Source: "planning-state",
+		BlockingFeature: status.Feature, WorkflowStage: status.ObservedStage, AttemptedPath: attemptedPath, NextOperation: status.NextOperation,
+	}, true
+}
 
 func publicationBypassFinding(repo, reason, source string) (SafetyFinding, bool) {
 	active, err := ActiveManagedDeliveries(repo)
@@ -248,6 +388,14 @@ func ClassifyCommand(repo, command string) []SafetyFinding {
 		}
 	}
 	findings := classifySafetyText(command, "command")
+	if len(findings) > 0 {
+		return dedupeFindings(findings)
+	}
+	if !isPureReadOnlyCommand(command) {
+		if finding, blocked := preActivationFinding(repo, ""); blocked && !controlledPhaseTransition(command, finding.WorkflowStage) {
+			return []SafetyFinding{finding}
+		}
+	}
 	if regexp.MustCompile(`(?i)\b(?:rm\s+-[^\n;]*(?:r[^\n;]*f|f[^\n;]*r)|remove-item\s+[^\n;]*-recurse[^\n;]*-force)\b`).MatchString(command) && strings.Contains(command, repo) {
 		findings = append(findings, SafetyFinding{Category: "filesystem-destruction", Reason: "recursive deletion of the repository is denied", Source: "command"})
 	}
@@ -282,7 +430,7 @@ func ClassifyCommand(repo, command string) []SafetyFinding {
 }
 
 func ClassifyTool(repo, name string, input any) []SafetyFinding {
-	if strings.EqualFold(name, "Bash") || strings.EqualFold(name, "Shell") || strings.EqualFold(name, "beforeShellExecution") {
+	if strings.EqualFold(name, "Bash") || strings.EqualFold(name, "Shell") || strings.EqualFold(name, "beforeShellExecution") || strings.EqualFold(name, "run_shell_command") {
 		if object, ok := input.(map[string]any); ok {
 			return ClassifyCommand(repo, stringValue(object["command"]))
 		}
@@ -294,6 +442,15 @@ func ClassifyTool(repo, name string, input any) []SafetyFinding {
 	combined := name + " " + string(value)
 	findings := classifySafetyText(combined, "tool-input")
 	nameLower := strings.ToLower(name)
+	attemptedPath := attemptedRepositoryPath(repo, input)
+	mutationCapable := mutationToolPattern.MatchString(nameLower) || (strings.HasPrefix(nameLower, "mcp__") && !externalReadOnlyToolPattern.MatchString(nameLower))
+	if mutationCapable {
+		if finding, blocked := preActivationFinding(repo, attemptedPath); blocked {
+			if finding.WorkflowStage != "DRAFT_PLAN" || attemptedPath == "" || !planningMarkdownPath(attemptedPath) || !planningMutationToolPattern.MatchString(nameLower) {
+				findings = append(findings, finding)
+			}
+		}
+	}
 	publicationText := strings.ToLower(combined)
 	if deliveryStatePathPattern.MatchString(combined) && regexp.MustCompile(`(?:write|edit|delete|remove|move|rename|create|update)`).MatchString(nameLower) {
 		findings = append(findings, SafetyFinding{Category: "workflow-state-tamper", Reason: "managed delivery state may be changed only by Boatstack transitions", Source: "delivery-state"})
@@ -374,6 +531,17 @@ func decodeCursorHook(value []byte) (string, any, error) {
 	toolInput := event["tool_input"]
 
 	switch eventName {
+	case "preToolUse":
+		if _, present := event["tool_name"]; !present {
+			return "", nil, malformedHookInput("missing-tool-name")
+		}
+		if strings.TrimSpace(toolName) == "" {
+			return "", nil, malformedHookInput("empty-tool-name")
+		}
+		if toolInput == nil {
+			return "", nil, malformedHookInput("missing-tool-input")
+		}
+		return toolName, toolInput, nil
 	case "beforeShellExecution":
 		if _, present := event["command"]; !present {
 			return "", nil, malformedHookInput("missing-command")
@@ -440,6 +608,25 @@ func decodePreToolUseHook(host string, value []byte) (string, any, error) {
 	return name, input, nil
 }
 
+func decodeGeminiHook(value []byte) (string, any, error) {
+	event, err := decodeJSONObject("gemini", value)
+	if err != nil {
+		return "", nil, err
+	}
+	if eventName := stringValue(event["hook_event_name"]); eventName != "" && eventName != "BeforeTool" {
+		return "", nil, malformedHookInput("unsupported-event")
+	}
+	name := stringValue(event["tool_name"])
+	if strings.TrimSpace(name) == "" {
+		return "", nil, malformedHookInput("missing-tool-name")
+	}
+	input, present := event["tool_input"]
+	if !present || input == nil {
+		return "", nil, malformedHookInput("missing-tool-input")
+	}
+	return name, input, nil
+}
+
 func structuredHookDeny(host string, finding SafetyFinding) ([]byte, error) {
 	message := denialMessage(host, finding)
 	value, err := json.Marshal(map[string]any{
@@ -475,6 +662,17 @@ var hookHostContracts = map[string]hookHostContract{
 		allow:  func() ([]byte, error) { return nil, nil },
 		deny:   func(finding SafetyFinding) ([]byte, error) { return structuredHookDeny("codex", finding) },
 	},
+	"gemini": {
+		decode: decodeGeminiHook,
+		allow: func() ([]byte, error) {
+			value, err := json.Marshal(map[string]any{"decision": "allow"})
+			return append(value, '\n'), err
+		},
+		deny: func(finding SafetyFinding) ([]byte, error) {
+			value, err := json.Marshal(map[string]any{"decision": "deny", "reason": denialMessage("gemini", finding)})
+			return append(value, '\n'), err
+		},
+	},
 }
 
 func denialMessage(host string, finding SafetyFinding) string {
@@ -496,6 +694,21 @@ func denialMessage(host string, finding SafetyFinding) string {
 	}
 	if finding.Category == "workflow-state-tamper" {
 		return "Boatstack denied direct delivery-state mutation. Use the active build, test, review, or ship transition instead of editing runtime authority."
+	}
+	if finding.Category == "workflow-phase-bypass" {
+		target := "the saved Boatstack plan"
+		if finding.BlockingFeature != "" {
+			target = fmt.Sprintf("Boatstack feature %q", finding.BlockingFeature)
+		}
+		path := ""
+		if finding.AttemptedPath != "" {
+			path = " Attempted path: " + finding.AttemptedPath + "."
+		}
+		next := finding.NextOperation
+		if next == "" {
+			next = "repair-state"
+		}
+		return fmt.Sprintf("Boatstack denied product mutation because %s is at %s.%s Continue with %s; unrelated task completions do not authorize implementation.", target, finding.WorkflowStage, path, next)
 	}
 	if finding.Category == "workflow-publication-bypass" {
 		target := "the active managed delivery"

@@ -27,8 +27,10 @@ func canonicalHookEvent(host string) ([]byte, error) {
 		return []byte(`{"hook_event_name":"beforeShellExecution","command":"git status --short"}`), nil
 	case "claude", "codex":
 		return []byte(`{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git status --short"}}`), nil
+	case "gemini":
+		return []byte(`{"hook_event_name":"BeforeTool","tool_name":"run_shell_command","tool_input":{"command":"git status --short"}}`), nil
 	default:
-		return nil, fmt.Errorf("unsupported hook host %q; expected cursor, claude, or codex", host)
+		return nil, fmt.Errorf("unsupported hook host %q; expected cursor, claude, codex, or gemini", host)
 	}
 }
 
@@ -37,6 +39,13 @@ func validateCanonicalHookOutput(host string, output []byte) error {
 		var decision map[string]any
 		if err := json.Unmarshal(bytes.TrimSpace(output), &decision); err != nil || stringValue(decision["permission"]) != "allow" {
 			return fmt.Errorf("cursor hook diagnostic returned a malformed or non-allow response")
+		}
+		return nil
+	}
+	if host == "gemini" {
+		var decision map[string]any
+		if err := json.Unmarshal(bytes.TrimSpace(output), &decision); err != nil || stringValue(decision["decision"]) != "allow" {
+			return fmt.Errorf("gemini hook diagnostic returned a malformed or non-allow response")
 		}
 		return nil
 	}
@@ -218,13 +227,17 @@ func hookCommandWindows(host string) string {
 func desiredHostHookForEvent(host, event string) map[string]any {
 	switch host {
 	case "cursor":
-		return map[string]any{
+		entry := map[string]any{
 			"command": hookCommand(host), "commandWindows": hookCommandWindows(host),
 			"failClosed": true, "timeout": 10,
 		}
+		if event == "preToolUse" {
+			entry["matcher"] = "Write|Edit|ApplyPatch|Create|Delete|Move|Rename"
+		}
+		return entry
 	case "claude":
 		return map[string]any{
-			"matcher": "Bash|Shell|mcp__.*",
+			"matcher": "Bash|Shell|Write|Edit|ApplyPatch|Create|Delete|Move|Rename|mcp__.*",
 			"hooks": []any{map[string]any{
 				"type": "command", "command": hookCommand(host),
 				"shell": "bash", "timeout": 10, "statusMessage": "Checking Boatstack execution policy",
@@ -232,10 +245,18 @@ func desiredHostHookForEvent(host, event string) map[string]any {
 		}
 	case "codex":
 		return map[string]any{
-			"matcher": "Bash|Shell|mcp__.*",
+			"matcher": "Bash|Shell|Write|Edit|ApplyPatch|Create|Delete|Move|Rename|mcp__.*",
 			"hooks": []any{map[string]any{
 				"type": "command", "command": hookCommand(host), "commandWindows": hookCommandWindows(host),
 				"timeout": 10, "statusMessage": "Checking Boatstack execution policy",
+			}},
+		}
+	case "gemini":
+		return map[string]any{
+			"matcher": ".*", "sequential": true,
+			"hooks": []any{map[string]any{
+				"name": "boatstack-safety-guard", "type": "command", "command": hookCommand(host),
+				"timeout": 10000, "description": "Checking Boatstack execution policy",
 			}},
 		}
 	default:
@@ -245,7 +266,10 @@ func desiredHostHookForEvent(host, event string) map[string]any {
 
 func hookEvents(host string) []string {
 	if host == "cursor" {
-		return []string{"beforeShellExecution", "beforeMCPExecution"}
+		return []string{"preToolUse", "beforeShellExecution", "beforeMCPExecution"}
+	}
+	if host == "gemini" {
+		return []string{"BeforeTool"}
 	}
 	return []string{"PreToolUse"}
 }
@@ -270,6 +294,8 @@ func hostHookConfigPath(repo, host string) string {
 		return filepath.Join(repo, ".claude", "settings.json")
 	case "codex":
 		return filepath.Join(repo, ".codex", "hooks.json")
+	case "gemini":
+		return filepath.Join(repo, ".gemini", "settings.json")
 	default:
 		return ""
 	}
@@ -277,7 +303,7 @@ func hostHookConfigPath(repo, host string) string {
 
 func HostHookPaths(adapters []string) []string {
 	paths := []string{}
-	for _, host := range []string{"cursor", "claude", "codex"} {
+	for _, host := range []string{"cursor", "claude", "codex", "gemini"} {
 		if contains(adapters, host) {
 			paths = append(paths, filepath.ToSlash(strings.TrimPrefix(hostHookConfigPath("", host), string(filepath.Separator))))
 		}
@@ -312,7 +338,7 @@ func validateBoatstackHookEntry(host, event string, value any) error {
 	}
 	allowedOuter := map[string]bool{}
 	if host == "cursor" {
-		allowedOuter = map[string]bool{"command": true, "commandWindows": true, "failClosed": true, "timeout": true}
+		allowedOuter = map[string]bool{"command": true, "commandWindows": true, "failClosed": true, "timeout": true, "matcher": true}
 		if stringValue(entry["command"]) == "" {
 			return fmt.Errorf("cursor Boatstack hook for %s has no command", event)
 		}
@@ -321,6 +347,9 @@ func validateBoatstackHookEntry(host, event string, value any) error {
 		}
 	} else {
 		allowedOuter = map[string]bool{"matcher": true, "hooks": true}
+		if host == "gemini" {
+			allowedOuter["sequential"] = true
+		}
 		if stringValue(entry["matcher"]) == "" {
 			return fmt.Errorf("%s Boatstack hook for %s has no matcher", host, event)
 		}
@@ -341,8 +370,11 @@ func validateBoatstackHookEntry(host, event string, value any) error {
 			if handler["shell"] != nil && handler["shell"] != "bash" {
 				return fmt.Errorf("claude Boatstack hook for %s must use the bash harness", event)
 			}
-		} else {
+		} else if host == "codex" {
 			allowedHandler["commandWindows"] = true
+		} else if host == "gemini" {
+			allowedHandler["name"] = true
+			allowedHandler["description"] = true
 		}
 		for key := range handler {
 			if !allowedHandler[key] {
@@ -451,7 +483,7 @@ func InstallHostHooks(repo string, adapters []string) error {
 // writing, allowing initialization to fail before entering its commit phase.
 func PrepareHostHooks(repo string, adapters []string) (map[string][]byte, error) {
 	prepared := map[string][]byte{}
-	for _, host := range []string{"cursor", "claude", "codex"} {
+	for _, host := range []string{"cursor", "claude", "codex", "gemini"} {
 		if !contains(adapters, host) {
 			continue
 		}
@@ -512,7 +544,7 @@ func CheckInstalledHostHooks(repo string, adapters []string) error {
 }
 
 func checkHostHooks(repo string, adapters []string, expectedForEvent func(host, event string) (any, error)) error {
-	for _, host := range []string{"cursor", "claude", "codex"} {
+	for _, host := range []string{"cursor", "claude", "codex", "gemini"} {
 		if !contains(adapters, host) {
 			continue
 		}

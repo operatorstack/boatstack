@@ -247,11 +247,11 @@ When `workflow.pr_visual_evidence` is `suggest` or `require`, every managed plan
 
 ### `PLAN -> PLAN_GATE`
 
-Run `boatstack-helper check-plan --plan <feature>/plan.md` and present the full draft and returned fingerprint. When `workflow.human_plan_approval` is `true`, require an exact standalone `a`, the compatible full reply `approve`, or a change request, and end the pending response with: Reply `a` to approve. When it is `false`, report that Build will create a policy-activation lock and do not create or imply human approval. The check is read-only.
+Run `boatstack-helper check-plan --plan <feature>/plan.md` and present the full draft, plan fingerprint, and product baseline returned by the check. A non-empty baseline includes its exact diff, changed paths, and SHA-256 so edits that existed when managed planning began remain visible and preserved. When `workflow.human_plan_approval` is `true`, require an exact standalone `a`, the compatible full reply `approve`, or a change request, and end the pending response with: Reply `a` to approve. When it is `false`, report that Build will create a policy-activation lock and do not create or imply human approval. The check is read-only.
 
 ### `PLAN_GATE -> PLAN_APPROVED`
 
-When human approval is enabled, invoke `record-approval` with the named human, RFC3339 timestamp, and exact fingerprint; it creates only `approval.md`. When disabled, skip that operation and preserve the checked plan for policy activation. Remain in the host's Plan mode; do not compile machine artifacts or edit product code.
+When human approval is enabled, invoke `record-approval` with the named human, RFC3339 timestamp, exact plan fingerprint, and displayed baseline-diff fingerprint (omitted only for a clean baseline); it recomputes both and creates only `approval.md`. When disabled, skip that operation and preserve the checked plan and baseline for policy activation. Remain in the host's Plan mode; do not compile machine artifacts or edit product code.
 
 Ask 1-3 finite questions using the global keyed-choice format whether the host renders them through a structured question tool or plain text, then return `WAITING_FOR_INPUT`. Never convert an unavailable question UI into permission to choose a default. A standalone `r` is an explicit human acceptance of all recommendations displayed in that response, not an agent-selected default. Authoritative repository facts are `DISCOVERED`; agent suggestions and repository-derived product choices are `PROPOSED`; only explicit human responses are `ANSWERED`. Every material proposal remains in `blocking_questions` until answered.
 
@@ -260,9 +260,9 @@ Ask 1-3 finite questions using the global keyed-choice format whether the host r
 At the host's normal Build transition, first confirm the host is in an execution-capable mode. If the transition is rejected or product-code writes remain unavailable, return `READY_FOR_BUILD` without compiling or writing a lock. Once execution is available and before the first product-code edit, `activate-plan` deterministically:
 
 1. parse and validate the marked structured block in `plan.md`;
-2. hash the complete source plan, spec, and `plan.md`, matching them to `approval.md` when human approval is enabled;
+2. hash the complete source plan, spec, `plan.md`, and pre-activation product baseline, matching them to `approval.md` when human approval is enabled;
 3. compile the task graph, requirement-test traceability rows, and evidence skeleton without adding semantics;
-4. record authorization mode, timestamp, source commit, and all artifact hashes in plan-lock schema v2, plus approver provenance only for human authorization;
+4. record authorization mode, timestamp, source commit, artifact hashes, and baseline diff/path provenance in plan-lock schema v2, plus approver provenance only for human authorization;
 5. write the lock last and recheck it before permitting implementation.
 
 Activation also initializes ignored, worktree-local Git delivery state bound to the lock.
@@ -270,7 +270,9 @@ One implicit `delivery` slice preserves the ordinary one-feature/one-PR flow. An
 explicit multi-slice plan starts only its first slice in `BUILD`; later slices remain
 `PENDING`.
 
-Missing required human approval, unresolved `blocking_questions`, or any change to the source plan, spec, or complete `plan.md` blocks activation and returns the feature to `PLAN_GATE`. A failed or partial compilation never creates a valid lock. Existing schema-v1 human locks remain valid; policy activation always writes schema v2.
+Missing required human approval, unresolved `blocking_questions`, or any change to the source plan, spec, complete `plan.md`, or displayed product baseline blocks activation and returns the feature to `PLAN_GATE`. Existing schema-v1 approval receipts remain valid only with a clean product baseline. A failed or partial compilation never creates a valid lock. Existing schema-v1 human locks remain valid; policy activation always writes schema v2.
+
+After `auto-plan` successfully saves a feature plan, managed authority is latched before activation. Reads and bounded Markdown planning transitions remain available, but native edits, mutation-capable MCP tools, and shell commands not proven read-only are denied until activation creates a current lock. Approval itself does not authorize product edits. Ambiguous, stale, malformed, or unverifiable phase state fails closed with one recovery operation; repositories with no saved managed plan retain ordinary unmanaged behavior.
 
 ### `PLAN_LOCKED -> BUILD`
 
