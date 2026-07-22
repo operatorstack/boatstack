@@ -19,6 +19,9 @@ INTENT
   -> REVIEW_GATE
   -> SHIP_GATE
   -> PR_OPEN
+  -> PUBLISHED (open, closed, or remotely unverified PR)
+  -> CORRECTIVE_CHILD (when CI, review, or ordinary conversation reports a correction)
+  -> FEATURE_COMPLETE (only after verified merge)
   -> WORKSPACE_CLEANUP (when workspace management is on and the feature's PR has merged)
   -> RETRO
 ```
@@ -27,7 +30,9 @@ Each transition emits an artifact and evidence. A host adapter may change how a 
 
 After build activation, persistent host adapters route ordinary change language through `REPAIR` before product edits. Same-intent implementation, verification, and review repairs resume at the earliest affected stage and supersede only downstream receipts. Changed or ambiguous intent enters `AMENDMENT_REQUIRED` and cannot pass a gate until a newly approved plan revision is activated. Existing `/test-gate` and `/review-gate` operations remain rerunnable; there are no repair-specific gates.
 
-A published delivery cannot be reset. Its correction uses a new feature id and declares `parent_delivery` as the published feature, producing a separate plan lock, delivery state, receipts, and PR while preserving the original evidence.
+A published delivery cannot be reset. Its correction uses a deterministic new feature id and declares `parent_delivery` as the published feature, producing a separate plan lock, delivery state, and receipts while preserving the original evidence. If the recorded PR is verified open and still owns the recorded head branch, the child updates that PR. Merged or closed work uses a fresh branch and PR; unknown PR state may be planned but cannot select a publication destination.
+
+`recovery-status` is the read-only resolver for CI failures, review findings, denied publication, and ordinary corrections. It selects by explicit feature, current active branch, current published branch, recorded PR identity, or one unambiguous candidate. It never chooses by recency. A stale reported head SHA, branch mismatch, or multiple match returns a blocker instead of drafting against the wrong delivery.
 
 The `SOURCE_PLAN` file is required from entry through completion of `BUILD`. After build, its path and hash remain recorded for provenance, but `TEST_GATE`, `REVIEW_GATE`, and `SHIP_GATE` do not require the original file to be present.
 

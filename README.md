@@ -97,16 +97,14 @@ In Claude Code, Cursor, and Gemini CLI, that guidance moves through `/plan-gate`
 
 ## Change course without losing the delivery
 
-After Build, describe changes normally. Boatstack records them, preserves valid work, and resumes at the earliest boundary.
-
-Invoke `/repair` in Claude Code, Cursor, or Gemini CLI, or `$boatstack repair` in Codex. It needs an active delivery and the exact change; earlier work routes to planning or Build.
+After Build, describe changes normally. Boatstack records them, preserves valid work, and resumes at the earliest boundary. You do not need to remember a repair command: ordinary CI failures, review findings, and denied publication attempts route automatically for active deliveries and published PRs.
 
 ```text
 “This is wrong” → record → repair → test → review
                          ↘ changed intent → approve delta
 ```
 
-Receipts remain as history; published corrections become linked deliveries.
+Receipts remain as history; published corrections become independently approved linked deliveries. An open PR is updated after fresh gates, while merged or closed work receives a new PR.
 
 ## What you get
 

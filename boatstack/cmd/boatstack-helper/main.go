@@ -403,6 +403,38 @@ func nextStatusCommand(arguments []string) int {
 	return 0
 }
 
+func recoveryStatusCommand(arguments []string) int {
+	flags := flag.NewFlagSet("recovery-status", flag.ContinueOnError)
+	options := boatstack.RecoveryStatusOptions{}
+	flags.StringVar(&options.Repo, "repo", ".", "repository whose managed delivery should be resolved")
+	flags.StringVar(&options.Feature, "feature", "", "optional specific active or published feature")
+	flags.StringVar(&options.Message, "message", "", "exact reported correction")
+	flags.StringVar(&options.SourceStage, "source-stage", "", "ci, review, publication, or user")
+	flags.StringVar(&options.Evidence, "evidence", "", "bounded failure or review reference")
+	flags.StringVar(&options.ObservedHeadSHA, "observed-head-sha", "", "optional PR head tied to the reported evidence")
+	jsonOutput := flags.Bool("json", false, "print the versioned structured recovery decision")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	status, err := boatstack.ResolveRecovery(options)
+	if err != nil {
+		return fail(err)
+	}
+	if *jsonOutput {
+		value, marshalErr := boatstack.MarshalJSON(status)
+		if marshalErr != nil {
+			return fail(marshalErr)
+		}
+		fmt.Print(string(value))
+	} else {
+		fmt.Printf("Recovery: %s\nFeature: %s\nLifecycle: %s\nNext operation: %s\nReason: %s\n", status.VerificationStatus, status.Feature, status.Lifecycle, status.NextOperation, status.Reason)
+	}
+	if status.VerificationStatus == "BLOCKED" {
+		return 1
+	}
+	return 0
+}
+
 func runPreflightCommand(arguments []string) int {
 	flags := flag.NewFlagSet("run-preflight", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository whose Git state should be verified before boatstack run")
@@ -448,7 +480,10 @@ func recordChangeCommand(arguments []string) int {
 	if err != nil {
 		return fail(err)
 	}
-	fmt.Printf("PASS: change observation recorded\nOBSERVATION_ID=%s\nCLASSIFICATION=%s\nMODE=%s\nRESUME_STAGE=%s\n", observation.ID, observation.Classification, state.Mode, state.ResumeStage)
+	fmt.Printf("PASS: change observation recorded\nOBSERVATION_ID=%s\nCLASSIFICATION=%s\nOUTCOME=%s\nMODE=%s\nRESUME_STAGE=%s\n", observation.ID, observation.Classification, observation.Outcome, state.Mode, state.ResumeStage)
+	if observation.Outcome == "CORRECTIVE_CHILD_REQUIRED" {
+		fmt.Printf("PARENT_DELIVERY=%s\nSUGGESTED_FEATURE_ID=%s\n", observation.ParentDelivery, observation.SuggestedFeatureID)
+	}
 	return 0
 }
 
@@ -783,7 +818,7 @@ func workspaceStatusCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|run-preflight|record-change|record-delivery-gate|record-pr-visual-evidence|record-pr-visual-publication|check-safety|migrate-config|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|run-preflight|record-change|record-delivery-gate|record-pr-visual-evidence|record-pr-visual-publication|check-safety|migrate-config|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -813,6 +848,8 @@ func run() int {
 		return deliveryStatusCommand(os.Args[2:])
 	case "next-status":
 		return nextStatusCommand(os.Args[2:])
+	case "recovery-status":
+		return recoveryStatusCommand(os.Args[2:])
 	case "run-preflight":
 		return runPreflightCommand(os.Args[2:])
 	case "record-change":

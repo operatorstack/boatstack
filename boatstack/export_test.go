@@ -330,7 +330,7 @@ func TestExportAndDriftCheck(t *testing.T) {
 		}
 	}
 	repair := string(bundle.Files[".cursor/commands/repair.md"])
-	for _, expected := range []string{"next-status", "No active delivery to repair", "NOT_STARTED", "DRAFT_PLAN", "APPROVED", "record-change", "implementation_repair", "verification_repair", "requirement_amendment", "needs_clarification", "/test-gate", "/review-gate", "MainThreadShellExec not initialized", "Developer: Reload Window"} {
+	for _, expected := range []string{"recovery-status", "repair_active", "draft_corrective_child", "record-change", "parent_delivery", "The PR needs a corrective delivery", "never reuse the parent's approval", "Never ask the user to repeat a denied push", "MainThreadShellExec not initialized", "Developer: Reload Window"} {
 		if !strings.Contains(repair, expected) {
 			t.Fatalf("repair adapter is missing %q", expected)
 		}
@@ -343,7 +343,7 @@ func TestExportAndDriftCheck(t *testing.T) {
 	}
 	for _, path := range []string{".claude/skills/boatstack/SKILL.md", ".gemini/skills/boatstack/SKILL.md", ".agents/skills/boatstack/SKILL.md"} {
 		router := string(bundle.Files[path])
-		if !strings.Contains(router, "automatically use repair") || !strings.Contains(router, "active managed delivery") {
+		if !strings.Contains(router, "automatically use repair") || !strings.Contains(router, "current-branch published managed delivery") || !strings.Contains(router, "Never instruct the user to manually repeat") {
 			t.Fatalf("%s does not auto-route free-form delivery changes", path)
 		}
 	}

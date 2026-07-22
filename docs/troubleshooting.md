@@ -39,9 +39,13 @@ Boatstack received a hook event without a decodable command or tool call. It fai
 
 Replace `cursor` with `claude` or `codex` for those hosts. A passing probe proves the installed wrapper, shared runtime, decoder, and canonical allow response; it cannot reveal the live payload emitted by the coding host. For Cursor, start a new task after a passing probe. Do not reinstall or hydrate Boatstack unless it separately reports a missing, drifted, unsafe, or checksum-invalid runtime.
 
-## `/repair` says there is no active delivery
+## A published PR fails CI or receives review feedback
 
-Repair compares an exact requested change with an activated, approved baseline. If no Boatstack feature has started, save the host Plan-mode file and run `/auto-plan`. If a draft or approved feature already exists, run the one planning or build operation reported by `/boatstack-next`; do not create or clear delivery state manually.
+Describe the failure normally. Boatstack resolves the current branch and recorded PR, preserves the published parent, and prepares a corrective delivery for approval. Do not manually repeat a push or PR mutation denied by the safety hook. If several features match, choose from the named candidates; if GitHub is unavailable, the correction may be planned but its PR destination remains unverified until publication.
+
+## Repair reports no matching delivery
+
+Recovery compares an exact requested change with an activated or published baseline. If no feature matches the current branch or recorded PR, save a new host Plan-mode file. If a draft or approved feature already exists, run the one planning or build operation reported by the status check; do not create or clear delivery state manually.
 
 ## Boatstack reports invalid or orphaned delivery state
 

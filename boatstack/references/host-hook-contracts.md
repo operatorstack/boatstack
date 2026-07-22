@@ -26,3 +26,9 @@ ambiguous, or malformed events deny without echoing tool arguments.
 Deterministic schema, payload, decision, exit-code, and hydration fixtures block
 release. Live host checks are opt-in through `BOATSTACK_LIVE_HOST_TESTS=1` and
 report host availability separately from deterministic conformance.
+
+Publication denials carry only secret-free recovery context: blocking feature
+and slice, branch relation, parent delivery, and the read-only next operation.
+Every host receives the same instruction to preserve edits and enter managed
+recovery. A host must never translate denial into a request that the user repeat
+the push or PR mutation manually.
