@@ -46,6 +46,8 @@ When Boatstack improves a branch that did not use the full workflow, it stores t
 
 The preview's frontmatter is publication metadata; the remaining Markdown is the exact GitHub body. The preview is excluded from its own product-diff fingerprint, but any other diff or evidence change makes it stale.
 
+PR schema v3 includes structural visual-evidence policy, status, count, and fingerprint fields. Screenshot binaries are never generated repository files: they live in Git-common Boatstack state until one PR evidence comment is published or manual attachment is required. Each imported PNG carries a `clean` or `human-reviewed` privacy receipt; upload observation is recorded separately so a failed comment can resume against the same PR.
+
 ## Worktrees, fresh clones, and updates
 
 One verified runtime is cached under the clone's Git common directory and keyed by Boatstack version, source commit, operating system, and architecture. Linked worktrees share that cache. Their first guarded command atomically restores the ignored local helper and install lock, then evaluates the original command. Hydration uses no network and produces no tracked diff.

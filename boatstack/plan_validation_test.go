@@ -124,7 +124,7 @@ func TestPLAN_INVALIDExitsRepair(t *testing.T) {
 
 func TestValidateSystemicBoundaries(t *testing.T) {
 	plan := validV2Plan()
-	
+
 	// Valid configuration
 	plan["systemic_boundaries"] = []any{
 		map[string]any{
@@ -172,5 +172,41 @@ func TestValidateSystemicBoundaries(t *testing.T) {
 	}
 	if err := validateSystemicBoundaries(plan); err == nil || !strings.Contains(err.Error(), "requires a minimum of 2 delivery_slices") {
 		t.Fatalf("expected error for insufficient slices, got: %v", err)
+	}
+}
+
+func TestValidatePRVisualEvidence(t *testing.T) {
+	plan := validV2Plan()
+	plan["pr_visual_evidence"] = map[string]any{
+		"relevance": "relevant",
+		"scenarios": []any{map[string]any{
+			"id": "warning", "entry": "/onboarding", "state": "picker open", "viewport": "1440x900",
+			"expected": []any{"warning visible"},
+		}},
+	}
+	if err := validatePRVisualEvidence(plan); err != nil {
+		t.Fatal(err)
+	}
+	plan["pr_visual_evidence"].(map[string]any)["scenarios"] = []any{}
+	if err := validatePRVisualEvidence(plan); err == nil || !strings.Contains(err.Error(), "one to three") {
+		t.Fatalf("empty relevant scenarios were not rejected: %v", err)
+	}
+	plan["pr_visual_evidence"] = map[string]any{"relevance": "not_relevant", "scenarios": []any{}}
+	if err := validatePRVisualEvidence(plan); err == nil || !strings.Contains(err.Error(), "reason") {
+		t.Fatalf("missing not-relevant reason was not rejected: %v", err)
+	}
+}
+
+func TestConfiguredPRVisualEvidenceRequiresPlanDecision(t *testing.T) {
+	repo := prTestRepoConfigured(t, func(config *ProjectConfig) {
+		config.Workflow.PRVisualEvidence = "suggest"
+	})
+	plan := validV2Plan()
+	if err := requireConfiguredPRVisualEvidenceDecision(plan, &ValidatePlanOptions{RepoRoot: repo}); err == nil || !strings.Contains(err.Error(), "structural plan decision") {
+		t.Fatalf("configured policy did not require a decision: %v", err)
+	}
+	plan["pr_visual_evidence"] = map[string]any{"relevance": "not_relevant", "reason": "backend-only", "scenarios": []any{}}
+	if err := requireConfiguredPRVisualEvidenceDecision(plan, &ValidatePlanOptions{RepoRoot: repo}); err != nil {
+		t.Fatal(err)
 	}
 }

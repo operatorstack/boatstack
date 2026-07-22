@@ -47,11 +47,12 @@ type Project struct {
 }
 
 type Workflow struct {
-	HumanPlanApproval            bool `json:"human_plan_approval"`
-	IndependentReviewForHighRisk bool `json:"independent_review_for_high_risk"`
-	AllowPassWithGaps            bool `json:"allow_pass_with_gaps"`
-	MaintainChangelog            bool `json:"maintain_changelog"`
-	BoundaryAnalysis             bool `json:"boundary_analysis,omitempty"`
+	HumanPlanApproval            bool   `json:"human_plan_approval"`
+	IndependentReviewForHighRisk bool   `json:"independent_review_for_high_risk"`
+	AllowPassWithGaps            bool   `json:"allow_pass_with_gaps"`
+	MaintainChangelog            bool   `json:"maintain_changelog"`
+	BoundaryAnalysis             bool   `json:"boundary_analysis,omitempty"`
+	PRVisualEvidence             string `json:"pr_visual_evidence,omitempty"`
 }
 
 type IntegrationState struct {

@@ -117,6 +117,10 @@ Boatstack found an installed generated file that no longer matches its previous 
 
 A new commit, changed evidence, changed approval artifact, or base-branch update invalidated the preview. Ask Boatstack to regenerate it. Do not copy the old body forward.
 
+## Visual evidence is unavailable or stale
+
+Confirm the development launch instruction and retry the bounded health probe. Boatstack reuses a machine capability receipt only while its Boatstack version, lockfile, launch command, browser version, framework configuration, and health state still match. Under `suggest`, keep the missing screenshot visible as a PR gap or attach the displayed local PNG manually. Under `require`, recapture and publish to the same PR; do not open a duplicate PR. If the PR already opened before upload failed, preserve it and fix forward from `visual_pending`.
+
 ## A phased plan cannot push or open its next PR
 
 Plan approval is not publication authority. Run `delivery-status` through the active

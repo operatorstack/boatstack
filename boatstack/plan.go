@@ -406,7 +406,7 @@ func ValidatePlan(plan map[string]any, opts *ValidatePlanOptions) error {
 	if !ok || (version != float64(1) && version != float64(2)) {
 		return fmt.Errorf("schema_version must be 1 or 2")
 	}
-	
+
 	if version == float64(2) {
 		if err := validateArchitectureGrounding(plan, opts); err != nil {
 			return err
@@ -414,6 +414,12 @@ func ValidatePlan(plan map[string]any, opts *ValidatePlanOptions) error {
 	}
 
 	if err := validateSystemicBoundaries(plan); err != nil {
+		return err
+	}
+	if err := validatePRVisualEvidence(plan); err != nil {
+		return err
+	}
+	if err := requireConfiguredPRVisualEvidenceDecision(plan, opts); err != nil {
 		return err
 	}
 

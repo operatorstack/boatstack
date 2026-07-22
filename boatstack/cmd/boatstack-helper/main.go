@@ -309,6 +309,52 @@ func recordDeliveryGateCommand(arguments []string) int {
 	return 0
 }
 
+func recordPRVisualEvidenceCommand(arguments []string) int {
+	flags := flag.NewFlagSet("record-pr-visual-evidence", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository whose Git-common state owns the evidence")
+	manifest := flags.String("manifest", "", "JSON manifest containing local PNG paths")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if *manifest == "" {
+		return fail(fmt.Errorf("record-pr-visual-evidence requires --manifest"))
+	}
+	recorded, err := boatstack.ImportPRVisualEvidence(*repo, *manifest)
+	if err != nil {
+		return fail(err)
+	}
+	value, err := boatstack.MarshalJSON(recorded)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Print(string(value))
+	return 0
+}
+
+func recordPRVisualPublicationCommand(arguments []string) int {
+	flags := flag.NewFlagSet("record-pr-visual-publication", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository whose Git-common state owns the evidence")
+	key := flags.String("key", "", "managed feature or ad-hoc branch evidence key")
+	prURL := flags.String("pr-url", "", "published pull request URL")
+	commentURL := flags.String("comment-url", "", "observable Boatstack evidence comment URL")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if *key == "" || *prURL == "" || *commentURL == "" {
+		return fail(fmt.Errorf("record-pr-visual-publication requires --key, --pr-url, and --comment-url"))
+	}
+	recorded, err := boatstack.RecordPRVisualPublication(*repo, *key, *prURL, *commentURL)
+	if err != nil {
+		return fail(err)
+	}
+	value, err := boatstack.MarshalJSON(recorded)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Print(string(value))
+	return 0
+}
+
 func deliveryStatusCommand(arguments []string) int {
 	flags := flag.NewFlagSet("delivery-status", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository containing the managed delivery")
@@ -656,7 +702,7 @@ func publishPRCommand(arguments []string) int {
 		verb = "updated"
 	}
 	fmt.Printf("PASS: PR %s without merge authorization\nPR_URL=%s\n", verb, url)
-	
+
 	feature := ""
 	if preview, err := boatstack.ParsePRPreview(*previewPath); err == nil {
 		feature = preview.Feature
@@ -735,7 +781,7 @@ func workspaceStatusCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|run-preflight|record-change|record-delivery-gate|check-safety|migrate-config|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|run-preflight|record-change|record-delivery-gate|record-pr-visual-evidence|record-pr-visual-publication|check-safety|migrate-config|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -771,6 +817,10 @@ func run() int {
 		return recordChangeCommand(os.Args[2:])
 	case "record-delivery-gate":
 		return recordDeliveryGateCommand(os.Args[2:])
+	case "record-pr-visual-evidence":
+		return recordPRVisualEvidenceCommand(os.Args[2:])
+	case "record-pr-visual-publication":
+		return recordPRVisualPublicationCommand(os.Args[2:])
 	case "pr-context":
 		return prContextCommand(os.Args[2:])
 	case "check-pr":

@@ -14,6 +14,7 @@ boatstack-config-field:workflow.independent_review_for_high_risk
 boatstack-config-field:workflow.allow_pass_with_gaps
 boatstack-config-field:workflow.maintain_changelog
 boatstack-config-field:workflow.boundary_analysis
+boatstack-config-field:workflow.pr_visual_evidence
 boatstack-config-field:workspace
 boatstack-config-field:workspace.enabled
 boatstack-config-field:workspace.mode
@@ -61,6 +62,7 @@ This reference document defines the schema and version history of `.boatstack-pr
 - `allow_pass_with_gaps` (boolean, optional): Whether the delivery verification allows outstanding questions or gaps.
 - `maintain_changelog` (boolean, optional): Whether a reader-visible `CHANGELOG.md` entry is required for each delivery slice.
 - `boundary_analysis` (boolean, optional): Whether planning checks for a missing systemic boundary and presents local repair versus programmatic enforcement as a material product decision.
+- `pr_visual_evidence` (string, optional): `off`, `suggest`, or `require`. Omission is `off`. Relevant PRs use machine-local PNG evidence without committing media to Git; `suggest` records missing evidence as a visible gap and `require` blocks completed publication.
 
 ### workspace Fields
 

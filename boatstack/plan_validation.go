@@ -33,7 +33,7 @@ func validateArchitectureGrounding(plan map[string]any, opts *ValidatePlanOption
 			return fmt.Errorf("architecture fact ID must be present and unique")
 		}
 		factIDs[id] = true
-		
+
 		kind := stringValue(fact["kind"])
 		validKinds := map[string]bool{
 			"route_exists": true, "route_absent": true, "symbol_exists": true,
@@ -48,7 +48,7 @@ func validateArchitectureGrounding(plan map[string]any, opts *ValidatePlanOption
 		evidenceLevel := EvidenceVerified
 		premiseStatus := PremiseValid
 		evidenceIDs, ok := stringSlice(fact["evidence_ids"])
-		
+
 		if !ok || len(evidenceIDs) == 0 {
 			evidenceLevel = EvidenceAbsent
 		} else {
@@ -63,7 +63,7 @@ func validateArchitectureGrounding(plan map[string]any, opts *ValidatePlanOption
 				if opts != nil && opts.RepoRevision != "" && record.RepositoryRevision != opts.RepoRevision {
 					evidenceLevel = EvidenceSupported
 				}
-				
+
 				// Basic operation check
 				if kind == "route_absent" && record.Operation != "repository_search" && record.Operation != "route_lookup" {
 					premiseStatus = PremiseInvalid
@@ -115,7 +115,7 @@ func validateArchitectureGrounding(plan map[string]any, opts *ValidatePlanOption
 				return fmt.Errorf("task %s references unknown architecture fact %s", id, req)
 			}
 		}
-		
+
 		// check blocked by unknowns
 		for _, unk := range unknowns {
 			blocks, _ := stringSlice(unk["blocks"])
@@ -151,6 +151,69 @@ func validateSystemicBoundaries(plan map[string]any) error {
 		if stringValue(boundary["verification_oracle"]) == "" {
 			return fmt.Errorf("systemic boundary %s requires a verification_oracle", id)
 		}
+	}
+	return nil
+}
+
+func validatePRVisualEvidence(plan map[string]any) error {
+	value, present := plan["pr_visual_evidence"]
+	if !present {
+		return nil
+	}
+	decision, ok := value.(map[string]any)
+	if !ok {
+		return fmt.Errorf("pr_visual_evidence must be an object")
+	}
+	relevance := stringValue(decision["relevance"])
+	if relevance != "relevant" && relevance != "not_relevant" {
+		return fmt.Errorf("pr_visual_evidence.relevance must be relevant or not_relevant")
+	}
+	scenarios, ok := objectSlice(decision["scenarios"])
+	if !ok && decision["scenarios"] != nil {
+		return fmt.Errorf("pr_visual_evidence.scenarios must be a list")
+	}
+	if relevance == "not_relevant" {
+		if stringValue(decision["reason"]) == "" {
+			return fmt.Errorf("not-relevant pr_visual_evidence requires a reason")
+		}
+		if len(scenarios) != 0 {
+			return fmt.Errorf("not-relevant pr_visual_evidence must not define scenarios")
+		}
+		return nil
+	}
+	if len(scenarios) == 0 || len(scenarios) > 3 {
+		return fmt.Errorf("relevant pr_visual_evidence requires one to three scenarios")
+	}
+	seen := map[string]bool{}
+	for _, scenario := range scenarios {
+		id := stringValue(scenario["id"])
+		if id == "" || seen[id] {
+			return fmt.Errorf("pr_visual_evidence scenario ids must be present and unique")
+		}
+		seen[id] = true
+		for _, field := range []string{"entry", "state", "viewport"} {
+			if stringValue(scenario[field]) == "" {
+				return fmt.Errorf("pr_visual_evidence scenario %s requires %s", id, field)
+			}
+		}
+		expected, ok := stringSlice(scenario["expected"])
+		if !ok || len(expected) == 0 {
+			return fmt.Errorf("pr_visual_evidence scenario %s requires expected visible outcomes", id)
+		}
+	}
+	return nil
+}
+
+func requireConfiguredPRVisualEvidenceDecision(plan map[string]any, opts *ValidatePlanOptions) error {
+	if opts == nil || opts.RepoRoot == "" {
+		return nil
+	}
+	config, _, err := LoadConfig(filepath.Join(opts.RepoRoot, ".product-loop", "project.json"))
+	if err != nil || normalizedPRVisualEvidencePolicy(config.Workflow.PRVisualEvidence) == "off" {
+		return nil
+	}
+	if _, present := plan["pr_visual_evidence"]; !present {
+		return fmt.Errorf("configured workflow.pr_visual_evidence requires a structural plan decision")
 	}
 	return nil
 }

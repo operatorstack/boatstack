@@ -11,9 +11,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
-const prPreviewSchemaVersion = 2
+const prPreviewSchemaVersion = 3
 
 var prStatusPattern = regexp.MustCompile(`(?i)^(PASS|PASS_WITH_GAPS|NOT_VERIFIED|BLOCKED)$`)
 
@@ -31,44 +32,132 @@ type PRSource struct {
 }
 
 type PRContext struct {
-	SchemaVersion      int               `json:"schema_version"`
-	Mode               string            `json:"mode"`
-	Feature            string            `json:"feature,omitempty"`
-	SliceID            string            `json:"slice_id,omitempty"`
-	SliceIndex         int               `json:"slice_index,omitempty"`
-	TotalSlices        int               `json:"total_slices,omitempty"`
-	BaseBranch         string            `json:"base_branch"`
-	HeadBranch         string            `json:"head_branch"`
-	BaseCommit         string            `json:"base_commit"`
-	MergeBaseCommit    string            `json:"merge_base_commit"`
-	HeadCommit         string            `json:"head_commit"`
-	ProductDiffSHA256  string            `json:"product_diff_sha256"`
-	ContextFingerprint string            `json:"context_fingerprint"`
-	ChangedFiles       []string          `json:"changed_files"`
-	Commits            []string          `json:"commits"`
-	DiffStat           string            `json:"diff_stat"`
-	ContextPaths       []string          `json:"context_paths,omitempty"`
-	ProjectCommands    map[string]string `json:"project_commands,omitempty"`
-	HighRiskFiles      []string          `json:"high_risk_files,omitempty"`
-	GateStatus         map[string]string `json:"gate_status,omitempty"`
-	SafetyStatus       string            `json:"safety_status"`
-	SafetyFindings     []SafetyFinding   `json:"safety_findings,omitempty"`
-	Sources            []PRSource        `json:"sources,omitempty"`
-	PreviewPath        string            `json:"preview_path"`
+	SchemaVersion               int                       `json:"schema_version"`
+	Mode                        string                    `json:"mode"`
+	Feature                     string                    `json:"feature,omitempty"`
+	SliceID                     string                    `json:"slice_id,omitempty"`
+	SliceIndex                  int                       `json:"slice_index,omitempty"`
+	TotalSlices                 int                       `json:"total_slices,omitempty"`
+	BaseBranch                  string                    `json:"base_branch"`
+	HeadBranch                  string                    `json:"head_branch"`
+	BaseCommit                  string                    `json:"base_commit"`
+	MergeBaseCommit             string                    `json:"merge_base_commit"`
+	HeadCommit                  string                    `json:"head_commit"`
+	ProductDiffSHA256           string                    `json:"product_diff_sha256"`
+	ContextFingerprint          string                    `json:"context_fingerprint"`
+	ChangedFiles                []string                  `json:"changed_files"`
+	Commits                     []string                  `json:"commits"`
+	DiffStat                    string                    `json:"diff_stat"`
+	ContextPaths                []string                  `json:"context_paths,omitempty"`
+	ProjectCommands             map[string]string         `json:"project_commands,omitempty"`
+	HighRiskFiles               []string                  `json:"high_risk_files,omitempty"`
+	GateStatus                  map[string]string         `json:"gate_status,omitempty"`
+	SafetyStatus                string                    `json:"safety_status"`
+	SafetyFindings              []SafetyFinding           `json:"safety_findings,omitempty"`
+	PRVisualEvidencePolicy      string                    `json:"pr_visual_evidence_policy"`
+	PRVisualEvidenceStatus      string                    `json:"pr_visual_evidence_status"`
+	PRVisualEvidenceCount       int                       `json:"pr_visual_evidence_count"`
+	PRVisualEvidenceFingerprint string                    `json:"pr_visual_evidence_fingerprint"`
+	PRVisualEvidenceRelevance   string                    `json:"pr_visual_evidence_relevance"`
+	PRVisualEvidenceSource      string                    `json:"pr_visual_evidence_source"`
+	PRVisualEvidence            *PRVisualEvidenceManifest `json:"pr_visual_evidence,omitempty"`
+	Sources                     []PRSource                `json:"sources,omitempty"`
+	PreviewPath                 string                    `json:"preview_path"`
 }
 
 type PRPreview struct {
-	SchemaVersion      int
-	Title              string
-	Mode               string
-	Feature            string
-	SliceID            string
-	BaseBranch         string
-	HeadBranch         string
-	ContextFingerprint string
-	Body               string
-	Path               string
-	Fingerprint        string
+	SchemaVersion               int
+	Title                       string
+	Mode                        string
+	Feature                     string
+	SliceID                     string
+	BaseBranch                  string
+	HeadBranch                  string
+	ContextFingerprint          string
+	PRVisualEvidencePolicy      string
+	PRVisualEvidenceStatus      string
+	PRVisualEvidenceCount       int
+	PRVisualEvidenceFingerprint string
+	Body                        string
+	Path                        string
+	Fingerprint                 string
+}
+
+func planVisualDecision(repo, feature string) (string, string, []PRVisualScenario, error) {
+	plan, err := LoadPlan(filepath.Join(repo, ".product-loop", "features", feature, "plan.md"))
+	if err != nil {
+		return "unresolved", "managed-plan", nil, err
+	}
+	value, ok := plan["pr_visual_evidence"].(map[string]any)
+	if !ok {
+		return "unresolved", "managed-plan", nil, nil
+	}
+	relevance := stringValue(value["relevance"])
+	if relevance == "not_relevant" {
+		return relevance, "managed-plan", nil, nil
+	}
+	rows, _ := objectSlice(value["scenarios"])
+	scenarios := make([]PRVisualScenario, 0, len(rows))
+	for _, row := range rows {
+		expected, _ := stringSlice(row["expected"])
+		scenarios = append(scenarios, PRVisualScenario{
+			ID: stringValue(row["id"]), Entry: stringValue(row["entry"]), State: stringValue(row["state"]),
+			Viewport: stringValue(row["viewport"]), Expected: expected,
+		})
+	}
+	return relevance, "managed-plan", scenarios, nil
+}
+
+func resolvePRVisualEvidence(repo string, config ProjectConfig, mode, feature, head, headCommit, diffHash string) (string, string, int, string, string, string, *PRVisualEvidenceManifest, error) {
+	policy := normalizedPRVisualEvidencePolicy(config.Workflow.PRVisualEvidence)
+	relevance, source := "unresolved", "agent-proposed"
+	var scenarios []PRVisualScenario
+	if mode == "managed" {
+		var err error
+		relevance, source, scenarios, err = planVisualDecision(repo, feature)
+		if err != nil {
+			return "", "", 0, "", "", "", nil, err
+		}
+	}
+	key, err := visualEvidenceKey(mode, feature, head)
+	if err != nil {
+		return "", "", 0, "", "", "", nil, err
+	}
+	status := "NOT_APPLICABLE"
+	var manifest *PRVisualEvidenceManifest
+	if policy != "off" && relevance != "not_relevant" {
+		loaded, loadErr := LoadPRVisualEvidence(repo, key)
+		if loadErr == nil {
+			manifest = &loaded
+			relevance, source, scenarios = loaded.Relevance, loaded.RelevanceSource, loaded.Scenarios
+			if loaded.SourceCommit == headCommit && loaded.ProductDiffSHA256 == diffHash {
+				status = loaded.Status
+			} else {
+				status = "NOT_VERIFIED"
+				manifest = nil
+			}
+		} else {
+			status = "NOT_VERIFIED"
+		}
+		if policy == "require" && status != "PASS" {
+			status = "BLOCKED"
+		}
+	}
+	payload := map[string]any{
+		"schema_version": visualEvidenceSchemaVersion, "policy": policy, "status": status,
+		"relevance": relevance, "relevance_source": source, "scenarios": scenarios,
+	}
+	count := 0
+	if manifest != nil {
+		payload["manifest_fingerprint"] = manifest.Fingerprint
+		payload["items"] = manifest.Items
+		count = len(manifest.Items)
+	}
+	raw, err := MarshalJSON(payload)
+	if err != nil {
+		return "", "", 0, "", "", "", nil, err
+	}
+	return policy, status, count, SHA256Bytes(raw), relevance, source, manifest, nil
 }
 
 type PRPublishOptions struct {
@@ -76,6 +165,56 @@ type PRPublishOptions struct {
 	PreviewPath         string
 	ExpectedFingerprint string
 	Action              string
+	VisualPublisher     PRVisualEvidencePublisher
+}
+
+// PRVisualEvidencePublisher is implemented by a host that can upload exact
+// machine-local PNG bytes to one Boatstack-owned pull-request comment. ExistingCommentURL
+// is empty on first publication and lets later updates reuse the same comment.
+type PRVisualEvidencePublisher interface {
+	PublishVisualEvidence(repo, prURL, existingCommentURL string, manifest PRVisualEvidenceManifest) (commentURL string, err error)
+}
+
+func publishPRVisualEvidence(repo, prURL string, context PRContext, publisher PRVisualEvidencePublisher) error {
+	if context.PRVisualEvidenceStatus == "NOT_APPLICABLE" || context.PRVisualEvidence == nil {
+		return nil
+	}
+	manifest, err := LoadPRVisualEvidence(repo, context.PRVisualEvidence.Key)
+	if err != nil || manifest.Fingerprint != context.PRVisualEvidence.Fingerprint {
+		return fmt.Errorf("PR opened but visual evidence became stale; preserve the PR and recapture before updating it")
+	}
+	if manifest.Publication.State == "published" && manifest.Publication.PRURL == prURL && strings.TrimSpace(manifest.Publication.CommentURL) != "" {
+		return nil
+	}
+	now := time.Now().UTC().Truncate(time.Second).Format(time.RFC3339)
+	if publisher == nil {
+		_, recordErr := recordPRVisualPublication(repo, manifest, PRVisualPublication{
+			State: "manual_required", PRURL: prURL, UpdatedAt: now,
+			Detail: "attach the fingerprinted local PNG files to the Boatstack visual-evidence comment",
+		})
+		if recordErr != nil {
+			return fmt.Errorf("PR opened but manual visual-evidence fallback could not be recorded: %w", recordErr)
+		}
+		if context.PRVisualEvidencePolicy == "require" {
+			return fmt.Errorf("PR opened at %s but required visual evidence still needs manual attachment; update the same PR after attachment", prURL)
+		}
+		return nil
+	}
+	commentURL, publishErr := publisher.PublishVisualEvidence(repo, prURL, manifest.Publication.CommentURL, manifest)
+	if publishErr != nil {
+		_, _ = recordPRVisualPublication(repo, manifest, PRVisualPublication{
+			State: "visual_pending", PRURL: prURL, CommentURL: manifest.Publication.CommentURL,
+			UpdatedAt: now, Detail: publishErr.Error(),
+		})
+		return fmt.Errorf("PR opened at %s but visual evidence publication failed; preserve the PR and fix forward: %w", prURL, publishErr)
+	}
+	if strings.TrimSpace(commentURL) == "" {
+		return fmt.Errorf("visual evidence publisher returned no observable comment URL")
+	}
+	_, err = recordPRVisualPublication(repo, manifest, PRVisualPublication{
+		State: "published", PRURL: prURL, CommentURL: strings.TrimSpace(commentURL), UpdatedAt: now,
+	})
+	return err
 }
 
 func commandOutput(repo string, name string, arguments ...string) (string, error) {
@@ -478,6 +617,20 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 	if err != nil {
 		return PRContext{}, err
 	}
+	visualPolicy, visualStatus, visualCount, visualFingerprint, visualRelevance, visualSource, visualManifest, err := resolvePRVisualEvidence(
+		repo, config, mode, options.Feature, head, headCommit, SHA256Bytes(diff),
+	)
+	if err != nil {
+		return PRContext{}, err
+	}
+	fingerprintPayload, err = MarshalJSON(map[string]any{
+		"base":                      json.RawMessage(fingerprintPayload),
+		"pr_visual_evidence_policy": visualPolicy, "pr_visual_evidence_status": visualStatus,
+		"pr_visual_evidence_count": visualCount, "pr_visual_evidence_fingerprint": visualFingerprint,
+	})
+	if err != nil {
+		return PRContext{}, err
+	}
 	return PRContext{
 		SchemaVersion: prPreviewSchemaVersion, Mode: mode, Feature: options.Feature, SliceID: sliceID,
 		SliceIndex: sliceIndex, TotalSlices: totalSlices,
@@ -488,7 +641,11 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 		HighRiskFiles: highRiskChangedFiles(changed, config.Project.HighRiskPaths),
 		GateStatus:    gateStatus, Sources: sources,
 		SafetyStatus: safety.Status, SafetyFindings: safety.Findings,
-		PreviewPath: previewPath,
+		PRVisualEvidencePolicy: visualPolicy, PRVisualEvidenceStatus: visualStatus,
+		PRVisualEvidenceCount: visualCount, PRVisualEvidenceFingerprint: visualFingerprint,
+		PRVisualEvidenceRelevance: visualRelevance, PRVisualEvidenceSource: visualSource,
+		PRVisualEvidence: visualManifest,
+		PreviewPath:      previewPath,
 	}, nil
 }
 
@@ -506,6 +663,8 @@ func parsePRFrontmatter(value string) (map[string]string, string, error) {
 	allowed := map[string]bool{
 		"boatstack_pr_version": true, "title": true, "mode": true, "feature": true,
 		"slice": true, "base": true, "head": true, "context_fingerprint": true,
+		"pr_visual_evidence_policy": true, "pr_visual_evidence_status": true,
+		"pr_visual_evidence_count": true, "pr_visual_evidence_fingerprint": true,
 	}
 	for _, line := range strings.Split(frontmatter, "\n") {
 		key, raw, found := strings.Cut(line, ":")
@@ -520,7 +679,7 @@ func parsePRFrontmatter(value string) (map[string]string, string, error) {
 		if _, exists := fields[key]; exists {
 			return nil, "", fmt.Errorf("duplicate PR frontmatter field: %s", key)
 		}
-		if key == "boatstack_pr_version" {
+		if key == "boatstack_pr_version" || key == "pr_visual_evidence_count" {
 			fields[key] = raw
 			continue
 		}
@@ -530,12 +689,41 @@ func parsePRFrontmatter(value string) (map[string]string, string, error) {
 		}
 		fields[key] = decoded
 	}
-	for _, key := range []string{"boatstack_pr_version", "title", "mode", "feature", "base", "head", "context_fingerprint"} {
+	for _, key := range []string{"boatstack_pr_version", "title", "mode", "feature", "base", "head", "context_fingerprint", "pr_visual_evidence_policy", "pr_visual_evidence_status", "pr_visual_evidence_count", "pr_visual_evidence_fingerprint"} {
 		if _, exists := fields[key]; !exists {
 			return nil, "", fmt.Errorf("PR frontmatter is missing %s", key)
 		}
 	}
 	return fields, body, nil
+}
+
+func validateVisualEvidenceSection(body, status string, count int) error {
+	if status == "NOT_APPLICABLE" {
+		return nil
+	}
+	visual := section(body, "## Visual evidence")
+	if visual == "" {
+		return fmt.Errorf("PR body requires a non-empty Visual evidence section")
+	}
+	rows := 0
+	for _, line := range strings.Split(visual, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "|") || strings.Contains(strings.ToLower(trimmed), "| scenario ") || strings.Contains(trimmed, "---") {
+			continue
+		}
+		cells := strings.Split(strings.Trim(trimmed, "|"), "|")
+		if len(cells) != 5 {
+			return fmt.Errorf("Visual evidence rows require Scenario, Viewport, Commit, Result, and Publication columns")
+		}
+		rows++
+	}
+	if rows != count && status == "PASS" {
+		return fmt.Errorf("Visual evidence row count %d does not match pr_visual_evidence_count %d", rows, count)
+	}
+	if rows == 0 {
+		return fmt.Errorf("Visual evidence requires at least one structured row")
+	}
+	return nil
 }
 
 func section(value, heading string) string {
@@ -636,7 +824,13 @@ func ParsePRPreview(path string) (PRPreview, error) {
 		SchemaVersion: version, Title: strings.TrimSpace(fields["title"]), Mode: fields["mode"],
 		Feature: fields["feature"], SliceID: fields["slice"], BaseBranch: fields["base"], HeadBranch: fields["head"],
 		ContextFingerprint: fields["context_fingerprint"], Body: body, Path: path,
-		Fingerprint: SHA256Bytes(value),
+		PRVisualEvidencePolicy: fields["pr_visual_evidence_policy"], PRVisualEvidenceStatus: fields["pr_visual_evidence_status"],
+		PRVisualEvidenceFingerprint: fields["pr_visual_evidence_fingerprint"],
+		Fingerprint:                 SHA256Bytes(value),
+	}
+	preview.PRVisualEvidenceCount, err = strconv.Atoi(fields["pr_visual_evidence_count"])
+	if err != nil || preview.PRVisualEvidenceCount < 0 || preview.PRVisualEvidenceCount > 3 {
+		return PRPreview{}, fmt.Errorf("pr_visual_evidence_count must be between 0 and 3")
 	}
 	if preview.Title == "" || strings.Contains(preview.Title, "\n") || len([]rune(preview.Title)) > 120 {
 		return PRPreview{}, fmt.Errorf("PR title must be one non-empty line of at most 120 characters")
@@ -662,6 +856,15 @@ func ParsePRPreview(path string) (PRPreview, error) {
 	if len(preview.ContextFingerprint) != 64 {
 		return PRPreview{}, fmt.Errorf("PR preview requires a valid context fingerprint")
 	}
+	if preview.PRVisualEvidencePolicy != "off" && preview.PRVisualEvidencePolicy != "suggest" && preview.PRVisualEvidencePolicy != "require" {
+		return PRPreview{}, fmt.Errorf("unsupported pr_visual_evidence_policy")
+	}
+	if !map[string]bool{"PASS": true, "PASS_WITH_GAPS": true, "NOT_VERIFIED": true, "NOT_APPLICABLE": true, "BLOCKED": true}[preview.PRVisualEvidenceStatus] {
+		return PRPreview{}, fmt.Errorf("unsupported pr_visual_evidence_status")
+	}
+	if len(preview.PRVisualEvidenceFingerprint) != 64 {
+		return PRPreview{}, fmt.Errorf("PR preview requires a valid pr_visual_evidence_fingerprint")
+	}
 	for _, heading := range []string{
 		"## Why this change", "## What changed", "## Review order", "## Evidence",
 		"## Operational safety", "## Known gaps and risks", "## Rollout and rollback",
@@ -674,6 +877,9 @@ func ParsePRPreview(path string) (PRPreview, error) {
 		return PRPreview{}, fmt.Errorf("PR body requires collapsed Boatstack provenance")
 	}
 	if err := validateEvidenceTable(body, preview.Mode); err != nil {
+		return PRPreview{}, err
+	}
+	if err := validateVisualEvidenceSection(body, preview.PRVisualEvidenceStatus, preview.PRVisualEvidenceCount); err != nil {
 		return PRPreview{}, err
 	}
 	return preview, nil
@@ -721,7 +927,9 @@ func CheckPRPreview(repoPath, previewPath string) (PRPreview, PRContext, error) 
 	if filepath.Clean(expectedPath) != filepath.Clean(actualPath) {
 		return PRPreview{}, PRContext{}, fmt.Errorf("PR preview must be stored at %s", context.PreviewPath)
 	}
-	if preview.Mode != context.Mode || preview.SliceID != context.SliceID || preview.BaseBranch != context.BaseBranch || preview.HeadBranch != context.HeadBranch || preview.ContextFingerprint != context.ContextFingerprint {
+	if preview.Mode != context.Mode || preview.SliceID != context.SliceID || preview.BaseBranch != context.BaseBranch || preview.HeadBranch != context.HeadBranch || preview.ContextFingerprint != context.ContextFingerprint ||
+		preview.PRVisualEvidencePolicy != context.PRVisualEvidencePolicy || preview.PRVisualEvidenceStatus != context.PRVisualEvidenceStatus ||
+		preview.PRVisualEvidenceCount != context.PRVisualEvidenceCount || preview.PRVisualEvidenceFingerprint != context.PRVisualEvidenceFingerprint {
 		return PRPreview{}, PRContext{}, fmt.Errorf("PR preview is stale or does not match the current branch context; regenerate it")
 	}
 	if context.Mode == "managed" {
@@ -794,6 +1002,9 @@ func PublishPR(options PRPublishOptions) (string, error) {
 	if options.Action != "open" && options.Action != "update" {
 		return "", fmt.Errorf("publication action must be open or update")
 	}
+	if context.PRVisualEvidencePolicy == "require" && context.PRVisualEvidenceStatus != "PASS" {
+		return "", fmt.Errorf("PR publication is blocked until required visual evidence is current")
+	}
 	dirty, err := dirtyPaths(repo)
 	if err != nil {
 		return "", err
@@ -838,17 +1049,24 @@ func PublishPR(options PRPublishOptions) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		url = strings.TrimSpace(url)
+		if err := publishPRVisualEvidence(repo, url, context, options.VisualPublisher); err != nil {
+			return "", err
+		}
 		if context.Mode == "managed" {
-			if err := MarkDeliveryPublished(repo, context.Feature, context.SliceID, strings.TrimSpace(url)); err != nil {
+			if err := MarkDeliveryPublished(repo, context.Feature, context.SliceID, url); err != nil {
 				return "", fmt.Errorf("PR opened but delivery state could not advance: %w", err)
 			}
 			if err := extractSystemicBoundaries(repo, context.Feature); err != nil {
 				fmt.Fprintf(os.Stderr, "WARNING: could not extract systemic boundaries: %v\n", err)
 			}
 		}
-		return strings.TrimSpace(url), nil
+		return url, nil
 	}
 	if _, err := commandOutput(repo, "gh", "pr", "edit", existingURL, "--title", preview.Title, "--body-file", temporaryPath); err != nil {
+		return "", err
+	}
+	if err := publishPRVisualEvidence(repo, existingURL, context, options.VisualPublisher); err != nil {
 		return "", err
 	}
 	if context.Mode == "managed" {
@@ -882,7 +1100,7 @@ func extractSystemicBoundaries(repo, feature string) error {
 		return err
 	}
 	defer f.Close()
-	
+
 	for _, b := range boundaries {
 		boundary, _ := b.(map[string]any)
 		id := stringValue(boundary["id"])
@@ -903,7 +1121,7 @@ func PRPreviewTemplate(context PRContext) string {
 	safetySummary := "Repository safety scan: `" + context.SafetyStatus + "`. Destructive recovery remains operator-only outside Boatstack."
 	lines := []string{
 		"---",
-		"boatstack_pr_version: 2",
+		"boatstack_pr_version: 3",
 		"title: " + quote("Describe the product or user value of this change (e.g., 'Enable historical data migration')"),
 		"mode: " + quote(context.Mode),
 		"feature: " + quote(context.Feature),
@@ -911,6 +1129,10 @@ func PRPreviewTemplate(context PRContext) string {
 		"base: " + quote(context.BaseBranch),
 		"head: " + quote(context.HeadBranch),
 		"context_fingerprint: " + quote(context.ContextFingerprint),
+		"pr_visual_evidence_policy: " + quote(context.PRVisualEvidencePolicy),
+		"pr_visual_evidence_status: " + quote(context.PRVisualEvidenceStatus),
+		fmt.Sprintf("pr_visual_evidence_count: %d", context.PRVisualEvidenceCount),
+		"pr_visual_evidence_fingerprint: " + quote(context.PRVisualEvidenceFingerprint),
 		"---",
 		"## Why this change", "", "Explain the user or engineering outcome.", "",
 		"## What changed", "", "| Area | Before | After | Reviewer focus |", "|---|---|---|---|", "| | | | |", "",
@@ -919,6 +1141,14 @@ func PRPreviewTemplate(context PRContext) string {
 		"## Operational safety", "", safetySummary, "",
 		"## Known gaps and risks", "", "List explicit gaps or say that no material gaps are known.", "",
 		"## Rollout and rollback", "", "Describe deployment impact and the smallest safe rollback.", "",
+	}
+	if context.PRVisualEvidenceStatus != "NOT_APPLICABLE" {
+		lines = append(lines,
+			"## Visual evidence", "",
+			"Screenshots are human-review evidence, not mechanical proof. Public-repository attachments are publicly accessible.", "",
+			"| Scenario | Viewport | Commit | Result | Publication |", "|---|---|---|---|---|",
+			"| Describe the approved state | viewport | "+context.HeadCommit+" | `"+context.PRVisualEvidenceStatus+"` | Boatstack evidence comment or manual fallback |", "",
+		)
 	}
 	if context.TotalSlices > 1 {
 		lines = append(lines, fmt.Sprintf("> *(This is PR %d of %d in the `%s` feature)*", context.SliceIndex, context.TotalSlices, context.Feature), "")
