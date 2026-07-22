@@ -16,6 +16,7 @@ Artifacts separate facts, decisions, unknowns, incompleteness, and evidence. Com
 | Delivery state | Ignored worktree-local Git active-slice state bound to the approved plan lock; never an approval artifact | Build activation and successful slice publication |
 | `changes.md` | Append-only, reviewable post-build observations with exact user message, expected/actual behavior, classification, evidence, and resolution | Controlled `record-change` transition |
 | Repair state | Ignored delivery mode, resume stage, active observation, attempt count, and superseded receipt references | Controlled repair and gate transitions |
+| Recovery status | Read-only active/published delivery, PR lifecycle, branch/SHA identity, ambiguity, and safe next transition | Before responding to CI, review, publication denial, or ordinary correction language |
 | Gate receipt | Machine-local test or review transition bound to one delivery slice, base/head branches, commit, product diff, and evidence hash | A slice passes test or review |
 | Test plan | Requirement-to-evidence mapping with each validation's origin, falsifiable oracle, procedure, and independence | Planning and after discovered failure modes |
 | Gap ledger | Known divergence between desired and current state | Work is deferred, partial, incompatible, or intentionally absent |
@@ -67,6 +68,10 @@ Every material statement should indicate whether it came from:
 - an external source.
 
 Generated artifacts include the canonical loop version and config hash. Human edits to generated adapters are drift and should be moved into project-owned context or canonical source.
+
+A completed parent's delivery state, plan lock, and receipts remain immutable.
+Post-publication observations append to its `changes.md`; the linked corrective
+child owns all new approval, lock, gate, and publication evidence.
 
 ## PR projection boundary
 

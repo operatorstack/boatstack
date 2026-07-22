@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -250,7 +251,7 @@ func TestResolveNextDeliveryTransitions(t *testing.T) {
 	}
 }
 
-func TestResolveNextReportsFeatureCompleteAfterPublication(t *testing.T) {
+func TestResolveNextReportsPublishedUnknownWithoutPRVerification(t *testing.T) {
 	repo := nextTestRepo(t)
 	writeNextDelivery(t, repo, "recovery", "PUBLISHED", 1)
 	intake := filepath.Join(repo, ".product-loop", "intake")
@@ -268,7 +269,7 @@ func TestResolveNextReportsFeatureCompleteAfterPublication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.ObservedStage != "FEATURE_COMPLETE" || status.NextOperation != "none" {
+	if status.SchemaVersion != 2 || status.ObservedStage != "PUBLISHED" || status.Lifecycle != "PUBLISHED_UNKNOWN" || status.NextOperation != "none" {
 		t.Fatalf("unexpected status: %+v", status)
 	}
 	if status.Feature != "recovery" {
@@ -276,6 +277,37 @@ func TestResolveNextReportsFeatureCompleteAfterPublication(t *testing.T) {
 	}
 	if status.ActiveSlice != "delivery" {
 		t.Fatalf("expected final delivery slice to be surfaced: %+v", status)
+	}
+}
+
+func TestResolveNextReportsFeatureCompleteOnlyAfterVerifiedMerge(t *testing.T) {
+	repo := nextTestRepo(t)
+	writeNextDelivery(t, repo, "recovery", "PUBLISHED", 1)
+	state, err := LoadDeliveryState(repo, "recovery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Slices[0].HeadBranch = "feat/recovery"
+	state.Slices[0].PRURL = "https://example.invalid/pr/1"
+	if err := saveDeliveryState(repo, state); err != nil {
+		t.Fatal(err)
+	}
+	withRecoveryGh(t, recoveryPR("MERGED", "feat/recovery", "abc123"))
+	status, err := ResolveNext(repo, "recovery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.ObservedStage != "FEATURE_COMPLETE" || status.Lifecycle != "PUBLISHED_MERGED" || status.NextOperation != "none" {
+		t.Fatalf("unexpected merged status: %+v", status)
+	}
+}
+
+func TestFormatNextStatusStillRendersSchemaV1Values(t *testing.T) {
+	value := FormatNextStatus(NextStatus{SchemaVersion: 1, VerificationStatus: "VERIFIED", Feature: "legacy", ObservedStage: "FEATURE_COMPLETE", NextOperation: "none", Reason: "Legacy published state."})
+	for _, expected := range []string{"Feature: legacy", "Boatstack stage: FEATURE_COMPLETE", "Next: none"} {
+		if !strings.Contains(value, expected) {
+			t.Fatalf("legacy status rendering omitted %q: %s", expected, value)
+		}
 	}
 }
 

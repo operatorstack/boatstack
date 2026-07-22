@@ -3,6 +3,7 @@ package boatstack
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,9 +15,14 @@ import (
 // SafetyFinding is intentionally small and secret-free. The guard reports the
 // class and a stable explanation, never the full command or tool arguments.
 type SafetyFinding struct {
-	Category string `json:"category"`
-	Reason   string `json:"reason"`
-	Source   string `json:"source,omitempty"`
+	Category        string `json:"category"`
+	Reason          string `json:"reason"`
+	Source          string `json:"source,omitempty"`
+	BlockingFeature string `json:"blocking_feature,omitempty"`
+	BlockingSlice   string `json:"blocking_slice,omitempty"`
+	BranchRelation  string `json:"branch_relation,omitempty"`
+	NextOperation   string `json:"next_operation,omitempty"`
+	ParentDelivery  string `json:"parent_delivery,omitempty"`
 }
 
 type SafetyReport struct {
@@ -64,6 +70,50 @@ var mutationStatementPattern = regexp.MustCompile(`(?is)\b(?:delete\s+from\s+(?:
 var directPublicationPattern = regexp.MustCompile(`(?i)(?:\bgit\b[^\n;&|]*\bpush\b|\bgh\s+pr\s+(?:create|edit|ready|merge)\b|\bgh\s+api\b[^\n;&|]*(?:/pulls\b|/pull-requests\b)|\bhub\s+pull-request\b|\bcurl\b[^\n;&|]*(?:api\.github\.com|/pulls\b)[^\n;&|]*(?:\s-X\s*(?:POST|PATCH)|--request\s+(?:POST|PATCH)))`)
 var approvedPublisherPattern = regexp.MustCompile(`(?i)^\s*(?:[^\s]*/)?boatstack-helper\s+publish-pr\b[^\n;&|]*$`)
 var deliveryStatePathPattern = regexp.MustCompile(`(?i)(?:boatstack[/\\]deliveries|\.git[/\\](?:worktrees[/\\][^/\\]+[/\\])?boatstack(?:[/\\]|$))`)
+
+func publicationBypassFinding(repo, reason, source string) (SafetyFinding, bool) {
+	active, err := ActiveManagedDeliveries(repo)
+	if err != nil {
+		return SafetyFinding{Category: "workflow-state-invalid", Reason: "publication is denied because managed delivery state cannot be verified", Source: "delivery-state"}, true
+	}
+	if len(active) == 0 {
+		return SafetyFinding{}, false
+	}
+	branch, _ := gitCommand(repo, "branch", "--show-current")
+	selected := ""
+	relation := "unrelated"
+	for _, feature := range active {
+		state, loadErr := LoadDeliveryState(repo, feature)
+		if loadErr == nil && stateMatchesBranch(state, strings.TrimSpace(branch)) {
+			if selected != "" {
+				selected = strings.Join(active, ",")
+				relation = "ambiguous"
+				break
+			}
+			selected = feature
+			relation = "current_branch"
+		}
+	}
+	if selected == "" {
+		if len(active) == 1 {
+			selected = active[0]
+		} else {
+			selected = strings.Join(active, ",")
+			relation = "ambiguous"
+		}
+	}
+	finding := SafetyFinding{
+		Category: "workflow-publication-bypass", Reason: reason, Source: source,
+		BlockingFeature: selected, BranchRelation: relation, NextOperation: "recovery-status",
+	}
+	if !strings.Contains(selected, ",") {
+		if state, loadErr := LoadDeliveryState(repo, selected); loadErr == nil {
+			_, finding.BlockingSlice, _ = deliveryBranchAndSlice(state)
+			finding.ParentDelivery = state.ParentDelivery
+		}
+	}
+	return finding, true
+}
 
 func classifySafetyText(value, source string) []SafetyFinding {
 	if isPureReadOnlyCommand(value) {
@@ -193,12 +243,8 @@ func ClassifyCommand(repo, command string) []SafetyFinding {
 		return []SafetyFinding{{Category: "workflow-state-tamper", Reason: "managed delivery state may be changed only by Boatstack transitions", Source: "delivery-state"}}
 	}
 	if directPublicationPattern.MatchString(command) && !approvedPublisherPattern.MatchString(command) {
-		active, activeErr := ActiveManagedDeliveries(repo)
-		if activeErr != nil {
-			return []SafetyFinding{{Category: "workflow-state-invalid", Reason: "publication is denied because managed delivery state cannot be verified", Source: "delivery-state"}}
-		}
-		if len(active) > 0 {
-			return []SafetyFinding{{Category: "workflow-publication-bypass", Reason: "direct push or PR mutation is denied while a managed delivery slice is active", Source: "tool-input"}}
+		if finding, blocked := publicationBypassFinding(repo, "direct push or PR mutation is denied while a managed delivery slice is active", "tool-input"); blocked {
+			return []SafetyFinding{finding}
 		}
 	}
 	findings := classifySafetyText(command, "command")
@@ -254,11 +300,8 @@ func ClassifyTool(repo, name string, input any) []SafetyFinding {
 	}
 	if (strings.Contains(publicationText, "pull_request") || strings.Contains(publicationText, "pull request")) &&
 		regexp.MustCompile(`(?:create|update|edit|merge|publish)`).MatchString(publicationText) {
-		active, activeErr := ActiveManagedDeliveries(repo)
-		if activeErr != nil {
-			findings = append(findings, SafetyFinding{Category: "workflow-state-invalid", Reason: "publication is denied because managed delivery state cannot be verified", Source: "delivery-state"})
-		} else if len(active) > 0 {
-			findings = append(findings, SafetyFinding{Category: "workflow-publication-bypass", Reason: "direct PR mutation is denied while a managed delivery slice is active", Source: "tool-input"})
+		if finding, blocked := publicationBypassFinding(repo, "direct PR mutation is denied while a managed delivery slice is active", "tool-input"); blocked {
+			findings = append(findings, finding)
 		}
 	}
 	if regexp.MustCompile(`(?:delete|destroy|reset|drop|truncate|terminate)`).MatchString(nameLower) && regexp.MustCompile(`(?:database|schema|project|cluster|namespace|volume|bucket|backup|snapshot|instance)`).MatchString(strings.ToLower(combined)) {
@@ -455,7 +498,33 @@ func denialMessage(host string, finding SafetyFinding) string {
 		return "Boatstack denied direct delivery-state mutation. Use the active build, test, review, or ship transition instead of editing runtime authority."
 	}
 	if finding.Category == "workflow-publication-bypass" {
-		return "Boatstack denied a publication bypass. Finish the active slice's test and review gates, then use ship-gate and the confirmed Boatstack publisher."
+		target := "the active managed delivery"
+		if finding.BlockingFeature != "" {
+			target = fmt.Sprintf("managed delivery %q", finding.BlockingFeature)
+		}
+		relation := ""
+		if finding.BranchRelation == "unrelated" {
+			relation = " It is unrelated to the current branch."
+		} else if finding.BranchRelation == "ambiguous" {
+			relation = " More than one delivery may be blocking publication."
+		}
+		context := ""
+		if finding.BlockingSlice != "" {
+			context += " slice=" + finding.BlockingSlice
+		}
+		if finding.BranchRelation != "" {
+			context += " relation=" + finding.BranchRelation
+		}
+		if finding.ParentDelivery != "" {
+			context += " parent=" + finding.ParentDelivery
+		}
+		if finding.NextOperation != "" {
+			context += " next=" + finding.NextOperation
+		}
+		if context != "" {
+			context = " Recovery context:" + context + "."
+		}
+		return "Boatstack denied the publication bypass because " + target + " still owns publication authority." + relation + context + " Resolve the reported change through the managed recovery path; do not repeat this push or PR mutation manually."
 	}
 	return "Boatstack denied an irreversible operation (" + finding.Category + "). Preserve the current state and use read-only diagnosis or fix-forward recovery; destructive recovery is operator-only outside the agent workflow."
 }

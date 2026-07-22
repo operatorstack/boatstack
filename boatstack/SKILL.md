@@ -29,7 +29,7 @@ For the full state machine, read [workflow.md](references/workflow.md). For arti
 
 ## Report what is next
 
-Run the project-local helper's read-only `next-status --repo . --json` inspection. Repository artifacts, managed delivery state, and gate receipts are evidence; conversation, terminal, worktree, and process observations are context only. Never run the returned operation automatically. Distinguish a Boatstack feature that is complete from one that has not started: `NOT_STARTED` and `SOURCE_PLAN_READY` point to `auto-plan`, while `FEATURE_COMPLETE` requires no action. If state is ambiguous, stale, or invalid, name the blocker instead of choosing by recency or clearing artifacts.
+Run the project-local helper's read-only `next-status --repo . --json` inspection. Repository artifacts, managed delivery state, gate receipts, and the recorded PR identity are evidence; conversation, terminal, worktree, and process observations are context only. Never run the returned operation automatically. `NOT_STARTED` and `SOURCE_PLAN_READY` point to `auto-plan`; `PUBLISHED` means a PR exists but is not a verified merge; only `FEATURE_COMPLETE` requires no action. If state is ambiguous, stale, or invalid, name the blocker instead of choosing by recency or clearing artifacts.
 
 ## Run through ship
 
@@ -161,7 +161,7 @@ Do not branch the workflow on model brand, price, or a guessed capability tier. 
 
 ## Repair from ordinary conversation
 
-Before any product edit or explicit `repair`, run `next-status`. Repair requires an active managed delivery and the user's exact requested change. If no Boatstack feature has started, explain that there is nothing to repair yet and point to `auto-plan`; if a draft or approved feature has not activated, route to its verified `plan-gate` or `build` operation. If a delivery is active and the user reports a problem or requests a modification, use `repair` even when they do not name Boatstack or a slash command. Compare the exact request with the current lock, acceptance criteria, diff, evidence, and receipts. Classify it as `implementation_repair`, `verification_repair`, `review_repair`, `requirement_amendment`, or `needs_clarification`, then invoke `record-change` before editing. A published feature is immutable; an exact correction request starts a linked Boatstack feature rather than rewriting completed evidence.
+Before any product edit or explicit `repair`, run `recovery-status` with the exact requested change and observed source stage. It resolves active work and published work associated with the current branch or recorded PR. Automatically use repair for ordinary CI failures, review findings, denied publication, problems, and modifications even when the user does not name Boatstack or a slash command. Active work resumes through `record-change`; a published parent returns `CORRECTIVE_CHILD_REQUIRED` and a deterministic child id. Never ask the user to manually repeat a denied push or PR mutation.
 
 If Cursor reports `MainThreadShellExec not initialized`, the host failed before Boatstack's hook process started. Keep the hook fail-closed and make **Developer: Reload Window** the primary recovery, then retry the operation. Recommend the verified installer only when Boatstack itself reports a missing, drifted, unsafe, or checksum-invalid helper/runtime.
 
@@ -169,7 +169,7 @@ If any host reports `HOST_PAYLOAD_MALFORMED`, Boatstack received an event it cou
 
 Same-intent repair resumes at the helper-reported stage and reuses the existing gates. A requirement amendment or ambiguous expected behavior blocks product edits and returns to a concise Plan Gate delta. Never edit `changes.md`, ignored delivery state, or receipts directly; those are emitted by controlled transitions. Conversation history is never workflow authority.
 
-A published delivery is immutable. Record the observation against it, then plan the correction under a new feature id whose structured plan sets `parent_delivery` to the published feature. Activation refuses to reset published slices; the corrective child receives its own lock and full gates.
+A published delivery is immutable. Record the append-only observation without changing its state, then automatically prepare a one-slice correction under the suggested feature id with `parent_delivery` set to the published feature. Present the inherited intent, observed failure, existing local diff, verification, and PR destination, then pause for the normal fingerprinted human approval. The corrective child receives its own lock and full gates. A verified open PR reuses its head branch and is updated; merged or closed work uses a fresh branch and PR. Unknown PR state may be planned but blocks destination-specific publication.
 
 ## Enforce the gates
 

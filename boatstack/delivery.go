@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -108,17 +109,20 @@ type ChangeObservationOptions struct {
 }
 
 type ChangeObservation struct {
-	ID             string `json:"id"`
-	Feature        string `json:"feature"`
-	SliceID        string `json:"slice_id,omitempty"`
-	SourceStage    string `json:"source_stage"`
-	Expected       string `json:"expected,omitempty"`
-	Actual         string `json:"actual,omitempty"`
-	Evidence       string `json:"evidence,omitempty"`
-	Message        string `json:"message"`
-	Classification string `json:"classification"`
-	ResumeStage    string `json:"resume_stage,omitempty"`
-	RecordedAt     string `json:"recorded_at"`
+	ID                 string `json:"id"`
+	Feature            string `json:"feature"`
+	SliceID            string `json:"slice_id,omitempty"`
+	SourceStage        string `json:"source_stage"`
+	Expected           string `json:"expected,omitempty"`
+	Actual             string `json:"actual,omitempty"`
+	Evidence           string `json:"evidence,omitempty"`
+	Message            string `json:"message"`
+	Classification     string `json:"classification"`
+	ResumeStage        string `json:"resume_stage,omitempty"`
+	RecordedAt         string `json:"recorded_at"`
+	Outcome            string `json:"outcome,omitempty"`
+	ParentDelivery     string `json:"parent_delivery,omitempty"`
+	SuggestedFeatureID string `json:"suggested_feature_id,omitempty"`
 }
 
 func deliveryEvidenceGateStatus(value, gate, sliceID string, explicit bool) string {
@@ -376,10 +380,28 @@ func appendChangeObservation(repo string, observation ChangeObservation) error {
 	if len(existing) == 0 {
 		existing = []byte("# Change observations\n\nAppend-only observations recorded after build activation.\n")
 	}
-	block := fmt.Sprintf("\n## %s\n\n- Recorded: `%s`\n- Source stage: `%s`\n- Classification: `%s`\n- Resume stage: `%s`\n- User message: %s\n- Expected: %s\n- Actual: %s\n- Evidence: %s\n- Resolution: pending\n",
+	block := fmt.Sprintf("\n## %s\n\n- Recorded: `%s`\n- Source stage: `%s`\n- Classification: `%s`\n- Outcome: `%s`\n- Resume stage: `%s`\n- Parent delivery: `%s`\n- Suggested corrective feature: `%s`\n- User message: %s\n- Expected: %s\n- Actual: %s\n- Evidence: %s\n- Resolution: pending\n",
 		observation.ID, observation.RecordedAt, observation.SourceStage, observation.Classification,
-		observation.ResumeStage, observation.Message, observation.Expected, observation.Actual, observation.Evidence)
+		observation.Outcome, observation.ResumeStage, observation.ParentDelivery, observation.SuggestedFeatureID,
+		observation.Message, observation.Expected, observation.Actual, observation.Evidence)
 	return atomicWriteMode(path, append(existing, []byte(block)...), 0o644)
+}
+
+func nextChangeObservationID(repo, feature string, fallback int) string {
+	path := filepath.Join(repo, ".product-loop", "features", feature, "changes.md")
+	value, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Sprintf("CHG-%03d", fallback)
+	}
+	maximum := fallback - 1
+	pattern := regexp.MustCompile(`(?m)^## CHG-([0-9]+)\s*$`)
+	for _, match := range pattern.FindAllStringSubmatch(string(value), -1) {
+		parsed, parseErr := strconv.Atoi(match[1])
+		if parseErr == nil && parsed > maximum {
+			maximum = parsed
+		}
+	}
+	return fmt.Sprintf("CHG-%03d", maximum+1)
 }
 
 func RecordChangeObservation(options ChangeObservationOptions) (ChangeObservation, DeliveryState, error) {
@@ -407,21 +429,40 @@ func RecordChangeObservation(options ChangeObservationOptions) (ChangeObservatio
 	if strings.TrimSpace(options.Message) == "" || strings.TrimSpace(options.SourceStage) == "" {
 		return ChangeObservation{}, DeliveryState{}, fmt.Errorf("change observation requires the user message and source stage")
 	}
-	state.RepairAttempt++
+	published := state.ActiveIndex >= len(state.Slices)
+	if !published {
+		state.RepairAttempt++
+	}
 	id := fmt.Sprintf("CHG-%03d", state.RepairAttempt)
+	if published {
+		id = nextChangeObservationID(repo, options.Feature, state.RepairAttempt+1)
+	}
 	observation := ChangeObservation{
 		ID: id, Feature: options.Feature, SourceStage: strings.ToUpper(strings.TrimSpace(options.SourceStage)),
 		Expected: strings.TrimSpace(options.Expected), Actual: strings.TrimSpace(options.Actual), Evidence: strings.TrimSpace(options.Evidence),
 		Message: strings.TrimSpace(options.Message), Classification: classification, ResumeStage: resume,
 		RecordedAt: time.Now().UTC().Truncate(time.Second).Format(time.RFC3339),
 	}
-	if state.ActiveIndex < len(state.Slices) {
+	if !published {
 		observation.SliceID = state.Slices[state.ActiveIndex].ID
-	} else if classification != "requirement_amendment" {
-		return ChangeObservation{}, DeliveryState{}, fmt.Errorf("published delivery changes require requirement_amendment and a corrective child delivery")
+		observation.Outcome = "RESUME_ACTIVE"
+	} else {
+		if len(state.Slices) > 0 {
+			observation.SliceID = state.Slices[len(state.Slices)-1].ID
+		}
+		states, statesErr := allManagedDeliveryStates(repo)
+		if statesErr != nil {
+			return ChangeObservation{}, DeliveryState{}, statesErr
+		}
+		observation.Outcome = "CORRECTIVE_CHILD_REQUIRED"
+		observation.ParentDelivery = state.Feature
+		observation.SuggestedFeatureID = suggestedCorrectionFeature(states, state.Feature)
 	}
 	if err := appendChangeObservation(repo, observation); err != nil {
 		return ChangeObservation{}, DeliveryState{}, err
+	}
+	if published {
+		return observation, state, nil
 	}
 	state.ActiveObservationID = id
 	state.ResumeStage = resume

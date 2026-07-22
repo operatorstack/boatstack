@@ -19,6 +19,7 @@ Select a move only after locating the failure below its surface symptom. “Time
 | Documentation drift | Durable behavior and docs disagree | Update source-of-truth artifact; drift check | Growing instructions with unverified rules |
 | Irreversible recovery escalation | A failed external operation causes authority/target broadening or an invented reset | Immutable pre-execution deny; preserve state; read-only diagnosis; transactional retry or fix forward | False denial of legitimate isolated development operations |
 | Worktree bootstrap deadlock | A linked worktree inherits fail-closed hooks but not the ignored runtime required to evaluate them | Versioned Git-common runtime; atomic first-use hydration; provenance check | Cross-version execution or weakened failure behavior |
+| Post-publication correction routing | CI, review, or a denied push targets work already marked published | Resolve branch and recorded PR identity; append the observation; draft an independently approved corrective child | Treating PR creation as completion or asking the user to bypass the guard |
 
 ## Lessons encoded from the benchmark campaign
 

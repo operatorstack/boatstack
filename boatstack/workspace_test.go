@@ -410,6 +410,7 @@ func TestResolveNextRoutesToWorkspaceCleanupAfterPublication(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeCompletedDelivery(t, repo, "shipped", "feat/shipped")
+	withRecoveryGh(t, recoveryPR("MERGED", "feat/shipped", "head"))
 	status, err := ResolveNext(repo, "")
 	if err != nil {
 		t.Fatal(err)
@@ -422,6 +423,7 @@ func TestResolveNextRoutesToWorkspaceCleanupAfterPublication(t *testing.T) {
 func TestResolveNextFeatureCompleteStaysNoneWithoutWorktree(t *testing.T) {
 	repo := workspaceRepo(t, defaultWorkspace())
 	writeCompletedDelivery(t, repo, "shipped", "feat/no-worktree")
+	withRecoveryGh(t, recoveryPR("MERGED", "feat/no-worktree", "head"))
 	status, err := ResolveNext(repo, "")
 	if err != nil {
 		t.Fatal(err)
@@ -436,6 +438,7 @@ func TestResolveNextFeatureCompleteStaysNoneWhenWorkspaceDisabled(t *testing.T) 
 	// A worktree exists on disk, but management is off, so cleanup is not surfaced.
 	workspaceGitDo(t, repo, "worktree", "add", "-b", "feat/manual", filepath.Join(repo, "wt-manual"))
 	writeCompletedDelivery(t, repo, "shipped", "feat/manual")
+	withRecoveryGh(t, recoveryPR("MERGED", "feat/manual", "head"))
 	status, err := ResolveNext(repo, "")
 	if err != nil {
 		t.Fatal(err)

@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-const nextStatusSchemaVersion = 1
+const nextStatusSchemaVersion = 2
 
 // NextStatus is the read-only, host-neutral projection of Boatstack's current
 // workflow position. Conversation and terminal context are deliberately absent:
@@ -25,6 +25,10 @@ type NextStatus struct {
 	Operator           DecisionOperator `json:"operator,omitempty"`
 	Reason             string           `json:"reason"`
 	BlockingAmbiguity  []string         `json:"blocking_ambiguity,omitempty"`
+	Lifecycle          string           `json:"lifecycle,omitempty"`
+	PRURL              string           `json:"pr_url,omitempty"`
+	HeadBranch         string           `json:"head_branch,omitempty"`
+	ParentDelivery     string           `json:"parent_delivery,omitempty"`
 }
 
 func blockedNextStatus(stage, operation, reason string, ambiguity ...string) NextStatus {
@@ -163,6 +167,30 @@ func nextForDelivery(repo, feature string) (NextStatus, error) {
 	return status, nil
 }
 
+func nextForPublished(repo string, state DeliveryState) NextStatus {
+	pr := observePublishedPR(repo, state)
+	_, sliceID, _ := deliveryBranchAndSlice(state)
+	status := NextStatus{
+		SchemaVersion: nextStatusSchemaVersion, VerificationStatus: "VERIFIED",
+		Feature: state.Feature, ActiveSlice: sliceID, SliceIndex: len(state.Slices),
+		TotalSlices: len(state.Slices), ObservedStage: "PUBLISHED", NextOperation: "none",
+		Lifecycle: pr.Lifecycle, PRURL: pr.URL, HeadBranch: pr.Branch,
+		ParentDelivery: state.ParentDelivery,
+	}
+	switch pr.Lifecycle {
+	case "PUBLISHED_MERGED":
+		status.ObservedStage = "FEATURE_COMPLETE"
+		status.Reason = fmt.Sprintf("The published PR for feature %q is merged.", state.Feature)
+	case "PUBLISHED_OPEN":
+		status.Reason = fmt.Sprintf("Feature %q is published in an open PR; review and required checks may still produce a corrective delivery.", state.Feature)
+	case "PUBLISHED_CLOSED":
+		status.Reason = fmt.Sprintf("The PR for feature %q is closed without a verified merge; a future correction requires a fresh PR.", state.Feature)
+	default:
+		status.Reason = fmt.Sprintf("Feature %q is published, but its PR state could not be verified.", state.Feature)
+	}
+	return status
+}
+
 func completedManagedStates(repo string) ([]DeliveryState, error) {
 	directory, err := deliveryStateDirectory(repo)
 	if err != nil {
@@ -192,8 +220,9 @@ func completedManagedStates(repo string) ([]DeliveryState, error) {
 	return completed, nil
 }
 
-// ResolveNext performs bounded, local, read-only state inspection. It never
-// contacts GitHub and never treats process or conversation history as evidence.
+// ResolveNext performs bounded, read-only state inspection. Published states
+// use the recorded PR identity when GitHub is available; conversation and
+// process history are never treated as evidence.
 func ResolveNext(repoPath, explicitFeature string) (NextStatus, error) {
 	repo, err := ResolveRepository(repoPath)
 	if err != nil {
@@ -227,8 +256,10 @@ func ResolveNext(repoPath, explicitFeature string) (NextStatus, error) {
 		}
 		if found {
 			active = []string{explicitFeature}
+		} else if completedState, completedErr := CurrentDeliveryState(repo, explicitFeature); completedErr == nil && completedState.ActiveIndex >= len(completedState.Slices) {
+			return nextForPublished(repo, completedState), nil
 		} else {
-			return blockedNextStatus("INVALID_STATE", "repair-state", fmt.Sprintf("Feature %s is not currently an active managed delivery.", explicitFeature)), nil
+			return blockedNextStatus("INVALID_STATE", "repair-state", fmt.Sprintf("Feature %s is not a verifiable active or published managed delivery.", explicitFeature)), nil
 		}
 	}
 
@@ -325,30 +356,35 @@ func ResolveNext(repoPath, explicitFeature string) (NextStatus, error) {
 		return blockedNextStatus("INVALID_STATE", "repair-state", "Boatstack found invalid completed delivery state. Preserve the artifacts and restore its evidence before continuing: "+err.Error()), nil
 	}
 	if len(completed) > 0 {
-		base.VerificationStatus = "VERIFIED"
-		base.ObservedStage = "FEATURE_COMPLETE"
-		base.NextOperation = "none"
 		if len(completed) == 1 {
-			base.Feature = completed[0].Feature
-			head := ""
-			if slices := completed[0].Slices; len(slices) > 0 {
-				last := slices[len(slices)-1]
-				base.ActiveSlice = last.ID
-				head = last.HeadBranch
-			}
-			base.Reason = fmt.Sprintf("All managed slices for feature %q are already published.", completed[0].Feature)
+			base = nextForPublished(repo, completed[0])
 			// When workspace management is on and the shipped feature still has a
-			// linked worktree locally, surface cleanup as the next step. This is a
-			// local-only check; merge confirmation and gating happen in the
-			// workspace-cleanup operation, never here.
-			if head != "" && workspaceEnabled(repo) {
-				if path := worktreePathForBranch(repo, head); path != "" {
+			// linked worktree locally, surface cleanup only after a verified merge.
+			if base.Lifecycle == "PUBLISHED_MERGED" && base.HeadBranch != "" && workspaceEnabled(repo) {
+				if path := worktreePathForBranch(repo, base.HeadBranch); path != "" {
 					base.NextOperation = "workspace-cleanup"
-					base.Reason = fmt.Sprintf("Feature %q is published; its workspace on %q can be cleaned up.", completed[0].Feature, head)
+					base.Reason = fmt.Sprintf("Feature %q is merged; its workspace on %q can be cleaned up.", completed[0].Feature, base.HeadBranch)
 				}
 			}
 		} else {
-			base.Reason = "All managed delivery states are already published."
+			branch, _ := gitCommand(repo, "branch", "--show-current")
+			matches := []DeliveryState{}
+			for _, state := range completed {
+				if stateMatchesBranch(state, strings.TrimSpace(branch)) {
+					matches = append(matches, state)
+				}
+			}
+			if len(matches) == 1 {
+				base = nextForPublished(repo, matches[0])
+			} else {
+				base.VerificationStatus = "BLOCKED"
+				base.ObservedStage = "AMBIGUOUS"
+				base.NextOperation = "resolve-ambiguity"
+				base.Reason = "Multiple published deliveries exist and none is uniquely associated with the current branch."
+				for _, state := range completed {
+					base.BlockingAmbiguity = append(base.BlockingAmbiguity, state.Feature)
+				}
+			}
 		}
 		return base, nil
 	}
@@ -374,6 +410,12 @@ func FormatNextStatus(status NextStatus) string {
 		} else {
 			parts = append(parts, "Active slice: "+status.ActiveSlice)
 		}
+	}
+	if status.Lifecycle != "" {
+		parts = append(parts, "Lifecycle: "+status.Lifecycle)
+	}
+	if status.PRURL != "" {
+		parts = append(parts, "PR: "+status.PRURL)
 	}
 	parts = append(parts, "Reason: "+status.Reason, "Next: "+status.NextOperation)
 	if len(status.BlockingAmbiguity) > 0 {

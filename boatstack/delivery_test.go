@@ -308,15 +308,41 @@ func TestPublishedChangeRemainsDiscoverableAndCannotResetOriginalDelivery(t *tes
 	if err := saveDeliveryState(repo, completed); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := RecordChangeObservation(ChangeObservationOptions{
-		Repo: repo, Feature: feature, Message: "production needs a different success state",
-		SourceStage: "published", Classification: "requirement_amendment",
-	}); err != nil {
+	statePath, err := deliveryStatePath(repo, feature)
+	if err != nil {
 		t.Fatal(err)
 	}
+	before, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observation, unchanged, err := RecordChangeObservation(ChangeObservationOptions{
+		Repo: repo, Feature: feature, Message: "production needs a different success state",
+		SourceStage: "ci", Classification: "verification_repair",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observation.Outcome != "CORRECTIVE_CHILD_REQUIRED" || observation.ParentDelivery != feature || observation.SuggestedFeatureID != feature+"-correction-01" {
+		t.Fatalf("unexpected corrective-child result: %#v", observation)
+	}
+	changes, err := os.ReadFile(filepath.Join(repo, ".product-loop", "features", feature, "changes.md"))
+	if err != nil || !strings.Contains(string(changes), "CORRECTIVE_CHILD_REQUIRED") || !strings.Contains(string(changes), feature+"-correction-01") {
+		t.Fatalf("corrective-child outcome was not recorded in the parent ledger: %v %s", err, changes)
+	}
+	if unchanged.Mode != completed.Mode || unchanged.ActiveIndex != completed.ActiveIndex {
+		t.Fatalf("published parent was mutated in memory: %#v", unchanged)
+	}
+	after, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatalf("published parent state changed while recording correction\nbefore=%s\nafter=%s", before, after)
+	}
 	active, err := ActiveManagedDeliveries(repo)
-	if err != nil || len(active) != 1 || active[0] != feature {
-		t.Fatalf("published correction was not discoverable: %#v %v", active, err)
+	if err != nil || len(active) != 0 {
+		t.Fatalf("published parent became active: %#v %v", active, err)
 	}
 	lockPath := filepath.Join(repo, ".product-loop", "features", feature, "plan.lock.json")
 	if err := os.WriteFile(lockPath, []byte("replacement-lock"), 0o644); err != nil {
@@ -399,10 +425,45 @@ func TestManagedDeliveryHookDeniesDirectPublicationRoutes(t *testing.T) {
 		if len(findings) == 0 || findings[0].Category != "workflow-publication-bypass" {
 			t.Fatalf("direct publication was not denied for %q: %#v", command, findings)
 		}
+		if findings[0].BlockingFeature != "phased-feature" || findings[0].BlockingSlice != "phase-one" || findings[0].NextOperation != "recovery-status" {
+			t.Fatalf("publication denial omitted recovery context for %q: %#v", command, findings)
+		}
+	}
+	state, err := LoadDeliveryState(repo, "phased-feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Slices[0].HeadBranch = "main"
+	state.ParentDelivery = "published-parent"
+	if err := saveDeliveryState(repo, state); err != nil {
+		t.Fatal(err)
+	}
+	related := ClassifyCommand(repo, "git push origin main")
+	if len(related) != 1 || related[0].BranchRelation != "current_branch" || related[0].ParentDelivery != "published-parent" {
+		t.Fatalf("related publication denial was not identified: %#v", related)
 	}
 	findings := ClassifyTool(repo, "github_create_pull_request", map[string]any{"title": "phase one"})
 	if len(findings) == 0 || findings[0].Category != "workflow-publication-bypass" {
 		t.Fatalf("GitHub tool publication was not denied: %#v", findings)
+	}
+	if findings[0].BlockingFeature != related[0].BlockingFeature || findings[0].BlockingSlice != related[0].BlockingSlice || findings[0].BranchRelation != related[0].BranchRelation || findings[0].NextOperation != related[0].NextOperation || findings[0].ParentDelivery != related[0].ParentDelivery {
+		t.Fatalf("shell and tool publication findings diverged:\nshell=%#v\ntool=%#v", related[0], findings[0])
+	}
+	hostEvents := map[string]string{
+		"cursor": `{"hook_event_name":"beforeShellExecution","command":"git push origin main"}`,
+		"claude": `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git push origin main"}}`,
+		"codex":  `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git push origin main"}}`,
+	}
+	for host, event := range hostEvents {
+		output, denied := HookDecision(SafetyHookOptions{Host: host, Repo: repo, Input: []byte(event)})
+		if !denied {
+			t.Fatalf("%s publication event was allowed", host)
+		}
+		for _, expected := range []string{"phased-feature", "slice=phase-one", "relation=current_branch", "parent=published-parent", "next=recovery-status", "do not repeat this push"} {
+			if !strings.Contains(string(output), expected) {
+				t.Fatalf("%s hook omitted recovery context %q: %s", host, expected, output)
+			}
+		}
 	}
 	if findings := ClassifyCommand(repo, "git status --short"); len(findings) != 0 {
 		t.Fatalf("read-only Git was unexpectedly denied: %#v", findings)
