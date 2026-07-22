@@ -413,16 +413,25 @@ func managedPRSources(repo, feature string) ([]PRSource, map[string]string, erro
 	if err != nil {
 		return nil, nil, fmt.Errorf("managed PR requires a current plan: %w", err)
 	}
-	if _, err := CheckApprovalReceipt(approvalPath, check); err != nil {
-		return nil, nil, fmt.Errorf("managed PR requires current approval: %w", err)
+	config, _, configErr := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	if configErr != nil {
+		return nil, nil, fmt.Errorf("managed PR requires a valid Boatstack project configuration: %w", configErr)
+	}
+	authorizationMode := "policy"
+	if config.Workflow.HumanPlanApproval {
+		authorizationMode = "human"
+		if _, err := CheckApprovalReceipt(approvalPath, check); err != nil {
+			return nil, nil, fmt.Errorf("managed PR requires current approval: %w", err)
+		}
 	}
 	tasksPath := filepath.Join(directory, "compiled", "tasks.json")
 	if err := CheckApprovalLock(ApprovalOptions{
-		SourcePlanPath: check.SourcePlanPath,
-		SpecPath:       check.SpecPath,
-		PlanPath:       planPath,
-		TasksPath:      tasksPath,
-		OutputPath:     lockPath,
+		SourcePlanPath:    check.SourcePlanPath,
+		SpecPath:          check.SpecPath,
+		PlanPath:          planPath,
+		TasksPath:         tasksPath,
+		AuthorizationMode: authorizationMode,
+		OutputPath:        lockPath,
 	}); err != nil {
 		return nil, nil, fmt.Errorf("managed PR requires a current build lock: %w", err)
 	}
@@ -455,14 +464,19 @@ func managedPRSources(repo, feature string) ([]PRSource, map[string]string, erro
 		if status != "PASS" && status != "PASS_WITH_GAPS" {
 			return nil, nil, fmt.Errorf("managed PR requires %s-gate evidence marked PASS or PASS_WITH_GAPS; found %q", gate, status)
 		}
+		if status == "PASS_WITH_GAPS" && !config.Workflow.AllowPassWithGaps {
+			return nil, nil, fmt.Errorf("managed PR %s gate violates workflow.allow_pass_with_gaps=false", gate)
+		}
 	}
 	paths := []struct{ kind, path string }{
 		{"source_plan", check.SourcePlanPath},
 		{"feature_spec", check.SpecPath},
 		{"plan", planPath},
-		{"approval", approvalPath},
 		{"plan_lock", lockPath},
 		{"evidence", evidencePath},
+	}
+	if config.Workflow.HumanPlanApproval {
+		paths = append(paths, struct{ kind, path string }{"approval", approvalPath})
 	}
 	for _, optional := range []struct{ kind, name string }{
 		{"questions", "questions.md"}, {"gaps", "gaps.md"}, {"test_plan", "test-plan.md"},

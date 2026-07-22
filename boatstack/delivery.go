@@ -55,16 +55,45 @@ type DeliveryGateReceipt struct {
 	Attempt              int    `json:"attempt,omitempty"`
 	TriggerObservationID string `json:"trigger_observation_id,omitempty"`
 	Supersedes           string `json:"supersedes,omitempty"`
+	ReviewerIdentity     string `json:"reviewer_identity,omitempty"`
+	ReviewMethod         string `json:"review_method,omitempty"`
 }
 
 type DeliveryGateOptions struct {
-	Repo         string
-	Feature      string
-	SliceID      string
-	Gate         string
-	Status       string
-	BaseBranch   string
-	EvidencePath string
+	Repo             string
+	Feature          string
+	SliceID          string
+	Gate             string
+	Status           string
+	BaseBranch       string
+	EvidencePath     string
+	ReviewerIdentity string
+	ReviewMethod     string
+}
+
+func validateDeliveryGatePolicy(config ProjectConfig, gate, status string, changed []string, reviewerIdentity, reviewMethod string) error {
+	if status == "PASS_WITH_GAPS" && !config.Workflow.AllowPassWithGaps {
+		return fmt.Errorf("workflow.allow_pass_with_gaps is false; record PASS only after resolving gaps")
+	}
+	if gate != "review" {
+		return nil
+	}
+	identity := strings.TrimSpace(reviewerIdentity)
+	method := strings.ToLower(strings.TrimSpace(reviewMethod))
+	if identity != "" || method != "" {
+		if identity == "" {
+			return fmt.Errorf("reviewer_identity is required when review_method is recorded")
+		}
+		if method != "human_peer" && method != "separate_agent" {
+			return fmt.Errorf("review_method must be human_peer or separate_agent")
+		}
+	}
+	if config.Workflow.IndependentReviewForHighRisk && len(highRiskChangedFiles(changed, config.Project.HighRiskPaths)) > 0 {
+		if identity == "" || method == "" {
+			return fmt.Errorf("high-risk review requires reviewer_identity and review_method")
+		}
+	}
+	return nil
 }
 
 type ChangeObservationOptions struct {
@@ -369,7 +398,7 @@ func RecordChangeObservation(options ChangeObservationOptions) (ChangeObservatio
 	resume := map[string]string{
 		"implementation_repair": "BUILD", "verification_repair": "TEST_GATE",
 		"review_repair": "REVIEW_GATE", "requirement_amendment": "PLAN_GATE",
-		"plan_invalid": "AUTO_PLAN",
+		"plan_invalid":        "AUTO_PLAN",
 		"needs_clarification": "",
 	}[classification]
 	if _, ok := map[string]bool{"implementation_repair": true, "verification_repair": true, "review_repair": true, "requirement_amendment": true, "needs_clarification": true, "plan_invalid": true}[classification]; !ok {
@@ -446,7 +475,7 @@ func checkDeliveryPlanLock(repo, feature string, state DeliveryState) error {
 		return fmt.Errorf("managed delivery requires its current plan lock: %w", err)
 	}
 	if state.PlanLockHash == "" || state.PlanLockHash != lockHash {
-		return fmt.Errorf("managed delivery state is stale for the current plan lock; reactivate the approved plan")
+		return fmt.Errorf("managed delivery state is stale for the current plan lock; reactivate the authorized plan")
 	}
 	return nil
 }
@@ -570,6 +599,13 @@ func RecordDeliveryGate(options DeliveryGateOptions) (DeliveryGateReceipt, error
 	if status != "PASS" && status != "PASS_WITH_GAPS" {
 		return DeliveryGateReceipt{}, fmt.Errorf("a delivery gate receipt may record only PASS or PASS_WITH_GAPS")
 	}
+	config, _, configErr := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	if configErr != nil {
+		return DeliveryGateReceipt{}, fmt.Errorf("delivery gate requires a valid Boatstack project configuration: %w", configErr)
+	}
+	if err := validateDeliveryGatePolicy(config, gate, status, nil, options.ReviewerIdentity, options.ReviewMethod); err != nil {
+		return DeliveryGateReceipt{}, err
+	}
 	state, err := LoadDeliveryState(repo, options.Feature)
 	if err != nil {
 		return DeliveryGateReceipt{}, err
@@ -602,6 +638,9 @@ func RecordDeliveryGate(options DeliveryGateOptions) (DeliveryGateReceipt, error
 	if err := validateDeliveryScope(options.Feature, slice, changed); err != nil {
 		return DeliveryGateReceipt{}, err
 	}
+	if err := validateDeliveryGatePolicy(config, gate, status, changed, options.ReviewerIdentity, options.ReviewMethod); err != nil {
+		return DeliveryGateReceipt{}, err
+	}
 	if slice.HeadBranch != "" && slice.HeadBranch != head {
 		return DeliveryGateReceipt{}, fmt.Errorf("delivery slice %s requires head branch %s; current branch is %s", slice.ID, slice.HeadBranch, head)
 	}
@@ -615,10 +654,6 @@ func RecordDeliveryGate(options DeliveryGateOptions) (DeliveryGateReceipt, error
 		}
 		if testReceipt.HeadCommit != headCommit || testReceipt.DiffSHA256 != diffHash || testReceipt.BaseBranch != base {
 			return DeliveryGateReceipt{}, fmt.Errorf("delivery diff changed after the test gate; rerun test-gate for slice %s", slice.ID)
-		}
-		config, _, configErr := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
-		if configErr != nil {
-			return DeliveryGateReceipt{}, fmt.Errorf("review requires a valid Boatstack project configuration: %w", configErr)
 		}
 		baseCommit, baseErr := resolveBaseCommit(repo, base)
 		if baseErr != nil {
@@ -669,6 +704,7 @@ func RecordDeliveryGate(options DeliveryGateOptions) (DeliveryGateReceipt, error
 		DiffSHA256: diffHash, EvidencePath: relEvidence, EvidenceHash: evidenceHash,
 		RecordedAt: time.Now().UTC().Truncate(time.Second).Format(time.RFC3339),
 		Attempt:    state.RepairAttempt + 1, TriggerObservationID: state.ActiveObservationID,
+		ReviewerIdentity: strings.TrimSpace(options.ReviewerIdentity), ReviewMethod: strings.ToLower(strings.TrimSpace(options.ReviewMethod)),
 	}
 	if previous.RecordedAt != "" {
 		receipt.Supersedes = previous.RecordedAt
@@ -721,6 +757,10 @@ func CheckDeliveryReadyForShip(repo, feature, base, head, diffHash string, chang
 		return DeliveryState{}, DeliverySlice{}, nil, err
 	}
 	sources := []PRSource{}
+	config, _, configErr := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	if configErr != nil {
+		return DeliveryState{}, DeliverySlice{}, nil, fmt.Errorf("ship readiness requires a valid Boatstack project configuration: %w", configErr)
+	}
 	for _, gate := range []string{"test", "review"} {
 		receipt, receiptErr := readDeliveryReceipt(repo, feature, slice.ID, gate)
 		if receiptErr != nil {
@@ -728,6 +768,9 @@ func CheckDeliveryReadyForShip(repo, feature, base, head, diffHash string, chang
 		}
 		if receipt.BaseBranch != base || receipt.HeadBranch != head || receipt.DiffSHA256 != diffHash {
 			return DeliveryState{}, DeliverySlice{}, nil, fmt.Errorf("stale delivery receipt: diff changed after the %s gate; rerun gates for slice %s", gate, slice.ID)
+		}
+		if err := validateDeliveryGatePolicy(config, gate, receipt.Status, changed, receipt.ReviewerIdentity, receipt.ReviewMethod); err != nil {
+			return DeliveryState{}, DeliverySlice{}, nil, fmt.Errorf("%s gate receipt violates current workflow policy: %w", gate, err)
 		}
 		path, _ := deliveryReceiptPath(repo, feature, slice.ID, gate)
 		hash, _ := SHA256File(path)

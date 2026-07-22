@@ -36,32 +36,34 @@ This reference document defines the schema and version history of `.boatstack-pr
 
 ## Field Reference
 
+This is the exhaustive serialization contract, not a list of recommended user edits. Fields are classified as **deterministic control**, **agent-mediated guidance**, **identity/compatibility metadata**, or **installer-owned state**. The public configuration guide contains only supported user controls.
+
 ### Root Fields
 
-- `schema_version` (integer, required): Must be exactly `1`.
+- `schema_version` (integer, required): Must be exactly `1`. Identity/compatibility metadata managed by Boatstack.
 - `project` (object, required): General project definition.
 - `workflow` (object, required): Flags controlling state machine transitions and safety gates.
 - `workspace` (object, optional): Opt-in per-feature branch or worktree management.
 - `adapters` (array of strings, optional): Enabled host environment adapters. If empty, defaults to enabling all.
-- `integrations` (object, optional): Explicit configurations for individual third-party integrations.
+- `integrations` (object, optional): Installer-owned state for third-party integrations.
 
 ### project Fields
 
-- `name` (string, required): The human-readable name of the project.
-- `default_branch` (string, optional): The canonical development/default branch (e.g. `main` or `master`).
-- `context` (array of strings, optional): Paths to persistent project directories or contextual documents.
-- `commands` (object, required): Custom development commands:
+- `name` (string, required): Identity metadata written into generated configuration.
+- `default_branch` (string, optional): Deterministic base for freshness, PR, update, and workspace operations.
+- `context` (array of strings, optional): Agent-mediated durable-context hints; the controller does not load every path automatically.
+- `commands` (object, required): Agent-mediated repository commands:
   - `test` (string, required): The exact command to execute project-local tests.
   - Other command names (string, optional): Additional repository-owned commands such as `build`, `lint`, or `typecheck`.
 - `high_risk_paths` (array of strings, optional): Glob patterns of files requiring independent reviewer sign-off before shipping.
 
 ### workflow Fields
 
-- `human_plan_approval` (boolean, optional): Whether a parent plan requires explicit human approval before building.
-- `independent_review_for_high_risk` (boolean, optional): Whether modifications to high-risk files require a distinct peer review gate.
-- `allow_pass_with_gaps` (boolean, optional): Whether the delivery verification allows outstanding questions or gaps.
+- `human_plan_approval` (boolean, optional): Deterministic activation control. `true` requires a current human receipt; `false` creates a fingerprinted policy lock.
+- `independent_review_for_high_risk` (boolean, optional): Deterministic review control. Matching diffs require reviewer identity and method `human_peer` or `separate_agent`.
+- `allow_pass_with_gaps` (boolean, optional): Deterministic gate control. `false` rejects `PASS_WITH_GAPS`; `true` preserves explicit gaps.
 - `maintain_changelog` (boolean, optional): Whether a reader-visible `CHANGELOG.md` entry is required for each delivery slice.
-- `boundary_analysis` (boolean, optional): Whether planning checks for a missing systemic boundary and presents local repair versus programmatic enforcement as a material product decision.
+- `boundary_analysis` (boolean, optional): Agent-mediated planning guidance that presents local repair versus programmatic enforcement as a material product decision.
 - `pr_visual_evidence` (string, optional): `off`, `suggest`, or `require`. Omission is `off`. Relevant PRs use machine-local PNG evidence without committing media to Git; `suggest` records missing evidence as a visible gap and `require` blocks completed publication.
 
 ### workspace Fields
@@ -77,7 +79,7 @@ Supported values are `cursor`, `claude`, `codex`, `gemini`, and `github`. An emp
 
 ### integrations Fields
 
-Supported integration keys are `gstack` and `spec-kit`. Each integration state can contain:
+Supported integration keys are `gstack` and `spec-kit`. The installer owns these records; hand edits do not select or pin an installation. Each state can contain:
 
 - `requested` (boolean, required when the integration is present): Whether installation was requested.
 - `status` (string, optional): Installer-maintained installation status.

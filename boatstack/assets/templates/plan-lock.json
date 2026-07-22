@@ -1,6 +1,8 @@
 {
-  "schema_version": 1,
-  "status": "APPROVED",
+  "schema_version": 2,
+  "status": "LOCKED",
+  "authorization_mode": "human",
+  "activated_at": "<ISO-8601 timestamp>",
   "approved_by": "<human identity>",
   "approved_at": "<ISO-8601 timestamp>",
   "source_commit": "<git commit>",
