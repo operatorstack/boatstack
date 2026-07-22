@@ -785,23 +785,27 @@ func compilePlanFiles(planPath, outDir, structuredPlanStatus string) error {
 }
 
 type ApprovalOptions struct {
-	SourcePlanPath    string
-	SpecPath          string
-	PlanPath          string
-	TasksPath         string
-	ApprovedBy        string
-	ApprovedAt        string
-	AuthorizationMode string
-	SourceCommit      string
-	OutputPath        string
+	SourcePlanPath       string
+	SpecPath             string
+	PlanPath             string
+	TasksPath            string
+	ApprovedBy           string
+	ApprovedAt           string
+	AuthorizationMode    string
+	SourceCommit         string
+	OutputPath           string
+	BaselineDiffSHA256   string
+	BaselineChangedPaths []string
 }
 
 type ApprovalReceipt struct {
-	SchemaVersion int
-	Status        string
-	ApprovedBy    string
-	ApprovedAt    string
-	Fingerprint   string
+	SchemaVersion        int
+	Status               string
+	ApprovedBy           string
+	ApprovedAt           string
+	Fingerprint          string
+	BaselineDiffSHA256   string
+	BaselineChangedPaths []string
 }
 
 func LoadApprovalReceipt(path string) (ApprovalReceipt, error) {
@@ -813,14 +817,21 @@ func LoadApprovalReceipt(path string) (ApprovalReceipt, error) {
 		return ApprovalReceipt{}, err
 	}
 	receipt := ApprovalReceipt{
-		SchemaVersion: intValue(value["schema_version"]),
-		Status:        stringValue(value["status"]),
-		ApprovedBy:    stringValue(value["approved_by"]),
-		ApprovedAt:    stringValue(value["approved_at"]),
-		Fingerprint:   stringValue(value["approval_fingerprint"]),
+		SchemaVersion:        intValue(value["schema_version"]),
+		Status:               stringValue(value["status"]),
+		ApprovedBy:           stringValue(value["approved_by"]),
+		ApprovedAt:           stringValue(value["approved_at"]),
+		Fingerprint:          stringValue(value["approval_fingerprint"]),
+		BaselineDiffSHA256:   stringValue(value["baseline_diff_sha256"]),
+		BaselineChangedPaths: []string{},
 	}
-	if receipt.SchemaVersion != 1 {
-		return ApprovalReceipt{}, fmt.Errorf("approval receipt schema_version must be 1")
+	if paths, ok := stringSlice(value["baseline_changed_paths"]); ok {
+		receipt.BaselineChangedPaths = paths
+	} else if receipt.SchemaVersion == 2 {
+		return ApprovalReceipt{}, fmt.Errorf("approval receipt baseline_changed_paths must be a string list")
+	}
+	if receipt.SchemaVersion != 1 && receipt.SchemaVersion != 2 {
+		return ApprovalReceipt{}, fmt.Errorf("approval receipt schema_version must be 1 or 2")
 	}
 	if receipt.Status != "APPROVED" {
 		return ApprovalReceipt{}, fmt.Errorf("approval receipt status must be APPROVED")
@@ -853,6 +864,21 @@ func CheckApprovalReceipt(path string, planCheck PlanCheck) (ApprovalReceipt, er
 	if receipt.Fingerprint != planCheck.Fingerprint {
 		return ApprovalReceipt{}, fmt.Errorf("stale approval receipt: fingerprint does not match the current source plan, spec, and plan")
 	}
+	repo, err := ResolveRepository(filepath.Dir(planCheck.PlanPath))
+	if err != nil {
+		return ApprovalReceipt{}, err
+	}
+	baseline, err := productBaseline(repo, planCheck.PlanPath, planCheck.SourcePlanPath, planCheck.SpecPath, path)
+	if err != nil {
+		return ApprovalReceipt{}, err
+	}
+	if receipt.SchemaVersion == 1 {
+		if baseline.DiffSHA256 != "" {
+			return ApprovalReceipt{}, fmt.Errorf("schema-v1 approval receipts remain valid only with a clean pre-activation product baseline; changed paths: %s", strings.Join(baseline.ChangedPaths, ", "))
+		}
+	} else if receipt.BaselineDiffSHA256 != baseline.DiffSHA256 || strings.Join(receipt.BaselineChangedPaths, "\x00") != strings.Join(baseline.ChangedPaths, "\x00") {
+		return ApprovalReceipt{}, fmt.Errorf("stale approval receipt: baseline product diff changed after approval")
+	}
 	return receipt, nil
 }
 
@@ -880,6 +906,7 @@ func ActivatePlan(options ActivationOptions) error {
 	authorizationMode := "policy"
 	structuredPlanStatus := "POLICY_ACTIVATED"
 	receipt := ApprovalReceipt{}
+	baseline := PlanningBaseline{}
 	if config.Workflow.HumanPlanApproval {
 		authorizationMode = "human"
 		structuredPlanStatus = "HUMAN_APPROVED"
@@ -887,6 +914,12 @@ func ActivatePlan(options ActivationOptions) error {
 			return fmt.Errorf("human_plan_approval requires --approval")
 		}
 		receipt, err = CheckApprovalReceipt(options.ApprovalPath, check)
+		if err != nil {
+			return err
+		}
+		baseline = PlanningBaseline{DiffSHA256: receipt.BaselineDiffSHA256, ChangedPaths: receipt.BaselineChangedPaths}
+	} else {
+		baseline, err = productBaseline(repo, options.PlanPath, check.SourcePlanPath, check.SpecPath, options.ApprovalPath, options.OutputPath)
 		if err != nil {
 			return err
 		}
@@ -900,15 +933,17 @@ func ActivatePlan(options ActivationOptions) error {
 	}
 	tasksPath := filepath.Join(options.OutDir, "tasks.json")
 	approval := ApprovalOptions{
-		SourcePlanPath:    check.SourcePlanPath,
-		SpecPath:          check.SpecPath,
-		PlanPath:          options.PlanPath,
-		TasksPath:         tasksPath,
-		ApprovedBy:        receipt.ApprovedBy,
-		ApprovedAt:        receipt.ApprovedAt,
-		AuthorizationMode: authorizationMode,
-		SourceCommit:      options.SourceCommit,
-		OutputPath:        options.OutputPath,
+		SourcePlanPath:       check.SourcePlanPath,
+		SpecPath:             check.SpecPath,
+		PlanPath:             options.PlanPath,
+		TasksPath:            tasksPath,
+		ApprovedBy:           receipt.ApprovedBy,
+		ApprovedAt:           receipt.ApprovedAt,
+		AuthorizationMode:    authorizationMode,
+		SourceCommit:         options.SourceCommit,
+		OutputPath:           options.OutputPath,
+		BaselineDiffSHA256:   baseline.DiffSHA256,
+		BaselineChangedPaths: baseline.ChangedPaths,
 	}
 	if fileExists(options.OutputPath) {
 		if err := CheckApprovalLock(approval); err == nil {
@@ -935,6 +970,13 @@ func ActivatePlan(options ActivationOptions) error {
 	}
 	if err := compilePlanFiles(options.PlanPath, options.OutDir, structuredPlanStatus); err != nil {
 		return err
+	}
+	currentBaseline, err := productBaseline(repo, options.PlanPath, check.SourcePlanPath, check.SpecPath, options.ApprovalPath, options.OutputPath, options.OutDir)
+	if err != nil {
+		return err
+	}
+	if currentBaseline.DiffSHA256 != baseline.DiffSHA256 || strings.Join(currentBaseline.ChangedPaths, "\x00") != strings.Join(baseline.ChangedPaths, "\x00") {
+		return fmt.Errorf("pre-activation product baseline drifted before the plan lock could be created; expected paths %s, observed paths %s", strings.Join(baseline.ChangedPaths, ", "), strings.Join(currentBaseline.ChangedPaths, ", "))
 	}
 	if err := CreateApprovalLock(approval); err != nil {
 		return err
@@ -985,22 +1027,28 @@ func CreateApprovalLock(options ApprovalOptions) error {
 	sourcePlanHash, _ := SHA256File(options.SourcePlanPath)
 	planHash, _ := SHA256File(options.PlanPath)
 	tasksHash, _ := SHA256File(options.TasksPath)
+	baselinePaths := options.BaselineChangedPaths
+	if baselinePaths == nil {
+		baselinePaths = []string{}
+	}
 	lock := map[string]any{
-		"schema_version":      2,
-		"status":              "LOCKED",
-		"authorization_mode":  mode,
-		"activated_at":        approvedAt,
-		"source_commit":       sourceCommit,
-		"source_plan_path":    options.SourcePlanPath,
-		"source_plan_sha256":  sourcePlanHash,
-		"spec_path":           options.SpecPath,
-		"spec_sha256":         specHash,
-		"plan_path":           options.PlanPath,
-		"plan_sha256":         planHash,
-		"task_graph_path":     options.TasksPath,
-		"task_graph_sha256":   tasksHash,
-		"invalidated_at":      nil,
-		"invalidation_reason": nil,
+		"schema_version":         2,
+		"status":                 "LOCKED",
+		"authorization_mode":     mode,
+		"activated_at":           approvedAt,
+		"source_commit":          sourceCommit,
+		"source_plan_path":       options.SourcePlanPath,
+		"source_plan_sha256":     sourcePlanHash,
+		"spec_path":              options.SpecPath,
+		"spec_sha256":            specHash,
+		"plan_path":              options.PlanPath,
+		"plan_sha256":            planHash,
+		"task_graph_path":        options.TasksPath,
+		"task_graph_sha256":      tasksHash,
+		"invalidated_at":         nil,
+		"invalidation_reason":    nil,
+		"baseline_diff_sha256":   options.BaselineDiffSHA256,
+		"baseline_changed_paths": baselinePaths,
 	}
 	if mode == "human" {
 		lock["approved_by"] = options.ApprovedBy
@@ -1053,6 +1101,9 @@ func CheckApprovalLock(options ApprovalOptions) error {
 	}
 	if expectedMode == "policy" && schemaVersion == 1 {
 		mismatches = append(mismatches, "authorization_mode")
+	}
+	if options.BaselineDiffSHA256 != "" && stringValue(lock["baseline_diff_sha256"]) != options.BaselineDiffSHA256 {
+		mismatches = append(mismatches, "baseline_diff")
 	}
 	if schemaVersion != 1 && schemaVersion != 2 {
 		mismatches = append(mismatches, "schema_version")

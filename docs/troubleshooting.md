@@ -147,3 +147,9 @@ update confirmation. Successful publication activates the next declared slice.
 ## GitHub CLI is unavailable
 
 Boatstack retains the validated `pr.md`. Authenticate or install GitHub CLI and repeat the open/update confirmation, or copy the exact preview into GitHub manually. Neither path authorizes merge.
+
+## A product edit is denied before build
+
+After `auto-plan` saves a feature plan, Boatstack owns the workflow boundary even though implementation has not started. Review the reported stage and continue with `plan-gate` when the plan is draft, or `build` when it is approved or policy-ready. Product files remain unchanged until build activation creates a current lock. Do not retry through another editor, shell redirection, package installer, or MCP tool; all supported host events share the same decision. If the denial reports ambiguous, stale, or invalid state, follow its single recovery operation.
+
+If `check-plan` reports a non-empty product baseline, inspect its exact diff and changed paths. Pass the displayed baseline fingerprint to `record-approval`. A changed fingerprint means the pre-existing edits drifted; preserve them, review the new diff, and approve again. Schema-v1 receipts remain valid only when this baseline is clean.

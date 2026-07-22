@@ -587,9 +587,12 @@ func RunInit(options InitOptions) (returnErr error) {
 		fmt.Fprintln(options.Output, "  1. Describe the product change and save the host plan (use .product-loop/intake/ if the host exposes no path).")
 	}
 	fmt.Fprintln(options.Output, "Host activation checklist:")
-	fmt.Fprintln(options.Output, "  Cursor: reload the window and confirm beforeShellExecution and beforeMCPExecution are enabled; the hook is defense in depth.")
+	fmt.Fprintln(options.Output, "  Cursor: reload the window and confirm beforeShellExecution and beforeMCPExecution, plus synchronous preToolUse for native edits, are enabled; the hook is defense in depth.")
 	fmt.Fprintln(options.Output, "  Claude Code: reload, then use /hooks to confirm the Boatstack PreToolUse hook is active (Bash is required).")
 	fmt.Fprintln(options.Output, "  Codex: trust this exact linked-worktree path, use /hooks to review and trust the Boatstack hook, then start a new task.")
+	if contains(config.Adapters, "gemini") {
+		fmt.Fprintln(options.Output, "  Gemini CLI: reload and confirm the Boatstack BeforeTool hook is active.")
+	}
 	fmt.Fprintln(options.Output, "Boatstack start command by host:")
 	fmt.Fprintln(options.Output, "  Claude Code: /auto-plan")
 	fmt.Fprintln(options.Output, "  Cursor: /auto-plan")
@@ -607,7 +610,8 @@ const ExecutionBoundaryDX = `
 **Boatstack Execution Boundary:**
 When the user approves a plan within your native Plan Mode, **do not immediately transition to Auto-Edit or begin mutating product files.** Because this repository is managed by Boatstack, execution must pass through verifiable gates. Instead of executing the code:
 1. Save your proposed plan to ` + "`.product-loop/intake/source-plan.md`" + `.
-2. Pause and ask the user: *"I have saved the plan. Should we execute this through Boatstack (` + "`/boatstack run`" + `), or do you want me to write the code directly?"*
+2. Before auto-plan succeeds, the user may still choose an unmanaged workflow. Once auto-plan creates a saved feature plan, do not offer direct product editing: resolve Boatstack state and continue through plan-gate, approval when configured, and build activation.
+3. Async task completion, conversation state, or an execution-mode transition never creates implementation authority. Only a current plan lock does.
 `
 
 const interceptorHeader = "<!-- BEGIN BOATSTACK EXECUTION INTERCEPTOR -->\n"
@@ -654,7 +658,6 @@ func InstallExecutionInterceptors(repo string, adapters []string) error {
 	}
 	return nil
 }
-
 
 func RunUpdate(options InitOptions) error {
 	options.Update = true

@@ -197,7 +197,12 @@ func checkPlanCommand(arguments []string) int {
 	if err != nil {
 		return fail(fmt.Errorf("invalid Markdown plan: %w", err))
 	}
-	fmt.Printf("PASS: Markdown plan is structurally valid\nPLAN_FINGERPRINT=%s\nSOURCE_PLAN=%s\nSPEC=%s\n", check.Fingerprint, check.SourcePlanPath, check.SpecPath)
+	baseline, err := boatstack.PlanningBaselineForPlan(*plan)
+	if err != nil {
+		return fail(fmt.Errorf("cannot fingerprint the pre-activation product baseline: %w", err))
+	}
+	paths, _ := json.Marshal(baseline.ChangedPaths)
+	fmt.Printf("PASS: Markdown plan is structurally valid\nPLAN_FINGERPRINT=%s\nSOURCE_PLAN=%s\nSPEC=%s\nBASELINE_DIFF_SHA256=%s\nBASELINE_CHANGED_PATHS=%s\n", check.Fingerprint, check.SourcePlanPath, check.SpecPath, baseline.DiffSHA256, paths)
 	return 0
 }
 
@@ -269,6 +274,7 @@ func recordApprovalCommand(arguments []string) int {
 	approvedBy := flags.String("approved-by", "", "named human approver")
 	approvedAt := flags.String("approved-at", "", "RFC3339 approval timestamp")
 	fingerprint := flags.String("fingerprint", "", "exact fingerprint displayed before approval")
+	baselineDiffSHA256 := flags.String("baseline-diff-sha256", "", "exact product baseline fingerprint displayed before approval; omit only when clean")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}
@@ -277,7 +283,7 @@ func recordApprovalCommand(arguments []string) int {
 	}
 	if err := boatstack.RecordApproval(boatstack.ApprovalRecordOptions{
 		PlanPath: *plan, OutputPath: *output, ApprovedBy: *approvedBy,
-		ApprovedAt: *approvedAt, Fingerprint: *fingerprint,
+		ApprovedAt: *approvedAt, Fingerprint: *fingerprint, BaselineDiffSHA256: *baselineDiffSHA256,
 	}); err != nil {
 		return fail(err)
 	}

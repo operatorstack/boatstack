@@ -87,11 +87,11 @@ ledger while the publisher rechecks the matching receipts.
 
 ## Planning boundary
 
-`auto-plan` and `plan-gate` create or update Markdown only. `plan.md` is the canonical structured input and `approval.md` is the human-approval receipt. Compiled JSON and `plan.lock.json` begin only at `build` activation, after the receipt is verified. This keeps planning compatible with hosts that intentionally restrict Plan mode to documents.
+`auto-plan` and `plan-gate` create or update Markdown only. `plan.md` is the canonical structured input and schema-v2 `approval.md` binds human approval to both the plan fingerprint and the displayed pre-activation product-diff baseline. Compiled JSON and `plan.lock.json` begin only at `build` activation, after the receipt and unchanged baseline are verified. Schema-v1 receipts remain compatible only when that baseline is clean. This keeps planning compatible with hosts that intentionally restrict Plan mode to documents while preserving edits that predated managed authority.
 
 ## Safety boundary
 
-The generated host hook fragments and launchers are committed installation infrastructure. Their policy is immutable in project configuration. The machine-local helper is ignored and restored by the installer. Safety evidence belongs in the feature evidence ledger: target identity, failure behavior, independent oracle, operational-diff scan, and the operator-only recovery boundary. A source edit is reviewable evidence, not permission to execute it.
+The generated host hook fragments and launchers are committed installation infrastructure. Their policy is immutable in project configuration. Cursor `preToolUse`, shell, and MCP events; Claude and Codex `PreToolUse`; and Gemini `BeforeTool` all project into one classifier. The machine-local helper is ignored and restored by the installer. Safety evidence belongs in the feature evidence ledger: target identity, failure behavior, independent oracle, operational-diff scan, and the operator-only recovery boundary. A source edit is reviewable evidence, not permission to execute it.
 
 ## PR visual evidence boundary
 

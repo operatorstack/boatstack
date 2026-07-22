@@ -92,6 +92,11 @@ func TestPlanningWriteRejectsSymlinksAndPreservesExistingContentOnFailure(t *tes
 func TestRecordApprovalChecksFingerprintAndWritesOnlyReceipt(t *testing.T) {
 	root := t.TempDir()
 	_, _, planPath := writePlanInputs(t, root, true)
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.name", "Boatstack Test")
+	runGit(t, root, "config", "user.email", "boatstack@example.invalid")
+	runGit(t, root, "add", ".")
+	runGit(t, root, "commit", "-m", "record planning inputs")
 	check, err := CheckPlan(planPath)
 	if err != nil {
 		t.Fatal(err)
@@ -120,6 +125,70 @@ func TestRecordApprovalChecksFingerprintAndWritesOnlyReceipt(t *testing.T) {
 		if strings.HasSuffix(entry.Name(), ".json") {
 			t.Fatalf("approval wrote machine state before build: %s", entry.Name())
 		}
+	}
+}
+
+func TestApprovalBindsAndPreservesExistingProductBaseline(t *testing.T) {
+	root := t.TempDir()
+	_, _, planPath := writePlanInputs(t, root, true)
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.name", "Boatstack Test")
+	runGit(t, root, "config", "user.email", "boatstack@example.invalid")
+	if err := os.WriteFile(filepath.Join(root, "app.ts"), []byte("before\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", ".")
+	runGit(t, root, "commit", "-m", "record planning baseline")
+	if err := os.WriteFile(filepath.Join(root, "app.ts"), []byte("pre-existing operator edit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	check, err := CheckPlan(planPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseline, err := PlanningBaselineForPlan(planPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if baseline.DiffSHA256 == "" || len(baseline.ChangedPaths) != 1 || baseline.ChangedPaths[0] != "app.ts" {
+		t.Fatalf("product baseline was not exposed for approval: %+v", baseline)
+	}
+	approval := filepath.Join(root, "approval.md")
+	if err := RecordApproval(ApprovalRecordOptions{
+		PlanPath: planPath, ApprovedBy: "Test Human", ApprovedAt: "2026-07-16T12:00:00Z",
+		Fingerprint: check.Fingerprint, BaselineDiffSHA256: baseline.DiffSHA256,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CheckApprovalReceipt(approval, check); err != nil {
+		t.Fatalf("unchanged product baseline invalidated approval: %v", err)
+	}
+	writeActivationConfig(t, root, true)
+	compiled := filepath.Join(root, ".product-loop", "features", "feature-one", "compiled")
+	lockPath := filepath.Join(root, ".product-loop", "features", "feature-one", "plan.lock.json")
+	if err := ActivatePlan(ActivationOptions{PlanPath: planPath, ApprovalPath: approval, OutDir: compiled, OutputPath: lockPath, SourceCommit: "test"}); err != nil {
+		t.Fatalf("unchanged pre-existing product diff blocked activation: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(root, "app.ts"))
+	if err != nil || string(content) != "pre-existing operator edit\n" {
+		t.Fatalf("activation rewrote the pre-existing product diff: %q %v", content, err)
+	}
+	lockValue, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock := map[string]any{}
+	if err := json.Unmarshal(lockValue, &lock); err != nil {
+		t.Fatal(err)
+	}
+	if stringValue(lock["baseline_diff_sha256"]) != baseline.DiffSHA256 {
+		t.Fatalf("plan lock lost baseline provenance: %#v", lock)
+	}
+	if err := os.WriteFile(filepath.Join(root, "app.ts"), []byte("drift after approval\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CheckApprovalReceipt(approval, check); err == nil || !strings.Contains(err.Error(), "baseline product diff changed") {
+		t.Fatalf("product drift did not invalidate approval: %v", err)
 	}
 }
 
