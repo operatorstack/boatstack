@@ -217,7 +217,7 @@ func TestHostContractsNormalizeCanonicalInputs(t *testing.T) {
 		{"codex allow", "codex", `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git status --short"}}`, false, ""},
 		{"codex deny", "codex", `{"hook_event_name":"PreToolUse","tool_name":"mcp__cloud__delete_database","tool_input":{"database":"primary"}}`, true, `"permissionDecision":"deny"`},
 		{"codex lowercase PreToolUse deny", "codex", `{"hook_event_name":"preToolUse","tool_name":"Bash","tool_input":{"command":"git status --short"}}`, true, `"permissionDecision":"deny"`},
-		{"wrong event deny", "codex", `{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"git status --short"}}`, true, `"permissionDecision":"deny"`},
+		{"malformed post deny", "codex", `{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"git status --short"}}`, true, `"permissionDecision":"deny"`},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -245,7 +245,7 @@ func TestMalformedHostPayloadsDenyWithoutLeakingInput(t *testing.T) {
 		{"cursor", `{"hook_event_name":"beforeMCPExecution","tool_input":{}}`, "missing-tool-name"},
 		{"cursor", `{"hook_event_name":"beforeMCPExecution","tool_name":"mcp__cloud__delete_database","tool_input":"secret-not-json"}`, "invalid-tool-input-json"},
 		{"cursor", `{"hook_event_name":"unknown","command":"secret-command"}`, "unsupported-event"},
-		{"claude", `{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"secret-command"}}`, "unsupported-event"},
+		{"claude", `{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"secret-command"}}`, "invalid-post-event"},
 		{"codex", `{"hook_event_name":"PreToolUse","tool_name":"Bash"}`, "missing-tool-input"},
 	} {
 		output, denied := HookDecision(SafetyHookOptions{Host: test.host, Repo: repo, Input: []byte(test.input)})

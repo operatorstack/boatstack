@@ -3,6 +3,7 @@ package boatstack
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -215,20 +216,6 @@ func publishPRVisualEvidence(repo, prURL string, context PRContext, publisher PR
 		State: "published", PRURL: prURL, CommentURL: strings.TrimSpace(commentURL), UpdatedAt: now,
 	})
 	return err
-}
-
-func commandOutput(repo string, name string, arguments ...string) (string, error) {
-	command := exec.Command(name, arguments...)
-	command.Dir = repo
-	value, err := command.CombinedOutput()
-	if err != nil {
-		message := strings.TrimSpace(string(value))
-		if message == "" {
-			message = err.Error()
-		}
-		return "", fmt.Errorf("%s", message)
-	}
-	return strings.TrimSpace(string(value)), nil
 }
 
 func gitCommand(repo string, arguments ...string) (string, error) {
@@ -1036,60 +1023,122 @@ func PublishPR(options PRPublishOptions) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if options.Action == "open" && exists {
+	operationTarget := "github-pr:" + options.Action + ":" + context.HeadBranch
+	operationFingerprint := preview.Fingerprint
+	operationID := operationID("publish-pr", operationTarget, operationFingerprint)
+	prior, priorErr := loadOperation(repo, operationID)
+	partialResume := priorErr == nil && (prior.State == OperationReconcileRequired || prior.State == OperationRetryable)
+	if options.Action == "open" && exists && !partialResume {
 		return "", fmt.Errorf("a PR already exists for %s; regenerate the preview for update", context.HeadBranch)
 	}
 	if options.Action == "update" && !exists {
 		return "", fmt.Errorf("no PR exists for %s; regenerate the preview for opening", context.HeadBranch)
 	}
+	receipt, err := PrepareOperation(OperationPrepareOptions{
+		Repo: repo, Kind: "publish-pr",
+		Scope:  OperationScope{Feature: context.Feature, Slice: context.SliceID, Worktree: filepath.Base(repo), HeadBranch: context.HeadBranch},
+		Target: operationTarget, PackageFingerprint: operationFingerprint, AuthorizationFingerprint: options.ExpectedFingerprint,
+		RetryClass: "RECONCILE_FIRST", MaxAttempts: 3,
+		ExpectedPostcondition: "origin contains the exact head commit and one pull request reflects the fingerprinted title, body, and visual-evidence package",
+	})
+	if err != nil {
+		return "", err
+	}
+	if receipt.State == OperationSucceeded {
+		if receipt.Observation.Evidence != "" {
+			return receipt.Observation.Evidence, nil
+		}
+		if exists {
+			return existingURL, nil
+		}
+		return "", fmt.Errorf("published operation is terminal but its PR URL is unavailable")
+	}
+	if receipt.State == OperationReconcileRequired {
+		result := "OBSERVED_ABSENT"
+		detail := "no pull request exists for the exact head branch"
+		evidence := context.HeadBranch
+		if exists {
+			result = "OBSERVED_PARTIAL"
+			detail = "the pull request exists; resume remaining idempotent publication steps"
+			evidence = existingURL
+		}
+		receipt, err = RecordOperationReconciliation(repo, receipt.OperationID, result, detail, evidence)
+		if err != nil {
+			return "", err
+		}
+	}
+	attemptKey := SHA256Bytes([]byte("publish-pr\x00" + options.Action + "\x00" + preview.Fingerprint))
+	begin, err := BeginOperation(repo, receipt.OperationID, attemptKey, "boatstack-helper publish-pr")
+	if err != nil {
+		if errors.Is(err, ErrOperationInFlight) {
+			return "", fmt.Errorf("the identical PR publication is already executing; inspect operation-status instead of repeating it")
+		}
+		return "", err
+	}
+	if begin.Receipt.State == OperationSucceeded {
+		return begin.Receipt.Observation.Evidence, nil
+	}
+	completeUnknown := func(cause error, observedURL string) (string, error) {
+		_, _ = CompleteOperation(repo, receipt.OperationID, begin.LeaseToken, "UNKNOWN", "publication ended without a verifiable complete postcondition", observedURL)
+		return "", cause
+	}
 	if _, err := gitCommand(repo, "push", "--set-upstream", "origin", context.HeadBranch); err != nil {
-		return "", fmt.Errorf("cannot push %s without rewriting history: %w", context.HeadBranch, err)
+		return completeUnknown(fmt.Errorf("cannot push %s without rewriting history: %w", context.HeadBranch, err), existingURL)
 	}
 	temporary, err := os.CreateTemp("", "boatstack-pr-body-*.md")
 	if err != nil {
-		return "", err
+		return completeUnknown(err, existingURL)
 	}
 	temporaryPath := temporary.Name()
 	defer os.Remove(temporaryPath)
 	if _, err := temporary.WriteString(preview.Body + "\n"); err != nil {
 		temporary.Close()
-		return "", err
+		return completeUnknown(err, existingURL)
 	}
 	if err := temporary.Close(); err != nil {
-		return "", err
+		return completeUnknown(err, existingURL)
 	}
 	if options.Action == "open" {
-		url, err := commandOutput(repo, "gh", "pr", "create", "--base", context.BaseBranch, "--head", context.HeadBranch, "--title", preview.Title, "--body-file", temporaryPath)
-		if err != nil {
-			return "", err
+		url := existingURL
+		if !exists {
+			url, err = commandOutput(repo, "gh", "pr", "create", "--base", context.BaseBranch, "--head", context.HeadBranch, "--title", preview.Title, "--body-file", temporaryPath)
+			if err != nil {
+				return completeUnknown(err, "")
+			}
 		}
 		url = strings.TrimSpace(url)
 		if err := publishPRVisualEvidence(repo, url, context, options.VisualPublisher); err != nil {
-			return "", err
+			return completeUnknown(err, url)
 		}
 		if context.Mode == "managed" {
 			if err := MarkDeliveryPublished(repo, context.Feature, context.SliceID, url); err != nil {
-				return "", fmt.Errorf("PR opened but delivery state could not advance: %w", err)
+				return completeUnknown(fmt.Errorf("PR opened but delivery state could not advance: %w", err), url)
 			}
 			if err := extractSystemicBoundaries(repo, context.Feature); err != nil {
 				fmt.Fprintf(os.Stderr, "WARNING: could not extract systemic boundaries: %v\n", err)
 			}
 		}
+		if _, err := CompleteOperation(repo, receipt.OperationID, begin.LeaseToken, "SUCCEEDED", "pull request publication postcondition observed", url); err != nil {
+			return "", err
+		}
 		return url, nil
 	}
 	if _, err := commandOutput(repo, "gh", "pr", "edit", existingURL, "--title", preview.Title, "--body-file", temporaryPath); err != nil {
-		return "", err
+		return completeUnknown(err, existingURL)
 	}
 	if err := publishPRVisualEvidence(repo, existingURL, context, options.VisualPublisher); err != nil {
-		return "", err
+		return completeUnknown(err, existingURL)
 	}
 	if context.Mode == "managed" {
 		if err := MarkDeliveryPublished(repo, context.Feature, context.SliceID, existingURL); err != nil {
-			return "", fmt.Errorf("PR updated but delivery state could not advance: %w", err)
+			return completeUnknown(fmt.Errorf("PR updated but delivery state could not advance: %w", err), existingURL)
 		}
 		if err := extractSystemicBoundaries(repo, context.Feature); err != nil {
 			fmt.Fprintf(os.Stderr, "WARNING: could not extract systemic boundaries: %v\n", err)
 		}
+	}
+	if _, err := CompleteOperation(repo, receipt.OperationID, begin.LeaseToken, "SUCCEEDED", "pull request update postcondition observed", existingURL); err != nil {
+		return "", err
 	}
 	return existingURL, nil
 }

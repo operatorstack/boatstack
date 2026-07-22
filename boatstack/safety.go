@@ -15,16 +15,20 @@ import (
 // SafetyFinding is intentionally small and secret-free. The guard reports the
 // class and a stable explanation, never the full command or tool arguments.
 type SafetyFinding struct {
-	Category        string `json:"category"`
-	Reason          string `json:"reason"`
-	Source          string `json:"source,omitempty"`
-	BlockingFeature string `json:"blocking_feature,omitempty"`
-	BlockingSlice   string `json:"blocking_slice,omitempty"`
-	BranchRelation  string `json:"branch_relation,omitempty"`
-	NextOperation   string `json:"next_operation,omitempty"`
-	ParentDelivery  string `json:"parent_delivery,omitempty"`
-	WorkflowStage   string `json:"workflow_stage,omitempty"`
-	AttemptedPath   string `json:"attempted_path,omitempty"`
+	Category               string `json:"category"`
+	Reason                 string `json:"reason"`
+	Source                 string `json:"source,omitempty"`
+	BlockingFeature        string `json:"blocking_feature,omitempty"`
+	BlockingSlice          string `json:"blocking_slice,omitempty"`
+	BranchRelation         string `json:"branch_relation,omitempty"`
+	NextOperation          string `json:"next_operation,omitempty"`
+	ParentDelivery         string `json:"parent_delivery,omitempty"`
+	WorkflowStage          string `json:"workflow_stage,omitempty"`
+	AttemptedPath          string `json:"attempted_path,omitempty"`
+	OperationID            string `json:"operation_id,omitempty"`
+	OperationState         string `json:"operation_state,omitempty"`
+	AttemptNumber          int    `json:"attempt_number,omitempty"`
+	ReconciliationRequired bool   `json:"reconciliation_required,omitempty"`
 }
 
 type SafetyReport struct {
@@ -90,7 +94,7 @@ func controlledPhaseTransition(command, stage string) bool {
 	}
 	readOnlyHelpers := map[string]bool{
 		"check-plan": true, "check-source-plan": true, "next-status": true, "delivery-status": true,
-		"recovery-status": true, "check-safety": true, "workspace-status": true, "diagnose-hook": true,
+		"recovery-status": true, "operation-status": true, "check-safety": true, "workspace-status": true, "diagnose-hook": true,
 		"doctor": true, "version": true,
 	}
 	if readOnlyHelpers[fields[1]] {
@@ -467,6 +471,196 @@ func ClassifyTool(repo, name string, input any) []SafetyFinding {
 	return dedupeFindings(findings)
 }
 
+func mutationCapableTool(name string, input any) bool {
+	if strings.EqualFold(name, "Bash") || strings.EqualFold(name, "Shell") || strings.EqualFold(name, "beforeShellExecution") || strings.EqualFold(name, "run_shell_command") {
+		object, ok := input.(map[string]any)
+		return !ok || !isPureReadOnlyCommand(stringValue(object["command"]))
+	}
+	lower := strings.ToLower(name)
+	return mutationToolPattern.MatchString(lower) || (strings.HasPrefix(lower, "mcp__") && !externalReadOnlyToolPattern.MatchString(lower))
+}
+
+func supervisedToolIdentity(name string, input any) (string, string) {
+	value, _ := json.Marshal(input)
+	fingerprint := SHA256Bytes(append([]byte(strings.ToLower(strings.TrimSpace(name))+"\x00"), value...))
+	return "tool:" + strings.ToLower(strings.TrimSpace(name)), fingerprint
+}
+
+func activeManagedOperationScope(repo string) (OperationScope, string, bool) {
+	active, err := ActiveManagedDeliveries(repo)
+	if err != nil || len(active) == 0 {
+		return OperationScope{}, "", false
+	}
+	branch := strings.TrimSpace(gitOutput(repo, "branch", "--show-current"))
+	for _, feature := range active {
+		state, loadErr := LoadDeliveryState(repo, feature)
+		if loadErr != nil || !stateMatchesBranch(state, branch) || state.ActiveIndex >= len(state.Slices) {
+			continue
+		}
+		slice := state.Slices[state.ActiveIndex]
+		return OperationScope{Feature: feature, Slice: slice.ID, Worktree: filepath.Base(repo), HeadBranch: branch}, state.PlanLockHash, true
+	}
+	return OperationScope{}, "", false
+}
+
+func operationRetryClassForTool(name string) string {
+	lower := strings.ToLower(name)
+	if strings.HasPrefix(lower, "mcp__") || strings.Contains(lower, "upload") || strings.Contains(lower, "browser") {
+		return "RECONCILE_FIRST"
+	}
+	if strings.Contains(lower, "write") || strings.Contains(lower, "edit") || strings.Contains(lower, "patch") || strings.Contains(lower, "create") {
+		return "ATOMIC_LOCAL"
+	}
+	return "IDEMPOTENT_EXTERNAL"
+}
+
+func hookAttemptKey(host, fingerprint string, eventValue []byte) string {
+	var event map[string]any
+	if json.Unmarshal(eventValue, &event) == nil {
+		for _, key := range []string{"tool_call_id", "tool_use_id", "call_id"} {
+			if identity := strings.TrimSpace(stringValue(event[key])); identity != "" {
+				return SHA256Bytes([]byte(strings.ToLower(strings.TrimSpace(host)) + "\x00" + identity + "\x00" + fingerprint))
+			}
+		}
+	}
+	return SHA256Bytes([]byte(strings.ToLower(strings.TrimSpace(host)) + "\x00" + fingerprint))
+}
+
+func superviseToolAttempt(repo, host, name string, input any, eventValue []byte) *SafetyFinding {
+	if !mutationCapableTool(name, input) {
+		return nil
+	}
+	scope, authority, managed := activeManagedOperationScope(repo)
+	if !managed {
+		return nil
+	}
+	kind, fingerprint := supervisedToolIdentity(name, input)
+	target := attemptedRepositoryPath(repo, input)
+	if target == "" {
+		target = kind
+	}
+	receipt, err := PrepareOperation(OperationPrepareOptions{
+		Repo: repo, Kind: kind, Scope: scope, Target: target, PackageFingerprint: fingerprint,
+		AuthorizationFingerprint: authority, RetryClass: operationRetryClassForTool(name), MaxAttempts: 3,
+		ExpectedPostcondition: "the supervised tool reports completion and its target can be reconciled",
+	})
+	if err != nil {
+		return &SafetyFinding{Category: "operation-state-invalid", Reason: "the managed operation receipt could not be prepared", Source: "operation-controller", NextOperation: "operation-status"}
+	}
+	if receipt.State == OperationSucceeded {
+		return &SafetyFinding{Category: "operation-already-succeeded", Reason: "the identical fingerprinted operation already succeeded", Source: "operation-controller", OperationID: receipt.OperationID, OperationState: string(receipt.State), AttemptNumber: receipt.Attempt, NextOperation: "none"}
+	}
+	attemptKey := hookAttemptKey(host, fingerprint, eventValue)
+	begin, beginErr := BeginOperation(repo, receipt.OperationID, attemptKey, name)
+	if beginErr == nil {
+		return nil
+	}
+	finding := &SafetyFinding{
+		Category: "operation-state-invalid", Reason: beginErr.Error(), Source: "operation-controller",
+		OperationID: receipt.OperationID, OperationState: string(begin.Receipt.State), AttemptNumber: begin.Receipt.Attempt, NextOperation: "operation-status",
+	}
+	switch {
+	case errors.Is(beginErr, ErrOperationInFlight):
+		finding.Category = "operation-in-flight"
+		finding.Reason = "the identical authorized operation is already executing"
+		finding.NextOperation = "wait"
+	case begin.Receipt.State == OperationReconcileRequired:
+		finding.Category = "operation-reconciliation-required"
+		finding.Reason = "the previous attempt ended without an observable completion"
+		finding.ReconciliationRequired = true
+		finding.NextOperation = "reconcile"
+	case begin.Receipt.State == OperationFailedFinal:
+		finding.Category = "operation-retry-exhausted"
+		finding.Reason = "the persistent operation retry budget is exhausted"
+		finding.NextOperation = "manual_recovery"
+	}
+	return finding
+}
+
+func postToolEvent(host string, value []byte) (string, any, string, bool, bool) {
+	var event map[string]any
+	if json.Unmarshal(value, &event) != nil {
+		return "", nil, "", false, false
+	}
+	eventName := stringValue(event["hook_event_name"])
+	postNames := map[string]bool{"postToolUse": true, "postToolUseFailure": true, "afterShellExecution": true, "afterMCPExecution": true, "PostToolUse": true, "PostToolUseFailure": true, "AfterTool": true}
+	if !postNames[eventName] {
+		return "", nil, "", false, false
+	}
+	name := stringValue(event["tool_name"])
+	input := event["tool_input"]
+	if eventName == "afterShellExecution" {
+		name = "Bash"
+		input = map[string]any{"command": stringValue(event["command"])}
+	}
+	if eventName == "afterMCPExecution" {
+		var err error
+		input, err = cursorMCPInput(input)
+		if err != nil {
+			return "", nil, "UNKNOWN", true, true
+		}
+	}
+	hasResult := event["tool_response"] != nil || event["tool_result"] != nil || event["tool_output"] != nil || event["result"] != nil || event["output"] != nil || event["error"] != nil || event["tool_error"] != nil || event["exit_code"] != nil || event["exitCode"] != nil
+	if strings.Contains(strings.ToLower(eventName), "failure") {
+		hasResult = event["error"] != nil || event["tool_error"] != nil
+	}
+	if !hasResult {
+		return "", nil, "UNKNOWN", true, true
+	}
+	outcome := "SUCCEEDED"
+	failed := event["error"] != nil || event["tool_error"] != nil || event["is_error"] == true
+	for _, key := range []string{"exit_code", "exitCode"} {
+		if code, ok := event[key].(float64); ok && code != 0 {
+			failed = true
+		}
+	}
+	if response, ok := event["tool_response"].(map[string]any); ok {
+		if response["error"] != nil || response["is_error"] == true || response["success"] == false {
+			failed = true
+		}
+		for _, key := range []string{"exit_code", "exitCode"} {
+			if code, ok := response[key].(float64); ok && code != 0 {
+				failed = true
+			}
+		}
+	}
+	if failed {
+		outcome = "UNKNOWN"
+	}
+	if strings.TrimSpace(name) == "" || input == nil {
+		return "", nil, "UNKNOWN", true, true
+	}
+	return name, input, outcome, true, false
+}
+
+func completeSupervisedToolEvent(repo, host string, value []byte) (bool, bool) {
+	name, input, outcome, handled, malformed := postToolEvent(host, value)
+	if !handled {
+		return false, false
+	}
+	if malformed {
+		return true, true
+	}
+	if name == "" || input == nil || !mutationCapableTool(name, input) {
+		return true, false
+	}
+	kind, fingerprint := supervisedToolIdentity(name, input)
+	target := attemptedRepositoryPath(repo, input)
+	if target == "" {
+		target = kind
+	}
+	id := operationID(kind, target, fingerprint)
+	receipt, err := loadOperation(repo, id)
+	if err != nil || receipt.State != OperationExecuting || receipt.Lease == nil {
+		return true, false
+	}
+	attemptKey := hookAttemptKey(host, fingerprint, value)
+	if _, err := CompleteOperationAttempt(repo, id, attemptKey, outcome, "host completion event observed", ""); err != nil && outcome != "UNKNOWN" {
+		_, _ = CompleteOperationAttempt(repo, id, attemptKey, "UNKNOWN", "completion event could not be correlated", "")
+	}
+	return true, false
+}
+
 func dedupeFindings(values []SafetyFinding) []SafetyFinding {
 	seen := map[string]bool{}
 	result := []SafetyFinding{}
@@ -739,6 +933,24 @@ func denialMessage(host string, finding SafetyFinding) string {
 		}
 		return "Boatstack denied the publication bypass because " + target + " still owns publication authority." + relation + context + " Resolve the reported change through the managed recovery path; do not repeat this push or PR mutation manually."
 	}
+	if strings.HasPrefix(finding.Category, "operation-") {
+		context := ""
+		if finding.OperationID != "" {
+			context = fmt.Sprintf(" operation=%s state=%s attempt=%d", finding.OperationID, finding.OperationState, finding.AttemptNumber)
+		}
+		switch finding.Category {
+		case "operation-in-flight":
+			return "Boatstack is already supervising this exact operation." + context + ". Wait for its completion event; do not launch it again."
+		case "operation-already-succeeded":
+			return "Boatstack already observed this exact operation succeed." + context + ". Continue from the resulting repository state instead of repeating it."
+		case "operation-reconciliation-required":
+			return "Boatstack cannot yet distinguish success from an interrupted response." + context + ". Reconcile the expected postcondition with operation-status before any retry."
+		case "operation-retry-exhausted":
+			return "Boatstack exhausted the persistent retry budget for this operation." + context + ". Preserve current state and use the reported manual recovery; do not repeat the tool call."
+		default:
+			return "Boatstack could not verify the durable operation state." + context + ". Inspect operation-status before retrying."
+		}
+	}
 	return "Boatstack denied an irreversible operation (" + finding.Category + "). Preserve the current state and use read-only diagnosis or fix-forward recovery; destructive recovery is operator-only outside the agent workflow."
 }
 
@@ -756,6 +968,15 @@ func HookDecision(options SafetyHookOptions) ([]byte, bool) {
 		value, _ := contract.deny(finding)
 		return value, true
 	}
+	if handled, malformed := completeSupervisedToolEvent(repo, host, options.Input); handled {
+		if malformed {
+			finding := SafetyFinding{Category: "malformed-tool-input", Reason: "invalid-post-event", Source: "hook"}
+			value, _ := contract.deny(finding)
+			return value, true
+		}
+		value, _ := contract.allow()
+		return value, false
+	}
 	name, input, err := contract.decode(options.Input)
 	if err != nil {
 		reason := "invalid-event"
@@ -769,6 +990,10 @@ func HookDecision(options SafetyHookOptions) ([]byte, bool) {
 	}
 	findings := ClassifyTool(repo, name, input)
 	if len(findings) == 0 {
+		if finding := superviseToolAttempt(repo, host, name, input, options.Input); finding != nil {
+			value, _ := contract.deny(*finding)
+			return value, true
+		}
 		value, _ := contract.allow()
 		return value, false
 	}

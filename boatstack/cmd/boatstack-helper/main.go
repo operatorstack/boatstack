@@ -92,6 +92,78 @@ func checkUpdateCommand(arguments []string) int {
 	return 0
 }
 
+func operationStatusCommand(arguments []string) int {
+	flags := flag.NewFlagSet("operation-status", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository whose durable operation state should be inspected")
+	operationID := flags.String("operation-id", "", "specific operation identity; omit only when the current branch has at most one unfinished operation")
+	jsonOutput := flags.Bool("json", false, "emit the versioned JSON projection")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	status, err := boatstack.ResolveOperationStatus(*repo, *operationID)
+	if err != nil {
+		return fail(err)
+	}
+	value, err := boatstack.MarshalJSON(status)
+	if err != nil {
+		return fail(err)
+	}
+	if *jsonOutput {
+		fmt.Print(string(value))
+	} else if status.Operation == nil {
+		fmt.Printf("OPERATION_STATUS=%s\nNEXT_OPERATION=%s\n", status.VerificationStatus, status.NextOperation)
+	} else {
+		fmt.Printf("OPERATION_STATUS=%s\nOPERATION_ID=%s\nSTATE=%s\nATTEMPT=%d/%d\nNEXT_OPERATION=%s\n", status.VerificationStatus, status.Operation.OperationID, status.Operation.State, status.Operation.Attempt, status.Operation.MaxAttempts, status.NextOperation)
+	}
+	if status.VerificationStatus == "AMBIGUOUS" {
+		return 1
+	}
+	return 0
+}
+
+func prepareUpdatePRCommand(arguments []string) int {
+	flags := flag.NewFlagSet("prepare-update-pr", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "updated Boatstack repository")
+	version := flags.String("version", "", "exact installed stable version")
+	jsonOutput := flags.Bool("json", false, "emit the fingerprinted preview as JSON")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	preview, err := boatstack.PrepareUpdatePublication(*repo, *version)
+	if err != nil {
+		return fail(err)
+	}
+	value, err := boatstack.MarshalJSON(preview)
+	if err != nil {
+		return fail(err)
+	}
+	if *jsonOutput {
+		fmt.Print(string(value))
+	} else {
+		fmt.Printf("UPDATE_PREVIEW=%s\nPREVIEW_FINGERPRINT=%s\nPACKAGE_FINGERPRINT=%s\n", preview.PreviewPath, preview.Fingerprint, preview.PackageFingerprint)
+	}
+	return 0
+}
+
+func publishUpdatePRCommand(arguments []string) int {
+	flags := flag.NewFlagSet("publish-update-pr", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "updated Boatstack repository")
+	preview := flags.String("preview", "", "exact machine-local update preview path")
+	fingerprint := flags.String("preview-fingerprint", "", "fingerprint confirmed by the human")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if *preview == "" || *fingerprint == "" {
+		return fail(fmt.Errorf("publish-update-pr requires --preview and --preview-fingerprint"))
+	}
+	url, err := boatstack.PublishUpdatePublication(boatstack.UpdatePublishOptions{Repo: *repo, PreviewPath: *preview, ExpectedFingerprint: *fingerprint})
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Printf("PR_URL=%s\n", url)
+	return 0
+}
+
 func releaseClassifyCommand(arguments []string) int {
 	flags := flag.NewFlagSet("release-classify", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "projected Boatstack repository")
@@ -824,7 +896,7 @@ func workspaceStatusCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|run-preflight|record-change|record-delivery-gate|record-pr-visual-evidence|record-pr-visual-publication|check-safety|migrate-config|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|run-preflight|record-change|record-delivery-gate|record-pr-visual-evidence|record-pr-visual-publication|check-safety|migrate-config|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -834,6 +906,12 @@ func run() int {
 		return updateCommand(os.Args[2:])
 	case "check-update":
 		return checkUpdateCommand(os.Args[2:])
+	case "operation-status":
+		return operationStatusCommand(os.Args[2:])
+	case "prepare-update-pr":
+		return prepareUpdatePRCommand(os.Args[2:])
+	case "publish-update-pr":
+		return publishUpdatePRCommand(os.Args[2:])
 	case "release-classify":
 		return releaseClassifyCommand(os.Args[2:])
 	case "next-patch":

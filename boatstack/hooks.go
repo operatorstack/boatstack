@@ -68,7 +68,11 @@ func runInstalledHookDiagnostic(ctx context.Context, repo, host string, input []
 	}
 	command.Dir = repo
 	command.Stdin = bytes.NewReader(append(input, '\n'))
-	return command.CombinedOutput()
+	channels, err := runCommandChannels(command)
+	if err != nil {
+		return channels.Stdout, commandFailure(channels, err)
+	}
+	return channels.Stdout, nil
 }
 
 // DiagnoseHook runs the installed guard with a canonical, read-only event. It
@@ -92,7 +96,8 @@ func DiagnoseHook(repoPath, hostName string) (HookDiagnostic, error) {
 		return HookDiagnostic{}, fmt.Errorf("%s hook diagnostic timed out", host)
 	}
 	if runErr != nil {
-		return HookDiagnostic{}, fmt.Errorf("%s hook diagnostic failed: %s", host, strings.TrimSpace(string(output)))
+		detail := boundedObservation(strings.TrimSpace(string(output) + " " + runErr.Error()))
+		return HookDiagnostic{}, fmt.Errorf("%s hook diagnostic failed: %s", host, detail)
 	}
 	if err := validateCanonicalHookOutput(host, output); err != nil {
 		return HookDiagnostic{}, err
@@ -231,7 +236,7 @@ func desiredHostHookForEvent(host, event string) map[string]any {
 			"command": hookCommand(host), "commandWindows": hookCommandWindows(host),
 			"failClosed": true, "timeout": 10,
 		}
-		if event == "preToolUse" {
+		if event == "preToolUse" || event == "postToolUse" {
 			entry["matcher"] = "Write|Edit|ApplyPatch|Create|Delete|Move|Rename"
 		}
 		return entry
@@ -266,12 +271,15 @@ func desiredHostHookForEvent(host, event string) map[string]any {
 
 func hookEvents(host string) []string {
 	if host == "cursor" {
-		return []string{"preToolUse", "beforeShellExecution", "beforeMCPExecution"}
+		return []string{"preToolUse", "postToolUse", "postToolUseFailure", "beforeShellExecution", "afterShellExecution", "beforeMCPExecution", "afterMCPExecution"}
 	}
 	if host == "gemini" {
-		return []string{"BeforeTool"}
+		return []string{"BeforeTool", "AfterTool"}
 	}
-	return []string{"PreToolUse"}
+	if host == "claude" {
+		return []string{"PreToolUse", "PostToolUse", "PostToolUseFailure"}
+	}
+	return []string{"PreToolUse", "PostToolUse"}
 }
 
 func desiredHostHook(host string) map[string]any {

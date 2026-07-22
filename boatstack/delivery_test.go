@@ -270,6 +270,28 @@ func TestRepairObservationPersistsAndSupersedesAffectedGates(t *testing.T) {
 	}
 }
 
+func TestRepairBudgetPersistsAcrossInvocations(t *testing.T) {
+	repo, feature := activateTwoSliceDelivery(t)
+	state, err := LoadDeliveryState(repo, feature)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.RepairAttempt = 3
+	if err := saveDeliveryState(repo, state); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := RecordChangeObservation(ChangeObservationOptions{
+		Repo: repo, Feature: feature, Message: "another asynchronous failure arrived",
+		SourceStage: "ci", Classification: "verification_repair",
+	}); err == nil || !strings.Contains(err.Error(), "persistent repair budget exhausted") {
+		t.Fatalf("new invocation reset the durable repair budget: %v", err)
+	}
+	current, err := LoadDeliveryState(repo, feature)
+	if err != nil || current.RepairAttempt != 3 {
+		t.Fatalf("exhausted repair state changed: %+v %v", current, err)
+	}
+}
+
 func TestRequirementAmendmentBlocksGates(t *testing.T) {
 	repo, feature := activateTwoSliceDelivery(t)
 	_, state, err := RecordChangeObservation(ChangeObservationOptions{

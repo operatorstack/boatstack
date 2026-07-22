@@ -6,10 +6,10 @@ claim.
 
 | Host | Configuration and event | Blocking result | Activation boundary |
 | --- | --- | --- | --- |
-| Cursor | `.cursor/hooks.json`; synchronous `preToolUse` plus `beforeShellExecution` and `beforeMCPExecution` | JSON `permission: "deny"`; generated entries set `failClosed: true` | Reload and host enablement are operator-visible. Native Write/Edit tools, shell, and MCP mutations all cross the same guard. |
-| Claude Code | `.claude/settings.json`; `PreToolUse` | Exit 0 with `hookSpecificOutput.permissionDecision: "deny"`, or exit 2 with a secret-free error | The generated command explicitly uses Bash and `${CLAUDE_PROJECT_DIR}`. Reload and confirm with `/hooks`. |
-| Codex | `.codex/hooks.json`; `PreToolUse` | Exit 0 with `hookSpecificOutput.permissionDecision: "deny"`, or exit 2 with a secret-free error | The project path and exact hook hash must be reviewed and trusted. A linked worktree is a distinct project path. Start a new task after trust changes. |
-| Gemini CLI | `.gemini/settings.json`; `BeforeTool` | JSON `decision: "deny"` with a secret-free reason | The generated sequential hook supervises every tool and uses the same repository guard. Reload after installation. |
+| Cursor | `.cursor/hooks.json`; synchronous `preToolUse`, `postToolUse`/`postToolUseFailure`, `beforeShellExecution`/`afterShellExecution`, and `beforeMCPExecution`/`afterMCPExecution` | JSON `permission: "deny"`; generated entries set `failClosed: true` | Reload and host enablement are operator-visible. Native Write/Edit tools, shell, and MCP mutations cross the guard and completion observer. |
+| Claude Code | `.claude/settings.json`; `PreToolUse`, `PostToolUse`, and `PostToolUseFailure` | Exit 0 with `hookSpecificOutput.permissionDecision: "deny"`, or exit 2 with a secret-free error | The generated command explicitly uses Bash and `${CLAUDE_PROJECT_DIR}`. Reload and confirm with `/hooks`. |
+| Codex | `.codex/hooks.json`; `PreToolUse` and `PostToolUse` | Exit 0 with `hookSpecificOutput.permissionDecision: "deny"`, or exit 2 with a secret-free error | The project path and exact hook hash must be reviewed and trusted. A linked worktree is a distinct project path. Start a new task after trust changes. |
+| Gemini CLI | `.gemini/settings.json`; `BeforeTool` and `AfterTool` | JSON `decision: "deny"` with a secret-free reason | The generated sequential hooks supervise requests and observe results through the same repository guard. Reload after installation. |
 
 Sources:
 
@@ -39,3 +39,10 @@ Pre-activation denials use `workflow-phase-bypass` and may add only the feature,
 observed workflow stage, attempted repository path, and deterministic next
 operation. No task notification, conversation turn, or async completion changes
 the authorization decision.
+
+Managed mutations add one single-use operation lease before the host tool runs.
+Post-tool events may complete only the matching kind, target, and argument
+fingerprint. A delayed or duplicated completion cannot initiate work. Missing or
+uncertain completion becomes `RECONCILE_REQUIRED`, and safety output may expose
+only operation identity, state, attempt number, and whether reconciliation is
+required.

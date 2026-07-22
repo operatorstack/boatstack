@@ -107,7 +107,7 @@ func TestHostHookValidationRejectsUnsupportedBoatstackFields(t *testing.T) {
 }
 
 func TestHostHookValidationRejectsWrongEventAndCursorVersion(t *testing.T) {
-	codex := map[string]any{"hooks": map[string]any{"PostToolUse": []any{desiredHostHook("codex")}}}
+	codex := map[string]any{"hooks": map[string]any{"SessionEnd": []any{desiredHostHook("codex")}}}
 	if err := validateHostHookConfig("codex", codex); err == nil || !strings.Contains(err.Error(), "unsupported event") {
 		t.Fatalf("expected wrong Codex event failure, got %v", err)
 	}

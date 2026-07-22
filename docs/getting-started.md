@@ -18,7 +18,7 @@ Ask Boatstack for the next verified stage without changing anything:
 
 Boatstack reads repository-owned plans, approvals, delivery state, and gate receipts, then returns exactly one next action. Chat, terminal, worktree, and running-process observations may add context but never establish a workflow stage. If no managed work remains, Boatstack reports **Feature complete** and **No action required**.
 
-For a small verified feature, `/boatstack-run` in Cursor or Claude Code and `$boatstack run` in Codex drive every declared delivery slice through PR publication. The command fetches `origin` before mutation and pauses for required plan approval, product decisions, and the exact PR open/update confirmation. Merge and deploy remain separate.
+For a small verified feature, `/boatstack-run` in Cursor or Claude Code and `$boatstack run` in Codex drive every declared delivery slice through PR publication. The command fetches `origin` before mutation and pauses for required plan approval, product decisions, and the exact PR open/update confirmation. Managed side effects use durable attempt receipts, so a lost response or new chat resumes or reconciles the same work instead of repeating it. Merge and deploy remain separate.
 
 ## 1. Install it separately
 
@@ -50,7 +50,7 @@ Review and commit the paths printed by the installer. Merge this infrastructure 
 
 The installer keeps a versioned, verified runtime under Git's common directory. A linked worktree still starts without the ignored `.product-loop/bin/` directory, but its first guarded Cursor, Codex, or Claude call restores that local runtime automatically before evaluating the original command. This performs no download and changes no tracked files.
 
-Host activation is separate from runtime installation. Codex requires the exact linked-worktree project path and hook definition to be reviewed and trusted through `/hooks`; start a new task after trusting it. Claude Code requires Bash and exposes the active `PreToolUse` hook through `/hooks`. Cursor requires a window reload and enabled `beforeShellExecution` and `beforeMCPExecution` hooks.
+Host activation is separate from runtime installation. Codex requires the exact linked-worktree project path and pre/post tool hook definitions to be reviewed and trusted through `/hooks`; start a new task after trusting them. Claude Code requires Bash and exposes `PreToolUse`, `PostToolUse`, and failure observation through `/hooks`. Cursor requires a window reload and enabled before/after native, shell, and MCP hooks.
 
 Different Boatstack versions use separate cached runtimes, so an older worktree is not silently run with a newer helper. A separate clone has a different Git common directory and still needs one installer run.
 
