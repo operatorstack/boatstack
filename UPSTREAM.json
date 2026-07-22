@@ -12,8 +12,8 @@
   },
   "files": {
     ".gitignore": "a7079e923a776f14f1bb3a6aa0a11a133a8e1dfb35af020f327623357b7e3957",
-    "CONTRIBUTING.md": "bef7d513b31e781826809b5ab637be803775bd3972c38a16df6731885b9a15a6",
-    "README.md": "8d481f8e395346400726d02f760f831a8b11062de18b7a76fe4cf00e5e12ca08",
+    "CONTRIBUTING.md": "927f0a25406086d3d014e024b6754f9a64fc792edcaced2fbf58e2671a034bbf",
+    "README.md": "2a8ed9e1b3305d68d6a6aba68b78a6301daa29acc15a53f805ac94551326cce8",
     "assets/boatstack-journey.svg": "e465befc50c8ce30f3e07e8fd97012931beeb053392c8fbf38ad645023b3cc63",
     "assets/boatstack-mark.svg": "be1f984da1bfa69fa5d1f986d8343d21f7e20921b71db888c928b4d2e54b09b5",
     "assets/boatstack-portability.svg": "66dfdfa85db857b3bd18b32047a6975f1fbbfc4dc091158e8277193f9969a346",
@@ -91,10 +91,10 @@
     "docs/account-recovery-walkthrough.md": "676034974594a7d1a559b24dbed31d7ccc429eb81404b203ca07bbdaa19ec3d3",
     "docs/benchmark-corpus-audit.md": "f2d206fe8579a514f9da82b2c96c19b343ac004be67617e1bd34f0f8e0e5e6c6",
     "docs/benchmark-submission-audit.md": "9518abdd17690729c6423f87cab20418ed47b0915b5faa44b9ef975e9e9c3b79",
-    "docs/evidence-engineered-coding.md": "c683d2f42e690f5854522c14839dbf0af5a3ea05f807e1c560454dc6ce15054e",
+    "docs/evidence-engineered-coding.md": "d785365deb036d5e4ec783abd4b0ce04488faa17ff5de279b0293e0b7325da70",
     "docs/generated-files.md": "136422baf0c7fc2bd5100cfe0ebdb3d9d0705dfd7e7d54bf745dd1037e63492c",
     "docs/getting-started.md": "eacc814fdffdfa3c7d8052b7cd99a79c04da5c75d88d8b44f3fb68d9afec0316",
-    "docs/public-claims.json": "7575107fd494e57112ff4eac3075476dcd74bc47b5f68f8e1501042b2ba913b8",
+    "docs/public-claims.json": "2528752e111bf8c626435356fdc62535c23e3f1c8512639ef23f74b0cc87fe1a",
     "docs/public-surface.md": "713f7a050b5f339cf948299103ef3800417dccfecf2cc1a4166397ea6f978907",
     "docs/research-and-design.md": "d65c66e323037bda5d45aacef5d48afa6bf93da55901378891d235aca3a5684f",
     "docs/safety.md": "7b9b5c515d36e683767ec8d3d9d6d119ac93650b2f629d351deadd4c600ed6a6",
@@ -108,7 +108,7 @@
     "labs/diagram-json/compiled/evidence.md": "1ba1c989ade070a8ef9a508fbd788d100d7292f2dbacbb2bce895468019f619d",
     "labs/diagram-json/compiled/tasks.json": "88f60851abf79d851e9fccc754ff3040034ae595306bc87d64784c19eb403e71",
     "labs/diagram-json/compiled/test-matrix.json": "424657ff505768e50fa113801fd8363364a18269d5297480907a993d44063a39",
-    "labs/diagram-json/plan.lock.json": "d386ffdd63bdeda36f36ad342a01424d8b69c71317f4766e29f43fede85089ef",
+    "labs/diagram-json/plan.lock.json": "7c07e8bd6c6c69bc1955e0621895e23274af54d483e650964ab93e3aa39ca9d6",
     "labs/diagram-json/plan.md": "3cc4f533b8d69386deff16b3a594a3ba09d4c0c3db636cccd8c4380084ce6a51",
     "labs/diagram-json/questions.md": "74733b015002c8a6777c558e7e997fa48c94850b9bd39054fe9366c97ecf728d",
     "labs/diagram-json/request.md": "0808fc41c36779c404f4a3a121167da6e76cac56df526e70f9ed6d3e0d4c02ed",
@@ -157,12 +157,13 @@
     "release-notes/2026-07-21-prevent-worktree-dirty-state.md": "d3ebac81a14565461fd7f3c5bd520d881d70b584408ba35a1022cd917c7bf132",
     "release-notes/2026-07-21-value-translation-readme.md": "8dd16fd08c1591667a1074fc6825dcbf58beda0faa18ede1526647267418c8ea",
     "release-notes/2026-07-22-boundary-analysis-dx.md": "60d727ab3b109fff95a82eb36ee4c6c5833760535b14f386fda349a21b4fe588",
-    "release-notes/2026-07-22-boundary-oracle-loop.md": "698c2ed7dd0a000e6e210f521989992b8fa476376987819ba92c12feb3528f7c"
+    "release-notes/2026-07-22-boundary-oracle-loop.md": "698c2ed7dd0a000e6e210f521989992b8fa476376987819ba92c12feb3528f7c",
+    "release-notes/2026-07-22-value-translation-boundary.md": "9cf168ff7caaf3906b78533935bdfb2c86e753984ed1e5ec8204cb373d083390"
   },
   "generator": "operatorstack/intelligence-flow:boatstack-distribution",
   "schema_version": 1,
   "source": {
-    "commit": "cb079d704e3b0d82fa88b4318d3fb89fbd96723e",
+    "commit": "b0d1c2855e04be6f85e16b8e8d5bdd3cbd74fd10",
     "path": "labs/12-product-engineering-loop",
     "repository": "operatorstack/intelligence-flow"
   }

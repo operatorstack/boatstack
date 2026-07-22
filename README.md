@@ -51,6 +51,14 @@ Boatstack does not preserve an agent's private reasoning or replay old chats. It
 
 That means the next feature starts from recorded project knowledge instead of reconstructing intent from another agent session.
 
+## Prevent systemic failure instead of patching symptoms
+
+When coding agents or developers encounter a bug, they instinctively patch the local symptom. The underlying architectural flaw—like a leaky database edge that blindly accepts bad data—remains open, guaranteeing the exact same failure will happen again elsewhere.
+
+When you ask for a fix during `/auto-plan`, Boatstack actively scans your codebase to determine if the bug is a symptom of a missing systemic boundary. Instead of silently patching the symptom, it pauses and asks if you want to establish a programmatic lock (like a database trigger or strict validator).
+
+By turning one-off bug fixes into systemic constraints, your codebase gets safer with every agent run. Boatstack requires a negative test to prove the new lock is impenetrable. Upon publication, it extracts that verified boundary into the repository's global memory, ensuring all future agent runs are strictly bound by the new law of physics.
+
 ## Install with your coding agent
 
 Copy this into Cursor, Codex, Claude Code, or Gemini CLI while the repository is open:
