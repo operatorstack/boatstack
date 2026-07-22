@@ -227,8 +227,8 @@ func activatePlanCommand(arguments []string) int {
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}
-	if options.PlanPath == "" || options.ApprovalPath == "" || options.OutDir == "" || options.OutputPath == "" {
-		return fail(fmt.Errorf("activate-plan requires --plan, --approval, --out-dir, and --output"))
+	if options.PlanPath == "" || options.OutDir == "" || options.OutputPath == "" {
+		return fail(fmt.Errorf("activate-plan requires --plan, --out-dir, and --output; --approval is required when human_plan_approval is enabled"))
 	}
 	if err := boatstack.ActivatePlan(options); err != nil {
 		return fail(fmt.Errorf("plan activation failed: %w", err))
@@ -295,6 +295,8 @@ func recordDeliveryGateCommand(arguments []string) int {
 	flags.StringVar(&options.Status, "status", "", "PASS or PASS_WITH_GAPS")
 	flags.StringVar(&options.BaseBranch, "base", "", "delivery base branch; defaults from the active slice or project")
 	flags.StringVar(&options.EvidencePath, "evidence", "", "current evidence ledger")
+	flags.StringVar(&options.ReviewerIdentity, "reviewer-identity", "", "reviewer identity required for configured high-risk independent review")
+	flags.StringVar(&options.ReviewMethod, "review-method", "", "human_peer or separate_agent")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}

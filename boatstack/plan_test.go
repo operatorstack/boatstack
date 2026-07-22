@@ -85,12 +85,29 @@ func writePlanInputs(t *testing.T, root string, marked bool) (string, string, st
 	return sourcePlan, spec, planPath
 }
 
+func writeActivationConfig(t *testing.T, root string, humanApproval bool) {
+	t.Helper()
+	config := testConfig()
+	config.Workflow.HumanPlanApproval = humanApproval
+	value, err := MarshalJSON(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".product-loop"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".product-loop", "project.json"), value, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestMarkdownPlanActivationAndStaleness(t *testing.T) {
 	root := t.TempDir()
 	sourcePlan, _, planPath := writePlanInputs(t, root, true)
 	runGit(t, root, "init", "-b", "main")
 	runGit(t, root, "config", "user.name", "Boatstack Test")
 	runGit(t, root, "config", "user.email", "boatstack@example.invalid")
+	writeActivationConfig(t, root, true)
 	runGit(t, root, "add", ".")
 	runGit(t, root, "commit", "-m", "record approved planning inputs")
 	approval := filepath.Join(root, "approval.md")
@@ -125,6 +142,59 @@ func TestMarkdownPlanActivationAndStaleness(t *testing.T) {
 	}
 	if err := ActivatePlan(options); err == nil || !strings.Contains(err.Error(), "stale approval") {
 		t.Fatalf("expected stale approval after plan prose change, got %v", err)
+	}
+}
+
+func TestPolicyActivationCreatesTypedLockWithoutApproval(t *testing.T) {
+	root := t.TempDir()
+	_, _, planPath := writePlanInputs(t, root, true)
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.name", "Boatstack Test")
+	runGit(t, root, "config", "user.email", "boatstack@example.invalid")
+	writeActivationConfig(t, root, false)
+	runGit(t, root, "add", ".")
+	runGit(t, root, "commit", "-m", "record policy-activated planning inputs")
+	compiled := filepath.Join(root, "compiled")
+	lockPath := filepath.Join(root, "plan.lock.json")
+	options := ActivationOptions{PlanPath: planPath, OutDir: compiled, OutputPath: lockPath, SourceCommit: "test"}
+	if err := ActivatePlan(options); err != nil {
+		t.Fatal(err)
+	}
+	lockValue, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock := map[string]any{}
+	if err := json.Unmarshal(lockValue, &lock); err != nil {
+		t.Fatal(err)
+	}
+	if intValue(lock["schema_version"]) != 2 || stringValue(lock["status"]) != "LOCKED" || stringValue(lock["authorization_mode"]) != "policy" || stringValue(lock["approved_by"]) != "" {
+		t.Fatalf("unexpected policy lock: %#v", lock)
+	}
+	tasksValue, _ := os.ReadFile(filepath.Join(compiled, "tasks.json"))
+	tasks := map[string]any{}
+	_ = json.Unmarshal(tasksValue, &tasks)
+	if stringValue(tasks["structured_plan_status"]) != "POLICY_ACTIVATED" {
+		t.Fatalf("compiled task graph hid policy activation: %#v", tasks)
+	}
+
+	lock["schema_version"] = 1
+	lock["status"] = "APPROVED"
+	lock["approved_by"] = "Legacy Human"
+	delete(lock, "authorization_mode")
+	legacy, _ := MarshalJSON(lock)
+	if err := os.WriteFile(lockPath, legacy, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	check, err := CheckPlan(planPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckApprovalLock(ApprovalOptions{
+		SourcePlanPath: check.SourcePlanPath, SpecPath: check.SpecPath, PlanPath: planPath,
+		TasksPath: filepath.Join(compiled, "tasks.json"), OutputPath: lockPath, AuthorizationMode: "human",
+	}); err != nil {
+		t.Fatalf("legacy v1 human lock was rejected: %v", err)
 	}
 }
 
@@ -218,6 +288,8 @@ func TestExternalWritePlanRequiresSafeExplicitSideEffects(t *testing.T) {
 func TestReadOnlyCheckAndFailedActivationWriteNothing(t *testing.T) {
 	root := t.TempDir()
 	_, _, planPath := writePlanInputs(t, root, true)
+	runGit(t, root, "init", "-b", "main")
+	writeActivationConfig(t, root, true)
 	before, _ := os.ReadDir(root)
 	check, err := CheckPlan(planPath)
 	if err != nil {

@@ -124,27 +124,28 @@ Treat repository-owned product context as canonical. Do not require it to be mig
 ```
 
 2. Present the draft spec, plan, open decisions, accepted assumptions, gaps, risks, validation provenance, and `PLAN_FINGERPRINT` in a reviewable form.
-3. Ask the developer to approve it or request changes. End the pending response with exactly this Markdown: Reply `a` to approve. Silence, continued conversation, tool permission, permission to build, `[a]`, and an `a` embedded in other text are not approval.
+3. When `workflow.human_plan_approval` is true, ask the developer to approve it or request changes and end with: Reply `a` to approve. When false, state that Build will create a policy-activation lock and do not imply human approval.
 4. On changes, return to `auto-plan`, preserve the feedback in the question ledger, and issue a new draft.
-5. On explicit approval, invoke `boatstack-helper record-approval` with the plan, named human, RFC3339 timestamp, and exact fingerprint returned before approval. It verifies the current plan and creates only `approval.md`.
-6. End in Plan mode and tell the developer the feature is approved and ready for the host's normal Build transition. Do not compile tasks, create a lock, request Agent mode merely to write a file, or edit product code.
+5. When human approval is enabled, invoke `boatstack-helper record-approval` with the plan, named human, RFC3339 timestamp, and exact fingerprint. When disabled, create no `approval.md`.
+6. End in Plan mode and tell the developer the feature is authorized for the host's normal Build transition. Do not compile tasks, create a lock, request Agent mode merely to write a file, or edit product code.
 
 All files created or updated by `auto-plan` and `plan-gate` must be Markdown. gstack and Spec Kit may help produce those documents, but their implementation stages and non-Markdown executable state are deferred to `build`.
 
 ## Build without erasing evidence
 
 - First confirm the host is in an execution-capable mode. If a requested transition is rejected or product-code writes remain unavailable, return `READY_FOR_BUILD` and stop without activating, compiling, or writing a lock.
-- Before the first product-code edit, activate the exact approved Markdown plan:
+- Before the first product-code edit, activate the exact authorized Markdown plan. Include `--approval` only when `workflow.human_plan_approval` is true:
 
 ```bash
 .product-loop/bin/boatstack-helper activate-plan \
   --plan .product-loop/features/<feature>/plan.md \
-  --approval .product-loop/features/<feature>/approval.md \
   --out-dir .product-loop/features/<feature>/compiled \
   --output .product-loop/features/<feature>/plan.lock.json
 ```
 
-- Activation verifies the approval fingerprint, compiles `tasks.json`, `test-matrix.json`, and the evidence skeleton, writes the content-addressed lock last, and rechecks it. It adds no semantics. Missing approval, open blocking questions, or any change to the source plan, spec, or complete `plan.md` returns `BLOCKED`.
+For human authorization, add `--approval .product-loop/features/<feature>/approval.md`.
+
+- Activation verifies the plan fingerprint and any required approval, compiles `tasks.json`, `test-matrix.json`, and the evidence skeleton, then writes a schema-v2 lock with `authorization_mode: human` or `policy`. Missing required approval, open blocking questions, or any changed input returns `BLOCKED`.
 - Activation also creates ignored delivery state bound to the plan lock. Read it with `delivery-status`; implement only the active slice's `task_ids`. A multi-slice plan advances only after the current slice publishes through `ship-gate`.
 - Keep the source plan present and hash-current through completion of `build`.
 - Choose any suitable model, tool, or implementation tactic inside the approved boundary. Boatstack controls transitions and claims, not local creativity.
@@ -180,14 +181,14 @@ A published delivery is immutable. Record the observation against it, then plan 
 - For relevant PR visual scenarios, use the repository runner first, then a host browser against the existing development server, one supplied launch instruction, or an explicitly approved machine-local runtime. Do not modify repository dependencies or configuration for capture. Review each exact PNG for secrets and private data, then import the temporary manifest with `record-pr-visual-evidence`; keep the images outside the repository.
 - Treat model-authored tests and same-model self-review as evidence, not ground truth.
 - Validate that tests load and exercise the intended interface. For high-risk code, add an independent oracle such as contract fixtures, mutation testing, differential checks, staging verification, or human acceptance.
-- A failing check blocks the gate. A skipped check must include a reason and risk owner.
+- A failing check blocks the gate. A skipped check must include a reason and risk owner. `PASS_WITH_GAPS` is accepted only when `workflow.allow_pass_with_gaps` is true.
 - Commit the intentional active-slice product and evidence diff, then record the test result with `record-delivery-gate --feature <feature> --slice <slice> --gate test`. The receipt is bound to the base/head branches, commit, product diff, and evidence hash. Editing an evidence status is not a gate transition.
 
 ### Review gate
 
 - Review the actual diff, not the intended plan alone.
 - Check spec traceability, invariants, data/security/tenancy boundaries, failure behavior, backward compatibility, migrations, observability, tests, docs, and gaps.
-- Use an independent reviewer for high-risk changes, repeated failures, or when the existing review evidence is circular.
+- When configured high-risk paths changed, use a human peer or separate agent and record `--reviewer-identity` with `--review-method human_peer|separate_agent`.
 - Convert actionable findings into tasks. Do not pass while critical findings are open.
 - On pass, record `record-delivery-gate --feature <feature> --slice <slice> --gate review`. Review is rejected unless the same diff already has a test receipt; any later product change makes both receipts stale.
 

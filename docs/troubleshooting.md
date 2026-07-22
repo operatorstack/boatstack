@@ -79,15 +79,25 @@ Planning is Markdown-only. The adapter may use Boatstack's bounded planning writ
 
 ## `/build` says it is ready but cannot start
 
-The plan is approved, but the host remains read-only. Enter the host's normal execution-capable mode and rerun `/build`. Boatstack deliberately creates no compiled state or lock before that transition.
+The plan is authorized, but the host remains read-only. Enter the host's normal execution-capable mode and rerun `/build`. Boatstack deliberately creates no compiled state or lock before that transition.
 
 ## Approval is stale
 
 The source plan, feature spec, or complete plan changed after approval. Return to `/auto-plan`, review the new plan at `/plan-gate`, and approve it again. Never edit approval metadata manually.
 
+## Build does not create `approval.md`
+
+Check `workflow.human_plan_approval`. When it is `false`, this is expected: activation writes a fingerprinted schema-v2 plan lock with `authorization_mode: policy` and does not claim human approval.
+
 ## A gate passes with gaps
 
 The proven criteria passed while named non-critical gaps remain. Each gap needs an impact, owner, reason, affected criteria, and revisit trigger. A critical correctness, safety, or acceptance gap blocks instead.
+
+If `workflow.allow_pass_with_gaps` is `false`, resolve the gaps and record `PASS`; changing evidence text alone cannot bypass the controller.
+
+## High-risk review requires reviewer provenance
+
+The current diff matches `project.high_risk_paths` and independent review is enabled. Rerun review with a real `--reviewer-identity` and `--review-method human_peer` or `separate_agent`. Boatstack retains these fields in the review receipt.
 
 ## An unrelated base-branch check fails
 

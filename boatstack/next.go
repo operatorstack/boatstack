@@ -207,12 +207,16 @@ func ResolveNext(repoPath, explicitFeature string) (NextStatus, error) {
 		base.Reason = "This repository has no Boatstack project installation to inspect."
 		return base, nil
 	}
+	config, _, configErr := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	if configErr != nil {
+		return blockedNextStatus("INVALID_STATE", "repair-state", "Boatstack project configuration is invalid: "+configErr.Error()), nil
+	}
 
 	active, err := ActiveManagedDeliveries(repo)
 	if err != nil {
 		return blockedNextStatus("INVALID_STATE", "repair-state", "Boatstack found invalid managed delivery state. Preserve the artifacts and restore the missing or stale evidence before continuing: "+err.Error()), nil
 	}
-	
+
 	if explicitFeature != "" {
 		found := false
 		for _, f := range active {
@@ -290,7 +294,15 @@ func ResolveNext(repoPath, explicitFeature string) (NextStatus, error) {
 		directory := filepath.Join(repo, ".product-loop", "features", feature)
 		base.VerificationStatus = "VERIFIED"
 		base.Feature = feature
-		if fileExists(filepath.Join(directory, "approval.md")) {
+		if !config.Workflow.HumanPlanApproval {
+			base.ObservedStage = "POLICY_READY"
+			base.NextOperation = "build"
+			base.Reason = "The saved feature is ready for fingerprinted policy activation without a human approval receipt."
+			if workspaceEnabled(repo) && needsFreshCut(repo, feature) {
+				base.NextOperation = "workspace-cut"
+				base.Reason = fmt.Sprintf("Feature %q is policy-authorized; cut a fresh workspace from the default branch before building.", feature)
+			}
+		} else if fileExists(filepath.Join(directory, "approval.md")) {
 			base.ObservedStage = "APPROVED"
 			base.NextOperation = "build"
 			base.Reason = "The saved feature has an approval receipt but no active delivery state."

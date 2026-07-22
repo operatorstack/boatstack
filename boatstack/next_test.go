@@ -17,7 +17,12 @@ func nextTestRepo(t *testing.T) string {
 	if err := os.MkdirAll(filepath.Join(repo, ".product-loop", "features"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(repo, ".product-loop", "project.json"), []byte("{}\n"), 0o644); err != nil {
+	config := testConfig()
+	value, err := MarshalJSON(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".product-loop", "project.json"), value, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return repo
@@ -200,6 +205,28 @@ func TestResolveNextPlanningStates(t *testing.T) {
 				t.Fatalf("unexpected status: %+v", status)
 			}
 		})
+	}
+}
+
+func TestResolveNextRoutesPolicyAuthorizedPlanToBuild(t *testing.T) {
+	repo := nextTestRepo(t)
+	configPath := filepath.Join(repo, ".product-loop", "project.json")
+	config, _, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.Workflow.HumanPlanApproval = false
+	value, _ := MarshalJSON(config)
+	if err := os.WriteFile(configPath, value, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeSavedFeaturePlan(t, repo, "policy-ready")
+	status, err := ResolveNext(repo, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.ObservedStage != "POLICY_READY" || status.NextOperation != "build" || status.Feature != "policy-ready" {
+		t.Fatalf("policy-authorized plan did not route to build: %+v", status)
 	}
 }
 

@@ -661,7 +661,7 @@ func CompilePlan(plan map[string]any, opts *ValidatePlanOptions) (map[string]any
 	rows := make([]any, 0, len(criteria))
 	evidence := []string{
 		"# Evidence ledger: " + stringValue(plan["feature_id"]), "",
-		"- Approved plan lock: pending", "- Test gate: `BLOCKED`", "- Review gate: `BLOCKED`", "- Ship gate: `BLOCKED`", "",
+		"- Authorized plan lock: pending", "- Test gate: `BLOCKED`", "- Review gate: `BLOCKED`", "- Ship gate: `BLOCKED`", "",
 	}
 	if plan["delivery_slices"] != nil {
 		evidence = append(evidence, "## Delivery slices", "")
@@ -739,6 +739,10 @@ func CompilePlan(plan map[string]any, opts *ValidatePlanOptions) (map[string]any
 }
 
 func CompilePlanFiles(planPath, outDir string) error {
+	return compilePlanFiles(planPath, outDir, "HUMAN_APPROVED")
+}
+
+func compilePlanFiles(planPath, outDir, structuredPlanStatus string) error {
 	plan, err := LoadPlan(planPath)
 	if err != nil {
 		return err
@@ -759,6 +763,7 @@ func CompilePlanFiles(planPath, outDir string) error {
 	if err != nil {
 		return err
 	}
+	tasks["structured_plan_status"] = structuredPlanStatus
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
 	}
@@ -780,14 +785,15 @@ func CompilePlanFiles(planPath, outDir string) error {
 }
 
 type ApprovalOptions struct {
-	SourcePlanPath string
-	SpecPath       string
-	PlanPath       string
-	TasksPath      string
-	ApprovedBy     string
-	ApprovedAt     string
-	SourceCommit   string
-	OutputPath     string
+	SourcePlanPath    string
+	SpecPath          string
+	PlanPath          string
+	TasksPath         string
+	ApprovedBy        string
+	ApprovedAt        string
+	AuthorizationMode string
+	SourceCommit      string
+	OutputPath        string
 }
 
 type ApprovalReceipt struct {
@@ -863,13 +869,27 @@ func ActivatePlan(options ActivationOptions) error {
 	if err != nil {
 		return err
 	}
-	receipt, err := CheckApprovalReceipt(options.ApprovalPath, check)
-	if err != nil {
-		return err
-	}
 	repo, err := ResolveRepository(filepath.Dir(options.PlanPath))
 	if err != nil {
 		return err
+	}
+	config, _, err := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	if err != nil {
+		return fmt.Errorf("plan activation requires a valid Boatstack project configuration: %w", err)
+	}
+	authorizationMode := "policy"
+	structuredPlanStatus := "POLICY_ACTIVATED"
+	receipt := ApprovalReceipt{}
+	if config.Workflow.HumanPlanApproval {
+		authorizationMode = "human"
+		structuredPlanStatus = "HUMAN_APPROVED"
+		if strings.TrimSpace(options.ApprovalPath) == "" {
+			return fmt.Errorf("human_plan_approval requires --approval")
+		}
+		receipt, err = CheckApprovalReceipt(options.ApprovalPath, check)
+		if err != nil {
+			return err
+		}
 	}
 	safety, err := CheckRepositorySafety(repo)
 	if err != nil {
@@ -880,14 +900,15 @@ func ActivatePlan(options ActivationOptions) error {
 	}
 	tasksPath := filepath.Join(options.OutDir, "tasks.json")
 	approval := ApprovalOptions{
-		SourcePlanPath: check.SourcePlanPath,
-		SpecPath:       check.SpecPath,
-		PlanPath:       options.PlanPath,
-		TasksPath:      tasksPath,
-		ApprovedBy:     receipt.ApprovedBy,
-		ApprovedAt:     receipt.ApprovedAt,
-		SourceCommit:   options.SourceCommit,
-		OutputPath:     options.OutputPath,
+		SourcePlanPath:    check.SourcePlanPath,
+		SpecPath:          check.SpecPath,
+		PlanPath:          options.PlanPath,
+		TasksPath:         tasksPath,
+		ApprovedBy:        receipt.ApprovedBy,
+		ApprovedAt:        receipt.ApprovedAt,
+		AuthorizationMode: authorizationMode,
+		SourceCommit:      options.SourceCommit,
+		OutputPath:        options.OutputPath,
 	}
 	if fileExists(options.OutputPath) {
 		if err := CheckApprovalLock(approval); err == nil {
@@ -907,12 +928,12 @@ func ActivatePlan(options ActivationOptions) error {
 		if stringValue(existing["plan_sha256"]) == currentPlanHash &&
 			stringValue(existing["source_plan_sha256"]) == currentSourceHash &&
 			stringValue(existing["spec_sha256"]) == currentSpecHash {
-			return fmt.Errorf("existing activation state is invalid for the unchanged approved plan; repair it instead of resetting delivery progress")
+			return fmt.Errorf("existing activation state is invalid for the unchanged authorized plan; repair it instead of resetting delivery progress")
 		}
 	} else if statePath, statePathErr := deliveryStatePath(repo, stringValue(check.Plan["feature_id"])); statePathErr == nil && fileExists(statePath) {
 		return fmt.Errorf("managed delivery state exists without its plan lock; do not reset delivery progress")
 	}
-	if err := CompilePlanFiles(options.PlanPath, options.OutDir); err != nil {
+	if err := compilePlanFiles(options.PlanPath, options.OutDir, structuredPlanStatus); err != nil {
 		return err
 	}
 	if err := CreateApprovalLock(approval); err != nil {
@@ -934,7 +955,14 @@ func gitCommit(directory string) string {
 }
 
 func CreateApprovalLock(options ApprovalOptions) error {
-	if strings.TrimSpace(options.ApprovedBy) == "" {
+	mode := strings.ToLower(strings.TrimSpace(options.AuthorizationMode))
+	if mode == "" {
+		mode = "human"
+	}
+	if mode != "human" && mode != "policy" {
+		return fmt.Errorf("authorization mode must be human or policy")
+	}
+	if mode == "human" && strings.TrimSpace(options.ApprovedBy) == "" {
 		return fmt.Errorf("approved-by must name the human who explicitly approved the plan")
 	}
 	if err := checkApprovalSourcePlan(options); err != nil {
@@ -958,10 +986,10 @@ func CreateApprovalLock(options ApprovalOptions) error {
 	planHash, _ := SHA256File(options.PlanPath)
 	tasksHash, _ := SHA256File(options.TasksPath)
 	lock := map[string]any{
-		"schema_version":      1,
-		"status":              "APPROVED",
-		"approved_by":         options.ApprovedBy,
-		"approved_at":         approvedAt,
+		"schema_version":      2,
+		"status":              "LOCKED",
+		"authorization_mode":  mode,
+		"activated_at":        approvedAt,
 		"source_commit":       sourceCommit,
 		"source_plan_path":    options.SourcePlanPath,
 		"source_plan_sha256":  sourcePlanHash,
@@ -973,6 +1001,10 @@ func CreateApprovalLock(options ApprovalOptions) error {
 		"task_graph_sha256":   tasksHash,
 		"invalidated_at":      nil,
 		"invalidation_reason": nil,
+	}
+	if mode == "human" {
+		lock["approved_by"] = options.ApprovedBy
+		lock["approved_at"] = approvedAt
 	}
 	value, err := MarshalJSON(lock)
 	if err != nil {
@@ -1001,11 +1033,29 @@ func CheckApprovalLock(options ApprovalOptions) error {
 			mismatches = append(mismatches, label)
 		}
 	}
-	if stringValue(lock["status"]) != "APPROVED" || lock["invalidated_at"] != nil {
+	schemaVersion := intValue(lock["schema_version"])
+	mode := strings.ToLower(stringValue(lock["authorization_mode"]))
+	validStatus := schemaVersion == 1 && stringValue(lock["status"]) == "APPROVED"
+	if schemaVersion == 2 {
+		validStatus = stringValue(lock["status"]) == "LOCKED" && (mode == "human" || mode == "policy")
+	}
+	if !validStatus || lock["invalidated_at"] != nil {
 		mismatches = append(mismatches, "status")
 	}
-	if stringValue(lock["approved_by"]) == "" {
-		mismatches = append(mismatches, "approver")
+	if schemaVersion == 1 || mode == "human" {
+		if stringValue(lock["approved_by"]) == "" {
+			mismatches = append(mismatches, "approver")
+		}
+	}
+	expectedMode := strings.ToLower(strings.TrimSpace(options.AuthorizationMode))
+	if expectedMode != "" && schemaVersion == 2 && mode != expectedMode {
+		mismatches = append(mismatches, "authorization_mode")
+	}
+	if expectedMode == "policy" && schemaVersion == 1 {
+		mismatches = append(mismatches, "authorization_mode")
+	}
+	if schemaVersion != 1 && schemaVersion != 2 {
+		mismatches = append(mismatches, "schema_version")
 	}
 	if len(mismatches) > 0 {
 		return fmt.Errorf("stale or invalid plan lock: %s", strings.Join(mismatches, ", "))

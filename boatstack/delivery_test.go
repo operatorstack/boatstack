@@ -49,13 +49,20 @@ func TestDeliverySlicesPartitionTasksAndRejectForwardDependencies(t *testing.T) 
 }
 
 func activateTwoSliceDelivery(t *testing.T) (string, string) {
-	return activateTwoSliceDeliveryWithChangelog(t, false)
+	return activateTwoSliceDeliveryConfigured(t, false, nil)
 }
 
 func activateTwoSliceDeliveryWithChangelog(t *testing.T, maintainChangelog bool) (string, string) {
+	return activateTwoSliceDeliveryConfigured(t, maintainChangelog, nil)
+}
+
+func activateTwoSliceDeliveryConfigured(t *testing.T, maintainChangelog bool, configure func(*ProjectConfig)) (string, string) {
 	t.Helper()
 	repo := prTestRepoConfigured(t, func(config *ProjectConfig) {
 		config.Workflow.MaintainChangelog = maintainChangelog
+		if configure != nil {
+			configure(config)
+		}
 	})
 	feature := "phased-feature"
 	directory := filepath.Join(repo, ".product-loop", "features", feature)
@@ -99,6 +106,53 @@ func activateTwoSliceDeliveryWithChangelog(t *testing.T, maintainChangelog bool)
 	runGit(t, repo, "add", ".product-loop/features/"+feature)
 	runGit(t, repo, "commit", "-m", "activate phased delivery")
 	return repo, feature
+}
+
+func TestDeliveryGatePoliciesControlGapsAndHighRiskReview(t *testing.T) {
+	t.Run("gaps disabled", func(t *testing.T) {
+		repo, feature := activateTwoSliceDeliveryConfigured(t, false, func(config *ProjectConfig) {
+			config.Workflow.AllowPassWithGaps = false
+		})
+		evidencePath := filepath.Join(repo, ".product-loop", "features", feature, "evidence.md")
+		value, err := os.ReadFile(evidencePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		value = []byte(strings.Replace(string(value), "Test gate (phase-one): `PASS`", "Test gate (phase-one): `PASS_WITH_GAPS`", 1))
+		if err := os.WriteFile(evidencePath, value, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, err = RecordDeliveryGate(DeliveryGateOptions{Repo: repo, Feature: feature, SliceID: "phase-one", Gate: "test", Status: "PASS_WITH_GAPS"})
+		if err == nil || !strings.Contains(err.Error(), "allow_pass_with_gaps is false") {
+			t.Fatalf("disabled gap policy did not block PASS_WITH_GAPS: %v", err)
+		}
+	})
+
+	t.Run("high risk review", func(t *testing.T) {
+		repo, feature := activateTwoSliceDeliveryConfigured(t, false, func(config *ProjectConfig) {
+			config.Workflow.IndependentReviewForHighRisk = true
+		})
+		if _, err := RecordDeliveryGate(DeliveryGateOptions{Repo: repo, Feature: feature, SliceID: "phase-one", Gate: "test", Status: "PASS"}); err != nil {
+			t.Fatal(err)
+		}
+		base := DeliveryGateOptions{Repo: repo, Feature: feature, SliceID: "phase-one", Gate: "review", Status: "PASS"}
+		if _, err := RecordDeliveryGate(base); err == nil || !strings.Contains(err.Error(), "reviewer_identity") {
+			t.Fatalf("high-risk review accepted missing provenance: %v", err)
+		}
+		base.ReviewerIdentity = "reviewer-2"
+		base.ReviewMethod = "same_agent"
+		if _, err := RecordDeliveryGate(base); err == nil || !strings.Contains(err.Error(), "human_peer or separate_agent") {
+			t.Fatalf("high-risk review accepted unsupported method: %v", err)
+		}
+		base.ReviewMethod = "separate_agent"
+		receipt, err := RecordDeliveryGate(base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if receipt.ReviewerIdentity != "reviewer-2" || receipt.ReviewMethod != "separate_agent" {
+			t.Fatalf("review provenance was not persisted: %#v", receipt)
+		}
+	})
 }
 
 func TestManagedReviewRequiresChangelogEntryAndBindsItToTestEvidence(t *testing.T) {

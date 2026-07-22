@@ -35,6 +35,7 @@ func prTestRepoConfigured(t *testing.T, configure func(*ProjectConfig)) string {
 	config.Project.DefaultBranch = "main"
 	config.Project.Context = []string{"README.md"}
 	config.Project.HighRiskPaths = []string{"feature.go"}
+	config.Workflow.IndependentReviewForHighRisk = false
 	if configure != nil {
 		configure(&config)
 	}
@@ -187,9 +188,13 @@ func activateManagedFeature(t *testing.T, repo, feature string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeApprovalReceipt(t, filepath.Join(directory, "approval.md"), check.Fingerprint)
+	approvalPath := ""
+	if config.Workflow.HumanPlanApproval {
+		approvalPath = filepath.Join(directory, "approval.md")
+		writeApprovalReceipt(t, approvalPath, check.Fingerprint)
+	}
 	if err := ActivatePlan(ActivationOptions{
-		PlanPath: filepath.Join(directory, "plan.md"), ApprovalPath: filepath.Join(directory, "approval.md"),
+		PlanPath: filepath.Join(directory, "plan.md"), ApprovalPath: approvalPath,
 		OutDir: filepath.Join(directory, "compiled"), OutputPath: filepath.Join(directory, "plan.lock.json"),
 		SourceCommit: runGit(t, repo, "rev-parse", "HEAD"),
 	}); err != nil {
@@ -250,6 +255,47 @@ No migration; revert the feature commit.
 		}
 	}
 	return directory
+}
+
+func TestManagedPRRechecksCurrentAuthorizationAndGapPolicy(t *testing.T) {
+	t.Run("policy activation omits approval source", func(t *testing.T) {
+		repo := prTestRepoConfigured(t, func(config *ProjectConfig) {
+			config.Workflow.HumanPlanApproval = false
+		})
+		directory := activateManagedFeature(t, repo, "policy-feature")
+		if fileExists(filepath.Join(directory, "approval.md")) {
+			t.Fatal("policy activation created approval.md")
+		}
+		context, err := PreparePRContext(PRContextOptions{Repo: repo, Feature: "policy-feature"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, source := range context.Sources {
+			if source.Kind == "approval" {
+				t.Fatalf("policy-activated PR claimed human approval: %#v", source)
+			}
+		}
+	})
+
+	t.Run("policy change rejects existing gaps", func(t *testing.T) {
+		repo := prTestRepo(t)
+		activateManagedFeature(t, repo, "gap-policy")
+		configPath := filepath.Join(repo, ".product-loop", "project.json")
+		config, _, err := LoadConfig(configPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		config.Workflow.AllowPassWithGaps = false
+		value, _ := MarshalJSON(config)
+		if err := os.WriteFile(configPath, value, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		runGit(t, repo, "add", ".product-loop/project.json")
+		runGit(t, repo, "commit", "-m", "tighten gap policy")
+		if _, err := PreparePRContext(PRContextOptions{Repo: repo, Feature: "gap-policy"}); err == nil || !strings.Contains(err.Error(), "allow_pass_with_gaps=false") {
+			t.Fatalf("managed PR reused a receipt forbidden by current policy: %v", err)
+		}
+	})
 }
 
 func managedPRBody() string {
