@@ -214,6 +214,21 @@ func TestValidateConfig_AcceptanceTable(t *testing.T) {
 	}
 }
 
+func TestValidateConfigPRVisualEvidencePolicy(t *testing.T) {
+	for _, policy := range []string{"", "off", "suggest", "require"} {
+		config := testConfig()
+		config.Workflow.PRVisualEvidence = policy
+		if err := ValidateConfig(config); err != nil {
+			t.Fatalf("policy %q should be accepted: %v", policy, err)
+		}
+	}
+	config := testConfig()
+	config.Workflow.PRVisualEvidence = "sometimes"
+	if err := ValidateConfig(config); err == nil || !strings.Contains(err.Error(), "pr_visual_evidence") {
+		t.Fatalf("invalid policy was not rejected: %v", err)
+	}
+}
+
 func TestDoctor_SchemaBehindAndAhead(t *testing.T) {
 	oldOverride := currentConfigSchemaVersionOverride
 	defer func() { currentConfigSchemaVersionOverride = oldOverride }()

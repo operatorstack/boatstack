@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -75,7 +76,7 @@ func quoted(value string) string {
 func previewDocument(context PRContext, title, body string) string {
 	return strings.Join([]string{
 		"---",
-		"boatstack_pr_version: 2",
+		"boatstack_pr_version: 3",
 		"title: " + quoted(title),
 		"mode: " + quoted(context.Mode),
 		"feature: " + quoted(context.Feature),
@@ -83,6 +84,10 @@ func previewDocument(context PRContext, title, body string) string {
 		"base: " + quoted(context.BaseBranch),
 		"head: " + quoted(context.HeadBranch),
 		"context_fingerprint: " + quoted(context.ContextFingerprint),
+		"pr_visual_evidence_policy: " + quoted(context.PRVisualEvidencePolicy),
+		"pr_visual_evidence_status: " + quoted(context.PRVisualEvidenceStatus),
+		"pr_visual_evidence_count: " + strconv.Itoa(context.PRVisualEvidenceCount),
+		"pr_visual_evidence_fingerprint: " + quoted(context.PRVisualEvidenceFingerprint),
 		"---",
 		strings.TrimSpace(body),
 		"",
@@ -158,6 +163,19 @@ func activateManagedFeature(t *testing.T, repo, feature string) string {
 	plan := validPlan()
 	plan["feature_id"] = feature
 	plan["spec_path"] = "feature-spec.md"
+	config, _, err := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalizedPRVisualEvidencePolicy(config.Workflow.PRVisualEvidence) != "off" {
+		plan["pr_visual_evidence"] = map[string]any{
+			"relevance": "relevant",
+			"scenarios": []any{map[string]any{
+				"id": "warning", "entry": "/onboarding", "state": "picker open", "viewport": "1440x900",
+				"expected": []any{"warning visible"},
+			}},
+		}
+	}
 	if err := os.WriteFile(filepath.Join(directory, "source-plan.md"), []byte("# Host plan\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -384,6 +402,83 @@ func TestPRPreviewRejectsMissingSectionsMalformedRowsAndStaleDiff(t *testing.T) 
 	}
 	if _, _, err := CheckPRPreview(repo, previewPath); err == nil || !strings.Contains(err.Error(), "working-tree changes") {
 		t.Fatalf("expected uncommitted product drift to block, got %v", err)
+	}
+}
+
+func visualEvidenceBody(base, status string) string {
+	return strings.TrimSpace(base) + `
+
+## Visual evidence
+
+Screenshots are human-review evidence, not mechanical proof.
+
+| Scenario | Viewport | Commit | Result | Publication |
+|---|---|---|---|---|
+| Sheet picker warning | 1440x900 | current | ` + "`" + status + "`" + ` | Boatstack evidence comment or manual fallback |
+`
+}
+
+func TestPRVisualEvidenceIsStructuralForManagedAndAdHocPreviews(t *testing.T) {
+	repo := prTestRepoConfigured(t, func(config *ProjectConfig) {
+		config.Workflow.PRVisualEvidence = "suggest"
+	})
+	context, err := PreparePRContext(PRContextOptions{Repo: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if context.PRVisualEvidencePolicy != "suggest" || context.PRVisualEvidenceStatus != "NOT_VERIFIED" || context.PRVisualEvidenceCount != 0 {
+		t.Fatalf("unexpected visual evidence context: %#v", context)
+	}
+	body := visualEvidenceBody(fixturePRBody(t), context.PRVisualEvidenceStatus)
+	previewPath := writePreview(t, repo, context, "Expose visual review evidence", body)
+	if _, _, err := CheckPRPreview(repo, previewPath); err != nil {
+		t.Fatal(err)
+	}
+	withoutVisual := strings.Replace(body, "## Visual evidence", "## Screenshot notes", 1)
+	if err := os.WriteFile(previewPath, []byte(previewDocument(context, "Expose visual review evidence", withoutVisual)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParsePRPreview(previewPath); err == nil || !strings.Contains(err.Error(), "Visual evidence") {
+		t.Fatalf("missing structural visual section was not rejected: %v", err)
+	}
+}
+
+func TestManagedPRVisualEvidenceUsesApprovedPlanScenarios(t *testing.T) {
+	repo := prTestRepoConfigured(t, func(config *ProjectConfig) {
+		config.Workflow.PRVisualEvidence = "suggest"
+	})
+	activateManagedFeature(t, repo, "reviewer-ready")
+	context, err := PreparePRContext(PRContextOptions{Repo: repo, Feature: "reviewer-ready"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if context.Mode != "managed" || context.PRVisualEvidenceRelevance != "relevant" || context.PRVisualEvidenceSource != "managed-plan" || context.PRVisualEvidenceStatus != "NOT_VERIFIED" {
+		t.Fatalf("managed visual decision was not projected: %#v", context)
+	}
+	previewPath := writePreview(t, repo, context, "Expose approved visual review scenario", visualEvidenceBody(managedPRBody(), context.PRVisualEvidenceStatus))
+	if _, _, err := CheckPRPreview(repo, previewPath); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRequiredPRVisualEvidenceBlocksPublicationBeforeMutation(t *testing.T) {
+	repo := prTestRepoConfigured(t, func(config *ProjectConfig) {
+		config.Workflow.PRVisualEvidence = "require"
+	})
+	context, err := PreparePRContext(PRContextOptions{Repo: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if context.PRVisualEvidenceStatus != "BLOCKED" {
+		t.Fatalf("required missing evidence should block, got %s", context.PRVisualEvidenceStatus)
+	}
+	previewPath := writePreview(t, repo, context, "Require visual review evidence", visualEvidenceBody(fixturePRBody(t), context.PRVisualEvidenceStatus))
+	preview, _, err := CheckPRPreview(repo, previewPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PublishPR(PRPublishOptions{Repo: repo, PreviewPath: previewPath, ExpectedFingerprint: preview.Fingerprint, Action: "open"}); err == nil || !strings.Contains(err.Error(), "required visual evidence") {
+		t.Fatalf("required visual evidence did not block publication: %v", err)
 	}
 }
 

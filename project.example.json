@@ -25,7 +25,8 @@
     "human_plan_approval": true,
     "independent_review_for_high_risk": true,
     "allow_pass_with_gaps": true,
-    "maintain_changelog": false
+    "maintain_changelog": false,
+    "pr_visual_evidence": "off"
   },
   "integrations": {
     "gstack": {

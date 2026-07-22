@@ -40,6 +40,11 @@
       "blocks": ["T-1"]
     }
   ],
+  "pr_visual_evidence": {
+    "relevance": "not_relevant",
+    "reason": "<why screenshots do not help review this change>",
+    "scenarios": []
+  },
   "tasks": [
     {
       "id": "T-1",

@@ -238,6 +238,8 @@ Validation must be derived before implementation. Each check records:
 
 Subjective work is not exempt from validation. Convert ambiguity into an approved reference, rubric, scenario, threshold, and evidence owner. If materially different interpretations remain or no defensible oracle exists, keep the plan `BLOCKED` at `PLAN_GATE`.
 
+When `workflow.pr_visual_evidence` is `suggest` or `require`, every managed plan also records a `pr_visual_evidence` decision. A relevant decision defines one to three scenarios with an entry surface, required state, viewport, and expected visible outcomes. A not-relevant decision records its reason. Planning may discover repository-owned visual tooling but must not require Storybook, Playwright, or another framework-specific dependency.
+
 ### `PLAN -> PLAN_GATE`
 
 Run `boatstack-helper check-plan --plan <feature>/plan.md`, present the full draft and returned fingerprint, then require an exact standalone `a`, the compatible full reply `approve`, or a change request. End the pending user-facing response with exactly this Markdown: Reply `a` to approve. The check is read-only. Do not interpret silence, `[a]`, an `a` embedded in other text, a new implementation question, a tool permission, or permission to build as plan approval.
@@ -308,6 +310,8 @@ Create requirement-to-evidence traceability. Use this evidence ladder:
 
 The riskier the slice, the less acceptable same-model, self-authored tests are as the only oracle.
 
+For relevant visual scenarios, resolve capture capability in this order: repository-owned visual tooling, a host browser against the existing development server, one human-supplied launch instruction, then explicit machine-local runtime setup. Capture must not edit source, dependency manifests, lockfiles, or test configuration. Bind each PNG to the current commit, product diff, scenario, viewport, SHA-256, and a `clean` or `human-reviewed` privacy receipt. `suggest` records unavailable capture as a visible gap; `require` retains a ship blocker.
+
 External-write evidence must establish immutable target identity, transactional or fix-forward behavior, and an independent safety oracle. A dry run that only prints the intended command does not prove the live target or failure behavior.
 
 Before passing the gate, commit the intentional active-slice product and evidence diff
@@ -352,6 +356,8 @@ Project the approved feature and actual committed diff into a reviewer-ready tit
 - collapsed approval, evidence, and coding-host provenance.
 
 Store the exact preview at `.product-loop/features/<feature>/pr.md`. Its non-rendered frontmatter records the title, base/head branches, managed feature, and context fingerprint; the remaining Markdown is the exact GitHub body. The preview artifact itself is excluded from the product-diff fingerprint so committing it does not create a self-referential hash.
+
+PR schema v3 always records `pr_visual_evidence_policy`, `pr_visual_evidence_status`, `pr_visual_evidence_count`, and `pr_visual_evidence_fingerprint`. Relevant or unresolved PRs contain a structured **Visual evidence** section. Show the exact local images and public-repository privacy warning before confirmation. The state-scoped `o` or `u` authorizes the fingerprinted PR package: title, body, and one Boatstack-owned visual-evidence comment. A host browser may upload or update that comment; otherwise expose the exact local PNGs for manual attachment. If the PR mutation succeeds but attachment fails, preserve the PR, record `visual_pending`, and fix forward. Under `require`, do not mark managed delivery published until the attachment is observed.
 
 Before publication, show the exact title and rendered body. Use **PR ready** and exactly one action. When no PR exists, render: Reply `o` to open PR. When one exists, render: Reply `u` to update PR. Only the corresponding state-scoped shortcut or compatible full reply authorizes opening or updating the PR. After confirmation, commit only the reviewed `pr.md`, recheck the same preview fingerprint, committed product diff, plan approval, build lock, test evidence, and review evidence, then perform a normal push and the selected GitHub action. Any drift blocks publication and requires a new preview; never force-push.
 

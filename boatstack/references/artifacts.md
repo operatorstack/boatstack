@@ -23,6 +23,7 @@ Artifacts separate facts, decisions, unknowns, incompleteness, and evidence. Com
 | Side-effect declaration | Affected paths, immutable external target, reversibility, failure policy, and destructive flag | A task can write outside the repository |
 | Runbook | Deploy, observe, recover, and roll back | Operational behavior changes |
 | Evidence ledger | Commands, results, review evidence, screenshots, CI and runtime links | Every gate |
+| PR visual manifest | Machine-local scenario, source revision, screenshot hashes, capture metadata, and publication state | Relevant PR capture and publication |
 | PR preview | Exact reviewer-ready title/body plus a hidden fingerprint of the committed diff and evidence | Ship gate, before opening or updating GitHub |
 | Move ledger | Failure class, intervention, prediction, paired result, decision | Improving the loop itself |
 
@@ -86,6 +87,10 @@ ledger while the publisher rechecks the matching receipts.
 ## Safety boundary
 
 The generated host hook fragments and launchers are committed installation infrastructure. Their policy is immutable in project configuration. The machine-local helper is ignored and restored by the installer. Safety evidence belongs in the feature evidence ledger: target identity, failure behavior, independent oracle, operational-diff scan, and the operator-only recovery boundary. A source edit is reviewable evidence, not permission to execute it.
+
+## PR visual evidence boundary
+
+When `workflow.pr_visual_evidence` is enabled, the approved plan records whether screenshots are relevant and names no more than three review scenarios. PNG bytes and capability receipts live under Git-common Boatstack state; committed ledgers retain only compact metadata and hashes. PR schema v3 binds the policy, status, count, and manifest fingerprint to the preview. Screenshots are human-review evidence rather than mechanical correctness proof.
 
 ## Templates
 

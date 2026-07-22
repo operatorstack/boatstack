@@ -14,6 +14,7 @@ boatstack-config-field:workflow.independent_review_for_high_risk
 boatstack-config-field:workflow.allow_pass_with_gaps
 boatstack-config-field:workflow.maintain_changelog
 boatstack-config-field:workflow.boundary_analysis
+boatstack-config-field:workflow.pr_visual_evidence
 boatstack-config-field:workspace
 boatstack-config-field:workspace.enabled
 boatstack-config-field:workspace.mode
@@ -40,6 +41,7 @@ Boatstack keeps delivery policy in `.boatstack-project.json` so the same project
 | Allow a gate to pass with recorded gaps | `workflow.allow_pass_with_gaps` | A gate may report a pass with visible, retained gaps instead of requiring a gap-free result. |
 | Keep reader-facing release history | `workflow.maintain_changelog` | Every managed delivery slice and Boatstack-prepared ad-hoc PR must update `CHANGELOG.md`. |
 | Look for a missing systemic boundary | `workflow.boundary_analysis` | Planning checks whether the request is a local symptom and asks before expanding it into boundary work. |
+| Attach fresh screenshots to frontend PRs | `workflow.pr_visual_evidence` | Boatstack structures visual review evidence without adding media or frontend tooling to Git. |
 | Start features in fresh Git workspaces | `workspace` | Boatstack can create a branch or linked worktree and manage local cleanup under the selected policy. |
 | Limit generated host adapters | `adapters` | Only the named Cursor, Claude Code, Codex, Gemini CLI, or GitHub surfaces are exported. |
 | Add supported specialist workflows | `integrations` | The installer records whether gstack or Spec Kit was requested and its installed state. |
@@ -79,7 +81,8 @@ JSON does not support comments, so the explanations follow the example.
     "independent_review_for_high_risk": true,
     "allow_pass_with_gaps": true,
     "maintain_changelog": false,
-    "boundary_analysis": false
+    "boundary_analysis": false,
+    "pr_visual_evidence": "off"
   },
   "workspace": {
     "enabled": true,
@@ -141,6 +144,7 @@ The defaults below describe an omitted JSON field. A fresh installer-generated c
 | `allow_pass_with_gaps` | `false` | When `true`, verification may pass with explicitly recorded outstanding gaps. It does not hide or discard them. |
 | `maintain_changelog` | `false` | When `true`, requires a reader-visible `CHANGELOG.md` entry for every managed delivery slice and Boatstack-prepared ad-hoc PR. |
 | `boundary_analysis` | `false` | When `true`, planning checks whether a request indicates a missing systemic boundary. Scope expansion remains a material human decision; choosing programmatic enforcement produces a boundary slice followed by the feature slice. |
+| `pr_visual_evidence` | `off` | `suggest` records missing relevant screenshots as a visible PR gap; `require` blocks completed PR publication until current screenshot evidence is available. Media remains machine-local until PR attachment. |
 
 ### `workspace`
 
@@ -195,6 +199,18 @@ Add a categorized entry under `CHANGELOG.md`'s current `Unreleased` heading. See
 ```
 
 This adds a product decision when repository evidence suggests that a local request is a symptom of a broader missing boundary. It does not silently turn every feature into a refactor.
+
+### Add screenshots to relevant pull requests
+
+```json
+{
+  "workflow": {
+    "pr_visual_evidence": "suggest"
+  }
+}
+```
+
+`suggest` keeps delivery nonblocking when capture or attachment is unavailable and exposes the missing evidence as a PR gap. Use `require` only when every relevant frontend PR must publish current screenshots. Boatstack stores PNG bytes in Git-common machine state, never in the product tree.
 
 ### Require independent review for high-risk paths
 
