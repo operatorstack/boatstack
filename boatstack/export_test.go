@@ -295,7 +295,7 @@ func TestExportAndDriftCheck(t *testing.T) {
 		}
 	}
 	update := string(bundle.Files[".cursor/commands/boatstack-update.md"])
-	for _, expected := range []string{"check-update", "chore/update-boatstack-v", "BOATSTACK_MODE=update", "Reply `o` to open update PR.", "full reply open update PR for compatibility", "Never merge"} {
+	for _, expected := range []string{"check-update", "prepare-update-pr", "publish-update-pr", "operation-status", "chore/update-boatstack-v", "BOATSTACK_MODE=update", "Reply `o` to open update PR.", "full reply open update PR for compatibility", "Never stage, commit, push, or open the update PR through free-form terminal calls", "Never merge"} {
 		if !strings.Contains(update, expected) {
 			t.Fatalf("update adapter is missing %q", expected)
 		}

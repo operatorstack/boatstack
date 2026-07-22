@@ -54,7 +54,7 @@ One verified runtime is cached under the clone's Git common directory and keyed 
 
 Independent clones do not share a Git common directory. Committed adapters survive a clone, but the ignored helper and repository-family cache do not; run the installer once in the new clone.
 
-For an update, run `/boatstack-update` from a clean, current default branch. Boatstack creates `chore/update-boatstack-v<version>`, verifies the tagged release and checksum, preserves integrations, and shows the exact generated diff before asking for `open update PR`. Release-check state in `.product-loop/bin/update-state.json` and the platform helper remain ignored; the adapters, generated lock, hook fragments, and merged host settings belong in the update PR.
+For an update, run `/boatstack-update` from a clean, current default branch. Boatstack creates `chore/update-boatstack-v<version>`, verifies the tagged release and checksum, preserves integrations, and stores a fingerprinted non-empty update-PR preview under Git-common Boatstack state before asking for `o`. `publish-update-pr` owns the exact commit, normal push, and single-PR reconciliation. Release-check state in `.product-loop/bin/update-state.json`, operation receipts under Git-common `boatstack/operations/v1`, the update preview, and the platform helper remain ignored; the adapters, generated lock, hook fragments, and merged host settings belong in the update PR.
 
 An update refuses feature branches, dirty worktrees, stale default branches, changed generated files, and user-owned collisions. It never merges its own PR.
 

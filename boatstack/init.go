@@ -587,11 +587,11 @@ func RunInit(options InitOptions) (returnErr error) {
 		fmt.Fprintln(options.Output, "  1. Describe the product change and save the host plan (use .product-loop/intake/ if the host exposes no path).")
 	}
 	fmt.Fprintln(options.Output, "Host activation checklist:")
-	fmt.Fprintln(options.Output, "  Cursor: reload the window and confirm beforeShellExecution and beforeMCPExecution, plus synchronous preToolUse for native edits, are enabled; the hook is defense in depth.")
-	fmt.Fprintln(options.Output, "  Claude Code: reload, then use /hooks to confirm the Boatstack PreToolUse hook is active (Bash is required).")
-	fmt.Fprintln(options.Output, "  Codex: trust this exact linked-worktree path, use /hooks to review and trust the Boatstack hook, then start a new task.")
+	fmt.Fprintln(options.Output, "  Cursor: reload the window and confirm beforeShellExecution and beforeMCPExecution are paired with their after events, plus synchronous pre/post native-tool hooks; the hooks are defense in depth.")
+	fmt.Fprintln(options.Output, "  Claude Code: reload, then use /hooks to confirm Boatstack PreToolUse, PostToolUse, and PostToolUseFailure hooks are active (Bash is required).")
+	fmt.Fprintln(options.Output, "  Codex: trust this exact linked-worktree path, use /hooks to review and trust the Boatstack PreToolUse and PostToolUse hooks, then start a new task.")
 	if contains(config.Adapters, "gemini") {
-		fmt.Fprintln(options.Output, "  Gemini CLI: reload and confirm the Boatstack BeforeTool hook is active.")
+		fmt.Fprintln(options.Output, "  Gemini CLI: reload and confirm the Boatstack BeforeTool and AfterTool hooks are active.")
 	}
 	fmt.Fprintln(options.Output, "Boatstack start command by host:")
 	fmt.Fprintln(options.Output, "  Claude Code: /auto-plan")
@@ -660,6 +660,37 @@ func InstallExecutionInterceptors(repo string, adapters []string) error {
 }
 
 func RunUpdate(options InitOptions) error {
+	repo, err := ResolveRepository(options.Repo)
+	if err != nil {
+		return err
+	}
+	branch := strings.TrimSpace(gitOutput(repo, "branch", "--show-current"))
+	packageFingerprint := SHA256Bytes([]byte(Version + "\x00" + SourceCommit + "\x00" + ChecksumsSHA256))
+	receipt, err := PrepareOperation(OperationPrepareOptions{
+		Repo: repo, Kind: "install-update", Scope: OperationScope{Worktree: filepath.Base(repo), HeadBranch: branch},
+		Target: "boatstack-install:" + Version, PackageFingerprint: packageFingerprint,
+		AuthorizationFingerprint: SHA256Bytes([]byte("update-request\x00" + branch + "\x00" + packageFingerprint)),
+		RetryClass:               "ATOMIC_LOCAL", MaxAttempts: 2,
+		ExpectedPostcondition: "the generated runtime, adapters, hooks, and preserved integration state match the pinned release",
+	})
+	if err != nil {
+		return err
+	}
+	begin, err := BeginOperation(repo, receipt.OperationID, SHA256Bytes([]byte("install-update\x00"+packageFingerprint)), "boatstack-helper update")
+	if err != nil {
+		if begin.Receipt.State == OperationSucceeded {
+			return nil
+		}
+		return err
+	}
+	if begin.Receipt.State == OperationSucceeded {
+		return nil
+	}
 	options.Update = true
-	return RunInit(options)
+	if err := RunInit(options); err != nil {
+		_, _ = CompleteOperation(repo, receipt.OperationID, begin.LeaseToken, "RETRYABLE", "the atomic update transaction rolled back", "")
+		return err
+	}
+	_, err = CompleteOperation(repo, receipt.OperationID, begin.LeaseToken, "SUCCEEDED", "post-install doctor and generated projections passed", Version)
+	return err
 }

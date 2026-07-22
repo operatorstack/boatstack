@@ -20,6 +20,7 @@ Select a move only after locating the failure below its surface symptom. “Time
 | Irreversible recovery escalation | A failed external operation causes authority/target broadening or an invented reset | Immutable pre-execution deny; preserve state; read-only diagnosis; transactional retry or fix forward | False denial of legitimate isolated development operations |
 | Worktree bootstrap deadlock | A linked worktree inherits fail-closed hooks but not the ignored runtime required to evaluate them | Versioned Git-common runtime; atomic first-use hydration; provenance check | Cross-version execution or weakened failure behavior |
 | Post-publication correction routing | CI, review, or a denied push targets work already marked published | Resolve branch and recorded PR identity; append the observation; draft an independently approved corrective child | Treating PR creation as completion or asking the user to bypass the guard |
+| Unobserved side-effect completion | The same visible state could mean not started, executing, succeeded with a lost response, or failed | Durable operation receipt; exact lease; observe completion; reconcile the expected postcondition before retry | Conversation-scoped retry loops, duplicate PRs, or phantom success |
 
 ## Lessons encoded from the benchmark campaign
 
@@ -32,6 +33,7 @@ Select a move only after locating the failure below its surface symptom. “Time
 - **Model changes relocate the bottleneck.** The same harness exposed different binding modes on Gemini and Qwen. Route moves by measured failure population, not by a universal “best loop.”
 - **Tool failure must not create recovery authority.** The sanitized database incident moved from a partial schema apply failure to an invented reset path. The irreversible-operation guard is `PROPOSED`, not promoted: evaluate its deny corpus, safe corpus, latency, and workflow regressions against the unguarded baseline.
 - **Fail-closed controls need an available evaluator.** A linked worktree copied the safety hook but not its ignored helper, so the guard also denied its own repair command. Share only the verified runtime within the Git clone and hydrate local ignored state before judging the original event.
+- **A retry needs a new observation.** Identical in-flight calls wait. Unknown non-idempotent calls enter `RECONCILE_REQUIRED`; Git, GitHub, filesystem, browser, and MCP boundaries must observe their exact postcondition before another attempt consumes the persistent budget.
 
 ## Move proposal schema
 

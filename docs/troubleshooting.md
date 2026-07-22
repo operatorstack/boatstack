@@ -127,6 +127,16 @@ Release discovery uses a short, unauthenticated request to GitHub and a 24-hour 
 
 Boatstack found an installed generated file that no longer matches its previous lock. Review the named path and move durable project-owned content into `.boatstack-project.json` or repository documentation. Do not overwrite the drift merely to make the update pass.
 
+## A tool call repeats or publication appears stuck
+
+Run `.product-loop/bin/boatstack-helper operation-status --repo . --json`. `EXECUTING` means the exact call already has a live lease, so wait instead of launching it again. `RECONCILE_REQUIRED` means Boatstack did not observe completion; verify the reported Git, GitHub, file, browser, or MCP postcondition before retrying. A successful operation whose response was lost is recovered from that observation. Do not reset the task, repeat a denied push, or open another PR.
+
+Operation receipts are shared by linked worktrees and retry budgets survive new chats and host restarts. If more than one unfinished operation matches, rerun status with the reported operation ID rather than choosing the newest. The receipts contain fingerprints and secret-free observations; no command payload or credential should be added to them.
+
+## An update PR response was interrupted
+
+Keep the update branch and rerun the Boatstack update publication step with the same displayed preview fingerprint. The deterministic publisher queries the exact head branch first and returns the existing PR when GitHub accepted the earlier request. If the update diff changed, regenerate and review the preview; never bypass it with a direct push or `gh pr create`.
+
 ## The PR preview is stale
 
 A new commit, changed evidence, changed approval artifact, or base-branch update invalidated the preview. Ask Boatstack to regenerate it. Do not copy the old body forward.

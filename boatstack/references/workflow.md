@@ -366,7 +366,7 @@ Store the exact preview at `.product-loop/features/<feature>/pr.md`. Its non-ren
 
 PR schema v3 always records `pr_visual_evidence_policy`, `pr_visual_evidence_status`, `pr_visual_evidence_count`, and `pr_visual_evidence_fingerprint`. Relevant or unresolved PRs contain a structured **Visual evidence** section. Show the exact local images and public-repository privacy warning before confirmation. The state-scoped `o` or `u` authorizes the fingerprinted PR package: title, body, and one Boatstack-owned visual-evidence comment. A host browser may upload or update that comment; otherwise expose the exact local PNGs for manual attachment. If the PR mutation succeeds but attachment fails, preserve the PR, record `visual_pending`, and fix forward. Under `require`, do not mark managed delivery published until the attachment is observed.
 
-Before publication, show the exact title and rendered body. Use **PR ready** and exactly one action. When no PR exists, render: Reply `o` to open PR. When one exists, render: Reply `u` to update PR. Only the corresponding state-scoped shortcut or compatible full reply authorizes opening or updating the PR. After confirmation, commit only the reviewed `pr.md`, recheck the same preview fingerprint, committed product diff, plan approval, build lock, test evidence, and review evidence, then perform a normal push and the selected GitHub action. Any drift blocks publication and requires a new preview; never force-push.
+Before publication, show the exact title and rendered body. Use **PR ready** and exactly one action. When no PR exists, render: Reply `o` to open PR. When one exists, render: Reply `u` to update PR. Only the corresponding state-scoped shortcut or compatible full reply authorizes opening or updating the PR. After confirmation, commit only the reviewed `pr.md`, recheck the same preview fingerprint, committed product diff, plan approval, build lock, test evidence, and review evidence, then let the deterministic publisher perform a normal push and the selected GitHub action. It records the fingerprinted package before execution. A lost response enters reconciliation against the exact remote branch and PR; it never opens another PR blindly. Any package drift blocks publication and requires a new preview; never force-push.
 
 For managed work, publication also requires current test and review receipts for the
 active delivery slice. Successful publication marks only that slice `PUBLISHED` and
@@ -381,9 +381,28 @@ After successful publication only, the publisher may use the ignored 24-hour rel
 
 `boatstack-update` is an infrastructure operation, not part of a feature plan. It first forces release discovery and proves the current installation is healthy. If the repository is not on its clean, current default branch, it changes nothing and returns **Update postponed**.
 
-For an available version, create `chore/update-boatstack-v<version>`, run the installer pinned to that release in update mode, preserve the repository configuration, adapters, integrations, and unrelated host settings, then run `doctor`. Show the release notes and link, exact generated diff, checksums, changed paths, integration state, rollout, and rollback. Product paths or generated-state drift are blocking.
+For an available version, create `chore/update-boatstack-v<version>`, run the installer pinned to that release in update mode, preserve the repository configuration, adapters, integrations, and unrelated host settings, then run `doctor`. The update transaction itself is a durable atomic-local operation. After installation, `prepare-update-pr` verifies that every changed path is Boatstack-owned and atomically stores the exact non-empty publication package in Git-common runtime state. Show the release notes and link, exact generated diff, checksums, changed paths, integration state, rollout, and rollback. Product paths or generated-state drift are blocking.
 
-Use **Boatstack update ready** and exactly one action: Reply `o` to open update PR. Only the state-scoped `o` or compatible full reply authorizes staging the reported infrastructure paths, committing, pushing normally, and opening the update PR. The PR body records old/new versions, release provenance, changed generated files, doctor result, integration state, rollout, and revert instructions. If publication is unavailable, retain the prepared branch and provide one manual action. Never merge automatically.
+Use **Boatstack update ready** and exactly one action: Reply `o` to open update PR. Only the state-scoped `o` or compatible full reply authorizes `publish-update-pr` with that preview fingerprint. The publisher stages only the approved paths, reuses or creates the exact update commit, pushes normally, and reconciles the head branch before opening at most one PR. The PR body records release provenance, changed generated files, verification, rollout, and revert instructions. If a response is lost after GitHub accepted the request, the next invocation observes and returns the existing PR. If publication is unavailable, retain the prepared branch and provide one manual action. Never merge automatically.
+
+## Durable operation boundary
+
+During an active managed delivery, every mutation-capable host call receives a
+single-use lease bound to its tool, target, argument fingerprint, plan authority,
+and persistent attempt number. Post-tool events complete that attempt. Identical
+active work reports **wait**; an already successful fingerprint is not relaunched.
+Unknown completion reports **reconcile** and checks the expected Git, GitHub,
+filesystem, browser, or MCP postcondition before any retry.
+
+`operation-status --repo . --json` is read-only. An omitted operation ID resolves
+only when at most one unfinished operation matches the current branch; ambiguity
+is explicit and never resolved by recency. Receipts are ignored Git-common state
+shared by linked worktrees. They store hashes and bounded facts, not commands,
+secrets, user content, or autonomous execution intent.
+
+`boatstack-run` consults this state before advancing. Its three-cycle repair budget
+is the delivery state's durable `repair_attempt`, not a counter reset by a new
+conversation, process, host, or async notification.
 
 ## Existing and ad-hoc PRs
 

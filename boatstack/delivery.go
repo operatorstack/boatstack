@@ -431,6 +431,9 @@ func RecordChangeObservation(options ChangeObservationOptions) (ChangeObservatio
 	}
 	published := state.ActiveIndex >= len(state.Slices)
 	if !published {
+		if state.RepairAttempt >= 3 {
+			return ChangeObservation{}, DeliveryState{}, fmt.Errorf("persistent repair budget exhausted after %d attempts; preserve current state and require a reviewed recovery decision", state.RepairAttempt)
+		}
 		state.RepairAttempt++
 	}
 	id := fmt.Sprintf("CHG-%03d", state.RepairAttempt)
@@ -840,6 +843,10 @@ func MarkDeliveryPublished(repo, feature, sliceID, url string) error {
 	state.ActiveIndex++
 	if state.ActiveIndex < len(state.Slices) {
 		state.Slices[state.ActiveIndex].Status = "BUILD"
+		state.RepairAttempt = 0
+		state.ActiveObservationID = ""
+		state.ResumeStage = ""
+		state.Mode = "NORMAL"
 	}
 	return saveDeliveryState(repo, state)
 }

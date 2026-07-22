@@ -73,11 +73,11 @@ func ClassifyReleaseDiff(repo, base, head string) (ReleaseClassification, error)
 		return ReleaseClassification{}, fmt.Errorf("release classification requires base and head revisions")
 	}
 	command := exec.Command("git", "-C", repo, "diff", "--name-only", "--no-renames", base, head)
-	output, err := command.CombinedOutput()
+	channels, err := runCommandChannels(command)
 	if err != nil {
-		return ReleaseClassification{}, fmt.Errorf("release diff failed: %s", strings.TrimSpace(string(output)))
+		return ReleaseClassification{}, fmt.Errorf("release diff failed: %w", commandFailure(channels, err))
 	}
-	return ClassifyReleasePaths(strings.Split(strings.TrimSpace(string(output)), "\n")), nil
+	return ClassifyReleasePaths(strings.Split(strings.TrimSpace(string(channels.Stdout)), "\n")), nil
 }
 
 // NextPatchVersion returns the next stable patch version. Minor and major
