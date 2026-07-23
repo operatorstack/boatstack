@@ -50,7 +50,19 @@ func featurePlanCandidates(repo string) ([]string, error) {
 	}
 	features := []string{}
 	for _, entry := range entries {
-		if !entry.IsDir() || !featureSlugPattern.MatchString(entry.Name()) || !fileExists(filepath.Join(root, entry.Name(), "plan.md")) {
+		if !entry.IsDir() || !featureSlugPattern.MatchString(entry.Name()) {
+			continue
+		}
+		directory := filepath.Join(root, entry.Name())
+		if !fileExists(filepath.Join(directory, "plan.md")) {
+			continue
+		}
+		// A feature that has been locked (built) or shipped is past planning and
+		// must never re-register as an open plan candidate, even when its
+		// ephemeral per-worktree delivery state.json was destroyed by worktree
+		// cleanup on ship. plan.lock.json / pr.md are the durable committed
+		// signals, mirroring orphanedFeatureArtifacts.
+		if fileExists(filepath.Join(directory, "plan.lock.json")) || fileExists(filepath.Join(directory, "pr.md")) {
 			continue
 		}
 		statePath, stateErr := deliveryStatePath(repo, entry.Name())
