@@ -1,6 +1,7 @@
 package boatstack
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -392,35 +393,6 @@ func updateDirtyPaths(repo string) ([]string, error) {
 	return paths, nil
 }
 
-func withoutBoatstackHooks(value []byte) ([]byte, error) {
-	var config map[string]any
-	if err := json.Unmarshal(value, &config); err != nil {
-		return nil, err
-	}
-	hooks, ok := config["hooks"].(map[string]any)
-	if !ok {
-		return json.Marshal(config)
-	}
-	for event, raw := range hooks {
-		entries, ok := raw.([]any)
-		if !ok {
-			continue
-		}
-		kept := []any{}
-		for _, entry := range entries {
-			if !containsBoatstackHook(entry) {
-				kept = append(kept, entry)
-			}
-		}
-		if len(kept) == 0 {
-			delete(hooks, event)
-		} else {
-			hooks[event] = kept
-		}
-	}
-	return json.Marshal(config)
-}
-
 func withoutInterceptor(value []byte) ([]byte, error) {
 	text := string(value)
 	start := strings.Index(text, interceptorHeader)
@@ -434,64 +406,191 @@ func withoutInterceptor(value []byte) ([]byte, error) {
 	return []byte(strings.TrimSpace(text[:start] + text[end+len(interceptorFooter):])), nil
 }
 
-func dirtyChangeIsOwned(repo, relative string, config ProjectConfig) bool {
-	base, err := exec.Command("git", "-C", repo, "show", "HEAD:"+relative).Output()
-	if err != nil {
-		return false
-	}
-	current, err := os.ReadFile(filepath.Join(repo, filepath.FromSlash(relative)))
-	for _, hookPath := range HostHookPaths(config.Adapters) {
-		if relative == filepath.ToSlash(hookPath) {
-			baseProjection, baseErr := withoutBoatstackHooks(base)
-			if os.IsNotExist(err) && baseErr == nil {
-				var skeleton map[string]any
-				if json.Unmarshal(baseProjection, &skeleton) != nil {
-					return false
-				}
-				for key, value := range skeleton {
-					if key == "version" {
-						continue
-					}
-					if key == "hooks" {
-						hooks, ok := value.(map[string]any)
-						if ok && len(hooks) == 0 {
-							continue
-						}
-					}
-					return false
-				}
-				return true
-			}
-			if err != nil {
-				return false
-			}
-			currentProjection, currentErr := withoutBoatstackHooks(current)
-			return baseErr == nil && currentErr == nil && string(baseProjection) == string(currentProjection)
+type updateOwnedKind string
+
+const (
+	updateOwnedConfig      updateOwnedKind = "config"
+	updateOwnedGenerated   updateOwnedKind = "generated"
+	updateOwnedHook        updateOwnedKind = "hook"
+	updateOwnedInterceptor updateOwnedKind = "interceptor"
+)
+
+type updateOwnershipProjection struct {
+	kinds        map[string]updateOwnedKind
+	currentFiles map[string][]byte
+	previous     map[string]string
+	targetKnown  bool
+}
+
+func executionInterceptorPath(adapter string) string {
+	return map[string]string{"cursor": ".cursorrules", "claude": "CLAUDE.md", "gemini": "GEMINI.md"}[adapter]
+}
+
+func executionInterceptorPaths(adapters []string) []string {
+	paths := map[string]bool{}
+	for _, adapter := range adapters {
+		if path := executionInterceptorPath(adapter); path != "" {
+			paths[path] = true
 		}
 	}
-	if relative == ".cursorrules" || relative == "CLAUDE.md" || relative == "GEMINI.md" {
+	return sortedKeys(paths)
+}
+
+func newUpdateOwnershipProjection(config ProjectConfig, currentFiles map[string][]byte, previous map[string]string) updateOwnershipProjection {
+	projection := updateOwnershipProjection{
+		kinds: map[string]updateOwnedKind{
+			".boatstack-project.json":           updateOwnedConfig,
+			".product-loop/generated.lock.json": updateOwnedGenerated,
+		},
+		currentFiles: currentFiles, previous: previous, targetKnown: currentFiles != nil,
+	}
+	for path := range currentFiles {
+		projection.kinds[filepath.ToSlash(path)] = updateOwnedGenerated
+	}
+	for path := range previous {
+		projection.kinds[filepath.ToSlash(path)] = updateOwnedGenerated
+	}
+	for _, path := range HostHookPaths(config.Adapters) {
+		projection.kinds[filepath.ToSlash(path)] = updateOwnedHook
+	}
+	for _, path := range executionInterceptorPaths(config.Adapters) {
+		projection.kinds[filepath.ToSlash(path)] = updateOwnedInterceptor
+	}
+	return projection
+}
+
+func readUpdateVersion(repo, relative string, head bool) ([]byte, bool, error) {
+	if head {
+		value, err := exec.Command("git", "-C", repo, "show", "HEAD:"+relative).Output()
 		if err != nil {
-			return false
+			return nil, false, nil
 		}
-		baseProjection, baseErr := withoutInterceptor(base)
-		currentProjection, currentErr := withoutInterceptor(current)
-		return baseErr == nil && currentErr == nil && string(baseProjection) == string(currentProjection)
+		return value, true, nil
 	}
-	if relative == ".product-loop/generated.lock.json" {
-		var lock struct {
-			Generator string            `json:"generator"`
-			Files     map[string]string `json:"files"`
+	path := filepath.Join(repo, filepath.FromSlash(relative))
+	if err := rejectSymlinkComponents(repo, path); err != nil {
+		return nil, false, err
+	}
+	value, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, false, nil
+	}
+	return value, err == nil, err
+}
+
+func withoutOwnedHostHook(value []byte, exists bool) ([]byte, error) {
+	if !exists {
+		return []byte("{}"), nil
+	}
+	var config map[string]any
+	if err := json.Unmarshal(value, &config); err != nil {
+		return nil, err
+	}
+	hooks, ok := config["hooks"].(map[string]any)
+	if ok {
+		for event, raw := range hooks {
+			entries, entriesOK := raw.([]any)
+			if !entriesOK {
+				continue
+			}
+			kept := []any{}
+			for _, entry := range entries {
+				if !containsBoatstackHook(entry) {
+					kept = append(kept, entry)
+				}
+			}
+			if len(kept) == 0 {
+				delete(hooks, event)
+			} else {
+				hooks[event] = kept
+			}
 		}
-		return json.Unmarshal(base, &lock) == nil && lock.Generator == Generator && len(lock.Files) > 0
+		if len(hooks) == 0 {
+			delete(config, "hooks")
+		}
 	}
-	expected, generated := previousFiles(repo)[relative]
-	if !generated {
-		return false
+	// Cursor's root version is generated alongside an otherwise Boatstack-only
+	// hook document. Retain it whenever user-owned configuration also exists.
+	if len(config) == 1 && config["version"] != nil {
+		delete(config, "version")
 	}
-	if SHA256Bytes(base) != expected {
-		return false
+	return json.Marshal(config)
+}
+
+func withoutOwnedInterceptor(value []byte, exists bool) ([]byte, error) {
+	if !exists {
+		return []byte{}, nil
 	}
-	return os.IsNotExist(err) || err == nil
+	return withoutInterceptor(value)
+}
+
+func (projection updateOwnershipProjection) verify(repo, relative string) error {
+	relative = filepath.ToSlash(relative)
+	kind, owned := projection.kinds[relative]
+	if !owned {
+		return fmt.Errorf("path is outside the prepared Boatstack ownership projection")
+	}
+	base, baseExists, err := readUpdateVersion(repo, relative, true)
+	if err != nil {
+		return err
+	}
+	current, currentExists, err := readUpdateVersion(repo, relative, false)
+	if err != nil {
+		return err
+	}
+	switch kind {
+	case updateOwnedConfig:
+		if !currentExists {
+			return fmt.Errorf("project configuration was removed")
+		}
+		return nil
+	case updateOwnedGenerated:
+		if expected, ok := projection.currentFiles[relative]; projection.targetKnown && ok {
+			if !currentExists || !bytes.Equal(current, expected) {
+				return fmt.Errorf("generated path does not match the prepared target")
+			}
+			return nil
+		}
+		if relative == ".product-loop/generated.lock.json" && !projection.targetKnown {
+			var lock struct {
+				Generator string            `json:"generator"`
+				Files     map[string]string `json:"files"`
+			}
+			if !baseExists || json.Unmarshal(base, &lock) != nil || lock.Generator != Generator || len(lock.Files) == 0 {
+				return fmt.Errorf("generated lock lacks installed Boatstack provenance")
+			}
+			return nil
+		}
+		expected, wasGenerated := projection.previous[relative]
+		if !wasGenerated || !baseExists || SHA256Bytes(base) != expected {
+			return fmt.Errorf("generated path lacks matching installed provenance")
+		}
+		if projection.targetKnown && currentExists {
+			return fmt.Errorf("retired generated path was not removed")
+		}
+		return nil
+	case updateOwnedHook:
+		baseProjection, baseErr := withoutOwnedHostHook(base, baseExists)
+		currentProjection, currentErr := withoutOwnedHostHook(current, currentExists)
+		if baseErr != nil || currentErr != nil || !bytes.Equal(baseProjection, currentProjection) {
+			return fmt.Errorf("non-Boatstack host-hook configuration changed")
+		}
+		return nil
+	case updateOwnedInterceptor:
+		baseProjection, baseErr := withoutOwnedInterceptor(base, baseExists)
+		currentProjection, currentErr := withoutOwnedInterceptor(current, currentExists)
+		if baseErr != nil || currentErr != nil || !bytes.Equal(baseProjection, currentProjection) {
+			return fmt.Errorf("content outside the Boatstack interceptor markers changed")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported Boatstack ownership kind")
+	}
+}
+
+func dirtyChangeIsOwned(repo, relative string, config ProjectConfig) bool {
+	projection := newUpdateOwnershipProjection(config, nil, previousFiles(repo))
+	return projection.verify(repo, relative) == nil
 }
 
 func ValidateUpdateWorkspaceForRepair(repo string, config ProjectConfig, repairResult InstallationRepairResult, repair bool) error {

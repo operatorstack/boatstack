@@ -127,6 +127,8 @@ Release discovery uses a short, unauthenticated request to GitHub and a 24-hour 
 
 Boatstack classifies the named path before writing. Exact installed state migrates automatically. If the path is provably Boatstack-owned but drifted, an interactive update shows the fingerprinted repair and asks whether to continue; a noninteractive update returns one retry using `--repair`. The repair is backed up outside the worktree and included in the same update PR.
 
+Admission and final diff validation use the same ownership projection. Marker-bounded updates to `.cursorrules`, `CLAUDE.md`, and `GEMINI.md` are accepted only when all content outside the Boatstack markers is byte-equivalent. If final validation rejects a path that preflight classified as owned, stop rather than retrying: that is a controller consistency failure and must not consume another attempt.
+
 Do not use `--repair` for user-owned or mixed changes. Move durable project content into `.boatstack-project.json` or repository documentation first. A downgrade additionally requires `--allow-downgrade`; repair authority alone never removes newer behavior.
 
 ## The installed helper or hook prevents updating

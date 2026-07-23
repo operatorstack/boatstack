@@ -15,6 +15,7 @@ Select a move only after locating the failure below its surface symptom. “Time
 | Review miss | Defect found after same-agent review | Independent reviewer; risk checklist; mechanical enforcement | Expensive review everywhere |
 | Scope drift | Diff no longer maps to approved outcomes | Re-scope; split PR; update spec with approval | Hiding product changes in implementation |
 | Update self-lockout | An installed helper, stale hook event, or damaged owned receipt blocks its own updater | Let the verified target helper classify state; migrate exact provenance automatically or offer fingerprinted `--repair` | Reinstalling blindly, overwriting user settings, or treating `--repair` as downgrade authority |
+| Ownership projection contradiction | Update admission classifies a path as Boatstack-owned, then final validation rejects the controller's own bounded mutation | Build one semantic ownership projection before execution; reuse it for admission, mutation, final verification, staging, and preview | Path-only allowlists accepting user content or independently maintained validators disagreeing after a side effect |
 | Security/tenancy | Trust boundary or data scope violated | Specialist review; invariant test; deny-by-default guard | Generic prompt mistaken for enforcement |
 | Integration/deploy | Local pass but runtime fails | Environment parity; canary; health checks; rollback | Treating staging as identical to production |
 | Documentation drift | Durable behavior and docs disagree | Update source-of-truth artifact; drift check | Growing instructions with unverified rules |
@@ -35,6 +36,7 @@ Select a move only after locating the failure below its surface symptom. “Time
 - **Tool failure must not create recovery authority.** The sanitized database incident moved from a partial schema apply failure to an invented reset path. The irreversible-operation guard is `PROPOSED`, not promoted: evaluate its deny corpus, safe corpus, latency, and workflow regressions against the unguarded baseline.
 - **Fail-closed controls need an available evaluator.** A linked worktree copied the safety hook but not its ignored helper, so the guard also denied its own repair command. Share only the verified runtime within the Git clone and hydrate local ignored state before judging the original event.
 - **A retry needs a new observation.** Identical in-flight calls wait. Unknown non-idempotent calls enter `RECONCILE_REQUIRED`; Git, GitHub, filesystem, browser, and MCP boundaries must observe their exact postcondition before another attempt consumes the persistent budget.
+- **Preconditions run before leases.** Wrong branch, stale base, or invalid diff state returns a recovery operation without creating a durable attempt. A rejected precondition cannot consume retry budget or leave an identity that collides with the corrected invocation.
 
 ## Move proposal schema
 
