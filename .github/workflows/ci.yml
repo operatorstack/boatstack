@@ -48,6 +48,29 @@ jobs:
           else
             echo "go=false" >> "$GITHUB_OUTPUT"
           fi
+      # Windows `go test`/`go build` is dominated by Microsoft Defender scanning
+      # the many small files the Go toolchain emits during compile/link. Excluding
+      # the Go caches, the workspace, and go.exe is the single biggest wall-clock
+      # lever (this job dropped from ~10m to a couple of minutes upstream).
+      - name: Exclude Go caches from Microsoft Defender (Windows)
+        if: steps.runtime.outputs.go == 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $targets = @(
+            "$env:LOCALAPPDATA\go-build",   # GOCACHE (build cache)
+            "$env:USERPROFILE\go",          # GOPATH incl. pkg\mod (GOMODCACHE)
+            $env:GITHUB_WORKSPACE,          # sources + compiled test binaries
+            $env:RUNNER_TEMP
+          ) | Where-Object { $_ -and $_.Trim() -ne '' } | Select-Object -Unique
+          foreach ($t in $targets) {
+            try {
+              Add-MpPreference -ExclusionPath $t -ErrorAction Stop
+              Write-Host "Defender exclusion added: $t"
+            } catch {
+              Write-Host "::warning::Defender exclusion failed for $t : $($_.Exception.Message)"
+            }
+          }
+          try { Add-MpPreference -ExclusionProcess 'go.exe' -ErrorAction Stop } catch {}
       - uses: actions/setup-go@v5
         if: steps.runtime.outputs.go == 'true'
         with:
