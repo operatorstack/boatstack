@@ -302,21 +302,12 @@ func updateChangedPaths(repo string) []string {
 	return sortedKeys(seen)
 }
 
-func checkUpdateDiffScope(repo string, currentFiles map[string][]byte, previous map[string]string, hookPaths []string) ([]string, error) {
-	allowed := map[string]bool{".boatstack-project.json": true}
-	for path := range currentFiles {
-		allowed[filepath.ToSlash(path)] = true
-	}
-	for path := range previous {
-		allowed[filepath.ToSlash(path)] = true
-	}
-	for _, path := range hookPaths {
-		allowed[filepath.ToSlash(path)] = true
-	}
+func checkUpdateDiffScope(repo string, currentFiles map[string][]byte, previous map[string]string, config ProjectConfig) ([]string, error) {
+	ownership := newUpdateOwnershipProjection(config, currentFiles, previous)
 	changed := updateChangedPaths(repo)
 	unexpected := []string{}
 	for _, path := range changed {
-		if !allowed[path] {
+		if err := ownership.verify(repo, path); err != nil {
 			unexpected = append(unexpected, path)
 		}
 	}
@@ -502,6 +493,9 @@ func RunInit(options InitOptions) (returnErr error) {
 	for _, path := range HostHookPaths(config.Adapters) {
 		fmt.Fprintln(options.Output, "  "+path+" (merge Boatstack safety hook; preserve existing settings)")
 	}
+	for _, path := range executionInterceptorPaths(config.Adapters) {
+		fmt.Fprintln(options.Output, "  "+path+" (replace only the marker-bounded Boatstack interceptor)")
+	}
 	if !configExists {
 		fmt.Fprintln(options.Output, "  .boatstack-project.json (editable repository facts)")
 	}
@@ -632,7 +626,7 @@ func RunInit(options InitOptions) (returnErr error) {
 		return fmt.Errorf("post-install smoke check failed: %w", err)
 	}
 	if options.Update {
-		changed, scopeErr := checkUpdateDiffScope(repo, bundle.Files, previousGenerated, HostHookPaths(config.Adapters))
+		changed, scopeErr := checkUpdateDiffScope(repo, bundle.Files, previousGenerated, config)
 		if scopeErr != nil {
 			return scopeErr
 		}
@@ -669,6 +663,7 @@ func RunInit(options InitOptions) (returnErr error) {
 		}
 	}
 	stagePaths = append(stagePaths, HostHookPaths(config.Adapters)...)
+	stagePaths = append(stagePaths, executionInterceptorPaths(config.Adapters)...)
 	stageSet := map[string]bool{}
 	for _, path := range stagePaths {
 		stageSet[path] = true
@@ -750,19 +745,9 @@ func injectExecutionInterceptor(repo, file string) error {
 }
 
 func InstallExecutionInterceptors(repo string, adapters []string) error {
-	for _, adapter := range adapters {
-		if adapter == "gemini" {
-			if err := injectExecutionInterceptor(repo, "GEMINI.md"); err != nil {
-				return err
-			}
-		} else if adapter == "claude" {
-			if err := injectExecutionInterceptor(repo, "CLAUDE.md"); err != nil {
-				return err
-			}
-		} else if adapter == "cursor" {
-			if err := injectExecutionInterceptor(repo, ".cursorrules"); err != nil {
-				return err
-			}
+	for _, path := range executionInterceptorPaths(adapters) {
+		if err := injectExecutionInterceptor(repo, path); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -794,6 +779,12 @@ func RunUpdate(options InitOptions) error {
 			return err
 		}
 	}
+	// Validate the complete update workspace before creating a durable attempt.
+	// Invalid branch or diff state must not consume a retry or leave an identity
+	// that collides with the later, correctly prepared operation.
+	if err := ValidateUpdateWorkspaceForRepair(repo, config, preflight, options.Repair); err != nil {
+		return err
+	}
 	branch := strings.TrimSpace(gitOutput(repo, "branch", "--show-current"))
 	repairAuthority := fmt.Sprintf("repair=%t\x00allow-downgrade=%t", options.Repair, options.AllowDowngrade)
 	packageFingerprint := SHA256Bytes([]byte(Version + "\x00" + SourceCommit + "\x00" + ChecksumsSHA256 + "\x00" + repairAuthority))
@@ -819,7 +810,7 @@ func RunUpdate(options InitOptions) error {
 	}
 	options.Update = true
 	if err := RunInit(options); err != nil {
-		_, _ = CompleteOperation(repo, receipt.OperationID, begin.LeaseToken, "RETRYABLE", "the atomic update transaction rolled back", "")
+		_, _ = CompleteOperation(repo, receipt.OperationID, begin.LeaseToken, "RETRYABLE", "the atomic update transaction rolled back: "+err.Error(), "")
 		return err
 	}
 	_, err = CompleteOperation(repo, receipt.OperationID, begin.LeaseToken, "SUCCEEDED", "post-install doctor and generated projections passed", Version)

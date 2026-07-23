@@ -311,6 +311,105 @@ func TestUpdateRequiresCleanCurrentDedicatedBranch(t *testing.T) {
 	}
 }
 
+func TestRunUpdateRejectsInvalidWorkspaceBeforePreparingOperation(t *testing.T) {
+	now := time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)
+	withUpdateGlobals(t, "v0.4.0", now, func() (ReleaseInfo, error) { return ReleaseInfo{}, nil })
+	repo, _ := updateInstalledRepo(t)
+	Version = "v0.5.0"
+	SourceCommit = "update-test-0.5.0"
+
+	err := RunUpdate(InitOptions{Repo: repo, Yes: true, Output: io.Discard})
+	if err == nil || !strings.Contains(err.Error(), "chore/update-boatstack-v0.5.0") {
+		t.Fatalf("update on main did not fail at the branch precondition: %v", err)
+	}
+	receipts, receiptErr := operationReceipts(repo)
+	if receiptErr != nil {
+		t.Fatal(receiptErr)
+	}
+	for _, receipt := range receipts {
+		if receipt.Kind == "install-update" && receipt.Target == "boatstack-install:v0.5.0" {
+			t.Fatalf("invalid workspace consumed a durable update attempt: %#v", receipt)
+		}
+	}
+}
+
+func replaceInterceptorBody(t *testing.T, repo, relative, body string) {
+	t.Helper()
+	path := filepath.Join(repo, relative)
+	value, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := strings.Index(string(value), interceptorHeader)
+	end := strings.Index(string(value), interceptorFooter)
+	if start < 0 || end < start {
+		t.Fatalf("%s has no complete interceptor boundary", relative)
+	}
+	updated := string(value[:start]) + interceptorHeader + body + interceptorFooter + string(value[end+len(interceptorFooter):])
+	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUpdateDiffScopeUsesMarkerBoundariesForEveryInterceptor(t *testing.T) {
+	repo, _ := updateInstalledRepo(t)
+	config, _, err := LoadConfig(filepath.Join(repo, ".boatstack-project.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.Adapters = append(config.Adapters, "gemini")
+	if err := injectExecutionInterceptor(repo, "GEMINI.md"); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "add", "GEMINI.md")
+	runGit(t, repo, "commit", "-m", "add Gemini interceptor fixture")
+
+	for _, relative := range executionInterceptorPaths(config.Adapters) {
+		replaceInterceptorBody(t, repo, relative, "old Boatstack boundary")
+	}
+	if _, err := checkUpdateDiffScope(repo, map[string][]byte{}, map[string]string{}, config); err != nil {
+		t.Fatalf("marker-bounded interceptor migration was rejected: %v", err)
+	}
+
+	claudePath := filepath.Join(repo, "CLAUDE.md")
+	value, err := os.ReadFile(claudePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(claudePath, append(value, []byte("user-owned change\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := checkUpdateDiffScope(repo, map[string][]byte{}, map[string]string{}, config); err == nil || !strings.Contains(err.Error(), "CLAUDE.md") {
+		t.Fatalf("change outside interceptor markers was accepted: %v", err)
+	}
+}
+
+func TestRunUpdateMigratesStaleInterceptorsWithoutScopeContradiction(t *testing.T) {
+	now := time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)
+	withUpdateGlobals(t, "v0.4.0", now, func() (ReleaseInfo, error) { return ReleaseInfo{}, nil })
+	repo, _ := updateInstalledRepo(t)
+	for _, relative := range []string{".cursorrules", "CLAUDE.md"} {
+		replaceInterceptorBody(t, repo, relative, "old Boatstack boundary")
+	}
+	runGit(t, repo, "add", ".cursorrules", "CLAUDE.md")
+	runGit(t, repo, "commit", "-m", "record stale interceptors")
+	runGit(t, repo, "push", "origin", "main")
+	runGit(t, repo, "switch", "-c", "chore/update-boatstack-v0.5.0")
+	Version = "v0.5.0"
+	SourceCommit = "update-test-0.5.0"
+
+	var output bytes.Buffer
+	if err := RunUpdate(InitOptions{Repo: repo, Repair: true, Yes: true, Output: &output}); err != nil {
+		t.Fatalf("stale interceptor update failed: %v\n%s", err, output.String())
+	}
+	for _, relative := range []string{".cursorrules", "CLAUDE.md"} {
+		value, err := os.ReadFile(filepath.Join(repo, relative))
+		if err != nil || !strings.Contains(string(value), strings.TrimSpace(ExecutionBoundaryDX)) || strings.Contains(string(value), "old Boatstack boundary") {
+			t.Fatalf("%s was not migrated to the target boundary: %v", relative, err)
+		}
+	}
+}
+
 func TestUpdateDirtyPathsPreserveSpacesAndRejectRenames(t *testing.T) {
 	repo := updateCacheRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "space name.txt"), []byte("fixture\n"), 0o644); err != nil {

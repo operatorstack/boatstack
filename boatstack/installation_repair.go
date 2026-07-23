@@ -240,7 +240,7 @@ func classifyHookState(repo, host string) []InstallationRepairItem {
 }
 
 func classifyExecutionInterceptor(repo, host string) []InstallationRepairItem {
-	relative := map[string]string{"cursor": ".cursorrules", "claude": "CLAUDE.md", "gemini": "GEMINI.md"}[host]
+	relative := executionInterceptorPath(host)
 	if relative == "" {
 		return nil
 	}
