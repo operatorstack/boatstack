@@ -65,49 +65,6 @@ func featurePlanCandidates(repo string) ([]string, error) {
 	return features, nil
 }
 
-func unclaimedSourcePlanCandidates(repo string) ([]string, error) {
-	candidates, err := sourcePlanCandidates(repo)
-	if err != nil {
-		return nil, err
-	}
-	claimed := map[string]bool{}
-	root := filepath.Join(repo, ".product-loop", "features")
-	entries, readErr := os.ReadDir(root)
-	if readErr != nil && !os.IsNotExist(readErr) {
-		return nil, readErr
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() || !featureSlugPattern.MatchString(entry.Name()) {
-			continue
-		}
-		planPath := filepath.Join(root, entry.Name(), "plan.md")
-		sourcePath, sourceErr := SourcePlanForStructuredPlan(planPath)
-		if sourceErr != nil {
-			continue
-		}
-		absolute, absoluteErr := filepath.Abs(sourcePath)
-		if absoluteErr != nil {
-			return nil, absoluteErr
-		}
-		claimed[filepath.Clean(absolute)] = true
-	}
-	unclaimed := []string{}
-	for _, candidate := range candidates {
-		absolute := candidate
-		if !filepath.IsAbs(absolute) {
-			absolute = filepath.Join(repo, filepath.FromSlash(candidate))
-		}
-		absolute, err = filepath.Abs(absolute)
-		if err != nil {
-			return nil, err
-		}
-		if !claimed[filepath.Clean(absolute)] {
-			unclaimed = append(unclaimed, candidate)
-		}
-	}
-	return unclaimed, nil
-}
-
 func orphanedFeatureArtifacts(repo string) ([]string, error) {
 	root := filepath.Join(repo, ".product-loop", "features")
 	entries, err := os.ReadDir(root)
@@ -289,26 +246,6 @@ func ResolveNext(repoPath, explicitFeature string) (NextStatus, error) {
 		return blockedNextStatus("INVALID_STATE", "repair-state", "Boatstack found a PR preview without the plan lock required to verify it. Preserve the artifacts and restore the feature evidence before continuing.", orphans...), nil
 	}
 
-	sourcePlans, sourceErr := unclaimedSourcePlanCandidates(repo)
-	if sourceErr != nil {
-		return NextStatus{}, sourceErr
-	}
-	if len(sourcePlans) == 1 {
-		base.VerificationStatus = "VERIFIED"
-		base.ObservedStage = "SOURCE_PLAN_READY"
-		base.NextOperation = "auto-plan"
-		base.Reason = fmt.Sprintf("Saved Plan-mode file %q is ready to become a Boatstack feature.", sourcePlans[0])
-		return base, nil
-	}
-	if len(sourcePlans) > 1 {
-		base.VerificationStatus = "BLOCKED"
-		base.ObservedStage = "AMBIGUOUS"
-		base.NextOperation = "resolve-ambiguity"
-		base.Reason = "Multiple unclaimed Plan-mode files are available; Boatstack will not choose by recency."
-		base.BlockingAmbiguity = sourcePlans
-		return base, nil
-	}
-
 	candidates, err := featurePlanCandidates(repo)
 	if err != nil {
 		return NextStatus{}, err
@@ -394,7 +331,7 @@ func ResolveNext(repoPath, explicitFeature string) (NextStatus, error) {
 	base.VerificationStatus = "VERIFIED"
 	base.ObservedStage = "NOT_STARTED"
 	base.NextOperation = "auto-plan"
-	base.Reason = "No Boatstack feature has started and no saved Plan-mode file is available."
+	base.Reason = "No Boatstack feature has started; run auto-plan with the plan produced in the host conversation (--plan <path>)."
 	return base, nil
 }
 

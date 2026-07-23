@@ -243,6 +243,20 @@ func TestExportAndDriftCheck(t *testing.T) {
 	if !strings.Contains(autoPlan, "Markdown-only") || !strings.Contains(autoPlan, "Never silently choose a default") || !strings.Contains(autoPlan, "planning-write") || !strings.Contains(autoPlan, "PROPOSED") {
 		t.Fatal("auto-plan adapter does not enforce the Markdown and question boundaries")
 	}
+	// Conformance: no ambient plan context. The exported auto-plan adapter must
+	// require an explicit --plan and must never reference the removed intake
+	// staging directory, and the bundle must not scaffold it.
+	if !strings.Contains(autoPlan, "--plan") {
+		t.Fatal("auto-plan adapter must instruct passing the plan explicitly with --plan")
+	}
+	if strings.Contains(autoPlan, ".product-loop/intake") {
+		t.Fatal("auto-plan adapter must not reference the removed .product-loop/intake staging directory")
+	}
+	for path := range bundle.Files {
+		if strings.HasPrefix(path, ".product-loop/intake") {
+			t.Fatalf("export bundle must not scaffold intake staging, found %q", path)
+		}
+	}
 	for _, expected := range []string{"compact keys such as 1a/1b", "exactly one choice per question with (Recommended)", "offer r to accept all displayed recommendations", "echo the selected mapping"} {
 		if !strings.Contains(autoPlan, expected) {
 			t.Fatalf("auto-plan adapter is missing finite-question shortcut rule %q", expected)
@@ -336,10 +350,13 @@ func TestExportAndDriftCheck(t *testing.T) {
 		}
 	}
 	runCommand := string(bundle.Files[".cursor/commands/boatstack-run.md"])
-	for _, expected := range []string{"SOURCE_PLAN_READY", "NOT_STARTED", "auto-plan", "planning and plan-gate do not require", "MainThreadShellExec not initialized", "Developer: Reload Window"} {
+	for _, expected := range []string{"NOT_STARTED", "auto-plan", "planning and plan-gate do not require", "MainThreadShellExec not initialized", "Developer: Reload Window"} {
 		if !strings.Contains(runCommand, expected) {
 			t.Fatalf("run adapter is missing startup recovery rule %q", expected)
 		}
+	}
+	if strings.Contains(runCommand, "SOURCE_PLAN_READY") {
+		t.Fatal("run adapter must no longer emit the retired SOURCE_PLAN_READY stage")
 	}
 	for _, path := range []string{".claude/skills/boatstack/SKILL.md", ".gemini/skills/boatstack/SKILL.md", ".agents/skills/boatstack/SKILL.md"} {
 		router := string(bundle.Files[path])

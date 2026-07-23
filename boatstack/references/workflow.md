@@ -114,7 +114,7 @@ Lead with a plain outcome, never a machine code such as `PASS`, `PLAN_APPROVED`,
 
 ### Foreground run coordinator
 
-`run` is an opt-in foreground coordinator over the existing operations, not a second state machine. It first resolves the read-only repository state, enters `auto-plan` when one saved source plan exists, asks for a saved Plan-mode file when none exists, returns **Feature complete** without requiring a remote only for completed work, and stops on unverified or blocked state. Before the first delivery-stage mutation it runs the versioned Git preflight, which fetches `origin`, requires the fetched remote base, verifies that the current named branch contains that base, rejects a behind or diverged upstream, and enforces any active slice branch constraints. Planning and approval remain local and do not require a remote. It never merges, rebases, switches or creates constrained branches, discards changes, force-pushes, merges a PR, or deploys.
+`run` is an opt-in foreground coordinator over the existing operations, not a second state machine. It first resolves the read-only repository state, enters `auto-plan` when the host supplies the plan path (`--plan`), asks for that plan when none is supplied, returns **Feature complete** without requiring a remote only for completed work, and stops on unverified or blocked state. Before the first delivery-stage mutation it runs the versioned Git preflight, which fetches `origin`, requires the fetched remote base, verifies that the current named branch contains that base, rejects a behind or diverged upstream, and enforces any active slice branch constraints. Planning and approval remain local and do not require a remote. It never merges, rebases, switches or creates constrained branches, discards changes, force-pushes, merges a PR, or deploys.
 
 After preflight, resolve the repository-backed next operation, execute exactly that canonical operation, verify the resulting state, and resolve again through all declared delivery slices. When the resolved block names only past deliveries, the coordinator may offer to ignore a named past delivery (adding its slug to `workflow.ignored_deliveries`) only after explicit user confirmation; any new, unlisted ambiguous delivery still pauses. Pause for `a`, a material product answer, and `o` or `u`; after the valid state-scoped reply, continue in the current host session. The invocation does not replace either human authorization. Automatically record and repair same-intent test or review failures for at most three complete repair-and-gate cycles per active slice per invocation. Stop immediately for requirement amendments, ambiguous or stale state, unsafe capability, unsupported recovery, branch mismatch, or exhausted repairs. Store no durable run/autopilot mode; re-invocation reconstructs progress from canonical repository state.
 
@@ -145,17 +145,15 @@ For plan approval, resolve `approved_by` from (1) an identity supplied with appr
 
 ### `INTENT -> SOURCE_PLAN`
 
-Begin in the active coding host's Plan mode. Explore the ordinary product intent without editing implementation files, then save that host-generated plan as a file. Invoke `auto-plan` without a path in the normal case.
+Begin in the active coding host's Plan mode. Explore the ordinary product intent without editing implementation files, then save that host-generated plan as a durable file. Invoke `auto-plan` with the plan's path.
 
 Before repository inspection, run:
 
 ```bash
 .product-loop/bin/boatstack-helper check-source-plan --repo . --plan <host-context-path>
-# If the host exposes no active path:
-.product-loop/bin/boatstack-helper check-source-plan --repo .
 ```
 
-The host/system conversation path is authoritative when present. Fallback discovery checks `.product-loop/intake/` and bounded repo-local host plan directories; it never scans the whole repository or selects a file solely because it is newest. If the file is missing, ambiguous, empty, or unreadable, `auto-plan` is `BLOCKED` and may request an explicit path. It must not manufacture the missing input. This source plan is an initial proposal rather than human approval.
+Boatstack never scans directories for plans, so `--plan` is required and no unshipped saved plan becomes ambient context. If no plan path is supplied, or the file is missing, empty, or unreadable, `auto-plan` is `BLOCKED` and must request the plan to build. It must not manufacture the missing input. Because the file's hash is recorded and re-checked through `BUILD`, `--plan` must point at a durable in-repo path that stays present and unchanged; a path outside the repository is rejected. This source plan is an initial proposal rather than human approval.
 
 ### `SOURCE_PLAN -> PROJECT`
 

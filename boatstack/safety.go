@@ -211,9 +211,6 @@ func attemptedRepositoryPath(repo string, input any) string {
 }
 
 func planningMarkdownPath(path string) bool {
-	if strings.HasPrefix(path, ".product-loop/intake/") && strings.HasSuffix(strings.ToLower(path), ".md") {
-		return true
-	}
 	if !strings.HasPrefix(path, ".product-loop/features/") {
 		return false
 	}

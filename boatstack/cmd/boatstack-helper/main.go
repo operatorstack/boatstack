@@ -313,8 +313,8 @@ func checkPlanCommand(arguments []string) int {
 
 func checkSourcePlanCommand(arguments []string) int {
 	flags := flag.NewFlagSet("check-source-plan", flag.ContinueOnError)
-	repo := flags.String("repo", ".", "repository whose bounded plan locations should be searched")
-	plan := flags.String("plan", "", "optional explicit plan file created by the host Plan mode")
+	repo := flags.String("repo", ".", "repository the source plan is validated against")
+	plan := flags.String("plan", "", "required in-repo path to the plan produced in the host conversation")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}

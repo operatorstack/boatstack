@@ -75,7 +75,7 @@ If Boatstack created `.claude/skills/` while Claude Code was already running, re
 
 ## `/auto-plan` cannot find a source plan
 
-Finish the host's Plan-mode exploration and save it. If the host does not expose the path, put exactly one non-empty plan under `.product-loop/intake/`, then rerun `/auto-plan`. Supply an explicit path only when Boatstack reports multiple candidates.
+Finish the host's Plan-mode exploration and save it as a durable file, then rerun `/auto-plan` with that path via `--plan <path>`. Boatstack does not scan directories for plans, so the path is always required; point it at a file that stays present and unchanged through build.
 
 ## Plan mode cannot write an artifact
 
