@@ -3,9 +3,49 @@ package boatstack
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestIgnoreDeliveryAppendsDedupsAndPreservesConfig(t *testing.T) {
+	repo := nextTestRepo(t)
+
+	added, err := IgnoreDelivery(repo, "old-feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !added {
+		t.Fatal("first ignore-delivery should report the slug as newly added")
+	}
+
+	config, _, err := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(config.Workflow.IgnoredDeliveries, []string{"old-feature"}) {
+		t.Fatalf("ignored delivery not persisted: %+v", config.Workflow.IgnoredDeliveries)
+	}
+	// Other config must survive the round-trip.
+	if config.Project.Name != "fixture" || config.Workflow.HumanPlanApproval != true {
+		t.Fatalf("ignore-delivery clobbered unrelated config: %+v", config)
+	}
+
+	added, err = IgnoreDelivery(repo, "old-feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if added {
+		t.Fatal("repeat ignore-delivery should be a no-op")
+	}
+	config, _, err = LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Workflow.IgnoredDeliveries) != 1 {
+		t.Fatalf("ignore-delivery duplicated the slug: %+v", config.Workflow.IgnoredDeliveries)
+	}
+}
 
 func twoSlicePlan() map[string]any {
 	plan := validPlan()

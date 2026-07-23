@@ -41,6 +41,12 @@ func runBranches(repo, explicitFeature string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
+	// Scope the ambiguity check to un-ignored deliveries so the foreground
+	// coordinator matches ResolveNext. A config that fails to load leaves active
+	// unfiltered, preserving the prior >1-active behavior.
+	if config, _, configErr := LoadConfig(filepath.Join(repo, ".product-loop", "project.json")); configErr == nil {
+		active = withoutIgnoredDeliveries(active, config.Workflow.IgnoredDeliveries)
+	}
 
 	if explicitFeature != "" {
 		found := false

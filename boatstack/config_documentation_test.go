@@ -120,6 +120,7 @@ func TestPublicConfigurationGuideContainsOnlySupportedUserControls(t *testing.T)
 		"workflow.allow_pass_with_gaps",
 		"workflow.boundary_analysis",
 		"workflow.human_plan_approval",
+		"workflow.ignored_deliveries",
 		"workflow.independent_review_for_high_risk",
 		"workflow.maintain_changelog",
 		"workflow.pr_visual_evidence",

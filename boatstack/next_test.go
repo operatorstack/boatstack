@@ -354,6 +354,71 @@ func TestResolveNextBlocksMultipleActiveFeaturesWithoutMutation(t *testing.T) {
 	}
 }
 
+func setIgnoredDeliveries(t *testing.T, repo string, ignored ...string) {
+	t.Helper()
+	config := testConfig()
+	config.Workflow.IgnoredDeliveries = ignored
+	value, err := MarshalJSON(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".product-loop", "project.json"), value, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestResolveNextIgnoredActiveDeliveryClearsAmbiguity(t *testing.T) {
+	repo := nextTestRepo(t)
+	writeNextDelivery(t, repo, "first", "BUILD", 0)
+	writeNextDelivery(t, repo, "second", "BUILD", 0)
+	setIgnoredDeliveries(t, repo, "first")
+
+	status, err := ResolveNext(repo, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.ObservedStage == "AMBIGUOUS" {
+		t.Fatalf("ignored active delivery did not clear ambiguity: %+v", status)
+	}
+	if status.Feature != "second" || status.NextOperation != "build" {
+		t.Fatalf("remaining active delivery did not resolve uniquely: %+v", status)
+	}
+}
+
+func TestResolveNextIgnoredPublishedDeliveryClearsAmbiguity(t *testing.T) {
+	repo := nextTestRepo(t)
+	writeNextDelivery(t, repo, "published-one", "PUBLISHED", 1)
+	writeNextDelivery(t, repo, "published-two", "PUBLISHED", 1)
+	setIgnoredDeliveries(t, repo, "published-one")
+
+	status, err := ResolveNext(repo, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.VerificationStatus == "BLOCKED" || status.ObservedStage == "AMBIGUOUS" {
+		t.Fatalf("ignored published delivery did not clear ambiguity: %+v", status)
+	}
+	if status.Feature != "published-two" {
+		t.Fatalf("remaining published delivery did not resolve uniquely: %+v", status)
+	}
+}
+
+func TestResolveNextNewUnignoredActiveDeliveryStillBlocks(t *testing.T) {
+	repo := nextTestRepo(t)
+	writeNextDelivery(t, repo, "first", "BUILD", 0)
+	writeNextDelivery(t, repo, "second", "BUILD", 0)
+	// Ignoring an unrelated slug must not clear a genuinely ambiguous pair.
+	setIgnoredDeliveries(t, repo, "unrelated")
+
+	status, err := ResolveNext(repo, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.VerificationStatus != "BLOCKED" || status.ObservedStage != "AMBIGUOUS" || !reflect.DeepEqual(status.BlockingAmbiguity, []string{"first", "second"}) {
+		t.Fatalf("un-ignored ambiguous deliveries should still block: %+v", status)
+	}
+}
+
 func TestResolveNextBlocksStaleManagedState(t *testing.T) {
 	repo := nextTestRepo(t)
 	writeNextDelivery(t, repo, "recovery", "BUILD", 0)

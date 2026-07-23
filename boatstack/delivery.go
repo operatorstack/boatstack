@@ -879,3 +879,82 @@ func ActiveManagedDeliveries(repo string) ([]string, error) {
 	sort.Strings(active)
 	return active, nil
 }
+
+// withoutIgnoredDeliveries returns the feature slugs in features that are not
+// listed in ignored. Order is preserved. It is used to scope delivery-ambiguity
+// resolution to the deliveries the user still cares about; new, unlisted
+// deliveries are unaffected.
+func withoutIgnoredDeliveries(features []string, ignored []string) []string {
+	if len(ignored) == 0 {
+		return features
+	}
+	skip := make(map[string]bool, len(ignored))
+	for _, slug := range ignored {
+		skip[slug] = true
+	}
+	kept := make([]string, 0, len(features))
+	for _, f := range features {
+		if !skip[f] {
+			kept = append(kept, f)
+		}
+	}
+	return kept
+}
+
+// withoutIgnoredDeliveryStates is the DeliveryState-slice variant of
+// withoutIgnoredDeliveries, filtering by each state's Feature slug.
+func withoutIgnoredDeliveryStates(states []DeliveryState, ignored []string) []DeliveryState {
+	if len(ignored) == 0 {
+		return states
+	}
+	skip := make(map[string]bool, len(ignored))
+	for _, slug := range ignored {
+		skip[slug] = true
+	}
+	kept := make([]DeliveryState, 0, len(states))
+	for _, state := range states {
+		if !skip[state.Feature] {
+			kept = append(kept, state)
+		}
+	}
+	return kept
+}
+
+// IgnoreDelivery appends a feature slug to workflow.ignored_deliveries in the
+// repository's project.json, deduplicating and preserving all other config. It
+// is the bounded, provenance-safe write behind the ignore-delivery helper
+// subcommand: the config round-trips through LoadConfig -> GeneratedJSON so the
+// serialization contract and generator metadata are preserved. It returns
+// whether the slug was newly added.
+func IgnoreDelivery(repo, feature string) (bool, error) {
+	feature = strings.TrimSpace(feature)
+	if feature == "" {
+		return false, fmt.Errorf("ignore-delivery requires a feature slug")
+	}
+	if !featureSlugPattern.MatchString(feature) {
+		return false, fmt.Errorf("feature slug %q is not a valid Boatstack feature slug", feature)
+	}
+	resolved, err := ResolveRepository(repo)
+	if err != nil {
+		return false, err
+	}
+	configPath := filepath.Join(resolved, ".product-loop", "project.json")
+	config, _, err := LoadConfig(configPath)
+	if err != nil {
+		return false, err
+	}
+	for _, existing := range config.Workflow.IgnoredDeliveries {
+		if existing == feature {
+			return false, nil
+		}
+	}
+	config.Workflow.IgnoredDeliveries = append(config.Workflow.IgnoredDeliveries, feature)
+	value, err := GeneratedJSON(config)
+	if err != nil {
+		return false, err
+	}
+	if err := atomicWriteMode(configPath, value, 0o644); err != nil {
+		return false, err
+	}
+	return true, nil
+}
