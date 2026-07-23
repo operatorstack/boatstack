@@ -66,12 +66,45 @@ func updateCommand(arguments []string) int {
 	repo := flags.String("repo", ".", "repository to update")
 	binary := flags.String("binary", "", "verified replacement helper binary")
 	yes := flags.Bool("yes", false, "accept the generated-file preview")
+	repair := flags.Bool("repair", false, "repair only fingerprinted Boatstack-owned control state")
+	allowDowngrade := flags.Bool("allow-downgrade", false, "permit an explicitly repaired downgrade")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}
-	err := boatstack.RunUpdate(boatstack.InitOptions{Repo: *repo, BinaryPath: *binary, Yes: *yes})
+	err := boatstack.RunUpdate(boatstack.InitOptions{Repo: *repo, BinaryPath: *binary, Yes: *yes, Repair: *repair, AllowDowngrade: *allowDowngrade})
 	if err != nil {
 		return fail(err)
+	}
+	return 0
+}
+
+func repairStatusCommand(arguments []string) int {
+	flags := flag.NewFlagSet("repair-status", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository installation to inspect")
+	allowDowngrade := flags.Bool("allow-downgrade", false, "include explicit downgrade authority in the projection")
+	jsonOutput := flags.Bool("json", false, "emit the versioned JSON projection")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	config, _, err := boatstack.LoadConfig(filepath.Join(*repo, ".boatstack-project.json"))
+	if err != nil {
+		return fail(err)
+	}
+	result, err := boatstack.ClassifyInstallationRepair(*repo, config.Adapters, *allowDowngrade)
+	if err != nil {
+		return fail(err)
+	}
+	value, err := boatstack.MarshalJSON(result)
+	if err != nil {
+		return fail(err)
+	}
+	if *jsonOutput {
+		fmt.Print(string(value))
+	} else {
+		fmt.Printf("REPAIR_STATUS=%s\nDIRECTION=%s\nPACKAGE_FINGERPRINT=%s\nNEXT_OPERATION=%s\n", result.VerificationStatus, result.Direction, result.PackageFingerprint, result.NextOperation)
+	}
+	if result.VerificationStatus == "BLOCKED" {
+		return 1
 	}
 	return 0
 }
@@ -896,7 +929,7 @@ func workspaceStatusCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|run-preflight|record-change|record-delivery-gate|record-pr-visual-evidence|record-pr-visual-publication|check-safety|migrate-config|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|run-preflight|record-change|record-delivery-gate|record-pr-visual-evidence|record-pr-visual-publication|check-safety|migrate-config|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -906,6 +939,8 @@ func run() int {
 		return updateCommand(os.Args[2:])
 	case "check-update":
 		return checkUpdateCommand(os.Args[2:])
+	case "repair-status":
+		return repairStatusCommand(os.Args[2:])
 	case "operation-status":
 		return operationStatusCommand(os.Args[2:])
 	case "prepare-update-pr":

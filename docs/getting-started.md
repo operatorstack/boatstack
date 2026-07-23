@@ -236,7 +236,9 @@ After the feature PR is merged, switch to a clean, current default branch and ru
 /boatstack-update
 ```
 
-You may also ask, “Update Boatstack.” Boatstack checks the latest stable release, creates `chore/update-boatstack-v<version>`, preserves the current configuration and integrations, runs `doctor`, and shows the exact infrastructure diff. Product files are outside the allowed update scope.
+You may also ask, “Update Boatstack.” Boatstack checks the latest stable release, creates `chore/update-boatstack-v<version>`, preserves the current configuration and integrations, and shows the exact infrastructure diff. If the installed helper cannot perform release discovery, Boatstack uses the official GitHub release endpoint and proceeds through the checksum-verified target installer. The old helper is never required to certify its own repair.
+
+Exact stale Boatstack state migrates automatically. If Boatstack finds recoverable owned drift, an interactive update shows the affected paths and asks whether to continue with `--repair`; pressing Enter declines. Noninteractive runs stop with one copyable `--repair` retry. The repair is backed up outside the worktree and remains visible in the same update PR. User-owned changes are never overwritten. Downgrades require the separate `--allow-downgrade` flag as well.
 
 When the preview is correct, reply:
 

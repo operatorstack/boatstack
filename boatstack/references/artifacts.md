@@ -18,6 +18,7 @@ Artifacts separate facts, decisions, unknowns, incompleteness, and evidence. Com
 | Repair state | Ignored delivery mode, resume stage, active observation, attempt count, and superseded receipt references | Controlled repair and gate transitions |
 | Recovery status | Read-only active/published delivery, PR lifecycle, branch/SHA identity, ambiguity, and safe next transition | Before responding to CI, review, publication denial, or ordinary correction language |
 | Operation receipt | Ignored Git-common identity, fingerprinted authority, lease, durable attempt budget, expected postcondition, and secret-free completion observation | Before and after each managed mutation or external side effect |
+| Installation repair receipt | Ignored Git-common installed/target version, direction, owned-state classifications, exact path hashes, repair fingerprint, and backup location | An update discovers or repairs Boatstack-owned control drift |
 | Gate receipt | Machine-local test or review transition bound to one delivery slice, base/head branches, commit, product diff, and evidence hash | A slice passes test or review |
 | Test plan | Requirement-to-evidence mapping with each validation's origin, falsifiable oracle, procedure, and independence | Planning and after discovered failure modes |
 | Gap ledger | Known divergence between desired and current state | Work is deferred, partial, incompatible, or intentionally absent |
@@ -95,6 +96,8 @@ ledger while the publisher rechecks the matching receipts.
 The generated host hook fragments and launchers are committed installation infrastructure. Their policy is immutable in project configuration. Cursor pre/post native, shell, and MCP events; Claude and Codex `PreToolUse`/`PostToolUse`; and Gemini `BeforeTool`/`AfterTool` project into one classifier and completion observer. The machine-local helper is ignored and restored by the installer. Safety evidence belongs in the feature evidence ledger: target identity, failure behavior, independent oracle, operational-diff scan, and the operator-only recovery boundary. A source edit is reviewable evidence, not permission to execute it.
 
 Operation receipts live under Git-common `boatstack/operations/v1`, never in Git history. They distinguish prepared, executing, unknown, retryable, and terminal work across turns and linked worktrees. Receipts contain hashes and bounded observations rather than commands, tool payloads, responses, credentials, or autonomous workflow intent. Terminal identities remain long enough to consume delayed duplicate events; old detail is compacted.
+
+Installation repair receipts and backups live under Git-common `boatstack/updates/<version>` and `boatstack/repair-backups/<fingerprint>`. The checksum-verified target helper owns this recovery plane. Exact installed fragments migrate automatically; `--repair` covers only a displayed fingerprinted owned-state package. User-owned or ambiguous state is never converted into repair authority.
 
 ## PR visual evidence boundary
 

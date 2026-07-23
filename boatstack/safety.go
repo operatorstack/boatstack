@@ -94,7 +94,7 @@ func controlledPhaseTransition(command, stage string) bool {
 	}
 	readOnlyHelpers := map[string]bool{
 		"check-plan": true, "check-source-plan": true, "next-status": true, "delivery-status": true,
-		"recovery-status": true, "operation-status": true, "check-safety": true, "workspace-status": true, "diagnose-hook": true,
+		"recovery-status": true, "repair-status": true, "operation-status": true, "check-safety": true, "workspace-status": true, "diagnose-hook": true,
 		"doctor": true, "version": true,
 	}
 	if readOnlyHelpers[fields[1]] {

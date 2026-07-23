@@ -54,9 +54,11 @@ One verified runtime is cached under the clone's Git common directory and keyed 
 
 Independent clones do not share a Git common directory. Committed adapters survive a clone, but the ignored helper and repository-family cache do not; run the installer once in the new clone.
 
-For an update, run `/boatstack-update` from a clean, current default branch. Boatstack creates `chore/update-boatstack-v<version>`, verifies the tagged release and checksum, preserves integrations, and stores a fingerprinted non-empty update-PR preview under Git-common Boatstack state before asking for `o`. `publish-update-pr` owns the exact commit, normal push, and single-PR reconciliation. Release-check state in `.product-loop/bin/update-state.json`, operation receipts under Git-common `boatstack/operations/v1`, the update preview, and the platform helper remain ignored; the adapters, generated lock, hook fragments, and merged host settings belong in the update PR.
+For an update, run `/boatstack-update` from a current default branch with no product or user-owned edits. Boatstack creates `chore/update-boatstack-v<version>`, verifies the target helper before inspecting the installed runtime, preserves integrations, and stores a fingerprinted non-empty update-PR preview under Git-common Boatstack state before asking for `o`. Exact owned migrations are automatic. Explicit `--repair` backs up recoverable owned drift under Git-common `boatstack/repair-backups/<fingerprint>` and keeps the repaired files in the same update PR.
 
-An update refuses feature branches, dirty worktrees, stale default branches, changed generated files, and user-owned collisions. It never merges its own PR.
+`publish-update-pr` owns the exact commit, normal push, and single-PR reconciliation. Release-check state in `.product-loop/bin/update-state.json`, operation receipts under Git-common `boatstack/operations/v1`, repair backups, the update preview, and the platform helper remain ignored; adapters, generated locks, hook fragments, and merged host settings belong in the update PR.
+
+An update refuses feature branches, stale default branches, product edits, user-owned collisions, mixed ownership, malformed host documents, and unsafe paths. `--repair` permits only fingerprinted Boatstack-owned drift. It never merges its own PR.
 
 If generated state looks wrong, run:
 

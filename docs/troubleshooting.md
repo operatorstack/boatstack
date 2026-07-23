@@ -125,7 +125,13 @@ Release discovery uses a short, unauthenticated request to GitHub and a 24-hour 
 
 ## The update reports generated drift
 
-Boatstack found an installed generated file that no longer matches its previous lock. Review the named path and move durable project-owned content into `.boatstack-project.json` or repository documentation. Do not overwrite the drift merely to make the update pass.
+Boatstack classifies the named path before writing. Exact installed state migrates automatically. If the path is provably Boatstack-owned but drifted, an interactive update shows the fingerprinted repair and asks whether to continue; a noninteractive update returns one retry using `--repair`. The repair is backed up outside the worktree and included in the same update PR.
+
+Do not use `--repair` for user-owned or mixed changes. Move durable project content into `.boatstack-project.json` or repository documentation first. A downgrade additionally requires `--allow-downgrade`; repair authority alone never removes newer behavior.
+
+## The installed helper or hook prevents updating
+
+Use the installer for the target release in update mode. It downloads and verifies the target helper before treating the installed helper's `doctor` result as diagnostic, so a missing helper or stale owned hook cannot disable recovery. Run `repair-status --repo . --json` to inspect the secret-free classification. Malformed host JSON, partial interceptor markers, symlinks, and unverifiable user content remain blocking and are never overwritten.
 
 ## A tool call repeats or publication appears stuck
 

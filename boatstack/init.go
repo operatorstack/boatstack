@@ -18,6 +18,8 @@ type InitOptions struct {
 	IntegrationChoice string
 	Yes               bool
 	Update            bool
+	Repair            bool
+	AllowDowngrade    bool
 	Input             io.Reader
 	Output            io.Writer
 }
@@ -180,6 +182,36 @@ func promptLine(reader *bufio.Reader, output io.Writer, prompt string) (string, 
 	return strings.TrimSpace(value), nil
 }
 
+func requestInstallationRepair(options *InitOptions, result InstallationRepairResult, reader *bufio.Reader) error {
+	fmt.Fprintf(options.Output, "Boatstack found recoverable drift in Boatstack-owned control state (%s -> %s, %s):\n", result.InstalledVersion, result.TargetVersion, result.Direction)
+	for _, item := range result.Items {
+		if item.Classification == RepairOwnedDrifted {
+			fmt.Fprintf(options.Output, "  %s: %s\n", item.Path, item.Reason)
+		}
+	}
+	fmt.Fprintln(options.Output, "Repair package: "+result.PackageFingerprint)
+	fmt.Fprintln(options.Output, "The repair will remain in this fresh update branch and its update PR.")
+	if options.Yes {
+		return fmt.Errorf("recoverable Boatstack-owned drift requires explicit repair authority\nNEXT=%s", installationRepairRetryCommand(result.TargetVersion))
+	}
+	answer, err := promptLine(reader, options.Output, "Repair Boatstack-owned state and continue the update? [y/N] ")
+	if err != nil {
+		return err
+	}
+	if strings.ToLower(answer) != "y" && strings.ToLower(answer) != "yes" {
+		return fmt.Errorf("update left unchanged\nNEXT=%s", installationRepairRetryCommand(result.TargetVersion))
+	}
+	options.Repair = true
+	return nil
+}
+
+func installationRepairRetryCommand(version string) string {
+	if runtime.GOOS == "windows" {
+		return `$env:BOATSTACK_MODE="update"; $env:BOATSTACK_VERSION="` + version + `"; $env:BOATSTACK_REPO=(Get-Location).Path; $env:BOATSTACK_YES="1"; $env:BOATSTACK_REPAIR="1"; irm https://raw.githubusercontent.com/operatorstack/boatstack/` + version + `/install.ps1 | iex`
+	}
+	return `BOATSTACK_MODE=update BOATSTACK_VERSION=` + version + ` BOATSTACK_REPO="$PWD" BOATSTACK_YES=1 BOATSTACK_REPAIR=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/operatorstack/boatstack/` + version + `/install.sh)"`
+}
+
 func copyHelper(source, repo string) (string, string, error) {
 	if source == "" {
 		var err error
@@ -308,6 +340,10 @@ func RunInit(options InitOptions) (returnErr error) {
 	reader := bufio.NewReader(options.Input)
 	configPath := filepath.Join(repo, ".boatstack-project.json")
 	configExists := fileExists(configPath)
+	installed := fileExists(filepath.Join(repo, ".product-loop", "generated.lock.json")) || fileExists(filepath.Join(repo, ".product-loop", "bin", helperName()))
+	if installed && !options.Update {
+		return fmt.Errorf("Boatstack is already installed; use update, or invoke the verified installer with --repair when owned control state prevents updating")
+	}
 	if options.Update && !configExists {
 		return fmt.Errorf("Boatstack update requires an existing .boatstack-project.json")
 	}
@@ -348,14 +384,34 @@ func RunInit(options InitOptions) (returnErr error) {
 		}
 		config = defaultConfig(repo, testCommand)
 	}
+	var repairResult InstallationRepairResult
 	if options.Update {
-		if err := ValidateUpdateWorkspace(repo, config); err != nil {
+		repairResult, err = ClassifyInstallationRepair(repo, config.Adapters, options.AllowDowngrade)
+		if err != nil {
+			return err
+		}
+		if repairResult.Direction == "DOWNGRADE" && (!options.Repair || !options.AllowDowngrade) {
+			return fmt.Errorf("Boatstack %s to %s is a downgrade; rerun with both --repair and --allow-downgrade after reviewing the target release", repairResult.InstalledVersion, repairResult.TargetVersion)
+		}
+		if repairResult.VerificationStatus == "BLOCKED" {
+			return fmt.Errorf("Boatstack update cannot safely repair this installation: %s", strings.Join(repairResult.Blockers, "; "))
+		}
+		if repairResult.VerificationStatus == "REPAIR_AVAILABLE" && !options.Repair {
+			if err := requestInstallationRepair(&options, repairResult, reader); err != nil {
+				return err
+			}
+		}
+		if err := ValidateUpdateWorkspaceForRepair(repo, config, repairResult, options.Repair); err != nil {
 			return err
 		}
 	}
 	var preservedStates map[string]IntegrationState
 	if options.Update {
 		preservedStates, err = readInstalledIntegrations(repo, config)
+		if err != nil && options.Repair && len(config.Integrations) > 0 {
+			preservedStates = config.Integrations
+			err = nil
+		}
 		if err != nil {
 			return err
 		}
@@ -405,6 +461,14 @@ func RunInit(options InitOptions) (returnErr error) {
 		}
 	}
 	previousGenerated := previousFiles(repo)
+	var repairGeneratedLock []byte
+	if options.Update && options.Repair && len(previousGenerated) == 0 {
+		var recoverErr error
+		repairGeneratedLock, previousGenerated, recoverErr = committedGeneratedProvenance(repo)
+		if recoverErr != nil {
+			return recoverErr
+		}
+	}
 	bundle, err := BuildExportBundle(configPath, config, rawConfig, "boatstack")
 	if err != nil {
 		return err
@@ -412,11 +476,23 @@ func RunInit(options InitOptions) (returnErr error) {
 	if err := ValidateJSON("validate project configuration before initialization", configPath, rawConfig); err != nil {
 		return err
 	}
-	if _, err := PrepareHostHooks(repo, config.Adapters); err != nil {
+	if _, err := PrepareHostHooksForUpdate(repo, config.Adapters, options.Update && options.Repair); err != nil {
 		return err
 	}
 	if problems := ExportCollisions(repo, bundle.Files); len(problems) > 0 {
-		return fmt.Errorf("refusing to overwrite user-owned files: %s", strings.Join(problems, ", "))
+		if options.Update && options.Repair {
+			allowed := repairOwnedPaths(repairResult)
+			remaining := []string{}
+			for _, problem := range problems {
+				if !allowed[problem] {
+					remaining = append(remaining, problem)
+				}
+			}
+			problems = remaining
+		}
+		if len(problems) > 0 {
+			return fmt.Errorf("refusing to overwrite user-owned files: %s", strings.Join(problems, ", "))
+		}
 	}
 	paths := sortedKeys(bundle.Files)
 	fmt.Fprintf(options.Output, "\nBoatstack will generate %d paths:\n", len(paths))
@@ -444,6 +520,21 @@ func RunInit(options InitOptions) (returnErr error) {
 		if err != nil {
 			return err
 		}
+	}
+	if options.Update && options.Repair {
+		currentRepair, classifyErr := ClassifyInstallationRepair(repo, config.Adapters, options.AllowDowngrade)
+		if classifyErr != nil {
+			return classifyErr
+		}
+		if currentRepair.PackageFingerprint != repairResult.PackageFingerprint {
+			return fmt.Errorf("Boatstack-owned repair state changed after preview; inspect the new repair-status before retrying")
+		}
+		backup, backupErr := writeInstallationRepairBackup(repo, repairResult)
+		if backupErr != nil {
+			return fmt.Errorf("create Boatstack repair backup: %w", backupErr)
+		}
+		repairResult.BackupPath = backup
+		fmt.Fprintf(options.Output, "Repair package %s backed up at %s.\n", repairResult.PackageFingerprint, backup)
 	}
 	snapshot, err := beginRepositorySnapshot(repo)
 	if err != nil {
@@ -482,13 +573,28 @@ func RunInit(options InitOptions) (returnErr error) {
 	if err := initCheckpoint("config-written"); err != nil {
 		return fmt.Errorf("initialization checkpoint config-written: %w", err)
 	}
-	if err := WriteExport(repo, bundle.Files); err != nil {
-		return err
+	if len(repairGeneratedLock) > 0 {
+		lockPath := filepath.Join(repo, ".product-loop", "generated.lock.json")
+		if err := rejectSymlinkComponents(repo, lockPath); err != nil {
+			return err
+		}
+		if err := atomicWrite(lockPath, repairGeneratedLock); err != nil {
+			return fmt.Errorf("restore generated provenance inside repair transaction: %w", err)
+		}
+	}
+	var writeErr error
+	if options.Update && options.Repair {
+		writeErr = WriteExportForRepair(repo, bundle.Files, repairOwnedPaths(repairResult))
+	} else {
+		writeErr = WriteExport(repo, bundle.Files)
+	}
+	if writeErr != nil {
+		return writeErr
 	}
 	if err := initCheckpoint("export-written"); err != nil {
 		return fmt.Errorf("initialization checkpoint export-written: %w", err)
 	}
-	if err := InstallHostHooks(repo, config.Adapters); err != nil {
+	if err := InstallHostHooksForUpdate(repo, config.Adapters, options.Update && options.Repair); err != nil {
 		return err
 	}
 	if err := initCheckpoint("hooks-written"); err != nil {
@@ -632,6 +738,9 @@ func injectExecutionInterceptor(repo, file string) error {
 	end := strings.Index(text, interceptorFooter)
 	injection := interceptorHeader + strings.TrimSpace(ExecutionBoundaryDX) + interceptorFooter
 
+	if strings.Count(text, interceptorHeader) != strings.Count(text, interceptorFooter) || strings.Count(text, interceptorHeader) > 1 || (start >= 0 && end < start) {
+		return fmt.Errorf("ambiguous Boatstack execution interceptor markers in %s; preserve the file and repair the marker boundary manually", path)
+	}
 	if start >= 0 && end > start {
 		text = text[:start] + injection + text[end+len(interceptorFooter):]
 	} else {
@@ -664,12 +773,34 @@ func RunUpdate(options InitOptions) error {
 	if err != nil {
 		return err
 	}
+	if options.Input == nil {
+		options.Input = os.Stdin
+	}
+	if options.Output == nil {
+		options.Output = os.Stdout
+	}
+	config, _, configErr := LoadConfig(filepath.Join(repo, ".boatstack-project.json"))
+	if configErr != nil {
+		return configErr
+	}
+	preflight, classifyErr := ClassifyInstallationRepair(repo, config.Adapters, options.AllowDowngrade)
+	if classifyErr != nil {
+		return classifyErr
+	}
+	if preflight.VerificationStatus == "REPAIR_AVAILABLE" && !options.Repair {
+		reader := bufio.NewReader(options.Input)
+		options.Input = reader
+		if err := requestInstallationRepair(&options, preflight, reader); err != nil {
+			return err
+		}
+	}
 	branch := strings.TrimSpace(gitOutput(repo, "branch", "--show-current"))
-	packageFingerprint := SHA256Bytes([]byte(Version + "\x00" + SourceCommit + "\x00" + ChecksumsSHA256))
+	repairAuthority := fmt.Sprintf("repair=%t\x00allow-downgrade=%t", options.Repair, options.AllowDowngrade)
+	packageFingerprint := SHA256Bytes([]byte(Version + "\x00" + SourceCommit + "\x00" + ChecksumsSHA256 + "\x00" + repairAuthority))
 	receipt, err := PrepareOperation(OperationPrepareOptions{
 		Repo: repo, Kind: "install-update", Scope: OperationScope{Worktree: filepath.Base(repo), HeadBranch: branch},
 		Target: "boatstack-install:" + Version, PackageFingerprint: packageFingerprint,
-		AuthorizationFingerprint: SHA256Bytes([]byte("update-request\x00" + branch + "\x00" + packageFingerprint)),
+		AuthorizationFingerprint: SHA256Bytes([]byte("update-request\x00" + branch + "\x00" + packageFingerprint + "\x00" + repairAuthority)),
 		RetryClass:               "ATOMIC_LOCAL", MaxAttempts: 2,
 		ExpectedPostcondition: "the generated runtime, adapters, hooks, and preserved integration state match the pinned release",
 	})

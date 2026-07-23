@@ -14,6 +14,7 @@ Select a move only after locating the failure below its surface symptom. “Time
 | Test fidelity | Tests pass wrong code or reject correct code | Contract fixtures; collect/load gate; mutation/differential/human oracle | Treating more model-authored tests as truth |
 | Review miss | Defect found after same-agent review | Independent reviewer; risk checklist; mechanical enforcement | Expensive review everywhere |
 | Scope drift | Diff no longer maps to approved outcomes | Re-scope; split PR; update spec with approval | Hiding product changes in implementation |
+| Update self-lockout | An installed helper, stale hook event, or damaged owned receipt blocks its own updater | Let the verified target helper classify state; migrate exact provenance automatically or offer fingerprinted `--repair` | Reinstalling blindly, overwriting user settings, or treating `--repair` as downgrade authority |
 | Security/tenancy | Trust boundary or data scope violated | Specialist review; invariant test; deny-by-default guard | Generic prompt mistaken for enforcement |
 | Integration/deploy | Local pass but runtime fails | Environment parity; canary; health checks; rollback | Treating staging as identical to production |
 | Documentation drift | Durable behavior and docs disagree | Update source-of-truth artifact; drift check | Growing instructions with unverified rules |

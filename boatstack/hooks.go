@@ -434,12 +434,52 @@ func loadHookConfig(path string) (map[string]any, error) {
 }
 
 func mergeHostHook(config map[string]any, host string) error {
+	return mergeHostHookWithOwnership(config, host, nil, false)
+}
+
+func mergeHostHookWithOwnership(config map[string]any, host string, installed map[string]any, repair bool) error {
 	hooks, ok := config["hooks"].(map[string]any)
 	if config["hooks"] == nil {
 		hooks = map[string]any{}
 		config["hooks"] = hooks
 	} else if !ok {
 		return fmt.Errorf("host hook config has non-object hooks")
+	}
+	desiredEvents := map[string]bool{}
+	for _, event := range hookEvents(host) {
+		desiredEvents[event] = true
+	}
+	// Retired events are an ordinary template migration when every Boatstack
+	// entry exactly matches the committed fragment from the installed release.
+	// The incoming helper may remove those entries before validating its own
+	// event set; otherwise the updater would be blocked by the state it owns.
+	for event, raw := range hooks {
+		if desiredEvents[event] || !containsBoatstackHook(raw) {
+			continue
+		}
+		entries, entriesOK := raw.([]any)
+		if !entriesOK {
+			return fmt.Errorf("host hook event %s is not a list", event)
+		}
+		kept := []any{}
+		owned := 0
+		verified := installed != nil && installed[event] != nil
+		for _, entry := range entries {
+			if !containsBoatstackHook(entry) {
+				kept = append(kept, entry)
+				continue
+			}
+			owned++
+			verified = verified && sameJSON(entry, installed[event])
+		}
+		if owned > 0 && !verified && !repair {
+			return fmt.Errorf("%s Boatstack hook is attached to unsupported event %s; rerun the update with --repair only after reviewing the owned-state preview", host, event)
+		}
+		if len(kept) == 0 {
+			delete(hooks, event)
+		} else {
+			hooks[event] = kept
+		}
 	}
 	for _, event := range hookEvents(host) {
 		entries := []any{}
@@ -452,18 +492,29 @@ func mergeHostHook(config map[string]any, host string) error {
 		}
 		kept := []any{}
 		found := 0
+		verified := true
 		for _, entry := range entries {
 			if containsBoatstackHook(entry) {
 				found++
-				if err := validateBoatstackHookEntry(host, event, entry); err != nil {
-					return err
+				isDesired := sameJSON(entry, desiredHostHookForEvent(host, event))
+				isInstalled := installed != nil && installed[event] != nil && sameJSON(entry, installed[event])
+				if installed != nil && !isDesired && !isInstalled {
+					verified = false
+				}
+				if installed == nil {
+					if err := validateBoatstackHookEntry(host, event, entry); err != nil {
+						return err
+					}
 				}
 				continue
 			}
 			kept = append(kept, entry)
 		}
-		if found > 1 {
+		if found > 1 && (installed == nil || !verified) && !repair {
 			return fmt.Errorf("ambiguous Boatstack hook collision in %s", event)
+		}
+		if found > 0 && !verified && !repair {
+			return fmt.Errorf("drifted %s Boatstack safety hook for %s; rerun the update with --repair only after reviewing the owned-state preview", host, event)
 		}
 		kept = append(kept, desiredHostHookForEvent(host, event))
 		hooks[event] = kept
@@ -490,6 +541,14 @@ func InstallHostHooks(repo string, adapters []string) error {
 // PrepareHostHooks renders and validates every selected host document without
 // writing, allowing initialization to fail before entering its commit phase.
 func PrepareHostHooks(repo string, adapters []string) (map[string][]byte, error) {
+	return prepareHostHooks(repo, adapters, false)
+}
+
+func PrepareHostHooksForUpdate(repo string, adapters []string, repair bool) (map[string][]byte, error) {
+	return prepareHostHooks(repo, adapters, repair)
+}
+
+func prepareHostHooks(repo string, adapters []string, repair bool) (map[string][]byte, error) {
 	prepared := map[string][]byte{}
 	for _, host := range []string{"cursor", "claude", "codex", "gemini"} {
 		if !contains(adapters, host) {
@@ -500,7 +559,17 @@ func PrepareHostHooks(repo string, adapters []string) (map[string][]byte, error)
 		if err != nil {
 			return nil, err
 		}
-		if err := mergeHostHook(config, host); err != nil {
+		var installed map[string]any
+		if repair || fileExists(filepath.Join(repo, ".product-loop", "hooks", host+".fragment.json")) {
+			installed, err = loadInstalledHookEvents(repo, host)
+			if err != nil {
+				installed, err = loadCommittedInstalledHookEvents(repo, host)
+				if err != nil {
+					return nil, fmt.Errorf("prepare %s host hooks: cannot verify installed ownership: %w", host, err)
+				}
+			}
+		}
+		if err := mergeHostHookWithOwnership(config, host, installed, repair); err != nil {
 			return nil, fmt.Errorf("prepare %s host hooks in %s: %w", host, path, err)
 		}
 		value, err := MarshalJSON(config)
@@ -515,6 +584,19 @@ func PrepareHostHooks(repo string, adapters []string) (map[string][]byte, error)
 	return prepared, nil
 }
 
+func InstallHostHooksForUpdate(repo string, adapters []string, repair bool) error {
+	prepared, err := PrepareHostHooksForUpdate(repo, adapters, repair)
+	if err != nil {
+		return err
+	}
+	for _, path := range sortedKeys(prepared) {
+		if err := atomicWrite(path, prepared[path]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func CheckHostHooks(repo string, adapters []string) error {
 	return checkHostHooks(repo, adapters, func(host, event string) (any, error) {
 		return desiredHostHookForEvent(host, event), nil
@@ -526,29 +608,50 @@ func CheckHostHooks(repo string, adapters []string) error {
 // comparing an old, healthy hook with the incoming release template would
 // misclassify an intentional template migration as user drift.
 func CheckInstalledHostHooks(repo string, adapters []string) error {
-	fragments := map[string]map[string]any{}
-	return checkHostHooks(repo, adapters, func(host, event string) (any, error) {
-		fragment := fragments[host]
-		if fragment == nil {
-			path := filepath.Join(repo, ".product-loop", "hooks", host+".fragment.json")
-			value, err := os.ReadFile(path)
+	for _, host := range []string{"cursor", "claude", "codex", "gemini"} {
+		if !contains(adapters, host) {
+			continue
+		}
+		installed, err := loadInstalledHookEvents(repo, host)
+		if err != nil {
+			installed, err = loadCommittedInstalledHookEvents(repo, host)
 			if err != nil {
-				return nil, fmt.Errorf("cannot read installed %s hook fragment: %w", host, err)
+				return fmt.Errorf("cannot read installed %s hook fragment: %w", host, err)
 			}
-			if err := DecodeJSON("load installed host hook fragment", path, value, &fragment); err != nil {
-				return nil, err
-			}
-			if fragment["schema_version"] != float64(1) || fragment["host"] != host {
-				return nil, fmt.Errorf("invalid installed %s hook fragment identity", host)
-			}
-			fragments[host] = fragment
 		}
-		events, ok := fragment["events"].(map[string]any)
-		if !ok || events[event] == nil {
-			return nil, fmt.Errorf("installed %s hook fragment is missing %s", host, event)
+		config, err := loadHookConfig(hostHookConfigPath(repo, host))
+		if err != nil {
+			return err
 		}
-		return events[event], nil
-	})
+		hooks, ok := config["hooks"].(map[string]any)
+		if !ok {
+			return fmt.Errorf("missing %s hooks", host)
+		}
+		for event, expected := range installed {
+			entries, ok := hooks[event].([]any)
+			if !ok {
+				return fmt.Errorf("missing installed %s safety event %s", host, event)
+			}
+			matches := 0
+			for _, entry := range entries {
+				if containsBoatstackHook(entry) {
+					matches++
+					if !sameJSON(entry, expected) {
+						return fmt.Errorf("drifted %s Boatstack safety hook", host)
+					}
+				}
+			}
+			if matches < 1 {
+				return fmt.Errorf("expected an installed %s Boatstack safety hook for %s; found %d", host, event, matches)
+			}
+		}
+		for event, raw := range hooks {
+			if installed[event] == nil && containsBoatstackHook(raw) {
+				return fmt.Errorf("drifted %s Boatstack safety hook on unowned event %s", host, event)
+			}
+		}
+	}
+	return nil
 }
 
 func checkHostHooks(repo string, adapters []string, expectedForEvent func(host, event string) (any, error)) error {

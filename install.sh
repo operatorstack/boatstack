@@ -6,11 +6,32 @@ repository="operatorstack/boatstack"
 version="${BOATSTACK_VERSION:-latest}"
 target_repo="${BOATSTACK_REPO:-$PWD}"
 mode="${BOATSTACK_MODE:-install}"
+repair="${BOATSTACK_REPAIR:-0}"
+allow_downgrade="${BOATSTACK_ALLOW_DOWNGRADE:-0}"
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --repair) repair=1 ;;
+    --allow-downgrade) allow_downgrade=1 ;;
+    *) echo "BLOCKED: unsupported installer argument: $1" >&2; exit 1 ;;
+  esac
+  shift
+done
 
 case "$mode" in
   install|update) ;;
   *) echo "BLOCKED: BOATSTACK_MODE must be install or update" >&2; exit 1 ;;
 esac
+
+if [ "$mode" = "install" ] && { [ -f "$target_repo/.product-loop/generated.lock.json" ] || [ -f "$target_repo/.product-loop/bin/boatstack-helper" ] || [ -f "$target_repo/.product-loop/bin/boatstack-helper.exe" ]; }; then
+  if [ "$repair" = "1" ]; then
+    mode="update"
+    echo "Existing Boatstack installation detected; preserving its configuration and using update repair semantics."
+  else
+    echo "BLOCKED: Boatstack is already installed; use BOATSTACK_MODE=update, or add --repair when owned control state prevents updating" >&2
+    exit 1
+  fi
+fi
 
 case "$(uname -s)" in
   Darwin) os_name="darwin" ;;
@@ -31,11 +52,6 @@ command -v git >/dev/null 2>&1 || { echo "BLOCKED: Git is required because Boats
 extension=""
 [ "$os_name" = "windows" ] && extension=".exe"
 asset="boatstack-helper_${os_name}_${arch}${extension}"
-if [ "$mode" = "update" ]; then
-  current_helper="$target_repo/.product-loop/bin/boatstack-helper${extension}"
-  [ -x "$current_helper" ] || { echo "BLOCKED: current Boatstack helper is missing; repair the installation before updating" >&2; exit 1; }
-  "$current_helper" doctor --repo "$target_repo"
-fi
 if [ "$version" = "latest" ]; then
   base="https://github.com/${repository}/releases/latest/download"
 else
@@ -62,6 +78,17 @@ fi
 [ "$expected" = "$actual" ] || { echo "BLOCKED: Boatstack binary checksum mismatch" >&2; exit 1; }
 chmod +x "$binary"
 
+if [ "$mode" = "update" ]; then
+  current_helper="$target_repo/.product-loop/bin/boatstack-helper${extension}"
+  if [ -x "$current_helper" ]; then
+    if ! "$current_helper" doctor --repo "$target_repo"; then
+      echo "Current Boatstack doctor reported drift; the verified target helper will classify whether it is safely repairable." >&2
+    fi
+  else
+    echo "Current Boatstack helper is missing; the verified target helper will classify whether it is safely repairable." >&2
+  fi
+fi
+
 command_name="init"
 [ "$mode" = "update" ] && command_name="update"
 arguments=("$command_name" --repo "$target_repo" --binary "$binary")
@@ -70,6 +97,12 @@ if [ "$mode" = "install" ] && [ -n "${BOATSTACK_INTEGRATIONS:-}" ]; then
 fi
 if [ "${BOATSTACK_YES:-0}" = "1" ]; then
   arguments+=(--yes)
+fi
+if [ "$repair" = "1" ]; then
+  arguments+=(--repair)
+fi
+if [ "$allow_downgrade" = "1" ]; then
+  arguments+=(--allow-downgrade)
 fi
 
 exec "$binary" "${arguments[@]}"

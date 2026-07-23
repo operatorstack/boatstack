@@ -29,6 +29,13 @@ Deterministic schema, payload, decision, exit-code, and hydration fixtures block
 release. Live host checks are opt-in through `BOATSTACK_LIVE_HOST_TESTS=1` and
 report host availability separately from deterministic conformance.
 
+During an update, the committed fragment from the installed release is the
+ownership witness. Entries that match it exactly may move to new events or be
+removed when an event retires, even when the target release no longer accepts
+that old event. A marker-only or modified entry requires a fingerprinted
+`--repair`; unrelated host entries are preserved, and malformed or mixed state
+remains blocking.
+
 Publication denials carry only secret-free recovery context: blocking feature
 and slice, branch relation, parent delivery, and the read-only next operation.
 Every host receives the same instruction to preserve edits and enter managed

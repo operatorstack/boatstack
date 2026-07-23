@@ -12,17 +12,18 @@ import (
 const updatePublicationSchemaVersion = 1
 
 type UpdatePublicationPreview struct {
-	SchemaVersion      int      `json:"schema_version"`
-	Version            string   `json:"version"`
-	BaseBranch         string   `json:"base_branch"`
-	HeadBranch         string   `json:"head_branch"`
-	StartingHeadCommit string   `json:"starting_head_commit"`
-	ChangedPaths       []string `json:"changed_paths"`
-	PackageFingerprint string   `json:"package_fingerprint"`
-	Title              string   `json:"title"`
-	Body               string   `json:"body"`
-	PreviewPath        string   `json:"preview_path"`
-	Fingerprint        string   `json:"fingerprint"`
+	SchemaVersion      int                       `json:"schema_version"`
+	Version            string                    `json:"version"`
+	BaseBranch         string                    `json:"base_branch"`
+	HeadBranch         string                    `json:"head_branch"`
+	StartingHeadCommit string                    `json:"starting_head_commit"`
+	ChangedPaths       []string                  `json:"changed_paths"`
+	PackageFingerprint string                    `json:"package_fingerprint"`
+	Title              string                    `json:"title"`
+	Body               string                    `json:"body"`
+	PreviewPath        string                    `json:"preview_path"`
+	Fingerprint        string                    `json:"fingerprint"`
+	Repair             *InstallationRepairResult `json:"repair,omitempty"`
 }
 
 type UpdatePublishOptions struct {
@@ -201,12 +202,22 @@ func PrepareUpdatePublication(repoPath, requestedVersion string) (UpdatePublicat
 	if err != nil {
 		return UpdatePublicationPreview{}, err
 	}
+	repairReceipt, err := loadInstallationRepairReceipt(repo, version)
+	if err != nil {
+		return UpdatePublicationPreview{}, err
+	}
+	body := "## Why this change\n\nUpdate the repository-owned Boatstack infrastructure to " + version + ".\n\n## What changed\n\nOnly the fingerprinted Boatstack-generated files, host hooks, runtime provenance, and preserved integration state in this update package.\n"
+	if repairReceipt != nil {
+		body += "\nThe update also repairs fingerprinted Boatstack-owned control state. Repair package: `" + repairReceipt.PackageFingerprint + "`. The pre-repair files are retained in ignored Git-common state at `" + repairReceipt.BackupPath + "`.\n"
+	}
+	body += "\n## Verification\n\n- Boatstack doctor passed after installation.\n- Generated-file and hook projections are validated by the update transaction.\n\n## Rollback\n\nRevert this infrastructure-only commit and rerun the previously pinned installer.\n"
 	preview := UpdatePublicationPreview{
 		SchemaVersion: updatePublicationSchemaVersion, Version: version, BaseBranch: baseBranch, HeadBranch: headBranch,
 		StartingHeadCommit: gitOutput(repo, "rev-parse", "HEAD"), ChangedPaths: paths, PackageFingerprint: packageFingerprint,
 		Title:       "Update Boatstack to " + version,
-		Body:        "## Why this change\n\nUpdate the repository-owned Boatstack infrastructure to " + version + ".\n\n## What changed\n\nOnly the fingerprinted Boatstack-generated files, host hooks, runtime provenance, and preserved integration state in this update package.\n\n## Verification\n\n- Boatstack doctor passed after installation.\n- Generated-file and hook projections are validated by the update transaction.\n\n## Rollback\n\nRevert this infrastructure-only commit and rerun the previously pinned installer.\n",
+		Body:        body,
 		PreviewPath: previewPath,
+		Repair:      repairReceipt,
 	}
 	preview.Fingerprint, err = updatePreviewFingerprint(preview)
 	if err != nil {

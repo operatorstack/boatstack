@@ -295,7 +295,7 @@ func TestExportAndDriftCheck(t *testing.T) {
 		}
 	}
 	update := string(bundle.Files[".cursor/commands/boatstack-update.md"])
-	for _, expected := range []string{"check-update", "prepare-update-pr", "publish-update-pr", "operation-status", "chore/update-boatstack-v", "BOATSTACK_MODE=update", "Reply `o` to open update PR.", "full reply open update PR for compatibility", "Never stage, commit, push, or open the update PR through free-form terminal calls", "Never merge"} {
+	for _, expected := range []string{"check-update", "prepare-update-pr", "publish-update-pr", "operation-status", "chore/update-boatstack-v", "BOATSTACK_MODE=update", "BOATSTACK_REPAIR=1", "repair-status", "checksum-verify the target helper", "Reply `o` to open update PR.", "full reply open update PR for compatibility", "Never stage, commit, push, or open the update PR through free-form terminal calls", "Never merge"} {
 		if !strings.Contains(update, expected) {
 			t.Fatalf("update adapter is missing %q", expected)
 		}
@@ -593,5 +593,30 @@ func TestExportRemovesOnlyUnmodifiedStaleGeneratedPath(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(repo, filepath.FromSlash(stale))); !os.IsNotExist(err) {
 		t.Fatal("unmodified stale generated path was not removed")
+	}
+}
+
+func TestRepairMayRemoveOnlyExplicitDriftedGeneratedPath(t *testing.T) {
+	repo := t.TempDir()
+	config := testConfig()
+	raw, _ := MarshalJSON(config)
+	bundle, _ := BuildExportBundle("config.json", config, raw, "boatstack")
+	if err := WriteExport(repo, bundle.Files); err != nil {
+		t.Fatal(err)
+	}
+	stale := ".cursor/commands/retro.md"
+	delete(bundle.Files, stale)
+	path := filepath.Join(repo, filepath.FromSlash(stale))
+	if err := os.WriteFile(path, []byte("locally drifted generated content\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteExport(repo, bundle.Files); err == nil {
+		t.Fatal("ordinary export removed drifted generated state")
+	}
+	if err := WriteExportForRepair(repo, bundle.Files, map[string]bool{stale: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("fingerprinted repair did not remove its exact stale generated path")
 	}
 }
