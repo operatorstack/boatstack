@@ -157,6 +157,15 @@ func TestAdHocPRContextAndPreviewAreEvidenceLimited(t *testing.T) {
 
 func activateManagedFeature(t *testing.T, repo, feature string) string {
 	t.Helper()
+	return activateManagedFeatureLayout(t, repo, feature, true)
+}
+
+// activateManagedFeatureLayout activates a feature in either the newer compiled/
+// layout (compiled=true → OutDir=<feature>/compiled) or the older feature-root
+// layout (compiled=false → OutDir=<feature>, tasks.json at the feature root, no
+// compiled/ dir), so managed-PR resolution can be exercised against both.
+func activateManagedFeatureLayout(t *testing.T, repo, feature string, compiled bool) string {
+	t.Helper()
 	directory := filepath.Join(repo, ".product-loop", "features", feature)
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		t.Fatal(err)
@@ -193,9 +202,13 @@ func activateManagedFeature(t *testing.T, repo, feature string) string {
 		approvalPath = filepath.Join(directory, "approval.md")
 		writeApprovalReceipt(t, approvalPath, check.Fingerprint)
 	}
+	outDir := directory
+	if compiled {
+		outDir = filepath.Join(directory, "compiled")
+	}
 	if err := ActivatePlan(ActivationOptions{
 		PlanPath: filepath.Join(directory, "plan.md"), ApprovalPath: approvalPath,
-		OutDir: filepath.Join(directory, "compiled"), OutputPath: filepath.Join(directory, "plan.lock.json"),
+		OutDir: outDir, OutputPath: filepath.Join(directory, "plan.lock.json"),
 		SourceCommit: runGit(t, repo, "rev-parse", "HEAD"),
 	}); err != nil {
 		t.Fatal(err)
@@ -255,6 +268,87 @@ No migration; revert the feature commit.
 		}
 	}
 	return directory
+}
+
+// TestFeatureArtifactPathResolvesBothLayouts pins the layout-resolution rule
+// from the root up, independent of PR wiring: the canonical location is tried
+// first, the alternate is the fallback, and when neither exists the last
+// candidate is returned for a clear downstream error path.
+func TestFeatureArtifactPathResolvesBothLayouts(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		present []string
+		want    string
+	}{
+		{name: "only compiled", present: []string{filepath.Join("compiled", "tasks.json")}, want: filepath.Join("compiled", "tasks.json")},
+		{name: "only root", present: []string{"tasks.json"}, want: "tasks.json"},
+		{name: "both prefer canonical", present: []string{filepath.Join("compiled", "tasks.json"), "tasks.json"}, want: filepath.Join("compiled", "tasks.json")},
+		{name: "neither returns last", present: nil, want: "tasks.json"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			directory := t.TempDir()
+			for _, rel := range test.present {
+				path := filepath.Join(directory, rel)
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got := featureArtifactPath(directory, filepath.Join("compiled", "tasks.json"), "tasks.json")
+			if got != filepath.Join(directory, test.want) {
+				t.Fatalf("resolved %q, want %q", got, filepath.Join(directory, test.want))
+			}
+		})
+	}
+}
+
+// TestManagedPRSourcesAcceptsBothTaskGraphLayouts is the conformance guard for
+// the build-lock layout bug: a feature activated in the older feature-root
+// layout (tasks.json at the feature root, no compiled/ dir) must resolve its
+// build lock exactly like the newer compiled layout, so the ship-gate is not
+// blocked after build/test/review all passed.
+func TestManagedPRSourcesAcceptsBothTaskGraphLayouts(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		compiled bool
+	}{
+		{name: "compiled layout", compiled: true},
+		{name: "feature-root layout", compiled: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repo := prTestRepo(t)
+			feature := "cta-transport-feedback"
+			directory := activateManagedFeatureLayout(t, repo, feature, test.compiled)
+
+			if !test.compiled {
+				if !fileExists(filepath.Join(directory, "tasks.json")) {
+					t.Fatal("feature-root fixture must place tasks.json at the feature root")
+				}
+				if fileExists(filepath.Join(directory, "compiled", "tasks.json")) {
+					t.Fatal("feature-root fixture must not have a compiled/tasks.json")
+				}
+			}
+
+			sources, statuses, err := managedPRSources(repo, feature)
+			if err != nil {
+				t.Fatalf("managed PR sources must resolve for the %s: %v", test.name, err)
+			}
+			if statuses["test"] != "PASS" || statuses["review"] != "PASS_WITH_GAPS" {
+				t.Fatalf("unexpected gate statuses: %+v", statuses)
+			}
+			found := false
+			for _, source := range sources {
+				if source.Kind == "plan_lock" {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("managed PR sources missing plan_lock: %+v", sources)
+			}
+		})
+	}
 }
 
 func TestManagedPRRechecksCurrentAuthorizationAndGapPolicy(t *testing.T) {

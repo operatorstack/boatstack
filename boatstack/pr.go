@@ -391,6 +391,25 @@ func relativeSource(repo, path, kind string) (PRSource, error) {
 	return PRSource{Kind: kind, Path: relative, SHA256: hash}, nil
 }
 
+// featureArtifactPath resolves a feature artifact that may live in either the
+// newer compiled/ subdirectory or the older feature-root layout. Candidates are
+// tried in priority order (each artifact's canonical location first); the first
+// that exists wins. When none exist the last candidate is returned so the
+// downstream check reports a clear, canonical error path rather than a guessed
+// one. This keeps the task graph and evidence resolution on one shared rule so
+// the two layouts can never silently diverge.
+func featureArtifactPath(directory string, candidates ...string) string {
+	var last string
+	for _, name := range candidates {
+		path := filepath.Join(directory, name)
+		last = path
+		if fileExists(path) {
+			return path
+		}
+	}
+	return last
+}
+
 func managedPRSources(repo, feature string) ([]PRSource, map[string]string, error) {
 	directory := filepath.Join(repo, ".product-loop", "features", feature)
 	planPath := filepath.Join(directory, "plan.md")
@@ -411,7 +430,7 @@ func managedPRSources(repo, feature string) ([]PRSource, map[string]string, erro
 			return nil, nil, fmt.Errorf("managed PR requires current approval: %w", err)
 		}
 	}
-	tasksPath := filepath.Join(directory, "compiled", "tasks.json")
+	tasksPath := featureArtifactPath(directory, filepath.Join("compiled", "tasks.json"), "tasks.json")
 	if err := CheckApprovalLock(ApprovalOptions{
 		SourcePlanPath:    check.SourcePlanPath,
 		SpecPath:          check.SpecPath,
@@ -422,10 +441,7 @@ func managedPRSources(repo, feature string) ([]PRSource, map[string]string, erro
 	}); err != nil {
 		return nil, nil, fmt.Errorf("managed PR requires a current build lock: %w", err)
 	}
-	evidencePath := filepath.Join(directory, "evidence.md")
-	if !fileExists(evidencePath) {
-		evidencePath = filepath.Join(directory, "compiled", "evidence.md")
-	}
+	evidencePath := featureArtifactPath(directory, "evidence.md", filepath.Join("compiled", "evidence.md"))
 	if err := checkNonEmptyFile(evidencePath, "feature evidence"); err != nil {
 		return nil, nil, err
 	}
