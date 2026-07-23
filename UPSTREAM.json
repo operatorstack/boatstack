@@ -12,7 +12,7 @@
   },
   "files": {
     ".gitignore": "a7079e923a776f14f1bb3a6aa0a11a133a8e1dfb35af020f327623357b7e3957",
-    "CONTRIBUTING.md": "66d71c53812017e686d180a310b71f058664a081be8f05c38299e429581b5c64",
+    "CONTRIBUTING.md": "cb76f4adb6c3ea2b4b1287ca6099bf0b38f56552649389fc8b42fd95320cb792",
     "README.md": "125b47671a68556df382f19756fb61fa18925606cbbaf54d6bc9df8872b36870",
     "assets/boatstack-journey.svg": "e465befc50c8ce30f3e07e8fd97012931beeb053392c8fbf38ad645023b3cc63",
     "assets/boatstack-mark.svg": "be1f984da1bfa69fa5d1f986d8343d21f7e20921b71db888c928b4d2e54b09b5",
@@ -109,10 +109,10 @@
     "docs/benchmark-corpus-audit.md": "f2d206fe8579a514f9da82b2c96c19b343ac004be67617e1bd34f0f8e0e5e6c6",
     "docs/benchmark-submission-audit.md": "9518abdd17690729c6423f87cab20418ed47b0915b5faa44b9ef975e9e9c3b79",
     "docs/configuration.md": "4d8f207b415a5a1e3b9b1698ee7bb1221aa0e5496a061bb8054294df2f347ad1",
-    "docs/evidence-engineered-coding.md": "4b7b413d909b936853b0db3fe13af84a53d5ade5a62ad4bdbbfac5189a53f700",
+    "docs/evidence-engineered-coding.md": "5d3732ff40bec63ff8ed89f60621347520e3607c00438115b9051d85368a2c82",
     "docs/generated-files.md": "437791765b0a4015032ae21d1a6618563cad92b7402819e4f963bf5ae16284a3",
     "docs/getting-started.md": "f314270c5ed1a55bbef5f3ddbcb5596693dbee9374e5f0d3df8838cefbd68052",
-    "docs/public-claims.json": "e57651659291d0d78ab9e62cfdfcc91d9e1d8692d044a626b7a55e1b5f77b258",
+    "docs/public-claims.json": "c4ed79593ff0acd86e4c1602bc269e8ccc9fe6400f8c798d714c78d599aa47a3",
     "docs/public-surface.md": "713f7a050b5f339cf948299103ef3800417dccfecf2cc1a4166397ea6f978907",
     "docs/research-and-design.md": "8d78678108f0a6c924e1ff9b32c0f81aae9d1f779e0082843b6f99ad993ae2b6",
     "docs/safety.md": "7b9b5c515d36e683767ec8d3d9d6d119ac93650b2f629d351deadd4c600ed6a6",
@@ -126,7 +126,7 @@
     "labs/diagram-json/compiled/evidence.md": "1ba1c989ade070a8ef9a508fbd788d100d7292f2dbacbb2bce895468019f619d",
     "labs/diagram-json/compiled/tasks.json": "88f60851abf79d851e9fccc754ff3040034ae595306bc87d64784c19eb403e71",
     "labs/diagram-json/compiled/test-matrix.json": "424657ff505768e50fa113801fd8363364a18269d5297480907a993d44063a39",
-    "labs/diagram-json/plan.lock.json": "49b9accb7a855c021b7f0bc62d283f242e0a566923d0a2f430e5dafaf76d13f4",
+    "labs/diagram-json/plan.lock.json": "24f89e5c01a81b707c8de9b815b891210841a444d868056306009e43803ca37f",
     "labs/diagram-json/plan.md": "3cc4f533b8d69386deff16b3a594a3ba09d4c0c3db636cccd8c4380084ce6a51",
     "labs/diagram-json/questions.md": "74733b015002c8a6777c558e7e997fa48c94850b9bd39054fe9366c97ecf728d",
     "labs/diagram-json/request.md": "0808fc41c36779c404f4a3a121167da6e76cac56df526e70f9ed6d3e0d4c02ed",
@@ -188,6 +188,7 @@
     "release-notes/2026-07-23-canonical-update-ownership.md": "7f34f890b252493797519389b23f1b56ec7ec16db7547aac8ea196f75f3b8c2c",
     "release-notes/2026-07-23-explicit-source-plan.md": "ec1f97434f9263f6db4bc3b83ae83213053cd2bc6b7465e4fb2d67cbea5cf731",
     "release-notes/2026-07-23-ignore-ambiguous-deliveries.md": "9b1b9fd48db340b91fcced1c282297de0ecad8744723f2b1fdd94033927a88c4",
+    "release-notes/2026-07-23-labkit-publishing-pipeline.md": "b3bfc5f28baf3961fb187380ff66e5383186c05a933bc6ca162416ce61149218",
     "release-notes/2026-07-23-managed-pr-task-graph-layout.md": "e2d67f15cc6a1eb200d6f13f81d891b30eae1bd51182d768dda561fcfdc69435",
     "release-notes/2026-07-23-recoverable-repository-sync.md": "3afc4f6220ae76df3bd6dcd15fc180135274c808729e9c512a2c53462ec690c2",
     "release-notes/2026-07-23-shipped-feature-candidate-resolution.md": "bd8ee8e7f3f216b356b121a83ef10cb0c8131a90b9ab803edebf23b882d9cf89"
@@ -195,7 +196,7 @@
   "generator": "operatorstack/intelligence-flow:boatstack-distribution",
   "schema_version": 1,
   "source": {
-    "commit": "c9e110ae06ef139d8ae336262558bc8bf21a1e2a",
+    "commit": "3e44eb72add2a33fb84bbc5a0142af9c1828feb1",
     "path": "labs/12-product-engineering-loop",
     "repository": "operatorstack/intelligence-flow"
   }
