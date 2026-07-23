@@ -43,6 +43,12 @@ Read [irreversible-operation-boundary.md](references/irreversible-operation-boun
 
 This enforcement is defense in depth, not a complete sandbox. Keep least-privilege service credentials and service-side destructive approval in place.
 
+## Keep repository administration outside delivery
+
+Branch synchronization, status, switching, worktree maintenance, and requests to discard local changes are repository administration, not product intent. Never route them to `auto-plan` or `repair` unless the exact target branch belongs to an active managed delivery. For an explicit branch and remote ref, use the project-local `workspace-sync` helper. It fetches the exact source, checkpoints branch and dirty-worktree state, aligns the branch in its owning worktree, and returns verified recovery refs.
+
+For requests such as “ensure main is same as origin/main remove any current changes,” inspect only the named refs and worktree, then invoke `.product-loop/bin/boatstack-helper workspace-sync --repo . --branch main --source origin/main`. If the guard denies a raw hard reset or clean, report the denial and this single recovery action immediately. Do not inspect feature plans, scan the repository, search for the helper, or retry destructive Git.
+
 ## Bound the outcome
 
 For ordinary feature work, define one bounded outcome:

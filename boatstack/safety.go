@@ -112,6 +112,59 @@ func controlledPhaseTransition(command, stage string) bool {
 	}
 }
 
+func controlledWorkspaceSync(repo, command string) bool {
+	if strings.ContainsAny(command, "\n`><;&|") || strings.Contains(command, "$(") {
+		return false
+	}
+	fields := strings.Fields(strings.TrimSpace(command))
+	if len(fields) < 4 || fields[1] != "workspace-sync" {
+		return false
+	}
+	executable := fields[0]
+	if !filepath.IsAbs(executable) {
+		executable = filepath.Join(repo, filepath.FromSlash(executable))
+	}
+	executable, err := filepath.Abs(executable)
+	if err != nil {
+		return false
+	}
+	expected := filepath.Join(repo, ".product-loop", "bin", helperName())
+	expected, err = filepath.Abs(expected)
+	if err != nil || filepath.Clean(executable) != filepath.Clean(expected) {
+		return false
+	}
+	info, err := os.Lstat(executable)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return false
+	}
+	seenSource := false
+	for index := 2; index < len(fields); index += 2 {
+		if index+1 >= len(fields) {
+			return false
+		}
+		switch fields[index] {
+		case "--source":
+			seenSource = strings.TrimSpace(fields[index+1]) != ""
+		case "--branch":
+			if strings.TrimSpace(fields[index+1]) == "" {
+				return false
+			}
+		case "--repo":
+			candidate := fields[index+1]
+			if !filepath.IsAbs(candidate) {
+				candidate = filepath.Join(repo, filepath.FromSlash(candidate))
+			}
+			absolute, absErr := filepath.Abs(candidate)
+			if absErr != nil || filepath.Clean(absolute) != filepath.Clean(repo) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return seenSource
+}
+
 func attemptedRepositoryPath(repo string, input any) string {
 	keys := map[string]bool{"path": true, "file_path": true, "filepath": true, "target_path": true, "destination": true}
 	var visit func(any) string
@@ -391,12 +444,15 @@ func ClassifyCommand(repo, command string) []SafetyFinding {
 			return []SafetyFinding{finding}
 		}
 	}
+	if strings.Contains(command, "workspace-sync") && !isPureReadOnlyCommand(command) && !controlledWorkspaceSync(repo, command) {
+		return []SafetyFinding{{Category: "workspace-sync-bypass", Reason: "recoverable branch alignment must use the exact project-local Boatstack helper", Source: "command"}}
+	}
 	findings := classifySafetyText(command, "command")
 	if len(findings) > 0 {
 		return dedupeFindings(findings)
 	}
 	if !isPureReadOnlyCommand(command) {
-		if finding, blocked := preActivationFinding(repo, ""); blocked && !controlledPhaseTransition(command, finding.WorkflowStage) {
+		if finding, blocked := preActivationFinding(repo, ""); blocked && !controlledPhaseTransition(command, finding.WorkflowStage) && !controlledWorkspaceSync(repo, command) {
 			return []SafetyFinding{finding}
 		}
 	}
@@ -950,6 +1006,12 @@ func denialMessage(host string, finding SafetyFinding) string {
 		default:
 			return "Boatstack could not verify the durable operation state." + context + ". Inspect operation-status before retrying."
 		}
+	}
+	if finding.Category == "git-history-destruction" {
+		return "Boatstack denied raw destructive Git cleanup. Use the project-local workspace-sync operation to checkpoint current state and align the exact branch; do not scan delivery artifacts or retry the destructive command."
+	}
+	if finding.Category == "workspace-sync-bypass" {
+		return "Boatstack denied an unverified workspace sync. Invoke only the exact project-local workspace-sync helper for the current repository."
 	}
 	return "Boatstack denied an irreversible operation (" + finding.Category + "). Preserve the current state and use read-only diagnosis or fix-forward recovery; destructive recovery is operator-only outside the agent workflow."
 }
