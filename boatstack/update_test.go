@@ -311,6 +311,17 @@ func TestUpdateRequiresCleanCurrentDedicatedBranch(t *testing.T) {
 	}
 }
 
+func TestUpdateDirtyPathsPreserveSpacesAndRejectRenames(t *testing.T) {
+	repo := updateCacheRepo(t)
+	if err := os.WriteFile(filepath.Join(repo, "space name.txt"), []byte("fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := updateDirtyPaths(repo)
+	if err != nil || len(paths) != 1 || paths[0] != "space name.txt" {
+		t.Fatalf("NUL-delimited status paths were not preserved: %#v %v", paths, err)
+	}
+}
+
 func TestDoctorReadsCachedUpdateWithoutNetwork(t *testing.T) {
 	now := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
 	withUpdateGlobals(t, "v0.4.0", now, func() (ReleaseInfo, error) {

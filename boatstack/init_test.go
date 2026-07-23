@@ -124,6 +124,28 @@ func TestInitFreshThirdPartyPythonRepositoryWithValidConfig(t *testing.T) {
 	}
 }
 
+func TestInitDoesNotResetAnExistingInstallation(t *testing.T) {
+	repo := t.TempDir()
+	if output, err := exec.Command("git", "-C", repo, "init").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "package.json"), []byte(`{"scripts":{"test":"node --test"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := RunInit(InitOptions{Repo: repo, IntegrationChoice: "core", Yes: true, Output: &bytes.Buffer{}}); err != nil {
+		t.Fatal(err)
+	}
+	configBefore, _ := os.ReadFile(filepath.Join(repo, ".boatstack-project.json"))
+	err := RunInit(InitOptions{Repo: repo, IntegrationChoice: "core", Yes: true, Output: &bytes.Buffer{}})
+	if err == nil || !strings.Contains(err.Error(), "already installed") {
+		t.Fatalf("existing installation was reinitialized: %v", err)
+	}
+	configAfter, _ := os.ReadFile(filepath.Join(repo, ".boatstack-project.json"))
+	if !bytes.Equal(configBefore, configAfter) {
+		t.Fatal("failed reinstall changed project configuration")
+	}
+}
+
 func TestInitRollsBackRepositoryWhenPostInstallVerificationFails(t *testing.T) {
 	repo := t.TempDir()
 	if output, err := exec.Command("git", "-C", repo, "init").CombinedOutput(); err != nil {

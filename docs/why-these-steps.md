@@ -97,6 +97,8 @@ The paired product evaluation will use the same feature, lower-cost model, budge
 
 **Status:** release notification and update preparation behavior are verified in automated tests. This is not a claim that updates install themselves or may be merged without review.
 
+**Repair boundary.** The checksum-verified target helper classifies installed control state instead of requiring the old helper to certify itself. Exact owned migrations are automatic; recoverable owned drift receives a fingerprinted `--repair` preview and Git-common backup in the update PR. User-owned changes and downgrades retain separate explicit boundaries.
+
 ## Git worktree activation
 
 **What happened.** A Claude Code worktree contained the committed fail-closed hook but not `.product-loop/bin/`, which Git intentionally ignores. Every shell call was denied because the helper was absent, including the installer command that could have repaired it.

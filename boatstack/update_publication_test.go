@@ -91,6 +91,30 @@ func TestPrepareUpdatePublicationIsAtomicAndRejectsProductPaths(t *testing.T) {
 	}
 }
 
+func TestUpdatePreviewCarriesFingerprintRepairProvenance(t *testing.T) {
+	repo := updatePublicationTestRepo(t, "v9.8.7")
+	result := InstallationRepairResult{
+		SchemaVersion: 1, VerificationStatus: "REPAIR_AVAILABLE", InstalledVersion: "v9.8.6",
+		TargetVersion: "v9.8.7", Direction: "UPGRADE", PackageFingerprint: strings.Repeat("a", 64),
+		HeadBranch: "chore/update-boatstack-v9.8.7", StartingHeadCommit: gitOutput(repo, "rev-parse", "HEAD"),
+		Items: []InstallationRepairItem{{Path: ".cursor/commands/boatstack-update.md", Classification: RepairOwnedDrifted, Reason: "fixture drift"}},
+	}
+	backup, err := writeInstallationRepairBackup(repo, result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview, err := PrepareUpdatePublication(repo, "v9.8.7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Repair == nil || preview.Repair.PackageFingerprint != result.PackageFingerprint || preview.Repair.BackupPath != "boatstack/repair-backups/"+result.PackageFingerprint || !strings.Contains(preview.Body, result.PackageFingerprint) {
+		t.Fatalf("repair provenance missing from update preview: %#v", preview)
+	}
+	if backup == "" {
+		t.Fatal("repair backup path was not returned to the local operator")
+	}
+}
+
 func TestPublishUpdatePublicationOwnsCommitPushAndSinglePR(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("fake gh fixture uses a POSIX shell")

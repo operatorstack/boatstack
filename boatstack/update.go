@@ -2,10 +2,12 @@ package boatstack
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -270,7 +272,7 @@ func CachedUpdate(repoPath string) (UpdateCheckResult, bool) {
 // information after a successful publication, but it cannot change that result.
 func PostShipUpdateNotice(repo string, feature string) (UpdateCheckResult, bool) {
 	if feature != "" {
-		if state, err := LoadDeliveryState(repo, feature); err == nil && state.ActiveIndex + 1 < len(state.Slices) {
+		if state, err := LoadDeliveryState(repo, feature); err == nil && state.ActiveIndex+1 < len(state.Slices) {
 			return UpdateCheckResult{}, false
 		}
 	}
@@ -310,6 +312,22 @@ func CheckPreviousGeneratedState(repo string) error {
 	return nil
 }
 
+func committedGeneratedProvenance(repo string) ([]byte, map[string]string, error) {
+	relative := ".product-loop/generated.lock.json"
+	value, err := exec.Command("git", "-C", repo, "show", "HEAD:"+relative).Output()
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot recover committed generated provenance: %w", err)
+	}
+	var lock struct {
+		Generator string            `json:"generator"`
+		Files     map[string]string `json:"files"`
+	}
+	if err := json.Unmarshal(value, &lock); err != nil || lock.Generator != Generator || len(lock.Files) == 0 {
+		return nil, nil, fmt.Errorf("committed generated provenance is invalid")
+	}
+	return value, lock.Files, nil
+}
+
 func CheckExistingInstallProvenance(repo string) error {
 	value, err := os.ReadFile(filepath.Join(repo, ".product-loop", "bin", "install.lock.json"))
 	if err != nil {
@@ -327,6 +345,12 @@ func CheckExistingInstallProvenance(repo string) error {
 	if err != nil {
 		return fmt.Errorf("invalid previous helper path: %w", err)
 	}
+	if err := rejectSymlinkComponents(repo, binaryPath); err != nil {
+		return fmt.Errorf("previous Boatstack helper path is unsafe: %w", err)
+	}
+	if info, err := os.Lstat(binaryPath); err == nil && (!info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0) {
+		return fmt.Errorf("previous Boatstack helper path is unsafe")
+	}
 	actual, err := SHA256File(binaryPath)
 	if err != nil || actual != lock.BinarySHA256 {
 		return fmt.Errorf("previous Boatstack helper does not match its install lock")
@@ -335,6 +359,142 @@ func CheckExistingInstallProvenance(repo string) error {
 }
 
 func ValidateUpdateWorkspace(repo string, config ProjectConfig) error {
+	result, err := ClassifyInstallationRepair(repo, config.Adapters, false)
+	if err != nil {
+		return err
+	}
+	if result.VerificationStatus == "BLOCKED" {
+		return fmt.Errorf("Boatstack update state is blocked: %s", strings.Join(result.Blockers, "; "))
+	}
+	return ValidateUpdateWorkspaceForRepair(repo, config, result, false)
+}
+
+func updateDirtyPaths(repo string) ([]string, error) {
+	value, err := exec.Command("git", "-C", repo, "status", "--porcelain=v1", "-z", "--untracked-files=all").Output()
+	if err != nil {
+		return nil, err
+	}
+	records := strings.Split(string(value), "\x00")
+	paths := []string{}
+	for index := 0; index < len(records); index++ {
+		record := records[index]
+		if record == "" {
+			continue
+		}
+		if len(record) < 4 || record[2] != ' ' {
+			return nil, fmt.Errorf("malformed Git status record")
+		}
+		paths = append(paths, filepath.ToSlash(record[3:]))
+		if (record[0] == 'R' || record[0] == 'C' || record[1] == 'R' || record[1] == 'C') && index+1 < len(records) {
+			index++ // -z emits the original rename/copy path as a second record.
+		}
+	}
+	return paths, nil
+}
+
+func withoutBoatstackHooks(value []byte) ([]byte, error) {
+	var config map[string]any
+	if err := json.Unmarshal(value, &config); err != nil {
+		return nil, err
+	}
+	hooks, ok := config["hooks"].(map[string]any)
+	if !ok {
+		return json.Marshal(config)
+	}
+	for event, raw := range hooks {
+		entries, ok := raw.([]any)
+		if !ok {
+			continue
+		}
+		kept := []any{}
+		for _, entry := range entries {
+			if !containsBoatstackHook(entry) {
+				kept = append(kept, entry)
+			}
+		}
+		if len(kept) == 0 {
+			delete(hooks, event)
+		} else {
+			hooks[event] = kept
+		}
+	}
+	return json.Marshal(config)
+}
+
+func withoutInterceptor(value []byte) ([]byte, error) {
+	text := string(value)
+	start := strings.Index(text, interceptorHeader)
+	end := strings.Index(text, interceptorFooter)
+	if start < 0 && end < 0 {
+		return value, nil
+	}
+	if start < 0 || end < start || strings.Count(text, interceptorHeader) != 1 || strings.Count(text, interceptorFooter) != 1 {
+		return nil, fmt.Errorf("ambiguous interceptor boundary")
+	}
+	return []byte(strings.TrimSpace(text[:start] + text[end+len(interceptorFooter):])), nil
+}
+
+func dirtyChangeIsOwned(repo, relative string, config ProjectConfig) bool {
+	base, err := exec.Command("git", "-C", repo, "show", "HEAD:"+relative).Output()
+	if err != nil {
+		return false
+	}
+	current, err := os.ReadFile(filepath.Join(repo, filepath.FromSlash(relative)))
+	for _, hookPath := range HostHookPaths(config.Adapters) {
+		if relative == filepath.ToSlash(hookPath) {
+			baseProjection, baseErr := withoutBoatstackHooks(base)
+			if os.IsNotExist(err) && baseErr == nil {
+				var skeleton map[string]any
+				if json.Unmarshal(baseProjection, &skeleton) != nil {
+					return false
+				}
+				for key, value := range skeleton {
+					if key == "version" {
+						continue
+					}
+					if key == "hooks" {
+						hooks, ok := value.(map[string]any)
+						if ok && len(hooks) == 0 {
+							continue
+						}
+					}
+					return false
+				}
+				return true
+			}
+			if err != nil {
+				return false
+			}
+			currentProjection, currentErr := withoutBoatstackHooks(current)
+			return baseErr == nil && currentErr == nil && string(baseProjection) == string(currentProjection)
+		}
+	}
+	if relative == ".cursorrules" || relative == "CLAUDE.md" || relative == "GEMINI.md" {
+		if err != nil {
+			return false
+		}
+		baseProjection, baseErr := withoutInterceptor(base)
+		currentProjection, currentErr := withoutInterceptor(current)
+		return baseErr == nil && currentErr == nil && string(baseProjection) == string(currentProjection)
+	}
+	if relative == ".product-loop/generated.lock.json" {
+		var lock struct {
+			Generator string            `json:"generator"`
+			Files     map[string]string `json:"files"`
+		}
+		return json.Unmarshal(base, &lock) == nil && lock.Generator == Generator && len(lock.Files) > 0
+	}
+	expected, generated := previousFiles(repo)[relative]
+	if !generated {
+		return false
+	}
+	if SHA256Bytes(base) != expected {
+		return false
+	}
+	return os.IsNotExist(err) || err == nil
+}
+
+func ValidateUpdateWorkspaceForRepair(repo string, config ProjectConfig, repairResult InstallationRepairResult, repair bool) error {
 	version, err := normalizedVersion(Version)
 	if err != nil {
 		return err
@@ -344,8 +504,27 @@ func ValidateUpdateWorkspace(repo string, config ProjectConfig) error {
 	if branch != wantBranch {
 		return fmt.Errorf("update must run on %s; current branch is %s", wantBranch, branch)
 	}
-	if gitOutput(repo, "status", "--porcelain") != "" {
-		return fmt.Errorf("update branch must start with a clean worktree")
+	dirtyPaths, statusErr := updateDirtyPaths(repo)
+	if statusErr != nil {
+		return fmt.Errorf("cannot inspect update worktree: %w", statusErr)
+	}
+	if len(dirtyPaths) > 0 {
+		allowed := map[string]bool{}
+		for _, item := range repairResult.Items {
+			if item.Classification == RepairOwnedStale || (repair && item.Classification == RepairOwnedDrifted) {
+				allowed[item.Path] = true
+			}
+		}
+		unexpected := []string{}
+		for _, path := range dirtyPaths {
+			if path != "" && (!allowed[path] || !dirtyChangeIsOwned(repo, path, config)) {
+				unexpected = append(unexpected, path)
+			}
+		}
+		if len(unexpected) > 0 {
+			sort.Strings(unexpected)
+			return fmt.Errorf("update branch must start with a clean worktree except for verified owned-state repair; non-repairable changes: %s", strings.Join(unexpected, ", "))
+		}
 	}
 	defaultBranch := strings.TrimSpace(config.Project.DefaultBranch)
 	if defaultBranch == "" {
@@ -357,9 +536,17 @@ func ValidateUpdateWorkspace(repo string, config ProjectConfig) error {
 		return fmt.Errorf("update branch must start from the current origin/%s", defaultBranch)
 	}
 	if err := CheckPreviousGeneratedState(repo); err != nil {
-		return err
+		allowed := false
+		for _, item := range repairResult.Items {
+			if item.Classification == RepairOwnedStale || (repair && item.Classification == RepairOwnedDrifted) {
+				allowed = true
+			}
+		}
+		if !allowed {
+			return err
+		}
 	}
-	if err := CheckInstalledHostHooks(repo, config.Adapters); err != nil {
+	if err := CheckInstalledHostHooks(repo, config.Adapters); err != nil && !repair {
 		return fmt.Errorf("host-hook drift blocks update: %w", err)
 	}
 	var schemaProblems []string
@@ -369,5 +556,8 @@ func ValidateUpdateWorkspace(repo string, config ProjectConfig) error {
 	if len(schemaProblems) > 0 {
 		return fmt.Errorf("config schema is behind; run /boatstack-update: %s", strings.Join(schemaProblems, ", "))
 	}
-	return CheckExistingInstallProvenance(repo)
+	if err := CheckExistingInstallProvenance(repo); err != nil && !repair {
+		return err
+	}
+	return nil
 }
