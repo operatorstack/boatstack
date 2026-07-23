@@ -375,36 +375,101 @@ func TestSourcePlanPreflightBlocksMissingAndEmptyFiles(t *testing.T) {
 	}
 }
 
-func TestSourcePlanDiscoveryUsesOneBoundedCandidateAndBlocksAmbiguity(t *testing.T) {
+// TestSourcePlanRequiresExplicitPlanAndNeverScansDirectories is the conformance
+// guard for the "no ambient plan context" contract: Boatstack must never scan a
+// directory for source plans. An empty --plan blocks even when plan-shaped files
+// exist in the historically scanned locations, and only an explicit path
+// resolves.
+func TestSourcePlanRequiresExplicitPlanAndNeverScansDirectories(t *testing.T) {
 	repo := t.TempDir()
-	intake := filepath.Join(repo, ".product-loop", "intake")
-	if err := os.MkdirAll(intake, 0o755); err != nil {
+	// Seed plan-shaped files in every location discovery used to scan. None of
+	// these may be picked up.
+	for _, dir := range []string{
+		".product-loop/intake",
+		".cursor/plans",
+		".claude/plans",
+		".codex/plans",
+	} {
+		absolute := filepath.Join(repo, filepath.FromSlash(dir))
+		if err := os.MkdirAll(absolute, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(absolute, "stale.md"), []byte("# Stale unshipped plan\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := DiscoverSourcePlan(repo, ""); err == nil {
+		t.Fatal("expected empty --plan to block; discovery must never scan directories")
+	} else if !strings.Contains(err.Error(), "--plan") {
+		t.Fatalf("expected error to require --plan, got %v", err)
+	}
+
+	// An explicit path is the only way to supply a source plan.
+	explicitFile := filepath.Join(repo, "docs", "chosen-plan.md")
+	if err := os.MkdirAll(filepath.Dir(explicitFile), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	first := filepath.Join(intake, "feature-a.md")
-	if err := os.WriteFile(first, []byte("# Feature A plan\n"), 0o644); err != nil {
+	if err := os.WriteFile(explicitFile, []byte("# Chosen plan\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	discovered, err := DiscoverSourcePlan(repo, "")
+	explicit, err := DiscoverSourcePlan(repo, "docs/chosen-plan.md")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if discovered != ".product-loop/intake/feature-a.md" {
-		t.Fatalf("unexpected discovered path: %s", discovered)
-	}
-	second := filepath.Join(intake, "feature-b.md")
-	if err := os.WriteFile(second, []byte("# Feature B plan\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := DiscoverSourcePlan(repo, ""); err == nil || !strings.Contains(err.Error(), "multiple") {
-		t.Fatalf("expected ambiguous source plans to block, got %v", err)
-	}
-	explicit, err := DiscoverSourcePlan(repo, ".product-loop/intake/feature-b.md")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if explicit != ".product-loop/intake/feature-b.md" {
+	if explicit != "docs/chosen-plan.md" {
 		t.Fatalf("unexpected explicit path: %s", explicit)
+	}
+}
+
+// TestSourcePlanRejectsOutsideRepoPath is the durability guard: source_plan_path
+// is recorded and re-hashed through build, so a plan outside the repository
+// (whose absolute path does not travel and is never committed) must be rejected
+// up front rather than drifting at build time.
+func TestSourcePlanRejectsOutsideRepoPath(t *testing.T) {
+	parent := t.TempDir()
+	repo := filepath.Join(parent, "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A real, non-empty plan file that lives outside the repository. It passes
+	// CheckSourcePlan (it exists and is non-empty) but is not durable relative
+	// to the repo.
+	outside := filepath.Join(parent, "ephemeral-plan.md")
+	if err := os.WriteFile(outside, []byte("# Ephemeral scratch plan\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DiscoverSourcePlan(repo, outside); err == nil {
+		t.Fatal("expected an out-of-repo source plan to be rejected")
+	} else if !strings.Contains(err.Error(), "outside the repository") {
+		t.Fatalf("expected an out-of-repo error, got %v", err)
+	}
+	// The same holds for a relative path that escapes the repo.
+	if _, err := DiscoverSourcePlan(repo, filepath.Join("..", "ephemeral-plan.md")); err == nil {
+		t.Fatal("expected a repo-escaping relative source plan to be rejected")
+	}
+}
+
+// TestNoIntakeStagingReferenceInProductionSource guards against the intake
+// staging concept returning: no production Go file may reference the removed
+// .product-loop/intake staging directory.
+func TestNoIntakeStagingReferenceInProductionSource(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		contents, readErr := os.ReadFile(name)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if strings.Contains(string(contents), ".product-loop/intake") {
+			t.Errorf("%s still references the removed .product-loop/intake staging directory", name)
+		}
 	}
 }
 

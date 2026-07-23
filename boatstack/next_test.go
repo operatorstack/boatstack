@@ -62,17 +62,6 @@ func writeSavedFeaturePlan(t *testing.T, repo, feature string) {
 	}
 }
 
-func writeIntakePlan(t *testing.T, repo, name string) {
-	t.Helper()
-	directory := filepath.Join(repo, ".product-loop", "intake")
-	if err := os.MkdirAll(directory, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(directory, name), []byte("# Source plan\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestResolveNextReportsNotStartedWhenNoFeatureExists(t *testing.T) {
 	repo := nextTestRepo(t)
 	status, err := ResolveNext(repo, "")
@@ -84,65 +73,54 @@ func TestResolveNextReportsNotStartedWhenNoFeatureExists(t *testing.T) {
 	}
 }
 
-func TestResolveNextReportsSavedSourcePlan(t *testing.T) {
+// TestResolveNextIgnoresAmbientPlanFiles is the conformance guard for the
+// "no Boatstack context for things we did not ship" contract at the state
+// machine: saved, never-shipped plan files sitting in the historically scanned
+// directories must never surface as SOURCE_PLAN_READY or AMBIGUOUS. next-status
+// reports NOT_STARTED regardless.
+func TestResolveNextIgnoresAmbientPlanFiles(t *testing.T) {
 	repo := nextTestRepo(t)
-	writeIntakePlan(t, repo, "feature.md")
-	status, err := ResolveNext(repo, "")
-	if err != nil {
-		t.Fatal(err)
+	for _, dir := range []string{
+		".product-loop/intake",
+		".cursor/plans",
+		".claude/plans",
+		".codex/plans",
+	} {
+		absolute := filepath.Join(repo, filepath.FromSlash(dir))
+		if err := os.MkdirAll(absolute, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(absolute, "unshipped.md"), []byte("# Unshipped plan\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if status.ObservedStage != "SOURCE_PLAN_READY" || status.NextOperation != "auto-plan" {
-		t.Fatalf("unexpected status: %+v", status)
-	}
-}
-
-func TestResolveNextPrefersUniqueSourcePlanOverHistoricalPlans(t *testing.T) {
-	repo := nextTestRepo(t)
-	writeSavedFeaturePlan(t, repo, "historical-one")
-	writeSavedFeaturePlan(t, repo, "historical-two")
-	writeIntakePlan(t, repo, "current.md")
-
-	status, err := ResolveNext(repo, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if status.VerificationStatus != "VERIFIED" || status.ObservedStage != "SOURCE_PLAN_READY" || status.NextOperation != "auto-plan" {
-		t.Fatalf("new source plan did not outrank historical plans: %+v", status)
-	}
-}
-
-func TestResolveNextBlocksMultipleSourcePlansBeforeHistoricalPlans(t *testing.T) {
-	repo := nextTestRepo(t)
-	writeSavedFeaturePlan(t, repo, "historical-one")
-	writeSavedFeaturePlan(t, repo, "historical-two")
-	writeIntakePlan(t, repo, "first.md")
-	writeIntakePlan(t, repo, "second.md")
 
 	status, err := ResolveNext(repo, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{".product-loop/intake/first.md", ".product-loop/intake/second.md"}
-	if status.VerificationStatus != "BLOCKED" || status.ObservedStage != "AMBIGUOUS" || !reflect.DeepEqual(status.BlockingAmbiguity, want) {
-		t.Fatalf("unexpected source-plan ambiguity: %+v", status)
+	if status.ObservedStage != "NOT_STARTED" || status.NextOperation != "auto-plan" {
+		t.Fatalf("ambient plan files leaked into next-status: %+v", status)
+	}
+	if status.ObservedStage == "SOURCE_PLAN_READY" {
+		t.Fatal("SOURCE_PLAN_READY must no longer be produced")
 	}
 }
 
-func TestResolveNextActiveDeliveryOutranksSourcePlan(t *testing.T) {
+func TestResolveNextActiveDeliveryIsReported(t *testing.T) {
 	repo := nextTestRepo(t)
 	writeNextDelivery(t, repo, "active-feature", "BUILD", 0)
-	writeIntakePlan(t, repo, "new-feature.md")
 
 	status, err := ResolveNext(repo, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if status.Feature != "active-feature" || status.ObservedStage != "BUILD" || status.NextOperation != "build" {
-		t.Fatalf("source plan displaced active delivery: %+v", status)
+		t.Fatalf("active delivery not reported: %+v", status)
 	}
 }
 
-func TestResolveNextOrphanedEvidenceOutranksSourcePlan(t *testing.T) {
+func TestResolveNextOrphanedEvidenceBlocks(t *testing.T) {
 	repo := nextTestRepo(t)
 	directory := filepath.Join(repo, ".product-loop", "features", "orphan")
 	if err := os.MkdirAll(directory, 0o755); err != nil {
@@ -151,14 +129,13 @@ func TestResolveNextOrphanedEvidenceOutranksSourcePlan(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(directory, "pr.md"), []byte("# Preview\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	writeIntakePlan(t, repo, "new-feature.md")
 
 	status, err := ResolveNext(repo, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if status.VerificationStatus != "BLOCKED" || status.ObservedStage != "INVALID_STATE" || status.NextOperation != "repair-state" {
-		t.Fatalf("source plan bypassed orphaned evidence: %+v", status)
+		t.Fatalf("orphaned evidence did not block: %+v", status)
 	}
 }
 
@@ -254,16 +231,12 @@ func TestResolveNextDeliveryTransitions(t *testing.T) {
 func TestResolveNextReportsPublishedUnknownWithoutPRVerification(t *testing.T) {
 	repo := nextTestRepo(t)
 	writeNextDelivery(t, repo, "recovery", "PUBLISHED", 1)
-	intake := filepath.Join(repo, ".product-loop", "intake")
-	if err := os.MkdirAll(intake, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(intake, "source-plan.md"), []byte("# Source plan\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, "source-plan.md"), []byte("# Source plan\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	plan := validPlan()
 	plan["feature_id"] = "recovery"
-	plan["source_plan_path"] = "../../intake/source-plan.md"
+	plan["source_plan_path"] = "../../../source-plan.md"
 	writeMarkdownPlan(t, filepath.Join(repo, ".product-loop", "features", "recovery", "plan.md"), plan, true)
 	status, err := ResolveNext(repo, "")
 	if err != nil {

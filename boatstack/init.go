@@ -685,7 +685,7 @@ func RunInit(options InitOptions) (returnErr error) {
 		fmt.Fprintln(options.Output, "\nAfter the update PR is merged, reload Cursor, Codex, or Claude.")
 	} else {
 		fmt.Fprintln(options.Output, "\nAfter that PR is merged, reload Cursor, Codex, or Claude and start in Plan mode:")
-		fmt.Fprintln(options.Output, "  1. Describe the product change and save the host plan (use .product-loop/intake/ if the host exposes no path).")
+		fmt.Fprintln(options.Output, "  1. Describe the product change, save the host plan as a durable file inside the repository, and pass its path to auto-plan with --plan <path>.")
 	}
 	fmt.Fprintln(options.Output, "Host activation checklist:")
 	fmt.Fprintln(options.Output, "  Cursor: reload the window and confirm beforeShellExecution and beforeMCPExecution are paired with their after events, plus synchronous pre/post native-tool hooks; the hooks are defense in depth.")
@@ -710,7 +710,7 @@ func RunInit(options InitOptions) (returnErr error) {
 const ExecutionBoundaryDX = `
 **Boatstack Execution Boundary:**
 When the user approves a plan within your native Plan Mode, **do not immediately transition to Auto-Edit or begin mutating product files.** Because this repository is managed by Boatstack, execution must pass through verifiable gates. Instead of executing the code:
-1. Save your proposed plan to ` + "`.product-loop/intake/source-plan.md`" + `.
+1. Save your proposed plan as a durable file inside the repository and pass its path to auto-plan with ` + "`--plan <path>`" + ` (Boatstack does not scan directories for plans; an out-of-repo path is rejected so the plan stays hash-current through build).
 2. Before auto-plan succeeds, the user may still choose an unmanaged workflow. Once auto-plan creates a saved feature plan, do not offer direct product editing: resolve Boatstack state and continue through plan-gate, approval when configured, and build activation.
 3. Async task completion, conversation state, or an execution-mode transition never creates implementation authority. Only a current plan lock does.
 `

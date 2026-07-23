@@ -62,7 +62,7 @@ Create a feature branch from the base containing Boatstack. Enter your host's Pl
 Add account recovery without removing the existing passwordless sign-in flow.
 ```
 
-Let the host inspect the relevant repository slice and save its plan. Boatstack uses a host-exposed path when available; otherwise save exactly one non-empty plan under `.product-loop/intake/`.
+Let the host inspect the relevant repository slice and save its plan as a durable file. Pass that path to `/auto-plan` via `--plan <path>`; Boatstack does not scan directories for plans, so the path is always required.
 
 Start Boatstack with the entry point for your host:
 

@@ -419,6 +419,24 @@ func TestSafetyGuardLatencyIsBounded(t *testing.T) {
 	}
 }
 
+// TestPlanningMarkdownPathRejectsIntakeStaging is the conformance guard that the
+// removed intake staging directory is no longer a permitted planning-write path;
+// only feature-scoped planning artifacts remain writable.
+func TestPlanningMarkdownPathRejectsIntakeStaging(t *testing.T) {
+	rejected := []string{
+		".product-loop/intake/source-plan.md",
+		".product-loop/intake/anything.md",
+	}
+	for _, path := range rejected {
+		if planningMarkdownPath(path) {
+			t.Errorf("intake staging path must no longer be a permitted planning-write path: %s", path)
+		}
+	}
+	if !planningMarkdownPath(".product-loop/features/account-recovery/plan.md") {
+		t.Fatal("feature-scoped planning artifacts must remain writable")
+	}
+}
+
 func TestPreActivationMutationInterlockLatchesAfterAutoPlan(t *testing.T) {
 	repo := nextTestRepo(t)
 	writeValidSavedFeaturePlan(t, repo, "guarded-feature")

@@ -185,87 +185,39 @@ func CheckSourcePlan(path string) error {
 	return nil
 }
 
-func sourcePlanCandidates(repo string) ([]string, error) {
-	repoAbsolute, err := filepath.Abs(repo)
-	if err != nil {
-		return nil, err
-	}
-	roots := []string{
-		".product-loop/intake",
-		".cursor/plans",
-		".claude/plans",
-		".codex/plans",
-	}
-	allowed := map[string]bool{".md": true, ".txt": true, ".json": true, ".yaml": true, ".yml": true}
-	candidates := []string{}
-	for _, root := range roots {
-		absoluteRoot := filepath.Join(repoAbsolute, filepath.FromSlash(root))
-		if _, err := os.Stat(absoluteRoot); err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, err
-		}
-		err := filepath.WalkDir(absoluteRoot, func(path string, entry os.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			if entry.IsDir() {
-				return nil
-			}
-			if entry.Type()&os.ModeSymlink != 0 || !allowed[strings.ToLower(filepath.Ext(entry.Name()))] {
-				return nil
-			}
-			if strings.EqualFold(entry.Name(), "README.md") || CheckSourcePlan(path) != nil {
-				return nil
-			}
-			relative, relErr := filepath.Rel(repoAbsolute, path)
-			if relErr != nil {
-				return relErr
-			}
-			candidates = append(candidates, filepath.ToSlash(relative))
-			return nil
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-	sort.Strings(candidates)
-	return candidates, nil
-}
-
+// DiscoverSourcePlan resolves the source plan from an explicit path supplied by
+// the caller (the host coding agent). Boatstack never scans directories for
+// ambient plan files: the plan produced in the host conversation must be passed
+// explicitly via --plan so no unshipped saved plan becomes blocking context.
+//
+// The resolved path is recorded as source_plan_path and hashed into the plan
+// fingerprint, then re-validated for drift through build. A plan file outside
+// the repository cannot satisfy that invariant: its absolute path does not
+// travel with clones or linked worktrees and it is never committed alongside the
+// feature, so build activation later fails on a missing file or hash drift. We
+// reject it up front and require an in-repo, durable path instead of surfacing
+// the failure downstream at build time.
 func DiscoverSourcePlan(repo, explicit string) (string, error) {
 	repoAbsolute, err := filepath.Abs(repo)
 	if err != nil {
 		return "", err
 	}
-	if strings.TrimSpace(explicit) != "" {
-		candidate := explicit
-		if !filepath.IsAbs(candidate) {
-			candidate = filepath.Join(repoAbsolute, candidate)
-		}
-		candidate = filepath.Clean(candidate)
-		if err := CheckSourcePlan(candidate); err != nil {
-			return "", err
-		}
-		relative, err := filepath.Rel(repoAbsolute, candidate)
-		if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-			return filepath.ToSlash(relative), nil
-		}
-		return candidate, nil
+	if strings.TrimSpace(explicit) == "" {
+		return "", fmt.Errorf("no source plan provided; pass --plan <path> to the plan produced in the host conversation")
 	}
-
-	candidates, err := sourcePlanCandidates(repoAbsolute)
-	if err != nil {
+	candidate := explicit
+	if !filepath.IsAbs(candidate) {
+		candidate = filepath.Join(repoAbsolute, candidate)
+	}
+	candidate = filepath.Clean(candidate)
+	if err := CheckSourcePlan(candidate); err != nil {
 		return "", err
 	}
-	if len(candidates) == 0 {
-		return "", fmt.Errorf("no saved Plan-mode file found; save the current host plan under .product-loop/intake/ and run auto-plan again")
+	relative, err := filepath.Rel(repoAbsolute, candidate)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("source plan %s is outside the repository; copy the plan into the repo and pass a durable in-repo path to --plan so it stays present and hash-current through build", explicit)
 	}
-	if len(candidates) > 1 {
-		return "", fmt.Errorf("multiple saved Plan-mode files found: %s; keep one active intake file or pass the intended path", strings.Join(candidates, ", "))
-	}
-	return candidates[0], nil
+	return filepath.ToSlash(relative), nil
 }
 
 func SourcePlanForStructuredPlan(planPath string) (string, error) {
