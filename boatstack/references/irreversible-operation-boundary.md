@@ -14,6 +14,8 @@ The guard always denies:
 
 There is no break-glass token or in-session override. Intentional destructive recovery belongs to a separately controlled operator surface outside Boatstack. Agents may edit source that describes a dangerous operation for review, but may not execute it; an operational diff containing that capability blocks build activation and subsequent gates until it is removed or transferred to the operator boundary.
 
+Recoverable repository alignment is not an exception to this policy. Raw `git reset --hard`, `git clean`, and forced history replacement remain denied. The project-local `workspace-sync` helper may align one exact local branch to one freshly fetched remote branch only after it creates and verifies Git recovery refs for the original branch and any staged, unstaged, or untracked work. It blocks active managed-delivery branches and reports the retained recovery refs.
+
 ## Failure response
 
 After an external-write failure:

@@ -927,9 +927,35 @@ func workspaceStatusCommand(arguments []string) int {
 	return 0
 }
 
+func workspaceSyncCommand(arguments []string) int {
+	flags := flag.NewFlagSet("workspace-sync", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository containing the branch to synchronize")
+	branch := flags.String("branch", "", "local branch to align; defaults to the current branch")
+	source := flags.String("source", "", "remote branch to fetch and align to, for example origin/main")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if strings.TrimSpace(*source) == "" {
+		return fail(fmt.Errorf("workspace-sync requires --source"))
+	}
+	result, err := boatstack.SyncWorkspace(boatstack.WorkspaceSyncOptions{Repo: *repo, Branch: *branch, Source: *source})
+	if err != nil {
+		return fail(err)
+	}
+	value, err := boatstack.MarshalJSON(result)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Print(string(value))
+	if result.Status == "BLOCKED" {
+		return 1
+	}
+	return 0
+}
+
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|run-preflight|record-change|record-delivery-gate|record-pr-visual-evidence|record-pr-visual-publication|check-safety|migrate-config|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|run-preflight|record-change|record-delivery-gate|record-pr-visual-evidence|record-pr-visual-publication|check-safety|migrate-config|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|workspace-sync|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -1001,6 +1027,8 @@ func run() int {
 		return workspaceCleanupCommand(os.Args[2:])
 	case "workspace-status":
 		return workspaceStatusCommand(os.Args[2:])
+	case "workspace-sync":
+		return workspaceSyncCommand(os.Args[2:])
 	case "migrate-config":
 		return migrateConfigCommand(os.Args[2:])
 	case "version":

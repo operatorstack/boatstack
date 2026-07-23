@@ -42,6 +42,8 @@ Every installed host routes supported shell and MCP events through Boatstack's i
 
 After an external-write failure, preserve state and use only read-only diagnosis. Do not escalate privileges, broaden the target, or invent a reset. Use a transactional retry only when retry safety is demonstrated; otherwise stop and fix forward. Destructive recovery is operator-only outside Boatstack. See `irreversible-operation-boundary.md` for the classified operations and evaluation status.
 
+Repository administration is not a delivery transition. Branch synchronization, status, switching, worktree maintenance, and requests to discard local changes do not enter `auto-plan` or `repair` unless the exact target branch belongs to an active managed delivery. Use the project-local `workspace-sync` helper for recoverable branch alignment: it fetches the exact remote source, preserves the original branch and dirty worktree under verified Git refs, updates the branch in its owning worktree, and verifies the final ref and clean status. A raw destructive-Git denial must return this one recovery action immediately without plan inspection or repository-wide discovery.
+
 Hooks are defense in depth rather than a complete sandbox. Protected systems still require least-privilege credentials, scoped service roles, backups, and service-side destructive approval. A missing, drifted, or failing helper denies execution and requires reinstall or repair. Cursor's exact `MainThreadShellExec not initialized` error occurs before the Boatstack hook starts; preserve fail-closed behavior, reload the Cursor window, and retry before diagnosing the Boatstack installation.
 
 ## User-facing response contract

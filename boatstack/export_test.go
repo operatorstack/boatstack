@@ -314,7 +314,7 @@ func TestExportAndDriftCheck(t *testing.T) {
 		}
 	}
 	cursorRule := string(bundle.Files[".cursor/rules/boatstack.mdc"])
-	for _, expected := range []string{"alwaysApply: true", "Before modifying product code", "active managed delivery", "repair operation", "ordinary language"} {
+	for _, expected := range []string{"alwaysApply: true", "Before modifying product code", "active managed delivery", "repair operation", "product behavior"} {
 		if !strings.Contains(cursorRule, expected) {
 			t.Fatalf("Cursor rule is missing conversational repair routing %q", expected)
 		}
@@ -489,10 +489,24 @@ func TestPortableHostAdaptersShareWorkflowAndArtifactContract(t *testing.T) {
 		"codex":  string(bundle.Files[".agents/skills/boatstack/SKILL.md"]),
 	}
 	for host, surface := range hostSurfaces {
-		for _, expected := range []string{".product-loop/project.json", ".product-loop/workflow.md"} {
+		for _, expected := range []string{
+			".product-loop/project.json",
+			".product-loop/workflow.md",
+			"Repository administration is outside managed product delivery",
+			"Branch synchronization, status, switching, worktree maintenance",
+			"must never route to auto-plan or repair",
+			"ensure main is same is origin/main remove any current changes",
+			".product-loop/bin/boatstack-helper workspace-sync --repo . --branch main --source origin/main",
+			"do not inspect plans, scan the repository, search for the helper",
+		} {
 			if !strings.Contains(surface, expected) {
 				t.Fatalf("%s adapter does not reference shared repository contract %q", host, expected)
 			}
+		}
+	}
+	for host, surface := range hostSurfaces {
+		if strings.Contains(surface, "automatically use repair for ordinary failure or change language") {
+			t.Fatalf("%s adapter retains broad free-form repair capture", host)
 		}
 	}
 	for _, operation := range []string{"next", "boatstack-next", "run", "boatstack-run", "auto-plan", "plan-gate", "build", "test-gate", "review-gate", "ship-gate", "boatstack-update", "retro"} {

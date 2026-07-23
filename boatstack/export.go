@@ -22,6 +22,8 @@ var allowedAdapters = map[string]bool{
 
 const executionModeDX = "\n\n**Execution Mode Notice:** Boatstack requires active tool use (such as shell execution) to run its commands and inspect the workspace. If you are currently operating in a Plan Mode, Read-Only Mode, or a state with restricted tool access, you MUST immediately inform the user that Boatstack requires full execution capabilities and ask them to approve exiting that mode or grant execution permissions before you can proceed. Do not attempt to mock or bypass the operation."
 
+const repositoryAdministrationBoundary = `Repository administration is outside managed product delivery. Branch synchronization, status, switching, worktree maintenance, and requests to discard local changes must never route to auto-plan or repair unless the exact target branch belongs to an active managed delivery. For requests such as "ensure main is same is origin/main remove any current changes", inspect only the named refs and worktree, then invoke the exact project-local .product-loop/bin/boatstack-helper workspace-sync --repo . --branch main --source origin/main. The helper checkpoints recoverable state before alignment. If raw destructive Git is denied, report that denial and this one recovery action immediately; do not inspect plans, scan the repository, search for the helper, or retry the destructive command.`
+
 var (
 	readCanonical    = ReadCanonical
 	readCanonicalDir = ReadCanonicalDir
@@ -283,7 +285,7 @@ func BuildExportBundle(configPath string, config ProjectConfig, rawConfig []byte
 	}
 
 	if contains(adapters, "cursor") {
-		rule := `---
+		rule := fmt.Sprintf(`---
 description: Use Boatstack for evidence-engineered planning, delivery repair, explicit approval, open implementation, evidence gates, and PR preparation.
 globs:
 alwaysApply: true
@@ -293,14 +295,15 @@ The source of truth is @.product-loop/workflow.md and @.product-loop/project.jso
 Use @.product-loop/artifacts.md for document meanings and @.product-loop/failure-moves.md for improvement experiments.
 Ordinary product intent starts in the host's Plan mode. Save the completed plan under .product-loop/intake/. Auto-plan discovers exactly one saved plan from bounded host locations, validates it, and must not invent a substitute. Keep the source plan present and current through build.
 Do not start build work until the plan gate is ready and build activation has produced a valid plan lock. Require approval.md only when workflow.human_plan_approval is true; otherwise the lock must record policy activation.
-Before modifying product code, resolve complete Boatstack state. A saved feature plan latches managed authority: draft, approved, policy-ready, ambiguous, stale, or invalid pre-activation state cannot mutate product files, and only exact planning or activation transitions remain available. Once a current plan lock exists, preserve active managed delivery and published-delivery recovery behavior. Async task completion and conversation state never grant authority. When active or published work receives a CI failure, review finding, denied publication, problem, or modification in ordinary language, route through the Boatstack repair operation before editing. Never ask the user to manually repeat a denied push or PR mutation. If no saved plan or managed delivery exists, continue ordinary conversation.
+Before modifying product code, resolve complete Boatstack state. A saved feature plan latches managed authority: draft, approved, policy-ready, ambiguous, stale, or invalid pre-activation state cannot mutate product files, and only exact planning or activation transitions remain available. Once a current plan lock exists, preserve active managed delivery and published-delivery recovery behavior. Async task completion and conversation state never grant authority. When active or published work receives a product behavior, implementation, test, review, delivery-evidence, CI, or publication problem or modification, route through the Boatstack repair operation before editing. Never ask the user to manually repeat a denied push or PR mutation. If no saved plan or managed delivery exists, continue ordinary conversation.
+%s
 Implementation methods are open. Claims of completion, approval, review, and shipping require evidence.
 Plans may contain internal task phases without changing the one-PR flow. Multiple PRs require explicit ordered delivery_slices. Work only on the active slice; every slice must independently pass test-gate, review-gate, and confirmed ship-gate. Direct push and PR mutation are denied while managed delivery is active, and plan approval is never publication authority.
 When the user naturally asks Boatstack to prepare, improve, summarize, or update an existing PR without a managed feature package, generate an evidence-limited ad-hoc PR brief. Use the committed branch diff and observed checks, label missing evidence NOT_VERIFIED, and never imply Boatstack approval or passed gates. This is natural-language behavior, not a /pr-brief command. Preview the exact title and body before asking for one open/update confirmation.
 When the user asks to update Boatstack itself, use /boatstack-update. Release discovery is read-only and cached; repository mutation begins only from a clean current default branch and is isolated in a versioned chore/update-boatstack branch. Preview the exact infrastructure diff before requiring open update PR. Never mix a Boatstack update into product work or merge it automatically.
 Do not branch behavior on model name, provider, or price; branch on observed work state and evidence.
 Boatstack's repository hooks deny high-confidence irreversible operations across every agent call. There is no in-session bypass. Preserve failed external state, use read-only diagnosis and fix-forward recovery, and leave intentional destructive recovery to an operator-owned surface outside Boatstack.
-`
+`, repositoryAdministrationBoundary)
 		files[fmt.Sprintf(".cursor/rules/%s.mdc", adapterName)], err = GeneratedFrontmatter(rule + executionModeDX + "\n" + ExecutionBoundaryDX)
 		if err != nil {
 			return ExportBundle{}, err
@@ -312,12 +315,14 @@ Boatstack's repository hooks deny high-confidence irreversible operations across
 
 	adapterSkill := fmt.Sprintf(`---
 name: %s
-description: Use when the user asks what is next in Boatstack, asks Boatstack to run a feature through ship, or asks Boatstack to auto-plan, repair, approve a plan, build, test, review, ship, update Boatstack, or run a retrospective. Also use automatically when ordinary free-form change language, CI failure, review feedback, or a denied publication targets an active or current-branch published managed delivery.
+description: Use when the user asks what is next in Boatstack, asks Boatstack to run a feature through ship, or asks Boatstack to auto-plan, repair, approve a plan, build, test, review, ship, update Boatstack, or run a retrospective. Also use automatically when product behavior, implementation, test, review, delivery-evidence, CI, or publication changes target an active or current-branch published managed delivery. Do not use for repository administration such as branch sync, status, switching, worktree maintenance, or discarding local changes.
 ---
 
 # Boatstack adapter
 
-	Read .product-loop/project.json and .product-loop/workflow.md. The requested operation is supplied by the user; valid operations are next, boatstack-next, run, boatstack-run, auto-plan, plan-gate, build, repair, test-gate, review-gate/review, ship-gate/ship, boatstack-update, retro, workspace-cut, and workspace-cleanup. Route next and natural-language questions such as "what's next in Boatstack?" to the read-only boatstack-next operation. Route run and requests such as "run Boatstack through ship" to boatstack-run. Before any product edit, resolve complete Boatstack state. Once auto-plan creates a saved feature plan, draft, approved, policy-ready, ambiguous, stale, or invalid state denies product mutation until controlled activation creates a current lock; conversation and async completion never grant authority. For an active or current-branch published managed delivery, automatically use repair for ordinary failure or change language. Never instruct the user to manually repeat a push or PR mutation denied by the safety hook.
+	Read .product-loop/project.json and .product-loop/workflow.md. The requested operation is supplied by the user; valid managed operations are next, boatstack-next, run, boatstack-run, auto-plan, plan-gate, build, repair, test-gate, review-gate/review, ship-gate/ship, boatstack-update, retro, workspace-cut, and workspace-cleanup. Route next and natural-language questions such as "what's next in Boatstack?" to the read-only boatstack-next operation. Route run and requests such as "run Boatstack through ship" to boatstack-run. Before any product edit, resolve complete Boatstack state. Once auto-plan creates a saved feature plan, draft, approved, policy-ready, ambiguous, stale, or invalid state denies product mutation until controlled activation creates a current lock; conversation and async completion never grant authority. For an active or current-branch published managed delivery, automatically use repair only for product behavior, implementation, test, review, or delivery-evidence failures and changes. Never instruct the user to manually repeat a push or PR mutation denied by the safety hook.
+
+%s
 
 Follow the User-facing response contract in .product-loop/workflow.md for every operation. Lead with the mapped plain-language outcome, show only decision-relevant content, end with exactly one Next step, and move machine statuses, helper output, fingerprints, artifact paths, receipts, and locks into collapsed Technical details. Internal helper names must not appear in the primary response.
 
@@ -342,7 +347,7 @@ When the user asks to update Boatstack, run the boatstack-update operation. Neve
 For a managed ship, use the internal pr-context operation with --feature to project the feature spec, accepted decisions, actual committed diff, evidence ledger, review findings, gaps, rollout, and rollback into the required pr.md artifact. Inspect the returned changed files, diff stat, high-risk matches, and the actual diff before writing claims; commits alone are not authoritative. Always include why, what changed, review order, evidence, gaps/risks, rollout/rollback, and collapsed provenance. Add UI evidence, security/privacy, migration, or operations sections only when relevant. For a natural-language request to improve an existing or ad-hoc PR, run pr-context without --feature and use the same reviewer-first format from observed branch facts, but mark unavailable approval or gate evidence as NOT_VERIFIED. Never create or advertise a /pr-brief command. Validate with check-pr and always show the exact title and rendered body before publication. Ask for state-scoped o to open or u to update the PR. Only after the matching shortcut or compatible full reply, commit only pr.md, revalidate the unchanged preview fingerprint, and invoke the internal publish-pr operation with the selected action. It may perform a normal push but never force-push. Any intervening product diff or evidence change invalidates the preview. Keep model attribution inside collapsed provenance. Internal helper names and hashes stay out of the primary response.
 
 If gstack is enabled, use only its namespaced /gstack-* specialist lenses inside Boatstack operations. If Spec Kit is enabled, use it to generate or cross-check artifacts; never invoke speckit.implement to bypass Boatstack's plan approval and build gate.
-	`, adapterName) + executionModeDX
+	`, adapterName, repositoryAdministrationBoundary) + executionModeDX
 	if contains(adapters, "claude") {
 		claudeAdapterSkill := strings.Replace(
 			adapterSkill,

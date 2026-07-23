@@ -73,6 +73,42 @@ func TestIrreversibleCommandCorpusIsDenied(t *testing.T) {
 	}
 }
 
+func TestWorkspaceSyncIsTheOnlyAllowedRepositoryAlignmentCommand(t *testing.T) {
+	repo := safetyTestRepo(t)
+	writeValidSavedFeaturePlan(t, repo, "pending-feature")
+	helper := filepath.Join(repo, ".product-loop", "bin", helperName())
+	if err := os.MkdirAll(filepath.Dir(helper), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	command := ".product-loop/bin/" + helperName() + " workspace-sync --repo . --branch main --source origin/main"
+	if findings := ClassifyCommand(repo, command); len(findings) != 0 {
+		t.Fatalf("exact project-local workspace sync was denied: %#v", findings)
+	}
+	for _, command := range []string{
+		"boatstack-helper workspace-sync --repo . --branch main --source origin/main",
+		"/tmp/boatstack-helper workspace-sync --repo . --branch main --source origin/main",
+		".product-loop/bin/" + helperName() + " workspace-sync --repo /tmp --branch main --source origin/main",
+	} {
+		findings := ClassifyCommand(repo, command)
+		if len(findings) == 0 || findings[0].Category != "workspace-sync-bypass" {
+			t.Fatalf("unverified workspace sync was allowed: %s %#v", command, findings)
+		}
+	}
+	raw := ClassifyCommand(repo, "git reset --hard origin/main")
+	if len(raw) == 0 || raw[0].Category != "git-history-destruction" {
+		t.Fatalf("raw hard reset was not denied: %#v", raw)
+	}
+	message := denialMessage("cursor", raw[0])
+	for _, expected := range []string{"project-local workspace-sync", "do not scan delivery artifacts", "do not", "retry"} {
+		if !strings.Contains(message, expected) {
+			t.Fatalf("hard-reset denial omitted %q: %s", expected, message)
+		}
+	}
+}
+
 func TestInvokedSymlinkFailsClosed(t *testing.T) {
 	repo := safetyTestRepo(t)
 	target := filepath.Join(repo, "target.py")
