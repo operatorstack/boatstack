@@ -444,6 +444,74 @@ func recordPRVisualEvidenceCommand(arguments []string) int {
 	return 0
 }
 
+func captureEvidenceCommand(arguments []string) int {
+	flags := flag.NewFlagSet("capture-evidence", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository whose Git-common state owns the evidence")
+	capability := flags.String("capability", "visual", "evidence capability to capture")
+	feature := flags.String("feature", "", "managed Boatstack feature slug")
+	base := flags.String("base", "", "base branch for the product diff (defaults to the project default branch)")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if *feature == "" {
+		return fail(fmt.Errorf("capture-evidence requires --feature"))
+	}
+	captured, err := boatstack.CaptureEvidence(boatstack.CaptureEvidenceOptions{
+		Repo: *repo, Capability: *capability, Feature: *feature, Base: *base,
+	})
+	if err != nil {
+		return fail(err)
+	}
+	value, err := boatstack.MarshalJSON(captured)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Print(string(value))
+	return 0
+}
+
+func provisionCapabilityCommand(arguments []string) int {
+	flags := flag.NewFlagSet("provision-capability", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository to inspect for evidence-capability provisioning")
+	capability := flags.String("capability", "visual", "evidence capability to provision")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	guide, err := boatstack.CapabilityProvisionGuide(*repo, *capability)
+	if err != nil {
+		return fail(err)
+	}
+	value, err := boatstack.MarshalJSON(guide)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Print(string(value))
+	return 0
+}
+
+func capabilityRegisterCommand(arguments []string) int {
+	flags := flag.NewFlagSet("capability-register", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository whose Boatstack configuration owns the command")
+	capability := flags.String("capability", "visual", "evidence capability to register a command for")
+	command := flags.String("command", "", "repository command that produces the evidence")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if *command == "" {
+		return fail(fmt.Errorf("capability-register requires --command"))
+	}
+	registered, err := boatstack.RegisterCapabilityCommand(*repo, *capability, *command)
+	if err != nil {
+		return fail(err)
+	}
+	value, err := boatstack.MarshalJSON(registered)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Print(string(value))
+	return 0
+}
+
 func recordPRVisualPublicationCommand(arguments []string) int {
 	flags := flag.NewFlagSet("record-pr-visual-publication", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository whose Git-common state owns the evidence")
@@ -977,7 +1045,7 @@ func workspaceSyncCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|run-preflight|record-change|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|record-pr-visual-publication|check-safety|migrate-config|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|workspace-sync|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|run-preflight|record-change|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|check-safety|migrate-config|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|workspace-sync|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -1027,6 +1095,12 @@ func run() int {
 		return recordDeliveryGateCommand(os.Args[2:])
 	case "record-pr-visual-evidence":
 		return recordPRVisualEvidenceCommand(os.Args[2:])
+	case "capture-evidence":
+		return captureEvidenceCommand(os.Args[2:])
+	case "provision-capability":
+		return provisionCapabilityCommand(os.Args[2:])
+	case "capability-register":
+		return capabilityRegisterCommand(os.Args[2:])
 	case "record-pr-visual-publication":
 		return recordPRVisualPublicationCommand(os.Args[2:])
 	case "pr-context":
