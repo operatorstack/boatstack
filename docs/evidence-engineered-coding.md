@@ -146,6 +146,6 @@ Delivery and system improvement also remain separate. A failed task may suggest 
 
 ## What is evidence-backed
 
-The current moves were derived from the Intelligence Flow benchmark corpus and product-repository studies. The generated source commit is [`dc7d340e0028db5df232d75b4c69ba866aa133f9`](https://github.com/operatorstack/intelligence-flow/tree/dc7d340e0028db5df232d75b4c69ba866aa133f9/labs/12-product-engineering-loop).
+The current moves were derived from the Intelligence Flow benchmark corpus and product-repository studies. The generated source commit is [`c288814c89139fa36e7b914ce14d9917f12d32d0`](https://github.com/operatorstack/intelligence-flow/tree/c288814c89139fa36e7b914ce14d9917f12d32d0/labs/12-product-engineering-loop).
 
 The evidence supports specific failure mechanisms and guardrails. It does not establish that Boatstack is optimal, that control-theory notation proves software quality, or that one workflow dominates every team. Those are evaluation questions, so the distribution preserves measurements, provenance, gaps, and negative results.
