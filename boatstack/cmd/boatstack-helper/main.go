@@ -598,6 +598,28 @@ func recordChangeCommand(arguments []string) int {
 	return 0
 }
 
+func ignoreDeliveryCommand(arguments []string) int {
+	flags := flag.NewFlagSet("ignore-delivery", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository containing the Boatstack installation")
+	feature := flags.String("feature", "", "feature slug of the past delivery to ignore")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if *feature == "" {
+		return fail(fmt.Errorf("ignore-delivery requires --feature"))
+	}
+	added, err := boatstack.IgnoreDelivery(*repo, *feature)
+	if err != nil {
+		return fail(err)
+	}
+	if added {
+		fmt.Printf("PASS: delivery %s added to workflow.ignored_deliveries\n", *feature)
+	} else {
+		fmt.Printf("PASS: delivery %s already ignored\n", *feature)
+	}
+	return 0
+}
+
 func doctorCommand(arguments []string) int {
 	flags := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository whose Boatstack installation should be checked")
@@ -955,7 +977,7 @@ func workspaceSyncCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|run-preflight|record-change|record-delivery-gate|record-pr-visual-evidence|record-pr-visual-publication|check-safety|migrate-config|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|workspace-sync|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|run-preflight|record-change|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|record-pr-visual-publication|check-safety|migrate-config|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|workspace-sync|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -999,6 +1021,8 @@ func run() int {
 		return runPreflightCommand(os.Args[2:])
 	case "record-change":
 		return recordChangeCommand(os.Args[2:])
+	case "ignore-delivery":
+		return ignoreDeliveryCommand(os.Args[2:])
 	case "record-delivery-gate":
 		return recordDeliveryGateCommand(os.Args[2:])
 	case "record-pr-visual-evidence":

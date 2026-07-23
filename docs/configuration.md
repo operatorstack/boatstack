@@ -11,6 +11,7 @@ boatstack-user-config-field:workflow.allow_pass_with_gaps
 boatstack-user-config-field:workflow.maintain_changelog
 boatstack-user-config-field:workflow.boundary_analysis
 boatstack-user-config-field:workflow.pr_visual_evidence
+boatstack-user-config-field:workflow.ignored_deliveries
 boatstack-user-config-field:workspace.enabled
 boatstack-user-config-field:workspace.mode
 boatstack-user-config-field:workspace.cleanup
@@ -34,6 +35,7 @@ Boatstack's installer owns the complete `.boatstack-project.json` shape. Edit on
 | Maintain reader-facing history | `workflow.maintain_changelog` | Managed delivery and Boatstack-prepared PRs require a categorized `CHANGELOG.md` entry. |
 | Check for a systemic boundary | `workflow.boundary_analysis` | Planning guidance asks whether the request is a local symptom before scope expands. |
 | Add frontend PR screenshots | `workflow.pr_visual_evidence` | `suggest` exposes missing screenshots as a gap; `require` blocks completed publication. |
+| Ignore old ambiguous deliveries | `workflow.ignored_deliveries` | Listed feature slugs are excluded from delivery-ambiguity resolution so past work stops blocking new work; new, unlisted ambiguous deliveries still pause. |
 | Use fresh feature workspaces | `workspace.*` | Boatstack creates and cleans branches or linked worktrees under the selected policy. |
 | Limit generated host surfaces | `adapters` | Export generates only the selected supported adapters. |
 
@@ -92,6 +94,16 @@ Changelog enforcement is mechanical. Boundary analysis is model-mediated plannin
 ```
 
 Visual-evidence values are `off`, `suggest`, and `require`. Screenshot bytes stay outside Git history until explicitly attached to the PR.
+
+```json
+{
+  "workflow": {
+    "ignored_deliveries": ["old-feature-slug", "another-past-feature"]
+  }
+}
+```
+
+List feature slugs here to drop past deliveries from the ambiguity check so historical work no longer blocks new work. Any new, unlisted ambiguous delivery still pauses the workflow.
 
 ## Workspace and adapter controls
 

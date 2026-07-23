@@ -53,6 +53,10 @@ type Workflow struct {
 	MaintainChangelog            bool   `json:"maintain_changelog"`
 	BoundaryAnalysis             bool   `json:"boundary_analysis,omitempty"`
 	PRVisualEvidence             string `json:"pr_visual_evidence,omitempty"`
+	// IgnoredDeliveries lists feature slugs of past deliveries to exclude from
+	// delivery-ambiguity resolution. New, unlisted ambiguous deliveries still
+	// pause the workflow. Persisted via the LoadConfig -> GeneratedJSON round-trip.
+	IgnoredDeliveries []string `json:"ignored_deliveries,omitempty"`
 }
 
 type IntegrationState struct {

@@ -15,6 +15,7 @@ boatstack-config-field:workflow.allow_pass_with_gaps
 boatstack-config-field:workflow.maintain_changelog
 boatstack-config-field:workflow.boundary_analysis
 boatstack-config-field:workflow.pr_visual_evidence
+boatstack-config-field:workflow.ignored_deliveries
 boatstack-config-field:workspace
 boatstack-config-field:workspace.enabled
 boatstack-config-field:workspace.mode
@@ -65,6 +66,7 @@ This is the exhaustive serialization contract, not a list of recommended user ed
 - `maintain_changelog` (boolean, optional): Whether a reader-visible `CHANGELOG.md` entry is required for each delivery slice.
 - `boundary_analysis` (boolean, optional): Agent-mediated planning guidance that presents local repair versus programmatic enforcement as a material product decision.
 - `pr_visual_evidence` (string, optional): `off`, `suggest`, or `require`. Omission is `off`. Relevant PRs use machine-local PNG evidence without committing media to Git; `suggest` records missing evidence as a visible gap and `require` blocks completed publication.
+- `ignored_deliveries` (array of strings, optional): Deterministic ambiguity control. Feature slugs of past deliveries to exclude from delivery-ambiguity resolution so historical work no longer blocks new work. New, unlisted ambiguous deliveries still pause the workflow.
 
 ### workspace Fields
 

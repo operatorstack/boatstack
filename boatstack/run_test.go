@@ -57,6 +57,52 @@ func withRunGit(t *testing.T, responses map[string]struct {
 	t.Cleanup(func() { runGitCommand = old })
 }
 
+func writeRunConfig(t *testing.T, repo string, ignored ...string) {
+	t.Helper()
+	config := testConfig()
+	config.Project.DefaultBranch = "main"
+	config.Adapters = []string{"cursor"}
+	config.Workflow.IgnoredDeliveries = ignored
+	value, err := MarshalJSON(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".product-loop", "project.json"), value, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRunBranchesIgnoredActiveDeliveryClearsAmbiguity(t *testing.T) {
+	repo := runTestRepo(t)
+	writeNextDelivery(t, repo, "first", "BUILD", 0)
+	writeNextDelivery(t, repo, "second", "BUILD", 0)
+	writeRunConfig(t, repo, "first")
+	withRunGit(t, map[string]struct {
+		value string
+		err   error
+	}{"branch --show-current": {value: "feature"}})
+
+	if _, _, err := runBranches(repo, ""); err != nil {
+		t.Fatalf("ignored active delivery should clear run ambiguity: %v", err)
+	}
+}
+
+func TestRunBranchesNewUnignoredActiveDeliveryStillBlocks(t *testing.T) {
+	repo := runTestRepo(t)
+	writeNextDelivery(t, repo, "first", "BUILD", 0)
+	writeNextDelivery(t, repo, "second", "BUILD", 0)
+	writeRunConfig(t, repo, "unrelated")
+	withRunGit(t, map[string]struct {
+		value string
+		err   error
+	}{"branch --show-current": {value: "feature"}})
+
+	_, _, err := runBranches(repo, "")
+	if err == nil || !strings.Contains(err.Error(), "more than one managed delivery is active") {
+		t.Fatalf("un-ignored ambiguous deliveries should still block run: %v", err)
+	}
+}
+
 func TestCheckRunPreflightRequiresOriginBeforeMutation(t *testing.T) {
 	repo := runTestRepo(t)
 	before, err := os.ReadFile(filepath.Join(repo, ".product-loop", "project.json"))

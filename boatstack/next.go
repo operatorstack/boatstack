@@ -245,6 +245,7 @@ func ResolveNext(repoPath, explicitFeature string) (NextStatus, error) {
 	if err != nil {
 		return blockedNextStatus("INVALID_STATE", "repair-state", "Boatstack found invalid managed delivery state. Preserve the artifacts and restore the missing or stale evidence before continuing: "+err.Error()), nil
 	}
+	active = withoutIgnoredDeliveries(active, config.Workflow.IgnoredDeliveries)
 
 	if explicitFeature != "" {
 		found := false
@@ -355,6 +356,7 @@ func ResolveNext(repoPath, explicitFeature string) (NextStatus, error) {
 	if err != nil {
 		return blockedNextStatus("INVALID_STATE", "repair-state", "Boatstack found invalid completed delivery state. Preserve the artifacts and restore its evidence before continuing: "+err.Error()), nil
 	}
+	completed = withoutIgnoredDeliveryStates(completed, config.Workflow.IgnoredDeliveries)
 	if len(completed) > 0 {
 		if len(completed) == 1 {
 			base = nextForPublished(repo, completed[0])
