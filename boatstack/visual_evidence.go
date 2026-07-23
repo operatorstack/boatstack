@@ -77,13 +77,17 @@ type PRVisualCaptureCapability struct {
 	Command string `json:"command,omitempty"`
 }
 
-// ResolvePRVisualCaptureCapability implements the portable capability cut. It
-// selects repository-owned tooling before host or machine-local capabilities.
+// ResolvePRVisualCaptureCapability implements the portable capability cut for the
+// visual capability. It selects repository-owned tooling (via the generic
+// ResolveCapability spine) before host or machine-local capabilities. The
+// browser-specific fallbacks below the repository cut are visual-only.
 func ResolvePRVisualCaptureCapability(repo string, config ProjectConfig, hostBrowser bool, suppliedLaunch string, expectedReceipt PRVisualCapabilityReceipt) (PRVisualCaptureCapability, error) {
-	for _, name := range []string{"visual", "screenshot", "e2e"} {
-		if command := strings.TrimSpace(config.Project.Commands[name]); command != "" {
-			return PRVisualCaptureCapability{Kind: "repository-command", Command: command}, nil
-		}
+	resolution, err := ResolveCapability("visual", config)
+	if err != nil {
+		return PRVisualCaptureCapability{}, err
+	}
+	if resolution.Kind == "repository-command" {
+		return PRVisualCaptureCapability{Kind: "repository-command", Command: resolution.Command}, nil
 	}
 	if hostBrowser {
 		return PRVisualCaptureCapability{Kind: "host-browser"}, nil
