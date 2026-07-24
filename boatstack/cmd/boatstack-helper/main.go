@@ -642,6 +642,83 @@ func repairStateCommand(arguments []string) int {
 	return 0
 }
 
+func mutationStatusCommand(arguments []string) int {
+	flags := flag.NewFlagSet("mutation-status", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository whose managed-artifact mutation receipts should be listed")
+	mutation := flags.String("mutation", "", "optional specific mutation id to inspect")
+	jsonOutput := flags.Bool("json", false, "print the structured mutation receipt(s)")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if strings.TrimSpace(*mutation) != "" {
+		receipt, ok, err := boatstack.GetMutationReceipt(*repo, *mutation)
+		if err != nil {
+			return fail(err)
+		}
+		if !ok {
+			fmt.Fprintf(os.Stderr, "no mutation receipt for %s\n", *mutation)
+			return 1
+		}
+		if *jsonOutput {
+			value, marshalErr := boatstack.MarshalJSON(receipt)
+			if marshalErr != nil {
+				return fail(marshalErr)
+			}
+			fmt.Print(string(value))
+		} else {
+			fmt.Printf("Mutation: %s\nKind: %s\nStatus: %s\nRecorded: %s\nScope: %s\n", receipt.MutationID, receipt.Kind, receipt.Status, receipt.RecordedAt, strings.Join(receipt.Scope, ", "))
+		}
+		return 0
+	}
+	receipts, err := boatstack.ListMutationReceipts(*repo)
+	if err != nil {
+		return fail(err)
+	}
+	if *jsonOutput {
+		value, marshalErr := boatstack.MarshalJSON(receipts)
+		if marshalErr != nil {
+			return fail(marshalErr)
+		}
+		fmt.Print(string(value))
+	} else {
+		if len(receipts) == 0 {
+			fmt.Println("No mutation receipts.")
+		}
+		for _, receipt := range receipts {
+			fmt.Printf("%s\t%s\t%s\t%s\n", receipt.MutationID, receipt.Kind, receipt.Status, receipt.RecordedAt)
+		}
+	}
+	return 0
+}
+
+func undoCommand(arguments []string) int {
+	flags := flag.NewFlagSet("undo", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository containing the managed-artifact mutation to reverse")
+	mutation := flags.String("mutation", "", "mutation id to undo (its receipt is the inverse command)")
+	jsonOutput := flags.Bool("json", false, "print the structured undo receipt")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if strings.TrimSpace(*mutation) == "" {
+		fmt.Fprintln(os.Stderr, "undo requires --mutation <id>")
+		return 2
+	}
+	receipt, err := boatstack.UndoManagedMutation(*repo, *mutation)
+	if err != nil {
+		return fail(err)
+	}
+	if *jsonOutput {
+		value, marshalErr := boatstack.MarshalJSON(receipt)
+		if marshalErr != nil {
+			return fail(marshalErr)
+		}
+		fmt.Print(string(value))
+	} else {
+		fmt.Printf("Undo: %s\nKind: %s\nStatus: %s\nScope: %s\n", receipt.MutationID, receipt.Kind, receipt.Status, strings.Join(receipt.Scope, ", "))
+	}
+	return 0
+}
+
 func runPreflightCommand(arguments []string) int {
 	flags := flag.NewFlagSet("run-preflight", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository whose Git state should be verified before boatstack run")
@@ -1074,7 +1151,7 @@ func workspaceSyncCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|repair-state|run-preflight|record-change|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|check-safety|migrate-config|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|workspace-sync|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|record-change|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|check-safety|migrate-config|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|workspace-sync|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -1116,6 +1193,10 @@ func run() int {
 		return recoveryStatusCommand(os.Args[2:])
 	case "repair-state":
 		return repairStateCommand(os.Args[2:])
+	case "mutation-status":
+		return mutationStatusCommand(os.Args[2:])
+	case "undo":
+		return undoCommand(os.Args[2:])
 	case "run-preflight":
 		return runPreflightCommand(os.Args[2:])
 	case "record-change":

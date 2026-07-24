@@ -95,7 +95,7 @@ func controlledPhaseTransition(command, stage string) bool {
 	readOnlyHelpers := map[string]bool{
 		"check-plan": true, "check-source-plan": true, "next-status": true, "delivery-status": true,
 		"recovery-status": true, "repair-status": true, "operation-status": true, "check-safety": true, "workspace-status": true, "diagnose-hook": true,
-		"doctor": true, "version": true,
+		"doctor": true, "version": true, "mutation-status": true,
 	}
 	if readOnlyHelpers[fields[1]] {
 		return true
@@ -106,6 +106,15 @@ func controlledPhaseTransition(command, stage string) bool {
 	// quarantines the draft), so it is not a read-only helper; RepairState
 	// self-guards, refusing any registered, published, or tracked directory.
 	if fields[1] == "repair-state" {
+		return true
+	}
+	// undo is the bounded actuator that reverses a Boatstack-generated managed
+	// artifact by re-applying its receipt's inverse through the same transactional
+	// mutation boundary. Like repair-state it is a stage-independent recovery verb;
+	// it mutates but self-guards (UndoManagedMutation refuses to strand delivery
+	// state and the boundary's stale-base precondition refuses to clobber later
+	// work), so it is not a read-only helper.
+	if fields[1] == "undo" {
 		return true
 	}
 	switch stage {
