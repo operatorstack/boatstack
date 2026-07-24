@@ -561,7 +561,7 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 	if len(changed) == 0 {
 		return PRContext{}, fmt.Errorf("branch has no committed product changes relative to %s", base)
 	}
-	changelogBase, err := changelogComparisonBase(repo, options.Feature, mergeBaseCommit)
+	changelogBase, err := changelogComparisonBase(repo, options.Feature, options.SliceID, mergeBaseCommit)
 	if err != nil {
 		return PRContext{}, err
 	}
@@ -603,15 +603,21 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 		}
 		sources = append(sources, managedSources...)
 		gateStatus = statuses
-		state, slice, gateSources, deliveryErr := CheckDeliveryReadyForShip(repo, options.Feature, base, head, SHA256Bytes(diff), changed)
+		state, slice, gateSources, deliveryErr := CheckDeliveryReadyForShip(repo, options.Feature, options.SliceID, base, head, SHA256Bytes(diff), changed)
 		if deliveryErr != nil {
 			return PRContext{}, deliveryErr
 		}
-		if options.SliceID != "" && options.SliceID != slice.ID {
-			return PRContext{}, fmt.Errorf("delivery slice %s is not active; current slice is %s", options.SliceID, slice.ID)
-		}
+		// The addressable slice may be the active slice or an earlier published-open
+		// slice being corrected in place; report its own 1-based position, not the
+		// active pointer's.
 		sliceID = slice.ID
-		sliceIndex = state.ActiveIndex + 1
+		sliceIndex = 1
+		for i, s := range state.Slices {
+			if s.ID == slice.ID {
+				sliceIndex = i + 1
+				break
+			}
+		}
 		totalSlices = len(state.Slices)
 		sources = append(sources, gateSources...)
 	}

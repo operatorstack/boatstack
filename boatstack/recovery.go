@@ -195,6 +195,38 @@ func observePublishedPR(repo string, state DeliveryState) publishedPRObservation
 	return observation
 }
 
+// persistObservedTerminalPRState caches a terminal (MERGED/CLOSED) PR lifecycle
+// on the specific published slice it belongs to. This is a bounded, best-effort
+// write of an already-observed external fact — not a workflow mutation — so the
+// network-free gate resolver (resolveAddressableSlice) can later refuse in-place
+// correction of a slice whose PR has closed and route it to a corrective child
+// instead. Non-terminal lifecycles are left as the OPEN default so the slice
+// stays re-gateable in place. Failures are swallowed: the observation is
+// authoritative regardless of whether the cache write succeeds.
+func persistObservedTerminalPRState(repo string, state DeliveryState, observation publishedPRObservation) {
+	if !isTerminalPRState(observation.Lifecycle) {
+		return
+	}
+	url := strings.TrimSpace(observation.URL)
+	branch := strings.TrimSpace(observation.Branch)
+	for i, s := range state.Slices {
+		if s.Status != "PUBLISHED" {
+			continue
+		}
+		matches := (url != "" && strings.TrimSpace(s.PRURL) == url) ||
+			(branch != "" && strings.TrimSpace(s.HeadBranch) == branch)
+		if !matches {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(s.PRState), observation.Lifecycle) {
+			return
+		}
+		state.Slices[i].PRState = observation.Lifecycle
+		_ = saveDeliveryState(repo, state)
+		return
+	}
+}
+
 func suggestedCorrectionFeature(states []DeliveryState, parent string) string {
 	used := map[int]bool{}
 	prefix := parent + "-correction-"
@@ -329,6 +361,7 @@ func ResolveRecovery(options RecoveryStatusOptions) (RecoveryStatus, error) {
 		return status, nil
 	}
 	pr := observePublishedPR(repo, selected)
+	persistObservedTerminalPRState(repo, selected, pr)
 	status.Lifecycle = pr.Lifecycle
 	status.PRURL = pr.URL
 	status.ObservedPRHeadSHA = pr.HeadSHA

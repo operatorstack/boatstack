@@ -401,7 +401,7 @@ func recordDeliveryGateCommand(arguments []string) int {
 	options := boatstack.DeliveryGateOptions{}
 	flags.StringVar(&options.Repo, "repo", ".", "repository containing the managed delivery")
 	flags.StringVar(&options.Feature, "feature", "", "managed Boatstack feature slug")
-	flags.StringVar(&options.SliceID, "slice", "", "active delivery slice id")
+	flags.StringVar(&options.SliceID, "slice", "", "delivery slice id; redirects to the named active or published-open slice (default: active slice)")
 	flags.StringVar(&options.Gate, "gate", "", "test or review")
 	flags.StringVar(&options.Status, "status", "", "PASS or PASS_WITH_GAPS")
 	flags.StringVar(&options.BaseBranch, "base", "", "delivery base branch; defaults from the active slice or project")
@@ -971,7 +971,7 @@ func prContextCommand(arguments []string) int {
 	flags := flag.NewFlagSet("pr-context", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository whose branch should be projected")
 	feature := flags.String("feature", "", "managed Boatstack feature slug; omit for evidence-limited ad-hoc mode")
-	slice := flags.String("slice", "", "active managed delivery slice")
+	slice := flags.String("slice", "", "managed delivery slice; redirects to the named active or published-open slice (default: active slice)")
 	base := flags.String("base", "", "base branch; defaults to the Boatstack project configuration")
 	format := flags.String("format", "json", "json or template")
 	if err := flags.Parse(arguments); err != nil {

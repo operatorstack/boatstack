@@ -223,7 +223,7 @@ func TestManagedReviewRequiresChangelogEntryAndBindsItToTestEvidence(t *testing.
 	if err := MarkDeliveryPublished(repo, feature, "phase-one", "https://example.invalid/pr/1"); err != nil {
 		t.Fatal(err)
 	}
-	base, err := changelogComparisonBase(repo, feature, runGit(t, repo, "merge-base", "main", "HEAD"))
+	base, err := changelogComparisonBase(repo, feature, "", runGit(t, repo, "merge-base", "main", "HEAD"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,8 +275,22 @@ func TestDeliveryGateReceiptsBindTheActiveSliceAndAdvanceOnce(t *testing.T) {
 	if err != nil || state.ActiveIndex != 1 {
 		t.Fatalf("rerunning build reset delivery progress: state=%#v err=%v", state, err)
 	}
-	if _, err := RecordDeliveryGate(DeliveryGateOptions{Repo: repo, Feature: feature, SliceID: "phase-one", Gate: "test", Status: "PASS"}); err == nil || !strings.Contains(err.Error(), "current slice is phase-two") {
-		t.Fatalf("prior slice receipt reused after publication: %v", err)
+	// A published slice whose PR is still open (PRState defaults to OPEN) remains
+	// re-gateable in place: publication advanced the BUILD pointer to phase-two but
+	// did not revoke phase-one's correction actuator. Re-gating must NOT double
+	// advance ActiveIndex.
+	if _, err := RecordDeliveryGate(DeliveryGateOptions{Repo: repo, Feature: feature, SliceID: "phase-one", Gate: "test", Status: "PASS"}); err != nil {
+		t.Fatalf("published-open slice was not re-gateable in place: %v", err)
+	}
+	state, err = LoadDeliveryState(repo, feature)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.ActiveIndex != 1 {
+		t.Fatalf("re-gating a published-open slice advanced the BUILD pointer: %#v", state)
+	}
+	if state.Slices[0].Status != "TEST_PASSED" {
+		t.Fatalf("re-gate did not transition the published slice: %#v", state.Slices[0])
 	}
 }
 

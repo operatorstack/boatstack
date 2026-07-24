@@ -23,6 +23,13 @@ type DeliverySlice struct {
 	BaseBranch         string   `json:"base_branch,omitempty"`
 	HeadBranch         string   `json:"head_branch,omitempty"`
 	PRURL              string   `json:"pr_url,omitempty"`
+	// PRState caches the last observed lifecycle of this slice's pull request
+	// ("OPEN", "MERGED", or "CLOSED"). It is set to OPEN when the slice is first
+	// published and advanced to a terminal value only when an external
+	// observation (gh) confirms it. A published slice remains re-gateable and
+	// updatable in place while non-terminal; once terminal, in-place correction
+	// is refused and a corrective child delivery is the bounded forward actuator.
+	PRState string `json:"pr_state,omitempty"`
 }
 
 type DeliveryState struct {
@@ -512,6 +519,66 @@ func activeDeliverySlice(state DeliveryState) (DeliverySlice, error) {
 	return state.Slices[state.ActiveIndex], nil
 }
 
+// isTerminalPRState reports whether a published slice's pull request has reached
+// a state (merged or closed) that a corrective child delivery must address,
+// rather than an in-place re-gate of the original slice.
+func isTerminalPRState(prState string) bool {
+	switch strings.ToUpper(strings.TrimSpace(prState)) {
+	case "MERGED", "CLOSED", "PUBLISHED_MERGED", "PUBLISHED_CLOSED":
+		return true
+	}
+	return false
+}
+
+// resolveAddressableSlice selects the slice a gate or ship operation may act on.
+//
+// The delivery keeps a single BUILD pointer (ActiveIndex) that advances on
+// publication so the next slice can start building. Addressability, however, is
+// broader than that pointer: a slice that has been PUBLISHED but whose PR is not
+// yet terminal must remain re-gateable and updatable *in place*, because its
+// postcondition (CI/merge) has not been observed. Conflating "which slice builds
+// next" with "which slices may still be corrected" is what stranded a just
+// published slice — publication advanced the pointer and thereby revoked the
+// bounded correction actuator before the slice's postcondition was terminal.
+//
+// The addressable set is therefore {active slice} ∪ {PUBLISHED slices whose PR
+// is not terminal}. Resolution is network-free: terminal-ness is read from the
+// persisted PRState cache, never a live gh call.
+func resolveAddressableSlice(state DeliveryState, sliceID string) (int, DeliverySlice, error) {
+	sliceID = strings.TrimSpace(sliceID)
+	if sliceID == "" {
+		if state.ActiveIndex >= len(state.Slices) {
+			return -1, DeliverySlice{}, fmt.Errorf("all delivery slices are already published")
+		}
+		return state.ActiveIndex, state.Slices[state.ActiveIndex], nil
+	}
+	activeID := "n/a"
+	if state.ActiveIndex < len(state.Slices) {
+		activeID = state.Slices[state.ActiveIndex].ID
+	}
+	for i, s := range state.Slices {
+		if s.ID != sliceID {
+			continue
+		}
+		if i == state.ActiveIndex {
+			return i, s, nil
+		}
+		// An earlier slice remains addressable while it has been published (PRState
+		// set on publication) but its PR is not yet terminal. PRState — not Status —
+		// is the correctability marker, because an in-place re-gate transitions the
+		// slice's Status back through TEST_PASSED/REVIEW_PASSED while it is still the
+		// same open PR being corrected.
+		if i < state.ActiveIndex && strings.TrimSpace(s.PRState) != "" {
+			if isTerminalPRState(s.PRState) {
+				return -1, DeliverySlice{}, fmt.Errorf("delivery slice %s has a %s pull request; draft a corrective child delivery instead of re-gating it in place", sliceID, strings.ToLower(strings.TrimPrefix(strings.ToUpper(s.PRState), "PUBLISHED_")))
+			}
+			return i, s, nil
+		}
+		return -1, DeliverySlice{}, fmt.Errorf("delivery slice %s is not active; current slice is %s", sliceID, activeID)
+	}
+	return -1, DeliverySlice{}, fmt.Errorf("delivery slice %s does not exist", sliceID)
+}
+
 func checkDeliveryPlanLock(repo, feature string, state DeliveryState) error {
 	lockPath := filepath.Join(repo, ".product-loop", "features", feature, "plan.lock.json")
 	lockHash, err := SHA256File(lockPath)
@@ -660,12 +727,9 @@ func RecordDeliveryGate(options DeliveryGateOptions) (DeliveryGateReceipt, error
 	if state.Mode == "AMENDMENT_REQUIRED" || state.Mode == "PLAN_INVALID" {
 		return DeliveryGateReceipt{}, fmt.Errorf("delivery requires an approved plan amendment before gates may continue")
 	}
-	slice, err := activeDeliverySlice(state)
+	sliceIndex, slice, err := resolveAddressableSlice(state, options.SliceID)
 	if err != nil {
 		return DeliveryGateReceipt{}, err
-	}
-	if options.SliceID != "" && options.SliceID != slice.ID {
-		return DeliveryGateReceipt{}, fmt.Errorf("delivery slice %s is not active; current slice is %s", options.SliceID, slice.ID)
 	}
 	base := strings.TrimSpace(options.BaseBranch)
 	if base == "" {
@@ -707,7 +771,7 @@ func RecordDeliveryGate(options DeliveryGateOptions) (DeliveryGateReceipt, error
 		if mergeErr != nil || mergeBase == "" {
 			return DeliveryGateReceipt{}, fmt.Errorf("cannot determine changelog diff against %s", base)
 		}
-		changelogBase, changelogBaseErr := changelogComparisonBase(repo, options.Feature, mergeBase)
+		changelogBase, changelogBaseErr := changelogComparisonBase(repo, options.Feature, options.SliceID, mergeBase)
 		if changelogBaseErr != nil {
 			return DeliveryGateReceipt{}, changelogBaseErr
 		}
@@ -760,15 +824,15 @@ func RecordDeliveryGate(options DeliveryGateOptions) (DeliveryGateReceipt, error
 	if err := atomicWriteMode(path, value, 0o644); err != nil {
 		return DeliveryGateReceipt{}, err
 	}
-	state.Slices[state.ActiveIndex].BaseBranch = base
-	state.Slices[state.ActiveIndex].HeadBranch = head
+	state.Slices[sliceIndex].BaseBranch = base
+	state.Slices[sliceIndex].HeadBranch = head
 	if gate == "test" {
-		state.Slices[state.ActiveIndex].Status = "TEST_PASSED"
+		state.Slices[sliceIndex].Status = "TEST_PASSED"
 		if reviewPath, pathErr := deliveryReceiptPath(repo, options.Feature, slice.ID, "review"); pathErr == nil {
 			_ = os.Remove(reviewPath)
 		}
 	} else {
-		state.Slices[state.ActiveIndex].Status = "REVIEW_PASSED"
+		state.Slices[sliceIndex].Status = "REVIEW_PASSED"
 		state.Mode = "NORMAL"
 		state.ResumeStage = ""
 		state.ActiveObservationID = ""
@@ -779,7 +843,7 @@ func RecordDeliveryGate(options DeliveryGateOptions) (DeliveryGateReceipt, error
 	return receipt, nil
 }
 
-func CheckDeliveryReadyForShip(repo, feature, base, head, diffHash string, changed []string) (DeliveryState, DeliverySlice, []PRSource, error) {
+func CheckDeliveryReadyForShip(repo, feature, sliceID, base, head, diffHash string, changed []string) (DeliveryState, DeliverySlice, []PRSource, error) {
 	state, err := LoadDeliveryState(repo, feature)
 	if err != nil {
 		return DeliveryState{}, DeliverySlice{}, nil, err
@@ -790,11 +854,14 @@ func CheckDeliveryReadyForShip(repo, feature, base, head, diffHash string, chang
 	if state.Mode != "" && state.Mode != "NORMAL" {
 		return DeliveryState{}, DeliverySlice{}, nil, fmt.Errorf("delivery has unresolved repair state %s", state.Mode)
 	}
-	slice, err := activeDeliverySlice(state)
+	_, slice, err := resolveAddressableSlice(state, sliceID)
 	if err != nil {
 		return DeliveryState{}, DeliverySlice{}, nil, err
 	}
-	if slice.Status != "REVIEW_PASSED" {
+	// A published-open slice that has been re-gated in place is REVIEW_PASSED again;
+	// an already-PUBLISHED slice that has not been re-gated is still shippable as an
+	// idempotent --action update of its open PR.
+	if slice.Status != "REVIEW_PASSED" && slice.Status != "PUBLISHED" {
 		return DeliveryState{}, DeliverySlice{}, nil, fmt.Errorf("delivery slice %s has not passed test and review gates", slice.ID)
 	}
 	if err := validateDeliveryScope(feature, slice, changed); err != nil {
@@ -831,22 +898,40 @@ func MarkDeliveryPublished(repo, feature, sliceID, url string) error {
 	if err := checkDeliveryPlanLock(repo, feature, state); err != nil {
 		return err
 	}
-	slice, err := activeDeliverySlice(state)
+	sliceIndex, slice, err := resolveAddressableSlice(state, sliceID)
 	if err != nil {
 		return err
 	}
-	if slice.ID != sliceID || slice.Status != "REVIEW_PASSED" {
+	if slice.ID != sliceID {
 		return fmt.Errorf("delivery slice %s is not ready to publish", sliceID)
 	}
-	state.Slices[state.ActiveIndex].Status = "PUBLISHED"
-	state.Slices[state.ActiveIndex].PRURL = url
-	state.ActiveIndex++
-	if state.ActiveIndex < len(state.Slices) {
-		state.Slices[state.ActiveIndex].Status = "BUILD"
-		state.RepairAttempt = 0
-		state.ActiveObservationID = ""
-		state.ResumeStage = ""
-		state.Mode = "NORMAL"
+	// Re-publishing an already-PUBLISHED, non-terminal slice is an idempotent
+	// --action update of its still-open PR: refresh the recorded PR URL and keep
+	// PRState OPEN, but do NOT advance the BUILD pointer a second time.
+	if slice.Status == "PUBLISHED" {
+		state.Slices[sliceIndex].PRURL = url
+		if strings.TrimSpace(state.Slices[sliceIndex].PRState) == "" {
+			state.Slices[sliceIndex].PRState = "OPEN"
+		}
+		return saveDeliveryState(repo, state)
+	}
+	if slice.Status != "REVIEW_PASSED" {
+		return fmt.Errorf("delivery slice %s is not ready to publish", sliceID)
+	}
+	state.Slices[sliceIndex].Status = "PUBLISHED"
+	state.Slices[sliceIndex].PRURL = url
+	state.Slices[sliceIndex].PRState = "OPEN"
+	// Only a first publication of the active slice advances the BUILD pointer to
+	// the next slice; a re-publication of an earlier published-open slice does not.
+	if sliceIndex == state.ActiveIndex {
+		state.ActiveIndex++
+		if state.ActiveIndex < len(state.Slices) {
+			state.Slices[state.ActiveIndex].Status = "BUILD"
+			state.RepairAttempt = 0
+			state.ActiveObservationID = ""
+			state.ResumeStage = ""
+			state.Mode = "NORMAL"
+		}
 	}
 	return saveDeliveryState(repo, state)
 }
