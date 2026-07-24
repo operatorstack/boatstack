@@ -138,6 +138,7 @@ func nextForDelivery(repo, feature string) (NextStatus, error) {
 
 func nextForPublished(repo string, state DeliveryState) NextStatus {
 	pr := observePublishedPR(repo, state)
+	persistObservedTerminalPRState(repo, state, pr)
 	_, sliceID, _ := deliveryBranchAndSlice(state)
 	status := NextStatus{
 		SchemaVersion: nextStatusSchemaVersion, VerificationStatus: "VERIFIED",

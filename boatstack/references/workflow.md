@@ -379,6 +379,16 @@ active delivery slice. Successful publication marks only that slice `PUBLISHED` 
 activates the next slice as `BUILD`. No parent-plan approval, prior phase receipt, or
 context summary can skip these transitions.
 
+Advancing the `BUILD` pointer does not revoke correctability of the slice just
+published. While its PR is not terminal (not merged or closed), a `PUBLISHED` slice
+**remains re-gateable and updatable in place**: `record-delivery-gate --slice <id>`
+and `pr-context --slice <id>` redirect to that slice, and `publish-pr --action update`
+re-targets its still-open PR without advancing the pointer a second time. Correctability
+ends only when the PR reaches a terminal state, observed by the recovery/next resolver
+and cached on the slice; from there correction routes to a corrective child delivery
+(see "A published delivery cannot be reset"). This keeps multi-slice deliveries flowing
+while never stranding a slice whose postcondition has not yet been observed.
+
 Opening or updating a PR does not authorize merge or deployment.
 
 After successful publication only, the publisher may use the ignored 24-hour release cache to report an available stable Boatstack version. The primary response and next action remain **PR opened -> Review the PR**. Put the maintenance notice in collapsed details, state that no files changed, and direct the user to run `/boatstack-update` from the clean default branch after the feature PR merges. Suppress repeated notices for seven days unless a different release appears. Release lookup failure never changes the ship result.

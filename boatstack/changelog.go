@@ -133,8 +133,11 @@ func validateChangelogChange(repo, baseCommit string, config ProjectConfig) erro
 
 // changelogComparisonBase makes each managed slice prove its own entry. Later
 // slices compare with the previous slice's reviewed head, even when both slices
-// use the same Git base and earlier Unreleased entries are still present.
-func changelogComparisonBase(repo, feature, mergeBase string) (string, error) {
+// use the same Git base and earlier Unreleased entries are still present. The
+// comparison is anchored to the slice actually being gated or shipped (the
+// addressable slice), not the BUILD pointer — a published-open earlier slice
+// corrected in place compares against ITS predecessor, not the active slice's.
+func changelogComparisonBase(repo, feature, sliceID, mergeBase string) (string, error) {
 	if strings.TrimSpace(feature) == "" {
 		return mergeBase, nil
 	}
@@ -142,16 +145,17 @@ func changelogComparisonBase(repo, feature, mergeBase string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if state.ActiveIndex == 0 {
+	index, _, err := resolveAddressableSlice(state, sliceID)
+	if err != nil {
+		return "", err
+	}
+	if index <= 0 {
 		return mergeBase, nil
 	}
-	if state.ActiveIndex >= len(state.Slices) {
-		return "", fmt.Errorf("delivery %s has no active slice for changelog comparison", feature)
-	}
-	previous := state.Slices[state.ActiveIndex-1]
+	previous := state.Slices[index-1]
 	receipt, err := readDeliveryReceipt(repo, feature, previous.ID, "review")
 	if err != nil {
-		return "", fmt.Errorf("cannot establish changelog baseline for delivery slice %s: %w", state.Slices[state.ActiveIndex].ID, err)
+		return "", fmt.Errorf("cannot establish changelog baseline for delivery slice %s: %w", state.Slices[index].ID, err)
 	}
 	if strings.TrimSpace(receipt.HeadCommit) == "" {
 		return "", fmt.Errorf("previous delivery slice %s has no reviewed head commit", previous.ID)
