@@ -1036,6 +1036,13 @@ func ActivatePlan(options ActivationOptions) error {
 	} else if statePath, statePathErr := deliveryStatePath(repo, stringValue(check.Plan["feature_id"])); statePathErr == nil && fileExists(statePath) {
 		return fmt.Errorf("managed delivery state exists without its plan lock; do not reset delivery progress")
 	}
+	// Refuse an amendment that would alter, drop, or reorder an already-published
+	// delivery slice BEFORE any artifact is promoted, so a rejected re-activation
+	// leaves the prior plan lock and delivery state fully intact rather than
+	// half-applied. The same invariant is re-checked in initializeDeliveryState.
+	if err := guardReactivationPreservesProgress(repo, stringValue(check.Plan["feature_id"]), options.PlanPath); err != nil {
+		return err
+	}
 	// Assemble the single activation MutationSet: the compiled trio plus the plan
 	// lock, all promoted all-or-nothing through the transactional boundary so no
 	// crash or failed post-write check can leave a compiled graph without its lock
