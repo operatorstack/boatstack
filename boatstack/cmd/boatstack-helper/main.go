@@ -793,6 +793,38 @@ func ignoreDeliveryCommand(arguments []string) int {
 	return 0
 }
 
+func discardDeliveryCommand(arguments []string) int {
+	flags := flag.NewFlagSet("discard-delivery", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository containing the Boatstack installation")
+	feature := flags.String("feature", "", "feature slug of the delivery whose state should be discarded")
+	force := flags.Bool("force", false, "discard even a delivery that has published slices (git history and merged PRs are unaffected)")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if *feature == "" {
+		return fail(fmt.Errorf("discard-delivery requires --feature"))
+	}
+	result, err := boatstack.DiscardDelivery(*repo, *feature, *force)
+	if err != nil {
+		return fail(err)
+	}
+	switch result.Action {
+	case "discarded":
+		fmt.Printf("PASS: delivery %s discarded; state archived to %s\n", result.Feature, result.ArchivePath)
+		return 0
+	case "none":
+		fmt.Printf("PASS: %s\n", result.Reason)
+		return 0
+	default: // refused
+		if len(result.Published) > 0 {
+			fmt.Printf("BLOCKED: delivery %s has published slices (%s); %s\n", result.Feature, strings.Join(result.Published, ", "), result.Reason)
+		} else {
+			fmt.Printf("BLOCKED: delivery %s: %s\n", result.Feature, result.Reason)
+		}
+		return 1
+	}
+}
+
 func doctorCommand(arguments []string) int {
 	flags := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository whose Boatstack installation should be checked")
@@ -1221,6 +1253,8 @@ func run() int {
 		return recordChangeCommand(os.Args[2:])
 	case "ignore-delivery":
 		return ignoreDeliveryCommand(os.Args[2:])
+	case "discard-delivery":
+		return discardDeliveryCommand(os.Args[2:])
 	case "record-delivery-gate":
 		return recordDeliveryGateCommand(os.Args[2:])
 	case "record-pr-visual-evidence":

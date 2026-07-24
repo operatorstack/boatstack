@@ -1045,32 +1045,58 @@ func MarkDeliveryPublished(repo, feature, sliceID, url string) error {
 	return saveDeliveryState(repo, state)
 }
 
-func ActiveManagedDeliveries(repo string) ([]string, error) {
+// scanManagedDeliveries partitions the delivery-state store into deliveries
+// whose state.json is valid and still in progress (active) and slugs whose
+// state.json is unreadable or malformed (invalid). Unlike ActiveManagedDeliveries
+// it never lets one corrupt delivery poison the scan: invalid deliveries are
+// returned as data, not as a fatal error, so a read-only caller (ResolveNext)
+// can apply the ignored-deliveries filter and surface an actionable remedy for
+// exactly the offending delivery instead of escalating one stale delivery into a
+// repo-wide INVALID_STATE that blocks unrelated new features. It errors only
+// when the store directory itself cannot be read.
+func scanManagedDeliveries(repo string) (active []string, invalid []string, err error) {
 	directory, err := deliveryStateDirectory(repo)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	entries, err := os.ReadDir(directory)
 	if os.IsNotExist(err) {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	active := []string{}
 	for _, entry := range entries {
 		if !entry.IsDir() || !featureSlugPattern.MatchString(entry.Name()) {
 			continue
 		}
 		state, loadErr := LoadDeliveryState(repo, entry.Name())
 		if loadErr != nil {
-			return nil, fmt.Errorf("invalid managed delivery state for %s: %w", entry.Name(), loadErr)
+			invalid = append(invalid, entry.Name())
+			continue
 		}
 		if state.ActiveIndex < len(state.Slices) || (state.Mode != "" && state.Mode != "NORMAL") {
 			active = append(active, entry.Name())
 		}
 	}
 	sort.Strings(active)
+	sort.Strings(invalid)
+	return active, invalid, nil
+}
+
+// ActiveManagedDeliveries is the strict, fail-closed enumeration used by the
+// mutation and guard boundaries (run, publish, safety, workspace): any invalid
+// delivery in the store aborts with an error so no mutation proceeds over
+// unverifiable state. The tolerant read-only counterpart is scanManagedDeliveries.
+func ActiveManagedDeliveries(repo string) ([]string, error) {
+	active, invalid, err := scanManagedDeliveries(repo)
+	if err != nil {
+		return nil, err
+	}
+	if len(invalid) > 0 {
+		_, loadErr := LoadDeliveryState(repo, invalid[0])
+		return nil, fmt.Errorf("invalid managed delivery state for %s: %w", invalid[0], loadErr)
+	}
 	return active, nil
 }
 
@@ -1151,4 +1177,111 @@ func IgnoreDelivery(repo, feature string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// DiscardDeliveryResult is the host-neutral outcome of discarding one managed
+// delivery's state from the store.
+type DiscardDeliveryResult struct {
+	Feature     string   `json:"feature"`
+	Action      string   `json:"action"` // discarded | refused | none
+	ArchivePath string   `json:"archive_path,omitempty"`
+	Reason      string   `json:"reason"`
+	Published   []string `json:"published_slices,omitempty"`
+}
+
+// DiscardDelivery removes one managed delivery's state from the delivery store
+// so a stale or abandoned delivery can no longer block unrelated new features on
+// the branches and worktrees that share the store. It is the bounded actuator
+// behind the discard-delivery helper, and the escape hatch that makes a new
+// mutation possible after Boatstack itself has been fixed but a divergent live
+// delivery remains.
+//
+// control-law: discard-preserves-published-authority
+//
+//	Boundary:          operator request -> deletion of managed delivery state
+//	Control law:       a delivery bearing PUBLISHED authority (any slice with a
+//	                   recorded PRState) is NOT discardable without an explicit
+//	                   force override; a discard NEVER touches git-tracked
+//	                   artifacts, the plan, the lock, or merged history, and it
+//	                   ARCHIVES (never hard-deletes) the state so the action is
+//	                   reversible.
+//	Authorized actor:  operator naming the exact feature slug (no implicit/bulk delete)
+//	Required evidence: the delivery's own state.json (feature match) and its
+//	                   recorded per-slice PRState — deterministic and offline; no
+//	                   live gh call gates the unblock.
+//	Failure behavior:  refuse and leave the store unchanged when the slug is
+//	                   invalid, no such delivery exists, or a published slice is
+//	                   present without force (fail closed).
+//	Release condition: the named delivery exists and either bears no published
+//	                   authority or force is set.
+func DiscardDelivery(repoPath, feature string, force bool) (DiscardDeliveryResult, error) {
+	repo, err := ResolveRepository(repoPath)
+	if err != nil {
+		return DiscardDeliveryResult{}, err
+	}
+	feature = strings.TrimSpace(feature)
+	if !featureSlugPattern.MatchString(feature) {
+		return DiscardDeliveryResult{}, fmt.Errorf("discard-delivery requires a valid feature slug")
+	}
+	statePath, err := deliveryStatePath(repo, feature)
+	if err != nil {
+		return DiscardDeliveryResult{}, err
+	}
+	featureDir := filepath.Dir(statePath)
+	if info, statErr := os.Stat(featureDir); os.IsNotExist(statErr) {
+		return DiscardDeliveryResult{
+			Feature: feature, Action: "none",
+			Reason: "no managed delivery state exists for this feature",
+		}, nil
+	} else if statErr != nil {
+		return DiscardDeliveryResult{}, statErr
+	} else if !info.IsDir() {
+		return DiscardDeliveryResult{}, fmt.Errorf("managed delivery path for %s is not a directory", feature)
+	}
+
+	// Published-authority gate: deterministic and offline, read from the recorded
+	// per-slice PRState. A malformed state that cannot be loaded carries no
+	// verifiable published authority — it IS the stuck state we must be able to
+	// clear — so it is discardable without force. A loadable state is refused when
+	// any slice has been published, unless force is set.
+	published := []string{}
+	if state, loadErr := LoadDeliveryState(repo, feature); loadErr == nil {
+		for _, slice := range state.Slices {
+			if strings.TrimSpace(slice.PRState) != "" {
+				published = append(published, slice.ID)
+			}
+		}
+	}
+	if len(published) > 0 && !force {
+		return DiscardDeliveryResult{
+			Feature: feature, Action: "refused", Published: published,
+			Reason: "delivery has published slices; re-run with --force to discard published delivery state (git history and merged PRs are unaffected)",
+		}, nil
+	}
+
+	// Archive rather than hard-delete so the discard is reversible. The archive
+	// lives under a dotted sibling that the slug pattern skips, so it is never
+	// re-scanned as a live delivery. Collision handling is deterministic (no
+	// clock/rng) so the actuator is replayable.
+	archiveDir := filepath.Join(filepath.Dir(featureDir), ".discarded")
+	destination := filepath.Join(archiveDir, feature)
+	for suffix := 2; ; suffix++ {
+		if _, statErr := os.Stat(destination); os.IsNotExist(statErr) {
+			break
+		} else if statErr != nil {
+			return DiscardDeliveryResult{}, statErr
+		}
+		destination = filepath.Join(archiveDir, fmt.Sprintf("%s-%d", feature, suffix))
+	}
+	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
+		return DiscardDeliveryResult{}, err
+	}
+	if err := os.Rename(featureDir, destination); err != nil {
+		return DiscardDeliveryResult{}, err
+	}
+	return DiscardDeliveryResult{
+		Feature: feature, Action: "discarded",
+		ArchivePath: ".git/boatstack/deliveries/.discarded/" + filepath.Base(destination),
+		Reason:      "managed delivery state archived; the feature can be rebuilt or re-planned",
+	}, nil
 }

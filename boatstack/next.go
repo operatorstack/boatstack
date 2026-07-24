@@ -180,7 +180,15 @@ func completedManagedStates(repo string) ([]DeliveryState, error) {
 		}
 		state, err := CurrentDeliveryState(repo, entry.Name())
 		if err != nil {
-			return nil, fmt.Errorf("invalid managed delivery state for %s: %w", entry.Name(), err)
+			// A completed delivery that cannot be verified on THIS branch — e.g. a
+			// divergent or absent committed plan lock for work shipped on another
+			// branch that shares the delivery store — must not poison resolution of
+			// an unrelated new feature. Structurally corrupt state is already
+			// surfaced upstream by scanManagedDeliveries; skipping here only
+			// tolerates cross-branch lock divergence. A delivery the caller actually
+			// acts on is still verified at its own boundary (explicit-feature lookup
+			// / nextForDelivery). control-law: stale-delivery-cannot-block-unrelated-feature
+			continue
 		}
 		if state.ActiveIndex >= len(state.Slices) {
 			completed = append(completed, state)
@@ -211,11 +219,23 @@ func ResolveNext(repoPath, explicitFeature string) (NextStatus, error) {
 		return blockedNextStatus("INVALID_STATE", "repair-state", "Boatstack project configuration is invalid: "+configErr.Error()), nil
 	}
 
-	active, err := ActiveManagedDeliveries(repo)
-	if err != nil {
-		return blockedNextStatus("INVALID_STATE", "repair-state", "Boatstack found invalid managed delivery state. Preserve the artifacts and restore the missing or stale evidence before continuing: "+err.Error()), nil
+	// Read-only boundary: apply the ignored-deliveries filter BEFORE a single
+	// invalid delivery can escalate into a repo-wide INVALID_STATE. The strict
+	// ActiveManagedDeliveries (used by mutation paths) aborts on any invalid
+	// delivery; here we partition instead, filter both lists by the operator's
+	// ignore policy, and only then block — and only on a still-unignored invalid
+	// delivery, naming it and pointing at the discard-delivery remedy. This is
+	// what keeps one stale delivery in the shared store from blocking an
+	// unrelated new feature. control-law: stale-delivery-cannot-block-unrelated-feature
+	active, invalidDeliveries, scanErr := scanManagedDeliveries(repo)
+	if scanErr != nil {
+		return blockedNextStatus("INVALID_STATE", "repair-state", "Boatstack could not read the managed delivery store: "+scanErr.Error()), nil
 	}
 	active = withoutIgnoredDeliveries(active, config.Workflow.IgnoredDeliveries)
+	invalidDeliveries = withoutIgnoredDeliveries(invalidDeliveries, config.Workflow.IgnoredDeliveries)
+	if len(invalidDeliveries) > 0 {
+		return blockedNextStatus("INVALID_STATE", "discard-delivery", "Boatstack found managed delivery state it cannot verify. Restore its evidence, add it to workflow.ignored_deliveries, or run discard-delivery to clear it before continuing.", invalidDeliveries...), nil
+	}
 
 	if explicitFeature != "" {
 		found := false
