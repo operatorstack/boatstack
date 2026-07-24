@@ -158,6 +158,19 @@ func installSharedRuntime(source, repo string, integrations map[string]Integrati
 	if err := atomicWriteMode(manifestPath, encoded, 0o644); err != nil {
 		return runtimeManifest{}, err
 	}
+	// Post-write integrity: the bytes that landed in the version-labeled slot must
+	// be exactly what the manifest attests. A mismatch means the atomic replace
+	// raced or the slot was tampered mid-install; remove the slot rather than leave
+	// a mislabeled runtime that would pass the checksum gate but drift at hydration.
+	writtenHash, err := SHA256File(binaryPath)
+	if err != nil {
+		return runtimeManifest{}, err
+	}
+	if writtenHash != manifest.BinarySHA256 {
+		_ = os.Remove(binaryPath)
+		_ = os.Remove(manifestPath)
+		return runtimeManifest{}, fmt.Errorf("installed runtime failed post-write verification: %s does not match its manifest checksum", binaryPath)
+	}
 	return manifest, nil
 }
 
@@ -185,7 +198,7 @@ func loadSharedRuntime(repo string) (runtimeManifest, string, error) {
 	}
 	if manifest.SchemaVersion != 1 || manifest.BoatstackVersion != Version ||
 		manifest.SourceCommit != SourceCommit || manifest.Platform != platformKey() {
-		return runtimeManifest{}, "", fmt.Errorf("shared Boatstack runtime provenance does not match this worktree")
+		return runtimeManifest{}, "", fmt.Errorf("shared Boatstack runtime provenance does not match this worktree; re-run the verified installer from any checkout in this Git clone to repopulate it")
 	}
 	if info, err := os.Lstat(binaryPath); err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 		return runtimeManifest{}, "", fmt.Errorf("shared Boatstack runtime is missing or unsafe: %s", binaryPath)
@@ -195,7 +208,7 @@ func loadSharedRuntime(repo string) (runtimeManifest, string, error) {
 		return runtimeManifest{}, "", err
 	}
 	if hash != manifest.BinarySHA256 {
-		return runtimeManifest{}, "", fmt.Errorf("shared Boatstack runtime checksum does not match its manifest")
+		return runtimeManifest{}, "", fmt.Errorf("shared Boatstack runtime checksum does not match its manifest; the cached runtime is corrupted — re-run the verified installer to repair it")
 	}
 	return manifest, binaryPath, nil
 }
@@ -298,6 +311,42 @@ func HydrateWorktree(repoPath string) error {
 		return err
 	}
 	return verifyLocalRuntime(repo)
+}
+
+// RunHydrateRuntime populates the shared runtime slot (and this worktree's
+// ignored bin/) from the RUNNING binary, without touching any committed
+// generated files and without requiring a dedicated update branch. It is the
+// slot-only primitive the safety guard invokes — via the verified installer's
+// hydrate mode — when a version-pinned slot is absent on a teammate's clone or
+// after a version bump. It is the cross-clone cousin of HydrateWorktree: that
+// copies an existing slot into a worktree; this creates the slot itself.
+//
+// Because the guard downloads and runs the exact pinned release before calling
+// this, the running binary equals the repo's committed pin by construction. The
+// verifyGeneratedRuntime gate refuses to populate a slot for any other version,
+// so hydration can never write a mislabeled runtime (the taxweave incident's
+// invariant), and installSharedRuntime's own post-write verify+rollback is the
+// backstop. The operation is idempotent and safe under concurrent first use.
+func RunHydrateRuntime(repoPath string) error {
+	repo, err := ResolveRepository(repoPath)
+	if err != nil {
+		return err
+	}
+	if err := verifyGeneratedRuntime(repo); err != nil {
+		return fmt.Errorf("refusing to hydrate a runtime that does not match this worktree's pin: %w", err)
+	}
+	source, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	config, _, err := LoadConfig(filepath.Join(repo, ".boatstack-project.json"))
+	if err != nil {
+		return fmt.Errorf("load project configuration for runtime hydration: %w", err)
+	}
+	if _, err := installSharedRuntime(source, repo, config.Integrations); err != nil {
+		return fmt.Errorf("populate the repository-family Boatstack runtime: %w", err)
+	}
+	return HydrateWorktree(repo)
 }
 
 func verifyLocalRuntime(repo string) error {

@@ -515,6 +515,20 @@ func RunInit(options InitOptions) (returnErr error) {
 			return err
 		}
 	}
+	// Write-boundary provenance guard: never stamp this process's version onto a
+	// foreign binary. When an explicit -binary is installed it must self-report the
+	// identity we are about to record in the slot path and locks; otherwise the
+	// runtime would be mislabeled and fail-close the shared cache. A self-install
+	// (no -binary) matches by construction, so the check runs only for -binary.
+	if options.BinaryPath != "" {
+		version, sourceCommit, identityErr := readBinaryIdentity(helperSource)
+		if identityErr != nil {
+			return fmt.Errorf("cannot verify the helper binary before install: %w", identityErr)
+		}
+		if version != Version || sourceCommit != SourceCommit {
+			return fmt.Errorf("refusing to install a version-mismatched helper: %s reports %s (%s) but this process is %s (%s); run the %s binary's own update or init", helperSource, version, sourceCommit, Version, SourceCommit, version)
+		}
+	}
 	if options.Update && options.Repair {
 		currentRepair, classifyErr := ClassifyInstallationRepair(repo, config.Adapters, options.AllowDowngrade)
 		if classifyErr != nil {
@@ -763,6 +777,21 @@ func RunUpdate(options InitOptions) error {
 	}
 	if options.Output == nil {
 		options.Output = os.Stdout
+	}
+	// Cross-version provenance guard. Each helper embeds its own generated bundle
+	// and version constants, so a running helper cannot correctly install a
+	// different version in-process — stamping the running version onto foreign
+	// bytes is exactly the corruption that fail-closes the shared runtime. If a
+	// passed -binary self-reports a different identity, hand the whole update to
+	// that binary, which carries its own bundle and constants.
+	if options.BinaryPath != "" {
+		version, sourceCommit, identityErr := readBinaryIdentity(options.BinaryPath)
+		if identityErr != nil {
+			return fmt.Errorf("cannot verify the replacement helper before update: %w", identityErr)
+		}
+		if version != Version || sourceCommit != SourceCommit {
+			return reexecUpdate(options.BinaryPath, options)
+		}
 	}
 	config, _, configErr := LoadConfig(filepath.Join(repo, ".boatstack-project.json"))
 	if configErr != nil {

@@ -178,9 +178,16 @@ func TestMissingHelperLauncherFailsClosed(t *testing.T) {
 	}
 	command := exec.Command("bash", path, "cursor")
 	command.Dir = repo
+	// Disable auto-hydration so this exercises the pure missing-slot deny without
+	// reaching for the network; auto-hydration has its own dedicated subtests.
+	command.Env = append(os.Environ(), "BOATSTACK_AUTO_HYDRATE=0")
 	output, err := command.CombinedOutput()
 	if err == nil || !strings.Contains(string(output), "shared runtime is missing") {
 		t.Fatalf("missing helper did not fail closed: err=%v output=%s", err, output)
+	}
+	// The deny is a one-line self-heal: it must embed the exact pinned installer.
+	if !strings.Contains(string(output), "BOATSTACK_MODE=hydrate BOATSTACK_VERSION="+Version) {
+		t.Fatalf("missing-slot deny did not embed the pinned installer command: %s", output)
 	}
 }
 
