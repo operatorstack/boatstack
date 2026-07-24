@@ -198,6 +198,80 @@ func TestPolicyActivationCreatesTypedLockWithoutApproval(t *testing.T) {
 	}
 }
 
+// activatePolicyPlan sets up a committed repo and activates a policy-mode plan,
+// returning the paths a caller needs to assert on the promoted artifacts. It is
+// the shared fixture for the atomic-activation and managed-undo tests.
+func activatePolicyPlan(t *testing.T) (root, planPath, compiled, lock, feature string) {
+	t.Helper()
+	root = t.TempDir()
+	_, _, planPath = writePlanInputs(t, root, true)
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.name", "Boatstack Test")
+	runGit(t, root, "config", "user.email", "boatstack@example.invalid")
+	writeActivationConfig(t, root, false)
+	runGit(t, root, "add", ".")
+	runGit(t, root, "commit", "-m", "record policy-activated planning inputs")
+	// Lay the managed artifacts out under the feature directory, as the real
+	// workflow does, so the undo verb's domain guard can resolve the owning
+	// feature from the promoted paths.
+	feature = "feature-one"
+	featureDir := filepath.Join(root, ".product-loop", "features", feature)
+	compiled = filepath.Join(featureDir, "compiled")
+	lock = filepath.Join(featureDir, "plan.lock.json")
+	options := ActivationOptions{PlanPath: planPath, OutDir: compiled, OutputPath: lock, SourceCommit: "test"}
+	if err := ActivatePlan(options); err != nil {
+		t.Fatal(err)
+	}
+	return root, planPath, compiled, lock, feature
+}
+
+// TestActivationPromotesFourArtifactsAtomically proves activation lands the
+// compiled trio and the plan lock as one transactional mutation: a single
+// receipt whose four recorded post-images match the bytes on disk. Because
+// ApplyMutation is all-or-nothing (proven at the primitive level), one receipt
+// covering all four files is the structural guarantee that no partial set can be
+// left behind.
+func TestActivationPromotesFourArtifactsAtomically(t *testing.T) {
+	root, _, compiled, lock, _ := activatePolicyPlan(t)
+	artifacts := []string{
+		filepath.Join(compiled, "tasks.json"),
+		filepath.Join(compiled, "test-matrix.json"),
+		filepath.Join(compiled, "evidence.md"),
+		lock,
+	}
+	for _, path := range artifacts {
+		if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+			t.Fatalf("expected activated artifact %s", path)
+		}
+	}
+	receipts, err := ListMutationReceipts(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var activation *MutationReceipt
+	for i := range receipts {
+		if receipts[i].Kind == "plan-activation" && receipts[i].Status == "APPLIED" {
+			activation = &receipts[i]
+			break
+		}
+	}
+	if activation == nil {
+		t.Fatalf("no APPLIED plan-activation receipt among %d receipts", len(receipts))
+	}
+	if len(activation.Changes) != 4 {
+		t.Fatalf("expected one atomic mutation over four artifacts, got %d changes", len(activation.Changes))
+	}
+	for _, change := range activation.Changes {
+		hash, err := SHA256File(filepath.Join(root, filepath.FromSlash(change.Path)))
+		if err != nil {
+			t.Fatalf("promoted artifact %s missing: %v", change.Path, err)
+		}
+		if change.AfterSHA256 != hash {
+			t.Fatalf("receipt post-image for %s does not match disk", change.Path)
+		}
+	}
+}
+
 func TestCurrentCursorSingleJSONFencePlanIsAccepted(t *testing.T) {
 	root := t.TempDir()
 	_, _, planPath := writePlanInputs(t, root, false)

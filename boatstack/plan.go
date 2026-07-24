@@ -694,46 +694,162 @@ func CompilePlanFiles(planPath, outDir string) error {
 	return compilePlanFiles(planPath, outDir, "HUMAN_APPROVED")
 }
 
+// canonicalizeExistingAncestor resolves symlinks on the deepest existing prefix
+// of an absolute path and rejoins any not-yet-created remainder. It lets a target
+// path that lives under a symlinked volume (e.g. macOS /var -> /private/var) be
+// compared against a symlink-resolved repository root even before its parent
+// directories exist.
+func canonicalizeExistingAncestor(path string) string {
+	remainder := ""
+	current := filepath.Clean(path)
+	for {
+		if resolved, err := filepath.EvalSymlinks(current); err == nil {
+			if remainder == "" {
+				return resolved
+			}
+			return filepath.Join(resolved, remainder)
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return path
+		}
+		remainder = filepath.Join(filepath.Base(current), remainder)
+		current = parent
+	}
+}
+
 func compilePlanFiles(planPath, outDir, structuredPlanStatus string) error {
-	plan, err := LoadPlan(planPath)
+	repoRoot, err := ResolveRepository(filepath.Dir(planPath))
 	if err != nil {
 		return err
+	}
+	artifacts, err := compileArtifacts(repoRoot, planPath, outDir, structuredPlanStatus)
+	if err != nil {
+		return err
+	}
+	// Promote the compiled plan (three files that must land together) through the
+	// transactional mutation boundary: an all-or-nothing atomic write with an
+	// automatic rollback on post-write verification failure and a durable receipt.
+	// This replaces three independent non-atomic os.WriteFile calls that could
+	// leave a compiled graph without its evidence ledger on a mid-write crash.
+	mutation := MutationSet{
+		Protocol:   MutationProtocol,
+		Kind:       "compiled-plan",
+		Scope:      artifacts.scope,
+		Base:       artifacts.base,
+		Authority:  MutationAuthority{Expected: artifacts.authority, Observed: artifacts.authority},
+		Operations: artifacts.ops,
+		PostCheck:  artifacts.postCheck,
+	}
+	if _, err := ApplyMutation(repoRoot, mutation); err != nil {
+		return err
+	}
+	return nil
+}
+
+// compiledArtifacts holds the compiled trio's mutation operations, their scope,
+// per-path base preconditions, the authorizing plan fingerprint, the compiled
+// tasks.json bytes (so the plan lock can bind their hash without a disk read),
+// and a post-write verifier. It is the shared spine of both the compiled-plan
+// mutation and the fully atomic plan-activation mutation.
+type compiledArtifacts struct {
+	ops       []MutationOperation
+	scope     []string
+	base      map[string]string
+	authority string
+	tasksJSON []byte
+	postCheck func() error
+}
+
+func compileArtifacts(repoRoot, planPath, outDir, structuredPlanStatus string) (compiledArtifacts, error) {
+	plan, err := LoadPlan(planPath)
+	if err != nil {
+		return compiledArtifacts{}, err
 	}
 	sourcePlan, err := SourcePlanForStructuredPlan(planPath)
 	if err != nil {
-		return err
+		return compiledArtifacts{}, err
 	}
 	if err := CheckSourcePlan(sourcePlan); err != nil {
-		return err
+		return compiledArtifacts{}, err
 	}
-	repoRoot, _ := ResolveRepository(filepath.Dir(planPath))
 	opts := &ValidatePlanOptions{
 		PlanPath: planPath,
 		RepoRoot: repoRoot,
 	}
 	tasks, matrix, evidence, err := CompilePlan(plan, opts)
 	if err != nil {
-		return err
+		return compiledArtifacts{}, err
 	}
 	tasks["structured_plan_status"] = structuredPlanStatus
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		return err
-	}
 	tasksJSON, err := MarshalJSON(tasks)
 	if err != nil {
-		return err
+		return compiledArtifacts{}, err
 	}
 	matrixJSON, err := MarshalJSON(matrix)
 	if err != nil {
-		return err
+		return compiledArtifacts{}, err
 	}
-	if err := os.WriteFile(filepath.Join(outDir, "tasks.json"), tasksJSON, 0o644); err != nil {
-		return err
+	absOut, err := filepath.Abs(outDir)
+	if err != nil {
+		return compiledArtifacts{}, err
 	}
-	if err := os.WriteFile(filepath.Join(outDir, "test-matrix.json"), matrixJSON, 0o644); err != nil {
-		return err
+	// Canonicalize through symlinks so repository-relative resolution matches the
+	// symlink-resolved repo root (e.g. /var -> /private/var on macOS). The output
+	// directory (and one or more of its parents) may not exist yet, so resolve the
+	// deepest existing ancestor and rejoin the not-yet-created remainder.
+	absOut = canonicalizeExistingAncestor(absOut)
+	relTasks, err := repositoryRelativePath(repoRoot, filepath.Join(absOut, "tasks.json"))
+	if err != nil {
+		return compiledArtifacts{}, err
 	}
-	return os.WriteFile(filepath.Join(outDir, "evidence.md"), []byte(evidence), 0o644)
+	relMatrix, err := repositoryRelativePath(repoRoot, filepath.Join(absOut, "test-matrix.json"))
+	if err != nil {
+		return compiledArtifacts{}, err
+	}
+	relEvidence, err := repositoryRelativePath(repoRoot, filepath.Join(absOut, "evidence.md"))
+	if err != nil {
+		return compiledArtifacts{}, err
+	}
+	authority := ""
+	if check, checkErr := CheckPlan(planPath); checkErr == nil {
+		authority = check.Fingerprint
+	}
+	scope := []string{relTasks, relMatrix, relEvidence}
+	base := map[string]string{}
+	for _, rel := range scope {
+		if hash, hashErr := SHA256File(filepath.Join(repoRoot, filepath.FromSlash(rel))); hashErr == nil {
+			base[rel] = hash
+		}
+	}
+	postCheck := func() error {
+		for _, rel := range []string{relTasks, relMatrix} {
+			value, readErr := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(rel)))
+			if readErr != nil {
+				return readErr
+			}
+			if validateErr := ValidateJSON("verify promoted compiled plan", rel, value); validateErr != nil {
+				return validateErr
+			}
+		}
+		info, statErr := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(relEvidence)))
+		if statErr != nil || info.Size() == 0 {
+			return fmt.Errorf("promoted evidence ledger is missing or empty")
+		}
+		return nil
+	}
+	return compiledArtifacts{
+		ops: []MutationOperation{
+			{Path: relTasks, Candidate: tasksJSON},
+			{Path: relMatrix, Candidate: matrixJSON},
+			{Path: relEvidence, Candidate: []byte(evidence)},
+		},
+		scope:     scope,
+		base:      base,
+		authority: authority,
+		tasksJSON: tasksJSON,
+		postCheck: postCheck,
+	}, nil
 }
 
 type ApprovalOptions struct {
@@ -920,9 +1036,18 @@ func ActivatePlan(options ActivationOptions) error {
 	} else if statePath, statePathErr := deliveryStatePath(repo, stringValue(check.Plan["feature_id"])); statePathErr == nil && fileExists(statePath) {
 		return fmt.Errorf("managed delivery state exists without its plan lock; do not reset delivery progress")
 	}
-	if err := compilePlanFiles(options.PlanPath, options.OutDir, structuredPlanStatus); err != nil {
+	// Assemble the single activation MutationSet: the compiled trio plus the plan
+	// lock, all promoted all-or-nothing through the transactional boundary so no
+	// crash or failed post-write check can leave a compiled graph without its lock
+	// (or a lock without its graph). The bytes are built before the atomic promote;
+	// nothing is written to disk until ApplyMutation succeeds end to end.
+	mutation, err := activationMutation(repo, options, structuredPlanStatus, approval)
+	if err != nil {
 		return err
 	}
+	// Baseline drift guard runs immediately before the atomic promote so a product
+	// change concurrent with approval cannot be sealed into the lock. The compiled
+	// output directory and the lock path are excluded from the baseline.
 	currentBaseline, err := productBaseline(repo, options.PlanPath, check.SourcePlanPath, check.SpecPath, options.ApprovalPath, options.OutputPath, options.OutDir)
 	if err != nil {
 		return err
@@ -930,13 +1055,60 @@ func ActivatePlan(options ActivationOptions) error {
 	if currentBaseline.DiffSHA256 != baseline.DiffSHA256 || strings.Join(currentBaseline.ChangedPaths, "\x00") != strings.Join(baseline.ChangedPaths, "\x00") {
 		return fmt.Errorf("pre-activation product baseline drifted before the plan lock could be created; expected paths %s, observed paths %s", strings.Join(baseline.ChangedPaths, ", "), strings.Join(currentBaseline.ChangedPaths, ", "))
 	}
-	if err := CreateApprovalLock(approval); err != nil {
-		return err
-	}
-	if err := CheckApprovalLock(approval); err != nil {
+	if _, err := ApplyMutation(repo, mutation); err != nil {
 		return err
 	}
 	return initializeDeliveryState(repo, stringValue(check.Plan["feature_id"]), options.PlanPath, options.OutputPath)
+}
+
+// activationMutation assembles the four-artifact activation MutationSet: the
+// compiled trio (tasks.json, test-matrix.json, evidence.md) and the plan lock.
+// The lock binds the compiled task graph hash from the in-memory candidate bytes
+// so all four land in a single atomic promote, and its PostCheck verifies the
+// promoted lock against the plan/spec/source-plan and the promoted task graph.
+func activationMutation(repoRoot string, options ActivationOptions, structuredPlanStatus string, approval ApprovalOptions) (MutationSet, error) {
+	artifacts, err := compileArtifacts(repoRoot, options.PlanPath, options.OutDir, structuredPlanStatus)
+	if err != nil {
+		return MutationSet{}, err
+	}
+	lockBytes, err := buildApprovalLock(approval, SHA256Bytes(artifacts.tasksJSON))
+	if err != nil {
+		return MutationSet{}, err
+	}
+	absLock, err := filepath.Abs(options.OutputPath)
+	if err != nil {
+		return MutationSet{}, err
+	}
+	absLock = canonicalizeExistingAncestor(absLock)
+	relLock, err := repositoryRelativePath(repoRoot, absLock)
+	if err != nil {
+		return MutationSet{}, err
+	}
+	scope := append(append([]string{}, artifacts.scope...), relLock)
+	base := map[string]string{}
+	for rel, hash := range artifacts.base {
+		base[rel] = hash
+	}
+	if hash, hashErr := SHA256File(filepath.Join(repoRoot, filepath.FromSlash(relLock))); hashErr == nil {
+		base[relLock] = hash
+	}
+	ops := append(append([]MutationOperation{}, artifacts.ops...), MutationOperation{Path: relLock, Candidate: lockBytes})
+	trioPostCheck := artifacts.postCheck
+	mutation := MutationSet{
+		Protocol:   MutationProtocol,
+		Kind:       "plan-activation",
+		Scope:      scope,
+		Base:       base,
+		Authority:  MutationAuthority{Expected: artifacts.authority, Observed: artifacts.authority},
+		Operations: ops,
+		PostCheck: func() error {
+			if err := trioPostCheck(); err != nil {
+				return err
+			}
+			return CheckApprovalLock(approval)
+		},
+	}
+	return mutation, nil
 }
 
 func gitCommit(directory string) string {
@@ -948,24 +1120,31 @@ func gitCommit(directory string) string {
 	return strings.TrimSpace(string(value))
 }
 
-func CreateApprovalLock(options ApprovalOptions) error {
+// buildApprovalLock constructs the plan.lock.json bytes. The compiled task graph
+// hash is supplied by the caller rather than read from disk so the lock can be
+// promoted in the same atomic MutationSet as tasks.json — during activation the
+// task graph does not yet exist on disk when the lock bytes are assembled.
+func buildApprovalLock(options ApprovalOptions, tasksSHA256 string) ([]byte, error) {
 	mode := strings.ToLower(strings.TrimSpace(options.AuthorizationMode))
 	if mode == "" {
 		mode = "human"
 	}
 	if mode != "human" && mode != "policy" {
-		return fmt.Errorf("authorization mode must be human or policy")
+		return nil, fmt.Errorf("authorization mode must be human or policy")
 	}
 	if mode == "human" && strings.TrimSpace(options.ApprovedBy) == "" {
-		return fmt.Errorf("approved-by must name the human who explicitly approved the plan")
+		return nil, fmt.Errorf("approved-by must name the human who explicitly approved the plan")
 	}
 	if err := checkApprovalSourcePlan(options); err != nil {
-		return err
+		return nil, err
 	}
-	for _, path := range []string{options.SpecPath, options.PlanPath, options.TasksPath} {
+	for _, path := range []string{options.SpecPath, options.PlanPath} {
 		if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
-			return fmt.Errorf("required approved artifact does not exist: %s", path)
+			return nil, fmt.Errorf("required approved artifact does not exist: %s", path)
 		}
+	}
+	if strings.TrimSpace(tasksSHA256) == "" {
+		return nil, fmt.Errorf("required approved artifact does not exist: %s", options.TasksPath)
 	}
 	approvedAt := options.ApprovedAt
 	if approvedAt == "" {
@@ -978,7 +1157,6 @@ func CreateApprovalLock(options ApprovalOptions) error {
 	specHash, _ := SHA256File(options.SpecPath)
 	sourcePlanHash, _ := SHA256File(options.SourcePlanPath)
 	planHash, _ := SHA256File(options.PlanPath)
-	tasksHash, _ := SHA256File(options.TasksPath)
 	baselinePaths := options.BaselineChangedPaths
 	if baselinePaths == nil {
 		baselinePaths = []string{}
@@ -996,7 +1174,7 @@ func CreateApprovalLock(options ApprovalOptions) error {
 		"plan_path":              options.PlanPath,
 		"plan_sha256":            planHash,
 		"task_graph_path":        options.TasksPath,
-		"task_graph_sha256":      tasksHash,
+		"task_graph_sha256":      tasksSHA256,
 		"invalidated_at":         nil,
 		"invalidation_reason":    nil,
 		"baseline_diff_sha256":   options.BaselineDiffSHA256,
@@ -1006,7 +1184,18 @@ func CreateApprovalLock(options ApprovalOptions) error {
 		lock["approved_by"] = options.ApprovedBy
 		lock["approved_at"] = approvedAt
 	}
-	value, err := MarshalJSON(lock)
+	return MarshalJSON(lock)
+}
+
+func CreateApprovalLock(options ApprovalOptions) error {
+	if info, err := os.Stat(options.TasksPath); err != nil || !info.Mode().IsRegular() {
+		return fmt.Errorf("required approved artifact does not exist: %s", options.TasksPath)
+	}
+	tasksHash, err := SHA256File(options.TasksPath)
+	if err != nil {
+		return err
+	}
+	value, err := buildApprovalLock(options, tasksHash)
 	if err != nil {
 		return err
 	}
