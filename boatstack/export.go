@@ -126,6 +126,30 @@ func ValidateConfig(config ProjectConfig) error {
 	if policy := strings.TrimSpace(config.Workflow.PRVisualEvidence); policy != "" && policy != "off" && policy != "suggest" && policy != "require" {
 		return fmt.Errorf("workflow.pr_visual_evidence must be \"off\", \"suggest\", or \"require\"")
 	}
+	if err := validateVisualEvidencePublish(config.Workflow.VisualEvidencePublish); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateVisualEvidencePublish rejects only explicit invalid enum values. A nil
+// block or empty fields are legal and resolve to defaults at use, so configs written
+// before this block existed remain valid.
+func validateVisualEvidencePublish(publish *VisualEvidencePublish) error {
+	if publish == nil {
+		return nil
+	}
+	if mode := publish.Mode; mode != "" && mode != "external-host" {
+		return fmt.Errorf("workflow.visual_evidence_publish.mode must be \"external-host\" when set")
+	}
+	if host := publish.Host; host != "" && host != "litterbox" && host != "catbox" {
+		return fmt.Errorf("workflow.visual_evidence_publish.host must be \"litterbox\" or \"catbox\"")
+	}
+	switch publish.Expiry {
+	case "", "1h", "12h", "24h", "72h":
+	default:
+		return fmt.Errorf("workflow.visual_evidence_publish.expiry must be one of \"1h\", \"12h\", \"24h\", \"72h\"")
+	}
 	return nil
 }
 

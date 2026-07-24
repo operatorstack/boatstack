@@ -53,10 +53,28 @@ type Workflow struct {
 	MaintainChangelog            bool   `json:"maintain_changelog"`
 	BoundaryAnalysis             bool   `json:"boundary_analysis,omitempty"`
 	PRVisualEvidence             string `json:"pr_visual_evidence,omitempty"`
+	// VisualEvidencePublish selects how programmatic visual evidence reaches a PR.
+	// The nil zero value keeps Boatstack's default: commit the exact PNG bytes to a
+	// public Boatstack-owned evidence branch and render them inline, but only for a
+	// PUBLIC GitHub origin (a private origin falls back to manual attachment).
+	// Setting mode to "external-host" opts a repository — including a private one —
+	// into uploading the bytes to an anonymous expiring host so the comment renders
+	// inline anywhere; it is never auto-selected because it publishes screenshot
+	// bytes to a third party.
+	VisualEvidencePublish *VisualEvidencePublish `json:"visual_evidence_publish,omitempty"`
 	// IgnoredDeliveries lists feature slugs of past deliveries to exclude from
 	// delivery-ambiguity resolution. New, unlisted ambiguous deliveries still
 	// pause the workflow. Persisted via the LoadConfig -> GeneratedJSON round-trip.
 	IgnoredDeliveries []string `json:"ignored_deliveries,omitempty"`
+}
+
+// VisualEvidencePublish configures the opt-in external-host publish mode. The empty
+// zero value of each field resolves to a default at use, so a partially-specified
+// block (mode only) still works.
+type VisualEvidencePublish struct {
+	Mode   string `json:"mode,omitempty"`   // "" (default public-branch) | "external-host"
+	Host   string `json:"host,omitempty"`   // external-host only: "litterbox" (default) | "catbox"
+	Expiry string `json:"expiry,omitempty"` // expiring host only: "1h" | "12h" | "24h" | "72h" (default "72h")
 }
 
 type IntegrationState struct {

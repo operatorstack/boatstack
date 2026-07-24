@@ -15,6 +15,10 @@ boatstack-config-field:workflow.allow_pass_with_gaps
 boatstack-config-field:workflow.maintain_changelog
 boatstack-config-field:workflow.boundary_analysis
 boatstack-config-field:workflow.pr_visual_evidence
+boatstack-config-field:workflow.visual_evidence_publish
+boatstack-config-field:workflow.visual_evidence_publish.mode
+boatstack-config-field:workflow.visual_evidence_publish.host
+boatstack-config-field:workflow.visual_evidence_publish.expiry
 boatstack-config-field:workflow.ignored_deliveries
 boatstack-config-field:workspace
 boatstack-config-field:workspace.enabled
@@ -66,6 +70,10 @@ This is the exhaustive serialization contract, not a list of recommended user ed
 - `maintain_changelog` (boolean, optional): Whether a reader-visible `CHANGELOG.md` entry is required for each delivery slice.
 - `boundary_analysis` (boolean, optional): Agent-mediated planning guidance that presents local repair versus programmatic enforcement as a material product decision.
 - `pr_visual_evidence` (string, optional): `off`, `suggest`, or `require`. Omission is `off`. Relevant PRs use machine-local PNG evidence without committing media to Git; `suggest` records missing evidence as a visible gap and `require` blocks completed publication.
+- `visual_evidence_publish` (object, optional): Agent-mediated publish control for how captured PNG bytes reach the pull-request comment. Omission keeps the default: commit the bytes to a public Boatstack-owned evidence branch and render them inline, but only for a **public** GitHub origin (a private origin falls back to manual attachment). Fields:
+  - `mode` (string, optional): `external-host` opts the repository — including a **private** one — into uploading the exact PNG bytes to an anonymous expiring host so the comment renders inline anywhere. It is **never auto-selected** because it publishes screenshot bytes to a third party; only this explicit value turns it on. Empty keeps the default public-branch behavior.
+  - `host` (string, optional): `litterbox` (default) or `catbox`. Only meaningful when `mode` is `external-host`. `litterbox` auto-expires uploads; `catbox` is permanent.
+  - `expiry` (string, optional): `1h`, `12h`, `24h`, or `72h` (default `72h`). Only meaningful for an expiring host; the PR comment reminds reviewers of the host and this window.
 - `ignored_deliveries` (array of strings, optional): Deterministic ambiguity control. Feature slugs of past deliveries to exclude from delivery-ambiguity resolution so historical work no longer blocks new work. New, unlisted ambiguous deliveries still pause the workflow.
 
 ### workspace Fields

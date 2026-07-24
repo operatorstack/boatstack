@@ -3,6 +3,7 @@ package boatstack
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -41,6 +42,20 @@ func commandFailure(channels commandChannels, runErr error) error {
 func commandOutput(repo string, name string, arguments ...string) (string, error) {
 	command := exec.Command(name, arguments...)
 	command.Dir = repo
+	channels, err := runCommandChannels(command)
+	if err != nil {
+		return "", commandFailure(channels, err)
+	}
+	return strings.TrimSpace(string(channels.Stdout)), nil
+}
+
+// commandOutputEnv is commandOutput with additional environment variables appended
+// to the inherited environment. It keeps the same stdout-is-the-only-authority
+// contract; extra entries are ordinary NAME=VALUE strings.
+func commandOutputEnv(repo string, extraEnv []string, name string, arguments ...string) (string, error) {
+	command := exec.Command(name, arguments...)
+	command.Dir = repo
+	command.Env = append(os.Environ(), extraEnv...)
 	channels, err := runCommandChannels(command)
 	if err != nil {
 		return "", commandFailure(channels, err)

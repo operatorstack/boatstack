@@ -931,6 +931,7 @@ func publishPRCommand(arguments []string) int {
 	}
 	url, err := boatstack.PublishPR(boatstack.PRPublishOptions{
 		Repo: *repo, PreviewPath: *previewPath, ExpectedFingerprint: *fingerprint, Action: *action,
+		VisualPublisher: boatstack.SelectVisualPublisher(*repo),
 	})
 	if err != nil {
 		return fail(err)

@@ -11,6 +11,9 @@ boatstack-user-config-field:workflow.allow_pass_with_gaps
 boatstack-user-config-field:workflow.maintain_changelog
 boatstack-user-config-field:workflow.boundary_analysis
 boatstack-user-config-field:workflow.pr_visual_evidence
+boatstack-user-config-field:workflow.visual_evidence_publish.mode
+boatstack-user-config-field:workflow.visual_evidence_publish.host
+boatstack-user-config-field:workflow.visual_evidence_publish.expiry
 boatstack-user-config-field:workflow.ignored_deliveries
 boatstack-user-config-field:workspace.enabled
 boatstack-user-config-field:workspace.mode
@@ -35,6 +38,7 @@ Boatstack's installer owns the complete `.boatstack-project.json` shape. Edit on
 | Maintain reader-facing history | `workflow.maintain_changelog` | Managed delivery and Boatstack-prepared PRs require a categorized `CHANGELOG.md` entry. |
 | Check for a systemic boundary | `workflow.boundary_analysis` | Planning guidance asks whether the request is a local symptom before scope expands. |
 | Add frontend PR screenshots | `workflow.pr_visual_evidence` | `suggest` exposes missing screenshots as a gap; `require` blocks completed publication. |
+| Render screenshots inline on a private PR | `workflow.visual_evidence_publish.*` | `mode: external-host` uploads the captured PNGs to an anonymous expiring host so the comment renders inline even on a private repo; opt-in, never automatic. |
 | Ignore old ambiguous deliveries | `workflow.ignored_deliveries` | Listed feature slugs are excluded from delivery-ambiguity resolution so past work stops blocking new work; new, unlisted ambiguous deliveries still pause. |
 | Use fresh feature workspaces | `workspace.*` | Boatstack creates and cleans branches or linked worktrees under the selected policy. |
 | Limit generated host surfaces | `adapters` | Export generates only the selected supported adapters. |
@@ -94,6 +98,22 @@ Changelog enforcement is mechanical. Boundary analysis is model-mediated plannin
 ```
 
 Visual-evidence values are `off`, `suggest`, and `require`. Screenshot bytes stay outside Git history until explicitly attached to the PR.
+
+By default Boatstack can publish those screenshots inline only for a **public** repository (it commits the bytes to a Boatstack-owned public branch and renders them from an immutable raw URL). On a **private** repository GitHub cannot fetch those bytes for the comment, so it falls back to manual attachment. To render inline on a private repository, opt into the external-host mode:
+
+```json
+{
+  "workflow": {
+    "visual_evidence_publish": {
+      "mode": "external-host",
+      "host": "litterbox",
+      "expiry": "72h"
+    }
+  }
+}
+```
+
+`mode: external-host` uploads the exact captured PNG bytes to an anonymous host (`litterbox`, which auto-expires uploads after `expiry` — one of `1h`, `12h`, `24h`, `72h`; or `catbox`, permanent) and posts the returned URLs inline. It is **never automatic** — only this explicit value turns it on — because the bytes leave your repository to a third party. The PR comment carries a standing reminder naming the host and expiry, so do not use this mode for sensitive screenshots.
 
 ```json
 {
