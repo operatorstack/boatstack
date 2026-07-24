@@ -96,7 +96,7 @@ subject to acceptance criteria pass
            approval is current
 ```
 
-That is why context trimming is not automatically an optimization. If removing state increases rework or false acceptance, total cost rises. The canonical runtime references are approximately **18368 estimated tokens**, while host adapters point to one operation at a time.
+That is why context trimming is not automatically an optimization. If removing state increases rework or false acceptance, total cost rises. The canonical runtime references are approximately **19038 estimated tokens**, while host adapters point to one operation at a time.
 
 ## Control appears at transitions
 
@@ -146,6 +146,6 @@ Delivery and system improvement also remain separate. A failed task may suggest 
 
 ## What is evidence-backed
 
-The current moves were derived from the Intelligence Flow benchmark corpus and product-repository studies. The generated source commit is [`76a1339c3bfb8c7a75cc3e3f7a408cf8736b5e75`](https://github.com/operatorstack/intelligence-flow/tree/76a1339c3bfb8c7a75cc3e3f7a408cf8736b5e75/labs/12-product-engineering-loop).
+The current moves were derived from the Intelligence Flow benchmark corpus and product-repository studies. The generated source commit is [`666b0631c31ee9509a4b3cb0f1242fe865a97c24`](https://github.com/operatorstack/intelligence-flow/tree/666b0631c31ee9509a4b3cb0f1242fe865a97c24/labs/12-product-engineering-loop).
 
 The evidence supports specific failure mechanisms and guardrails. It does not establish that Boatstack is optimal, that control-theory notation proves software quality, or that one workflow dominates every team. Those are evaluation questions, so the distribution preserves measurements, provenance, gaps, and negative results.

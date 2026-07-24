@@ -334,26 +334,135 @@ func initializeDeliveryState(repo, feature, planPath, lockPath string) error {
 	if err != nil {
 		return err
 	}
-	previousLocks := []string{}
-	repairAttempt := 0
 	if existing, loadErr := LoadDeliveryState(repo, feature); loadErr == nil {
+		// Re-activating the exact same lock is a no-op: never disturb progress.
 		if existing.PlanLockHash == lockHash {
 			return nil
 		}
-		if existing.ActiveIndex >= len(existing.Slices) {
-			return fmt.Errorf("published delivery %s is immutable; activate the correction under a new feature id with parent_delivery=%s", feature, feature)
+		// A plan amendment mid-delivery must preserve every already-published
+		// slice. deliveryDefinitions freshly recomputes ALL slices from the new
+		// plan, so a naive re-initialize would reset ActiveIndex to 0 and strand
+		// slices whose PR is already open or merged. Reconcile instead: keep the
+		// published prefix (and its BUILD pointer) and adopt the amended
+		// definitions only for the not-yet-published tail.
+		if err := validateAmendmentPreservesProgress(existing, slices); err != nil {
+			return err
 		}
-		previousLocks = append(previousLocks, existing.PreviousPlanLocks...)
-		if existing.PlanLockHash != "" {
-			previousLocks = append(previousLocks, existing.PlanLockHash)
-		}
-		repairAttempt = existing.RepairAttempt
+		return saveDeliveryState(repo, reconcileAmendedDeliveryState(existing, slices, lockHash))
 	}
 	return saveDeliveryState(repo, DeliveryState{
 		SchemaVersion: deliveryStateSchemaVersion, Feature: feature, PlanLockHash: lockHash,
-		PreviousPlanLocks: previousLocks, ActiveIndex: 0, Slices: slices, Mode: "NORMAL", RepairAttempt: repairAttempt,
+		ActiveIndex: 0, Slices: slices, Mode: "NORMAL",
 		ParentDelivery: strings.TrimSpace(stringValue(plan["parent_delivery"])),
 	})
+}
+
+// guardReactivationPreservesProgress lets ActivatePlan reject a
+// progress-destroying amendment before it promotes any artifact. It is a no-op
+// when no managed delivery exists yet (first activation) or when the amendment
+// only touches the not-yet-published tail. An idempotent same-plan re-activation
+// never reaches this guard: ActivatePlan short-circuits on the matching lock.
+func guardReactivationPreservesProgress(repo, feature, planPath string) error {
+	existing, err := LoadDeliveryState(repo, feature)
+	if err != nil {
+		return nil
+	}
+	plan, err := LoadPlan(planPath)
+	if err != nil {
+		return err
+	}
+	newSlices, err := deliveryDefinitions(plan)
+	if err != nil {
+		return err
+	}
+	return validateAmendmentPreservesProgress(existing, newSlices)
+}
+
+// equalStrings reports slice equality treating nil and empty as the same, so a
+// definition round-tripped through JSON (where an empty list may deserialize as
+// nil) compares equal to a freshly recomputed one.
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// deliveryDefinitionMatches reports whether two slices carry the same task
+// composition and scope. Runtime fields (Status, PRURL, PRState, branches) are
+// intentionally ignored: an amendment may not alter what an already-published
+// slice built, but PR/branch bookkeeping is delivery state, not definition.
+func deliveryDefinitionMatches(a, b DeliverySlice) bool {
+	return a.ID == b.ID &&
+		equalStrings(a.TaskIDs, b.TaskIDs) &&
+		equalStrings(a.AffectedPaths, b.AffectedPaths) &&
+		equalStrings(a.AcceptanceCriteria, b.AcceptanceCriteria)
+}
+
+// validateAmendmentPreservesProgress refuses a re-activation that would alter,
+// drop, or reorder any already-published delivery slice. Slices in
+// [0, ActiveIndex) have shipped — their branch, PR, and gate receipts are bound
+// to the definition that shipped — so a change there must go through a corrective
+// child delivery, never an in-place reset. The not-yet-published tail
+// [ActiveIndex, len) is freely recomputable, so amending it (e.g. widening a
+// building slice's affected_paths) is allowed.
+func validateAmendmentPreservesProgress(existing DeliveryState, newSlices []DeliverySlice) error {
+	if existing.ActiveIndex >= len(existing.Slices) {
+		return fmt.Errorf("published delivery %s is immutable; activate the correction under a new feature id with parent_delivery=%s", existing.Feature, existing.Feature)
+	}
+	for i := 0; i < existing.ActiveIndex; i++ {
+		old := existing.Slices[i]
+		if i >= len(newSlices) {
+			return fmt.Errorf("amendment drops published delivery slice %s; draft a corrective child delivery instead of resetting delivery progress", old.ID)
+		}
+		if newSlices[i].ID != old.ID {
+			return fmt.Errorf("amendment reorders or renames published delivery slice %s (now %s at position %d); draft a corrective child delivery instead of resetting delivery progress", old.ID, newSlices[i].ID, i)
+		}
+		if !deliveryDefinitionMatches(old, newSlices[i]) {
+			return fmt.Errorf("amendment changes published delivery slice %s, whose pull request is bound to what shipped; draft a corrective child delivery instead of re-activating it in place", old.ID)
+		}
+	}
+	return nil
+}
+
+// reconcileAmendedDeliveryState preserves the published prefix and its BUILD
+// pointer while adopting the amended plan's definitions for the not-yet-published
+// tail. The pointer never moves backward and shipped slices keep their PR,
+// branches, and status; only the active slice onward is recomputed (its prior
+// gate receipts are already invalidated by the new plan lock, so it correctly
+// restarts at BUILD). Callers MUST have passed validateAmendmentPreservesProgress
+// first.
+func reconcileAmendedDeliveryState(existing DeliveryState, newSlices []DeliverySlice, lockHash string) DeliveryState {
+	merged := make([]DeliverySlice, 0, len(newSlices))
+	merged = append(merged, existing.Slices[:existing.ActiveIndex]...)
+	for i := existing.ActiveIndex; i < len(newSlices); i++ {
+		slice := newSlices[i]
+		if i == existing.ActiveIndex {
+			slice.Status = "BUILD"
+		} else {
+			slice.Status = "PENDING"
+		}
+		merged = append(merged, slice)
+	}
+	previousLocks := append([]string{}, existing.PreviousPlanLocks...)
+	if existing.PlanLockHash != "" {
+		previousLocks = append(previousLocks, existing.PlanLockHash)
+	}
+	return DeliveryState{
+		SchemaVersion:     deliveryStateSchemaVersion,
+		Feature:           existing.Feature,
+		PlanLockHash:      lockHash,
+		PreviousPlanLocks: previousLocks,
+		ActiveIndex:       existing.ActiveIndex,
+		Slices:            merged,
+		Mode:              "NORMAL",
+		ParentDelivery:    existing.ParentDelivery,
+	}
 }
 
 func archiveDeliveryReceipt(repo, feature, sliceID, gate, observationID string) (string, error) {

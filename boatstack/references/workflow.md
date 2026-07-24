@@ -276,6 +276,17 @@ One implicit `delivery` slice preserves the ordinary one-feature/one-PR flow. An
 explicit multi-slice plan starts only its first slice in `BUILD`; later slices remain
 `PENDING`.
 
+Because delivery state is keyed to the lock hash, re-activating an amended plan (a
+widened tail slice, a new phase, any edit that changes the lock) **reconciles** rather
+than resets: the already-published prefix is preserved verbatim — its status, PR, and
+branch bookkeeping intact — the active pointer holds, and only the recomputable tail is
+re-derived (the active slice restarts at `BUILD`, the rest `PENDING`), recording the
+superseded lock. An amendment that would drop, reorder, rename, or change an
+already-published slice, or any edit to a fully-published (immutable) delivery, is
+refused before the transactional promote — nothing half-applies — and routes to a
+corrective child delivery (see "A published delivery cannot be reset"). Published status
+is read from the pointer and slice status, never from `pr_state`.
+
 Missing required human approval, unresolved `blocking_questions`, or any change to the source plan, spec, complete `plan.md`, or displayed product baseline blocks activation and returns the feature to `PLAN_GATE`. Existing schema-v1 approval receipts remain valid only with a clean product baseline. A failed or partial compilation never creates a valid lock. Existing schema-v1 human locks remain valid; policy activation always writes schema v2.
 
 After `auto-plan` successfully saves a feature plan, managed authority is latched before activation. Reads and bounded Markdown planning transitions remain available, but native edits, mutation-capable MCP tools, and shell commands not proven read-only are denied until activation creates a current lock. Approval itself does not authorize product edits. Ambiguous, stale, malformed, or unverifiable phase state fails closed with one recovery operation; repositories with no saved managed plan retain ordinary unmanaged behavior.
