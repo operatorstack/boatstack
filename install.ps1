@@ -12,8 +12,8 @@ $targetRepo = if ($env:BOATSTACK_REPO) { $env:BOATSTACK_REPO } else { (Get-Locat
 $mode = if ($env:BOATSTACK_MODE) { $env:BOATSTACK_MODE } else { "install" }
 $repairRequested = $Repair -or $env:BOATSTACK_REPAIR -eq "1"
 $downgradeRequested = $AllowDowngrade -or $env:BOATSTACK_ALLOW_DOWNGRADE -eq "1"
-if ($mode -notin @("install", "update")) {
-    throw "BLOCKED: BOATSTACK_MODE must be install or update"
+if ($mode -notin @("install", "update", "hydrate")) {
+    throw "BLOCKED: BOATSTACK_MODE must be install, update, or hydrate"
 }
 
 $existingGeneratedLock = Test-Path -PathType Leaf (Join-Path $targetRepo ".product-loop/generated.lock.json")
@@ -73,6 +73,18 @@ try {
         } else {
             Write-Warning "Current Boatstack helper is missing; the verified target helper will classify whether it is safely repairable."
         }
+    }
+
+    # hydrate mode only populates the version-keyed shared runtime slot (and this
+    # worktree's ignored bin/) from the just-verified binary. It runs the binary
+    # as itself — running == installed — so no --binary handoff is needed, and it
+    # never touches committed generated files or requires a dedicated update branch.
+    if ($mode -eq "hydrate") {
+        & $binary hydrate-runtime --repo $targetRepo
+        if ($LASTEXITCODE -ne 0) {
+            throw "Boatstack runtime hydration failed with exit code $LASTEXITCODE"
+        }
+        return
     }
 
     $commandName = if ($mode -eq "update") { "update" } else { "init" }

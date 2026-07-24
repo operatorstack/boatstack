@@ -48,7 +48,7 @@ func failSafetyHook(err error) int {
 func initCommand(arguments []string) int {
 	flags := flag.NewFlagSet("init", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository to initialize")
-	binary := flags.String("binary", "", "verified helper binary to install project-locally")
+	binary := flags.String("binary", "", "helper binary to install project-locally; must self-report this process's version (use the target binary's own update for a different version)")
 	integrations := flags.String("integrations", "", "core, gstack, spec-kit, or both")
 	yes := flags.Bool("yes", false, "accept the generated-file preview; optional integrations still default to core")
 	if err := flags.Parse(arguments); err != nil {
@@ -64,7 +64,7 @@ func initCommand(arguments []string) int {
 func updateCommand(arguments []string) int {
 	flags := flag.NewFlagSet("update", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository to update")
-	binary := flags.String("binary", "", "verified replacement helper binary")
+	binary := flags.String("binary", "", "helper binary to install; its own self-reported version is installed (cross-version updates re-exec it)")
 	yes := flags.Bool("yes", false, "accept the generated-file preview")
 	repair := flags.Bool("repair", false, "repair only fingerprinted Boatstack-owned control state")
 	allowDowngrade := flags.Bool("allow-downgrade", false, "permit an explicitly repaired downgrade")
@@ -885,6 +885,24 @@ func bootstrapSafetyHookCommand(arguments []string) int {
 	return 0
 }
 
+// hydrateRuntimeCommand populates the version-keyed shared runtime slot (and
+// this worktree's ignored bin/) from the RUNNING binary, without switching
+// branches or touching any committed generated file. The safety guard invokes
+// it — via the verified installer's hydrate mode — to self-heal a clone whose
+// slot is empty after a version bump or a fresh checkout, so a teammate never
+// sees a hard "shared runtime is missing" deny.
+func hydrateRuntimeCommand(arguments []string) int {
+	flags := flag.NewFlagSet("hydrate-runtime", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "worktree whose shared runtime slot should be populated")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if err := boatstack.RunHydrateRuntime(*repo); err != nil {
+		return fail(err)
+	}
+	return 0
+}
+
 func checkSafetyCommand(arguments []string) int {
 	flags := flag.NewFlagSet("check-safety", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository whose operational diff should be checked")
@@ -1229,6 +1247,8 @@ func run() int {
 		return safetyHookCommand(os.Args[2:])
 	case "bootstrap-safety-hook":
 		return bootstrapSafetyHookCommand(os.Args[2:])
+	case "hydrate-runtime":
+		return hydrateRuntimeCommand(os.Args[2:])
 	case "check-safety":
 		return checkSafetyCommand(os.Args[2:])
 	case "workspace-cut":

@@ -19,8 +19,8 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$mode" in
-  install|update) ;;
-  *) echo "BLOCKED: BOATSTACK_MODE must be install or update" >&2; exit 1 ;;
+  install|update|hydrate) ;;
+  *) echo "BLOCKED: BOATSTACK_MODE must be install, update, or hydrate" >&2; exit 1 ;;
 esac
 
 if [ "$mode" = "install" ] && { [ -f "$target_repo/.product-loop/generated.lock.json" ] || [ -f "$target_repo/.product-loop/bin/boatstack-helper" ] || [ -f "$target_repo/.product-loop/bin/boatstack-helper.exe" ]; }; then
@@ -87,6 +87,14 @@ if [ "$mode" = "update" ]; then
   else
     echo "Current Boatstack helper is missing; the verified target helper will classify whether it is safely repairable." >&2
   fi
+fi
+
+# hydrate mode only populates the version-keyed shared runtime slot (and this
+# worktree's ignored bin/) from the just-verified binary. It runs the binary as
+# itself — running == installed — so no --binary handoff is needed, and it never
+# touches committed generated files or requires a dedicated update branch.
+if [ "$mode" = "hydrate" ]; then
+  exec "$binary" hydrate-runtime --repo "$target_repo"
 fi
 
 command_name="init"
