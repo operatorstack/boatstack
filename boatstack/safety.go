@@ -270,6 +270,15 @@ func publicationBypassFinding(repo, reason, source string) (SafetyFinding, bool)
 	if err != nil {
 		return SafetyFinding{Category: "workflow-state-invalid", Reason: "publication is denied because managed delivery state cannot be verified", Source: "delivery-state"}, true
 	}
+	// Scope publication-authority resolution to un-ignored deliveries so it
+	// matches ResolveNext and the run coordinator. Without this, a stale-but-
+	// active ignored delivery (e.g. an APPROVED lock whose code shipped out of
+	// band) poisons authority for every other delivery with relation=ambiguous.
+	// A config that fails to load leaves active unfiltered, preserving the prior
+	// behavior.
+	if config, _, configErr := LoadConfig(filepath.Join(repo, ".product-loop", "project.json")); configErr == nil {
+		active = withoutIgnoredDeliveries(active, config.Workflow.IgnoredDeliveries)
+	}
 	if len(active) == 0 {
 		return SafetyFinding{}, false
 	}
