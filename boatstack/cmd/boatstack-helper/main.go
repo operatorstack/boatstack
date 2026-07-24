@@ -614,6 +614,34 @@ func recoveryStatusCommand(arguments []string) int {
 	return 0
 }
 
+func repairStateCommand(arguments []string) int {
+	flags := flag.NewFlagSet("repair-state", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository whose stuck feature draft should be repaired")
+	feature := flags.String("feature", "", "optional specific feature draft to repair")
+	jsonOutput := flags.Bool("json", false, "print the versioned structured repair decision")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	result, err := boatstack.RepairState(*repo, *feature)
+	if err != nil {
+		return fail(err)
+	}
+	if *jsonOutput {
+		value, marshalErr := boatstack.MarshalJSON(result)
+		if marshalErr != nil {
+			return fail(marshalErr)
+		}
+		fmt.Print(string(value))
+	} else {
+		fmt.Printf("Repair: %s\nFeature: %s\nAction: %s\nQuarantine: %s\nNext operation: %s\nReason: %s\n",
+			result.VerificationStatus, result.Feature, result.Action, result.QuarantinePath, result.NextOperation, result.Reason)
+	}
+	if result.VerificationStatus == "BLOCKED" {
+		return 1
+	}
+	return 0
+}
+
 func runPreflightCommand(arguments []string) int {
 	flags := flag.NewFlagSet("run-preflight", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository whose Git state should be verified before boatstack run")
@@ -1046,7 +1074,7 @@ func workspaceSyncCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|run-preflight|record-change|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|check-safety|migrate-config|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|workspace-sync|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|repair-state|run-preflight|record-change|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|check-safety|migrate-config|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|workspace-sync|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -1086,6 +1114,8 @@ func run() int {
 		return nextStatusCommand(os.Args[2:])
 	case "recovery-status":
 		return recoveryStatusCommand(os.Args[2:])
+	case "repair-state":
+		return repairStateCommand(os.Args[2:])
 	case "run-preflight":
 		return runPreflightCommand(os.Args[2:])
 	case "record-change":

@@ -23,6 +23,7 @@ Select a move only after locating the failure below its surface symptom. “Time
 | Worktree bootstrap deadlock | A linked worktree inherits fail-closed hooks but not the ignored runtime required to evaluate them | Versioned Git-common runtime; atomic first-use hydration; provenance check | Cross-version execution or weakened failure behavior |
 | Post-publication correction routing | CI, review, or a denied push targets work already marked published | Resolve branch and recorded PR identity; append the observation; draft an independently approved corrective child | Treating PR creation as completion or asking the user to bypass the guard |
 | Unobserved side-effect completion | The same visible state could mean not started, executing, succeeded with a lost response, or failed | Durable operation receipt; exact lease; observe completion; reconcile the expected postcondition before retry | Conversation-scoped retry loops, duplicate PRs, or phantom success |
+| Unregistered malformed draft lockout | A hand-authored feature `plan.md` never passed through the helper, so a `CheckPlan` failure escalates to `INVALID_STATE` and the guard denies every product mutation, including the prescribed recovery | `repair-state` quarantines the draft out of `features/` and returns the workflow to `auto-plan`, refusing any directory with a lock, `pr.md`, delivery state, or tracked files | Loosening candidate selection so a genuinely invalid plan silently unblocks product edits |
 
 ## Lessons encoded from the benchmark campaign
 

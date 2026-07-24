@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const recoveryStatusSchemaVersion = 1
@@ -360,4 +361,194 @@ func ResolveRecovery(options RecoveryStatusOptions) (RecoveryStatus, error) {
 		status.Reason = "The PR state cannot be verified; draft the corrective child now and defer its publication destination until verification succeeds."
 	}
 	return status, nil
+}
+
+const repairStateSchemaVersion = 1
+
+// RepairStateResult is the host-neutral outcome of the bounded recovery that
+// clears a workflow stuck at INVALID_STATE because of a hand-authored,
+// unregistered, malformed feature draft. It carries no authority to edit,
+// approve, or publish product code; its only mutation is to quarantine one such
+// draft directory so planning can restart cleanly.
+type RepairStateResult struct {
+	SchemaVersion      int      `json:"schema_version"`
+	VerificationStatus string   `json:"verification_status"` // VERIFIED | BLOCKED | UNVERIFIED
+	Feature            string   `json:"feature,omitempty"`
+	Action             string   `json:"action"` // quarantined | none | refused
+	QuarantinePath     string   `json:"quarantine_path,omitempty"`
+	NextOperation      string   `json:"next_operation"`
+	Reason             string   `json:"reason"`
+	Blockers           []string `json:"blockers,omitempty"`
+}
+
+func refusedRepairState(feature, reason string, blockers ...string) RepairStateResult {
+	return RepairStateResult{
+		SchemaVersion: repairStateSchemaVersion, VerificationStatus: "BLOCKED",
+		Feature: feature, Action: "refused", NextOperation: "none", Reason: reason, Blockers: blockers,
+	}
+}
+
+// RepairState inspects one unregistered, malformed feature draft directory and
+// quarantines it so the workflow can return to auto-plan. It NEVER touches a
+// directory that carries durable authority: any plan.lock.json, pr.md, managed
+// delivery state, git-tracked file, or active/published delivery causes a
+// refusal. When feature is empty it resolves the sole malformed unregistered
+// candidate and blocks if more than one is present.
+func RepairState(repoPath, feature string) (RepairStateResult, error) {
+	repo, err := ResolveRepository(repoPath)
+	if err != nil {
+		return RepairStateResult{}, err
+	}
+	feature = strings.TrimSpace(feature)
+	if feature == "" {
+		candidates, candErr := featurePlanCandidates(repo)
+		if candErr != nil {
+			return RepairStateResult{}, candErr
+		}
+		eligible := []string{}
+		for _, candidate := range candidates {
+			if _, checkErr := CheckPlan(filepath.Join(repo, ".product-loop", "features", candidate, "plan.md")); checkErr != nil {
+				eligible = append(eligible, candidate)
+			}
+		}
+		switch {
+		case len(eligible) == 0:
+			return RepairStateResult{
+				SchemaVersion: repairStateSchemaVersion, VerificationStatus: "UNVERIFIED",
+				Action: "none", NextOperation: "none",
+				Reason: "no unregistered malformed feature draft was found to repair",
+			}, nil
+		case len(eligible) > 1:
+			return RepairStateResult{
+				SchemaVersion: repairStateSchemaVersion, VerificationStatus: "BLOCKED",
+				Action: "refused", NextOperation: "resolve_ambiguity",
+				Reason:   "more than one unregistered malformed draft matches; rerun with --feature",
+				Blockers: eligible,
+			}, nil
+		default:
+			feature = eligible[0]
+		}
+	}
+	if !featureSlugPattern.MatchString(feature) {
+		return RepairStateResult{}, fmt.Errorf("invalid feature slug: %q", feature)
+	}
+
+	directory := filepath.Join(repo, ".product-loop", "features", feature)
+	planPath := filepath.Join(directory, "plan.md")
+	if !fileExists(planPath) {
+		return refusedRepairState(feature, "no plan.md exists for this feature; nothing to repair"), nil
+	}
+	if _, checkErr := CheckPlan(planPath); checkErr == nil {
+		return refusedRepairState(feature, "the saved plan is valid; repair-state only quarantines a malformed unregistered draft"), nil
+	}
+
+	// The draft must carry no durable authority. Any of these markers means a
+	// registered, published, or tracked feature that must never be quarantined.
+	blockers := []string{}
+	if fileExists(filepath.Join(directory, "plan.lock.json")) {
+		blockers = append(blockers, "plan.lock.json present (registered or activated plan)")
+	}
+	if fileExists(filepath.Join(directory, "pr.md")) {
+		blockers = append(blockers, "pr.md present (published or orphaned delivery)")
+	}
+	if statePath, stateErr := deliveryStatePath(repo, feature); stateErr == nil && fileExists(statePath) {
+		blockers = append(blockers, "managed delivery state present")
+	}
+	relDir := filepath.ToSlash(filepath.Join(".product-loop", "features", feature))
+	tracked, gitErr := gitCommand(repo, "ls-files", "--", relDir)
+	if gitErr != nil {
+		return refusedRepairState(feature, "cannot verify git tracking state; refusing to quarantine", gitErr.Error()), nil
+	}
+	if strings.TrimSpace(tracked) != "" {
+		blockers = append(blockers, "directory contains git-tracked files")
+	}
+	active, activeErr := ActiveManagedDeliveries(repo)
+	if activeErr != nil {
+		return refusedRepairState(feature, "cannot verify active managed deliveries; refusing to quarantine", activeErr.Error()), nil
+	}
+	for _, candidate := range active {
+		if candidate == feature {
+			blockers = append(blockers, "feature has an active managed delivery")
+		}
+	}
+	if completed, completedErr := completedManagedStates(repo); completedErr == nil {
+		for _, state := range completed {
+			if state.Feature == feature {
+				blockers = append(blockers, "feature has a published managed delivery")
+			}
+		}
+	}
+	if len(blockers) > 0 {
+		return refusedRepairState(feature, "refusing to quarantine a registered, published, or tracked feature directory", blockers...), nil
+	}
+
+	common, err := gitCommonDir(repo)
+	if err != nil {
+		return RepairStateResult{}, err
+	}
+	stamp := time.Now().UTC().Format("20060102T150405Z")
+	destParent := filepath.Join(common, "boatstack", "quarantine", feature)
+	dest := filepath.Join(destParent, stamp)
+	for index := 2; fileExists(dest); index++ {
+		dest = filepath.Join(destParent, fmt.Sprintf("%s-%d", stamp, index))
+	}
+	if err := rejectSymlinkComponents(common, dest); err != nil {
+		return RepairStateResult{}, err
+	}
+	if err := os.MkdirAll(destParent, 0o700); err != nil {
+		return RepairStateResult{}, err
+	}
+	if err := os.Rename(directory, dest); err != nil {
+		if copyErr := copyTree(directory, dest); copyErr != nil {
+			return RepairStateResult{}, copyErr
+		}
+		if rmErr := os.RemoveAll(directory); rmErr != nil {
+			return RepairStateResult{}, rmErr
+		}
+	}
+
+	quarantine := dest
+	if rel, relErr := filepath.Rel(repo, dest); relErr == nil {
+		quarantine = filepath.ToSlash(rel)
+	}
+	return RepairStateResult{
+		SchemaVersion: repairStateSchemaVersion, VerificationStatus: "VERIFIED",
+		Feature: feature, Action: "quarantined", QuarantinePath: quarantine,
+		NextOperation: "auto-plan",
+		Reason:        "quarantined an unregistered malformed feature draft; restart planning with auto-plan",
+	}, nil
+}
+
+// copyTree copies a directory tree file-by-file for the cross-device fallback of
+// os.Rename. It refuses symlinks so quarantine cannot follow a link out of the
+// repository.
+func copyTree(source, destination string) error {
+	return filepath.WalkDir(source, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, relErr := filepath.Rel(source, path)
+		if relErr != nil {
+			return relErr
+		}
+		target := filepath.Join(destination, relative)
+		if entry.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			return infoErr
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("refusing to copy symlinked path: %s", path)
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		if mkErr := os.MkdirAll(filepath.Dir(target), 0o755); mkErr != nil {
+			return mkErr
+		}
+		return os.WriteFile(target, data, info.Mode().Perm())
+	})
 }

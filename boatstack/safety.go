@@ -100,6 +100,14 @@ func controlledPhaseTransition(command, stage string) bool {
 	if readOnlyHelpers[fields[1]] {
 		return true
 	}
+	// repair-state is the guard-prescribed recovery for a workflow stuck at
+	// INVALID_STATE because of an unregistered malformed draft. Those findings
+	// carry an empty stage, so allow it independent of stage. It mutates (it
+	// quarantines the draft), so it is not a read-only helper; RepairState
+	// self-guards, refusing any registered, published, or tracked directory.
+	if fields[1] == "repair-state" {
+		return true
+	}
 	switch stage {
 	case "DRAFT_PLAN":
 		return fields[1] == "planning-write" || fields[1] == "record-approval"
