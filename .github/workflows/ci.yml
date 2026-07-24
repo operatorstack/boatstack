@@ -10,11 +10,13 @@ permissions:
   contents: read
 
 jobs:
+  # Unix runs the full suite serially (~1-2 min) and is the unsharded correctness
+  # reference. Windows is sharded in `test-windows` (see below).
   test:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -48,29 +50,6 @@ jobs:
           else
             echo "go=false" >> "$GITHUB_OUTPUT"
           fi
-      # Windows `go test`/`go build` is dominated by Microsoft Defender scanning
-      # the many small files the Go toolchain emits during compile/link. Excluding
-      # the Go caches, the workspace, and go.exe is the single biggest wall-clock
-      # lever (this job dropped from ~10m to a couple of minutes upstream).
-      - name: Exclude Go caches from Microsoft Defender (Windows)
-        if: steps.runtime.outputs.go == 'true' && runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $targets = @(
-            "$env:LOCALAPPDATA\go-build",   # GOCACHE (build cache)
-            "$env:USERPROFILE\go",          # GOPATH incl. pkg\mod (GOMODCACHE)
-            $env:GITHUB_WORKSPACE,          # sources + compiled test binaries
-            $env:RUNNER_TEMP
-          ) | Where-Object { $_ -and $_.Trim() -ne '' } | Select-Object -Unique
-          foreach ($t in $targets) {
-            try {
-              Add-MpPreference -ExclusionPath $t -ErrorAction Stop
-              Write-Host "Defender exclusion added: $t"
-            } catch {
-              Write-Host "::warning::Defender exclusion failed for $t : $($_.Exception.Message)"
-            }
-          }
-          try { Add-MpPreference -ExclusionProcess 'go.exe' -ErrorAction Stop } catch {}
       - uses: actions/setup-go@v5
         if: steps.runtime.outputs.go == 'true'
         with:
@@ -97,11 +76,85 @@ jobs:
           PYTHONUTF8: "1"
         run: python3 -m compileall -q boatstack
       - name: Validate Bash installer
-        if: steps.runtime.outputs.go == 'true' && runner.os != 'Windows'
+        if: steps.runtime.outputs.go == 'true'
         shell: bash
         run: bash -n install.sh
+
+  # Windows `go test` is dominated by per-process spawn latency (each test spawns
+  # several `git` processes; the suite is ~330 tests run serially), so the full
+  # suite takes ~15 min on Windows vs ~1 min on Unix. In-process t.Parallel() is
+  # unsafe (the package swaps ~14 global function-seams), so we shard across
+  # processes: N runners, each running a disjoint, balanced subset. Shard
+  # assignment is an LPT makespan-minimization controller — see
+  # .github/scripts/ci_shard.py. Target: slowest shard < 5 min.
+  test-windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect projected runtime
+        id: runtime
+        shell: bash
+        run: |
+          if [[ -f boatstack/go.mod ]]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          fi
+      # Windows `go test`/`go build` is dominated by Microsoft Defender scanning
+      # the many small files the Go toolchain emits during compile/link. Excluding
+      # the Go caches, the workspace, and go.exe is a major wall-clock lever;
+      # sharding on top of this is what gets the suite under 5 min.
+      - name: Exclude Go caches from Microsoft Defender (Windows)
+        if: steps.runtime.outputs.go == 'true'
+        shell: pwsh
+        run: |
+          $targets = @(
+            "$env:LOCALAPPDATA\go-build",   # GOCACHE (build cache)
+            "$env:USERPROFILE\go",          # GOPATH incl. pkg\mod (GOMODCACHE)
+            $env:GITHUB_WORKSPACE,          # sources + compiled test binaries
+            $env:RUNNER_TEMP
+          ) | Where-Object { $_ -and $_.Trim() -ne '' } | Select-Object -Unique
+          foreach ($t in $targets) {
+            try {
+              Add-MpPreference -ExclusionPath $t -ErrorAction Stop
+              Write-Host "Defender exclusion added: $t"
+            } catch {
+              Write-Host "::warning::Defender exclusion failed for $t : $($_.Exception.Message)"
+            }
+          }
+          try { Add-MpPreference -ExclusionProcess 'go.exe' -ErrorAction Stop } catch {}
+      - uses: actions/setup-go@v5
+        if: steps.runtime.outputs.go == 'true'
+        with:
+          go-version-file: boatstack/go.mod
+          cache-dependency-path: boatstack/go.mod
+      # Enumerate tests, pick this shard's balanced subset, and run only those.
+      # `go test -list` and `go test -run` share the warm GOCACHE, so the second
+      # compile is a cache hit. An empty shard is a clean skip — never
+      # `go test -run ''`, which would run the whole suite.
+      - name: Test shard ${{ matrix.shard }}
+        if: steps.runtime.outputs.go == 'true'
+        shell: bash
+        working-directory: boatstack
+        run: |
+          regex=$(go test -list '^Test' ./... | python "${{ github.workspace }}/.github/scripts/ci_shard.py" --total 6 --index ${{ matrix.shard }})
+          if [ -z "$regex" ]; then
+            echo "Shard ${{ matrix.shard }} is empty; nothing to run."
+            exit 0
+          fi
+          echo "Shard ${{ matrix.shard }} selects $(( $(grep -o '|' <<<"$regex" | wc -l) + 1 )) tests"
+          go test -run "$regex" ./...
+      # Windows-only, non-test validation runs once (on shard 0), not per shard.
+      - name: Build helper
+        if: steps.runtime.outputs.go == 'true' && matrix.shard == '0'
+        working-directory: boatstack
+        run: go build ./cmd/boatstack-helper
       - name: Validate PowerShell installer
-        if: steps.runtime.outputs.go == 'true' && runner.os == 'Windows'
+        if: steps.runtime.outputs.go == 'true' && matrix.shard == '0'
         shell: pwsh
         run: |
           $tokens = $null
@@ -117,7 +170,7 @@ jobs:
       github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       startsWith(github.head_ref, 'sync/intelligence-flow-')
-    needs: test
+    needs: [test, test-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Create repository automation token
