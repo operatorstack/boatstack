@@ -410,6 +410,17 @@ func featureArtifactPath(directory string, candidates ...string) string {
 	return last
 }
 
+// featureEvidencePath resolves a feature's evidence ledger through the one shared
+// dual-layout rule: the feature-root copy (canonical for legacy features) first,
+// the compiled/ copy as the current-layout fallback. The delivery-gate recorder
+// and pr-context MUST both call this so they can never resolve different evidence
+// files for the same feature — the compiled-artifact analogue of the per-slice
+// addressability resolver that closed the published-slice split-brain. Hand-joining
+// a single fixed path (as the recorder once did) is exactly the drift this prevents.
+func featureEvidencePath(featureDir string) string {
+	return featureArtifactPath(featureDir, "evidence.md", filepath.Join("compiled", "evidence.md"))
+}
+
 func managedPRSources(repo, feature string) ([]PRSource, map[string]string, error) {
 	directory := filepath.Join(repo, ".product-loop", "features", feature)
 	planPath := filepath.Join(directory, "plan.md")
@@ -441,7 +452,7 @@ func managedPRSources(repo, feature string) ([]PRSource, map[string]string, erro
 	}); err != nil {
 		return nil, nil, fmt.Errorf("managed PR requires a current build lock: %w", err)
 	}
-	evidencePath := featureArtifactPath(directory, "evidence.md", filepath.Join("compiled", "evidence.md"))
+	evidencePath := featureEvidencePath(directory)
 	if err := checkNonEmptyFile(evidencePath, "feature evidence"); err != nil {
 		return nil, nil, err
 	}
