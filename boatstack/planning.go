@@ -332,6 +332,9 @@ func Doctor(repoPath string) error {
 	if err := CheckExport(repo, bundle.Files); err != nil {
 		return err
 	}
+	// Best-effort hygiene: drop the orphaned clone-shared operation ledger left by
+	// pre-isolation versions. Never fails doctor.
+	pruneLegacyOperationLedger(repo)
 	if err := CheckHostHooks(repo, config.Adapters); err != nil {
 		return err
 	}

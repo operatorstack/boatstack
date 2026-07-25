@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 )
@@ -264,41 +263,70 @@ func TestExpiredLeaseBecomesUnknownAndBudgetPersists(t *testing.T) {
 	}
 }
 
-func TestOperationReceiptsAreSharedAcrossLinkedWorktreesAndSerialized(t *testing.T) {
+// TestOperationLedgerIsolatedPerWorktree encodes the deliberate contract reversal
+// from the pre-isolation design: the operation ledger is now per-worktree, so one
+// worktree neither observes nor blocks another worktree's operations. Two worktrees
+// running the same operation identity each hold their own receipt and their own lock.
+func TestOperationLedgerIsolatedPerWorktree(t *testing.T) {
 	repo := operationTestRepo(t)
 	linked := filepath.Join(t.TempDir(), "linked")
 	runGit(t, repo, "worktree", "add", "-b", "linked-test", linked)
+
+	// An operation prepared in the main worktree is invisible in a linked worktree:
+	// the linked worktree cannot resolve it from its own separate ledger.
 	receipt := preparedOperation(t, repo, "package-d", "ATOMIC_LOCAL", 2)
-	status, err := ResolveOperationStatus(linked, receipt.OperationID)
-	if err != nil || status.Operation == nil || status.Operation.OperationID != receipt.OperationID {
-		t.Fatalf("linked worktree did not observe shared operation: %+v %v", status, err)
+	if _, err := ResolveOperationStatus(linked, receipt.OperationID); err == nil {
+		t.Fatal("linked worktree observed another worktree's operation ledger")
 	}
 
-	var wait sync.WaitGroup
-	errorsSeen := make(chan error, 2)
-	for _, root := range []string{repo, linked} {
-		wait.Add(1)
-		go func(path string) {
-			defer wait.Done()
-			_, beginErr := BeginOperation(path, receipt.OperationID, "same-attempt", "Write")
-			errorsSeen <- beginErr
-		}(root)
+	// The same identity begins independently in each worktree — no cross-worktree
+	// in-flight serialization and no identity collision.
+	if _, err := BeginOperation(repo, receipt.OperationID, "main-attempt", "Write"); err != nil {
+		t.Fatalf("main worktree could not begin its own operation: %v", err)
 	}
-	wait.Wait()
-	close(errorsSeen)
-	successes, inFlight := 0, 0
-	for beginErr := range errorsSeen {
-		switch {
-		case beginErr == nil:
-			successes++
-		case errors.Is(beginErr, ErrOperationInFlight):
-			inFlight++
-		default:
-			t.Fatalf("unexpected concurrent begin error: %v", beginErr)
+	linkedReceipt := preparedOperation(t, linked, "package-d", "ATOMIC_LOCAL", 2)
+	if linkedReceipt.OperationID != receipt.OperationID {
+		t.Fatalf("same identity produced different operation ids: %s vs %s", linkedReceipt.OperationID, receipt.OperationID)
+	}
+	if _, err := BeginOperation(linked, linkedReceipt.OperationID, "linked-attempt", "Write"); err != nil {
+		t.Fatalf("linked worktree blocked by another worktree's in-flight operation: %v", err)
+	}
+}
+
+// TestSameVersionUpdateFromTwoWorktreesDoesNotCollide reproduces the reported
+// incident: a same-version install-update prepared from a second worktree used to
+// fail with "existing operation identity does not match the prepared package"
+// because the clone-shared ledger compared a differing scope. Per-worktree ledgers
+// make each prepare independent.
+func TestSameVersionUpdateFromTwoWorktreesDoesNotCollide(t *testing.T) {
+	repo := operationTestRepo(t)
+	linked := filepath.Join(t.TempDir(), "linked")
+	runGit(t, repo, "worktree", "add", "-b", "update-b", linked)
+
+	options := func(root, scopeWorktree, branch string) OperationPrepareOptions {
+		return OperationPrepareOptions{
+			Repo:                     root,
+			Kind:                     "install-update",
+			Target:                   "boatstack-install:v9.9.9",
+			PackageFingerprint:       "fp-999",
+			AuthorizationFingerprint: "auth-999",
+			RetryClass:               "ATOMIC_LOCAL",
+			MaxAttempts:              2,
+			ExpectedPostcondition:    "generated runtime matches the pinned release",
+			Scope:                    OperationScope{Worktree: scopeWorktree, HeadBranch: branch},
 		}
 	}
-	if successes != 1 || inFlight != 1 {
-		t.Fatalf("operation lock admitted %d executions and %d in-flight reports", successes, inFlight)
+
+	a, err := PrepareOperation(options(repo, "update-a", "chore/update-boatstack-v9.9.9"))
+	if err != nil {
+		t.Fatalf("worktree A prepare failed: %v", err)
+	}
+	b, err := PrepareOperation(options(linked, "update-b", "chore/update-boatstack-v9.9.9"))
+	if err != nil {
+		t.Fatalf("worktree B blocked by worktree A's operation: %v", err)
+	}
+	if a.OperationID != b.OperationID {
+		t.Fatalf("expected identical operation ids across worktrees, got %s vs %s", a.OperationID, b.OperationID)
 	}
 }
 
