@@ -1001,7 +1001,7 @@ func RecordDeliveryGate(options DeliveryGateOptions) (DeliveryGateReceipt, error
 	}
 	evidencePath := strings.TrimSpace(options.EvidencePath)
 	if evidencePath == "" {
-		evidencePath = filepath.Join(repo, ".product-loop", "features", options.Feature, "evidence.md")
+		evidencePath = featureEvidencePath(filepath.Join(repo, ".product-loop", "features", options.Feature))
 	} else if !filepath.IsAbs(evidencePath) {
 		evidencePath = filepath.Join(repo, evidencePath)
 	}
