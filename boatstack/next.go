@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 const nextStatusSchemaVersion = 2
@@ -394,4 +395,178 @@ func FormatNextStatus(status NextStatus) string {
 		parts = append(parts, "Candidates: "+strings.Join(status.BlockingAmbiguity, ", "))
 	}
 	return strings.Join(parts, "\n") + "\n"
+}
+
+// Banner glyphs (Kit C "Flightpath"). Deliberately no glyph for Boatstack itself.
+const (
+	bannerGlyphDone     = "✓" // a journey node that is finished
+	bannerGlyphNow      = "▸" // the node in progress right now
+	bannerGlyphTodo     = "·" // a node not yet reached
+	bannerGlyphBlocked  = "▲" // the current node needs a human
+	bannerGlyphComplete = "✱" // the whole feature is done
+	bannerWordmark      = "Boatstack"
+	bannerRuleWidth     = 44
+)
+
+// RenderNextStatusBanner produces the branded, human-facing header shown at the
+// top of every Boatstack message. It is pure presentation of the read-only
+// NextStatus: a wordmark rule, a plain-language subtitle, and an unlabeled
+// four-node progress rail with one friendly active phrase.
+//
+// Control law "banner-hides-internal-machinery": the banner MUST NEVER surface
+// internal stage names or machine codes (BUILD, TEST_PASSED, REVIEW_PASSED,
+// POLICY_READY, PUBLISHED, DRAFT_PLAN, APPROVED, NOT_INITIALIZED, INVALID_STATE,
+// AMBIGUOUS, discard-delivery, repair-state, ship-gate, …) and MUST NOT carry a
+// logo/badge for Boatstack. Every ObservedStage/NextOperation/VerificationStatus/
+// Lifecycle value maps to friendly words or degrades to a safe generic phrase.
+// The renderer emits plain Unicode (no ANSI): the banner lands inside a Markdown
+// response, so colour is a host concern applied later.
+func RenderNextStatusBanner(status NextStatus) string {
+	var b strings.Builder
+	b.WriteString(bannerRule(bannerWordmark, bannerRuleWidth) + "\n")
+
+	if subtitle := bannerSubtitle(status); subtitle != "" {
+		b.WriteString(" " + subtitle + "\n")
+	}
+
+	phrase := friendlyPhrase(status)
+	if status.VerificationStatus == "UNVERIFIED" {
+		// No feature is being tracked yet: show the wordmark and a plain phrase,
+		// no rail (an all-todo rail would imply work is queued when it is not).
+		b.WriteString(" " + phrase + "\n")
+	} else {
+		rail := strings.Join(journeyNodes(status), "──")
+		b.WriteString(" " + rail + "   " + phrase + "\n")
+	}
+
+	b.WriteString(strings.Repeat("━", bannerRuleWidth) + "\n")
+	return b.String()
+}
+
+// bannerRule renders the top rule "━━ <title> ━━━…" padded to width runes.
+func bannerRule(title string, width int) string {
+	prefix := "━━ " + title + " "
+	fill := width - utf8.RuneCountInString(prefix)
+	if fill < 1 {
+		fill = 1
+	}
+	return prefix + strings.Repeat("━", fill)
+}
+
+// bannerSubtitle is the feature line, using the non-coder word "part" for slices.
+func bannerSubtitle(status NextStatus) string {
+	if status.Feature == "" {
+		return ""
+	}
+	if status.TotalSlices > 1 {
+		return fmt.Sprintf("%s · part %d of %d", status.Feature, status.SliceIndex, status.TotalSlices)
+	}
+	return status.Feature
+}
+
+// journeyNodes returns the four rail glyphs. The four nodes are a deliberate
+// user-facing abstraction of the internal machine; they are never labelled.
+func journeyNodes(status NextStatus) []string {
+	if status.ObservedStage == "FEATURE_COMPLETE" || status.Lifecycle == "PUBLISHED_MERGED" {
+		return []string{bannerGlyphDone, bannerGlyphDone, bannerGlyphDone, bannerGlyphComplete}
+	}
+	if status.ObservedStage == "PUBLISHED" {
+		return []string{bannerGlyphDone, bannerGlyphDone, bannerGlyphDone, bannerGlyphDone}
+	}
+
+	pos := stagePosition(status.ObservedStage)
+	blocked := bannerBlocked(status)
+	nodes := make([]string, 4)
+	for i := range nodes {
+		switch {
+		case i < pos:
+			nodes[i] = bannerGlyphDone
+		case i == pos:
+			if blocked {
+				nodes[i] = bannerGlyphBlocked
+			} else {
+				nodes[i] = bannerGlyphNow
+			}
+		default:
+			nodes[i] = bannerGlyphTodo
+		}
+	}
+	return nodes
+}
+
+// stagePosition collapses the internal stages into a 0..3 position on the rail.
+func stagePosition(stage string) int {
+	switch stage {
+	case "NOT_STARTED", "NOT_INITIALIZED", "DRAFT_PLAN", "AMBIGUOUS":
+		return 0
+	case "POLICY_READY", "APPROVED", "BUILD", "INVALID_STATE":
+		return 1
+	case "TEST_PASSED":
+		return 2
+	case "PR_PREVIEW", "REVIEW_PASSED":
+		return 3
+	default:
+		return 0
+	}
+}
+
+func bannerBlocked(status NextStatus) bool {
+	return status.VerificationStatus == "BLOCKED" ||
+		status.ObservedStage == "AMBIGUOUS" ||
+		status.ObservedStage == "INVALID_STATE"
+}
+
+// friendlyPhrase maps the internal status to one plain-language sentence. It must
+// never echo a raw stage name or machine code.
+func friendlyPhrase(status NextStatus) string {
+	if status.VerificationStatus == "UNVERIFIED" {
+		return "not tracking a feature here yet"
+	}
+	if bannerBlocked(status) {
+		return "needs you: " + friendlyBlockReason(status)
+	}
+	switch status.ObservedStage {
+	case "NOT_STARTED", "NOT_INITIALIZED", "DRAFT_PLAN":
+		return "getting your plan ready"
+	case "POLICY_READY", "APPROVED":
+		return "ready to build"
+	case "BUILD":
+		return "building your changes"
+	case "TEST_PASSED":
+		return "checking your changes"
+	case "PR_PREVIEW", "REVIEW_PASSED":
+		return "ready to ship"
+	case "PUBLISHED":
+		if status.Lifecycle == "PUBLISHED_MERGED" {
+			return "complete"
+		}
+		return "shipped — in review"
+	case "FEATURE_COMPLETE":
+		return "complete"
+	default:
+		return "working on your changes"
+	}
+}
+
+// friendlyBlockReason translates NextOperation into a plain "what you need to do"
+// sentence. The raw operation name is never printed.
+func friendlyBlockReason(status NextStatus) string {
+	switch status.NextOperation {
+	case "resolve-ambiguity":
+		return "pick which feature to continue"
+	case "discard-delivery":
+		return "an old draft needs clearing before we continue"
+	case "repair-state":
+		return "the workspace needs a quick reset"
+	case "init":
+		return "Boatstack isn't set up here yet"
+	case "plan-gate":
+		return "your plan needs approval"
+	case "review-gate":
+		return "a review check needs attention"
+	case "ship-gate":
+		return "a ship check needs attention"
+	default:
+		return "a check needs your attention"
+	}
 }

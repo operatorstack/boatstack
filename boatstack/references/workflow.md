@@ -57,6 +57,17 @@ Hooks are defense in depth rather than a complete sandbox. Protected systems sti
 Helper commands and state labels are internal control machinery. Every normal response uses
 the structure below, with a host-compatible rendering for **Technical details**.
 
+### Boatstack banner
+
+Begin every Boatstack response with the status banner, so the reader can tell Boatstack's
+output apart from ordinary prose and see where their work stands at a glance. Emit the exact
+output of `boatstack-helper next-status --repo . --render` verbatim (a fenced code block or as
+plain lines), above the `## <Plain-language outcome>` heading. The banner is presentation only:
+it does not replace the single `### Next step`, does not add a second action, and never
+introduces machine codes or internal stage names (the renderer already hides them). The `--json`
+projection remains the source of truth for decisions and belongs in **Technical details**, not
+the banner. Skip the banner only for replies that are not about a Boatstack operation.
+
 Cursor and Claude Code use a collapsed disclosure:
 
 ```markdown
