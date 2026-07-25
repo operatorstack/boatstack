@@ -108,12 +108,33 @@ func operationTimestamp() string {
 	return operationNow().UTC().Truncate(time.Second).Format(time.RFC3339)
 }
 
+// operationDirectory holds the operation ledger. It is per-worktree: an operation
+// records a mutation performed by one worktree at one time, so worktree A's ledger
+// must never sit on worktree B's read/write path (a shared ledger produced false
+// "operation identity does not match" blocks across worktrees). The "v2" segment
+// is intentional: the main worktree's Git directory aliases the common directory,
+// so bumping the version cleanly orphans the legacy clone-shared "v1" ledger for
+// every worktree — including main — instead of silently inheriting its receipts.
 func operationDirectory(repo string) (string, error) {
-	common, err := gitCommonDir(repo)
+	gitDir, err := worktreeGitDir(repo)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(common, "boatstack", "operations", "v1"), nil
+	return filepath.Join(gitDir, "boatstack", "operations", "v2"), nil
+}
+
+// pruneLegacyOperationLedger removes the pre-isolation clone-shared "v1" ledger
+// under the Git common directory. Once operations moved to the per-worktree "v2"
+// ledger those receipts are orphaned for every worktree (including main, whose
+// Git directory aliases the common directory). This is best-effort hygiene: the
+// v2 path already guarantees correctness, so any failure here is ignored.
+func pruneLegacyOperationLedger(repo string) {
+	common, err := gitCommonDir(repo)
+	if err != nil {
+		return
+	}
+	legacy := filepath.Join(common, "boatstack", "operations", "v1")
+	_ = os.RemoveAll(legacy)
 }
 
 func operationPath(repo, operationID string) (string, error) {
@@ -126,11 +147,11 @@ func operationPath(repo, operationID string) (string, error) {
 		return "", err
 	}
 	path := filepath.Join(directory, id+".json")
-	common, err := gitCommonDir(repo)
+	gitDir, err := worktreeGitDir(repo)
 	if err != nil {
 		return "", err
 	}
-	if err := rejectSymlinkComponents(common, path); err != nil {
+	if err := rejectSymlinkComponents(gitDir, path); err != nil {
 		return "", err
 	}
 	return path, nil
@@ -211,11 +232,11 @@ func withOperationLock(repo, id string, apply func() error) error {
 		return err
 	}
 	lock := strings.TrimSuffix(path, ".json") + ".lock"
-	common, err := gitCommonDir(repo)
+	gitDir, err := worktreeGitDir(repo)
 	if err != nil {
 		return err
 	}
-	if err := rejectSymlinkComponents(common, lock); err != nil {
+	if err := rejectSymlinkComponents(gitDir, lock); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(lock), 0o700); err != nil {

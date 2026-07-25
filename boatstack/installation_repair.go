@@ -404,12 +404,17 @@ func repairOwnedPaths(result InstallationRepairResult) map[string]bool {
 }
 
 func writeInstallationRepairBackup(repo string, result InstallationRepairResult) (string, error) {
-	common, err := gitCommonDir(repo)
+	// Repair backups capture this worktree's pre-repair working-tree bytes. Two
+	// worktrees repairing to the same version share a package fingerprint but hold
+	// different pre-repair content, so a clone-shared directory would let one
+	// clobber the other's restore point. Key the backup and its receipt by the
+	// per-worktree Git directory instead, and keep them co-located.
+	gitDir, err := worktreeGitDir(repo)
 	if err != nil {
 		return "", err
 	}
-	directory := filepath.Join(common, "boatstack", "repair-backups", result.PackageFingerprint)
-	if err := rejectSymlinkComponents(common, directory); err != nil {
+	directory := filepath.Join(gitDir, "boatstack", "repair-backups", result.PackageFingerprint)
+	if err := rejectSymlinkComponents(gitDir, directory); err != nil {
 		return "", err
 	}
 	if err := os.MkdirAll(directory, 0o700); err != nil {
@@ -449,7 +454,7 @@ func writeInstallationRepairBackup(repo string, result InstallationRepairResult)
 	if err != nil {
 		return "", err
 	}
-	receiptPath := filepath.Join(common, "boatstack", "updates", version, "repair.json")
+	receiptPath := filepath.Join(gitDir, "boatstack", "updates", version, "repair.json")
 	if err := atomicWriteMode(receiptPath, receiptValue, 0o600); err != nil {
 		return "", err
 	}
@@ -457,7 +462,7 @@ func writeInstallationRepairBackup(repo string, result InstallationRepairResult)
 }
 
 func loadInstallationRepairReceipt(repo, version string) (*InstallationRepairResult, error) {
-	common, err := gitCommonDir(repo)
+	gitDir, err := worktreeGitDir(repo)
 	if err != nil {
 		return nil, err
 	}
@@ -465,7 +470,7 @@ func loadInstallationRepairReceipt(repo, version string) (*InstallationRepairRes
 	if err != nil {
 		return nil, err
 	}
-	path := filepath.Join(common, "boatstack", "updates", segment, "repair.json")
+	path := filepath.Join(gitDir, "boatstack", "updates", segment, "repair.json")
 	value, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return nil, nil

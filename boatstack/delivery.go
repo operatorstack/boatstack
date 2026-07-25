@@ -280,17 +280,11 @@ func deliveryDefinitions(plan map[string]any) ([]DeliverySlice, error) {
 }
 
 func deliveryStateDirectory(repo string) (string, error) {
-	gitDirectory := gitOutput(repo, "rev-parse", "--path-format=absolute", "--git-dir")
-	if gitDirectory == "" {
-		gitDirectory = gitOutput(repo, "rev-parse", "--git-dir")
+	gitDir, err := worktreeGitDir(repo)
+	if err != nil {
+		return "", err
 	}
-	if gitDirectory == "" {
-		return "", fmt.Errorf("cannot resolve the Git worktree directory")
-	}
-	if !filepath.IsAbs(gitDirectory) {
-		gitDirectory = filepath.Join(repo, gitDirectory)
-	}
-	return filepath.Join(filepath.Clean(gitDirectory), "boatstack", "deliveries"), nil
+	return filepath.Join(gitDir, "boatstack", "deliveries"), nil
 }
 
 func deliveryStatePath(repo, feature string) (string, error) {

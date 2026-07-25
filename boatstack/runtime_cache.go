@@ -64,6 +64,31 @@ func gitCommonDir(repo string) (string, error) {
 	return filepath.Clean(absolute), nil
 }
 
+// worktreeGitDir resolves the per-worktree Git directory (".git" for the main
+// worktree, ".git/worktrees/<name>" for a linked worktree). Per-worktree mutable
+// state (operations, repair backups, deliveries) lives here so one worktree never
+// reads or writes another worktree's record-of-work, and a removed worktree takes
+// its state with it. Contrast gitCommonDir, which is shared clone-wide and is the
+// right home only for immutable, version-namespaced content (runtime binaries,
+// staged update packages).
+func worktreeGitDir(repo string) (string, error) {
+	value := gitOutput(repo, "rev-parse", "--path-format=absolute", "--git-dir")
+	if value == "" {
+		value = gitOutput(repo, "rev-parse", "--git-dir")
+	}
+	if value == "" {
+		return "", fmt.Errorf("cannot resolve the Git worktree directory")
+	}
+	if !filepath.IsAbs(value) {
+		value = filepath.Join(repo, value)
+	}
+	absolute, err := filepath.Abs(value)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(absolute), nil
+}
+
 func sharedRuntimeDirectory(repo, version, sourceCommit string) (string, error) {
 	version, err := safeCacheSegment(version, "Boatstack version")
 	if err != nil {

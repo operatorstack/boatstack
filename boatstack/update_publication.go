@@ -208,7 +208,7 @@ func PrepareUpdatePublication(repoPath, requestedVersion string) (UpdatePublicat
 	}
 	body := "## Why this change\n\nUpdate the repository-owned Boatstack infrastructure to " + version + ".\n\n## What changed\n\nOnly the fingerprinted Boatstack-generated files, host hooks, runtime provenance, and preserved integration state in this update package.\n"
 	if repairReceipt != nil {
-		body += "\nThe update also repairs fingerprinted Boatstack-owned control state. Repair package: `" + repairReceipt.PackageFingerprint + "`. The pre-repair files are retained in ignored Git-common state at `" + repairReceipt.BackupPath + "`.\n"
+		body += "\nThe update also repairs fingerprinted Boatstack-owned control state. Repair package: `" + repairReceipt.PackageFingerprint + "`. The pre-repair files are retained in ignored per-worktree Git state at `" + repairReceipt.BackupPath + "`.\n"
 	}
 	body += "\n## Verification\n\n- Boatstack doctor passed after installation.\n- Generated-file and hook projections are validated by the update transaction.\n\n## Rollback\n\nRevert this infrastructure-only commit and rerun the previously pinned installer.\n"
 	preview := UpdatePublicationPreview{
