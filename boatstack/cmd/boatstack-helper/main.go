@@ -757,6 +757,7 @@ func recordChangeCommand(arguments []string) int {
 	flags.StringVar(&options.Actual, "actual", "", "observed behavior")
 	flags.StringVar(&options.Evidence, "evidence", "", "bounded evidence or reproduction reference")
 	flags.StringVar(&options.Classification, "classification", "", "implementation_repair, verification_repair, review_repair, requirement_amendment, needs_clarification, or plan_invalid")
+	flags.StringVar(&options.SliceID, "slice", "", "delivery slice id the correction targets; redirects to the named active or published-open slice (default: the correction's branch, then the active slice)")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}

@@ -328,7 +328,14 @@ func publicationBypassFinding(repo, reason, source string) (SafetyFinding, bool)
 	}
 	if !strings.Contains(selected, ",") {
 		if state, loadErr := LoadDeliveryState(repo, selected); loadErr == nil {
-			_, finding.BlockingSlice, _ = deliveryBranchAndSlice(state)
+			// Report the addressable slice the current branch actually owns — the
+			// active slice or a published-but-open earlier slice — rather than always
+			// the active slice, which named the wrong slice for a published-slice fix.
+			if _, addressable, ok := resolveAddressableSliceByBranch(state, strings.TrimSpace(branch)); ok {
+				finding.BlockingSlice = addressable.ID
+			} else {
+				_, finding.BlockingSlice, _ = deliveryBranchAndSlice(state)
+			}
 			finding.ParentDelivery = state.ParentDelivery
 		}
 	}
