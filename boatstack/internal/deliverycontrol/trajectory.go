@@ -48,13 +48,17 @@ func ChargedCostClass(kind TransitionKind, declared TransitionCostClass, outcome
 // is left at zero (there is no baseline to regret against — never a fabricated
 // one).
 type FlowTrajectoryReport struct {
-	Start      StateID
-	Goal       StateID
-	JFlow      int
-	JFlowStar  int
-	Regret     int
-	Steps      int
-	Resolution Resolution
+	Start     StateID `json:"start"`
+	Goal      StateID `json:"goal"`
+	JFlow     int     `json:"j_flow"`
+	JFlowStar int     `json:"j_flow_star"`
+	Regret    int     `json:"regret"`
+	// JCoding is coding effort measured as telemetry and reported ALONGSIDE J_flow.
+	// It is never summed into J_flow and never enters Regret — the decomposition
+	// J = J_flow + J_coding keeps the two costs separate by construction.
+	JCoding    int        `json:"j_coding"`
+	Steps      int        `json:"steps"`
+	Resolution Resolution `json:"resolution"`
 }
 
 // WalkCost sums a trajectory's observed J_flow: each attempt billed at its
@@ -90,5 +94,15 @@ func ComputeReport(t Trajectory, g *Graph, weights FlowCostWeights, goal StateID
 		report.JFlowStar = oracle.Cost
 		report.Regret = report.JFlow - oracle.Cost
 	}
+	return report
+}
+
+// ComputeReportWithCoding measures flow regret exactly as ComputeReport and then
+// attaches coding effort as a SEPARATE figure. J_coding is summed from telemetry
+// signals — never from the graph — and is never folded into J_flow or Regret, so
+// optimizing flow can never be confused with reducing coding effort.
+func ComputeReportWithCoding(t Trajectory, g *Graph, weights FlowCostWeights, goal StateID, signals []CodingSignal) FlowTrajectoryReport {
+	report := ComputeReport(t, g, weights, goal)
+	report.JCoding = TallyCoding(signals).JCoding
 	return report
 }
