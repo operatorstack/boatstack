@@ -113,6 +113,8 @@ not change the information, ordering, gate semantics, or one-action boundary.
 
 Lead with a plain outcome, never a machine code such as `PASS`, `PLAN_APPROVED`, `BLOCKED`, `READY_FOR_BUILD`, `PASS_WITH_GAPS`, or `WAITING_FOR_INPUT`. Keep approval-relevant scope, non-goals, decisions, risks, and gaps visible. Move internal operations (`check-plan`, `record-approval`, `activate-plan`), hashes, paths, tables, receipts, locks, and raw output into **Technical details**. **Exactly one primary action:** end with the action that advances or unblocks the current state; a secondary option gets one short sentence. Never route past a blocked state.
 
+**Write in Simplified Technical English.** Use short sentences, the active voice, and the present tense. State one idea per sentence, put the condition first, and choose the simple, common word. Keep a term consistent, and write positively. This applies to every operation, including the review findings and the PR brief. It does not change the fixed outcome labels, the single `### Next step`, the collapsed **Technical details**, or the reply keys.
+
 | State | Outcome -> one next action |
 |---|---|
 | `next`, `/boatstack-next`, `$boatstack next` not started / active / complete / ambiguous | **Start a Boatstack feature** -> save a Plan-mode file or run `auto-plan`; **Next Boatstack stage** -> run the one repository-backed operation; **Feature complete** -> no action required; **Boatstack state needs attention** -> resolve the named ambiguity (address the invalid evidence, or, when the block names only past deliveries, ignore a named past delivery after explicit user confirmation) |
@@ -359,7 +361,7 @@ into Markdown is evidence content, not a state transition.
 
 ### `TEST_GATE -> REVIEW_GATE`
 
-Review only after required mechanical checks pass, unless reviewing a failure is the goal. The reviewer inspects the actual diff and reports findings by severity with file/line evidence, consequence, and correction.
+Review only after required mechanical checks pass, unless reviewing a failure is the goal. The reviewer inspects the actual diff and reports findings by severity with file/line evidence, consequence, and correction. Write each finding in Simplified Technical English.
 
 On pass, invoke the same recorder for `review`. It accepts only the active slice and
 only when the test receipt matches the current diff. Any product or evidence change
@@ -383,7 +385,7 @@ Require:
 
 ### `SHIP_GATE -> PR_OPEN`
 
-Project the approved feature and actual committed diff into a reviewer-ready title and body:
+Project the approved feature and actual committed diff into a reviewer-ready title and body. Write the brief in Simplified Technical English:
 
 - why the change exists;
 - what changed, grouped by reviewer concern;
