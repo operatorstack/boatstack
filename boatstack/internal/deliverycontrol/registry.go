@@ -2,8 +2,13 @@ package deliverycontrol
 
 // registry is the single declaration of Boatstack's delivery transitions,
 // mirroring ../../notes/delivery-control-inventory.md. Each HandlerRef names a
-// real exported function in package boatstack; the parity conformance test keeps
-// this faithful. This is a shadow catalog — nothing consumes it at runtime yet.
+// real exported function in package boatstack, and each CLIVerb names a real
+// dispatch verb in cmd/boatstack-helper; the conformance tests keep both
+// faithful in each direction. The registry is the authoritative projection
+// source: the flow commands consume it at runtime (NextControl resolves the
+// prescribed command through Transition(id).CLIVerb), and the coverage
+// conformance test asserts it covers exactly the real delivery machine — no real
+// mutation verb without a row, no row without a real verb.
 var registry = []TransitionDescriptor{
 	{
 		ID: "delivery.activate", From: []StateID{StateUninitialized}, To: StateBuild,
@@ -68,8 +73,8 @@ var registry = []TransitionDescriptor{
 	{
 		ID: "delivery.check_ship", From: []StateID{StateReviewPassed, StatePublished}, To: "",
 		Kind: KindQuery, CostClass: CostQuery, Reversible: false,
-		HandlerRef: "CheckDeliveryReadyForShip", CLIVerb: "ship-gate",
-		Note: "Re-checks receipt freshness and gate policy for the addressable slice and returns its PR sources. No state change.",
+		HandlerRef: "CheckDeliveryReadyForShip", CLIVerb: "pr-context",
+		Note: "Re-checks receipt freshness and gate policy for the addressable slice and returns its PR sources via pr-context. No state change.",
 	},
 	{
 		ID: "delivery.next", From: nil, To: "",

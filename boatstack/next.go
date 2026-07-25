@@ -116,13 +116,13 @@ func nextForDelivery(repo, feature string) (NextStatus, error) {
 		SliceIndex: state.ActiveIndex + 1, TotalSlices: len(state.Slices),
 	}
 	switch slice.Status {
-	case "BUILD":
+	case StatusBuild:
 		status.NextOperation = "build"
 		status.Reason = "The approved delivery slice is active and has no current test-gate receipt."
-	case "TEST_PASSED":
+	case StatusTestPassed:
 		status.NextOperation = "review-gate"
 		status.Reason = "The active delivery slice has current test evidence and still requires review."
-	case "REVIEW_PASSED":
+	case StatusReviewPassed:
 		previewPath := filepath.Join(repo, ".product-loop", "features", feature, "pr.md")
 		if preview, previewErr := ParsePRPreview(previewPath); previewErr == nil && preview.Feature == feature && preview.SliceID == slice.ID {
 			status.ObservedStage = "PR_PREVIEW"
