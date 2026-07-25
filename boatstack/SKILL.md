@@ -14,6 +14,7 @@ Map the request to one operation:
 - `init`: inspect a repository and create or update `.product-loop/project.json`.
 - `next`: report the verified current stage and exactly one next action without changing workflow or repository state.
 - `run`: drive the verified feature through every delivery slice and PR publication, pausing at approval, product-decision, and publication boundaries.
+- `root-cause`: read-only failure-mode-elimination diagnosis of a bug — classify the failure class below its symptom, produce a cited root-cause chain, and hand a class-eliminating source plan to `auto-plan`; never edits code or advances a gate.
 - `auto-plan`: refine a saved host Plan-mode file into a reviewable draft feature package; refuse when that file is absent.
 - `plan-gate`: validate the Markdown draft, present it for explicit human acceptance, and record that acceptance in Markdown.
 - `build`: activate the approved Markdown plan, then implement only the active delivery slice's tasks.

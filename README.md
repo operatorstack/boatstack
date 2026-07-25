@@ -57,6 +57,8 @@ When coding agents or developers encounter a bug, they instinctively patch the l
 
 When you ask for a fix during `/auto-plan`, Boatstack actively scans your codebase to determine if the bug is a symptom of a missing systemic boundary. Instead of silently patching the symptom, it pauses and asks if you want to establish a programmatic lock (like a database trigger or strict validator).
 
+For a bug you want diagnosed first, run `/root-cause <symptom-or-log>` (paste a stack trace, error, or failing signal). It is strictly read-only: it locates the failure below its surface symptom, names the failure *class*, traces a cited root-cause chain, maps the blast radius, and proposes the structural change that eliminates the whole class. It ends by producing a source plan you save and hand to `/auto-plan --plan <path>` — the diagnostic front door to the plan gate.
+
 By turning one-off bug fixes into systemic constraints, your codebase gets safer with every agent run. Boatstack requires a negative test to prove the new lock is impenetrable. Upon publication, it extracts that verified boundary into the repository's global memory, ensuring all future agent runs are strictly bound by the new law of physics.
 
 ## Install with your coding agent

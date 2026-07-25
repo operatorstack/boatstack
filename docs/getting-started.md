@@ -64,6 +64,8 @@ Add account recovery without removing the existing passwordless sign-in flow.
 
 Let the host inspect the relevant repository slice and save its plan as a durable file. Pass that path to `/auto-plan` via `--plan <path>`; Boatstack does not scan directories for plans, so the path is always required.
 
+For bug-shaped work, `/root-cause <symptom-or-log>` is an optional read-only on-ramp: it diagnoses the failure, names its class, and produces exactly this source plan for you to save and pass to `/auto-plan --plan <path>`.
+
 Start Boatstack with the entry point for your host:
 
 | Host | Start command |

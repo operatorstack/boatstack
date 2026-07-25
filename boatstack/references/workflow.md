@@ -117,6 +117,7 @@ Lead with a plain outcome, never a machine code such as `PASS`, `PLAN_APPROVED`,
 |---|---|
 | `next`, `/boatstack-next`, `$boatstack next` not started / active / complete / ambiguous | **Start a Boatstack feature** -> save a Plan-mode file or run `auto-plan`; **Next Boatstack stage** -> run the one repository-backed operation; **Feature complete** -> no action required; **Boatstack state needs attention** -> resolve the named ambiguity (address the invalid evidence, or, when the block names only past deliveries, ignore a named past delivery after explicit user confirmation) |
 | `run`, `/boatstack-run`, `$boatstack run` not started / complete / paused / blocked | **Start a Boatstack feature** -> save a Plan-mode file; **Feature ready for review** -> review the published PRs; **Boatstack run paused** -> provide the one required approval, confirmation, or product answer; **Boatstack run needs attention** -> resolve the named freshness, safety, state, or repair blocker |
+| `root-cause`, `/root-cause`, `$boatstack root-cause` | **Root cause found** -> save the diagnosis as a source plan and run `auto-plan` with it via `--plan`; the operation is read-only and never edits code or advances a gate |
 | `auto-plan` ready / needs answers | **Plan ready** -> run `/plan-gate`; **I need your input** -> answer with the displayed choice keys or `r` for all recommendations |
 | `plan-gate` pending / approved | **Ready for your approval** -> reply `a` to approve; **Approved — ready to build** -> enter execution mode and run `/build` |
 | `build` success / paused | **Build complete** -> run `/test-gate`; **Build needs a decision** -> answer the blocking question |
@@ -163,6 +164,8 @@ For plan approval, resolve `approved_by` from (1) an identity supplied with appr
 ### `INTENT -> SOURCE_PLAN`
 
 Begin in the active coding host's Plan mode. Explore the ordinary product intent without editing implementation files, then save that host-generated plan as a durable file. Invoke `auto-plan` with the plan's path.
+
+For bug-shaped intent (a crash, stack trace, or failing signal), the read-only `root-cause` operation is the optional on-ramp to this state: it classifies the failure against [failure-moves.md](failure-moves.md), produces a cited root-cause chain, and proposes the structural change that eliminates the failure class rather than patching the instance, formatted as the source plan you then save and pass to `auto-plan --plan`. It never edits code, writes artifacts, or advances a gate.
 
 Before repository inspection, run:
 
