@@ -563,6 +563,7 @@ func nextStatusCommand(arguments []string) int {
 	repo := flags.String("repo", ".", "repository whose Boatstack stage should be inspected")
 	feature := flags.String("feature", "", "optional specific managed feature to inspect")
 	jsonOutput := flags.Bool("json", false, "print the versioned structured status")
+	render := flags.Bool("render", false, "print the branded, human-facing status banner")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}
@@ -576,6 +577,8 @@ func nextStatusCommand(arguments []string) int {
 			return fail(marshalErr)
 		}
 		fmt.Print(string(value))
+	} else if *render {
+		fmt.Print(boatstack.RenderNextStatusBanner(status))
 	} else {
 		fmt.Print(boatstack.FormatNextStatus(status))
 	}
