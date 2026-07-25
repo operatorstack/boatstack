@@ -2,6 +2,8 @@
 
 Select a move only after locating the failure below its surface symptom. “Timed out,” “tests failed,” and “the agent got confused” are starting observations, not diagnoses.
 
+The `root-cause` operation operationalizes this taxonomy for a single bug: it classifies the failure against the classes below, produces a cited root-cause chain, and proposes the structural change that eliminates the class rather than patching the instance, then hands the result to `auto-plan` as a source plan.
+
 | Failure class | Evidence | Candidate moves | Main regression risk |
 |---|---|---|---|
 | Unknown requirement | Plausible implementations disagree on product behavior | Ask a targeted human question; record answer and expiry | Invented requirements or stalled delivery |
