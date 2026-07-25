@@ -155,15 +155,18 @@ esac
 
 HELPER="$COMMON/boatstack/runtimes/%s/%s/${OS_NAME}-${ARCH}/boatstack-helper${EXTENSION}"
 MANIFEST="$COMMON/boatstack/runtimes/%s/%s/${OS_NAME}-${ARCH}/runtime.lock.json"
-# Auto-hydrate a missing shared-runtime slot. A teammate who pulls a version
-# bump or clones fresh inherits the committed pointers (this guard's baked
-# version path) but an empty, gitignored slot, so without this the very next
-# tool call would hard-deny before any Go runs. On an absent slot we run the
+# Auto-hydrate a missing or incomplete shared-runtime slot. A teammate who pulls
+# a version bump or clones fresh inherits the committed pointers (this guard's
+# baked version path) but an empty, gitignored slot, so without this the very next
+# tool call would hard-deny before any Go runs. On an incomplete slot we run the
 # tag-pinned, checksum-verifying installer in branch-free hydrate mode, serialize
 # clone-wide with an atomic mkdir lock, and bound the attempt. This is purely
 # additive: the existing missing/symlink/checksum gates below stay authoritative
 # and fail-closed, so a disabled, timed-out, or failed hydration simply denies.
-if [[ ! -x "$HELPER" && "${BOATSTACK_AUTO_HYDRATE:-1}" != "0" ]]; then
+# The entry test mirrors those gates (helper AND manifest present, non-symlink):
+# an installer copies the helper before the manifest, so a peer arriving in that
+# window must join the lock and wait, not skip the block and deny a half-slot.
+if { [[ ! -x "$HELPER" || -L "$HELPER" || ! -f "$MANIFEST" || -L "$MANIFEST" ]]; } && [[ "${BOATSTACK_AUTO_HYDRATE:-1}" != "0" ]]; then
   mkdir -p "$COMMON/boatstack" 2>/dev/null || true
   HYDRATE_LOCK="$COMMON/boatstack/hydrate-%s.lock"
   if mkdir "$HYDRATE_LOCK" 2>/dev/null; then
@@ -184,9 +187,15 @@ if [[ ! -x "$HELPER" && "${BOATSTACK_AUTO_HYDRATE:-1}" != "0" ]]; then
     ) >&2 || true
     rmdir "$HYDRATE_LOCK" 2>/dev/null || true
   else
-    # A peer is hydrating the shared slot; wait briefly for it to appear.
-    for _ in $(seq 1 8); do
-      [[ -x "$HELPER" ]] && break
+    # A peer holds the hydrate lock. Wait for the peer to finish — it removes the
+    # lock only after its hydrate command returns — before inspecting the slot, so
+    # a waiter never observes a half-written runtime (for example the helper copied
+    # but the manifest not yet in place). A released lock means the slot is as
+    # complete as it will get; the authoritative gates below then accept it or fail
+    # closed. Bound the wait above the peer's own hydrate timeout so a slow but
+    # succeeding peer still wins.
+    for _ in $(seq 1 12); do
+      [[ -d "$HYDRATE_LOCK" ]] || break
       sleep 1
     done
   fi
@@ -249,7 +258,7 @@ $manifestPath = Join-Path $common "boatstack/runtimes/%s/%s/windows-$arch/runtim
 # checksum-verifying installer in branch-free hydrate mode, serialized clone-wide
 # with an atomic directory lock. Purely additive: the gates below stay
 # authoritative and fail-closed if hydration is disabled, fails, or is skipped.
-if ((-not (Test-Path -LiteralPath $helper -PathType Leaf)) -and $env:BOATSTACK_AUTO_HYDRATE -ne "0") {
+if (((-not (Test-Path -LiteralPath $helper -PathType Leaf)) -or (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf))) -and $env:BOATSTACK_AUTO_HYDRATE -ne "0") {
   $bsCommon = Join-Path $common "boatstack"
   New-Item -ItemType Directory -Path $bsCommon -Force -ErrorAction SilentlyContinue | Out-Null
   $hydrateLock = Join-Path $bsCommon "hydrate-%s.lock"
@@ -270,8 +279,12 @@ if ((-not (Test-Path -LiteralPath $helper -PathType Leaf)) -and $env:BOATSTACK_A
       Remove-Item -LiteralPath $hydrateLock -Recurse -Force -ErrorAction SilentlyContinue
     }
   } else {
-    for ($i = 0; $i -lt 8; $i++) {
-      if (Test-Path -LiteralPath $helper -PathType Leaf) { break }
+    # Wait for the peer to release the lock (it does so only after its hydrate
+    # command returns) before inspecting the slot, so a waiter never observes a
+    # half-written runtime. The authoritative gates below then accept it or fail
+    # closed. Bound the wait above the peer's own hydrate timeout.
+    for ($i = 0; $i -lt 12; $i++) {
+      if (-not (Test-Path -LiteralPath $hydrateLock)) { break }
       Start-Sleep -Seconds 1
     }
   }
