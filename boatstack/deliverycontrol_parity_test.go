@@ -41,12 +41,15 @@ func TestRegistryHandlerRefsAreRealFunctions(t *testing.T) {
 }
 
 func TestRegistrySliceStatusMatchesRealLiterals(t *testing.T) {
-	// The real slice lifecycle literals, from DeliverySlice.Status assignments in
-	// delivery.go and the nextForDelivery switch in next.go. If the real machine
-	// gains or renames a slice status, update both the machine and the registry.
-	realLiterals := map[string]bool{
-		"PENDING": true, "BUILD": true, "TEST_PASSED": true,
-		"REVIEW_PASSED": true, "PUBLISHED": true,
+	// The real slice lifecycle literals derive from a single source —
+	// DeliverySliceStatuses() in delivery.go, which the real DeliverySlice.Status
+	// assignments and the nextForDelivery switch use as named constants. A new
+	// slice status therefore cannot be introduced as a raw literal that this
+	// hand-maintained test would miss: it must appear in DeliverySliceStatuses(),
+	// and the registry's SliceStatusStates() must then match it.
+	realLiterals := map[string]bool{}
+	for _, s := range DeliverySliceStatuses() {
+		realLiterals[s] = true
 	}
 	registryStatus := map[string]bool{}
 	for _, s := range deliverycontrol.SliceStatusStates() {

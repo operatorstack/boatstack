@@ -13,6 +13,27 @@ import (
 
 const deliveryStateSchemaVersion = 1
 
+// Slice-status lifecycle literals — the canonical string values stored in
+// DeliverySlice.Status. These are the single source for the slice-status
+// vocabulary; DeliverySliceStatuses returns the full set so the deliverycontrol
+// registry parity test can pin its mirror against them instead of a
+// hand-maintained list (control-law: registry-covers-real-delivery-machine).
+// ResumeStage and WorkflowStage are separate vocabularies, not slice statuses.
+const (
+	StatusPending      = "PENDING"
+	StatusBuild        = "BUILD"
+	StatusTestPassed   = "TEST_PASSED"
+	StatusReviewPassed = "REVIEW_PASSED"
+	StatusPublished    = "PUBLISHED"
+)
+
+// DeliverySliceStatuses returns the canonical slice-status lifecycle set, in
+// order. It is the single source the registry conformance test mirrors, so a new
+// slice status cannot be introduced without appearing here.
+func DeliverySliceStatuses() []string {
+	return []string{StatusPending, StatusBuild, StatusTestPassed, StatusReviewPassed, StatusPublished}
+}
+
 type DeliverySlice struct {
 	ID                 string   `json:"id"`
 	Title              string   `json:"title"`
@@ -163,7 +184,7 @@ func deliveryDefinitions(plan map[string]any) ([]DeliverySlice, error) {
 				}
 			}
 		}
-		return []DeliverySlice{{ID: "delivery", Title: "Feature delivery", TaskIDs: taskIDs, AcceptanceCriteria: criteria, Status: "BUILD"}}, nil
+		return []DeliverySlice{{ID: "delivery", Title: "Feature delivery", TaskIDs: taskIDs, AcceptanceCriteria: criteria, Status: StatusBuild}}, nil
 	}
 	items, ok := objectSlice(plan["delivery_slices"])
 	if !ok || len(items) == 0 {
@@ -225,11 +246,11 @@ func deliveryDefinitions(plan map[string]any) ([]DeliverySlice, error) {
 		}
 		result = append(result, DeliverySlice{
 			ID: id, Title: title, TaskIDs: mapped, AcceptanceCriteria: criteria, AffectedPaths: affectedPaths,
-			Status: "PENDING", BaseBranch: strings.TrimSpace(stringValue(item["base_branch"])),
+			Status: StatusPending, BaseBranch: strings.TrimSpace(stringValue(item["base_branch"])),
 			HeadBranch: strings.TrimSpace(stringValue(item["head_branch"])),
 		})
 		if index == 0 {
-			result[index].Status = "BUILD"
+			result[index].Status = StatusBuild
 		}
 	}
 	unassigned := []string{}
@@ -314,6 +335,14 @@ func LoadDeliveryState(repo, feature string) (DeliveryState, error) {
 	value, err := os.ReadFile(path)
 	if err != nil {
 		return DeliveryState{}, fmt.Errorf("managed delivery state is missing: %w", err)
+	}
+	// Route the raw document through the schema-migration hook before decoding. At
+	// the current schema version this is a byte-for-byte pass-through; it exists so a
+	// future version has a defined upgrade path and so state from a newer Boatstack
+	// fails closed with an actionable message rather than as generic corruption.
+	value, _, err = migrateDeliveryStateBytes(value)
+	if err != nil {
+		return DeliveryState{}, err
 	}
 	var state DeliveryState
 	if err := DecodeJSON("load managed delivery state", path, value, &state); err != nil {
@@ -447,9 +476,9 @@ func reconcileAmendedDeliveryState(existing DeliveryState, newSlices []DeliveryS
 	for i := existing.ActiveIndex; i < len(newSlices); i++ {
 		slice := newSlices[i]
 		if i == existing.ActiveIndex {
-			slice.Status = "BUILD"
+			slice.Status = StatusBuild
 		} else {
-			slice.Status = "PENDING"
+			slice.Status = StatusPending
 		}
 		merged = append(merged, slice)
 	}
@@ -651,9 +680,9 @@ func RecordChangeObservation(options ChangeObservationOptions) (ChangeObservatio
 			}
 		}
 		if resume == "REVIEW_GATE" {
-			slice.Status = "TEST_PASSED"
+			slice.Status = StatusTestPassed
 		} else {
-			slice.Status = "BUILD"
+			slice.Status = StatusBuild
 		}
 		if err := saveDeliveryState(repo, state); err != nil {
 			return ChangeObservation{}, DeliveryState{}, err
@@ -687,9 +716,9 @@ func RecordChangeObservation(options ChangeObservationOptions) (ChangeObservatio
 			}
 		}
 		if resume == "REVIEW_GATE" {
-			slice.Status = "TEST_PASSED"
+			slice.Status = StatusTestPassed
 		} else {
-			slice.Status = "BUILD"
+			slice.Status = StatusBuild
 		}
 	}
 	if err := saveDeliveryState(repo, state); err != nil {
@@ -973,7 +1002,7 @@ func RecordDeliveryGate(options DeliveryGateOptions) (DeliveryGateReceipt, error
 		return DeliveryGateReceipt{}, fmt.Errorf("delivery slice %s requires head branch %s; current branch is %s", slice.ID, slice.HeadBranch, head)
 	}
 	if gate == "review" {
-		if slice.Status != "TEST_PASSED" {
+		if slice.Status != StatusTestPassed {
 			return DeliveryGateReceipt{}, fmt.Errorf("delivery slice %s must pass its test gate before review", slice.ID)
 		}
 		testReceipt, receiptErr := readDeliveryReceipt(repo, options.Feature, slice.ID, "test")
@@ -1047,12 +1076,12 @@ func RecordDeliveryGate(options DeliveryGateOptions) (DeliveryGateReceipt, error
 	state.Slices[sliceIndex].BaseBranch = base
 	state.Slices[sliceIndex].HeadBranch = head
 	if gate == "test" {
-		state.Slices[sliceIndex].Status = "TEST_PASSED"
+		state.Slices[sliceIndex].Status = StatusTestPassed
 		if reviewPath, pathErr := deliveryReceiptPath(repo, options.Feature, slice.ID, "review"); pathErr == nil {
 			_ = os.Remove(reviewPath)
 		}
 	} else {
-		state.Slices[sliceIndex].Status = "REVIEW_PASSED"
+		state.Slices[sliceIndex].Status = StatusReviewPassed
 		state.Mode = "NORMAL"
 		state.ResumeStage = ""
 		state.ActiveObservationID = ""
@@ -1081,7 +1110,7 @@ func CheckDeliveryReadyForShip(repo, feature, sliceID, base, head, diffHash stri
 	// A published-open slice that has been re-gated in place is REVIEW_PASSED again;
 	// an already-PUBLISHED slice that has not been re-gated is still shippable as an
 	// idempotent --action update of its open PR.
-	if slice.Status != "REVIEW_PASSED" && slice.Status != "PUBLISHED" {
+	if slice.Status != StatusReviewPassed && slice.Status != StatusPublished {
 		return DeliveryState{}, DeliverySlice{}, nil, fmt.Errorf("delivery slice %s has not passed test and review gates", slice.ID)
 	}
 	if err := validateDeliveryScope(feature, slice, changed); err != nil {
@@ -1128,17 +1157,17 @@ func MarkDeliveryPublished(repo, feature, sliceID, url string) error {
 	// Re-publishing an already-PUBLISHED, non-terminal slice is an idempotent
 	// --action update of its still-open PR: refresh the recorded PR URL and keep
 	// PRState OPEN, but do NOT advance the BUILD pointer a second time.
-	if slice.Status == "PUBLISHED" {
+	if slice.Status == StatusPublished {
 		state.Slices[sliceIndex].PRURL = url
 		if strings.TrimSpace(state.Slices[sliceIndex].PRState) == "" {
 			state.Slices[sliceIndex].PRState = "OPEN"
 		}
 		return saveDeliveryState(repo, state)
 	}
-	if slice.Status != "REVIEW_PASSED" {
+	if slice.Status != StatusReviewPassed {
 		return fmt.Errorf("delivery slice %s is not ready to publish", sliceID)
 	}
-	state.Slices[sliceIndex].Status = "PUBLISHED"
+	state.Slices[sliceIndex].Status = StatusPublished
 	state.Slices[sliceIndex].PRURL = url
 	state.Slices[sliceIndex].PRState = "OPEN"
 	// Only a first publication of the active slice advances the BUILD pointer to
@@ -1146,7 +1175,7 @@ func MarkDeliveryPublished(repo, feature, sliceID, url string) error {
 	if sliceIndex == state.ActiveIndex {
 		state.ActiveIndex++
 		if state.ActiveIndex < len(state.Slices) {
-			state.Slices[state.ActiveIndex].Status = "BUILD"
+			state.Slices[state.ActiveIndex].Status = StatusBuild
 			state.RepairAttempt = 0
 			state.ActiveObservationID = ""
 			state.ResumeStage = ""
