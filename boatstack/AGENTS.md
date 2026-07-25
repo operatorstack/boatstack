@@ -107,6 +107,13 @@ change. Ask whether to (1) expand the current delivery, (2) split the shared
 boundary into a prerequisite delivery, or (3) apply bounded local containment
 and record the remaining risk.
 
+State the law over the invariant and its failure class — never scoped to the one
+call site where you found the bug. A single shared resource is usually crossed by
+several boundaries; enumerate them all and extend the existing law to cover them
+rather than minting a near-duplicate for the second one. See
+[docs/control-law-scoping.md](docs/control-law-scoping.md) for the method and a
+worked example.
+
 ### 3. Add boundary-conformance tests
 
 Tests must prove the control law, not merely exercise the implementation. Add
