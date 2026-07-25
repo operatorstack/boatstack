@@ -12,9 +12,9 @@
 
 Boatstack is a repository-local delivery harness for Cursor, Codex, Claude Code, and Gemini CLI.
 
-AI coding agents can write code quickly, but each tool brings its own planning flow, session state, and definition of “done.” Change agents and your delivery process often disappears with the chat.
+AI coding agents write code quickly. But each tool brings its own planning flow, session state, and definition of "done". If you change agents, your delivery process often disappears with the chat.
 
-<!-- boatstack-claim:portable-product-flow -->Boatstack keeps the delivery process in the repository. Plans, product decisions, tests, review findings, accepted gaps, and completion evidence stay connected from idea to pull request, regardless of which agent or model performs the work. Use Cursor, Codex, Claude Code, or Gemini CLI. Boatstack keeps the same approval, testing, review, and shipping boundaries across them.
+<!-- boatstack-claim:portable-product-flow -->Boatstack keeps the delivery process in the repository. Your plans, product decisions, tests, review findings, accepted gaps, and completion evidence stay connected from idea to pull request. This holds no matter which agent or model does the work. Use Cursor, Codex, Claude Code, or Gemini CLI. Boatstack keeps the same approval, testing, review, and shipping boundaries across all of them.
 
 **Your product development flow stays with the repository, not the coding agent.** Change agents, models, or specialist skills without rebuilding how your team plans, verifies, reviews, and ships software.
 
@@ -49,17 +49,17 @@ Boatstack does not preserve an agent's private reasoning or replay old chats. It
 - review findings
 - verified repository state
 
-That means the next feature starts from recorded project knowledge instead of reconstructing intent from another agent session.
+So the next feature starts from recorded project knowledge. You do not reconstruct intent from another agent session.
 
 ## Prevent systemic failure instead of patching symptoms
 
-When coding agents or developers encounter a bug, they instinctively patch the local symptom. The underlying architectural flaw—like a leaky database edge that blindly accepts bad data—remains open, guaranteeing the exact same failure will happen again elsewhere.
+When coding agents or developers meet a bug, they usually patch the local symptom. The underlying architectural flaw stays open — for example, a database edge that accepts bad data. The same failure then happens again elsewhere.
 
-When you ask for a fix during `/auto-plan`, Boatstack actively scans your codebase to determine if the bug is a symptom of a missing systemic boundary. Instead of silently patching the symptom, it pauses and asks if you want to establish a programmatic lock (like a database trigger or strict validator).
+When you ask for a fix during `/auto-plan`, Boatstack scans your codebase. It checks whether the bug is a symptom of a missing systemic boundary. If it is, Boatstack pauses instead of patching the symptom. It then asks whether you want to add a programmatic lock, such as a database trigger or a strict validator.
 
-For a bug you want diagnosed first, run `/root-cause <symptom-or-log>` (paste a stack trace, error, or failing signal). It is strictly read-only: it locates the failure below its surface symptom, names the failure *class*, traces a cited root-cause chain, maps the blast radius, and proposes the structural change that eliminates the whole class. It ends by producing a source plan you save and hand to `/auto-plan --plan <path>` — the diagnostic front door to the plan gate.
+To diagnose a bug first, run `/root-cause <symptom-or-log>` and paste a stack trace, an error, or a failing signal. The operation is strictly read-only. It locates the failure below its surface symptom. It names the failure *class*. It traces a cited root-cause chain, maps the blast radius, and proposes the structural change that removes the whole class. It ends with a source plan. Save that plan and pass it to `/auto-plan --plan <path>`, the diagnostic front door to the plan gate.
 
-By turning one-off bug fixes into systemic constraints, your codebase gets safer with every agent run. Boatstack requires a negative test to prove the new lock is impenetrable. Upon publication, it extracts that verified boundary into the repository's global memory, ensuring all future agent runs are strictly bound by the new law of physics.
+Boatstack turns one-off bug fixes into systemic constraints, so your codebase gets safer with every agent run. It requires a negative test that proves the new lock holds. On publication, it records that verified boundary in the repository's global memory. All future agent runs are then bound by the new rule.
 
 ## Install with your coding agent
 
@@ -69,7 +69,7 @@ Copy this into Cursor, Codex, Claude Code, or Gemini CLI while the repository is
 Install Boatstack in this repository from https://github.com/operatorstack/boatstack. Detect whether you are running in Cursor, Codex, Claude Code, or Gemini CLI; create or use a chore/install-boatstack branch; run the official installer for this operating system; default to core unless I request gstack or Spec Kit; keep all portable host adapters; run Boatstack doctor; show me the generated files and installation diff; and prepare the installation PR without merging it or starting product work.
 ```
 
-Install Boatstack in its own infrastructure PR and merge it before starting a feature. Install once per Git clone; linked worktrees reuse the verified runtime and restore their ignored local helper automatically.
+Install Boatstack in its own infrastructure PR. Merge that PR before you start a feature. Install once per Git clone. Linked worktrees reuse the verified runtime and restore their ignored local helper automatically.
 
 ## Start with two moves
 
@@ -85,13 +85,13 @@ Install Boatstack in its own infrastructure PR and merge it before starting a fe
 
 That is all you need to learn up front. Boatstack shows one next action at a time through approval, building, tests, review, and PR preparation.
 
-When you return after an interruption, run `/boatstack-next` in Claude Code, Cursor, or Gemini CLI, or `$boatstack next` in Codex. Boatstack reports the repository-verified stage and one next action without changing state. It distinguishes a feature that has not started from one that is complete.
+When you return after an interruption, run `/boatstack-next` in Claude Code, Cursor, or Gemini CLI. In Codex, run `$boatstack next`. Boatstack reports the repository-verified stage and one next action. It does not change state. It tells apart a feature that has not started from one that is complete.
 
-`$boatstack run` in Codex or `/boatstack-run` in Claude Code, Cursor, and Gemini CLI starts from one saved plan and continues through publication, pausing for approvals and product decisions. It checks branch freshness before delivery; it never merges or deploys.
+`/boatstack-run` (or `$boatstack run` in Codex) starts from one saved plan. It continues through publication and pauses for approvals and product decisions. It checks branch freshness before delivery. It never merges or deploys.
 
 In Claude Code, Cursor, and Gemini CLI, that guidance moves through `/plan-gate` → `/build` → `/test-gate` → `/review-gate` → `/ship-gate`. In Codex, use the same operation names after `$boatstack`.
 
-> The diagram shows what Boatstack guides—not a checklist you need to memorize.
+> The diagram shows what Boatstack guides. It is not a checklist you must memorize.
 
 <p align="center">
   <img src="assets/boatstack-journey.svg" width="960" alt="One feature moves from idea through planning, approval, building, tests, review, and pull request; its retained plans, decisions, gaps, evidence, and code state combine with the next idea to create the next plan">
@@ -99,14 +99,14 @@ In Claude Code, Cursor, and Gemini CLI, that guidance moves through `/plan-gate`
 
 ## Change course without losing the delivery
 
-After Build, describe changes normally. Boatstack records them, preserves valid work, and resumes at the earliest boundary. You do not need to remember a repair command: ordinary CI failures, review findings, and denied publication attempts route automatically for active deliveries and published PRs.
+After Build, describe changes normally. Boatstack records them, keeps valid work, and resumes at the earliest boundary. You do not need to remember a repair command. Ordinary CI failures, review findings, and denied publication attempts route automatically for active deliveries and published PRs.
 
 ```text
-“This is wrong” → record → repair → test → review
+"This is wrong" → record → repair → test → review
                          ↘ changed intent → approve delta
 ```
 
-Receipts remain as history; published corrections become independently approved linked deliveries. An open PR is updated after fresh gates, while merged or closed work receives a new PR.
+Receipts stay as history. Published corrections become independently approved, linked deliveries. Boatstack updates an open PR after fresh gates. For merged or closed work, it opens a new PR.
 
 ## What you get
 
@@ -120,22 +120,22 @@ Receipts remain as history; published corrections become independently approved 
 <summary>Technical Features</summary>
 
 - **A guided path from idea to PR.** `/auto-plan` starts a one-action-at-a-time delivery flow.
-- **Instant orientation after a break.** `boatstack next` reconstructs the verified stage without treating chat or a running process as workflow evidence, so you resume in seconds instead of re-reading history.
-- **Human decisions stay human.** Material product questions remain open until a person answers them, and implementation waits for explicit approval.
-- **Evidence tied to the promise.** Tests and checks map to the outcomes the change claims to deliver instead of treating one green command as proof of everything.
-- **Context that survives the feature.** Plans, decisions, gaps, evidence, and code state remain useful beyond the chat.
-- **Conversational repair after Build.** Describe what changed; Boatstack preserves valid work and reruns only affected boundaries.
+- **Instant orientation after a break.** `boatstack next` reconstructs the verified stage. It does not treat chat or a running process as workflow evidence. You resume in seconds instead of re-reading history.
+- **Human decisions stay human.** Material product questions stay open until a person answers them. Implementation waits for explicit approval.
+- **Evidence tied to the promise.** Tests and checks map to the outcomes the change claims to deliver. One green command is not proof of everything.
+- **Context that survives the feature.** Plans, decisions, gaps, evidence, and code state stay useful beyond the chat.
+- **Conversational repair after Build.** Describe what changed. Boatstack keeps valid work and reruns only the affected boundaries.
 - **Safer agent execution.** High-confidence destructive recovery is stopped before execution; phased work is gated and published one approved delivery slice at a time.
-- **Reviewer-ready pull requests.** Actual changes, evidence, risks, rollout, and rollback become a focused PR brief, so reviewers spend time on judgment, not reconstruction.
+- **Reviewer-ready pull requests.** Actual changes, evidence, risks, rollout, and rollback become a focused PR brief. Reviewers spend time on judgment, not reconstruction.
 - **Optional repository changelog.** Require readable `CHANGELOG.md` entries grounded in actual changes.
 - **Portable across your AI stack.** Hosts, models, and skills share one repository-owned delivery contract.
-- **Repository-friendly maintenance.** Worktrees restore runtime; updates stay in separate infrastructure PRs.
+- **Repository-friendly maintenance.** Worktrees restore runtime. Updates stay in separate infrastructure PRs.
 
 </details>
 
 ## Configure repository policy
 
-`.boatstack-project.json` controls the project commands and context Boatstack uses, which coding hosts it supports, and opt-in policies for changelogs, boundary analysis, high-risk review, and feature workspaces. [Choose the outcomes you want and see every configuration field](docs/configuration.md).
+`.boatstack-project.json` controls three things: the project commands and context Boatstack uses, the coding hosts it supports, and the opt-in policies for changelogs, boundary analysis, high-risk review, and feature workspaces. [Choose the outcomes you want and see every configuration field](docs/configuration.md).
 
 ## How Boatstack fits into your AI stack
 
@@ -151,14 +151,14 @@ Boatstack is a repository-local delivery harness.
 > **Designed for model flexibility · Quality uplift evaluation in progress**
 
 - <!-- boatstack-claim:model-neutral-contract -->**Verified:** the same completion requirements apply regardless of model, provider, or price.
-- <!-- boatstack-claim:cross-model-failures -->**Observed:** benchmark runs exposed failures in protocol handling, context, verification, and recovery—not only model capability.
+- <!-- boatstack-claim:cross-model-failures -->**Observed:** benchmark runs exposed failures in protocol handling, context, verification, and recovery — not only model capability.
 - <!-- boatstack-claim:lower-cost-outcomes -->**Being evaluated:** whether this improves product quality, cost, or delivery time with lower-cost models.
 
 This does not mean every model performs equally. [See the evidence and paired evaluation design](docs/why-these-steps.md#model-choice-and-budget).
 
 ## Built from failures observed in real coding work
 
-They derive from coding failures observed in benchmark and product work—not guesses. When a failure reveals a reusable delivery problem rather than a project-specific mistake, Boatstack turns it into a boundary future runs can enforce. Each link explains what happened, what Boatstack does, and whether that behavior has actually been tested.
+These behaviors come from coding failures observed in benchmark and product work, not from guesses. When a failure reveals a reusable delivery problem rather than a project-specific mistake, Boatstack turns it into a boundary that future runs enforce. Each link explains what happened, what Boatstack does, and whether that behavior has actually been tested.
 
 | What happened | What Boatstack does | Current evidence |
 |---|---|---|
@@ -173,13 +173,13 @@ They derive from coding failures observed in benchmark and product work—not gu
 
 ## A small example
 
-A request asked to “Add a password reset button,” but the product used passwordless sign-in. Boatstack flagged the conflict. The developer chose dual authentication; later, review caught an unsafe recovery assumption and prompted a repair.
+A request asked to "Add a password reset button". But the product used passwordless sign-in. Boatstack flagged the conflict. The developer chose dual authentication. Later, review caught an unsafe recovery assumption and prompted a repair.
 
 [Follow the sanitized walkthrough](docs/account-recovery-walkthrough.md) or [ship your first feature](docs/getting-started.md).
 
 ## Updates stay out of product work
 
-<!-- boatstack-claim:visible-updates -->After a PR is published, Boatstack may report a new stable release without changing the feature branch. `/boatstack-update` prepares a separate infrastructure branch, shows the diff, and waits for `open update PR`. It never merges the update.
+<!-- boatstack-claim:visible-updates -->After you publish a PR, Boatstack may report a new stable release. It does not change the feature branch. `/boatstack-update` prepares a separate infrastructure branch, shows the diff, and waits for `open update PR`. It never merges the update.
 
 <details>
 <summary><strong>Install manually</strong></summary>
@@ -212,6 +212,6 @@ The installer previews generated paths, verifies the platform helper, offers opt
 
 ## Project status
 
-Boatstack is an open-source research prototype. Its workflow and enforcement behavior are tested, but the current record does not prove improved delivery success. A paired feature benchmark—same model, task, and budget—is the next evaluation.
+Boatstack is an open-source research prototype. Its workflow and enforcement behavior are tested. But the current record does not prove improved delivery success. The next evaluation is a paired feature benchmark with the same model, task, and budget.
 
 Exact Intelligence Flow provenance and generated file hashes are recorded in [`UPSTREAM.json`](UPSTREAM.json).

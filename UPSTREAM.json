@@ -12,8 +12,8 @@
   },
   "files": {
     ".gitignore": "a7079e923a776f14f1bb3a6aa0a11a133a8e1dfb35af020f327623357b7e3957",
-    "CONTRIBUTING.md": "d036445ff05dfc40abb8a74d9bab61411474599a66c8e6678b72987e2ad9df2d",
-    "README.md": "6b7402c5cef5b3b9b739281d3d4d576cdc995796ff127fc6aefb97c5743e0bac",
+    "CONTRIBUTING.md": "a56c0ee373be7e3491996906937cbe779092c5709c80912f171d67e6a755a12a",
+    "README.md": "3ce3e95e511089b44e946a44b8d5f4f81d019ece5336db65b2cab1f9dc4d4dad",
     "assets/boatstack-journey.svg": "e465befc50c8ce30f3e07e8fd97012931beeb053392c8fbf38ad645023b3cc63",
     "assets/boatstack-mark.svg": "be1f984da1bfa69fa5d1f986d8343d21f7e20921b71db888c928b4d2e54b09b5",
     "assets/boatstack-portability.svg": "66dfdfa85db857b3bd18b32047a6975f1fbbfc4dc091158e8277193f9969a346",
@@ -175,10 +175,10 @@
     "docs/benchmark-corpus-audit.md": "f2d206fe8579a514f9da82b2c96c19b343ac004be67617e1bd34f0f8e0e5e6c6",
     "docs/benchmark-submission-audit.md": "9518abdd17690729c6423f87cab20418ed47b0915b5faa44b9ef975e9e9c3b79",
     "docs/configuration.md": "df054f49d532c8b1b7d94184810d1b3b5bf18cdc30eb985b4b6d0639162e341a",
-    "docs/evidence-engineered-coding.md": "f8abc34bc426482e0fa0f7e30fc0c5b6cdbfc03b25fdc81963b1e718e8736922",
+    "docs/evidence-engineered-coding.md": "1000dd25b8f56593390aaab82e2a83d1909c3bd573c0112162aa8be3d7b9807c",
     "docs/generated-files.md": "437791765b0a4015032ae21d1a6618563cad92b7402819e4f963bf5ae16284a3",
     "docs/getting-started.md": "1dd4f4e2e636cc5adfc2f79939629701e171087c3d5e558cf919548b9224adfd",
-    "docs/public-claims.json": "178cdeb2738ef09101e056591760ecf450666ad039931134987cb225512ffd81",
+    "docs/public-claims.json": "5dad07bb9c9b254ea8e0e917784dbd4a0de318bf00890fbbc5f902468c78c849",
     "docs/public-surface.md": "713f7a050b5f339cf948299103ef3800417dccfecf2cc1a4166397ea6f978907",
     "docs/research-and-design.md": "8d78678108f0a6c924e1ff9b32c0f81aae9d1f779e0082843b6f99ad993ae2b6",
     "docs/safety.md": "7b9b5c515d36e683767ec8d3d9d6d119ac93650b2f629d351deadd4c600ed6a6",
@@ -192,7 +192,7 @@
     "labs/diagram-json/compiled/evidence.md": "1ba1c989ade070a8ef9a508fbd788d100d7292f2dbacbb2bce895468019f619d",
     "labs/diagram-json/compiled/tasks.json": "88f60851abf79d851e9fccc754ff3040034ae595306bc87d64784c19eb403e71",
     "labs/diagram-json/compiled/test-matrix.json": "424657ff505768e50fa113801fd8363364a18269d5297480907a993d44063a39",
-    "labs/diagram-json/plan.lock.json": "f3e4094f2ac5731cf8774986c3e8233d1dbc843d5684efc9b2ab7ba245cea340",
+    "labs/diagram-json/plan.lock.json": "f1c1abc21dc10b530e05cd26055b4f329a95ea87e4552c2846c280e0aa2b2443",
     "labs/diagram-json/plan.md": "3cc4f533b8d69386deff16b3a594a3ba09d4c0c3db636cccd8c4380084ce6a51",
     "labs/diagram-json/questions.md": "74733b015002c8a6777c558e7e997fa48c94850b9bd39054fe9366c97ecf728d",
     "labs/diagram-json/request.md": "0808fc41c36779c404f4a3a121167da6e76cac56df526e70f9ed6d3e0d4c02ed",
@@ -288,12 +288,13 @@
     "release-notes/2026-07-25-deliverycontrol-shadow-registry.md": "e7f8ca4e4f188eda3088e46cba77369d8ff0d903f29e43846103d986e79a2273",
     "release-notes/2026-07-25-evidence-path-resolution.md": "b32cb8a6e69f397f751c3a7fb62be254a7407a28bed25ae9108d6d773c863d11",
     "release-notes/2026-07-25-published-slice-correction-routing.md": "129cdd62c80c8b93060726027d68ba3abdb0bca1a1ce9e64d6053271af3fd082",
+    "release-notes/2026-07-25-readme-simplified-technical-english.md": "c362f46702c38dda6b0301d05b95a067da617d170ddfcca22fd7eb9f6e2c1881",
     "release-notes/2026-07-25-root-cause-operation.md": "5bf1f082e9123c5a7bcc8bc01b12e97b24b5ae15958577b4ff2a358994fca891"
   },
   "generator": "operatorstack/intelligence-flow:boatstack-distribution",
   "schema_version": 1,
   "source": {
-    "commit": "719220d52b8ac1237c9169099b53a024dc583cc6",
+    "commit": "dc521a60a4a3dc03405d545ca63feaa753087b54",
     "path": "labs/12-product-engineering-loop",
     "repository": "operatorstack/intelligence-flow"
   }
