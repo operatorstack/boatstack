@@ -75,6 +75,18 @@ var operationalPathPattern = regexp.MustCompile(`(?i)(?:^|/)(?:scripts?|migratio
 var mutationStatementPattern = regexp.MustCompile(`(?is)\b(?:delete\s+from\s+(?:[a-z_][a-z0-9_$.-]*|"[^"]+")|update\s+(?:[a-z_][a-z0-9_$.-]*|"[^"]+")\s+set\b)[^;]*`)
 var directPublicationPattern = regexp.MustCompile(`(?i)(?:\bgit\b[^\n;&|]*\bpush\b|\bgh\s+pr\s+(?:create|edit|ready|merge)\b|\bgh\s+api\b[^\n;&|]*(?:/pulls\b|/pull-requests\b)|\bhub\s+pull-request\b|\bcurl\b[^\n;&|]*(?:api\.github\.com|/pulls\b)[^\n;&|]*(?:\s-X\s*(?:POST|PATCH)|--request\s+(?:POST|PATCH)))`)
 var approvedPublisherPattern = regexp.MustCompile(`(?i)^\s*(?:[^\s]*/)?boatstack-helper\s+publish-pr\b[^\n;&|]*$`)
+
+// approvedUpdatePublisherPattern recognizes the sanctioned Boatstack version-update
+// publisher. That command must be passed the update preview path, which lives under
+// <git-common-dir>/boatstack/updates/<version>/pr-preview.json, so the command line
+// always names a path inside the .git/boatstack/ subtree. Without this exemption the
+// deliveryStatePathPattern check below denies the publish as workflow-state-tamper,
+// even though the path is a read argument to the trusted helper, not a direct edit.
+// Like approvedPublisherPattern it is anchored end to end so no second command can be
+// chained after it, and it tolerates the platform-suffixed helper binary (for example
+// boatstack-helper_darwin_arm64) that a running update may invoke after the installed
+// helper is swapped or removed.
+var approvedUpdatePublisherPattern = regexp.MustCompile(`(?i)^\s*(?:[^\s]*/)?boatstack-helper(?:[_.-][a-z0-9._-]+)?\s+publish-update-pr\b[^\n;&|]*$`)
 var deliveryStatePathPattern = regexp.MustCompile(`(?i)(?:boatstack[/\\]deliveries|\.git[/\\](?:worktrees[/\\][^/\\]+[/\\])?boatstack(?:[/\\]|$))`)
 var mutationToolPattern = regexp.MustCompile(`(?i)(?:write|edit|apply[_-]?patch|create|delete|remove|move|rename|update|insert|upload|install)`)
 var planningMutationToolPattern = regexp.MustCompile(`(?i)(?:write|edit|apply[_-]?patch|create)`)
@@ -466,7 +478,7 @@ func ClassifyCommand(repo, command string) []SafetyFinding {
 	if strings.TrimSpace(command) == "" {
 		return []SafetyFinding{{Category: "malformed-tool-input", Reason: "empty-command", Source: "tool-input"}}
 	}
-	if deliveryStatePathPattern.MatchString(command) && !isPureReadOnlyCommand(command) {
+	if deliveryStatePathPattern.MatchString(command) && !isPureReadOnlyCommand(command) && !approvedUpdatePublisherPattern.MatchString(command) {
 		return []SafetyFinding{{Category: "workflow-state-tamper", Reason: "managed delivery state may be changed only by Boatstack transitions", Source: "delivery-state"}}
 	}
 	if directPublicationPattern.MatchString(command) && !approvedPublisherPattern.MatchString(command) {
@@ -973,7 +985,7 @@ func denialMessage(host string, finding SafetyFinding) string {
 		return "Boatstack denied publication because managed delivery state cannot be verified. Re-run the active Boatstack operation or repair the installation before publishing."
 	}
 	if finding.Category == "workflow-state-tamper" {
-		return "Boatstack denied direct delivery-state mutation. Use the active build, test, review, or ship transition instead of editing runtime authority."
+		return "Boatstack denied a direct write to managed runtime authority under .git/boatstack/. Change it only through the command that owns it: a build, test, review, or ship transition for delivery state, or publish-update-pr for a version update. If this is a false positive, run `boatstack-helper diagnose-hook` from an external terminal."
 	}
 	if finding.Category == "workflow-phase-bypass" {
 		target := "the saved Boatstack plan"
