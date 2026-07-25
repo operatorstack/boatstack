@@ -414,7 +414,14 @@ func recordDeliveryGateCommand(arguments []string) int {
 	if options.Feature == "" || options.SliceID == "" || options.Gate == "" || options.Status == "" {
 		return fail(fmt.Errorf("record-delivery-gate requires --feature, --slice, --gate, and --status"))
 	}
+	transition := boatstack.GateTransition(options.Gate)
+	guard := boatstack.GuardFlowMove(options.Repo, options.Feature, transition)
+	if !guard.Allow {
+		boatstack.RecordFlowTransition(options.Repo, guard.Transition, guard.From, false)
+		return fail(fmt.Errorf("%s", guard.Message))
+	}
 	receipt, err := boatstack.RecordDeliveryGate(options)
+	boatstack.RecordFlowTransition(options.Repo, transition, guard.From, err == nil)
 	if err != nil {
 		return fail(err)
 	}
@@ -768,6 +775,9 @@ func recordChangeCommand(arguments []string) int {
 	if err != nil {
 		return fail(err)
 	}
+	// A recorded correction is the honest moment coding rework is initiated;
+	// record one unit of coding effort as telemetry (never a gate, never J_flow).
+	boatstack.RecordCodingEffort(options.Repo, 1, string(observation.Classification))
 	fmt.Printf("PASS: change observation recorded\nOBSERVATION_ID=%s\nCLASSIFICATION=%s\nOUTCOME=%s\nMODE=%s\nRESUME_STAGE=%s\n", observation.ID, observation.Classification, observation.Outcome, state.Mode, state.ResumeStage)
 	if observation.Outcome == "CORRECTIVE_CHILD_REQUIRED" {
 		fmt.Printf("PARENT_DELIVERY=%s\nSUGGESTED_FEATURE_ID=%s\n", observation.ParentDelivery, observation.SuggestedFeatureID)
@@ -1088,10 +1098,20 @@ func publishPRCommand(arguments []string) int {
 	if *previewPath == "" || *fingerprint == "" || *action == "" {
 		return fail(fmt.Errorf("publish-pr requires --preview, --preview-fingerprint, and --action"))
 	}
+	feature := ""
+	if preview, previewErr := boatstack.ParsePRPreview(*previewPath); previewErr == nil {
+		feature = preview.Feature
+	}
+	guard := boatstack.GuardFlowMove(*repo, feature, boatstack.PublishTransition)
+	if !guard.Allow {
+		boatstack.RecordFlowTransition(*repo, guard.Transition, guard.From, false)
+		return fail(fmt.Errorf("%s", guard.Message))
+	}
 	url, err := boatstack.PublishPR(boatstack.PRPublishOptions{
 		Repo: *repo, PreviewPath: *previewPath, ExpectedFingerprint: *fingerprint, Action: *action,
 		VisualPublisher: boatstack.SelectVisualPublisher(*repo),
 	})
+	boatstack.RecordFlowTransition(*repo, boatstack.PublishTransition, guard.From, err == nil)
 	if err != nil {
 		return fail(err)
 	}
@@ -1101,10 +1121,6 @@ func publishPRCommand(arguments []string) int {
 	}
 	fmt.Printf("PASS: PR %s without merge authorization\nPR_URL=%s\n", verb, url)
 
-	feature := ""
-	if preview, err := boatstack.ParsePRPreview(*previewPath); err == nil {
-		feature = preview.Feature
-	}
 	if update, ok := boatstack.PostShipUpdateNotice(*repo, feature); ok {
 		fmt.Printf("UPDATE_AVAILABLE=%s\nUPDATE_RELEASE_URL=%s\n", update.LatestVersion, update.ReleaseURL)
 	}
@@ -1205,7 +1221,7 @@ func workspaceSyncCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|record-change|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|check-safety|migrate-config|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|workspace-sync|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|record-change|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|check-safety|migrate-config|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|workspace-sync|flow|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -1299,6 +1315,8 @@ func run() int {
 		return workspaceSyncCommand(os.Args[2:])
 	case "migrate-config":
 		return migrateConfigCommand(os.Args[2:])
+	case "flow":
+		return flowCommand(os.Args[2:])
 	case "version":
 		fmt.Printf("Boatstack %s (%s)\n", boatstack.Version, boatstack.SourceCommit)
 		return 0

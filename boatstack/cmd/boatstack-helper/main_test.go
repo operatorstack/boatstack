@@ -49,6 +49,46 @@ func TestBootstrapFailureUsesBlockingExitCode(t *testing.T) {
 	}
 }
 
+// captureStdout runs fn with os.Stdout redirected and returns what it printed,
+// so read-only CLI verbs can be asserted without polluting test output.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	previous := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = writer
+	fn()
+	writer.Close()
+	os.Stdout = previous
+	out, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}
+
+func TestFlowCheckCommandPassesOnShippedModel(t *testing.T) {
+	var code int
+	out := captureStdout(t, func() { code = flowCheckCommand(nil) })
+	if code != 0 {
+		t.Fatalf("flow check exit = %d, want 0; output:\n%s", code, out)
+	}
+	if !strings.HasPrefix(out, "PASS:") {
+		t.Errorf("flow check output should lead with PASS:\n%s", out)
+	}
+}
+
+func TestFlowCommandRejectsUnknownSubcommand(t *testing.T) {
+	if code := flowCommand([]string{"nonsense"}); code != 2 {
+		t.Errorf("unknown flow subcommand exit = %d, want 2", code)
+	}
+	if code := flowCommand(nil); code != 2 {
+		t.Errorf("flow with no subcommand exit = %d, want 2", code)
+	}
+}
+
 func liveHostArguments(host, prompt string) []string {
 	switch host {
 	case "cursor":
