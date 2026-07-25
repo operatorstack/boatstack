@@ -105,6 +105,13 @@ func stateMatchesBranch(state DeliveryState, branch string) bool {
 	if strings.TrimSpace(branch) == "" {
 		return false
 	}
+	// A correction may be pushed on the branch of any addressable slice — the active
+	// slice or a published-but-open earlier slice — not only the active slice's head.
+	// Matching solely the active slice's head stranded corrections for a published
+	// slice inside a still-active delivery, so they never selected their own delivery.
+	if _, _, ok := resolveAddressableSliceByBranch(state, branch); ok {
+		return true
+	}
 	head, _, _ := deliveryBranchAndSlice(state)
 	if head != "" {
 		return head == branch
@@ -354,7 +361,25 @@ func ResolveRecovery(options RecoveryStatusOptions) (RecoveryStatus, error) {
 		Feature: selected.Feature, Slice: sliceID, ParentDelivery: selected.ParentDelivery,
 		HeadBranch: head, PRURL: prURL,
 	}
+	// A correction can target a published-but-open earlier slice whose PR has not
+	// yet merged or closed. The actuator layer (resolveAddressableSlice) can re-gate
+	// and re-publish such a slice in place, so the advisor must point the correction
+	// there rather than at the active slice. Resolve the target from the correction's
+	// branch through the same addressable set the actuators use; only an earlier
+	// (already published) slice needs this redirect — the active slice falls through
+	// to the ordinary repair boundary below. This redirect is scoped to a still-active
+	// delivery: once the whole delivery is published the corrective-child logic below
+	// owns the decision (and observes the live PR terminal-ness rather than the cache).
 	if selected.ActiveIndex < len(selected.Slices) {
+		if idx, addressable, ok := resolveAddressableSliceByBranch(selected, strings.TrimSpace(branch)); ok && idx < selected.ActiveIndex {
+			status.Slice = addressable.ID
+			status.HeadBranch = addressable.HeadBranch
+			status.PRURL = addressable.PRURL
+			status.Lifecycle = "PUBLISHED_OPEN"
+			status.NextOperation = "repair_published_slice"
+			status.Reason = fmt.Sprintf("Delivery slice %q is published with an open pull request; re-gate it and republish with publish-pr --action update on its own branch, rather than repairing the active slice.", addressable.ID)
+			return status, nil
+		}
 		status.Lifecycle = "ACTIVE"
 		status.NextOperation = "repair_active"
 		status.Reason = fmt.Sprintf("Managed delivery %q is active; route the exact correction through its current repair boundary.", selected.Feature)

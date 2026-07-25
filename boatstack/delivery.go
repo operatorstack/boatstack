@@ -113,6 +113,10 @@ type ChangeObservationOptions struct {
 	Actual         string
 	Evidence       string
 	Classification string
+	// SliceID optionally targets a specific addressable slice — the active slice or
+	// a published-but-open earlier slice. Empty resolves to the correction's branch
+	// and then the active slice, preserving the ordinary repair path.
+	SliceID string
 }
 
 type ChangeObservation struct {
@@ -546,14 +550,52 @@ func RecordChangeObservation(options ChangeObservationOptions) (ChangeObservatio
 		return ChangeObservation{}, DeliveryState{}, fmt.Errorf("change observation requires the user message and source stage")
 	}
 	published := state.ActiveIndex >= len(state.Slices)
+
+	// Resolve which addressable slice this correction targets before mutating any
+	// state. An explicit --slice, or a correction pushed on a published-but-open
+	// earlier slice's branch, must bind to that slice — historically every non-
+	// published correction was bound to the active slice, which corrupted the wrong
+	// slice when the real target was an already-published slice inside the delivery.
+	targetIndex := -1
+	var targetSlice DeliverySlice
+	publishedOpen := false
 	if !published {
+		sliceHint := strings.TrimSpace(options.SliceID)
+		if sliceHint == "" {
+			if branch, _ := gitCommand(repo, "branch", "--show-current"); strings.TrimSpace(branch) != "" {
+				if idx, _, ok := resolveAddressableSliceByBranch(state, strings.TrimSpace(branch)); ok && idx < state.ActiveIndex {
+					sliceHint = state.Slices[idx].ID
+				}
+			}
+		}
+		idx, slice, resolveErr := resolveAddressableSlice(state, sliceHint)
+		if resolveErr != nil {
+			return ChangeObservation{}, DeliveryState{}, resolveErr
+		}
+		targetIndex, targetSlice = idx, slice
+		publishedOpen = idx < state.ActiveIndex
+	}
+
+	// A published-but-open slice may only be corrected in place through a gate
+	// repair; a requirement or plan change to it is a new decision that requires an
+	// independently approved corrective child, not an in-place re-gate.
+	if publishedOpen {
+		switch classification {
+		case "implementation_repair", "verification_repair", "review_repair":
+		default:
+			return ChangeObservation{}, DeliveryState{}, fmt.Errorf("delivery slice %s is published with an open pull request; a %s change must be handled by a corrective child delivery, not an in-place re-gate", targetSlice.ID, classification)
+		}
+	}
+
+	// The delivery-level repair budget governs only the active slice's build loop.
+	if !published && !publishedOpen {
 		if state.RepairAttempt >= 3 {
 			return ChangeObservation{}, DeliveryState{}, fmt.Errorf("persistent repair budget exhausted after %d attempts; preserve current state and require a reviewed recovery decision", state.RepairAttempt)
 		}
 		state.RepairAttempt++
 	}
 	id := fmt.Sprintf("CHG-%03d", state.RepairAttempt)
-	if published {
+	if published || publishedOpen {
 		id = nextChangeObservationID(repo, options.Feature, state.RepairAttempt+1)
 	}
 	observation := ChangeObservation{
@@ -562,10 +604,8 @@ func RecordChangeObservation(options ChangeObservationOptions) (ChangeObservatio
 		Message: strings.TrimSpace(options.Message), Classification: classification, ResumeStage: resume,
 		RecordedAt: time.Now().UTC().Truncate(time.Second).Format(time.RFC3339),
 	}
-	if !published {
-		observation.SliceID = state.Slices[state.ActiveIndex].ID
-		observation.Outcome = "RESUME_ACTIVE"
-	} else {
+	switch {
+	case published:
 		if len(state.Slices) > 0 {
 			observation.SliceID = state.Slices[len(state.Slices)-1].ID
 		}
@@ -576,11 +616,48 @@ func RecordChangeObservation(options ChangeObservationOptions) (ChangeObservatio
 		observation.Outcome = "CORRECTIVE_CHILD_REQUIRED"
 		observation.ParentDelivery = state.Feature
 		observation.SuggestedFeatureID = suggestedCorrectionFeature(states, state.Feature)
+	case publishedOpen:
+		observation.SliceID = targetSlice.ID
+		observation.Outcome = "RESUME_PUBLISHED_SLICE"
+	default:
+		observation.SliceID = targetSlice.ID
+		observation.Outcome = "RESUME_ACTIVE"
 	}
 	if err := appendChangeObservation(repo, observation); err != nil {
 		return ChangeObservation{}, DeliveryState{}, err
 	}
 	if published {
+		return observation, state, nil
+	}
+	if publishedOpen {
+		// In-place re-gate of a published-but-open slice: archive its stale gate
+		// receipts and reset its Status so test/review re-run against the fix, while
+		// its PRState="OPEN" preserves the published identity that publish-pr --action
+		// update targets. The active slice's build loop (RepairAttempt, Mode,
+		// ResumeStage, ActiveObservationID) is deliberately left untouched — the
+		// correction belongs to the published slice, not the active one.
+		slice := &state.Slices[targetIndex]
+		gates := []string{"review"}
+		if resume == "BUILD" || resume == "TEST_GATE" {
+			gates = []string{"test", "review"}
+		}
+		for _, gate := range gates {
+			archived, archiveErr := archiveDeliveryReceipt(repo, options.Feature, slice.ID, gate, id)
+			if archiveErr != nil {
+				return ChangeObservation{}, DeliveryState{}, archiveErr
+			}
+			if archived != "" {
+				state.SupersededReceipts = append(state.SupersededReceipts, archived)
+			}
+		}
+		if resume == "REVIEW_GATE" {
+			slice.Status = "TEST_PASSED"
+		} else {
+			slice.Status = "BUILD"
+		}
+		if err := saveDeliveryState(repo, state); err != nil {
+			return ChangeObservation{}, DeliveryState{}, err
+		}
 		return observation, state, nil
 	}
 	state.ActiveObservationID = id
@@ -686,6 +763,40 @@ func resolveAddressableSlice(state DeliveryState, sliceID string) (int, Delivery
 		return -1, DeliverySlice{}, fmt.Errorf("delivery slice %s is not active; current slice is %s", sliceID, activeID)
 	}
 	return -1, DeliverySlice{}, fmt.Errorf("delivery slice %s does not exist", sliceID)
+}
+
+// resolveAddressableSliceByBranch selects the addressable slice a correction on
+// the given branch may act on. It applies the same addressable set as
+// resolveAddressableSlice — {active slice} ∪ {PUBLISHED slices whose PR is not
+// terminal} — but keys off the slice's recorded head branch rather than its id.
+//
+// Advisors (recovery routing, safety findings, change recording) start from the
+// current git branch, not a slice id, and historically resolved corrections
+// against state.ActiveIndex alone. That left the advisor layer blind to a
+// published-but-open earlier slice that the actuator layer (resolveAddressableSlice)
+// could still correct in place, so a correction pushed on the published slice's
+// branch was mis-routed to the active slice. Routing every advisor through this one
+// resolver keeps "which slice this correction may act on" defined in a single place,
+// so the advisor layer cannot drift from the actuator layer again. ok is false when
+// no addressable slice owns the branch (including a slice whose PR is terminal — the
+// caller then falls through to its corrective-child path unchanged).
+func resolveAddressableSliceByBranch(state DeliveryState, branch string) (int, DeliverySlice, bool) {
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return -1, DeliverySlice{}, false
+	}
+	for i, s := range state.Slices {
+		if strings.TrimSpace(s.HeadBranch) != branch {
+			continue
+		}
+		if i == state.ActiveIndex {
+			return i, s, true
+		}
+		if i < state.ActiveIndex && strings.TrimSpace(s.PRState) != "" && !isTerminalPRState(s.PRState) {
+			return i, s, true
+		}
+	}
+	return -1, DeliverySlice{}, false
 }
 
 func checkDeliveryPlanLock(repo, feature string, state DeliveryState) error {
