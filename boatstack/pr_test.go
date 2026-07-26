@@ -440,17 +440,43 @@ No migration is required; revert the feature commit to roll back.
 func TestManagedPRBlocksCommittedIrreversibleCapability(t *testing.T) {
 	repo := prTestRepo(t)
 	activateManagedFeature(t, repo, "reviewer-ready")
-	path := filepath.Join(repo, "scripts", "recover.sql")
+	// A committed SCRIPT that runs a destructive reset is a live capability the
+	// deploy pipeline would execute — the managed PR must block it. (A declarative
+	// .sql migration is data and is intentionally allowed; see safety_test.go.)
+	path := filepath.Join(repo, "scripts", "recover.sh")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte("DROP SCHEMA public CASCADE;\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("#!/usr/bin/env bash\nsupabase db reset --linked\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, repo, "add", "scripts/recover.sql")
+	runGit(t, repo, "add", "scripts/recover.sh")
 	runGit(t, repo, "commit", "-m", "add unsafe recovery")
 	if _, err := PreparePRContext(PRContextOptions{Repo: repo, Feature: "reviewer-ready"}); err == nil || !strings.Contains(err.Error(), "irreversible capability") {
 		t.Fatalf("managed PR did not block committed destructive code: %v", err)
+	}
+}
+
+// A managed delivery that commits a declarative migration must NOT be blocked as
+// an irreversible capability — regenerating and committing schema SQL is the
+// normal migration step, applied later by the controlled deploy pipeline. This is
+// the positive counterpart that dissolves the migration-bearing-delivery deadlock.
+func TestManagedPRAllowsDeclarativeMigration(t *testing.T) {
+	repo := prTestRepo(t)
+	activateManagedFeature(t, repo, "reviewer-ready")
+	path := filepath.Join(repo, "schema", "generated", "staging.sql")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("DROP SCHEMA public CASCADE;\nCREATE SCHEMA public;\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "add", "schema/generated/staging.sql")
+	runGit(t, repo, "commit", "-m", "regenerate staging schema")
+	// PreparePRContext may fail for unrelated reasons in this fixture; the delivery
+	// deadlock only exists if it fails SPECIFICALLY on the migration capability.
+	if _, err := PreparePRContext(PRContextOptions{Repo: repo, Feature: "reviewer-ready"}); err != nil && strings.Contains(err.Error(), "irreversible capability") {
+		t.Fatalf("declarative migration wrongly blocked the managed delivery: %v", err)
 	}
 }
 
