@@ -204,3 +204,38 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: gh pr merge "$PR_URL" --squash
+      # After a sync lands, close any older sync PR it supersedes. A sync PR that
+      # failed CI is never merged by this job, so without this it lingers as an
+      # orphan once a newer sync overtakes it (see the pile-up that motivated this).
+      # intelligence-flow is public, so the default token can read its history for
+      # the ancestry check; closing uses the app token (pull-requests: write).
+      - name: Check out Intelligence Flow for ancestry
+        uses: actions/checkout@v4
+        with:
+          repository: operatorstack/intelligence-flow
+          fetch-depth: 0
+          path: intelligence-flow
+      - name: Close superseded sync PRs
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        shell: bash
+        run: |
+          merged="$(jq -r '.source.commit' UPSTREAM.json)"
+          if [[ -z "$merged" || "$merged" == "null" ]]; then
+            echo "No recorded source commit; skipping supersession cleanup."
+            exit 0
+          fi
+          gh pr list --state open --json number,headRefName \
+            --jq '.[] | select(.headRefName | startswith("sync/intelligence-flow-")) | [.number, .headRefName] | @tsv' \
+          | while IFS=$'\t' read -r number branch; do
+              short="${branch#sync/intelligence-flow-}"
+              # Skip the sync that just merged (its own branch), not a supersession.
+              [[ "${merged:0:12}" == "$short" ]] && continue
+              # Close only PRs whose source is an ancestor of the merged source —
+              # i.e. already included. A newer, not-yet-merged sync (descendant) is
+              # left untouched.
+              if git -C intelligence-flow merge-base --is-ancestor "$short" "$merged" 2>/dev/null; then
+                echo "Closing superseded sync PR #$number ($short)."
+                gh pr close "$number" --comment "Superseded by the sync at ${merged:0:12}, which already includes this PR's source ($short). Closing the stale sync PR automatically."
+              fi
+            done
