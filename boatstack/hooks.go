@@ -223,7 +223,24 @@ if [[ -z "$EXPECTED" || "$ACTUAL" != "$EXPECTED" ]]; then
   exit 2
 fi
 
-exec "$HELPER" bootstrap-safety-hook --host "$HOST" --repo "$ROOT"
+# Linux refuses to exec a file another process still holds open for writing
+# (ETXTBSY, surfaced as exit 126). Under concurrent first use a peer guard can be
+# finishing hydration at this instant, even though the writer replaces the binary
+# atomically. Retry briefly, then hand off. A genuinely non-executable helper keeps
+# returning 126 and the final status still propagates unchanged. Running the helper
+# as a child (not exec) is required so a failed start is observable; stdio and the
+# exit code pass through, and an ETXTBSY start never consumes stdin.
+ATTEMPT=0
+while :; do
+  "$HELPER" bootstrap-safety-hook --host "$HOST" --repo "$ROOT"
+  HELPER_STATUS=$?
+  if [[ $HELPER_STATUS -eq 126 && $ATTEMPT -lt 30 ]]; then
+    ATTEMPT=$((ATTEMPT + 1))
+    sleep 0.1
+    continue
+  fi
+  exit $HELPER_STATUS
+done
 `, Version, SourceCommit, Version, SourceCommit, Version, Version, runtimeHydrateCommandBash(Version), runtimeHydrateCommandBash(Version)))
 }
 

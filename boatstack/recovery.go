@@ -62,31 +62,41 @@ func blockedRecovery(reason string, blockers ...string) RecoveryStatus {
 	}
 }
 
-func allManagedDeliveryStates(repo string) ([]DeliveryState, error) {
+// allManagedDeliveryStates partitions the delivery-state store the way the
+// read-only recovery boundary needs it: states whose plan lock verifies on this
+// branch are returned as data, and slugs that cannot be verified are returned as
+// invalid rather than aborting the whole scan. Like scanManagedDeliveries (the
+// ResolveNext counterpart) it never lets one corrupt or cross-branch delivery
+// poison recovery of an unrelated one; ResolveRecovery applies the
+// ignored-deliveries filter to both lists before any invalidity becomes fatal.
+// control-law: stale-delivery-cannot-block-unrelated-feature
+func allManagedDeliveryStates(repo string) (states []DeliveryState, invalid []string, err error) {
 	directory, err := deliveryStateDirectory(repo)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	entries, err := os.ReadDir(directory)
 	if os.IsNotExist(err) {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	states := []DeliveryState{}
+	states = []DeliveryState{}
 	for _, entry := range entries {
 		if !entry.IsDir() || !featureSlugPattern.MatchString(entry.Name()) {
 			continue
 		}
 		state, loadErr := CurrentDeliveryState(repo, entry.Name())
 		if loadErr != nil {
-			return nil, fmt.Errorf("invalid managed delivery state for %s: %w", entry.Name(), loadErr)
+			invalid = append(invalid, entry.Name())
+			continue
 		}
 		states = append(states, state)
 	}
 	sort.Slice(states, func(i, j int) bool { return states[i].Feature < states[j].Feature })
-	return states, nil
+	sort.Strings(invalid)
+	return states, invalid, nil
 }
 
 func deliveryBranchAndSlice(state DeliveryState) (string, string, string) {
@@ -337,9 +347,28 @@ func ResolveRecovery(options RecoveryStatusOptions) (RecoveryStatus, error) {
 			NextOperation: "none", Reason: "This repository has no managed delivery installation to inspect.",
 		}, nil
 	}
-	states, err := allManagedDeliveryStates(repo)
+	// Read-only boundary: partition the store instead of failing closed, then
+	// apply the operator's ignored-deliveries filter to BOTH the readable states
+	// and the invalid slugs before any invalidity becomes fatal. Only a
+	// still-unignored invalid delivery blocks — named, and routed to the
+	// discard-delivery remedy. This is the same law the ResolveNext boundary
+	// already enforces; without it one abandoned, already-ignored delivery in the
+	// shared store poisons recovery of an unrelated healthy delivery.
+	// control-law: stale-delivery-cannot-block-unrelated-feature
+	states, invalidDeliveries, err := allManagedDeliveryStates(repo)
 	if err != nil {
 		return blockedRecovery("Managed delivery state cannot be verified: " + err.Error()), nil
+	}
+	config, _, configErr := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	if configErr != nil {
+		return blockedRecovery("Boatstack project configuration is invalid: " + configErr.Error()), nil
+	}
+	states = withoutIgnoredDeliveryStates(states, config.Workflow.IgnoredDeliveries)
+	invalidDeliveries = withoutIgnoredDeliveries(invalidDeliveries, config.Workflow.IgnoredDeliveries)
+	if len(invalidDeliveries) > 0 {
+		status := blockedRecovery("Boatstack found managed delivery state it cannot verify. Restore its evidence, add it to workflow.ignored_deliveries, or run discard-delivery to clear it before recovering.", invalidDeliveries...)
+		status.NextOperation = "discard-delivery"
+		return status, nil
 	}
 	branch, _ := gitCommand(repo, "branch", "--show-current")
 	selected, ambiguity, selectErr := selectRecoveryDelivery(states, strings.TrimSpace(options.Feature), strings.TrimSpace(branch))
