@@ -51,20 +51,39 @@ func malformedHookInput(code string) error {
 	return hookDecodeError{code: code}
 }
 
-var readOnlyStage = regexp.MustCompile(`(?i)^\s*(?:env\s+[^ ]+\s+)*(?:rg|grep|git\s+(?:grep|diff|status|show|log)|cat|sed|head|tail|less|find\s+[^\n]*-(?:print|ls)|psql\s+[^\n]*\s-c\s+["']?\s*select\b)`)
+var readOnlyStage = regexp.MustCompile(`(?i)^\s*(?:env\s+[^ ]+\s+)*(?:rg|grep|git\s+(?:grep|diff|status|show|log)|cat|sed|head|tail|less|find\s+[^\n]*-(?:print|ls)|psql\s+[^\n]*\s-c\s+["']?\s*select\b|(?:[^\s]*/)?boatstack-helper(?:[_.-][a-z0-9._-]+)?\s+(?:recovery-status|mutation-status|operation-status|delivery-status|next-status|workspace-status|repair-status|check-plan|check-source-plan|check-safety|diagnose-hook|doctor|version)\b)`)
 
+// irreversiblePatterns classify destruction by text. Rules whose regex names its
+// own EXECUTOR (rm, git, terraform, supabase db reset, …) are self-executing:
+// matching the text is sound because the text IS the command. Rules marked
+// sqlEffect match bare SQL grammar (DROP TABLE, TRUNCATE) that is inert as data
+// and destructive only when a live database client runs it — so they are applied
+// only in an executor context (see classifySafetyText's scanSQL argument). This
+// is what stops `git add staging.sql` or a committed migration from being read as
+// a live drop while `psql -c "DROP TABLE"` is still denied.
 var irreversiblePatterns = []struct {
-	category string
-	reason   string
-	pattern  *regexp.Regexp
+	category  string
+	reason    string
+	pattern   *regexp.Regexp
+	sqlEffect bool
 }{
-	{"database-destruction", "database or schema destruction is operator-only", regexp.MustCompile(`(?is)\bdrop\s+(?:database|schema|table)\b|\balter\s+table\b[^;\n]*\bdrop\s+(?:column|constraint)\b|\btruncate(?:\s+table)?\b|\bdrop\s+schema\b[^;\n]*\bcascade\b`)},
-	{"database-reset", "database reset, flush, or destructive downgrade is operator-only", regexp.MustCompile(`(?i)(?:--reset-public\b|\b(?:supabase\s+db\s+reset|prisma\s+migrate\s+reset|rails\s+db:(?:drop|reset)|django-admin\s+flush|manage\.py\s+flush|alembic\s+downgrade\s+base|pg_restore\b[^\n]*\s--clean\b))`)},
-	{"filesystem-destruction", "recursive deletion of a broad or protected path is denied", regexp.MustCompile(`(?i)\b(?:rm\s+-[^\n;]*(?:r[^\n;]*f|f[^\n;]*r)|remove-item\s+[^\n;]*-recurse[^\n;]*-force)\s+(?:["']?(?:/|~|\$home|\$HOME|\.|\.\.)["']?\s*(?:;|&&|\|\||$)|[^\s;]*\*[^\s;]*)`)},
-	{"git-history-destruction", "destructive Git cleanup or history replacement is denied", regexp.MustCompile(`(?i)\bgit\s+(?:reset\s+--hard\b|clean\s+-[^\s]*(?:f[^\s]*d|d[^\s]*f|x)[^\s]*|push\b[^\n]*(?:--force(?:-with-lease)?|-f\b))`)},
-	{"infrastructure-destruction", "cloud or infrastructure destruction is operator-only", regexp.MustCompile(`(?i)\b(?:terraform|tofu|pulumi)\s+destroy\b|\bkubectl\s+delete\s+(?:namespace|cluster|persistentvolume|persistentvolumeclaim|pvc)\b|\bdocker\s+volume\s+(?:rm|prune)\b|\bgcloud\s+(?:projects|sql\s+instances|compute\s+(?:instances|disks))\s+delete\b|\baws\s+[^\n]*(?:delete-cluster|delete-db-instance|terminate-instances|delete-volume|delete-bucket)\b`)},
-	{"recovery-destruction", "backup deletion or recovery disablement is operator-only", regexp.MustCompile(`(?i)\b(?:delete|remove|disable)\b[^\n;]*(?:backup|snapshot|point-in-time|pitr|recovery)\b`)},
+	{"database-destruction", "database or schema destruction is operator-only", regexp.MustCompile(`(?is)\bdrop\s+(?:database|schema|table)\b|\balter\s+table\b[^;\n]*\bdrop\s+(?:column|constraint)\b|\btruncate(?:\s+table)?\b|\bdrop\s+schema\b[^;\n]*\bcascade\b`), true},
+	{"database-reset", "database reset, flush, or destructive downgrade is operator-only", regexp.MustCompile(`(?i)(?:--reset-public\b|\b(?:supabase\s+db\s+reset|prisma\s+migrate\s+reset|rails\s+db:(?:drop|reset)|django-admin\s+flush|manage\.py\s+flush|alembic\s+downgrade\s+base|pg_restore\b[^\n]*\s--clean\b))`), false},
+	{"filesystem-destruction", "recursive deletion of a broad or protected path is denied", regexp.MustCompile(`(?i)\b(?:rm\s+-[^\n;]*(?:r[^\n;]*f|f[^\n;]*r)|remove-item\s+[^\n;]*-recurse[^\n;]*-force)\s+(?:["']?(?:/|~|\$home|\$HOME|\.|\.\.)["']?\s*(?:;|&&|\|\||$)|[^\s;]*\*[^\s;]*)`), false},
+	{"git-history-destruction", "destructive Git cleanup or history replacement is denied", regexp.MustCompile(`(?i)\bgit\s+(?:reset\s+--hard\b|clean\s+-[^\s]*(?:f[^\s]*d|d[^\s]*f|x)[^\s]*|push\b[^\n]*(?:--force(?:-with-lease)?|-f\b))`), false},
+	{"infrastructure-destruction", "cloud or infrastructure destruction is operator-only", regexp.MustCompile(`(?i)\b(?:terraform|tofu|pulumi)\s+destroy\b|\bkubectl\s+delete\s+(?:namespace|cluster|persistentvolume|persistentvolumeclaim|pvc)\b|\bdocker\s+volume\s+(?:rm|prune)\b|\bgcloud\s+(?:projects|sql\s+instances|compute\s+(?:instances|disks))\s+delete\b|\baws\s+[^\n]*(?:delete-cluster|delete-db-instance|terminate-instances|delete-volume|delete-bucket)\b`), false},
+	{"recovery-destruction", "backup deletion or recovery disablement is operator-only", regexp.MustCompile(`(?i)\b(?:delete|remove|disable)\b[^\n;]*(?:backup|snapshot|point-in-time|pitr|recovery)\b`), false},
 }
+
+// liveSQLClientPattern matches the executable of a command that runs SQL against a
+// live database connection. Reading, committing, or diffing a file that CONTAINS
+// SQL is not such a command; only these executors actually apply DDL/DML.
+var liveSQLClientPattern = regexp.MustCompile(`(?i)^(?:psql|mysql|mariadb|mongo|mongosh|cockroach|sqlcmd|usql|clickhouse-client)$`)
+
+// fileRunnerPattern matches an executable that EXECUTES a file argument, so that
+// file's contents are a live capability — unlike git/cp/cat, which treat a named
+// file as data. SQL clients are added at the use site (they run a file via -f/<).
+var fileRunnerPattern = regexp.MustCompile(`(?i)^(?:python[0-9.]*|sh|bash|zsh|ksh|dash|ruby|node|deno|bun|perl|php|pwsh|powershell)$`)
 
 var operationalPathPattern = regexp.MustCompile(`(?i)(?:^|/)(?:scripts?|migrations?|schema|database|db|deploy|infra|ops|terraform|k8s)(?:/|$)|\.(?:sql|ps1|sh|bash|py)$`)
 
@@ -86,6 +105,7 @@ var approvedPublisherPattern = regexp.MustCompile(`(?i)^\s*(?:[^\s]*/)?boatstack
 // boatstack-helper_darwin_arm64) that a running update may invoke after the installed
 // helper is swapped or removed.
 var approvedUpdatePublisherPattern = regexp.MustCompile(`(?i)^\s*(?:[^\s]*/)?boatstack-helper(?:[_.-][a-z0-9._-]+)?\s+publish-update-pr\b[^\n;&|]*$`)
+
 // deliveryStatePathPattern matches Boatstack's managed runtime/control state so
 // the guard denies direct model mutation of it. It covers the embedded homes
 // (boatstack/deliveries and any .git/.../boatstack subtree) and the Detached
@@ -369,23 +389,36 @@ func publicationBypassFinding(repo, reason, source string) (SafetyFinding, bool)
 	return finding, true
 }
 
-func classifySafetyText(value, source string) []SafetyFinding {
+// classifySafetyText matches destructive-operation text. scanSQL gates the rules
+// whose grammar is inert as data and destructive only when a live database client
+// runs it — bare DDL (DROP TABLE) and unbounded DML (DELETE FROM … with no WHERE).
+// Callers pass scanSQL=true only in an executor context (a command that invokes a
+// SQL client, a file the command executes, or a live SQL tool); they pass false
+// for a committed artifact, a git operand, or a document edit, so declarative SQL
+// is treated as data. Self-executing rules (rm, git, terraform, supabase db reset)
+// name their own executor and always apply.
+func classifySafetyText(value, source string, scanSQL bool) []SafetyFinding {
 	if isPureReadOnlyCommand(value) {
 		return nil
 	}
 	findings := []SafetyFinding{}
 	seen := map[string]bool{}
 	for _, rule := range irreversiblePatterns {
+		if rule.sqlEffect && !scanSQL {
+			continue
+		}
 		if rule.pattern.MatchString(value) && !seen[rule.category] {
 			seen[rule.category] = true
 			findings = append(findings, SafetyFinding{Category: rule.category, Reason: rule.reason, Source: source})
 		}
 	}
-	for _, statement := range mutationStatementPattern.FindAllString(strings.ToLower(value), -1) {
-		normalized := " " + strings.Join(strings.Fields(statement), " ") + " "
-		if !strings.Contains(normalized, " where ") {
-			findings = append(findings, SafetyFinding{Category: "unbounded-data-mutation", Reason: "unbounded data deletion or update is denied", Source: source})
-			break
+	if scanSQL {
+		for _, statement := range mutationStatementPattern.FindAllString(strings.ToLower(value), -1) {
+			normalized := " " + strings.Join(strings.Fields(statement), " ") + " "
+			if !strings.Contains(normalized, " where ") {
+				findings = append(findings, SafetyFinding{Category: "unbounded-data-mutation", Reason: "unbounded data deletion or update is denied", Source: source})
+				break
+			}
 		}
 	}
 	return findings
@@ -449,44 +482,160 @@ func shellPipelineStages(value string) ([]string, bool) {
 	return stages, true
 }
 
-func safeRepositoryPath(repo, candidate string) (string, bool) {
-	candidate = strings.Trim(candidate, "\"'`;,()[]{}")
-	if candidate == "" || strings.HasPrefix(candidate, "-") {
-		return "", false
-	}
-	ext := strings.ToLower(filepath.Ext(candidate))
-	if ext != ".py" && ext != ".sh" && ext != ".bash" && ext != ".ps1" && ext != ".sql" {
-		return "", false
-	}
-	path := candidate
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(repo, filepath.FromSlash(candidate))
-	}
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return "", false
-	}
-	rel, err := filepath.Rel(repo, abs)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", false
-	}
-	info, err := os.Lstat(abs)
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-		return "", false
-	}
-	return abs, true
-}
-
-func invokedRepositoryFiles(repo, command string) []string {
-	paths := []string{}
-	seen := map[string]bool{}
-	for _, token := range strings.Fields(command) {
-		if path, ok := safeRepositoryPath(repo, token); ok && !seen[path] {
-			seen[path] = true
-			paths = append(paths, path)
+// shellSegments splits a command into simple-command segments on unquoted shell
+// operators (; & | and newline), so each segment's first word is its executor.
+// && and || reduce to their operator characters, which still segments correctly.
+func shellSegments(value string) []string {
+	segments := []string{}
+	start := 0
+	var quote rune
+	escaped := false
+	for index, char := range value {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if char == '\\' && quote != '\'' {
+			escaped = true
+			continue
+		}
+		if quote != 0 {
+			if char == quote {
+				quote = 0
+			}
+			continue
+		}
+		if char == '\'' || char == '"' {
+			quote = char
+			continue
+		}
+		if char == ';' || char == '&' || char == '|' || char == '\n' {
+			segments = append(segments, value[start:index])
+			start = index + 1
 		}
 	}
-	return paths
+	return append(segments, value[start:])
+}
+
+// segmentExecutor returns the executable basename of a simple command, skipping
+// leading VAR=value assignments and benign wrappers (env, sudo, time, …). It
+// returns "" when the segment has no command word.
+func segmentExecutor(segment string) string {
+	fields := strings.Fields(segment)
+	for len(fields) > 0 {
+		field := fields[0]
+		if strings.HasPrefix(field, "-") {
+			return ""
+		}
+		if eq := strings.IndexByte(field, '='); eq > 0 && !strings.ContainsAny(field[:eq], "/\\") {
+			fields = fields[1:]
+			continue
+		}
+		base := strings.TrimSuffix(strings.ToLower(filepath.Base(field)), ".exe")
+		switch base {
+		case "env", "sudo", "time", "nohup", "xargs", "command", "doas", "stdbuf":
+			fields = fields[1:]
+			continue
+		}
+		return base
+	}
+	return ""
+}
+
+// shellDashCScript returns the script passed to a shell's -c flag, so an executor
+// hidden inside `bash -c "…"` is analyzed at the same fidelity as a top-level one.
+func shellDashCScript(executor, segment string) (string, bool) {
+	switch executor {
+	case "sh", "bash", "zsh", "ksh", "dash":
+	default:
+		return "", false
+	}
+	fields := strings.Fields(segment)
+	for index, field := range fields {
+		if field == "-c" && index+1 < len(fields) {
+			return strings.Trim(strings.Join(fields[index+1:], " "), "\"'"), true
+		}
+	}
+	return "", false
+}
+
+// commandExecutesLiveSQL reports whether any segment of the command invokes a live
+// database client. Quoted prose in an unrelated command (git commit -m "DROP
+// TABLE …") is not an executor and returns false; a nested shell -c script is
+// unwrapped so `bash -c "psql … DROP …"` returns true.
+func commandExecutesLiveSQL(command string) bool {
+	for _, segment := range shellSegments(command) {
+		executor := segmentExecutor(segment)
+		if liveSQLClientPattern.MatchString(executor) {
+			return true
+		}
+		if inline, ok := shellDashCScript(executor, segment); ok && commandExecutesLiveSQL(inline) {
+			return true
+		}
+	}
+	return false
+}
+
+// executedRepositoryFiles returns repository files the command actually EXECUTES,
+// split into regular files (whose contents are inspected) and symlinked
+// entrypoints (reported, never followed). A file merely named as data — git add
+// x.sql, cp, cat — is returned by neither, because only runner segments (an
+// interpreter or a SQL client that runs a file) are considered.
+func executedRepositoryFiles(repo, command string) (content []string, symlinks []string) {
+	seen := map[string]bool{}
+	for _, segment := range shellSegments(command) {
+		executor := segmentExecutor(segment)
+		if !fileRunnerPattern.MatchString(executor) && !liveSQLClientPattern.MatchString(executor) {
+			continue
+		}
+		for _, token := range strings.Fields(segment) {
+			candidate := strings.Trim(token, "\"'`;,()[]{}")
+			if candidate == "" || strings.HasPrefix(candidate, "-") {
+				continue
+			}
+			ext := strings.ToLower(filepath.Ext(candidate))
+			if ext != ".py" && ext != ".sh" && ext != ".bash" && ext != ".ps1" && ext != ".sql" {
+				continue
+			}
+			path := candidate
+			if !filepath.IsAbs(path) {
+				path = filepath.Join(repo, filepath.FromSlash(candidate))
+			}
+			abs, err := filepath.Abs(path)
+			if err != nil {
+				continue
+			}
+			rel, err := filepath.Rel(repo, abs)
+			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				continue
+			}
+			if seen[abs] {
+				continue
+			}
+			info, err := os.Lstat(abs)
+			if err != nil {
+				continue
+			}
+			seen[abs] = true
+			switch {
+			case info.Mode()&os.ModeSymlink != 0:
+				symlinks = append(symlinks, abs)
+			case info.Mode().IsRegular():
+				content = append(content, abs)
+			}
+		}
+	}
+	return content, symlinks
+}
+
+// sqlExecutorToolPattern matches a tool name that denotes a database client
+// executing SQL against a live connection (an MCP execute_sql / db query tool),
+// so its arguments are a live capability rather than inert text.
+var sqlExecutorToolPattern = regexp.MustCompile(`(?i)(?:execute|run|exec)[_-]?sql|sql[_-]?(?:exec|execute|query|statement)|db[_-]?(?:execute|exec|query)`)
+
+// toolExecutesLiveSQL reports whether the tool runs SQL against a live database.
+func toolExecutesLiveSQL(name string) bool {
+	return sqlExecutorToolPattern.MatchString(strings.ToLower(name))
 }
 
 func ClassifyCommand(repo, command string) []SafetyFinding {
@@ -504,7 +653,7 @@ func ClassifyCommand(repo, command string) []SafetyFinding {
 	if strings.Contains(command, "workspace-sync") && !isPureReadOnlyCommand(command) && !controlledWorkspaceSync(repo, command) {
 		return []SafetyFinding{{Category: "workspace-sync-bypass", Reason: "recoverable branch alignment must use the exact project-local Boatstack helper", Source: "command"}}
 	}
-	findings := classifySafetyText(command, "command")
+	findings := classifySafetyText(command, "command", commandExecutesLiveSQL(command))
 	if len(findings) > 0 {
 		return dedupeFindings(findings)
 	}
@@ -519,20 +668,15 @@ func ClassifyCommand(repo, command string) []SafetyFinding {
 	if len(findings) > 0 || isPureReadOnlyCommand(command) {
 		return dedupeFindings(findings)
 	}
-	for _, token := range strings.Fields(command) {
-		candidate := strings.Trim(token, "\"'`;,()[]{}")
-		if ext := strings.ToLower(filepath.Ext(candidate)); ext != ".py" && ext != ".sh" && ext != ".bash" && ext != ".ps1" && ext != ".sql" {
-			continue
-		}
-		path := candidate
-		if !filepath.IsAbs(path) {
-			path = filepath.Join(repo, filepath.FromSlash(path))
-		}
-		if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
-			return []SafetyFinding{{Category: "symlink-entrypoint", Reason: "an invoked repository entrypoint is a symlink and cannot be inspected safely", Source: filepath.Base(path)}}
-		}
+	// Only inspect files the command actually EXECUTES (interpreter / SQL-client
+	// segments). A file merely named as data (git add x.sql, cp, cat) is not an
+	// executed capability, so its SQL content is never classified. An executed file
+	// IS a live capability, so its contents are scanned with scanSQL=true.
+	contentFiles, symlinkFiles := executedRepositoryFiles(repo, command)
+	if len(symlinkFiles) > 0 {
+		return []SafetyFinding{{Category: "symlink-entrypoint", Reason: "an invoked repository entrypoint is a symlink and cannot be inspected safely", Source: filepath.Base(symlinkFiles[0])}}
 	}
-	for _, path := range invokedRepositoryFiles(repo, command) {
+	for _, path := range contentFiles {
 		value, err := os.ReadFile(path)
 		if err != nil {
 			return []SafetyFinding{{Category: "unreadable-entrypoint", Reason: "an invoked repository entrypoint could not be inspected", Source: filepath.Base(path)}}
@@ -541,7 +685,7 @@ func ClassifyCommand(repo, command string) []SafetyFinding {
 		if relErr != nil {
 			relative = filepath.Base(path)
 		}
-		findings = append(findings, classifySafetyText(string(value), filepath.ToSlash(relative))...)
+		findings = append(findings, classifySafetyText(string(value), filepath.ToSlash(relative), true)...)
 	}
 	return dedupeFindings(findings)
 }
@@ -557,7 +701,10 @@ func ClassifyTool(repo, name string, input any) []SafetyFinding {
 		return []SafetyFinding{{Category: "malformed-tool-input", Reason: "invalid-tool-input", Source: "tool-input"}}
 	}
 	combined := name + " " + string(value)
-	findings := classifySafetyText(combined, "tool-input")
+	// Bare SQL grammar in a tool's arguments is a live capability only when the tool
+	// itself executes SQL (an MCP execute_sql / db query tool). A Write/Edit/Read
+	// whose content merely contains DDL is a document, not an execution.
+	findings := classifySafetyText(combined, "tool-input", toolExecutesLiveSQL(name))
 	nameLower := strings.ToLower(name)
 	attemptedPath := attemptedRepositoryPath(repo, input)
 	mutationCapable := mutationToolPattern.MatchString(nameLower) || (strings.HasPrefix(nameLower, "mcp__") && !externalReadOnlyToolPattern.MatchString(nameLower))
@@ -1144,7 +1291,13 @@ func CheckRepositorySafety(repoPath string) (SafetyReport, error) {
 		if readErr != nil {
 			return SafetyReport{}, readErr
 		}
-		findings = append(findings, classifySafetyText(string(value), relative)...)
+		// A committed file in the delivery diff is a DATA ARTIFACT, not an execution:
+		// a declarative migration .sql or a schema dump is applied later by the
+		// controlled deploy pipeline (the operator boundary), so its bare SQL is not a
+		// capability the agent is exercising now (scanSQL=false). Self-executing
+		// destruction committed into a script (supabase db reset, terraform destroy)
+		// still blocks, because those rules name their own executor.
+		findings = append(findings, classifySafetyText(string(value), relative, false)...)
 	}
 	findings = dedupeFindings(findings)
 	status := "PASS"

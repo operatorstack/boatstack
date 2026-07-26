@@ -55,7 +55,7 @@ func TestIrreversibleCommandCorpusIsDenied(t *testing.T) {
 		"wildcard deletion":  `rm -rf build/*`,
 		"compound pipeline":  `rg reset scripts | rm -rf .`,
 		"subshell":           `echo $(git reset --hard HEAD~1)`,
-		"environment prefix": `TARGET=dev sh -c 'DROP SCHEMA public CASCADE'`,
+		"environment prefix": `TARGET=dev sh -c 'psql -c "DROP SCHEMA public CASCADE"'`,
 		"hard reset":         `git reset --hard HEAD~1`,
 		"force push":         `git push --force origin main`,
 		"cloud deletion":     `gcloud sql instances delete primary`,
@@ -190,6 +190,97 @@ func TestSafeDiagnosticsAndFixForwardCommandsRemainAllowed(t *testing.T) {
 	for _, command := range commands {
 		if findings := ClassifyCommand(repo, command); len(findings) != 0 {
 			t.Fatalf("safe command %q was denied: %#v", command, findings)
+		}
+	}
+}
+
+func containsCategory(findings []SafetyFinding, category string) bool {
+	for _, finding := range findings {
+		if finding.Category == category {
+			return true
+		}
+	}
+	return false
+}
+
+// Git plumbing and file I/O never execute SQL, so naming a DDL-laden file (or
+// spelling a keyword in a message or a note) must not be classified as database
+// destruction. This is the recurring migration-commit false positive.
+func TestDataOperationsOnSQLAreNotDestruction(t *testing.T) {
+	repo := safetyTestRepo(t)
+	dump := filepath.Join(repo, "schema", "generated", "staging.sql")
+	if err := os.MkdirAll(filepath.Dir(dump), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dump, []byte("DROP SCHEMA public CASCADE;\nTRUNCATE TABLE accounts;\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	allowed := []string{
+		"git add schema/generated/staging.sql",
+		`git commit -m "regenerate staging schema (adds DROP TABLE stale)"`,
+		"git diff --stat schema/generated/staging.sql",
+		"git restore --staged schema/generated/staging.sql",
+		"git status",
+		"cat schema/generated/staging.sql",
+	}
+	for _, command := range allowed {
+		if findings := ClassifyCommand(repo, command); len(findings) != 0 {
+			t.Errorf("data operation wrongly blocked: %q -> %#v", command, findings)
+		}
+	}
+	// A note that merely mentions the keywords is a document, not an execution.
+	edit := ClassifyTool(repo, "Edit", map[string]any{
+		"file_path": filepath.Join(repo, "notes.md"),
+		"content":   "Recovery runbook: operator runs `psql -c \"DROP SCHEMA public CASCADE\"` off-hours.",
+	})
+	if containsCategory(edit, "database-destruction") {
+		t.Errorf("document edit wrongly flagged as database-destruction: %#v", edit)
+	}
+}
+
+// The real boundary must stay intact: a command whose EXECUTOR runs SQL against a
+// live database is still denied, whether the DDL is inline, in a file it executes,
+// or in a live SQL tool.
+func TestLiveSQLExecutionStillBlocked(t *testing.T) {
+	repo := safetyTestRepo(t)
+	migration := filepath.Join(repo, "scripts", "drop.sql")
+	if err := os.MkdirAll(filepath.Dir(migration), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(migration, []byte("DROP SCHEMA public CASCADE;\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pyRunner := filepath.Join(repo, "scripts", "run_ddl.py")
+	if err := os.WriteFile(pyRunner, []byte("cur.execute('DROP TABLE accounts')\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	blocked := []string{
+		`psql -c "DROP SCHEMA public CASCADE"`, // inline DDL via a live client
+		"psql -f scripts/drop.sql",             // client executes the file
+		"python scripts/run_ddl.py",            // interpreter executes DDL-running code
+	}
+	for _, command := range blocked {
+		if findings := ClassifyCommand(repo, command); !containsCategory(findings, "database-destruction") {
+			t.Errorf("live SQL execution not blocked: %q -> %#v", command, findings)
+		}
+	}
+	// A live SQL tool (MCP execute_sql) running DDL is still denied.
+	tool := ClassifyTool(repo, "mcp__db__execute_sql", map[string]any{"query": "DROP TABLE users"})
+	if !containsCategory(tool, "database-destruction") {
+		t.Errorf("live SQL tool not blocked: %#v", tool)
+	}
+}
+
+// Read-only helper status commands may be piped for inspection during recovery
+// without dropping into the full classifier.
+func TestReadOnlyHelperStatusIsPipeable(t *testing.T) {
+	repo := safetyTestRepo(t)
+	for _, command := range []string{
+		"boatstack-helper mutation-status | grep active",
+		"boatstack-helper recovery-status | head -20",
+	} {
+		if findings := ClassifyCommand(repo, command); len(findings) != 0 {
+			t.Errorf("read-only helper pipe wrongly blocked: %q -> %#v", command, findings)
 		}
 	}
 }
@@ -390,28 +481,44 @@ func TestBlockedHookNeverCreatesSentinelSideEffect(t *testing.T) {
 	}
 }
 
-func TestOperationalDiffBlocksGateProgression(t *testing.T) {
+// A committed declarative migration is a DATA ARTIFACT applied later by the
+// controlled deploy pipeline, not a capability the agent is exercising now, so it
+// must not block gate progression — regenerating and committing schema SQL is the
+// normal migration step. A self-executing destructive capability committed into a
+// SCRIPT still blocks, because those rules name their own executor.
+func TestOperationalDiffTreatsDeclarativeSQLAsData(t *testing.T) {
 	repo := safetyTestRepo(t)
-	path := filepath.Join(repo, "scripts", "recover.sql")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	sqlPath := filepath.Join(repo, "schema", "generated", "staging.sql")
+	if err := os.MkdirAll(filepath.Dir(sqlPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte("DROP SCHEMA public CASCADE;\n"), 0o644); err != nil {
+	// A pg_dump-style artifact, legitimately full of DROP/DDL.
+	if err := os.WriteFile(sqlPath, []byte("DROP SCHEMA public CASCADE;\nCREATE SCHEMA public;\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	report, err := CheckRepositorySafety(repo)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Status != "BLOCKED" || len(report.Findings) == 0 {
-		t.Fatalf("operational destructive capability did not block gates: %#v", report)
+	if report.Status != "PASS" {
+		t.Fatalf("declarative migration .sql was wrongly blocked: %#v", report)
 	}
-	if err := os.WriteFile(path, []byte("BEGIN;\nSELECT current_database();\nCOMMIT;\n"), 0o644); err != nil {
+
+	// A committed script that RUNS a destructive reset is a live capability the
+	// deploy pipeline would execute — it must still block.
+	scriptPath := filepath.Join(repo, "scripts", "reset.sh")
+	if err := os.MkdirAll(filepath.Dir(scriptPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(scriptPath, []byte("#!/usr/bin/env bash\nsupabase db reset --linked\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	report, err = CheckRepositorySafety(repo)
-	if err != nil || report.Status != "PASS" {
-		t.Fatalf("fix-forward operational diff did not pass: %#v %v", report, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Status != "BLOCKED" || len(report.Findings) == 0 {
+		t.Fatalf("committed self-executing destructive script did not block gates: %#v", report)
 	}
 }
 
