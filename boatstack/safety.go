@@ -3,7 +3,6 @@ package boatstack
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -921,11 +920,17 @@ func decodeGeminiHook(value []byte) (string, any, error) {
 
 func structuredHookDeny(host string, finding SafetyFinding) ([]byte, error) {
 	message := denialMessage(host, finding)
-	value, err := json.Marshal(map[string]any{
-		"hookSpecificOutput": map[string]any{
-			"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": message,
-		},
-	})
+	hookOutput := map[string]any{
+		"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": message,
+	}
+	// Opt-in structured object for hosts that adopt rich denial rendering. Nested
+	// inside the host's existing container; the flat reason above is always the
+	// complete fallback for any host that ignores it. Off by default (no host
+	// documents tolerating unknown keys — see references/host-hook-contracts.md).
+	if denialRichEnabled() {
+		hookOutput["boatstackDenial"] = denialFor(host, finding).Structured()
+	}
+	value, err := json.Marshal(map[string]any{"hookSpecificOutput": hookOutput})
 	return append(value, '\n'), err
 }
 
@@ -938,9 +943,13 @@ var hookHostContracts = map[string]hookHostContract{
 		},
 		deny: func(finding SafetyFinding) ([]byte, error) {
 			message := denialMessage("cursor", finding)
-			value, err := json.Marshal(map[string]any{
+			payload := map[string]any{
 				"continue": true, "permission": "deny", "user_message": message, "agent_message": message,
-			})
+			}
+			if denialRichEnabled() {
+				payload["boatstackDenial"] = denialFor("cursor", finding).Structured()
+			}
+			value, err := json.Marshal(payload)
 			return append(value, '\n'), err
 		},
 	},
@@ -961,101 +970,23 @@ var hookHostContracts = map[string]hookHostContract{
 			return append(value, '\n'), err
 		},
 		deny: func(finding SafetyFinding) ([]byte, error) {
-			value, err := json.Marshal(map[string]any{"decision": "deny", "reason": denialMessage("gemini", finding)})
+			payload := map[string]any{"decision": "deny", "reason": denialMessage("gemini", finding)}
+			if denialRichEnabled() {
+				payload["boatstackDenial"] = denialFor("gemini", finding).Structured()
+			}
+			value, err := json.Marshal(payload)
 			return append(value, '\n'), err
 		},
 	},
 }
 
+// denialMessage renders the human-facing reason string embedded in a host's hook
+// decision. It delegates to the structured Denial model (denial.go) and renders
+// the plain, multi-line form — the safe default that every host displays. Richer
+// treatments (markdown, ANSI, the structured object) are produced from the same
+// Denial by the CLI/guard surfaces and the opt-in rich path.
 func denialMessage(host string, finding SafetyFinding) string {
-	if finding.Category == "malformed-tool-input" {
-		name := strings.ToUpper(strings.TrimSpace(host))
-		if name == "" {
-			name = "HOST"
-		}
-		message := "Boatstack could not inspect the " + name + " hook event (HOST_PAYLOAD_MALFORMED:" + finding.Reason + "). No unsafe operation was detected; execution is denied because the intended command or tool call is unavailable. Retry once with an explicit non-empty command. If this repeats, stop shell and tool retries and preserve current edits."
-		if strings.EqualFold(host, "cursor") {
-			message += " Start a new Cursor task and run `.product-loop/bin/boatstack-helper diagnose-hook --host cursor --repo .` from an external terminal. Do not reinstall Boatstack unless it separately reports a missing, drifted, unsafe, or checksum-invalid runtime."
-		} else {
-			message += " Run `.product-loop/bin/boatstack-helper diagnose-hook --host " + strings.ToLower(host) + " --repo .` from an external terminal before changing the installation."
-		}
-		return message
-	}
-	if finding.Category == "workflow-state-invalid" {
-		return "Boatstack denied publication because managed delivery state cannot be verified. Re-run the active Boatstack operation or repair the installation before publishing."
-	}
-	if finding.Category == "workflow-state-tamper" {
-		return "Boatstack denied a direct write to managed runtime authority under .git/boatstack/. Change it only through the command that owns it: a build, test, review, or ship transition for delivery state, or publish-update-pr for a version update. If this is a false positive, run `boatstack-helper diagnose-hook` from an external terminal."
-	}
-	if finding.Category == "workflow-phase-bypass" {
-		target := "the saved Boatstack plan"
-		if finding.BlockingFeature != "" {
-			target = fmt.Sprintf("Boatstack feature %q", finding.BlockingFeature)
-		}
-		path := ""
-		if finding.AttemptedPath != "" {
-			path = " Attempted path: " + finding.AttemptedPath + "."
-		}
-		next := finding.NextOperation
-		if next == "" {
-			next = "repair-state"
-		}
-		return fmt.Sprintf("Boatstack denied product mutation because %s is at %s.%s Continue with %s; unrelated task completions do not authorize implementation.", target, finding.WorkflowStage, path, next)
-	}
-	if finding.Category == "workflow-publication-bypass" {
-		target := "the active managed delivery"
-		if finding.BlockingFeature != "" {
-			target = fmt.Sprintf("managed delivery %q", finding.BlockingFeature)
-		}
-		relation := ""
-		if finding.BranchRelation == "unrelated" {
-			relation = " It is unrelated to the current branch."
-		} else if finding.BranchRelation == "ambiguous" {
-			relation = " More than one delivery may be blocking publication."
-		}
-		context := ""
-		if finding.BlockingSlice != "" {
-			context += " slice=" + finding.BlockingSlice
-		}
-		if finding.BranchRelation != "" {
-			context += " relation=" + finding.BranchRelation
-		}
-		if finding.ParentDelivery != "" {
-			context += " parent=" + finding.ParentDelivery
-		}
-		if finding.NextOperation != "" {
-			context += " next=" + finding.NextOperation
-		}
-		if context != "" {
-			context = " Recovery context:" + context + "."
-		}
-		return "Boatstack denied the publication bypass because " + target + " still owns publication authority." + relation + context + " Resolve the reported change through the managed recovery path; do not repeat this push or PR mutation manually."
-	}
-	if strings.HasPrefix(finding.Category, "operation-") {
-		context := ""
-		if finding.OperationID != "" {
-			context = fmt.Sprintf(" operation=%s state=%s attempt=%d", finding.OperationID, finding.OperationState, finding.AttemptNumber)
-		}
-		switch finding.Category {
-		case "operation-in-flight":
-			return "Boatstack is already supervising this exact operation." + context + ". Wait for its completion event; do not launch it again."
-		case "operation-already-succeeded":
-			return "Boatstack already observed this exact operation succeed." + context + ". Continue from the resulting repository state instead of repeating it."
-		case "operation-reconciliation-required":
-			return "Boatstack cannot yet distinguish success from an interrupted response." + context + ". Reconcile the expected postcondition with operation-status before any retry."
-		case "operation-retry-exhausted":
-			return "Boatstack exhausted the persistent retry budget for this operation." + context + ". Preserve current state and use the reported manual recovery; do not repeat the tool call."
-		default:
-			return "Boatstack could not verify the durable operation state." + context + ". Inspect operation-status before retrying."
-		}
-	}
-	if finding.Category == "git-history-destruction" {
-		return "Boatstack denied raw destructive Git cleanup. Use the project-local workspace-sync operation to checkpoint current state and align the exact branch; do not scan delivery artifacts or retry the destructive command."
-	}
-	if finding.Category == "workspace-sync-bypass" {
-		return "Boatstack denied an unverified workspace sync. Invoke only the exact project-local workspace-sync helper for the current repository."
-	}
-	return "Boatstack denied an irreversible operation (" + finding.Category + "). Preserve the current state and use read-only diagnosis or fix-forward recovery; destructive recovery is operator-only outside the agent workflow."
+	return denialFor(host, finding).Render(RenderPlain)
 }
 
 func HookDecision(options SafetyHookOptions) ([]byte, bool) {

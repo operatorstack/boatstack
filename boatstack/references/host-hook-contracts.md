@@ -53,3 +53,38 @@ fingerprint. A delayed or duplicated completion cannot initiate work. Missing or
 uncertain completion becomes `RECONCILE_REQUIRED`, and safety output may expose
 only operation identity, state, attempt number, and whether reconciliation is
 required.
+
+## Denial rendering
+
+A denial is a guardrail, not a crash. Every human-facing denial is one structured
+value (`denial.go`) rendered by the surface that shows it:
+
+- Hook decision `reason` (all hosts): a plain, multi-line message — a badge line
+  (`Blocked by Boatstack`), the guidance, a reassurance line, and the recovery
+  hint. This is the safe default every host displays.
+- CLI errors and guard-script stderr: the same message as an ANSI soft-coral badge
+  when the stream is a real terminal, and the plain form (the literal `BLOCKED:`
+  prefix for CLI errors) when redirected. Controlled by `BOATSTACK_COLOR`
+  (`auto` default, `always`, `never`) and `NO_COLOR`.
+- Structured object (opt-in): `BOATSTACK_DENIAL_RICH=1` adds a `boatstackDenial`
+  object next to the reason for a host that adopts rich denial rendering.
+
+### Unknown-key tolerance (rechecked 2026-07-26 against the sources above)
+
+Whether a host rejects unknown keys in the decision JSON governs the structured
+object. None of the four host docs state that extra keys are rejected, and each
+already defines additional optional fields (Claude `additionalContext` /
+`updatedInput`; Gemini `systemMessage` / `continue`), which implies permissive
+parsing — but none guarantees tolerance either.
+
+| Host | Documented extra fields | Rejects unknown keys? | Structured-object default |
+| --- | --- | --- | --- |
+| Claude Code | `additionalContext`, `updatedInput` (under `hookSpecificOutput`) | Not documented; lean tolerant | off (opt-in), nested in `hookSpecificOutput` |
+| Cursor | — | Not documented; lean tolerant | off (opt-in) |
+| Gemini CLI | `systemMessage`, `continue` | Not documented; lean tolerant | off (opt-in) |
+| Codex | — | Not documented; treat as strict (portable-only host) | off (opt-in) |
+
+Because tolerance is unverified, the structured object is off by default and the
+flat `reason` string is always complete on its own. Enable it per host only after
+the host is confirmed to ignore unknown keys, and never add fields to the
+Claude/Codex empty-allow path.
