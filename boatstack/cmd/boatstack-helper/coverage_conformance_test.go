@@ -70,6 +70,7 @@ var nonDeliveryVerbs = map[string]bool{
 	"bootstrap-safety-hook": true,
 	"workspace-cut":         true,
 	"workspace-cleanup":     true,
+	"workspace-reap":        true,
 	"workspace-sync":        true,
 	// Flow layer itself is read-only navigation over the machine, not a transition.
 	"flow": true,

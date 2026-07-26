@@ -405,7 +405,11 @@ func writeCompletedDelivery(t *testing.T, repo, feature, headBranch string) {
 }
 
 func TestResolveNextRoutesToWorkspaceCleanupAfterPublication(t *testing.T) {
-	repo := workspaceRepo(t, defaultWorkspace())
+	// With reap disabled, the merge checkpoint falls back to the single-feature
+	// workspace-cleanup surface for the just-merged worktree.
+	ws := defaultWorkspace()
+	ws.Reap = "off"
+	repo := workspaceRepo(t, ws)
 	if _, err := CutFeatureWorkspace(WorkspaceCutOptions{Repo: repo, Feature: "shipped"}); err != nil {
 		t.Fatal(err)
 	}

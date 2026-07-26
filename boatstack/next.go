@@ -338,6 +338,16 @@ func ResolveNext(repoPath, explicitFeature string) (NextStatus, error) {
 					base.NextOperation = "workspace-cleanup"
 					base.Reason = fmt.Sprintf("Feature %q is merged; its workspace on %q can be cleaned up.", completed[0].Feature, base.HeadBranch)
 				}
+				// At the merge checkpoint, prefer the backlog sweep: if reaping is
+				// enabled and there are terminal Boatstack workspaces to reclaim,
+				// surface workspace-reap so one prompt clears the accumulated backlog
+				// rather than only the just-merged feature.
+				if reapEnabled(repo) {
+					if count := CountReclaimableWorkspaces(repo); count > 0 {
+						base.NextOperation = "workspace-reap"
+						base.Reason = fmt.Sprintf("Feature %q is merged; %d merged or abandoned Boatstack workspace(s) are reclaimable.", completed[0].Feature, count)
+					}
+				}
 			}
 		} else {
 			branch, _ := gitCommand(repo, "branch", "--show-current")

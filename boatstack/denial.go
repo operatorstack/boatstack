@@ -337,7 +337,7 @@ func denialFor(host string, finding SafetyFinding) Denial {
 
 	case "workflow-state-tamper":
 		d.Qualifier = "managed runtime authority"
-		d.Detail = "Change `.git/boatstack/` only through the command that owns it — a build, test, review, or ship transition for delivery state, or `publish-update-pr` for a version update."
+		d.Detail = "Change `.git/boatstack/` only through the command that owns it — a build, test, review, or ship transition for delivery state, `publish-update-pr` for a version update, or `workspace-reap` to reclaim a finished worktree and its runtime state."
 		d.Reassurance = "Nothing was written; your runtime state is unchanged."
 		d.Hint = "boatstack-helper diagnose-hook"
 		return d
@@ -415,6 +415,12 @@ func denialFor(host string, finding SafetyFinding) Denial {
 	case "workspace-sync-bypass":
 		d.Qualifier = "unverified workspace sync"
 		d.Detail = "Invoke only the exact project-local workspace-sync helper for the current repository."
+		d.Reassurance = reassureUntouched
+		return d
+
+	case "filesystem-destruction":
+		d.Qualifier = "recursive deletion"
+		d.Detail = "Recursive deletion of a broad or protected path is denied. To reclaim a finished managed worktree and its branch, use `workspace-reap` (or single-feature `workspace-cleanup`); Boatstack removes them through its own sanctioned actuator. For any other path, preserve current state and use fix-forward recovery — destructive deletion is operator-only outside the agent workflow."
 		d.Reassurance = reassureUntouched
 		return d
 	}

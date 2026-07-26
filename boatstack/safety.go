@@ -128,6 +128,16 @@ func controlledPhaseTransition(command, stage string) bool {
 	if fields[1] == "undo" {
 		return true
 	}
+	// workspace-reap and workspace-cleanup are the sanctioned actuators that
+	// reclaim finished managed worktrees and branches. They mutate only
+	// Boatstack-owned workspace bookkeeping — never product source or delivery
+	// state — and self-guard (refusing the base branch, the current worktree, and
+	// unmerged or dirty work without an explicit force). They are stage-independent
+	// like undo: without this the pre-activation interlock would deny post-merge
+	// cleanup and force the operator to reclaim worktrees with raw, denied Git.
+	if fields[1] == "workspace-reap" || fields[1] == "workspace-cleanup" {
+		return true
+	}
 	switch stage {
 	case "DRAFT_PLAN":
 		return fields[1] == "planning-write" || fields[1] == "record-approval"

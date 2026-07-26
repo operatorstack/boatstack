@@ -94,6 +94,7 @@ type Workspace struct {
 	Mode         string `json:"mode,omitempty"`          // "worktree" | "branch" (default "worktree")
 	Cleanup      string `json:"cleanup,omitempty"`       // "confirm" | "auto" | "off" (default "confirm")
 	CleanupAfter string `json:"cleanup_after,omitempty"` // "merge" | "ship" (default "merge")
+	Reap         string `json:"reap,omitempty"`          // "confirm" | "auto" | "off" (default "confirm")
 }
 
 func ReadCanonical(path string) ([]byte, error) {

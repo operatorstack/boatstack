@@ -73,6 +73,47 @@ func TestIrreversibleCommandCorpusIsDenied(t *testing.T) {
 	}
 }
 
+// control-law: reap-mutates-only-through-the-sanctioned-actuator
+// The sanctioned workspace-reap helper is allowed through the pre-activation
+// interlock, while the raw destructive equivalents an operator would otherwise
+// run by hand stay denied and are redirected to workspace-reap.
+func TestReapHelperIsExemptWhileRawWorktreeRemovalStaysDenied(t *testing.T) {
+	repo := safetyTestRepo(t)
+	// A saved-but-unactivated plan latches the pre-activation interlock, so this
+	// proves the allowlist entry rather than merely the absence of a deny pattern.
+	writeValidSavedFeaturePlan(t, repo, "pending-feature")
+	helper := filepath.Join(repo, ".product-loop", "bin", helperName())
+	if err := os.MkdirAll(filepath.Dir(helper), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	allowed := ".product-loop/bin/" + helperName() + " workspace-reap --repo . --confirm"
+	if findings := ClassifyCommand(repo, allowed); len(findings) != 0 {
+		t.Fatalf("sanctioned reap helper was denied: %#v", findings)
+	}
+
+	// Recursive deletion of the Boatstack worktree directory stays denied.
+	rawFilesystem := ClassifyCommand(repo, "rm -rf .product-loop/worktrees/*")
+	if len(rawFilesystem) == 0 || rawFilesystem[0].Category != "filesystem-destruction" {
+		t.Fatalf("raw worktree deletion was not denied: %#v", rawFilesystem)
+	}
+	if message := denialMessage("cursor", rawFilesystem[0]); !strings.Contains(message, "workspace-reap") {
+		t.Fatalf("filesystem-destruction denial should redirect to workspace-reap: %s", message)
+	}
+
+	// Touching a worktree's runtime ledger is workflow-state-tamper.
+	rawState := ClassifyCommand(repo, "rm -rf .git/worktrees/old-feature/boatstack")
+	if len(rawState) == 0 || rawState[0].Category != "workflow-state-tamper" {
+		t.Fatalf("raw runtime-state deletion was not denied: %#v", rawState)
+	}
+	if message := denialMessage("cursor", rawState[0]); !strings.Contains(message, "workspace-reap") {
+		t.Fatalf("workflow-state-tamper denial should mention workspace-reap: %s", message)
+	}
+}
+
 func TestWorkspaceSyncIsTheOnlyAllowedRepositoryAlignmentCommand(t *testing.T) {
 	repo := safetyTestRepo(t)
 	writeValidSavedFeaturePlan(t, repo, "pending-feature")

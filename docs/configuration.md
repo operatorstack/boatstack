@@ -19,6 +19,7 @@ boatstack-user-config-field:workspace.enabled
 boatstack-user-config-field:workspace.mode
 boatstack-user-config-field:workspace.cleanup
 boatstack-user-config-field:workspace.cleanup_after
+boatstack-user-config-field:workspace.reap
 boatstack-user-config-field:adapters
 -->
 
@@ -133,13 +134,14 @@ List feature slugs here to drop past deliveries from the ambiguity check so hist
     "enabled": true,
     "mode": "worktree",
     "cleanup": "confirm",
-    "cleanup_after": "merge"
+    "cleanup_after": "merge",
+    "reap": "confirm"
   },
   "adapters": ["cursor", "claude", "codex", "github"]
 }
 ```
 
-Workspace `mode` is `worktree` or `branch`; cleanup is `confirm`, `auto`, or `off`; and cleanup eligibility begins after `merge` or `ship`. Supported adapters are `cursor`, `claude`, `codex`, `gemini`, and `github`. Empty or omitted adapters enable all supported surfaces.
+Workspace `mode` is `worktree` or `branch`; cleanup is `confirm`, `auto`, or `off`; and cleanup eligibility begins after `merge` or `ship`. `reap` is `confirm`, `auto`, or `off`: when a delivery's PR is confirmed merged, Boatstack sweeps every terminal (merged or abandoned) Boatstack workspace at once — `confirm` asks the operator once before reclaiming them, `auto` reclaims without asking, and `off` disables the sweep. Supported adapters are `cursor`, `claude`, `codex`, `gemini`, and `github`. Empty or omitted adapters enable all supported surfaces.
 
 ## Installer-owned fields
 
