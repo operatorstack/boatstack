@@ -11,10 +11,12 @@ import (
 //
 //	control-law: stale-delivery-cannot-block-unrelated-feature
 //	  A stale/invalid delivery in the shared store must never escalate into a
-//	  repo-wide INVALID_STATE that blocks resolution of an unrelated new feature.
-//	  The ignored-deliveries filter is applied at the read-only ResolveNext
-//	  boundary BEFORE invalidity becomes fatal; the mutation boundary
-//	  (ActiveManagedDeliveries) stays fail-closed.
+//	  repo-wide block on resolution of an unrelated delivery. This holds at EVERY
+//	  read-only resolution boundary — ResolveNext (new work) and ResolveRecovery
+//	  (recovering an existing delivery) alike: each partitions the store instead
+//	  of failing closed and applies the ignored-deliveries filter BEFORE
+//	  invalidity becomes fatal, blocking only on a still-unignored invalid
+//	  delivery. The mutation boundary (ActiveManagedDeliveries) stays fail-closed.
 //
 //	control-law: discard-preserves-published-authority
 //	  A delivery bearing published authority (any slice with a recorded PRState)
@@ -139,6 +141,88 @@ func TestResolveNextLeavesInvalidStateUntouched(t *testing.T) {
 	}
 	if string(before) != string(after) {
 		t.Fatalf("read-only resolution mutated the invalid state file\nbefore=%s\nafter=%s", before, after)
+	}
+}
+
+// The same law holds at the OTHER read-only resolution boundary: ResolveRecovery.
+// ResolveNext resolves new work; ResolveRecovery resolves an existing delivery
+// that hit a problem. Both scan the shared store, so both must tolerate an
+// unrelated stale delivery. These tests are the recovery-boundary twins of the
+// ResolveNext cases above — the defect that motivated generalizing the law was
+// that recovery had none of them and fell through to a repo-wide block.
+
+// Positive + bypass conformance: an IGNORED invalid delivery no longer poisons
+// recovery of an unrelated healthy delivery on the current branch. The ignore
+// filter runs before invalidity can become fatal, so recovery selects and routes
+// the real target instead of blocking on abandoned state.
+func TestResolveRecoveryIgnoredInvalidDeliveryDoesNotBlockHealthyBranch(t *testing.T) {
+	repo := nextTestRepo(t)
+	branch, _ := gitCommand(repo, "branch", "--show-current")
+
+	writeNextDelivery(t, repo, "healthy-feature", "BUILD", 0)
+	updateRecoveryDelivery(t, repo, "healthy-feature", branch, "", "")
+
+	writeInvalidDelivery(t, repo, "stale-one")
+	if _, err := IgnoreDelivery(repo, "stale-one"); err != nil {
+		t.Fatal(err)
+	}
+
+	status, err := ResolveRecovery(RecoveryStatusOptions{Repo: repo, Message: "the test failed", SourceStage: "ci"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.VerificationStatus != "VERIFIED" || status.Feature != "healthy-feature" ||
+		status.Lifecycle != "ACTIVE" || status.NextOperation != "repair_active" {
+		t.Fatalf("ignored invalid delivery poisoned recovery of an unrelated healthy branch: %#v", status)
+	}
+}
+
+// Negative + relation conformance: a still-unignored invalid delivery does block
+// recovery, but the block names exactly the offending delivery and routes to the
+// discard-delivery remedy — request -> boundary -> decision.
+func TestResolveRecoveryUnignoredInvalidDeliveryBlocksWithDiscardRemedy(t *testing.T) {
+	repo := nextTestRepo(t)
+	branch, _ := gitCommand(repo, "branch", "--show-current")
+	writeNextDelivery(t, repo, "healthy-feature", "BUILD", 0)
+	updateRecoveryDelivery(t, repo, "healthy-feature", branch, "", "")
+	writeInvalidDelivery(t, repo, "stale-one")
+
+	status, err := ResolveRecovery(RecoveryStatusOptions{Repo: repo, Message: "the test failed", SourceStage: "ci"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.VerificationStatus != "BLOCKED" || status.NextOperation != "discard-delivery" {
+		t.Fatalf("unignored invalid delivery did not block with discard remedy: %#v", status)
+	}
+	found := false
+	for _, slug := range status.Blockers {
+		if slug == "stale-one" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("block did not name the offending delivery: %#v", status.Blockers)
+	}
+}
+
+// Failure-state conformance: ResolveRecovery is read-only. A blocking decision on
+// an invalid delivery must leave the offending state file byte-for-byte unchanged.
+func TestResolveRecoveryLeavesInvalidStateUntouched(t *testing.T) {
+	repo := nextTestRepo(t)
+	statePath := writeInvalidDelivery(t, repo, "stale-one")
+	before, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ResolveRecovery(RecoveryStatusOptions{Repo: repo, Message: "boom", SourceStage: "ci"}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatalf("read-only recovery mutated the invalid state file\nbefore=%s\nafter=%s", before, after)
 	}
 }
 
