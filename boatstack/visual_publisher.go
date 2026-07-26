@@ -69,7 +69,7 @@ func SelectVisualPublisher(repo string) PRVisualEvidencePublisher {
 // or leaves the block unset so the caller falls back to the default public-branch
 // behavior.
 func visualPublishConfig(repo string) *VisualEvidencePublish {
-	config, _, err := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	config, _, err := LoadConfig(WorkspaceFor(repo).ProjectConfigPath())
 	if err != nil {
 		return nil
 	}

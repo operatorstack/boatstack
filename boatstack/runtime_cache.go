@@ -90,19 +90,7 @@ func worktreeGitDir(repo string) (string, error) {
 }
 
 func sharedRuntimeDirectory(repo, version, sourceCommit string) (string, error) {
-	version, err := safeCacheSegment(version, "Boatstack version")
-	if err != nil {
-		return "", err
-	}
-	sourceCommit, err = safeCacheSegment(sourceCommit, "source commit")
-	if err != nil {
-		return "", err
-	}
-	common, err := gitCommonDir(repo)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(common, "boatstack", "runtimes", version, sourceCommit, platformKey()), nil
+	return WorkspaceFor(repo).RuntimeDir(version, sourceCommit)
 }
 
 func sharedRuntimePaths(repo, version, sourceCommit string) (string, string, error) {
@@ -364,7 +352,7 @@ func RunHydrateRuntime(repoPath string) error {
 	if err != nil {
 		return err
 	}
-	config, _, err := LoadConfig(filepath.Join(repo, ".boatstack-project.json"))
+	config, _, err := LoadConfig(WorkspaceFor(repo).SourceConfigPath())
 	if err != nil {
 		return fmt.Errorf("load project configuration for runtime hydration: %w", err)
 	}

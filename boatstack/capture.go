@@ -92,7 +92,7 @@ func CaptureEvidence(options CaptureEvidenceOptions) (PRVisualEvidenceManifest, 
 	if feature == "" {
 		return PRVisualEvidenceManifest{}, fmt.Errorf("capture requires a managed --feature")
 	}
-	config, _, err := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	config, _, err := LoadConfig(WorkspaceFor(repo).ProjectConfigPath())
 	if err != nil {
 		return PRVisualEvidenceManifest{}, fmt.Errorf("capture requires a valid Boatstack project configuration: %w", err)
 	}

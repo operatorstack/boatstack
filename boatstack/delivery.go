@@ -280,11 +280,7 @@ func deliveryDefinitions(plan map[string]any) ([]DeliverySlice, error) {
 }
 
 func deliveryStateDirectory(repo string) (string, error) {
-	gitDir, err := worktreeGitDir(repo)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(gitDir, "boatstack", "deliveries"), nil
+	return WorkspaceFor(repo).DeliveryDir()
 }
 
 func deliveryStatePath(repo, feature string) (string, error) {
@@ -953,7 +949,7 @@ func RecordDeliveryGate(options DeliveryGateOptions) (DeliveryGateReceipt, error
 	if status != "PASS" && status != "PASS_WITH_GAPS" {
 		return DeliveryGateReceipt{}, fmt.Errorf("a delivery gate receipt may record only PASS or PASS_WITH_GAPS")
 	}
-	config, _, configErr := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	config, _, configErr := LoadConfig(WorkspaceFor(repo).ProjectConfigPath())
 	if configErr != nil {
 		return DeliveryGateReceipt{}, fmt.Errorf("delivery gate requires a valid Boatstack project configuration: %w", configErr)
 	}
@@ -1111,7 +1107,7 @@ func CheckDeliveryReadyForShip(repo, feature, sliceID, base, head, diffHash stri
 		return DeliveryState{}, DeliverySlice{}, nil, err
 	}
 	sources := []PRSource{}
-	config, _, configErr := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	config, _, configErr := LoadConfig(WorkspaceFor(repo).ProjectConfigPath())
 	if configErr != nil {
 		return DeliveryState{}, DeliverySlice{}, nil, fmt.Errorf("ship readiness requires a valid Boatstack project configuration: %w", configErr)
 	}
@@ -1292,7 +1288,7 @@ func IgnoreDelivery(repo, feature string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	configPath := filepath.Join(resolved, ".product-loop", "project.json")
+	configPath := WorkspaceFor(resolved).ProjectConfigPath()
 	config, _, err := LoadConfig(configPath)
 	if err != nil {
 		return false, err

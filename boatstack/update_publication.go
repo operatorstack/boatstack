@@ -171,7 +171,7 @@ func PrepareUpdatePublication(repoPath, requestedVersion string) (UpdatePublicat
 	if err != nil {
 		return UpdatePublicationPreview{}, err
 	}
-	config, _, err := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	config, _, err := LoadConfig(WorkspaceFor(repo).ProjectConfigPath())
 	if err != nil {
 		return UpdatePublicationPreview{}, err
 	}

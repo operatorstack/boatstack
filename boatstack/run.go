@@ -2,7 +2,6 @@ package boatstack
 
 import (
 	"fmt"
-	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -44,7 +43,7 @@ func runBranches(repo, explicitFeature string) (string, string, error) {
 	// Scope the ambiguity check to un-ignored deliveries so the foreground
 	// coordinator matches ResolveNext. A config that fails to load leaves active
 	// unfiltered, preserving the prior >1-active behavior.
-	if config, _, configErr := LoadConfig(filepath.Join(repo, ".product-loop", "project.json")); configErr == nil {
+	if config, _, configErr := LoadConfig(WorkspaceFor(repo).ProjectConfigPath()); configErr == nil {
 		active = withoutIgnoredDeliveries(active, config.Workflow.IgnoredDeliveries)
 	}
 
@@ -96,7 +95,7 @@ func CheckRunPreflight(repoPath, explicitFeature string) RunPreflight {
 	if err != nil {
 		return blockedRunPreflight("", "", "", "INVALID_REPOSITORY", err.Error())
 	}
-	if !fileExists(filepath.Join(repo, ".product-loop", "project.json")) {
+	if !fileExists(WorkspaceFor(repo).ProjectConfigPath()) {
 		return blockedRunPreflight("", "", "", "NOT_INITIALIZED", "This repository has no Boatstack project installation to run.")
 	}
 	if _, err := runGitCommand(repo, "remote", "get-url", "origin"); err != nil {

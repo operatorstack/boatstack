@@ -320,7 +320,7 @@ func Doctor(repoPath string) error {
 	if err != nil {
 		return err
 	}
-	configPath := filepath.Join(repo, ".boatstack-project.json")
+	configPath := WorkspaceFor(repo).SourceConfigPath()
 	config, raw, err := LoadConfig(configPath)
 	if err != nil {
 		return fmt.Errorf("invalid or missing .boatstack-project.json: %w", err)
@@ -380,7 +380,7 @@ func DoctorHookHosts(repoPath string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	config, _, err := LoadConfig(filepath.Join(repo, ".boatstack-project.json"))
+	config, _, err := LoadConfig(WorkspaceFor(repo).SourceConfigPath())
 	if err != nil {
 		return nil, err
 	}

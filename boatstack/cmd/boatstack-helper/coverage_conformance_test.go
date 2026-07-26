@@ -65,8 +65,15 @@ var nonDeliveryVerbs = map[string]bool{
 	"record-pr-visual-publication": true,
 	// PR construction / verification helpers reached around the ship gate.
 	"check-pr": true,
+	// Detached Supervision lifecycle (control-plane ownership, not delivery moves).
+	"attach":          true,
+	"detach":          true,
+	"detached-status": true,
+	"context":         true,
+	"activate":        true,
 	// Safety hooks and workspace management (guard/scaffold, not delivery moves).
 	"safety-hook":           true,
+	"ambient-safety-hook":   true,
 	"bootstrap-safety-hook": true,
 	"workspace-cut":         true,
 	"workspace-cleanup":     true,

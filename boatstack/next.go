@@ -208,14 +208,14 @@ func ResolveNext(repoPath, explicitFeature string) (NextStatus, error) {
 		return NextStatus{}, err
 	}
 	base := NextStatus{SchemaVersion: nextStatusSchemaVersion}
-	if !fileExists(filepath.Join(repo, ".product-loop", "project.json")) {
+	if !fileExists(WorkspaceFor(repo).ProjectConfigPath()) {
 		base.VerificationStatus = "UNVERIFIED"
 		base.ObservedStage = "NOT_INITIALIZED"
 		base.NextOperation = "init"
 		base.Reason = "This repository has no Boatstack project installation to inspect."
 		return base, nil
 	}
-	config, _, configErr := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	config, _, configErr := LoadConfig(WorkspaceFor(repo).ProjectConfigPath())
 	if configErr != nil {
 		return blockedNextStatus("INVALID_STATE", "repair-state", "Boatstack project configuration is invalid: "+configErr.Error()), nil
 	}

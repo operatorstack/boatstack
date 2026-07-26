@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -78,6 +77,119 @@ func updateCommand(arguments []string) int {
 	return 0
 }
 
+func emitJSON(value any) int {
+	raw, err := boatstack.MarshalJSON(value)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Print(string(raw))
+	return 0
+}
+
+func applyStateRoot(override string) {
+	if strings.TrimSpace(override) != "" {
+		_ = os.Setenv("BOATSTACK_STATE_ROOT", override)
+	}
+}
+
+func attachCommand(arguments []string) int {
+	flags := flag.NewFlagSet("attach", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository to attach")
+	mode := flags.String("mode", "detached", "supervision mode; only \"detached\" is supported by attach")
+	stateRoot := flags.String("state-root", "", "external control-state root (overrides the default user state directory)")
+	force := flags.Bool("force", false, "re-attach even if the repository is already attached")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if *mode != "detached" {
+		return fail(fmt.Errorf("attach supports only --mode detached"))
+	}
+	applyStateRoot(*stateRoot)
+	result, err := boatstack.AttachDetached(boatstack.AttachOptions{Repo: *repo, Force: *force})
+	if err != nil {
+		return fail(err)
+	}
+	code := emitJSON(result)
+	if result.VerificationStatus == "BLOCKED" {
+		return 1
+	}
+	return code
+}
+
+func detachCommand(arguments []string) int {
+	flags := flag.NewFlagSet("detach", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository to detach")
+	stateRoot := flags.String("state-root", "", "external control-state root (overrides the default user state directory)")
+	preserve := flags.Bool("preserve-state", false, "keep the external controller state instead of removing it")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	applyStateRoot(*stateRoot)
+	result, err := boatstack.DetachDetached(boatstack.DetachOptions{Repo: *repo, PreserveState: *preserve})
+	if err != nil {
+		return fail(err)
+	}
+	code := emitJSON(result)
+	if result.VerificationStatus == "BLOCKED" {
+		return 1
+	}
+	return code
+}
+
+func detachedStatusCommand(arguments []string) int {
+	flags := flag.NewFlagSet("detached-status", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository to inspect")
+	stateRoot := flags.String("state-root", "", "external control-state root (overrides the default user state directory)")
+	_ = flags.Bool("json", true, "emit the versioned JSON projection (always JSON)")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	applyStateRoot(*stateRoot)
+	result, err := boatstack.DetachedStatus(*repo)
+	if err != nil {
+		return fail(err)
+	}
+	return emitJSON(result)
+}
+
+func activateCommand(arguments []string) int {
+	flags := flag.NewFlagSet("activate", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "attached repository to produce activation instructions for")
+	host := flags.String("host", "", "limit to one coding agent (cursor|claude|codex|gemini); default all")
+	stateRoot := flags.String("state-root", "", "external control-state root (overrides the default user state directory)")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	applyStateRoot(*stateRoot)
+	var hosts []string
+	if strings.TrimSpace(*host) != "" {
+		hosts = []string{*host}
+	}
+	result, err := boatstack.DetachedActivationPlan(*repo, hosts)
+	if err != nil {
+		return fail(err)
+	}
+	return emitJSON(result)
+}
+
+func contextCommand(arguments []string) int {
+	flags := flag.NewFlagSet("context", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository to project context for")
+	operation := flags.String("operation", "", "the operation about to run (advisory)")
+	host := flags.String("host", "", "the coding-agent host (advisory)")
+	stateRoot := flags.String("state-root", "", "external control-state root (overrides the default user state directory)")
+	_ = flags.Bool("json", true, "emit the versioned JSON projection (always JSON)")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	applyStateRoot(*stateRoot)
+	result, err := boatstack.ProjectOperatorContext(*repo, *operation, *host)
+	if err != nil {
+		return fail(err)
+	}
+	return emitJSON(result)
+}
+
 func repairStatusCommand(arguments []string) int {
 	flags := flag.NewFlagSet("repair-status", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository installation to inspect")
@@ -86,7 +198,7 @@ func repairStatusCommand(arguments []string) int {
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}
-	config, _, err := boatstack.LoadConfig(filepath.Join(*repo, ".boatstack-project.json"))
+	config, _, err := boatstack.LoadConfig(boatstack.WorkspaceFor(*repo).SourceConfigPath())
 	if err != nil {
 		return fail(err)
 	}
@@ -925,6 +1037,28 @@ func safetyHookCommand(arguments []string) int {
 	return 0
 }
 
+// ambientSafetyHookCommand is the guard entry for a developer-level (user-scoped)
+// hook that runs for every repository. It enforces Boatstack only on managed
+// repositories and no-ops everywhere else, so detached activation can install one
+// user-level hook without controlling unattached repositories.
+func ambientSafetyHookCommand(arguments []string) int {
+	flags := flag.NewFlagSet("ambient-safety-hook", flag.ContinueOnError)
+	host := flags.String("host", "", "cursor, claude, codex, or gemini")
+	repo := flags.String("repo", ".", "repository the coding agent is operating in")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	input, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		input = nil
+	}
+	value, _ := boatstack.AmbientHookDecision(boatstack.SafetyHookOptions{Host: *host, Repo: *repo, Input: input})
+	if err := emitHookOutput(os.Stdout, *host, value); err != nil {
+		return failSafetyHook(fmt.Errorf("cannot emit hook decision: %w", err))
+	}
+	return 0
+}
+
 func bootstrapSafetyHookCommand(arguments []string) int {
 	flags := flag.NewFlagSet("bootstrap-safety-hook", flag.ContinueOnError)
 	host := flags.String("host", "", "cursor, claude, or codex")
@@ -1000,7 +1134,7 @@ func migrateConfigCommand(arguments []string) int {
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}
-	configPath := filepath.Join(*repo, ".boatstack-project.json")
+	configPath := boatstack.WorkspaceFor(*repo).SourceConfigPath()
 	raw, err := os.ReadFile(configPath)
 	if err != nil {
 		report := MigrateConfigReport{
@@ -1259,10 +1393,20 @@ func workspaceSyncCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|record-change|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|check-safety|migrate-config|safety-hook|diagnose-hook|render-denial|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-reap|workspace-status|workspace-sync|flow|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <attach|detach|detached-status|context|activate|init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|record-change|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|check-safety|migrate-config|safety-hook|ambient-safety-hook|diagnose-hook|render-denial|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-reap|workspace-status|workspace-sync|flow|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
+	case "attach":
+		return attachCommand(os.Args[2:])
+	case "detach":
+		return detachCommand(os.Args[2:])
+	case "detached-status":
+		return detachedStatusCommand(os.Args[2:])
+	case "context":
+		return contextCommand(os.Args[2:])
+	case "activate":
+		return activateCommand(os.Args[2:])
 	case "init":
 		return initCommand(os.Args[2:])
 	case "update":
@@ -1339,6 +1483,8 @@ func run() int {
 		return renderDenialCommand(os.Args[2:])
 	case "safety-hook":
 		return safetyHookCommand(os.Args[2:])
+	case "ambient-safety-hook":
+		return ambientSafetyHookCommand(os.Args[2:])
 	case "bootstrap-safety-hook":
 		return bootstrapSafetyHookCommand(os.Args[2:])
 	case "hydrate-runtime":
