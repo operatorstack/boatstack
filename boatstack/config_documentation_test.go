@@ -131,6 +131,7 @@ func TestPublicConfigurationGuideContainsOnlySupportedUserControls(t *testing.T)
 		"workspace.cleanup_after",
 		"workspace.enabled",
 		"workspace.mode",
+		"workspace.reap",
 	}
 	document := publicConfigurationDocument(t)
 	got := documentedConfigSurface(t, document, userConfigFieldMarkerPrefix)

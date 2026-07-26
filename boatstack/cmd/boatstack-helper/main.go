@@ -1189,6 +1189,29 @@ func workspaceCleanupCommand(arguments []string) int {
 	return 0
 }
 
+func workspaceReapCommand(arguments []string) int {
+	flags := flag.NewFlagSet("workspace-reap", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository whose terminal workspaces should be reclaimed")
+	confirm := flags.Bool("confirm", false, "operator confirmation to reclaim the merged or abandoned workspaces")
+	force := flags.Bool("force", false, "override the merge gate and discard uncommitted or unmerged work")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	result, err := boatstack.ReapWorkspaces(boatstack.WorkspaceReapOptions{Repo: *repo, Confirm: *confirm, Force: *force})
+	if err != nil {
+		return fail(err)
+	}
+	value, err := boatstack.MarshalJSON(result)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Print(string(value))
+	if result.VerificationStatus == "BLOCKED" {
+		return 1
+	}
+	return 0
+}
+
 func workspaceStatusCommand(arguments []string) int {
 	flags := flag.NewFlagSet("workspace-status", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository to inspect")
@@ -1236,7 +1259,7 @@ func workspaceSyncCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|record-change|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|check-safety|migrate-config|safety-hook|diagnose-hook|render-denial|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|workspace-sync|flow|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|record-change|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|check-safety|migrate-config|safety-hook|diagnose-hook|render-denial|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-reap|workspace-status|workspace-sync|flow|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -1326,6 +1349,8 @@ func run() int {
 		return workspaceCutCommand(os.Args[2:])
 	case "workspace-cleanup":
 		return workspaceCleanupCommand(os.Args[2:])
+	case "workspace-reap":
+		return workspaceReapCommand(os.Args[2:])
 	case "workspace-status":
 		return workspaceStatusCommand(os.Args[2:])
 	case "workspace-sync":

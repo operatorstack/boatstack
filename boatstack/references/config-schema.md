@@ -25,6 +25,7 @@ boatstack-config-field:workspace.enabled
 boatstack-config-field:workspace.mode
 boatstack-config-field:workspace.cleanup
 boatstack-config-field:workspace.cleanup_after
+boatstack-config-field:workspace.reap
 boatstack-config-field:adapters
 boatstack-config-field:integrations
 boatstack-config-field:integrations.*.requested
@@ -80,8 +81,9 @@ This is the exhaustive serialization contract, not a list of recommended user ed
 
 - `enabled` (boolean, optional): Enables managed per-feature workspaces. Defaults to `false`.
 - `mode` (string, optional): `worktree` or `branch`. Defaults to `worktree` when workspace management is enabled.
-- `cleanup` (string, optional): `confirm`, `auto`, or `off`. Defaults to `confirm`.
+- `cleanup` (string, optional): `confirm`, `auto`, or `off`. Defaults to `confirm`. Governs single-feature cleanup of the named workspace.
 - `cleanup_after` (string, optional): `merge` or `ship`. Defaults to `merge`.
+- `reap` (string, optional): `confirm`, `auto`, or `off`. Defaults to `confirm`. Governs the post-merge sweep that reclaims all terminal (merged or abandoned) Boatstack workspaces at once. `confirm` prompts the operator once when reclaimable workspaces exist; `auto` reclaims them without prompting; `off` disables the sweep and its prompt.
 
 ### adapters Values
 

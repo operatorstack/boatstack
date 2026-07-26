@@ -27,6 +27,7 @@ type ResolvedWorkspace struct {
 	Mode         string
 	Cleanup      string
 	CleanupAfter string
+	Reap         string
 }
 
 func resolveWorkspace(workspace Workspace) ResolvedWorkspace {
@@ -35,6 +36,7 @@ func resolveWorkspace(workspace Workspace) ResolvedWorkspace {
 		Mode:         workspace.Mode,
 		Cleanup:      workspace.Cleanup,
 		CleanupAfter: workspace.CleanupAfter,
+		Reap:         workspace.Reap,
 	}
 	if resolved.Mode == "" {
 		resolved.Mode = "worktree"
@@ -44,6 +46,9 @@ func resolveWorkspace(workspace Workspace) ResolvedWorkspace {
 	}
 	if resolved.CleanupAfter == "" {
 		resolved.CleanupAfter = "merge"
+	}
+	if resolved.Reap == "" {
+		resolved.Reap = "confirm"
 	}
 	return resolved
 }
@@ -56,6 +61,17 @@ func workspaceEnabled(repo string) bool {
 		return false
 	}
 	return policy.Enabled
+}
+
+// reapEnabled reports whether the post-merge reap sweep is active — workspace
+// management is on and workspace.reap is not "off". It swallows config errors as
+// "off" so the read-only next surface never fails on a malformed project file.
+func reapEnabled(repo string) bool {
+	policy, err := loadWorkspacePolicy(repo)
+	if err != nil {
+		return false
+	}
+	return policy.Enabled && policy.Reap != "off"
 }
 
 // needsFreshCut reports whether an approved feature still has to be moved off the
@@ -260,6 +276,83 @@ func blockedCleanup(branch, reason string) WorkspaceCleanup {
 	return WorkspaceCleanup{SchemaVersion: workspaceSchemaVersion, VerificationStatus: "BLOCKED", Branch: branch, Reason: reason}
 }
 
+// workspaceRemovalPlan is the outcome of the safety gates shared by cleanup and
+// reap: whether the named workspace may be removed, and the merge state resolved
+// while deciding (which selects force-deletion of a squash/rebase-merged branch).
+type workspaceRemovalPlan struct {
+	Removable bool
+	Status    string // BLOCKED when !Removable
+	Reason    string
+	Merged    bool
+}
+
+// planWorkspaceRemoval applies the base-branch, current-branch, merge, dirty, and
+// unmerged-commit gates that govern removing a single feature workspace. It never
+// consults cleanup/reap mode or human confirmation and never mutates the
+// repository; callers own policy and confirmation. cleanupAfter="ship" permits
+// removing an unmerged branch (used for merged-optional and abandoned workspaces).
+func planWorkspaceRemoval(repo, base, branch, worktreePath, cleanupAfter string, merged, force bool) workspaceRemovalPlan {
+	if branch == base {
+		return workspaceRemovalPlan{Status: "BLOCKED", Reason: fmt.Sprintf("Refusing to clean up the base branch %q.", base)}
+	}
+	if current, _ := workspaceGit(repo, "branch", "--show-current"); strings.TrimSpace(current) == branch && worktreePath == "" {
+		return workspaceRemovalPlan{Status: "BLOCKED", Reason: fmt.Sprintf("Branch %q is the current branch; switch away before cleaning it up.", branch)}
+	}
+	if cleanupAfter == "merge" && !merged && !force {
+		return workspaceRemovalPlan{Status: "BLOCKED", Reason: fmt.Sprintf("PR for %q is not merged yet; keeping the workspace. Re-run with force to clean up early.", branch)}
+	}
+	// Refuse to discard work the user has not landed unless explicitly forced.
+	if !force {
+		if worktreePath != "" {
+			if dirty, _ := workspaceGit(worktreePath, "status", "--porcelain"); strings.TrimSpace(dirty) != "" {
+				return workspaceRemovalPlan{Status: "BLOCKED", Reason: fmt.Sprintf("Workspace %q has uncommitted changes; commit or discard them, or force cleanup.", branch)}
+			}
+		}
+		if !merged {
+			for _, target := range []string{"refs/remotes/origin/" + base, "refs/heads/" + base, base} {
+				if _, err := workspaceGit(repo, "merge-base", "--is-ancestor", "refs/heads/"+branch, target); err == nil {
+					merged = true
+					break
+				}
+			}
+			if !merged && cleanupAfter != "ship" {
+				return workspaceRemovalPlan{Status: "BLOCKED", Reason: fmt.Sprintf("Branch %q has commits not merged into %s; force cleanup to discard them.", branch, base)}
+			}
+		}
+	}
+	return workspaceRemovalPlan{Removable: true, Status: "VERIFIED", Merged: merged}
+}
+
+// performWorkspaceRemoval removes the linked worktree (if any) and deletes the
+// local branch in-process. It assumes planWorkspaceRemoval already cleared the
+// safety gates; merged/force select force-deletion so a squash- or rebase-merged
+// branch (whose local ref is not a local ancestor of the base) is still removable.
+// The git it runs is the helper's own subprocess, never an agent shell command, so
+// it is the sanctioned actuator the guard allows.
+func performWorkspaceRemoval(repo, branch, worktreePath string, merged, force bool) (worktreeRemoved, branchDeleted bool, reason string, err error) {
+	if worktreePath != "" {
+		removeArgs := []string{"worktree", "remove", worktreePath}
+		if force {
+			removeArgs = append(removeArgs, "--force")
+		}
+		if _, e := workspaceGit(repo, removeArgs...); e != nil {
+			return false, false, "Boatstack could not remove the worktree: " + e.Error(), e
+		}
+		worktreeRemoved = true
+	}
+	if branchExists(repo, branch) {
+		deleteFlag := "-d"
+		if force || merged {
+			deleteFlag = "-D"
+		}
+		if _, e := workspaceGit(repo, "branch", deleteFlag, branch); e != nil {
+			return worktreeRemoved, false, "Boatstack could not delete the branch: " + e.Error(), e
+		}
+		branchDeleted = true
+	}
+	return worktreeRemoved, branchDeleted, "", nil
+}
+
 // CleanupFeatureWorkspace removes a finished workspace only when it is safe: the
 // PR must be merged (unless cleanup_after is "ship" or Force overrides), there
 // must be no uncommitted or unmerged work (unless Force), and confirm-mode must
@@ -293,49 +386,19 @@ func CleanupFeatureWorkspace(options WorkspaceCleanupOptions) (WorkspaceCleanup,
 	}
 
 	base := defaultPRBase(repo)
-	if branch == base {
-		return blockedCleanup(branch, fmt.Sprintf("Refusing to clean up the base branch %q.", base)), nil
-	}
-	if current, _ := workspaceGit(repo, "branch", "--show-current"); strings.TrimSpace(current) == branch && worktreePath == "" {
-		return blockedCleanup(branch, fmt.Sprintf("Branch %q is the current branch; switch away before cleaning it up.", branch)), nil
-	}
-
 	merged, source := workspaceMergeStatus(repo, branch, base)
 	result := WorkspaceCleanup{
 		SchemaVersion: workspaceSchemaVersion, Branch: branch, Mode: policy.Mode,
 		Merged: merged, MergeSource: source,
 	}
 
-	if policy.CleanupAfter == "merge" && !merged && !options.Force {
-		result.VerificationStatus = "BLOCKED"
-		result.Reason = fmt.Sprintf("PR for %q is not merged yet; keeping the workspace. Re-run with force to clean up early.", branch)
+	plan := planWorkspaceRemoval(repo, base, branch, worktreePath, policy.CleanupAfter, merged, options.Force)
+	if !plan.Removable {
+		result.VerificationStatus = plan.Status
+		result.Reason = plan.Reason
 		return result, nil
 	}
-
-	// Refuse to discard work the user has not landed unless explicitly forced.
-	if !options.Force {
-		if worktreePath != "" {
-			if dirty, _ := workspaceGit(worktreePath, "status", "--porcelain"); strings.TrimSpace(dirty) != "" {
-				result.VerificationStatus = "BLOCKED"
-				result.Reason = fmt.Sprintf("Workspace %q has uncommitted changes; commit or discard them, or force cleanup.", branch)
-				return result, nil
-			}
-		}
-		if !merged {
-			for _, target := range []string{"refs/remotes/origin/" + base, "refs/heads/" + base, base} {
-				if _, err := workspaceGit(repo, "merge-base", "--is-ancestor", "refs/heads/"+branch, target); err == nil {
-					merged = true
-					break
-				}
-			}
-			if !merged && policy.CleanupAfter != "ship" {
-				result.VerificationStatus = "BLOCKED"
-				result.Reason = fmt.Sprintf("Branch %q has commits not merged into %s; force cleanup to discard them.", branch, base)
-				return result, nil
-			}
-		}
-	}
-	result.Merged = merged
+	result.Merged = plan.Merged
 
 	if policy.Cleanup == "confirm" && !options.Confirm && !options.Force {
 		result.VerificationStatus = "NEEDS_CONFIRMATION"
@@ -343,31 +406,258 @@ func CleanupFeatureWorkspace(options WorkspaceCleanupOptions) (WorkspaceCleanup,
 		return result, nil
 	}
 
-	if worktreePath != "" {
-		removeArgs := []string{"worktree", "remove", worktreePath}
-		if options.Force {
-			removeArgs = append(removeArgs, "--force")
-		}
-		if _, err := workspaceGit(repo, removeArgs...); err != nil {
-			return blockedCleanup(branch, "Boatstack could not remove the worktree: "+err.Error()), nil
-		}
-		result.WorktreeRemoved = true
+	worktreeRemoved, branchDeleted, failReason, removeErr := performWorkspaceRemoval(repo, branch, worktreePath, plan.Merged, options.Force)
+	if removeErr != nil {
+		return blockedCleanup(branch, failReason), nil
 	}
-	if branchExists(repo, branch) {
-		// Once the merge/safety gates above have cleared, force-delete so a
-		// squash- or rebase-merged PR (whose local ref is not a local ancestor
-		// of the base) is still removable.
-		deleteFlag := "-d"
-		if options.Force || result.Merged {
-			deleteFlag = "-D"
-		}
-		if _, err := workspaceGit(repo, "branch", deleteFlag, branch); err != nil {
-			return blockedCleanup(branch, "Boatstack could not delete the branch: "+err.Error()), nil
-		}
-		result.BranchDeleted = true
-	}
+	result.WorktreeRemoved = worktreeRemoved
+	result.BranchDeleted = branchDeleted
 	result.VerificationStatus = "VERIFIED"
 	result.Reason = fmt.Sprintf("Cleaned up the workspace for %q.", branch)
+	return result, nil
+}
+
+// worktreeEntry is one linked worktree and the branch it has checked out.
+type worktreeEntry struct {
+	Path   string
+	Branch string
+}
+
+// boatstackWorktrees lists the linked worktrees Boatstack owns — those created
+// under .product-loop/worktrees/. The main worktree, human-created worktrees, and
+// detached worktrees are excluded so reap can never remove work Boatstack did not
+// create. Paths are absolute (git reports them so), which lets reap run from any
+// worktree.
+func boatstackWorktrees(repo string) []worktreeEntry {
+	out, err := workspaceGit(repo, "worktree", "list", "--porcelain")
+	if err != nil {
+		return nil
+	}
+	var entries []worktreeEntry
+	var current worktreeEntry
+	flush := func() {
+		if current.Path != "" && current.Branch != "" && strings.Contains(filepath.ToSlash(current.Path), "/.product-loop/worktrees/") {
+			entries = append(entries, current)
+		}
+		current = worktreeEntry{}
+	}
+	for _, line := range strings.Split(out, "\n") {
+		switch {
+		case strings.HasPrefix(line, "worktree "):
+			flush()
+			current.Path = strings.TrimSpace(strings.TrimPrefix(line, "worktree "))
+		case strings.HasPrefix(line, "branch "):
+			current.Branch = strings.TrimPrefix(strings.TrimSpace(strings.TrimPrefix(line, "branch ")), "refs/heads/")
+		}
+	}
+	flush()
+	return entries
+}
+
+// WorkspaceReapOptions requests a sweep of all terminal Boatstack workspaces.
+type WorkspaceReapOptions struct {
+	Repo    string
+	Confirm bool // the operator approved the aggregate reap prompt
+	Force   bool // override the merge/dirty/unmerged gates and discard unlanded work
+}
+
+// WorkspaceReapItem is the per-workspace outcome within a reap sweep.
+type WorkspaceReapItem struct {
+	Branch          string `json:"branch"`
+	WorktreePath    string `json:"worktree_path,omitempty"`
+	Merged          bool   `json:"merged"`
+	MergeSource     string `json:"merge_source,omitempty"`
+	Abandoned       bool   `json:"abandoned,omitempty"`
+	Action          string `json:"action"` // reaped | reclaimable | skipped | blocked
+	WorktreeRemoved bool   `json:"worktree_removed,omitempty"`
+	BranchDeleted   bool   `json:"branch_deleted,omitempty"`
+	Reason          string `json:"reason"`
+}
+
+// WorkspaceReap is the deterministic result of a reap sweep.
+type WorkspaceReap struct {
+	SchemaVersion      int                 `json:"schema_version"`
+	VerificationStatus string              `json:"verification_status"` // VERIFIED | NEEDS_CONFIRMATION | BLOCKED
+	Mode               string              `json:"mode,omitempty"`
+	Candidates         []WorkspaceReapItem `json:"candidates,omitempty"`
+	ReclaimableCount   int                 `json:"reclaimable_count"`
+	ReapedCount        int                 `json:"reaped_count"`
+	Reason             string              `json:"reason"`
+}
+
+func blockedReap(reason string) WorkspaceReap {
+	return WorkspaceReap{SchemaVersion: workspaceSchemaVersion, VerificationStatus: "BLOCKED", Reason: reason}
+}
+
+// samePath reports whether two filesystem paths denote the same location,
+// resolving symlinks first (macOS temp dirs live under a /private symlink, so a
+// raw string compare of git's toplevel against a recorded worktree path can
+// spuriously differ) and falling back to a lexical comparison.
+func samePath(a, b string) bool {
+	if resolved, err := filepath.EvalSymlinks(a); err == nil {
+		a = resolved
+	}
+	if resolved, err := filepath.EvalSymlinks(b); err == nil {
+		b = resolved
+	}
+	return filepath.Clean(a) == filepath.Clean(b)
+}
+
+// reclaimableScan enumerates the Boatstack worktrees and classifies each as
+// skipped or reclaimable without mutating the repository. It returns the skipped
+// candidates (for reporting) and the reclaimable subset (merged or abandoned,
+// excluding the base branch, the current worktree, and non-Boatstack worktrees).
+func reclaimableScan(repo, base string, ignored []string) (skipped, reapable []WorkspaceReapItem) {
+	abandonedBranches := map[string]bool{}
+	for _, slug := range ignored {
+		if branch := branchForFeature(slug); branch != "" {
+			abandonedBranches[branch] = true
+		}
+	}
+	currentTop := ""
+	if top, topErr := workspaceGit(repo, "rev-parse", "--show-toplevel"); topErr == nil {
+		currentTop = strings.TrimSpace(top)
+	}
+	for _, wt := range boatstackWorktrees(repo) {
+		branch := wt.Branch
+		if branch == "" || branch == base {
+			continue
+		}
+		item := WorkspaceReapItem{Branch: branch, WorktreePath: wt.Path}
+		if currentTop != "" && samePath(wt.Path, currentTop) {
+			item.Action = "skipped"
+			item.Reason = "This is the current worktree; reap it from another location."
+			skipped = append(skipped, item)
+			continue
+		}
+		merged, source := workspaceMergeStatus(repo, branch, base)
+		abandoned := abandonedBranches[branch]
+		item.Merged = merged
+		item.MergeSource = source
+		item.Abandoned = abandoned
+		if !merged && !abandoned {
+			item.Action = "skipped"
+			item.Reason = "Not merged and not abandoned; keeping the workspace."
+			skipped = append(skipped, item)
+			continue
+		}
+		item.Action = "reclaimable"
+		reapable = append(reapable, item)
+	}
+	return skipped, reapable
+}
+
+// CountReclaimableWorkspaces reports how many terminal Boatstack workspaces reap
+// would reclaim right now. It is read-only so boatstack-next can surface the reap
+// prompt with an accurate count. It returns 0 when workspace management is off.
+func CountReclaimableWorkspaces(repoPath string) int {
+	repo, err := ResolveRepository(repoPath)
+	if err != nil {
+		return 0
+	}
+	config, _, cfgErr := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	if cfgErr != nil || !resolveWorkspace(config.Workspace).Enabled {
+		return 0
+	}
+	_, reapable := reclaimableScan(repo, defaultPRBase(repo), config.Workflow.IgnoredDeliveries)
+	return len(reapable)
+}
+
+// ReapWorkspaces sweeps every terminal Boatstack workspace — one whose branch is
+// confirmed merged (via gh, else local ancestry) or explicitly abandoned (its
+// feature slug is in workflow.ignored_deliveries) — and reclaims the local
+// worktree and branch. It never touches a non-Boatstack worktree, the base branch,
+// the current worktree, or an unmerged/open workspace, and it never discards
+// uncommitted or unmerged work without Force. In confirm mode it returns the
+// reclaimable set as NEEDS_CONFIRMATION without removing anything; in auto mode (or
+// after Confirm/Force) it removes them through the in-process actuator.
+func ReapWorkspaces(options WorkspaceReapOptions) (WorkspaceReap, error) {
+	repo, err := ResolveRepository(options.Repo)
+	if err != nil {
+		return blockedReap(err.Error()), nil
+	}
+	if !fileExists(filepath.Join(repo, ".product-loop", "project.json")) {
+		return blockedReap("This repository has no Boatstack project installation."), nil
+	}
+	config, _, cfgErr := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	if cfgErr != nil {
+		return blockedReap("Boatstack could not read the workspace policy: " + cfgErr.Error()), nil
+	}
+	policy := resolveWorkspace(config.Workspace)
+	result := WorkspaceReap{SchemaVersion: workspaceSchemaVersion, Mode: policy.Reap}
+	if !policy.Enabled {
+		result.VerificationStatus = "BLOCKED"
+		result.Reason = "Workspace management is disabled (workspace.enabled=false)."
+		return result, nil
+	}
+	if policy.Reap == "off" && !options.Force {
+		result.VerificationStatus = "BLOCKED"
+		result.Reason = "Workspace reaping is disabled (workspace.reap=off)."
+		return result, nil
+	}
+
+	base := defaultPRBase(repo)
+	skipped, reapable := reclaimableScan(repo, base, config.Workflow.IgnoredDeliveries)
+	result.Candidates = append(result.Candidates, skipped...)
+	result.ReclaimableCount = len(reapable)
+
+	if len(reapable) == 0 {
+		result.VerificationStatus = "VERIFIED"
+		result.Reason = "No merged or abandoned Boatstack workspaces to reclaim."
+		return result, nil
+	}
+
+	if policy.Reap == "confirm" && !options.Confirm && !options.Force {
+		result.Candidates = append(result.Candidates, reapable...)
+		result.VerificationStatus = "NEEDS_CONFIRMATION"
+		result.Reason = fmt.Sprintf("%d Boatstack worktree(s)/branch(es) are merged or abandoned and reclaimable. Confirm reap to remove them.", len(reapable))
+		return result, nil
+	}
+
+	for _, item := range reapable {
+		// An explicitly abandoned but unmerged branch is operator-authorized
+		// disposal, so it is removed like cleanup_after="ship" (unmerged allowed);
+		// the dirty gate below still protects uncommitted work unless forced.
+		effectiveAfter := policy.CleanupAfter
+		if item.Abandoned && !item.Merged {
+			effectiveAfter = "ship"
+		}
+		plan := planWorkspaceRemoval(repo, base, item.Branch, item.WorktreePath, effectiveAfter, item.Merged, options.Force)
+		if !plan.Removable {
+			item.Action = "blocked"
+			item.Reason = plan.Reason
+			result.Candidates = append(result.Candidates, item)
+			continue
+		}
+		// A terminal branch — merged or operator-abandoned — is safe to
+		// force-delete: an abandoned branch is intentionally not merged into base,
+		// so `git branch -d` would refuse it. The gates above already cleared it.
+		forceDelete := plan.Merged || item.Abandoned
+		worktreeRemoved, branchDeleted, failReason, removeErr := performWorkspaceRemoval(repo, item.Branch, item.WorktreePath, forceDelete, options.Force)
+		if removeErr != nil {
+			item.Action = "blocked"
+			item.Reason = failReason
+			result.Candidates = append(result.Candidates, item)
+			continue
+		}
+		item.Merged = plan.Merged
+		item.WorktreeRemoved = worktreeRemoved
+		item.BranchDeleted = branchDeleted
+		item.Action = "reaped"
+		item.Reason = fmt.Sprintf("Reclaimed the workspace for %q.", item.Branch)
+		result.Candidates = append(result.Candidates, item)
+		result.ReapedCount++
+	}
+
+	// Clear any stale worktree admin entries left by out-of-band directory removal.
+	_, _ = workspaceGit(repo, "worktree", "prune")
+
+	result.VerificationStatus = "VERIFIED"
+	if result.ReapedCount == len(reapable) {
+		result.Reason = fmt.Sprintf("Reclaimed %d Boatstack workspace(s).", result.ReapedCount)
+	} else {
+		result.Reason = fmt.Sprintf("Reclaimed %d of %d reclaimable Boatstack workspace(s); see candidates for the rest.", result.ReapedCount, len(reapable))
+	}
 	return result, nil
 }
 
