@@ -90,6 +90,56 @@ func needsFreshCut(repo, feature string) bool {
 	return strings.TrimSpace(current) == defaultPRBase(repo)
 }
 
+// isMainWorktree reports whether repo is checked out in the repository's main
+// worktree, whose Git directory aliases the common directory. A linked worktree's
+// Git directory is .git/worktrees/<name>, so the two differ there.
+func isMainWorktree(repo string) bool {
+	gitDir, err := worktreeGitDir(repo)
+	if err != nil {
+		return false
+	}
+	common, err := gitCommonDir(repo)
+	if err != nil {
+		return false
+	}
+	return gitDir == common
+}
+
+// guardManagedActivationWorktree refuses to activate a managed delivery from the
+// main worktree once the feature already has a cut workspace. In worktree mode the
+// delivery must be built inside its cut worktree; activating on the base branch in
+// the main worktree strands compiled artifacts and a competing per-worktree
+// delivery ledger on the base branch (the split-brain this guards against). It is
+// inert unless workspace management is on in worktree mode, a workspace for the
+// feature already exists, and the caller is on the base branch in the main
+// worktree — so the normal flow (cut first, then activate inside the worktree) is
+// unaffected.
+func guardManagedActivationWorktree(repo string, config ProjectConfig, feature string) error {
+	policy := resolveWorkspace(config.Workspace)
+	if !policy.Enabled || policy.Mode != "worktree" {
+		return nil
+	}
+	branch := branchForFeature(feature)
+	if branch == "" {
+		return nil
+	}
+	worktreePath := worktreePathForBranch(repo, branch)
+	if worktreePath == "" && !branchExists(repo, branch) {
+		return nil // no workspace cut yet — this is the normal pre-cut path
+	}
+	if !isMainWorktree(repo) {
+		return nil // already inside a linked worktree
+	}
+	base := defaultPRBase(repo)
+	if current, _ := workspaceGit(repo, "branch", "--show-current"); strings.TrimSpace(current) != base {
+		return nil // not on the base branch
+	}
+	if worktreePath != "" {
+		return fmt.Errorf("feature %q already has a managed workspace at %s; activate and build there, not on the base branch %q. Run: cd %s and re-run — managed delivery must run in its cut worktree", feature, worktreePath, base, worktreePath)
+	}
+	return fmt.Errorf("feature %q already has a managed branch %q; activate and build in its worktree, not on the base branch %q — managed delivery must run in its cut worktree", feature, branch, base)
+}
+
 func loadWorkspacePolicy(repo string) (ResolvedWorkspace, error) {
 	config, _, err := LoadConfig(WorkspaceFor(repo).ProjectConfigPath())
 	if err != nil {
