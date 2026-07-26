@@ -329,7 +329,7 @@ func RunInit(options InitOptions) (returnErr error) {
 		return err
 	}
 	reader := bufio.NewReader(options.Input)
-	configPath := filepath.Join(repo, ".boatstack-project.json")
+	configPath := WorkspaceFor(repo).SourceConfigPath()
 	configExists := fileExists(configPath)
 	installed := fileExists(filepath.Join(repo, ".product-loop", "generated.lock.json")) || fileExists(filepath.Join(repo, ".product-loop", "bin", helperName()))
 	if installed && !options.Update {
@@ -793,7 +793,7 @@ func RunUpdate(options InitOptions) error {
 			return reexecUpdate(options.BinaryPath, options)
 		}
 	}
-	config, _, configErr := LoadConfig(filepath.Join(repo, ".boatstack-project.json"))
+	config, _, configErr := LoadConfig(WorkspaceFor(repo).SourceConfigPath())
 	if configErr != nil {
 		return configErr
 	}

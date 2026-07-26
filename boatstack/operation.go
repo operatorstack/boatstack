@@ -116,11 +116,7 @@ func operationTimestamp() string {
 // so bumping the version cleanly orphans the legacy clone-shared "v1" ledger for
 // every worktree — including main — instead of silently inheriting its receipts.
 func operationDirectory(repo string) (string, error) {
-	gitDir, err := worktreeGitDir(repo)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(gitDir, "boatstack", "operations", "v2"), nil
+	return WorkspaceFor(repo).OperationDir()
 }
 
 // pruneLegacyOperationLedger removes the pre-isolation clone-shared "v1" ledger

@@ -208,7 +208,7 @@ func requireConfiguredPRVisualEvidenceDecision(plan map[string]any, opts *Valida
 	if opts == nil || opts.RepoRoot == "" {
 		return nil
 	}
-	config, _, err := LoadConfig(filepath.Join(opts.RepoRoot, ".product-loop", "project.json"))
+	config, _, err := LoadConfig(WorkspaceFor(opts.RepoRoot).ProjectConfigPath())
 	if err != nil || normalizedPRVisualEvidencePolicy(config.Workflow.PRVisualEvidence) == "off" {
 		return nil
 	}

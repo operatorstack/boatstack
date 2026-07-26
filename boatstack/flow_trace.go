@@ -2,7 +2,6 @@ package boatstack
 
 import (
 	"os"
-	"path/filepath"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/deliverycontrol"
 )
@@ -16,11 +15,7 @@ const flowTraceKillSwitch = "BOATSTACK_FLOW_TRACE"
 // <gitdir>/boatstack/flow, a sibling of the delivery-state directory. It reuses
 // deliveryStateDirectory's Git-dir resolution so the two stay in lockstep.
 func flowLogDirectory(repo string) (string, error) {
-	deliveries, err := deliveryStateDirectory(repo)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(filepath.Dir(deliveries), "flow"), nil
+	return WorkspaceFor(repo).FlowDir()
 }
 
 // RecordFlowTransition appends a best-effort shadow record of one delivery-flow

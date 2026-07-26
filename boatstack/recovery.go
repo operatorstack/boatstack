@@ -341,7 +341,7 @@ func ResolveRecovery(options RecoveryStatusOptions) (RecoveryStatus, error) {
 	default:
 		return RecoveryStatus{}, fmt.Errorf("recovery source stage must be ci, review, publication, or user")
 	}
-	if !fileExists(filepath.Join(repo, ".product-loop", "project.json")) {
+	if !fileExists(WorkspaceFor(repo).ProjectConfigPath()) {
 		return RecoveryStatus{
 			SchemaVersion: recoveryStatusSchemaVersion, VerificationStatus: "UNVERIFIED",
 			NextOperation: "none", Reason: "This repository has no managed delivery installation to inspect.",
@@ -359,7 +359,7 @@ func ResolveRecovery(options RecoveryStatusOptions) (RecoveryStatus, error) {
 	if err != nil {
 		return blockedRecovery("Managed delivery state cannot be verified: " + err.Error()), nil
 	}
-	config, _, configErr := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	config, _, configErr := LoadConfig(WorkspaceFor(repo).ProjectConfigPath())
 	if configErr != nil {
 		return blockedRecovery("Boatstack project configuration is invalid: " + configErr.Error()), nil
 	}

@@ -223,7 +223,7 @@ func gitCommand(repo string, arguments ...string) (string, error) {
 }
 
 func defaultPRBase(repo string) string {
-	configPath := filepath.Join(repo, ".product-loop", "project.json")
+	configPath := WorkspaceFor(repo).ProjectConfigPath()
 	if config, _, err := LoadConfig(configPath); err == nil && strings.TrimSpace(config.Project.DefaultBranch) != "" {
 		return strings.TrimSpace(config.Project.DefaultBranch)
 	}
@@ -430,7 +430,7 @@ func managedPRSources(repo, feature string) ([]PRSource, map[string]string, erro
 	if err != nil {
 		return nil, nil, fmt.Errorf("managed PR requires a current plan: %w", err)
 	}
-	config, _, configErr := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	config, _, configErr := LoadConfig(WorkspaceFor(repo).ProjectConfigPath())
 	if configErr != nil {
 		return nil, nil, fmt.Errorf("managed PR requires a valid Boatstack project configuration: %w", configErr)
 	}
@@ -530,7 +530,7 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 	if err != nil || head == "" {
 		return PRContext{}, fmt.Errorf("PR preparation requires a named branch")
 	}
-	configPath := filepath.Join(repo, ".product-loop", "project.json")
+	configPath := WorkspaceFor(repo).ProjectConfigPath()
 	config, _, err := LoadConfig(configPath)
 	if err != nil {
 		return PRContext{}, fmt.Errorf("PR preparation requires a valid Boatstack project configuration: %w", err)

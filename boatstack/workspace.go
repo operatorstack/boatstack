@@ -91,7 +91,7 @@ func needsFreshCut(repo, feature string) bool {
 }
 
 func loadWorkspacePolicy(repo string) (ResolvedWorkspace, error) {
-	config, _, err := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	config, _, err := LoadConfig(WorkspaceFor(repo).ProjectConfigPath())
 	if err != nil {
 		return ResolvedWorkspace{}, err
 	}
@@ -141,7 +141,7 @@ func CutFeatureWorkspace(options WorkspaceCutOptions) (WorkspaceCut, error) {
 	if err != nil {
 		return blockedCut(err.Error()), nil
 	}
-	if !fileExists(filepath.Join(repo, ".product-loop", "project.json")) {
+	if !fileExists(WorkspaceFor(repo).ProjectConfigPath()) {
 		return blockedCut("This repository has no Boatstack project installation."), nil
 	}
 	policy, err := loadWorkspacePolicy(repo)
@@ -366,7 +366,7 @@ func CleanupFeatureWorkspace(options WorkspaceCleanupOptions) (WorkspaceCleanup,
 	if branch == "" {
 		return blockedCleanup(branch, "A branch is required to clean up a workspace."), nil
 	}
-	if !fileExists(filepath.Join(repo, ".product-loop", "project.json")) {
+	if !fileExists(WorkspaceFor(repo).ProjectConfigPath()) {
 		return blockedCleanup(branch, "This repository has no Boatstack project installation."), nil
 	}
 	policy, err := loadWorkspacePolicy(repo)
@@ -555,7 +555,7 @@ func CountReclaimableWorkspaces(repoPath string) int {
 	if err != nil {
 		return 0
 	}
-	config, _, cfgErr := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	config, _, cfgErr := LoadConfig(WorkspaceFor(repo).ProjectConfigPath())
 	if cfgErr != nil || !resolveWorkspace(config.Workspace).Enabled {
 		return 0
 	}
@@ -576,10 +576,10 @@ func ReapWorkspaces(options WorkspaceReapOptions) (WorkspaceReap, error) {
 	if err != nil {
 		return blockedReap(err.Error()), nil
 	}
-	if !fileExists(filepath.Join(repo, ".product-loop", "project.json")) {
+	if !fileExists(WorkspaceFor(repo).ProjectConfigPath()) {
 		return blockedReap("This repository has no Boatstack project installation."), nil
 	}
-	config, _, cfgErr := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	config, _, cfgErr := LoadConfig(WorkspaceFor(repo).ProjectConfigPath())
 	if cfgErr != nil {
 		return blockedReap("Boatstack could not read the workspace policy: " + cfgErr.Error()), nil
 	}

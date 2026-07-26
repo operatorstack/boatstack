@@ -350,7 +350,7 @@ func ClassifyInstallationRepair(repoPath string, adapters []string, allowDowngra
 			result.Items = append(result.Items, InstallationRepairItem{Path: filepath.ToSlash(relative), Classification: classification, Reason: reason, CurrentSHA256: currentFileHash(filepath.Join(repo, filepath.FromSlash(relative)))})
 		}
 	}
-	config, _, configErr := LoadConfig(filepath.Join(repo, ".boatstack-project.json"))
+	config, _, configErr := LoadConfig(WorkspaceFor(repo).SourceConfigPath())
 	if configErr == nil {
 		states, stateErr := readInstalledIntegrations(repo, config)
 		if stateErr == nil {

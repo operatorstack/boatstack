@@ -140,7 +140,7 @@ func CapabilityProvisionGuide(repo, name string) (ProvisionGuide, error) {
 	if !ok {
 		return ProvisionGuide{}, fmt.Errorf("unknown evidence capability %q", name)
 	}
-	config, _, err := LoadConfig(filepath.Join(resolved, ".product-loop", "project.json"))
+	config, _, err := LoadConfig(WorkspaceFor(resolved).ProjectConfigPath())
 	if err != nil {
 		return ProvisionGuide{}, fmt.Errorf("provisioning requires a valid Boatstack project configuration: %w", err)
 	}
@@ -224,7 +224,7 @@ func RegisterCapabilityCommand(repo, name, command string) (RegisteredCapability
 		return RegisteredCapability{}, fmt.Errorf("capability-register requires a non-empty --command")
 	}
 
-	sourcePath := filepath.Join(resolved, ".boatstack-project.json")
+	sourcePath := WorkspaceFor(resolved).SourceConfigPath()
 	if fileExists(sourcePath) {
 		config, _, err := LoadConfig(sourcePath)
 		if err != nil {
@@ -251,7 +251,7 @@ func RegisterCapabilityCommand(repo, name, command string) (RegisteredCapability
 		return RegisteredCapability{Capability: capability.Name, Alias: capability.Name, Command: command, Source: "source-and-export"}, nil
 	}
 
-	configPath := filepath.Join(resolved, ".product-loop", "project.json")
+	configPath := WorkspaceFor(resolved).ProjectConfigPath()
 	config, _, err := LoadConfig(configPath)
 	if err != nil {
 		return RegisteredCapability{}, err

@@ -157,7 +157,7 @@ func prescribeCommand(repo, feature string, status NextStatus, transition delive
 		cmd.Args = append(repoArgs, "--feature", feature, "--slice", status.ActiveSlice, "--gate", "review")
 		cmd.RequiresHumanInput = []string{"--status", "--evidence", "--reviewer-identity", "--review-method"}
 	case PublishTransition:
-		preview := filepath.Join(repo, ".product-loop", "features", feature, "pr.md")
+		preview := filepath.Join(WorkspaceFor(repo).GeneratedRoot(), "features", feature, "pr.md")
 		cmd.Args = append(repoArgs, "--preview", preview, "--action", "open")
 		cmd.RequiresHumanInput = []string{"--preview-fingerprint"}
 	default:

@@ -86,7 +86,13 @@ var approvedPublisherPattern = regexp.MustCompile(`(?i)^\s*(?:[^\s]*/)?boatstack
 // boatstack-helper_darwin_arm64) that a running update may invoke after the installed
 // helper is swapped or removed.
 var approvedUpdatePublisherPattern = regexp.MustCompile(`(?i)^\s*(?:[^\s]*/)?boatstack-helper(?:[_.-][a-z0-9._-]+)?\s+publish-update-pr\b[^\n;&|]*$`)
-var deliveryStatePathPattern = regexp.MustCompile(`(?i)(?:boatstack[/\\]deliveries|\.git[/\\](?:worktrees[/\\][^/\\]+[/\\])?boatstack(?:[/\\]|$))`)
+// deliveryStatePathPattern matches Boatstack's managed runtime/control state so
+// the guard denies direct model mutation of it. It covers the embedded homes
+// (boatstack/deliveries and any .git/.../boatstack subtree) and the Detached
+// Supervision external control root (boatstack/{repositories,registry.json} and
+// the version-namespaced boatstack/runtimes). Only Boatstack transitions and the
+// sanctioned publisher (approvedUpdatePublisherPattern) may name these paths.
+var deliveryStatePathPattern = regexp.MustCompile(`(?i)(?:boatstack[/\\](?:deliveries|operations|flow|repositories|runtimes|registry\.json)|\.git[/\\](?:worktrees[/\\][^/\\]+[/\\])?boatstack(?:[/\\]|$))`)
 var mutationToolPattern = regexp.MustCompile(`(?i)(?:write|edit|apply[_-]?patch|create|delete|remove|move|rename|update|insert|upload|install)`)
 var planningMutationToolPattern = regexp.MustCompile(`(?i)(?:write|edit|apply[_-]?patch|create)`)
 var externalReadOnlyToolPattern = regexp.MustCompile(`(?i)(?:^|[_-])(?:get|list|read|search|find|status|inspect|query|fetch|open)(?:[_-]|$)`)
@@ -314,7 +320,7 @@ func publicationBypassFinding(repo, reason, source string) (SafetyFinding, bool)
 	// band) poisons authority for every other delivery with relation=ambiguous.
 	// A config that fails to load leaves active unfiltered, preserving the prior
 	// behavior.
-	if config, _, configErr := LoadConfig(filepath.Join(repo, ".product-loop", "project.json")); configErr == nil {
+	if config, _, configErr := LoadConfig(WorkspaceFor(repo).ProjectConfigPath()); configErr == nil {
 		active = withoutIgnoredDeliveries(active, config.Workflow.IgnoredDeliveries)
 	}
 	if len(active) == 0 {
@@ -999,6 +1005,26 @@ func denialMessage(host string, finding SafetyFinding) string {
 	return denialFor(host, finding).Render(RenderPlain)
 }
 
+// AmbientHookDecision is the entry point for a developer-level (user-scoped) guard
+// that runs for every repository the coding agent opens. It enforces Boatstack only
+// on managed repositories — those with a detached attachment or an embedded install
+// — and returns a plain allow (no Boatstack decision) everywhere else, so a
+// user-level hook never controls an unattached repository. On a managed repository
+// it delegates to the full HookDecision.
+func AmbientHookDecision(options SafetyHookOptions) ([]byte, bool) {
+	host := strings.ToLower(strings.TrimSpace(options.Host))
+	contract, supported := hookHostContracts[host]
+	repo, err := ResolveRepository(options.Repo)
+	if err != nil || !RepositoryIsManaged(repo) {
+		if supported {
+			value, _ := contract.allow()
+			return value, false
+		}
+		return nil, false
+	}
+	return HookDecision(options)
+}
+
 func HookDecision(options SafetyHookOptions) ([]byte, bool) {
 	host := strings.ToLower(strings.TrimSpace(options.Host))
 	contract, supported := hookHostContracts[host]
@@ -1100,7 +1126,7 @@ func CheckRepositorySafety(repoPath string) (SafetyReport, error) {
 	}
 	highRisk := []string{}
 	defaultBranch := ""
-	configPath := filepath.Join(repo, ".product-loop", "project.json")
+	configPath := WorkspaceFor(repo).ProjectConfigPath()
 	if value, readErr := os.ReadFile(configPath); readErr == nil {
 		var config ProjectConfig
 		if json.Unmarshal(value, &config) == nil {

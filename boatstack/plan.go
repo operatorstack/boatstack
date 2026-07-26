@@ -967,7 +967,7 @@ func ActivatePlan(options ActivationOptions) error {
 	if err != nil {
 		return err
 	}
-	config, _, err := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	config, _, err := LoadConfig(WorkspaceFor(repo).ProjectConfigPath())
 	if err != nil {
 		return fmt.Errorf("plan activation requires a valid Boatstack project configuration: %w", err)
 	}
