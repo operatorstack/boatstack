@@ -971,6 +971,13 @@ func ActivatePlan(options ActivationOptions) error {
 	if err != nil {
 		return fmt.Errorf("plan activation requires a valid Boatstack project configuration: %w", err)
 	}
+	// Once a feature's workspace worktree is cut, activation must happen inside it,
+	// never from the main worktree on the base branch — otherwise the compiled
+	// artifacts and delivery ledger land on the base branch and compete with the
+	// cut worktree's own state.
+	if err := guardManagedActivationWorktree(repo, config, stringValue(check.Plan["feature_id"])); err != nil {
+		return err
+	}
 	authorizationMode := "policy"
 	structuredPlanStatus := "POLICY_ACTIVATED"
 	receipt := ApprovalReceipt{}
