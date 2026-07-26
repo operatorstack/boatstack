@@ -632,7 +632,7 @@ func RecordChangeObservation(options ChangeObservationOptions) (ChangeObservatio
 		if len(state.Slices) > 0 {
 			observation.SliceID = state.Slices[len(state.Slices)-1].ID
 		}
-		states, statesErr := allManagedDeliveryStates(repo)
+		states, _, statesErr := allManagedDeliveryStates(repo)
 		if statesErr != nil {
 			return ChangeObservation{}, DeliveryState{}, statesErr
 		}
