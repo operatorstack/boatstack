@@ -15,7 +15,7 @@ import (
 )
 
 func fail(err error) int {
-	fmt.Fprintln(os.Stderr, "BLOCKED:", err)
+	fmt.Fprintln(os.Stderr, boatstack.FormatBlocked(os.Stderr, err.Error()))
 	return 1
 }
 
@@ -39,7 +39,7 @@ func emitHookOutput(writer io.Writer, host string, value []byte) error {
 }
 
 func failSafetyHook(err error) int {
-	fmt.Fprintln(os.Stderr, "BLOCKED:", err)
+	fmt.Fprintln(os.Stderr, boatstack.FormatBlocked(os.Stderr, err.Error()))
 	// Claude Code and Codex both define exit 2 as a blocking PreToolUse error.
 	// Exit 1 is non-blocking in Claude and must never represent policy failure.
 	return 2
@@ -871,6 +871,21 @@ func doctorCommand(arguments []string) int {
 	return 0
 }
 
+func renderDenialCommand(arguments []string) int {
+	flags := flag.NewFlagSet("render-denial", flag.ContinueOnError)
+	mode := flags.String("mode", "ansi", "render mode: ansi | plain | markdown")
+	host := flags.String("host", "claude", "coding host: claude | codex | cursor | gemini")
+	demo := flags.Bool("demo", false, "render a representative set of denials")
+	if err := flags.Parse(arguments); err != nil {
+		return fail(err)
+	}
+	if !*demo {
+		return fail(fmt.Errorf("render-denial requires --demo (optional: --mode, --host)"))
+	}
+	fmt.Println(boatstack.DenialDemo(*host, boatstack.ParseRenderMode(*mode)))
+	return 0
+}
+
 func diagnoseHookCommand(arguments []string) int {
 	flags := flag.NewFlagSet("diagnose-hook", flag.ContinueOnError)
 	host := flags.String("host", "", "cursor, claude, or codex")
@@ -1221,7 +1236,7 @@ func workspaceSyncCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|record-change|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|check-safety|migrate-config|safety-hook|diagnose-hook|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|workspace-sync|flow|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|record-change|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|check-safety|migrate-config|safety-hook|diagnose-hook|render-denial|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-status|workspace-sync|flow|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -1297,6 +1312,8 @@ func run() int {
 		return doctorCommand(os.Args[2:])
 	case "diagnose-hook":
 		return diagnoseHookCommand(os.Args[2:])
+	case "render-denial":
+		return renderDenialCommand(os.Args[2:])
 	case "safety-hook":
 		return safetyHookCommand(os.Args[2:])
 	case "bootstrap-safety-hook":

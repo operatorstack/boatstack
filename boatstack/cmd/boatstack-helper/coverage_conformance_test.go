@@ -55,6 +55,7 @@ var nonDeliveryVerbs = map[string]bool{
 	"check-safety":     true,
 	"doctor":           true,
 	"diagnose-hook":    true,
+	"render-denial":    true,
 	"workspace-status": true,
 	// Evidence / capability substrate (a separate tenant, not the delivery graph).
 	"record-pr-visual-evidence":    true,
