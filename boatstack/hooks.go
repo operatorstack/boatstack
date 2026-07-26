@@ -170,21 +170,28 @@ if { [[ ! -x "$HELPER" || -L "$HELPER" || ! -f "$MANIFEST" || -L "$MANIFEST" ]];
   mkdir -p "$COMMON/boatstack" 2>/dev/null || true
   HYDRATE_LOCK="$COMMON/boatstack/hydrate-%s.lock"
   if mkdir "$HYDRATE_LOCK" 2>/dev/null; then
-    (
-      cd "$ROOT" || exit 0
-      export BOATSTACK_MODE=hydrate
-      export BOATSTACK_VERSION="%s"
-      export BOATSTACK_REPO="$ROOT"
-      HYDRATE_COMMAND="${BOATSTACK_HYDRATE_COMMAND:-}"
-      if [[ -z "$HYDRATE_COMMAND" ]]; then
-        HYDRATE_COMMAND='%s'
-      fi
-      if command -v timeout >/dev/null 2>&1; then
-        timeout 8 /bin/bash -c "$HYDRATE_COMMAND"
-      else
-        /bin/bash -c "$HYDRATE_COMMAND"
-      fi
-    ) >&2 || true
+    # Double-checked locking. A slow guard can reach this mkdir only after the
+    # winner already hydrated and released the lock, so its mkdir succeeds too.
+    # Re-test the slot now that we hold the lock and run the installer only if it
+    # is still missing or incomplete, so exactly one hydration happens under
+    # contention (redundant installer runs also widen the exec-time race window).
+    if [[ ! -x "$HELPER" || -L "$HELPER" || ! -f "$MANIFEST" || -L "$MANIFEST" ]]; then
+      (
+        cd "$ROOT" || exit 0
+        export BOATSTACK_MODE=hydrate
+        export BOATSTACK_VERSION="%s"
+        export BOATSTACK_REPO="$ROOT"
+        HYDRATE_COMMAND="${BOATSTACK_HYDRATE_COMMAND:-}"
+        if [[ -z "$HYDRATE_COMMAND" ]]; then
+          HYDRATE_COMMAND='%s'
+        fi
+        if command -v timeout >/dev/null 2>&1; then
+          timeout 8 /bin/bash -c "$HYDRATE_COMMAND"
+        else
+          /bin/bash -c "$HYDRATE_COMMAND"
+        fi
+      ) >&2 || true
+    fi
     rmdir "$HYDRATE_LOCK" 2>/dev/null || true
   else
     # A peer holds the hydrate lock. Wait for the peer to finish — it removes the
