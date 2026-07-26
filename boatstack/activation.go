@@ -4,7 +4,57 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
+
+// ambientHookMarker identifies a user-level hook entry as Boatstack's ambient
+// guard. It is distinct from the embedded hookCommandMarker (".product-loop/hooks/
+// guard"): the ambient command runs the external helper's ambient-safety-hook and
+// never names the in-repo guard, so ownership is detected by this substring.
+const ambientHookMarker = "ambient-safety-hook"
+
+// containsAmbientHook reports whether a hook value is (or contains) a Boatstack
+// ambient-guard entry, by finding the ambient marker in any command string.
+func containsAmbientHook(value any) bool {
+	switch typed := value.(type) {
+	case string:
+		return strings.Contains(typed, ambientHookMarker)
+	case []any:
+		for _, item := range typed {
+			if containsAmbientHook(item) {
+				return true
+			}
+		}
+	case map[string]any:
+		for _, item := range typed {
+			if containsAmbientHook(item) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// detachedHelperPath resolves the helper the ambient hook should invoke: the
+// external shared-runtime slot's binary when present (stable across helper
+// relocation), else the running executable, else the bare name.
+func detachedHelperPath(repo string) string {
+	if binaryPath, _, err := sharedRuntimePaths(repo, Version, SourceCommit); err == nil && fileExists(binaryPath) {
+		return binaryPath
+	}
+	if exe, err := os.Executable(); err == nil && exe != "" {
+		return exe
+	}
+	return "boatstack-helper"
+}
+
+// ambientDesiredEntry is the per-event ambient-guard entry for a host, shaped like
+// the embedded entry but running the external ambient command.
+func ambientDesiredEntry(host, event, helper string) map[string]any {
+	entry := desiredHostHookForEvent(host, event)
+	overrideHookCommand(entry, ambientHookCommand(host, helper))
+	return entry
+}
 
 // Detached activation. A detached repository has no in-repo host hook, so the
 // developer installs one user-level (developer-scoped) hook per coding agent. That
@@ -128,10 +178,7 @@ func DetachedActivationPlan(repoPath string, hosts []string) (ActivationPlan, er
 	plan.Attached = true
 	_ = ctx
 
-	helper, err := os.Executable()
-	if err != nil || helper == "" {
-		helper = "boatstack-helper"
-	}
+	helper := detachedHelperPath(root)
 	plan.HelperPath = helper
 
 	if len(hosts) == 0 {
@@ -155,4 +202,185 @@ func DetachedActivationPlan(repoPath string, hosts []string) (ActivationPlan, er
 	}
 	plan.Reason = "Add the developer-level ambient guard for each coding agent you use. It no-ops on repositories you have not attached."
 	return plan, nil
+}
+
+// AmbientHostResult is the per-host outcome of an install/uninstall.
+type AmbientHostResult struct {
+	Host       string `json:"host"`
+	ConfigPath string `json:"config_path"`
+	Action     string `json:"action"` // installed | removed | unchanged
+}
+
+// AmbientActivationResult is the deterministic outcome of installing or removing
+// the developer-level ambient guard.
+type AmbientActivationResult struct {
+	SchemaVersion      int                 `json:"schema_version"`
+	VerificationStatus string              `json:"verification_status"` // VERIFIED | BLOCKED
+	Mode               string              `json:"mode,omitempty"`
+	RepoRoot           string              `json:"repo_root,omitempty"`
+	Hosts              []AmbientHostResult `json:"hosts,omitempty"`
+	Reason             string              `json:"reason"`
+}
+
+func blockedAmbient(reason string) AmbientActivationResult {
+	return AmbientActivationResult{SchemaVersion: detachedSchemaVersion, VerificationStatus: "BLOCKED", Reason: reason}
+}
+
+func defaultActivationHosts(hosts []string) []string {
+	if len(hosts) == 0 {
+		return []string{"cursor", "claude", "codex", "gemini"}
+	}
+	return hosts
+}
+
+// mergeAmbientHooks installs exactly one ambient-guard entry per host event,
+// preserving every non-ambient entry (a user's own hooks, and any embedded guard)
+// verbatim. Stripping then re-adding the single owned entry makes reinstall
+// idempotent — the same input config yields the same output.
+func mergeAmbientHooks(config map[string]any, host, helper string) error {
+	hooks, ok := config["hooks"].(map[string]any)
+	if config["hooks"] == nil {
+		hooks = map[string]any{}
+		config["hooks"] = hooks
+	} else if !ok {
+		return fmt.Errorf("host hook config has non-object hooks")
+	}
+	for _, event := range hookEvents(host) {
+		var entries []any
+		if existing := hooks[event]; existing != nil {
+			list, listOK := existing.([]any)
+			if !listOK {
+				return fmt.Errorf("host hook event %s is not a list", event)
+			}
+			entries = list
+		}
+		kept := []any{}
+		for _, entry := range entries {
+			if containsAmbientHook(entry) {
+				continue
+			}
+			kept = append(kept, entry)
+		}
+		kept = append(kept, ambientDesiredEntry(host, event, helper))
+		hooks[event] = kept
+	}
+	if host == "cursor" && config["version"] == nil {
+		config["version"] = float64(1)
+	}
+	return nil
+}
+
+// removeAmbientHooks strips only Boatstack ambient-guard entries, preserving all
+// other entries. It reports whether anything changed.
+func removeAmbientHooks(config map[string]any, host string) bool {
+	hooks, ok := config["hooks"].(map[string]any)
+	if !ok {
+		return false
+	}
+	changed := false
+	for _, event := range hookEvents(host) {
+		existing, listOK := hooks[event].([]any)
+		if !listOK {
+			continue
+		}
+		kept := []any{}
+		for _, entry := range existing {
+			if containsAmbientHook(entry) {
+				changed = true
+				continue
+			}
+			kept = append(kept, entry)
+		}
+		if len(kept) == 0 {
+			delete(hooks, event)
+		} else {
+			hooks[event] = kept
+		}
+	}
+	return changed
+}
+
+// InstallAmbientHooks merges the ambient guard into each agent's developer-level
+// config. It requires the repository to be attached in detached mode. It preserves
+// existing user hooks and is idempotent.
+func InstallAmbientHooks(repoPath string, hosts []string) (AmbientActivationResult, error) {
+	root, err := ResolveRepository(repoPath)
+	if err != nil {
+		return blockedAmbient(err.Error()), nil
+	}
+	_, ok, verifyErr := detachedContextFor(root)
+	if verifyErr != nil {
+		return blockedAmbient(verifyErr.Error() + " Reattach before activating."), nil
+	}
+	if !ok {
+		return blockedAmbient("This repository is not attached in detached mode. Run `boatstack-helper attach --repo . --mode detached` first."), nil
+	}
+	helper := detachedHelperPath(root)
+	result := AmbientActivationResult{SchemaVersion: detachedSchemaVersion, VerificationStatus: "VERIFIED", Mode: string(SupervisionDetached), RepoRoot: root}
+	for _, host := range defaultActivationHosts(hosts) {
+		configPath, pathErr := userHostConfigPath(host)
+		if pathErr != nil {
+			continue
+		}
+		config, loadErr := loadHookConfig(configPath)
+		if loadErr != nil {
+			return blockedAmbient(fmt.Sprintf("Boatstack could not read %s: %v", configPath, loadErr)), nil
+		}
+		before, _ := MarshalJSON(config)
+		if err := mergeAmbientHooks(config, host, helper); err != nil {
+			return blockedAmbient(err.Error()), nil
+		}
+		after, marshalErr := MarshalJSON(config)
+		if marshalErr != nil {
+			return blockedAmbient(marshalErr.Error()), nil
+		}
+		action := "unchanged"
+		if string(before) != string(after) {
+			if err := atomicWriteMode(configPath, after, 0o644); err != nil {
+				return blockedAmbient(err.Error()), nil
+			}
+			action = "installed"
+		}
+		result.Hosts = append(result.Hosts, AmbientHostResult{Host: host, ConfigPath: configPath, Action: action})
+	}
+	result.Reason = "Installed the Boatstack ambient guard into your developer-level host configuration. It enforces Boatstack only on attached repositories and leaves all other repositories uncontrolled."
+	return result, nil
+}
+
+// RemoveAmbientHooks removes the ambient guard from each agent's developer-level
+// config, preserving every other entry.
+func RemoveAmbientHooks(repoPath string, hosts []string) (AmbientActivationResult, error) {
+	root, err := ResolveRepository(repoPath)
+	if err != nil {
+		return blockedAmbient(err.Error()), nil
+	}
+	result := AmbientActivationResult{SchemaVersion: detachedSchemaVersion, VerificationStatus: "VERIFIED", RepoRoot: root}
+	for _, host := range defaultActivationHosts(hosts) {
+		configPath, pathErr := userHostConfigPath(host)
+		if pathErr != nil {
+			continue
+		}
+		if !fileExists(configPath) {
+			result.Hosts = append(result.Hosts, AmbientHostResult{Host: host, ConfigPath: configPath, Action: "unchanged"})
+			continue
+		}
+		config, loadErr := loadHookConfig(configPath)
+		if loadErr != nil {
+			return blockedAmbient(fmt.Sprintf("Boatstack could not read %s: %v", configPath, loadErr)), nil
+		}
+		action := "unchanged"
+		if removeAmbientHooks(config, host) {
+			after, marshalErr := MarshalJSON(config)
+			if marshalErr != nil {
+				return blockedAmbient(marshalErr.Error()), nil
+			}
+			if err := atomicWriteMode(configPath, after, 0o644); err != nil {
+				return blockedAmbient(err.Error()), nil
+			}
+			action = "removed"
+		}
+		result.Hosts = append(result.Hosts, AmbientHostResult{Host: host, ConfigPath: configPath, Action: action})
+	}
+	result.Reason = "Removed the Boatstack ambient guard from your developer-level host configuration."
+	return result, nil
 }

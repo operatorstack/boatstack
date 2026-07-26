@@ -71,6 +71,7 @@ var nonDeliveryVerbs = map[string]bool{
 	"detached-status": true,
 	"context":         true,
 	"activate":        true,
+	"deactivate":      true,
 	// Safety hooks and workspace management (guard/scaffold, not delivery moves).
 	"safety-hook":           true,
 	"ambient-safety-hook":   true,

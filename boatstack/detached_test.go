@@ -368,6 +368,114 @@ func TestActivationPlanIsHostNeutralAndExternal(t *testing.T) {
 }
 
 // control-law: detached-control-state-never-enters-the-plant
+// Attaching populates the external shared-runtime slot so the ambient guard has a
+// helper to invoke, without writing into the repository.
+func TestAttachPopulatesExternalRuntimeSlot(t *testing.T) {
+	repo := detachedTestRepo(t, "https://github.com/acme/app.git")
+	if _, err := AttachDetached(AttachOptions{Repo: repo}); err != nil {
+		t.Fatal(err)
+	}
+	binaryPath, manifestPath, err := sharedRuntimePaths(repo, Version, SourceCommit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{binaryPath, manifestPath} {
+		if !fileExists(p) {
+			t.Fatalf("external runtime slot missing %s", p)
+		}
+		if strings.HasPrefix(p, repo+string(filepath.Separator)) {
+			t.Fatalf("runtime slot must be external, got %s", p)
+		}
+	}
+}
+
+// control-law: activation-preserves-existing-host-config
+// Installing the ambient guard adds only a Boatstack-owned entry, preserves the
+// developer's existing hooks, and is idempotent.
+func TestActivateInstallsAmbientGuardPreservingUserHooks(t *testing.T) {
+	repo := detachedTestRepo(t, "https://github.com/acme/app.git")
+	userRoot := t.TempDir()
+	t.Setenv("BOATSTACK_USER_CONFIG_ROOT", userRoot)
+	if _, err := AttachDetached(AttachOptions{Repo: repo}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Seed a developer's own Claude hook that Boatstack must never touch.
+	claudeCfg := filepath.Join(userRoot, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(claudeCfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	seed := `{"theme":"dark","hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"my-own-check.sh"}]}]}}`
+	if err := os.WriteFile(claudeCfg, []byte(seed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := InstallAmbientHooks(repo, []string{"claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.VerificationStatus != "VERIFIED" || len(result.Hosts) != 1 || result.Hosts[0].Action != "installed" {
+		t.Fatalf("unexpected install result: %+v", result)
+	}
+	body, err := os.ReadFile(claudeCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	if !strings.Contains(text, "my-own-check.sh") {
+		t.Fatalf("install clobbered the developer's own hook: %s", text)
+	}
+	if !strings.Contains(text, "ambient-safety-hook") {
+		t.Fatalf("install did not add the ambient guard: %s", text)
+	}
+	if !strings.Contains(text, `"theme"`) {
+		t.Fatalf("install dropped unrelated user settings: %s", text)
+	}
+
+	// Idempotent: a second install changes nothing.
+	again, err := InstallAmbientHooks(repo, []string{"claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Hosts[0].Action != "unchanged" {
+		t.Fatalf("second install was not idempotent: %+v", again)
+	}
+
+	// Deactivate removes only the ambient guard, preserving the developer's hook.
+	removed, err := RemoveAmbientHooks(repo, []string{"claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed.Hosts[0].Action != "removed" {
+		t.Fatalf("deactivate did not remove the ambient guard: %+v", removed)
+	}
+	after, err := os.ReadFile(claudeCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(after), "ambient-safety-hook") {
+		t.Fatalf("deactivate left the ambient guard behind: %s", after)
+	}
+	if !strings.Contains(string(after), "my-own-check.sh") {
+		t.Fatalf("deactivate removed the developer's own hook: %s", after)
+	}
+}
+
+// control-law: unattached-repositories-are-not-controlled
+// Installing the ambient guard requires an attachment; an unattached repo is refused.
+func TestActivateRefusesUnattachedRepository(t *testing.T) {
+	repo := detachedTestRepo(t, "https://github.com/acme/app.git")
+	t.Setenv("BOATSTACK_USER_CONFIG_ROOT", t.TempDir())
+	result, err := InstallAmbientHooks(repo, []string{"claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.VerificationStatus != "BLOCKED" {
+		t.Fatalf("activation of an unattached repo must be blocked: %+v", result)
+	}
+}
+
+// control-law: detached-control-state-never-enters-the-plant
 func TestDetachRemovesAttachmentAndState(t *testing.T) {
 	repo := detachedTestRepo(t, "https://github.com/acme/app.git")
 	if _, err := AttachDetached(AttachOptions{Repo: repo}); err != nil {
