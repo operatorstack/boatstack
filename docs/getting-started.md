@@ -266,6 +266,40 @@ $env:BOATSTACK_MODE="update"; $env:BOATSTACK_VERSION="v0.5.0"; $env:BOATSTACK_RE
 
 Review the diff and open the update PR normally. After that bootstrap, future releases use `/boatstack-update`.
 
+## Supervise a repository without adding Boatstack to it
+
+Detached Supervision lets you use Boatstack on a repository you do not want to change — an
+evaluation, a client checkout, an open-source project, or a large monorepo. Boatstack keeps
+its controller state (configuration, plans, delivery state, evidence, runtime) under a
+developer-local control root outside the repository; the working tree and `.git` gain no
+Boatstack files.
+
+Attach the repository, then install the developer-level guard once per coding agent:
+
+```bash
+boatstack-helper attach --repo . --mode detached
+boatstack-helper activate --repo .
+```
+
+`attach` inspects the repository and writes the controller state and a binding to the external
+control root, leaving the working tree byte-for-byte unchanged. `activate` merges a
+developer-level ambient guard into each agent's global configuration; that guard enforces
+Boatstack only on repositories you have attached and is a no-op everywhere else, and it never
+removes your own hooks. Use `activate --print` to review the exact per-agent configuration
+before installing it.
+
+Check or end supervision at any time:
+
+```bash
+boatstack-helper detached-status --repo .   # is this repository attached and verified?
+boatstack-helper deactivate --repo .        # remove the developer-level guard
+boatstack-helper detach --repo .            # remove the attachment and its external state
+```
+
+From then on the ordinary flow — plan, approve, build, prove, review, prepare a PR — works
+exactly as in repository-owned mode. When a project decides to adopt Boatstack, install it
+normally to promote the controller into the repository.
+
 ## When something blocks
 
 - A product decision returns to you rather than being guessed.

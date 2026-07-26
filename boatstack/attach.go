@@ -115,6 +115,15 @@ func AttachDetached(opts AttachOptions) (AttachResult, error) {
 	}
 	invalidateWorkspaceCache()
 
+	// Populate the external shared-runtime slot from the running helper so the
+	// developer-level ambient guard has a stable helper to invoke. The binding is
+	// written above, so WorkspaceFor now resolves detached and the slot is external.
+	if source, execErr := os.Executable(); execErr == nil {
+		if _, runtimeErr := installDetachedRuntime(root, source); runtimeErr != nil {
+			return blockedAttach("Boatstack could not install the external runtime: " + runtimeErr.Error()), nil
+		}
+	}
+
 	return AttachResult{
 		SchemaVersion:      detachedSchemaVersion,
 		VerificationStatus: "VERIFIED",

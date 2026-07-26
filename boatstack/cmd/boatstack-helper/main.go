@@ -154,7 +154,39 @@ func detachedStatusCommand(arguments []string) int {
 
 func activateCommand(arguments []string) int {
 	flags := flag.NewFlagSet("activate", flag.ContinueOnError)
-	repo := flags.String("repo", ".", "attached repository to produce activation instructions for")
+	repo := flags.String("repo", ".", "attached repository to activate")
+	host := flags.String("host", "", "limit to one coding agent (cursor|claude|codex|gemini); default all")
+	stateRoot := flags.String("state-root", "", "external control-state root (overrides the default user state directory)")
+	print := flags.Bool("print", false, "only print the per-agent config to add; do not install it")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	applyStateRoot(*stateRoot)
+	var hosts []string
+	if strings.TrimSpace(*host) != "" {
+		hosts = []string{*host}
+	}
+	if *print {
+		result, err := boatstack.DetachedActivationPlan(*repo, hosts)
+		if err != nil {
+			return fail(err)
+		}
+		return emitJSON(result)
+	}
+	result, err := boatstack.InstallAmbientHooks(*repo, hosts)
+	if err != nil {
+		return fail(err)
+	}
+	code := emitJSON(result)
+	if result.VerificationStatus == "BLOCKED" {
+		return 1
+	}
+	return code
+}
+
+func deactivateCommand(arguments []string) int {
+	flags := flag.NewFlagSet("deactivate", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository to deactivate")
 	host := flags.String("host", "", "limit to one coding agent (cursor|claude|codex|gemini); default all")
 	stateRoot := flags.String("state-root", "", "external control-state root (overrides the default user state directory)")
 	if err := flags.Parse(arguments); err != nil {
@@ -165,11 +197,15 @@ func activateCommand(arguments []string) int {
 	if strings.TrimSpace(*host) != "" {
 		hosts = []string{*host}
 	}
-	result, err := boatstack.DetachedActivationPlan(*repo, hosts)
+	result, err := boatstack.RemoveAmbientHooks(*repo, hosts)
 	if err != nil {
 		return fail(err)
 	}
-	return emitJSON(result)
+	code := emitJSON(result)
+	if result.VerificationStatus == "BLOCKED" {
+		return 1
+	}
+	return code
 }
 
 func contextCommand(arguments []string) int {
@@ -1393,7 +1429,7 @@ func workspaceSyncCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <attach|detach|detached-status|context|activate|init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|record-change|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|check-safety|migrate-config|safety-hook|ambient-safety-hook|diagnose-hook|render-denial|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-reap|workspace-status|workspace-sync|flow|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <attach|detach|detached-status|context|activate|deactivate|init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|record-change|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|check-safety|migrate-config|safety-hook|ambient-safety-hook|diagnose-hook|render-denial|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-reap|workspace-status|workspace-sync|flow|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -1407,6 +1443,8 @@ func run() int {
 		return contextCommand(os.Args[2:])
 	case "activate":
 		return activateCommand(os.Args[2:])
+	case "deactivate":
+		return deactivateCommand(os.Args[2:])
 	case "init":
 		return initCommand(os.Args[2:])
 	case "update":

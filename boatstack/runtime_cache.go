@@ -136,6 +136,44 @@ func atomicWriteMode(path string, content []byte, mode fs.FileMode) error {
 }
 
 func installSharedRuntime(source, repo string, integrations map[string]IntegrationState) (runtimeManifest, error) {
+	binaryPath, manifestPath, err := sharedRuntimePaths(repo, Version, SourceCommit)
+	if err != nil {
+		return runtimeManifest{}, err
+	}
+	common, err := gitCommonDir(repo)
+	if err != nil {
+		return runtimeManifest{}, err
+	}
+	return writeRuntimeSlot(source, common, binaryPath, manifestPath, integrations)
+}
+
+// installDetachedRuntime populates a detached repository's external shared-runtime
+// slot from the running helper, so the developer-level ambient guard has a stable
+// helper to invoke. Unlike installSharedRuntime it scopes the symlink check to the
+// external control root and does not consult any in-repo generated lock. It
+// requires WorkspaceFor(repo) to already resolve detached (attach writes the
+// binding and invalidates the cache first). It is idempotent.
+func installDetachedRuntime(repo, source string) (runtimeManifest, error) {
+	ctx := WorkspaceFor(repo)
+	if ctx.Mode != SupervisionDetached {
+		return runtimeManifest{}, fmt.Errorf("installDetachedRuntime requires an attached detached repository")
+	}
+	binaryPath, manifestPath, err := sharedRuntimePaths(repo, Version, SourceCommit)
+	if err != nil {
+		return runtimeManifest{}, err
+	}
+	root, err := ctx.sharedControlDir()
+	if err != nil {
+		return runtimeManifest{}, err
+	}
+	return writeRuntimeSlot(source, root, binaryPath, manifestPath, nil)
+}
+
+// writeRuntimeSlot copies a helper binary and its manifest into a version-labeled
+// runtime slot atomically, rejecting symlinked components under symlinkRoot and
+// verifying the written bytes against the manifest checksum. It is the shared core
+// of the embedded and detached runtime installers.
+func writeRuntimeSlot(source, symlinkRoot, binaryPath, manifestPath string, integrations map[string]IntegrationState) (runtimeManifest, error) {
 	value, err := os.ReadFile(source)
 	if err != nil {
 		return runtimeManifest{}, err
@@ -145,16 +183,8 @@ func installSharedRuntime(source, repo string, integrations map[string]Integrati
 		Platform: platformKey(), BinarySHA256: SHA256Bytes(value),
 		ReleaseChecksumsSHA256: ChecksumsSHA256, Integrations: integrations,
 	}
-	binaryPath, manifestPath, err := sharedRuntimePaths(repo, Version, SourceCommit)
-	if err != nil {
-		return runtimeManifest{}, err
-	}
-	common, err := gitCommonDir(repo)
-	if err != nil {
-		return runtimeManifest{}, err
-	}
 	for _, path := range []string{binaryPath, manifestPath} {
-		if err := rejectSymlinkComponents(common, path); err != nil {
+		if err := rejectSymlinkComponents(symlinkRoot, path); err != nil {
 			return runtimeManifest{}, err
 		}
 	}
