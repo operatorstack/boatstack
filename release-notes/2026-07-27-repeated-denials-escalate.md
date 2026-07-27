@@ -1,0 +1,5 @@
+### A denial that repeats escalates its help, not its severity
+
+An agent that hits the same guardrail again and again is telling you the stated rule is not reaching it — and under that pressure agents drift toward worse moves, not better ones. The guard now keeps a small per-worktree count of identical denials. From the third identical denial, the message escalates its corrective information: the pick list expands from three commands to the full legal set, and the denial prescribes a fresh diagnostic (`boatstack-helper doctor`) instead of leaving the loop to continue.
+
+Nothing about admissibility changes — what was denied stays denied, what was allowed stays allowed, and the constitutional destruction floor is untouched. Any allowed mutating call counts as forward progress and clears the history, so an old denial streak never escalates an unrelated message. The ledger lives with the rest of the worktree's control state, is bounded, and degrades silently: if its file is corrupt or unwritable, the denial simply renders unescalated.

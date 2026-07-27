@@ -28,6 +28,12 @@ type SafetyFinding struct {
 	OperationState         string `json:"operation_state,omitempty"`
 	AttemptNumber          int    `json:"attempt_number,omitempty"`
 	ReconciliationRequired bool   `json:"reconciliation_required,omitempty"`
+	// RepeatCount is how many times this same denial (category at stage) has
+	// fired consecutively in this worktree, from the guard's denial ledger.
+	// At the escalation threshold the rendering lifts its solution-set cap and
+	// prescribes a fresh diagnostic — more information, never more severity.
+	// control-law: repeated-denials-escalate-to-solutions
+	RepeatCount int `json:"repeat_count,omitempty"`
 }
 
 type SafetyReport struct {
@@ -1400,13 +1406,22 @@ func HookDecision(options SafetyHookOptions) ([]byte, bool) {
 	findings := ClassifyTool(repo, name, input)
 	if len(findings) == 0 {
 		if finding := superviseToolAttempt(repo, host, name, input, options.Input); finding != nil {
+			finding.RepeatCount = recordDenial(repo, *finding)
 			value, _ := contract.deny(repo, *finding)
 			return value, true
+		}
+		// An allowed mutation-capable call is forward progress: stale denial
+		// history must not escalate the next unrelated denial.
+		// control-law: repeated-denials-escalate-to-solutions
+		if mutationCapableTool(name, input) {
+			resetDenialLedger(repo)
 		}
 		value, _ := contract.allow()
 		return value, false
 	}
-	value, _ := contract.deny(repo, findings[0])
+	finding := findings[0]
+	finding.RepeatCount = recordDenial(repo, finding)
+	value, _ := contract.deny(repo, finding)
 	return value, true
 }
 

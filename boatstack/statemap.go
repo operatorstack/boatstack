@@ -187,6 +187,20 @@ func StateRegistry() []StateEntry {
 			},
 		},
 		{
+			// The denial ledger backing repeated-denials-escalate-to-solutions.
+			// Written only by the hook's own deny path; per-worktree so one
+			// worktree's denial history never escalates a sibling's denials.
+			Name: "guard-denial-ledger", Class: ClassRuntimeWorktree, Partition: "per-worktree", Gitignored: true, GuardProtected: true,
+			OwnerVerbs: []string{"safety-hook", "ambient-safety-hook"},
+			Sample: func(w WorkspaceContext) (string, error) {
+				base, err := w.GuardDir()
+				if err != nil {
+					return "", err
+				}
+				return filepath.Join(base, "denials.json"), nil
+			},
+		},
+		{
 			Name: "runtime-slots", Class: ClassRuntimeShared, Partition: "git-common", Gitignored: true, GuardProtected: true,
 			OwnerVerbs: []string{"init", "update", "hydrate-runtime"},
 			Sample: func(w WorkspaceContext) (string, error) {

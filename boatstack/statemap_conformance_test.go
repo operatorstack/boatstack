@@ -67,6 +67,7 @@ func TestEveryWorkspaceResolverIsDeclared(t *testing.T) {
 		"DeliveryDir":       {resolve(w.DeliveryDir), ClassRuntimeWorktree},
 		"OperationDir":      {resolve(w.OperationDir), ClassRuntimeWorktree},
 		"FlowDir":           {resolve(w.FlowDir), ClassRuntimeWorktree},
+		"GuardDir":          {resolve(w.GuardDir), ClassRuntimeWorktree},
 		"RuntimeDir": {resolve(func() (string, error) {
 			return w.RuntimeDir("v0.0.0", "0000000")
 		}), ClassRuntimeShared},

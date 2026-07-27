@@ -211,6 +211,18 @@ func (w WorkspaceContext) FlowDir() (string, error) {
 	return filepath.Join(base, "flow"), nil
 }
 
+// GuardDir holds the per-worktree guard bookkeeping (the denial ledger). It is
+// worktree-partitioned like the delivery state: one worktree's denial history
+// must never escalate a sibling's denials.
+// control-law: repeated-denials-escalate-to-solutions
+func (w WorkspaceContext) GuardDir() (string, error) {
+	base, err := w.worktreeControlDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "guard"), nil
+}
+
 // RuntimeDir holds the shared, version-namespaced runtime binary for the current
 // platform. version and sourceCommit are validated as single safe path segments.
 func (w WorkspaceContext) RuntimeDir(version, sourceCommit string) (string, error) {
