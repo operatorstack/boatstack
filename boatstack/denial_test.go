@@ -154,7 +154,7 @@ func TestStructuredDenialObjectAndRichGate(t *testing.T) {
 
 	// Rich object is gated off by default; the flat reason stays complete.
 	t.Setenv("BOATSTACK_DENIAL_RICH", "")
-	out, err := structuredHookDeny("claude", finding)
+	out, err := structuredHookDeny(".", "claude", finding)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestStructuredDenialObjectAndRichGate(t *testing.T) {
 
 	// Opt-in adds the object while keeping the flat reason.
 	t.Setenv("BOATSTACK_DENIAL_RICH", "1")
-	out, err = structuredHookDeny("claude", finding)
+	out, err = structuredHookDeny(".", "claude", finding)
 	if err != nil {
 		t.Fatal(err)
 	}

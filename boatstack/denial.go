@@ -58,6 +58,18 @@ type Denial struct {
 	Detail      string   // guidance; may contain `code` spans
 	Reassurance string   // "Nothing was written; your files are untouched." (empty if an effect occurred)
 	Hint        string   // recovery command, e.g. "boatstack-helper diagnose-hook"
+	// Options is the denial's computed solution set: the admissible commands
+	// from exactly the position the finding describes, so a weaker model picks
+	// a legal move instead of retrying the blocked one. Derived from the same
+	// declarations the guard enforces; renders as a short "You can:" list and
+	// rides in full on the structured payload.
+	// control-law: solution-set-derives-from-guard-declarations
+	Options          []PrescribedCommand
+	OptionsTruncated bool
+	// OwnerVerbs names the verbs that own a protected path (state-tamper
+	// denials), derived from the state-ownership map. Named, never compiled
+	// into runnable commands — their full arguments are not derivable here.
+	OwnerVerbs []string
 }
 
 // --- ANSI palette (truecolor; matches the approved mockup) -------------------
@@ -107,6 +119,29 @@ func (d Denial) Render(mode RenderMode) string {
 	}
 }
 
+// optionLines renders the solution set as at most `limit` numbered command
+// lines, plus an overflow note. Shared by the three text renderers so every
+// surface shows the same picks.
+// control-law: solution-set-derives-from-guard-declarations
+func (d Denial) optionLines(limit int) []string {
+	if len(d.Options) == 0 {
+		return nil
+	}
+	shown := d.Options
+	if len(shown) > limit {
+		shown = shown[:limit]
+	}
+	lines := make([]string, 0, len(shown)+1)
+	for i, option := range shown {
+		lines = append(lines, fmt.Sprintf("  %d) %s", i+1, option.CommandLine()))
+	}
+	hidden := len(d.Options) - len(shown)
+	if d.OptionsTruncated || hidden > 0 {
+		lines = append(lines, "  (more legal moves: run boatstack-helper next-status)")
+	}
+	return lines
+}
+
 func (d Denial) renderPlain(badge string) string {
 	var b strings.Builder
 	head := badge
@@ -121,6 +156,13 @@ func (d Denial) renderPlain(badge string) string {
 	if d.Reassurance != "" {
 		b.WriteString("\n\n↳ ")
 		b.WriteString(d.Reassurance)
+	}
+	if len(d.OwnerVerbs) > 0 {
+		b.WriteString("\n\nThis path is owned by: " + strings.Join(d.OwnerVerbs, ", ") + ".")
+	}
+	if lines := d.optionLines(solutionSetTextCap); len(lines) > 0 {
+		b.WriteString("\n\nYou can:\n")
+		b.WriteString(strings.Join(lines, "\n"))
 	}
 	if d.Hint != "" {
 		b.WriteString("\n\nFalse positive? run: ")
@@ -141,6 +183,15 @@ func (d Denial) renderMarkdown(badge string) string {
 	if d.Reassurance != "" {
 		b.WriteString("\n\n↳ _" + d.Reassurance + "_")
 	}
+	if len(d.OwnerVerbs) > 0 {
+		b.WriteString("\n\nThis path is owned by: `" + strings.Join(d.OwnerVerbs, "`, `") + "`.")
+	}
+	if lines := d.optionLines(solutionSetTextCap); len(lines) > 0 {
+		b.WriteString("\n\nYou can:\n")
+		for _, line := range lines {
+			b.WriteString("\n" + line)
+		}
+	}
 	if d.Hint != "" {
 		b.WriteString("\n\nFalse positive? run `" + d.Hint + "`")
 	}
@@ -159,6 +210,15 @@ func (d Denial) renderANSI(badge string) string {
 	}
 	if d.Reassurance != "" {
 		b.WriteString("\n" + fgGray + "↳ " + d.Reassurance + ansiReset)
+	}
+	if len(d.OwnerVerbs) > 0 {
+		b.WriteString("\n" + fgGray + "this path is owned by: " + ansiReset + fgCode + strings.Join(d.OwnerVerbs, ", ") + ansiReset)
+	}
+	if lines := d.optionLines(solutionSetTextCap); len(lines) > 0 {
+		b.WriteString("\n" + fgGray + "you can:" + ansiReset)
+		for _, line := range lines {
+			b.WriteString("\n" + fgCode + line + ansiReset)
+		}
 	}
 	if d.Hint != "" {
 		b.WriteString("\n" + fgGray + ansiDim + "false positive? run " + ansiReset + fgCode + d.Hint + ansiReset)
@@ -205,6 +265,33 @@ func (d Denial) Structured() map[string]any {
 	}
 	if d.Hint != "" {
 		out["hint"] = d.Hint
+	}
+	// Additive keys only — schema_version stays 1; a consumer that ignores them
+	// loses nothing (the flat reason string already carries the capped picks).
+	// control-law: solution-set-derives-from-guard-declarations
+	if len(d.Options) > 0 {
+		options := make([]map[string]any, 0, len(d.Options))
+		for _, option := range d.Options {
+			row := map[string]any{
+				"verb":         option.Verb,
+				"command_line": option.CommandLine(),
+				"transition":   string(option.Transition),
+			}
+			if len(option.Args) > 0 {
+				row["args"] = option.Args
+			}
+			if len(option.RequiresHumanInput) > 0 {
+				row["requires_human_input"] = option.RequiresHumanInput
+			}
+			options = append(options, row)
+		}
+		out["options"] = options
+		if d.OptionsTruncated {
+			out["options_truncated"] = true
+		}
+	}
+	if len(d.OwnerVerbs) > 0 {
+		out["owner_verbs"] = d.OwnerVerbs
 	}
 	return out
 }
@@ -296,9 +383,25 @@ func DenialDemo(host string, mode RenderMode) string {
 		if i > 0 {
 			b.WriteString("\n\n")
 		}
-		b.WriteString(denialFor(host, finding).Render(mode))
+		b.WriteString(denialWithOptions(".", host, finding).Render(mode))
 	}
 	return b.String()
+}
+
+// denialWithOptions composes the pure finding→Denial mapping with the
+// enumerated solution set for the finding's position. denialFor stays pure
+// (DenialDemo and tests use it directly); the hook deny paths call this so
+// every real denial carries its picks.
+// control-law: solution-set-derives-from-guard-declarations
+func denialWithOptions(repo, host string, finding SafetyFinding) Denial {
+	d := denialFor(host, finding)
+	set := enumerateDenialSolutions(repo, host, finding)
+	d.Options = set.Options
+	d.OptionsTruncated = set.Truncated
+	if finding.Category == "workflow-state-tamper" {
+		d.OwnerVerbs = tamperOwnerVerbs(repo, finding.AttemptedPath)
+	}
+	return d
 }
 
 const reassureUntouched = "Nothing was written; your files are untouched."

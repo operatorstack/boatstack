@@ -807,7 +807,10 @@ func ClassifyCommand(repo, command string) []SafetyFinding {
 		return []SafetyFinding{{Category: "malformed-tool-input", Reason: "empty-command", Source: "tool-input"}}
 	}
 	if deliveryStatePathPattern.MatchString(command) && !isPureReadOnlyCommand(command) && !approvedUpdatePublisherPattern.MatchString(command) {
-		return []SafetyFinding{{Category: "workflow-state-tamper", Reason: "managed delivery state may be changed only by Boatstack transitions", Source: "delivery-state"}}
+		// AttemptedPath carries the matched managed-path fragment (bounded and
+		// secret-free, like the phase-bypass finding) so the denial can name the
+		// path's declared owner verbs from the state-ownership map.
+		return []SafetyFinding{{Category: "workflow-state-tamper", Reason: "managed delivery state may be changed only by Boatstack transitions", Source: "delivery-state", AttemptedPath: deliveryStatePathPattern.FindString(command)}}
 	}
 	if directPublicationPattern.MatchString(command) && !approvedPublisherPattern.MatchString(command) {
 		if finding, blocked := publicationBypassFinding(repo, "direct push or PR mutation is denied while a managed delivery slice is active", "tool-input"); blocked {
@@ -895,7 +898,7 @@ func ClassifyTool(repo, name string, input any) []SafetyFinding {
 	}
 	publicationText := strings.ToLower(combined)
 	if deliveryStatePathPattern.MatchString(combined) && regexp.MustCompile(`(?:write|edit|delete|remove|move|rename|create|update)`).MatchString(nameLower) {
-		findings = append(findings, SafetyFinding{Category: "workflow-state-tamper", Reason: "managed delivery state may be changed only by Boatstack transitions", Source: "delivery-state"})
+		findings = append(findings, SafetyFinding{Category: "workflow-state-tamper", Reason: "managed delivery state may be changed only by Boatstack transitions", Source: "delivery-state", AttemptedPath: deliveryStatePathPattern.FindString(combined)})
 	}
 	if (strings.Contains(publicationText, "pull_request") || strings.Contains(publicationText, "pull request")) &&
 		regexp.MustCompile(`(?:create|update|edit|merge|publish)`).MatchString(publicationText) {
@@ -1121,7 +1124,10 @@ func dedupeFindings(values []SafetyFinding) []SafetyFinding {
 type hookHostContract struct {
 	decode func([]byte) (string, any, error)
 	allow  func() ([]byte, error)
-	deny   func(SafetyFinding) ([]byte, error)
+	// deny takes the resolved repository so the denial can carry its computed
+	// solution set (empty when the repository could not be resolved).
+	// control-law: solution-set-derives-from-guard-declarations
+	deny func(repo string, finding SafetyFinding) ([]byte, error)
 }
 
 func decodeJSONObject(host string, value []byte) (map[string]any, error) {
@@ -1259,17 +1265,17 @@ func decodeGeminiHook(value []byte) (string, any, error) {
 	return name, input, nil
 }
 
-func structuredHookDeny(host string, finding SafetyFinding) ([]byte, error) {
-	message := denialMessage(host, finding)
+func structuredHookDeny(repo, host string, finding SafetyFinding) ([]byte, error) {
+	denial := denialWithOptions(repo, host, finding)
 	hookOutput := map[string]any{
-		"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": message,
+		"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": denial.Render(RenderPlain),
 	}
 	// Opt-in structured object for hosts that adopt rich denial rendering. Nested
 	// inside the host's existing container; the flat reason above is always the
 	// complete fallback for any host that ignores it. Off by default (no host
 	// documents tolerating unknown keys — see references/host-hook-contracts.md).
 	if denialRichEnabled() {
-		hookOutput["boatstackDenial"] = denialFor(host, finding).Structured()
+		hookOutput["boatstackDenial"] = denial.Structured()
 	}
 	value, err := json.Marshal(map[string]any{"hookSpecificOutput": hookOutput})
 	return append(value, '\n'), err
@@ -1282,13 +1288,14 @@ var hookHostContracts = map[string]hookHostContract{
 			value, err := json.Marshal(map[string]any{"continue": true, "permission": "allow"})
 			return append(value, '\n'), err
 		},
-		deny: func(finding SafetyFinding) ([]byte, error) {
-			message := denialMessage("cursor", finding)
+		deny: func(repo string, finding SafetyFinding) ([]byte, error) {
+			denial := denialWithOptions(repo, "cursor", finding)
+			message := denial.Render(RenderPlain)
 			payload := map[string]any{
 				"continue": true, "permission": "deny", "user_message": message, "agent_message": message,
 			}
 			if denialRichEnabled() {
-				payload["boatstackDenial"] = denialFor("cursor", finding).Structured()
+				payload["boatstackDenial"] = denial.Structured()
 			}
 			value, err := json.Marshal(payload)
 			return append(value, '\n'), err
@@ -1297,12 +1304,16 @@ var hookHostContracts = map[string]hookHostContract{
 	"claude": {
 		decode: func(value []byte) (string, any, error) { return decodePreToolUseHook("claude", value) },
 		allow:  func() ([]byte, error) { return nil, nil },
-		deny:   func(finding SafetyFinding) ([]byte, error) { return structuredHookDeny("claude", finding) },
+		deny: func(repo string, finding SafetyFinding) ([]byte, error) {
+			return structuredHookDeny(repo, "claude", finding)
+		},
 	},
 	"codex": {
 		decode: func(value []byte) (string, any, error) { return decodePreToolUseHook("codex", value) },
 		allow:  func() ([]byte, error) { return nil, nil },
-		deny:   func(finding SafetyFinding) ([]byte, error) { return structuredHookDeny("codex", finding) },
+		deny: func(repo string, finding SafetyFinding) ([]byte, error) {
+			return structuredHookDeny(repo, "codex", finding)
+		},
 	},
 	"gemini": {
 		decode: decodeGeminiHook,
@@ -1310,10 +1321,11 @@ var hookHostContracts = map[string]hookHostContract{
 			value, err := json.Marshal(map[string]any{"decision": "allow"})
 			return append(value, '\n'), err
 		},
-		deny: func(finding SafetyFinding) ([]byte, error) {
-			payload := map[string]any{"decision": "deny", "reason": denialMessage("gemini", finding)}
+		deny: func(repo string, finding SafetyFinding) ([]byte, error) {
+			denial := denialWithOptions(repo, "gemini", finding)
+			payload := map[string]any{"decision": "deny", "reason": denial.Render(RenderPlain)}
 			if denialRichEnabled() {
-				payload["boatstackDenial"] = denialFor("gemini", finding).Structured()
+				payload["boatstackDenial"] = denial.Structured()
 			}
 			value, err := json.Marshal(payload)
 			return append(value, '\n'), err
@@ -1322,12 +1334,13 @@ var hookHostContracts = map[string]hookHostContract{
 }
 
 // denialMessage renders the human-facing reason string embedded in a host's hook
-// decision. It delegates to the structured Denial model (denial.go) and renders
-// the plain, multi-line form — the safe default that every host displays. Richer
-// treatments (markdown, ANSI, the structured object) are produced from the same
-// Denial by the CLI/guard surfaces and the opt-in rich path.
-func denialMessage(host string, finding SafetyFinding) string {
-	return denialFor(host, finding).Render(RenderPlain)
+// decision. It delegates to the structured Denial model (denial.go) — including
+// the finding's computed solution set — and renders the plain, multi-line form,
+// the safe default that every host displays. Richer treatments (markdown, ANSI,
+// the structured object) are produced from the same Denial by the CLI/guard
+// surfaces and the opt-in rich path.
+func denialMessage(repo, host string, finding SafetyFinding) string {
+	return denialWithOptions(repo, host, finding).Render(RenderPlain)
 }
 
 // AmbientHookDecision is the entry point for a developer-level (user-scoped) guard
@@ -1355,19 +1368,19 @@ func HookDecision(options SafetyHookOptions) ([]byte, bool) {
 	contract, supported := hookHostContracts[host]
 	if !supported {
 		finding := SafetyFinding{Category: "unsupported-host", Reason: "unknown host is denied by the fail-closed guard", Source: "hook"}
-		value, _ := structuredHookDeny("codex", finding)
+		value, _ := structuredHookDeny("", "codex", finding)
 		return value, true
 	}
 	repo, err := ResolveRepository(options.Repo)
 	if err != nil {
 		finding := SafetyFinding{Category: "unresolved-repository", Reason: "repository identity could not be established", Source: "hook"}
-		value, _ := contract.deny(finding)
+		value, _ := contract.deny("", finding)
 		return value, true
 	}
 	if handled, malformed := completeSupervisedToolEvent(repo, host, options.Input); handled {
 		if malformed {
 			finding := SafetyFinding{Category: "malformed-tool-input", Reason: "invalid-post-event", Source: "hook"}
-			value, _ := contract.deny(finding)
+			value, _ := contract.deny(repo, finding)
 			return value, true
 		}
 		value, _ := contract.allow()
@@ -1381,19 +1394,19 @@ func HookDecision(options SafetyHookOptions) ([]byte, bool) {
 			reason = decodeErr.code
 		}
 		finding := SafetyFinding{Category: "malformed-tool-input", Reason: reason, Source: "hook"}
-		value, _ := contract.deny(finding)
+		value, _ := contract.deny(repo, finding)
 		return value, true
 	}
 	findings := ClassifyTool(repo, name, input)
 	if len(findings) == 0 {
 		if finding := superviseToolAttempt(repo, host, name, input, options.Input); finding != nil {
-			value, _ := contract.deny(*finding)
+			value, _ := contract.deny(repo, *finding)
 			return value, true
 		}
 		value, _ := contract.allow()
 		return value, false
 	}
-	value, _ := contract.deny(findings[0])
+	value, _ := contract.deny(repo, findings[0])
 	return value, true
 }
 
