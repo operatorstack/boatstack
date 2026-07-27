@@ -1,6 +1,8 @@
 package boatstack
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -197,6 +199,84 @@ func TestSupervisoryControlNeverDeadlocks(t *testing.T) {
 			if !admitted {
 				t.Fatalf("stage %q admitted no bounded recovery verb — a deadlock", stage)
 			}
+		}
+	})
+
+	// Coreachability invariant (stronger than "some verb is admitted"): the verb a
+	// blocked state PRESCRIBES must be both admitted in-tool AND accept/clear that
+	// exact state — diagnosis-predicate ⊆ recovery-predicate. Otherwise the guard
+	// sends the operator to a verb that refuses, a fail-closed state with no exit
+	// (the repair-state-refuses-a-valid/orphan-dir wedge). All prescribed recovery
+	// verbs must be reachable through controlledPhaseTransition at INVALID_STATE.
+	t.Run("every prescribed recovery verb is admitted at INVALID_STATE", func(t *testing.T) {
+		for _, verb := range []string{"repair-state", "discard-delivery", "doctor", "undo"} {
+			if !controlledPhaseTransition("boatstack-helper "+verb+" --repo .", "INVALID_STATE") {
+				t.Fatalf("INVALID_STATE prescribes %q but the guard does not admit it — a dead-end", verb)
+			}
+		}
+	})
+
+	// An orphan (pr.md, no plan.lock) is prescribed discard-delivery; that verb must
+	// accept and clear it, and the state must resolve afterward.
+	t.Run("orphan is prescribed discard-delivery which clears it", func(t *testing.T) {
+		repo := nextTestRepo(t)
+		dir := filepath.Join(repo, ".product-loop", "features", "orphan")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "pr.md"), []byte("# Preview\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		status, err := ResolveNext(repo, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status.NextOperation != "discard-delivery" {
+			t.Fatalf("orphan prescribed %q, want discard-delivery", status.NextOperation)
+		}
+		if !controlledPhaseTransition("boatstack-helper discard-delivery --repo . --feature orphan", "INVALID_STATE") {
+			t.Fatal("prescribed discard-delivery is not admitted at INVALID_STATE")
+		}
+		result, err := DiscardDelivery(repo, "orphan", false)
+		if err != nil {
+			t.Fatalf("discard-delivery refused the orphan it was prescribed for: %v", err)
+		}
+		if result.Action != "discarded" {
+			t.Fatalf("discard-delivery did not clear the orphan: %#v", result)
+		}
+		after, err := ResolveNext(repo, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if after.ObservedStage == "INVALID_STATE" && after.NextOperation == "discard-delivery" {
+			t.Fatalf("orphan still blocks after discard-delivery: %#v", after)
+		}
+	})
+
+	// A malformed, unregistered, untracked draft is prescribed repair-state; that
+	// verb must accept and quarantine it.
+	t.Run("malformed draft is prescribed repair-state which clears it", func(t *testing.T) {
+		repo := nextTestRepo(t)
+		dir := filepath.Join(repo, ".product-loop", "features", "broken")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "plan.md"), []byte("not a valid plan\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		finding, blocked := preActivationFinding(repo, filepath.Join(dir, "x.go"))
+		if !blocked || finding.NextOperation != "repair-state" {
+			t.Fatalf("malformed draft prescribed %q (blocked=%v), want repair-state", finding.NextOperation, blocked)
+		}
+		if !controlledPhaseTransition("boatstack-helper repair-state --repo .", finding.WorkflowStage) {
+			t.Fatal("prescribed repair-state is not admitted for the malformed draft")
+		}
+		result, err := RepairState(repo, "broken")
+		if err != nil {
+			t.Fatalf("repair-state refused the malformed draft it was prescribed for: %v", err)
+		}
+		if result.Action != "quarantined" {
+			t.Fatalf("repair-state did not clear the malformed draft: %#v", result)
 		}
 	})
 }

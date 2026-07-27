@@ -526,6 +526,10 @@ func RepairState(repoPath, feature string) (RepairStateResult, error) {
 		return refusedRepairState(feature, "no plan.md exists for this feature; nothing to repair"), nil
 	}
 	if _, checkErr := CheckPlan(planPath); checkErr == nil {
+		// Coreachability: repair-state accepts only a malformed unregistered draft, so
+		// the resolver must never PRESCRIBE it for a valid one. A valid draft advances
+		// (plan-gate/activate); an orphan or unverifiable delivery is prescribed
+		// discard-delivery, not repair-state — see preActivationFinding / ResolveNext.
 		return refusedRepairState(feature, "the saved plan is valid; repair-state only quarantines a malformed unregistered draft"), nil
 	}
 

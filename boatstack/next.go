@@ -217,7 +217,10 @@ func ResolveNext(repoPath, explicitFeature string) (NextStatus, error) {
 	}
 	config, _, configErr := LoadConfig(WorkspaceFor(repo).ProjectConfigPath())
 	if configErr != nil {
-		return blockedNextStatus("INVALID_STATE", "repair-state", "Boatstack project configuration is invalid: "+configErr.Error()), nil
+		// Channel fault: an invalid config cannot be cleared by any mutation verb —
+		// the operator repairs the file. Route to the read-only doctor to diagnose,
+		// not repair-state (which quarantines a draft and would not help). Coreachability.
+		return blockedNextStatus("INVALID_STATE", "doctor", "Boatstack project configuration is invalid; fix the config file, then re-run (doctor diagnoses): "+configErr.Error()), nil
 	}
 
 	// Read-only boundary: apply the ignored-deliveries filter BEFORE a single
@@ -230,7 +233,9 @@ func ResolveNext(repoPath, explicitFeature string) (NextStatus, error) {
 	// unrelated new feature. control-law: stale-delivery-cannot-block-unrelated-feature
 	active, invalidDeliveries, scanErr := scanManagedDeliveries(repo)
 	if scanErr != nil {
-		return blockedNextStatus("INVALID_STATE", "repair-state", "Boatstack could not read the managed delivery store: "+scanErr.Error()), nil
+		// Channel fault reading the store: observation loss, diagnosed by doctor —
+		// not repaired by quarantining a draft. Coreachability.
+		return blockedNextStatus("INVALID_STATE", "doctor", "Boatstack could not read the managed delivery store; diagnose the channel with doctor: "+scanErr.Error()), nil
 	}
 	active = withoutIgnoredDeliveries(active, config.Workflow.IgnoredDeliveries)
 	invalidDeliveries = withoutIgnoredDeliveries(invalidDeliveries, config.Workflow.IgnoredDeliveries)
@@ -251,7 +256,9 @@ func ResolveNext(repoPath, explicitFeature string) (NextStatus, error) {
 		} else if completedState, completedErr := CurrentDeliveryState(repo, explicitFeature); completedErr == nil && completedState.ActiveIndex >= len(completedState.Slices) {
 			return nextForPublished(repo, completedState), nil
 		} else {
-			return blockedNextStatus("INVALID_STATE", "repair-state", fmt.Sprintf("Feature %s is not a verifiable active or published managed delivery.", explicitFeature)), nil
+			// Unverifiable named delivery: discard-delivery accepts and archives it
+			// (repair-state refuses registered/tracked dirs). Coreachability.
+			return blockedNextStatus("INVALID_STATE", "discard-delivery", fmt.Sprintf("Feature %s is not a verifiable active or published managed delivery; clear it with discard-delivery.", explicitFeature), explicitFeature), nil
 		}
 	}
 
@@ -267,7 +274,9 @@ func ResolveNext(repoPath, explicitFeature string) (NextStatus, error) {
 	if len(active) == 1 {
 		status, deliveryErr := nextForDelivery(repo, active[0])
 		if deliveryErr != nil {
-			return blockedNextStatus("INVALID_STATE", "repair-state", "Boatstack could not verify the active managed delivery. Preserve the artifacts and restore its evidence before continuing: "+deliveryErr.Error()), nil
+			// Unverifiable active delivery state: discard-delivery archives it
+			// (reversibly); repair-state would refuse the registered dir. Coreachability.
+			return blockedNextStatus("INVALID_STATE", "discard-delivery", "Boatstack could not verify the active managed delivery; restore its evidence, or archive it with discard-delivery to continue: "+deliveryErr.Error(), active[0]), nil
 		}
 		return status, nil
 	}
@@ -277,7 +286,10 @@ func ResolveNext(repoPath, explicitFeature string) (NextStatus, error) {
 		return NextStatus{}, err
 	}
 	if len(orphans) > 0 {
-		return blockedNextStatus("INVALID_STATE", "repair-state", "Boatstack found a PR preview without the plan lock required to verify it. Preserve the artifacts and restore the feature evidence before continuing.", orphans...), nil
+		// An orphan (pr.md, no plan.lock) is a published-then-unlinked delivery.
+		// repair-state refuses it (pr.md is a durable-authority blocker); discard-delivery
+		// accepts and archives the orphaned artifacts. Coreachability.
+		return blockedNextStatus("INVALID_STATE", "discard-delivery", "Boatstack found a PR preview without the plan lock required to verify it; restore the feature evidence, or archive the orphan with discard-delivery.", orphans...), nil
 	}
 
 	candidates, err := featurePlanCandidates(repo)
@@ -325,7 +337,9 @@ func ResolveNext(repoPath, explicitFeature string) (NextStatus, error) {
 
 	completed, err := completedManagedStates(repo)
 	if err != nil {
-		return blockedNextStatus("INVALID_STATE", "repair-state", "Boatstack found invalid completed delivery state. Preserve the artifacts and restore its evidence before continuing: "+err.Error()), nil
+		// Invalid completed delivery state: discard-delivery archives it reversibly;
+		// repair-state refuses a delivery-bearing dir. Coreachability.
+		return blockedNextStatus("INVALID_STATE", "discard-delivery", "Boatstack found invalid completed delivery state; restore its evidence, or archive it with discard-delivery to continue: "+err.Error()), nil
 	}
 	completed = withoutIgnoredDeliveryStates(completed, config.Workflow.IgnoredDeliveries)
 	if len(completed) > 0 {

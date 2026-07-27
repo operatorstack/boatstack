@@ -164,6 +164,18 @@ func controlledPhaseTransition(command, stage string) bool {
 	if fields[1] == "workspace-reap" || fields[1] == "workspace-cleanup" {
 		return true
 	}
+	// discard-delivery is the bounded recovery that clears stuck or unverifiable
+	// managed delivery state (and orphaned feature artifacts). It is the verb the
+	// resolver prescribes for those causes, so it must be admitted wherever it is
+	// prescribed — the Coreachability invariant: the states that prescribe a
+	// recovery verb must be a subset of the states that verb accepts, and the verb
+	// must be reachable in-tool. It mutates but self-guards (DiscardDelivery archives
+	// rather than deletes and refuses published state without --force). Without this
+	// admission the resolver could name discard-delivery while the guard denied it —
+	// a fail-closed state with no reachable exit.
+	if fields[1] == "discard-delivery" {
+		return true
+	}
 	switch stage {
 	case "DRAFT_PLAN":
 		return fields[1] == "planning-write" || fields[1] == "record-approval"
@@ -282,24 +294,33 @@ func planningMarkdownPath(path string) bool {
 	return len(parts) == 4 && featureSlugPattern.MatchString(parts[2]) && planningArtifacts[parts[3]]
 }
 
+// preActivationFinding decides whether a product mutation is denied before a plan
+// reaches its activation boundary, and — per the Coreachability invariant — names
+// a recovery verb that actually CLEARS the cause it reports. A "cannot verify /
+// cannot resolve" error is observation loss (a channel fault), not a plant defect:
+// no mutation verb repairs it, so it is classified distinctly and routed to the
+// read-only doctor to diagnose the channel — never to repair-state, which acts on a
+// malformed draft and would refuse. A genuinely malformed draft routes to
+// repair-state; every other stage carries ResolveNext's own (already Coreachable)
+// next operation.
 func preActivationFinding(repo, attemptedPath string) (SafetyFinding, bool) {
 	active, err := ActiveManagedDeliveries(repo)
 	if err != nil {
-		return SafetyFinding{Category: "workflow-state-invalid", Reason: "managed delivery state cannot be verified", Source: "delivery-state", NextOperation: "repair-state"}, true
+		return SafetyFinding{Category: "workflow-observation-fault", Reason: "managed delivery state cannot be verified; diagnose the channel with doctor", Source: "delivery-state", NextOperation: "doctor"}, true
 	}
 	if len(active) > 0 {
 		return SafetyFinding{}, false
 	}
 	candidates, err := featurePlanCandidates(repo)
 	if err != nil {
-		return SafetyFinding{Category: "workflow-state-invalid", Reason: "saved feature plans cannot be verified", Source: "planning-state", NextOperation: "repair-state"}, true
+		return SafetyFinding{Category: "workflow-observation-fault", Reason: "saved feature plans cannot be verified; diagnose the channel with doctor", Source: "planning-state", NextOperation: "doctor"}, true
 	}
 	if len(candidates) == 0 {
 		return SafetyFinding{}, false
 	}
 	status, err := ResolveNext(repo, "")
 	if err != nil {
-		return SafetyFinding{Category: "workflow-state-invalid", Reason: "workflow state cannot be resolved", Source: "planning-state", NextOperation: "repair-state"}, true
+		return SafetyFinding{Category: "workflow-observation-fault", Reason: "workflow state cannot be resolved; diagnose the channel with doctor", Source: "planning-state", NextOperation: "doctor"}, true
 	}
 	if status.ObservedStage != "DRAFT_PLAN" && status.ObservedStage != "APPROVED" && status.ObservedStage != "POLICY_READY" && status.ObservedStage != "AMBIGUOUS" && status.ObservedStage != "INVALID_STATE" {
 		return SafetyFinding{}, false
