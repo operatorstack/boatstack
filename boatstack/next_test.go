@@ -154,7 +154,7 @@ func TestResolveNextOrphanedEvidenceBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.VerificationStatus != "BLOCKED" || status.ObservedStage != "INVALID_STATE" || status.NextOperation != "repair-state" {
+	if status.VerificationStatus != "BLOCKED" || status.ObservedStage != "INVALID_STATE" || status.NextOperation != "discard-delivery" {
 		t.Fatalf("orphaned evidence did not block: %+v", status)
 	}
 }
@@ -521,7 +521,7 @@ func TestResolveNextBlocksStaleManagedState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.VerificationStatus != "BLOCKED" || status.ObservedStage != "INVALID_STATE" || status.NextOperation != "repair-state" {
+	if status.VerificationStatus != "BLOCKED" || status.ObservedStage != "INVALID_STATE" || status.NextOperation != "discard-delivery" {
 		t.Fatalf("stale managed state was accepted: %+v", status)
 	}
 }
@@ -561,7 +561,7 @@ func TestResolveNextBlocksMissingLockAndOrphanPreview(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if status.VerificationStatus != "BLOCKED" || status.ObservedStage != "INVALID_STATE" || status.NextOperation != "repair-state" {
+			if status.VerificationStatus != "BLOCKED" || status.ObservedStage != "INVALID_STATE" || status.NextOperation != "discard-delivery" {
 				t.Fatalf("unexpected invalid state: %+v", status)
 			}
 			if !reflect.DeepEqual(before, after) {

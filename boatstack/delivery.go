@@ -1344,6 +1344,55 @@ type DiscardDeliveryResult struct {
 //	                   present without force (fail closed).
 //	Release condition: the named delivery exists and either bears no published
 //	                   authority or force is set.
+//
+// discardOrphanFeatureArtifacts archives an orphaned product-loop feature
+// directory — one carrying a pr.md but no plan.lock.json, with no managed delivery
+// state — reversibly to a dotted .discarded sibling (which the slug pattern skips,
+// so it is never re-scanned as live). It is the accepting side of the Coreachability
+// contract for the orphan cause: ResolveNext prescribes discard-delivery for an
+// orphan, so discard-delivery must clear it. It refuses a dir carrying a
+// plan.lock.json (a registered, live feature) so it never touches active work.
+func discardOrphanFeatureArtifacts(repo, feature string) (DiscardDeliveryResult, bool, error) {
+	dir := filepath.Join(repo, ".product-loop", "features", feature)
+	info, statErr := os.Stat(dir)
+	if os.IsNotExist(statErr) {
+		return DiscardDeliveryResult{}, false, nil
+	}
+	if statErr != nil {
+		return DiscardDeliveryResult{}, false, statErr
+	}
+	if !info.IsDir() {
+		return DiscardDeliveryResult{}, false, nil
+	}
+	if !fileExists(filepath.Join(dir, "pr.md")) || fileExists(filepath.Join(dir, "plan.lock.json")) {
+		return DiscardDeliveryResult{}, false, nil
+	}
+	archiveDir := filepath.Join(filepath.Dir(dir), ".discarded")
+	destination := filepath.Join(archiveDir, feature)
+	for suffix := 2; ; suffix++ {
+		if _, existErr := os.Stat(destination); os.IsNotExist(existErr) {
+			break
+		} else if existErr != nil {
+			return DiscardDeliveryResult{}, false, existErr
+		}
+		destination = filepath.Join(archiveDir, fmt.Sprintf("%s-%d", feature, suffix))
+	}
+	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
+		return DiscardDeliveryResult{}, false, err
+	}
+	if err := os.Rename(dir, destination); err != nil {
+		return DiscardDeliveryResult{}, false, err
+	}
+	archive := destination
+	if rel, relErr := filepath.Rel(repo, destination); relErr == nil {
+		archive = filepath.ToSlash(rel)
+	}
+	return DiscardDeliveryResult{
+		Feature: feature, Action: "discarded", ArchivePath: archive,
+		Reason: "orphaned feature artifacts (pr.md without a plan lock) archived; the feature can be re-planned",
+	}, true, nil
+}
+
 func DiscardDelivery(repoPath, feature string, force bool) (DiscardDeliveryResult, error) {
 	repo, err := ResolveRepository(repoPath)
 	if err != nil {
@@ -1359,6 +1408,15 @@ func DiscardDelivery(repoPath, feature string, force bool) (DiscardDeliveryResul
 	}
 	featureDir := filepath.Dir(statePath)
 	if info, statErr := os.Stat(featureDir); os.IsNotExist(statErr) {
+		// No delivery-state dir. The resolver also prescribes discard-delivery for an
+		// ORPHAN — a product-loop feature dir carrying a pr.md but no plan.lock.json —
+		// so discard-delivery must accept and archive that too (Coreachability: the
+		// verb accepts every state that prescribes it).
+		if archived, ok, orphanErr := discardOrphanFeatureArtifacts(repo, feature); orphanErr != nil {
+			return DiscardDeliveryResult{}, orphanErr
+		} else if ok {
+			return archived, nil
+		}
 		return DiscardDeliveryResult{
 			Feature: feature, Action: "none",
 			Reason: "no managed delivery state exists for this feature",
