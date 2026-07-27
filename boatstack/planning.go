@@ -24,6 +24,20 @@ var planningArtifacts = map[string]bool{
 	"plan.md":         true,
 }
 
+// planningArtifactNames returns the accepted artifact tokens, sorted, for error
+// messages. Discoverability: a rejection that gates on a closed domain must name
+// the accepted set at the point of failure. The tokens are filenames carrying a
+// .md suffix, so the natural guess ("plan") is always wrong — listing them (and the
+// suffix) is what turns a dead-end rejection into an actionable one.
+func planningArtifactNames() []string {
+	names := make([]string, 0, len(planningArtifacts))
+	for name := range planningArtifacts {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 type PlanningWriteOptions struct {
 	Repo     string
 	Feature  string
@@ -212,7 +226,7 @@ func WritePlanningArtifact(options PlanningWriteOptions) (string, error) {
 		return "", fmt.Errorf("feature must be a lowercase kebab-case slug")
 	}
 	if !planningArtifacts[options.Artifact] {
-		return "", fmt.Errorf("unsupported planning artifact: %s", options.Artifact)
+		return "", fmt.Errorf("unsupported planning artifact %q; use one of: %s (note the .md suffix)", options.Artifact, strings.Join(planningArtifactNames(), ", "))
 	}
 	if !utf8.Valid(options.Content) {
 		return "", fmt.Errorf("planning artifact must be valid UTF-8 Markdown")
@@ -251,7 +265,7 @@ func RecordApproval(options ApprovalRecordOptions) error {
 		return err
 	}
 	if options.Fingerprint != check.Fingerprint {
-		return fmt.Errorf("approval fingerprint does not match the current plan")
+		return fmt.Errorf("approval fingerprint does not match the current plan; the plan now fingerprints as %s — re-approve against that value (run check-plan to confirm)", check.Fingerprint)
 	}
 	repo, err := ResolveRepository(filepath.Dir(options.PlanPath))
 	if err != nil {

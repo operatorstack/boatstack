@@ -50,6 +50,25 @@ func TestPlanningWriteIsBoundedMarkdownOnly(t *testing.T) {
 	}
 }
 
+// Discoverability: the natural guess for an artifact token is "plan" — but the
+// tokens carry a .md suffix, so it is always wrong. The rejection must name the
+// accepted set and the transform at the point of failure, so the caller is not
+// forced to discover them out of band (the failure that burned a planning session).
+func TestPlanningWriteUnsupportedArtifactErrorIsDiscoverable(t *testing.T) {
+	repo := planningRepo(t)
+	_, err := WritePlanningArtifact(PlanningWriteOptions{
+		Repo: repo, Feature: "account-recovery", Artifact: "plan", Content: []byte("# Plan\n"),
+	})
+	if err == nil {
+		t.Fatal("expected the bare token to be rejected")
+	}
+	for _, want := range []string{"plan.md", "source-plan.md", "test-plan.md", ".md suffix"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("unsupported-artifact error omitted %q: %v", want, err)
+		}
+	}
+}
+
 func TestPlanningWriteRejectsSymlinksAndPreservesExistingContentOnFailure(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation needs elevated Windows permissions")
