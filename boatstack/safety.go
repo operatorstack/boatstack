@@ -60,6 +60,16 @@ func malformedHookInput(code string) error {
 // still banned in isPureReadOnlyCommand, so no filter can be turned into a writer.
 var readOnlyStage = regexp.MustCompile(`(?i)^\s*(?:env\s+[^ ]+\s+)*(?:rg|grep|git\s+(?:grep|diff|status|show|log)|cat|sed|head|tail|less|wc|awk|sort|uniq|cut|tr|jq|column|nl|comm|rev|fold|find\s+[^\n]*-(?:print|ls)|psql\s+[^\n]*\s-c\s+["']?\s*select\b|(?:[^\s]*/)?boatstack-helper(?:[_.-][a-z0-9._-]+)?\s+(?:recovery-status|mutation-status|operation-status|delivery-status|next-status|workspace-status|repair-status|check-plan|check-source-plan|check-safety|diagnose-hook|doctor|version)\b)`)
 
+// Constitutional/Optimization split. These destruction rules are CONSTITUTIONAL:
+// they define the real boundary (destroying a live resource) and are never traded
+// for convenience — no project config knob disables them; config may only ADD
+// scope (HighRiskPaths). The executor-gating around them (the scanSQL argument to
+// classifySafetyText; the executed-vs-data file distinction; the artifact exemption
+// on committed diffs) is the OPTIMIZATION surface: it narrows WHEN a rule is
+// observed to cut false positives, but it may never disable the boundary — when the
+// executor is live, a constitutional rule must still fire. That floor is enforced by
+// TestExecutorGatingNeverDisablesTheBoundary.
+//
 // irreversiblePatterns classify destruction by text. Rules whose regex names its
 // own EXECUTOR (rm, git, terraform, supabase db reset, …) are self-executing:
 // matching the text is sound because the text IS the command. Rules marked
