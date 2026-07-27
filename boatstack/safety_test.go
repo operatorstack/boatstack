@@ -198,6 +198,43 @@ func TestReadOnlyInspectionPipelinesAllowed(t *testing.T) {
 	}
 }
 
+// Constitutional/Optimization split: the executor-gating optimization narrows WHEN
+// a destruction rule is observed (to cut false positives) but must NEVER disable the
+// boundary. When the executor is live the constitutional rule still fires; the
+// optimization's benefit (data operations pass) does not become a leak; and no
+// project config can trade the boundary away.
+func TestExecutorGatingNeverDisablesTheBoundary(t *testing.T) {
+	repo := safetyTestRepo(t)
+	if err := os.WriteFile(filepath.Join(repo, "migrate.sql"), []byte("DROP TABLE accounts;\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Optimization FLOOR: a live executor still blocks (the gating did not disable it).
+	mustBlock := []string{
+		`psql -c "DROP TABLE accounts"`,   // executor-gated SQL, live client
+		`psql -f migrate.sql`,             // live client runs a DDL file it executes
+		`rm -rf /`,                        // self-executing constitutional
+		`terraform destroy -auto-approve`, // self-executing constitutional
+		`supabase db reset`,               // self-executing constitutional
+		`git push --force origin main`,    // self-executing constitutional
+	}
+	for _, command := range mustBlock {
+		if findings := ClassifyCommand(repo, command); len(findings) == 0 {
+			t.Errorf("optimization disabled the boundary — live destruction allowed: %q", command)
+		}
+	}
+	// Optimization BENEFIT (not a leak): the same DDL as inert data passes, because
+	// no live executor observes it.
+	mustPass := []string{
+		"git add migrate.sql",
+		`git commit -m "add migration with DROP TABLE accounts"`,
+	}
+	for _, command := range mustPass {
+		if findings := ClassifyCommand(repo, command); len(findings) != 0 {
+			t.Errorf("data operation wrongly blocked: %q -> %#v", command, findings)
+		}
+	}
+}
+
 func TestSafeDiagnosticsAndFixForwardCommandsRemainAllowed(t *testing.T) {
 	repo := safetyTestRepo(t)
 	safeScript := filepath.Join(repo, "scripts", "apply_schema.py")
