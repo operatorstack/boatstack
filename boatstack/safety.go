@@ -306,6 +306,20 @@ func planningMarkdownPath(path string) bool {
 func preActivationFinding(repo, attemptedPath string) (SafetyFinding, bool) {
 	active, err := ActiveManagedDeliveries(repo)
 	if err != nil {
+		// Same-Relation-Same-Law: the mutation boundary FAILS CLOSED on invalid
+		// delivery state — ignoring a delivery quiets status but never launders corrupt
+		// state into a mutation (TestActiveManagedDeliveriesStaysFailClosedOnInvalid).
+		// But the block must be Coreachable: distinguish a corrupt-delivery *plant*
+		// fault (a verb clears it — discard-delivery, named) from an *observation*
+		// (channel) fault (doctor to diagnose). Naming discard-delivery is what tells
+		// the operator how to actually unblock mutation, since ignoring will not.
+		if _, invalid, scanErr := scanManagedDeliveries(repo); scanErr == nil && len(invalid) > 0 {
+			return SafetyFinding{
+				Category: "workflow-state-invalid", Source: "delivery-state",
+				Reason:        "invalid managed delivery state blocks all mutation; ignoring it only quiets status — clear it with discard-delivery to continue",
+				NextOperation: "discard-delivery", BlockingFeature: invalid[0], AttemptedPath: attemptedPath,
+			}, true
+		}
 		return SafetyFinding{Category: "workflow-observation-fault", Reason: "managed delivery state cannot be verified; diagnose the channel with doctor", Source: "delivery-state", NextOperation: "doctor"}, true
 	}
 	if len(active) > 0 {
