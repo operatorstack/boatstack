@@ -1,6 +1,7 @@
 package boatstack
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/deliverycontrol"
@@ -69,11 +70,36 @@ func TestNextControlAdvisesFromReviewPassed(t *testing.T) {
 }
 
 // A stage that is not a concrete slice-lifecycle position must resolve to unknown
-// so callers fall back rather than act on a guess.
+// so callers fall back rather than act on a guess. Pre-activation stages are
+// covered by prescribePlanning instead — a prescription, never a flow state.
 func TestFlowStateFromStageIsConservative(t *testing.T) {
 	for _, stage := range []string{"NOT_STARTED", "AMBIGUOUS", "INVALID_STATE", "POLICY_READY", "DRAFT_PLAN", ""} {
 		if _, ok := flowStateFromStage(stage); ok {
 			t.Errorf("stage %q must not resolve to a flow state", stage)
 		}
+	}
+}
+
+// A pre-activation stage keeps Resolved=false (flow-state conservativeness) yet
+// still names its exact runnable command, and the rendering shows the honest
+// pre-activation label rather than the bare unresolved line.
+// control-law: prescriptive-closure-every-stage-names-a-runnable-command
+func TestNextControlPrescribesWithoutResolvingBeforeActivation(t *testing.T) {
+	repo := nextTestRepo(t)
+	writeSavedFeaturePlan(t, repo, "demo")
+
+	next, err := NextControl(repo, "")
+	if err != nil {
+		t.Fatalf("NextControl: %v", err)
+	}
+	if next.Resolved {
+		t.Fatal("pre-activation must never resolve a flow state")
+	}
+	if next.Prescribed == nil || next.Prescribed.Verb != "check-plan" {
+		t.Fatalf("DRAFT_PLAN must prescribe check-plan: %+v", next.Prescribed)
+	}
+	out := FormatFlowNext(next)
+	if !strings.Contains(out, "pre-activation (delivery oracle not engaged)") || !strings.Contains(out, "Run: boatstack-helper check-plan") {
+		t.Fatalf("pre-activation rendering must label the state and carry the Run line: %q", out)
 	}
 }

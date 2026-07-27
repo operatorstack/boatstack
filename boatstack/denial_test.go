@@ -35,6 +35,32 @@ func TestDenialRenderModesCarryTheSameInformation(t *testing.T) {
 	}
 }
 
+// control-law: prescriptive-closure-every-stage-names-a-runnable-command — a
+// planning-state plan-gate denial names the owned authoring channel
+// (planning-write), not just the cleanup verb, in every render mode.
+func TestPlanningPhaseBypassDenialNamesOwnedChannel(t *testing.T) {
+	finding := SafetyFinding{
+		Category: "workflow-phase-bypass", Source: "planning-state",
+		WorkflowStage: "INVALID_STATE", NextOperation: "repair-state",
+		BlockingFeature: "sample-feature",
+	}
+	d := denialFor("claude", finding)
+	for mode, name := range map[RenderMode]string{RenderPlain: "plain", RenderMarkdown: "markdown", RenderANSI: "ansi"} {
+		out := d.Render(mode)
+		if !strings.Contains(out, "repair-state") {
+			t.Fatalf("%s denial dropped the recovery verb: %q", name, out)
+		}
+		if !strings.Contains(out, "planning-write --repo . --feature sample-feature --artifact <name>") {
+			t.Fatalf("%s denial must name the owned planning-write channel: %q", name, out)
+		}
+	}
+	// A non-planning finding must not gain the planning guidance.
+	other := denialFor("claude", SafetyFinding{Category: "workflow-phase-bypass", Source: "delivery-state", WorkflowStage: "BUILD", NextOperation: "plan-gate"}).Render(RenderPlain)
+	if strings.Contains(other, "planning-write") {
+		t.Fatalf("non-planning denial must not mention planning-write: %q", other)
+	}
+}
+
 func TestDenialReassuranceIsCategoryAware(t *testing.T) {
 	// A blocked-before-effect denial reassures that nothing was written.
 	tamper := denialFor("claude", SafetyFinding{Category: "workflow-state-tamper"}).Render(RenderPlain)

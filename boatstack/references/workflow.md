@@ -255,6 +255,8 @@ If gstack is installed, its review skills can execute these lenses. If Spec Kit 
 
 `plan.md` is the canonical structured plan. Its human-readable prose and one marked JSON block are a single approval surface. Until `BUILD_ACTIVATION`, feature artifacts are Markdown only; no compiled task graph, machine lock, or executable state exists.
 
+Feature artifacts are authored through the owned channel `boatstack-helper planning-write --repo . --feature <feature> --artifact <name>` (Markdown on stdin). The host's own Markdown writer is permitted only where the host allows it; arbitrary shell redirection never is.
+
 Validation must be derived before implementation. Each check records:
 
 - `run`: an executable command or a specific human/external procedure;
@@ -305,7 +307,7 @@ is read from the pointer and slice status, never from `pr_state`.
 
 Missing required human approval, unresolved `blocking_questions`, or any change to the source plan, spec, complete `plan.md`, or displayed product baseline blocks activation and returns the feature to `PLAN_GATE`. Existing schema-v1 approval receipts remain valid only with a clean product baseline. A failed or partial compilation never creates a valid lock. Existing schema-v1 human locks remain valid; policy activation always writes schema v2.
 
-After `auto-plan` successfully saves a feature plan, managed authority is latched before activation. Reads and bounded Markdown planning transitions remain available, but native edits, mutation-capable MCP tools, and shell commands not proven read-only are denied until activation creates a current lock. Approval itself does not authorize product edits. Ambiguous, stale, malformed, or unverifiable phase state fails closed with one recovery operation; repositories with no saved managed plan retain ordinary unmanaged behavior.
+After `auto-plan` successfully saves a feature plan, managed authority is latched before activation. Reads and bounded Markdown planning transitions remain available — `planning-write` is the channel that stays open for authoring planning Markdown while the latch holds — but native edits, mutation-capable MCP tools, and shell commands not proven read-only are denied until activation creates a current lock. Approval itself does not authorize product edits. Ambiguous, stale, malformed, or unverifiable phase state fails closed with one recovery operation; repositories with no saved managed plan retain ordinary unmanaged behavior.
 
 ### `PLAN_LOCKED -> BUILD`
 
