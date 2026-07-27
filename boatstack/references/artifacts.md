@@ -95,13 +95,53 @@ ledger while the publisher rechecks the matching receipts.
 
 The generated host hook fragments and launchers are committed installation infrastructure. Their policy is immutable in project configuration. Cursor pre/post native, shell, and MCP events; Claude and Codex `PreToolUse`/`PostToolUse`; and Gemini `BeforeTool`/`AfterTool` project into one classifier and completion observer. The machine-local helper is ignored and restored by the installer. Safety evidence belongs in the feature evidence ledger: target identity, failure behavior, independent oracle, operational-diff scan, and the operator-only recovery boundary. A source edit is reviewable evidence, not permission to execute it.
 
-Operation receipts live under Git-common `boatstack/operations/v1`, never in Git history. They distinguish prepared, executing, unknown, retryable, and terminal work across turns and linked worktrees. Receipts contain hashes and bounded observations rather than commands, tool payloads, responses, credentials, or autonomous workflow intent. Terminal identities remain long enough to consume delayed duplicate events; old detail is compacted.
+Operation receipts live under the current worktree's Git directory at `boatstack/operations/v2`, never in Git history. (The Git-common `operations/v1` ledger is the orphaned pre-isolation layout; `doctor` prunes it.) They distinguish prepared, executing, unknown, retryable, and terminal work across turns and linked worktrees. Receipts contain hashes and bounded observations rather than commands, tool payloads, responses, credentials, or autonomous workflow intent. Terminal identities remain long enough to consume delayed duplicate events; old detail is compacted.
 
 Installation repair receipts and backups live under Git-common `boatstack/updates/<version>` and `boatstack/repair-backups/<fingerprint>`. The checksum-verified target helper owns this recovery plane. Exact installed fragments migrate automatically; `--repair` covers only a displayed fingerprinted owned-state package. User-owned or ambiguous state is never converted into repair authority.
 
 ## PR visual evidence boundary
 
 When `workflow.pr_visual_evidence` is enabled, the approved plan records whether screenshots are relevant and names no more than three review scenarios. PNG bytes and capability receipts live under Git-common Boatstack state; committed ledgers retain only compact metadata and hashes. PR schema v3 binds the policy, status, count, and manifest fingerprint to the preview. Screenshots are human-review evidence rather than mechanical correctness proof.
+
+## State ownership
+
+Every tree Boatstack manages has one declared owner, class, and partition. The
+authoritative registry is `StateRegistry` in the runtime; this table mirrors it
+and a conformance test holds the two together, so neither can drift silently.
+Partitions: `checkout` lives in the working tree, `per-worktree` under the
+worktree's own Git directory, `git-common` shared by every worktree of the
+clone, `external` outside the repository (Detached Supervision).
+
+| Name | Class | Partition | Owned by |
+| --- | --- | --- | --- |
+| project-config | committed-generated | checkout | init, update, export |
+| source-config | committed-generated | checkout | init, migrate-config, update |
+| generated-references | committed-generated | checkout | init, update, export |
+| guard-hooks | committed-generated | checkout | init, update, export |
+| generated-lock | committed-generated | checkout | init, update, export |
+| planning-artifacts | committed-planning | checkout | planning-write |
+| approval-receipt | committed-planning | checkout | record-approval |
+| plan-lock | committed-planning | checkout | activate-plan |
+| compiled-artifacts | committed-planning | checkout | activate-plan |
+| pr-preview | committed-planning | checkout | ship-gate, publish-pr |
+| change-ledger | committed-planning | checkout | record-change |
+| discard-archive | committed-planning | checkout | discard-delivery |
+| pr-briefs | committed-planning | checkout | pr-context |
+| verified-boundaries | committed-planning | checkout | record-delivery-gate |
+| worktree-helper | checkout-runtime | checkout | init, update, hydrate-runtime |
+| managed-worktrees | checkout-runtime | checkout | workspace-cut, workspace-cleanup, workspace-reap |
+| delivery-state | runtime-worktree | per-worktree | delivery transitions |
+| operation-ledger | runtime-worktree | per-worktree | run-preflight, publishers |
+| flow-logs | runtime-worktree | per-worktree | flow |
+| runtime-slots | runtime-shared | git-common | init, update, hydrate-runtime |
+| mutation-receipts | runtime-shared | git-common | activate-plan, undo |
+| update-previews | runtime-shared | git-common | prepare-update-pr, publish-update-pr |
+| repair-receipts | runtime-shared | git-common | update |
+| visual-evidence | runtime-shared | git-common | evidence verbs |
+| quarantine | runtime-shared | git-common | repair-state |
+| host-hook-config | host-activation | checkout | activation merge only |
+| detached-registry | detached | external | attach, detach |
+| detached-repositories | detached | external | attach, detach, activate |
 
 ## Templates
 

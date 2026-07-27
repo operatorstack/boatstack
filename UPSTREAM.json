@@ -1,7 +1,7 @@
 {
   "canonical_context": {
-    "characters": 80947,
-    "estimated_tokens": 20237,
+    "characters": 83659,
+    "estimated_tokens": 20915,
     "estimator": "ceil(total characters / 4); compactness signal, not provider billing",
     "files": [
       "product-engineering-loop/references/workflow.md",
@@ -12,7 +12,7 @@
   },
   "files": {
     ".gitignore": "a7079e923a776f14f1bb3a6aa0a11a133a8e1dfb35af020f327623357b7e3957",
-    "CONTRIBUTING.md": "583ad367e1375a741b32879d96dbf084a8c6b3ed8edc6d701342f7b384fc27f1",
+    "CONTRIBUTING.md": "9361609e7207a8b0dc8b9257e180798e08e4ec88b9e39b00f93453d9699efb9f",
     "README.md": "3ce3e95e511089b44e946a44b8d5f4f81d019ece5336db65b2cab1f9dc4d4dad",
     "assets/boatstack-journey.svg": "e465befc50c8ce30f3e07e8fd97012931beeb053392c8fbf38ad645023b3cc63",
     "assets/boatstack-mark.svg": "be1f984da1bfa69fa5d1f986d8343d21f7e20921b71db888c928b4d2e54b09b5",
@@ -149,7 +149,7 @@
     "boatstack/reexec.go": "fed55416479d7bd3e0c3637057ffe8eb58a032f93fc358f76df906ab7acc677b",
     "boatstack/reexec_unix.go": "ff86157a9aa20c82a56fcd859b70669b7eacf4e0a9f61a4546ef33808437939e",
     "boatstack/reexec_windows.go": "f5335c8c28cb4e89048b058b1c4d12f78644f99acb4f6167ff60e622dfb9e742",
-    "boatstack/references/artifacts.md": "5fa888ac519085d65cee1d04df5902761651bcf2d7af81711fa0f8ecd1fc0f59",
+    "boatstack/references/artifacts.md": "9589849796553dfb433c3d49f2d75f49fd2b50e03068f481c41776f1d4cef066",
     "boatstack/references/config-schema.md": "eff8586850eca9941df1cea29ac7edb779277ed9bd6d938a1980db5028d28cf4",
     "boatstack/references/failure-moves.md": "b65ef72035afa6ad0dce589a0b38f84bc40cde3864c9ecf973f08fc687f001c3",
     "boatstack/references/host-hook-contracts.md": "2a89d44d0e418a53f2e3b6300fed957cdf878f45ea97ce24b55b66065f0eaa1d",
@@ -171,6 +171,8 @@
     "boatstack/safety_update_publisher_test.go": "ed3f8187036623694dfe7c395cdae00fdae14609bab6124d1fdfc6fe73fa2196",
     "boatstack/skill_frontmatter.go": "73364df463ce828c2d005aab55f72bb92f7a34d99cf3f53d4e0cd5a4da9dbd0e",
     "boatstack/skill_frontmatter_test.go": "a3ec52e7df357a72265c95dd66db15d9c0effc7e5f90f14ce69c27792ce394eb",
+    "boatstack/statemap.go": "39ff3a7a7254ec5fde8340551fa92a82aac3f00a48bea34c94192823dcb41337",
+    "boatstack/statemap_conformance_test.go": "38950377d10b97f4223b79cdb16b17c29a6334f8f2a9a4d826ce12cbd292aa57",
     "boatstack/supervisory_control_test.go": "c7ea4bcd678e8ec211dac772c834981c4e21762914be2770a5e181bc24605e06",
     "boatstack/testdata/reviewer-pr-body.md": "4c64e3788e5d61a377aeb0f797f7fc8d2316ab6e49572d15636eea7ba9e34ac4",
     "boatstack/testdata/safety/safe_apply.py.txt": "c9ec7fb932cf21b6aa8df597c4d4c54d6ec65e796240e49118d699f583383975",
@@ -193,10 +195,10 @@
     "docs/benchmark-corpus-audit.md": "f2d206fe8579a514f9da82b2c96c19b343ac004be67617e1bd34f0f8e0e5e6c6",
     "docs/benchmark-submission-audit.md": "9518abdd17690729c6423f87cab20418ed47b0915b5faa44b9ef975e9e9c3b79",
     "docs/configuration.md": "060775c73431f28bd16066bdf9e0f89034d2855c7ca0f5544f660d24b91211d0",
-    "docs/evidence-engineered-coding.md": "c81d462de78afc834b04acc99e6a816f97ac6e05c98f065a35167eb9feb4fce7",
+    "docs/evidence-engineered-coding.md": "e4eb592093db7fb1ce18f41fe7dd1c89efbaa76760fd618c3375f27fa507b684",
     "docs/generated-files.md": "437791765b0a4015032ae21d1a6618563cad92b7402819e4f963bf5ae16284a3",
     "docs/getting-started.md": "51c2823f21e35140d31e6d5083dc4b89fddd24721ac6acc474154a4da53ee9f8",
-    "docs/public-claims.json": "79ddc45aebfbbaba1054a731413183a47da0d1c6c299e444869d6986a27f7498",
+    "docs/public-claims.json": "a243fcd3b9a12ef51f491b77b4646db6f8d4b7d435d9b5f0402b97941d73821a",
     "docs/public-surface.md": "713f7a050b5f339cf948299103ef3800417dccfecf2cc1a4166397ea6f978907",
     "docs/research-and-design.md": "8d78678108f0a6c924e1ff9b32c0f81aae9d1f779e0082843b6f99ad993ae2b6",
     "docs/safety.md": "7b9b5c515d36e683767ec8d3d9d6d119ac93650b2f629d351deadd4c600ed6a6",
@@ -210,7 +212,7 @@
     "labs/diagram-json/compiled/evidence.md": "1ba1c989ade070a8ef9a508fbd788d100d7292f2dbacbb2bce895468019f619d",
     "labs/diagram-json/compiled/tasks.json": "88f60851abf79d851e9fccc754ff3040034ae595306bc87d64784c19eb403e71",
     "labs/diagram-json/compiled/test-matrix.json": "424657ff505768e50fa113801fd8363364a18269d5297480907a993d44063a39",
-    "labs/diagram-json/plan.lock.json": "5807b7d5140a41e9db5a20256e4bd4adebb2820778db2f378803059dd111ea45",
+    "labs/diagram-json/plan.lock.json": "06b5298ea7a2f9a3db31eb3b1a9bee41a74168a2f3ff02bf5d8a00183705392d",
     "labs/diagram-json/plan.md": "3cc4f533b8d69386deff16b3a594a3ba09d4c0c3db636cccd8c4380084ce6a51",
     "labs/diagram-json/questions.md": "74733b015002c8a6777c558e7e997fa48c94850b9bd39054fe9366c97ecf728d",
     "labs/diagram-json/request.md": "0808fc41c36779c404f4a3a121167da6e76cac56df526e70f9ed6d3e0d4c02ed",
@@ -333,12 +335,13 @@
     "release-notes/2026-07-27-invalid-delivery-block-actionable.md": "8fac8e3921e2285291703efa46e624b72cb5bac1b8492beca4c4b633abb5ba16",
     "release-notes/2026-07-27-prescriptive-planning-closure.md": "e544408e1c3cceb0cb1979833ea120853c38020933439b39e7f009f454b9661e",
     "release-notes/2026-07-27-read-only-inspection-pipelines.md": "0963286371e9a12592915c23a958dd013bf2a35e9fca6921691bc8bb3c3d8dc8",
-    "release-notes/2026-07-27-sandboxed-migration-grading.md": "03cebc372bbdfed37cc70d18f3b6374d1aa5e585bafefa073dbcced58bd0336a"
+    "release-notes/2026-07-27-sandboxed-migration-grading.md": "03cebc372bbdfed37cc70d18f3b6374d1aa5e585bafefa073dbcced58bd0336a",
+    "release-notes/2026-07-27-state-ownership-map.md": "d032547aafc1a4acbeb520f6cbb59d7757de4f33fe824701d7b5ea8cd8c8b9e7"
   },
   "generator": "operatorstack/intelligence-flow:boatstack-distribution",
   "schema_version": 1,
   "source": {
-    "commit": "039454bde99f8059e1a8ee0356ef433f7837cd74",
+    "commit": "4b31ab38875160d6ef71a85c65efcdb4bd7ad91b",
     "path": "labs/12-product-engineering-loop",
     "repository": "operatorstack/intelligence-flow"
   }
