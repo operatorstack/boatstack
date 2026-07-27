@@ -70,6 +70,31 @@ type Denial struct {
 	// denials), derived from the state-ownership map. Named, never compiled
 	// into runnable commands — their full arguments are not derivable here.
 	OwnerVerbs []string
+	// Escalated marks a denial that has repeated past the ledger threshold:
+	// the rendering lifts the pick-list cap to the full set and prescribes a
+	// fresh diagnostic. More corrective information, never more severity —
+	// what is denied never changes.
+	// control-law: repeated-denials-escalate-to-solutions
+	Escalated   bool
+	RepeatCount int
+}
+
+// optionTextLimit is the pick-list cap for the text renderings: compact by
+// default, the full structured cap once the denial has escalated.
+func (d Denial) optionTextLimit() int {
+	if d.Escalated {
+		return solutionSetCap
+	}
+	return solutionSetTextCap
+}
+
+// escalationLine is the repeat notice with the fresh-probe prescription; empty
+// until the denial escalates.
+func (d Denial) escalationLine() string {
+	if !d.Escalated {
+		return ""
+	}
+	return fmt.Sprintf("This denial repeated %d times. Run: boatstack-helper doctor --repo .", d.RepeatCount)
 }
 
 // --- ANSI palette (truecolor; matches the approved mockup) -------------------
@@ -160,9 +185,12 @@ func (d Denial) renderPlain(badge string) string {
 	if len(d.OwnerVerbs) > 0 {
 		b.WriteString("\n\nThis path is owned by: " + strings.Join(d.OwnerVerbs, ", ") + ".")
 	}
-	if lines := d.optionLines(solutionSetTextCap); len(lines) > 0 {
+	if lines := d.optionLines(d.optionTextLimit()); len(lines) > 0 {
 		b.WriteString("\n\nYou can:\n")
 		b.WriteString(strings.Join(lines, "\n"))
+	}
+	if escalation := d.escalationLine(); escalation != "" {
+		b.WriteString("\n\n" + escalation)
 	}
 	if d.Hint != "" {
 		b.WriteString("\n\nFalse positive? run: ")
@@ -186,11 +214,14 @@ func (d Denial) renderMarkdown(badge string) string {
 	if len(d.OwnerVerbs) > 0 {
 		b.WriteString("\n\nThis path is owned by: `" + strings.Join(d.OwnerVerbs, "`, `") + "`.")
 	}
-	if lines := d.optionLines(solutionSetTextCap); len(lines) > 0 {
+	if lines := d.optionLines(d.optionTextLimit()); len(lines) > 0 {
 		b.WriteString("\n\nYou can:\n")
 		for _, line := range lines {
 			b.WriteString("\n" + line)
 		}
+	}
+	if escalation := d.escalationLine(); escalation != "" {
+		b.WriteString("\n\n" + escalation)
 	}
 	if d.Hint != "" {
 		b.WriteString("\n\nFalse positive? run `" + d.Hint + "`")
@@ -214,11 +245,14 @@ func (d Denial) renderANSI(badge string) string {
 	if len(d.OwnerVerbs) > 0 {
 		b.WriteString("\n" + fgGray + "this path is owned by: " + ansiReset + fgCode + strings.Join(d.OwnerVerbs, ", ") + ansiReset)
 	}
-	if lines := d.optionLines(solutionSetTextCap); len(lines) > 0 {
+	if lines := d.optionLines(d.optionTextLimit()); len(lines) > 0 {
 		b.WriteString("\n" + fgGray + "you can:" + ansiReset)
 		for _, line := range lines {
 			b.WriteString("\n" + fgCode + line + ansiReset)
 		}
+	}
+	if escalation := d.escalationLine(); escalation != "" {
+		b.WriteString("\n" + fgGray + escalation + ansiReset)
 	}
 	if d.Hint != "" {
 		b.WriteString("\n" + fgGray + ansiDim + "false positive? run " + ansiReset + fgCode + d.Hint + ansiReset)
@@ -292,6 +326,10 @@ func (d Denial) Structured() map[string]any {
 	}
 	if len(d.OwnerVerbs) > 0 {
 		out["owner_verbs"] = d.OwnerVerbs
+	}
+	if d.Escalated {
+		out["escalated"] = true
+		out["repeat_count"] = d.RepeatCount
 	}
 	return out
 }
@@ -400,6 +438,10 @@ func denialWithOptions(repo, host string, finding SafetyFinding) Denial {
 	d.OptionsTruncated = set.Truncated
 	if finding.Category == "workflow-state-tamper" {
 		d.OwnerVerbs = tamperOwnerVerbs(repo, finding.AttemptedPath)
+	}
+	if finding.RepeatCount >= denialEscalationThreshold {
+		d.Escalated = true
+		d.RepeatCount = finding.RepeatCount
 	}
 	return d
 }
