@@ -123,6 +123,37 @@ func TestActiveManagedDeliveriesStaysFailClosedOnInvalid(t *testing.T) {
 	}
 }
 
+// Same-Relation-Same-Law + Coreachability at the MUTATION boundary: invalid
+// delivery state fails closed even when ignored (no laundering corrupt state), but
+// the block is actionable — it prescribes discard-delivery (a reachable verb that
+// clears it), not the opaque error or a verb that refuses. Ignoring quiets status;
+// discarding unblocks mutation. This is the mutation-path twin of the read-only
+// ResolveNext discard-remedy conformance above.
+func TestPreActivationBlockOnInvalidDeliveryPrescribesDiscard(t *testing.T) {
+	repo := nextTestRepo(t)
+	writeInvalidDelivery(t, repo, "stale-one")
+	if _, err := IgnoreDelivery(repo, "stale-one"); err != nil {
+		t.Fatal(err)
+	}
+	finding, blocked := preActivationFinding(repo, "product.go")
+	if !blocked {
+		t.Fatal("invalid delivery state did not block mutation")
+	}
+	if finding.NextOperation != "discard-delivery" {
+		t.Fatalf("block prescribed %q, want the reachable discard-delivery", finding.NextOperation)
+	}
+	if !controlledPhaseTransition("boatstack-helper discard-delivery --repo . --feature stale-one", finding.WorkflowStage) {
+		t.Fatal("prescribed discard-delivery is not admitted for the block it was prescribed for")
+	}
+	// The prescribed verb clears the state, and mutation is then unblocked.
+	if _, err := DiscardDelivery(repo, "stale-one", true); err != nil {
+		t.Fatalf("discard-delivery refused the invalid delivery it was prescribed for: %v", err)
+	}
+	if _, stillBlocked := preActivationFinding(repo, "product.go"); stillBlocked {
+		t.Fatal("mutation still blocked after discarding the invalid delivery")
+	}
+}
+
 // Failure-state conformance: ResolveNext is read-only. A blocking decision must
 // leave the offending state file byte-for-byte unchanged (no partial repair).
 func TestResolveNextLeavesInvalidStateUntouched(t *testing.T) {
