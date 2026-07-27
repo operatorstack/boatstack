@@ -317,6 +317,50 @@ func attemptedRepositoryPath(repo string, input any) string {
 	return visit(input)
 }
 
+// contentInputKeys are the tool-input fields that carry a document body rather
+// than structure. They are dropped before text classification of a file-writer
+// tool call: the body is data (inert until executed), while structural fields
+// — file_path, destination, url — survive redaction, so a protected path in
+// any of them is still graded.
+var contentInputKeys = map[string]bool{
+	"content": true, "contents": true, "new_string": true, "old_string": true,
+	"new_str": true, "old_str": true, "patch": true, "diff": true,
+	"text": true, "body": true, "data": true,
+}
+
+// redactContentFields deep-copies a decoded tool input with content-bearing
+// fields removed, at every nesting depth. The original input is never mutated.
+func redactContentFields(input any) any {
+	switch value := input.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(value))
+		for key, item := range value {
+			if contentInputKeys[strings.ToLower(key)] {
+				continue
+			}
+			out[key] = redactContentFields(item)
+		}
+		return out
+	case []any:
+		out := make([]any, 0, len(value))
+		for _, item := range value {
+			out = append(out, redactContentFields(item))
+		}
+		return out
+	default:
+		return input
+	}
+}
+
+// fileWriterTool reports whether a tool call is a file write: it names a target
+// path and its verb shape is a writer (write/edit/patch/create). Live SQL
+// executors are excluded — their arguments are executed, not stored. Only
+// file-writer calls get content redaction; everything else keeps full-input
+// text grading. control-law: written-content-is-data-not-effect
+func fileWriterTool(nameLower, attemptedPath string) bool {
+	return attemptedPath != "" && planningMutationToolPattern.MatchString(nameLower) && !toolExecutesLiveSQL(nameLower)
+}
+
 // featureScopedPath reports whether a repo-relative path lands anywhere under
 // the managed planning tree. Broader than planningMarkdownPath on purpose: the
 // first-write latch covers every depth and name, while planningMarkdownPath
@@ -808,13 +852,25 @@ func ClassifyTool(repo, name string, input any) []SafetyFinding {
 	if err != nil {
 		return []SafetyFinding{{Category: "malformed-tool-input", Reason: "invalid-tool-input", Source: "tool-input"}}
 	}
+	nameLower := strings.ToLower(name)
+	attemptedPath := attemptedRepositoryPath(repo, input)
+	// Written content is DATA, not effect: a file-writer tool's document body is
+	// inert until something executes it, so the text classifiers grade only the
+	// tool name and its structural fields (paths, destinations) — a runbook that
+	// MENTIONS `terraform destroy` or `.git/boatstack/` is not the act of running
+	// or tampering with either. Bash command strings stay fully text-scanned (the
+	// text IS the command), and live SQL-executor tools keep full-input grading.
+	// control-law: written-content-is-data-not-effect
+	if fileWriterTool(nameLower, attemptedPath) {
+		if redacted, redactErr := json.Marshal(redactContentFields(input)); redactErr == nil {
+			value = redacted
+		}
+	}
 	combined := name + " " + string(value)
 	// Bare SQL grammar in a tool's arguments is a live capability only when the tool
 	// itself executes SQL (an MCP execute_sql / db query tool). A Write/Edit/Read
 	// whose content merely contains DDL is a document, not an execution.
 	findings := classifySafetyText(combined, "tool-input", toolExecutesLiveSQL(name))
-	nameLower := strings.ToLower(name)
-	attemptedPath := attemptedRepositoryPath(repo, input)
 	mutationCapable := mutationToolPattern.MatchString(nameLower) || (strings.HasPrefix(nameLower, "mcp__") && !externalReadOnlyToolPattern.MatchString(nameLower))
 	if mutationCapable {
 		if finding, blocked := preActivationFinding(repo, attemptedPath); blocked {
