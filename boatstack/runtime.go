@@ -44,6 +44,21 @@ type Project struct {
 	Context       []string          `json:"context,omitempty"`
 	Commands      map[string]string `json:"commands"`
 	HighRiskPaths []string          `json:"high_risk_paths,omitempty"`
+	Migration     MigrationConfig   `json:"migration,omitempty"`
+}
+
+// MigrationConfig declares how a project APPLIES and VERIFIES its migrations against
+// a disposable database, so their EFFECT can be graded by executing them
+// (GradeMigrationEffect) rather than approximated from their SQL text. This is the
+// Sandboxed-Effect law: the guard treats a committed migration as data (the
+// data-artifact exemption), and the deploy pipeline — modelled here by a disposable
+// database and these commands — is the controlled executor that observes the real
+// effect. Both commands run via `sh -c` with the disposable database coordinate in
+// the environment as BOATSTACK_MIGRATE_DB. When apply_command is absent, grading is
+// skipped, so a repository without a database is unaffected.
+type MigrationConfig struct {
+	ApplyCommand  string `json:"apply_command,omitempty"`
+	VerifyCommand string `json:"verify_command,omitempty"`
 }
 
 type Workflow struct {

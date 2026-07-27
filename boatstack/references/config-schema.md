@@ -8,6 +8,9 @@ boatstack-config-field:project.default_branch
 boatstack-config-field:project.context
 boatstack-config-field:project.commands
 boatstack-config-field:project.high_risk_paths
+boatstack-config-field:project.migration
+boatstack-config-field:project.migration.apply_command
+boatstack-config-field:project.migration.verify_command
 boatstack-config-field:workflow
 boatstack-config-field:workflow.human_plan_approval
 boatstack-config-field:workflow.independent_review_for_high_risk
@@ -62,6 +65,9 @@ This is the exhaustive serialization contract, not a list of recommended user ed
   - `test` (string, required): The exact command to execute project-local tests.
   - Other command names (string, optional): Additional repository-owned commands such as `build`, `lint`, or `typecheck`.
 - `high_risk_paths` (array of strings, optional): Glob patterns of files requiring independent reviewer sign-off before shipping.
+- `migration` (object, optional): Declares how migrations are graded by EFFECT against a disposable database, so a committed migration stays a data artifact for the guard while its real effect is executed and observed by a conformance harness. Both commands run via `sh -c` with the disposable database coordinate in the environment as `BOATSTACK_MIGRATE_DB`; when `apply_command` is absent, grading is skipped.
+  - `apply_command` (string, optional): The command that applies the migration set to the disposable database.
+  - `verify_command` (string, optional): The command that asserts the post-migration invariant; a non-zero exit grades the migration FAIL.
 
 ### workflow Fields
 
