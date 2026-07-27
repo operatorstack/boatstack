@@ -134,6 +134,14 @@ var mutationToolPattern = regexp.MustCompile(`(?i)(?:write|edit|apply[_-]?patch|
 var planningMutationToolPattern = regexp.MustCompile(`(?i)(?:write|edit|apply[_-]?patch|create)`)
 var externalReadOnlyToolPattern = regexp.MustCompile(`(?i)(?:^|[_-])(?:get|list|read|search|find|status|inspect|query|fetch|open)(?:[_-]|$)`)
 
+// featuresCommandPathPattern extracts a .product-loop/features/… operand from a
+// shell command so the first-write latch can see raw shell writes (cp, tee, >)
+// the same way ClassifyTool sees a Write tool's file_path. Mirrors the
+// deliveryStatePathPattern law for .git/boatstack: only owned channels may name
+// managed planning paths in a mutating command.
+// control-law: first-planning-write-uses-the-owned-channel
+var featuresCommandPathPattern = regexp.MustCompile(`(?i)(?:^|[\s"'=(])((?:\./)?\.product-loop[/\\]features[/\\][^\s"';&|)]+)`)
+
 func controlledPhaseTransition(command, stage string) bool {
 	if strings.ContainsAny(command, "\n`><;&|") || strings.Contains(command, "$(") {
 		return false
@@ -200,6 +208,12 @@ func controlledPhaseTransition(command, stage string) bool {
 		return fields[1] == "planning-write" || fields[1] == "record-approval"
 	case "APPROVED", "POLICY_READY":
 		return fields[1] == "activate-plan" || fields[1] == "workspace-cut"
+	case "NOT_STARTED":
+		// The first-write latch denies raw writes into .product-loop/features/
+		// before any candidate exists and prescribes planning-write; Coreachability
+		// requires the guard to admit that verb at the very stage that names it.
+		// record-approval is NOT admitted here — there is no plan to approve yet.
+		return fields[1] == "planning-write"
 	default:
 		return false
 	}
@@ -303,8 +317,29 @@ func attemptedRepositoryPath(repo string, input any) string {
 	return visit(input)
 }
 
+// featureScopedPath reports whether a repo-relative path lands anywhere under
+// the managed planning tree. Broader than planningMarkdownPath on purpose: the
+// first-write latch covers every depth and name, while planningMarkdownPath
+// stays the exact allowlist for the bounded DRAFT_PLAN carve-out.
+func featureScopedPath(path string) bool {
+	return strings.HasPrefix(filepath.ToSlash(path), ".product-loop/features/")
+}
+
+// featuresPathInCommand extracts the first .product-loop/features/… operand a
+// shell command names, normalized to a slash-form repo-relative path, or ""
+// when none is named. It is the ClassifyCommand analogue of a Write tool's
+// extracted file_path, feeding the same first-write latch.
+func featuresPathInCommand(command string) string {
+	match := featuresCommandPathPattern.FindStringSubmatch(command)
+	if match == nil {
+		return ""
+	}
+	path := filepath.ToSlash(match[1])
+	return strings.TrimPrefix(path, "./")
+}
+
 func planningMarkdownPath(path string) bool {
-	if !strings.HasPrefix(path, ".product-loop/features/") {
+	if !featureScopedPath(path) {
 		return false
 	}
 	parts := strings.Split(filepath.ToSlash(path), "/")
@@ -347,6 +382,25 @@ func preActivationFinding(repo, attemptedPath string) (SafetyFinding, bool) {
 		return SafetyFinding{Category: "workflow-observation-fault", Reason: "saved feature plans cannot be verified; diagnose the channel with doctor", Source: "planning-state", NextOperation: "doctor"}, true
 	}
 	if len(candidates) == 0 {
+		// First-write latch: even before any plan candidate exists, the managed
+		// planning tree is authored only through the owned channel. Without this,
+		// the very first raw host write of plan.md registers a malformed draft and
+		// the agent discovers planning-write only by failing into INVALID_STATE.
+		// The deny is path-scoped — ordinary product writes stay unlatched at zero
+		// candidates. Stage NOT_STARTED is what ResolveNext reports here, and
+		// controlledPhaseTransition admits planning-write at that stage, so the
+		// denial names a verb the guard accepts (Coreachability).
+		// control-law: first-planning-write-uses-the-owned-channel
+		if featureScopedPath(attemptedPath) {
+			finding := SafetyFinding{
+				Category: "workflow-phase-bypass", Reason: "planning Markdown is created through the owned channel; a raw first write into .product-loop/features/ is denied", Source: "planning-state",
+				WorkflowStage: "NOT_STARTED", AttemptedPath: attemptedPath, NextOperation: "planning-write",
+			}
+			if parts := strings.Split(filepath.ToSlash(attemptedPath), "/"); len(parts) > 2 && featureSlugPattern.MatchString(parts[2]) {
+				finding.BlockingFeature = parts[2]
+			}
+			return finding, true
+		}
 		return SafetyFinding{}, false
 	}
 	status, err := ResolveNext(repo, "")
@@ -710,7 +764,9 @@ func ClassifyCommand(repo, command string) []SafetyFinding {
 		return dedupeFindings(findings)
 	}
 	if !isPureReadOnlyCommand(command) {
-		if finding, blocked := preActivationFinding(repo, ""); blocked && !controlledPhaseTransition(command, finding.WorkflowStage) && !controlledWorkspaceSync(repo, command) {
+		// Feed any named .product-loop/features/ operand so the first-write latch
+		// sees raw shell writes (cp/tee/redirect) the same way it sees a Write tool.
+		if finding, blocked := preActivationFinding(repo, featuresPathInCommand(command)); blocked && !controlledPhaseTransition(command, finding.WorkflowStage) && !controlledWorkspaceSync(repo, command) {
 			return []SafetyFinding{finding}
 		}
 	}
