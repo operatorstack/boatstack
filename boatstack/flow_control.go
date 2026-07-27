@@ -92,6 +92,8 @@ const (
 	MarkerPlanningCheckPlan   = deliverycontrol.TransitionID("planning.check_plan")
 	MarkerPlanningActivate    = deliverycontrol.TransitionID("planning.activate")
 	MarkerPlanningWorkspace   = deliverycontrol.TransitionID("planning.workspace_cut")
+	MarkerPlanningWrite       = deliverycontrol.TransitionID("planning.planning_write")
+	MarkerPlanningApproval    = deliverycontrol.TransitionID("planning.record_approval")
 	MarkerRecoveryDoctor      = deliverycontrol.TransitionID("recovery.doctor")
 	MarkerRecoveryDiscard     = deliverycontrol.TransitionID("recovery.discard_delivery")
 	MarkerRecoveryRepair      = deliverycontrol.TransitionID("recovery.repair_state")
@@ -130,6 +132,12 @@ type FlowNext struct {
 	// completion state and prescribes no command — coding work is never a modeled
 	// transition, only an ordered pointer.
 	SubAction *FlowTask `json:"sub_action,omitempty"`
+	// Alternatives are the other admissible next commands from this position —
+	// the computed solution set minus the single Prescribed primary. They let a
+	// caller PICK a legal move instead of deriving one from the law's prose.
+	// Advisory, never a second primary: the rendering keeps exactly one Run line.
+	// control-law: solution-set-derives-from-guard-declarations
+	Alternatives []PrescribedCommand `json:"alternatives,omitempty"`
 }
 
 // PrescribedCommand is the exact next command that makes the oracle's lowest-cost
@@ -188,9 +196,30 @@ func prescribeCommand(repo, feature string, status NextStatus, transition delive
 		preview := filepath.Join(WorkspaceFor(repo).GeneratedRoot(), "features", feature, "pr.md")
 		cmd.Args = append(repoArgs, "--preview", preview, "--action", "open")
 		cmd.RequiresHumanInput = []string{"--preview-fingerprint"}
+	case deliverycontrol.TransitionID("delivery.record_change"):
+		if feature == "" {
+			return nil, false
+		}
+		// Rework: the correction facts (what changed, where it was observed, and
+		// its classification) are human knowledge; owe them, never fabricate them.
+		cmd.Args = append(repoArgs, "--feature", feature)
+		if status.ActiveSlice != "" {
+			cmd.Args = append(cmd.Args, "--slice", status.ActiveSlice)
+		}
+		cmd.RequiresHumanInput = []string{"--message", "--source-stage", "--classification"}
+	case deliverycontrol.TransitionID("delivery.undo"):
+		// The mutation id names WHICH receipt to reverse — a human decision.
+		cmd.Args = repoArgs
+		cmd.RequiresHumanInput = []string{"--mutation"}
+	case deliverycontrol.TransitionID("delivery.discard_delivery"):
+		if feature == "" {
+			return nil, false
+		}
+		cmd.Args = append(repoArgs, "--feature", feature)
 	default:
-		// Recovery/observe/rework transitions are not prescribed as a forward move;
-		// emit nothing rather than a command whose arguments we cannot derive.
+		// Recovery/observe transitions outside the set above are not prescribed as
+		// a forward move; emit nothing rather than a command whose arguments we
+		// cannot derive.
 		return nil, false
 	}
 	cmd.AutoDerivable = len(cmd.RequiresHumanInput) == 0
@@ -209,12 +238,18 @@ func prescribeCommand(repo, feature string, status NextStatus, transition delive
 // state"), not an execution grant: markers are off the auto-drive allowlist
 // and have no executor, so the driver always prescribes-and-stops on them.
 // control-law: prescriptive-closure-every-stage-names-a-runnable-command
+// planningFeatureDir is the single joined form of a feature's planning
+// directory used by the prescription layer and the solution-set enumerator.
+func planningFeatureDir(repo, feature string) string {
+	return filepath.Join(repo, ".product-loop", "features", feature)
+}
+
 func prescribePlanning(repo string, status NextStatus) (*PrescribedCommand, string) {
 	var repoArgs []string
 	if repo != "" && repo != "." {
 		repoArgs = []string{"--repo", repo}
 	}
-	featureDir := filepath.Join(repo, ".product-loop", "features", status.Feature)
+	featureDir := planningFeatureDir(repo, status.Feature)
 	finish := func(cmd *PrescribedCommand, followUp string) (*PrescribedCommand, string) {
 		cmd.AutoDerivable = len(cmd.RequiresHumanInput) == 0
 		return cmd, followUp
@@ -233,8 +268,8 @@ func prescribePlanning(repo string, status NextStatus) (*PrescribedCommand, stri
 		}, "Then run auto-plan with the validated SOURCE_PLAN path; author every feature artifact through `boatstack-helper planning-write` (document on stdin).")
 	case "DRAFT_PLAN":
 		return finish(&PrescribedCommand{
-			Verb: "check-plan",
-			Args: []string{"--plan", filepath.Join(featureDir, "plan.md")},
+			Verb:       "check-plan",
+			Args:       []string{"--plan", filepath.Join(featureDir, "plan.md")},
 			Transition: MarkerPlanningCheckPlan,
 		}, "After the check passes, present the plan for approval and record it with `record-approval` using the exact PLAN_FINGERPRINT it printed.")
 	case "APPROVED", "POLICY_READY":
@@ -242,23 +277,10 @@ func prescribePlanning(repo string, status NextStatus) (*PrescribedCommand, stri
 		// needed, otherwise activation. "build" is an operation name, not a verb;
 		// activate-plan is the build operation's first concrete command.
 		if status.NextOperation == "workspace-cut" {
-			return finish(&PrescribedCommand{
-				Verb: "workspace-cut",
-				Args: append(repoArgs, "--feature", status.Feature),
-				Transition: MarkerPlanningWorkspace,
-			}, "Then activate the plan from the fresh workspace with `activate-plan`.")
+			return finish(buildWorkspaceCut(repoArgs, status.Feature),
+				"Then activate the plan from the fresh workspace with `activate-plan`.")
 		}
-		args := []string{
-			"--plan", filepath.Join(featureDir, "plan.md"),
-			"--out-dir", filepath.Join(featureDir, "compiled"),
-			"--output", filepath.Join(featureDir, "plan.lock.json"),
-		}
-		if status.ObservedStage == "APPROVED" {
-			args = append(args, "--approval", filepath.Join(featureDir, "approval.md"))
-		}
-		return finish(&PrescribedCommand{
-			Verb: "activate-plan", Args: args, Transition: MarkerPlanningActivate,
-		}, "")
+		return finish(buildActivatePlan(featureDir, status.ObservedStage), "")
 	case "INVALID_STATE":
 		switch status.NextOperation {
 		case "doctor":
@@ -296,6 +318,30 @@ func prescribePlanning(repo string, status NextStatus) (*PrescribedCommand, stri
 	}
 }
 
+// buildWorkspaceCut and buildActivatePlan are the single assembly points for
+// their commands, shared by prescribePlanning (the primary) and the solution-set
+// enumerator (the alternatives) so the two can never drift apart.
+// control-law: solution-set-derives-from-guard-declarations
+func buildWorkspaceCut(repoArgs []string, feature string) *PrescribedCommand {
+	return &PrescribedCommand{
+		Verb:       "workspace-cut",
+		Args:       append(append([]string{}, repoArgs...), "--feature", feature),
+		Transition: MarkerPlanningWorkspace,
+	}
+}
+
+func buildActivatePlan(featureDir, stage string) *PrescribedCommand {
+	args := []string{
+		"--plan", filepath.Join(featureDir, "plan.md"),
+		"--out-dir", filepath.Join(featureDir, "compiled"),
+		"--output", filepath.Join(featureDir, "plan.lock.json"),
+	}
+	if stage == "APPROVED" {
+		args = append(args, "--approval", filepath.Join(featureDir, "approval.md"))
+	}
+	return &PrescribedCommand{Verb: "activate-plan", Args: args, Transition: MarkerPlanningActivate}
+}
+
 // NextControl composes the authoritative read-only recommendation (ResolveNext)
 // with the deterministic oracle to advise the lowest-cost next move toward a
 // published delivery. It performs no mutation and is safe to call at any time.
@@ -330,6 +376,7 @@ func nextControlFromStatus(repo string, status NextStatus) (FlowNext, error) {
 			out.Prescribed = cmd
 			out.FollowUp = followUp
 		}
+		out.Alternatives = alternativesFor(repo, status, out)
 		return out, nil
 	}
 	out.State = state
@@ -354,6 +401,7 @@ func nextControlFromStatus(repo string, status NextStatus) (FlowNext, error) {
 			}
 		}
 	}
+	out.Alternatives = alternativesFor(repo, status, out)
 	return out, nil
 }
 
@@ -389,7 +437,30 @@ func FormatFlowNext(next FlowNext) string {
 	} else {
 		fmt.Fprintf(&b, "Flow state: unresolved (no oracle advisory; follow the recommended operation above)\n")
 	}
+	writeAlternatives(&b, next.Alternatives)
 	return b.String()
+}
+
+// writeAlternatives renders the solution set's other legal moves as ONE line of
+// verbs with a short purpose gloss — never a second Run line, so the response
+// contract's single primary action holds.
+// control-law: solution-set-derives-from-guard-declarations
+func writeAlternatives(b *strings.Builder, alternatives []PrescribedCommand) {
+	if len(alternatives) == 0 {
+		return
+	}
+	shown := alternatives
+	if len(shown) > solutionSetTextCap {
+		shown = shown[:solutionSetTextCap]
+	}
+	labels := make([]string, 0, len(shown))
+	for _, alt := range shown {
+		labels = append(labels, alt.Verb+" ("+solutionGloss(alt.Transition)+")")
+	}
+	fmt.Fprintf(b, "Also legal from here: %s\n", strings.Join(labels, ", "))
+	if len(alternatives) > len(shown) {
+		fmt.Fprintf(b, "  (%d more in `flow next --json` under alternatives)\n", len(alternatives)-len(shown))
+	}
 }
 
 // writePrescribed renders the Run line and its owed-input annotation for a

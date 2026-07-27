@@ -124,15 +124,38 @@ func TestPrescribeNeverFabricatesHumanInput(t *testing.T) {
 	}
 }
 
-// Failure-state: a transition that is not a faithfully-assemblable forward move
+// Failure-state: a transition that is not a faithfully-assemblable move
 // prescribes nothing — the caller emits no command rather than a guess.
+// Observation rows are assembled by prescribeObserve, never here; unknown
+// transitions are never assembled anywhere. (delivery.undo, record_change, and
+// discard_delivery ARE assemblable since the solution set enumerates every
+// legal edge; their fidelity is held by the closure conformance sweeps.)
 func TestPrescribeEmitsNothingForUnassemblableTransition(t *testing.T) {
 	for _, id := range []deliverycontrol.TransitionID{
-		"delivery.undo", "delivery.record_change", "delivery.discard_delivery",
 		"delivery.status", "delivery.recovery_status", "not.a.transition",
 	} {
 		if cmd, ok := prescribeCommand("/repo", "demo", syntheticStatus(), id); ok {
 			t.Errorf("transition %s should not be prescribed as a forward move; got %+v", id, cmd)
+		}
+	}
+	// The rework/recovery edges owe exactly their human facts, never fabricated.
+	for id, owed := range map[deliverycontrol.TransitionID][]string{
+		"delivery.record_change":    {"--message", "--source-stage", "--classification"},
+		"delivery.undo":             {"--mutation"},
+		"delivery.discard_delivery": nil,
+	} {
+		cmd, ok := prescribeCommand("/repo", "demo", syntheticStatus(), id)
+		if !ok {
+			t.Fatalf("edge %s must be assemblable for the solution set", id)
+		}
+		if len(cmd.RequiresHumanInput) != len(owed) {
+			t.Errorf("%s owes %v, got %v", id, owed, cmd.RequiresHumanInput)
+			continue
+		}
+		for i, flag := range owed {
+			if cmd.RequiresHumanInput[i] != flag {
+				t.Errorf("%s owes %v, got %v", id, owed, cmd.RequiresHumanInput)
+			}
 		}
 	}
 }
