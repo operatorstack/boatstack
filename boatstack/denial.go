@@ -357,6 +357,17 @@ func denialFor(host string, finding SafetyFinding) Denial {
 		}
 		d.Qualifier = "plan gate"
 		d.Detail = fmt.Sprintf("Product mutation is denied because %s is at %s.%s Continue with `%s`; unrelated task completions do not authorize implementation.", target, finding.WorkflowStage, attempted, next)
+		// A planning-state denial must name the owned authoring channel, not just
+		// the cleanup verb — otherwise the corrective move (planning-write) is
+		// discoverable only by failing again.
+		// control-law: prescriptive-closure-every-stage-names-a-runnable-command
+		if finding.Source == "planning-state" {
+			slug := "<feature>"
+			if finding.BlockingFeature != "" {
+				slug = finding.BlockingFeature
+			}
+			d.Detail += fmt.Sprintf(" Planning Markdown is authored through the owned channel: `boatstack-helper planning-write --repo . --feature %s --artifact <name>` with the document on stdin — never a raw host write into `.product-loop/features/`.", slug)
+		}
 		d.Reassurance = reassureUntouched
 		return d
 

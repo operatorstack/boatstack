@@ -45,9 +45,10 @@ func FormatFlowCheck(result deliverycontrol.CheckResult) string {
 // flowStateFromStage maps a read-only NextStatus.ObservedStage to a
 // delivery-flow StateID. It resolves ONLY the concrete slice-lifecycle stages,
 // where the position is unambiguous; every planning, ambiguous, or invalid stage
-// returns false so callers fall back to existing behavior rather than act on a
-// guessed position. This conservative mapping is what keeps flow control from
-// ever interfering with pre-activation or ambiguous flows.
+// returns false so the oracle never scores a guessed position. The oracle stays
+// delivery-only; pre-activation stages are covered instead by prescribePlanning,
+// which names the exact runnable command without ever claiming a flow state.
+// control-law: prescriptive-closure-every-stage-names-a-runnable-command
 func flowStateFromStage(stage string) (deliverycontrol.StateID, bool) {
 	switch stage {
 	case "BUILD":
@@ -79,6 +80,23 @@ func CurrentFlowState(repo, feature string) (deliverycontrol.StateID, bool) {
 	return flowStateFromStage(status.ObservedStage)
 }
 
+// Non-registry prescription markers. These name pre-activation and recovery
+// moves the delivery oracle deliberately does not model (deliverycontrol shadows
+// the DELIVERY machine only). They are never legal registry transitions, never
+// allowlisted for auto-drive, and exist so a prescription's provenance is
+// self-describing in JSON and telemetry.
+// control-law: prescriptive-closure-every-stage-names-a-runnable-command
+const (
+	MarkerPlanningInit        = deliverycontrol.TransitionID("planning.init")
+	MarkerPlanningCheckSource = deliverycontrol.TransitionID("planning.check_source_plan")
+	MarkerPlanningCheckPlan   = deliverycontrol.TransitionID("planning.check_plan")
+	MarkerPlanningActivate    = deliverycontrol.TransitionID("planning.activate")
+	MarkerPlanningWorkspace   = deliverycontrol.TransitionID("planning.workspace_cut")
+	MarkerRecoveryDoctor      = deliverycontrol.TransitionID("recovery.doctor")
+	MarkerRecoveryDiscard     = deliverycontrol.TransitionID("recovery.discard_delivery")
+	MarkerRecoveryRepair      = deliverycontrol.TransitionID("recovery.repair_state")
+)
+
 // FlowNext is the advisory answer for `flow next`: the current delivery-flow
 // state, the real recommended operation (from ResolveNext — the authoritative
 // next-move table), and the oracle's lowest-cost next control plus the remaining
@@ -93,11 +111,18 @@ type FlowNext struct {
 	OracleNext    deliverycontrol.TransitionID `json:"oracle_next_transition,omitempty"`
 	RemainingCost int                          `json:"remaining_flow_cost"`
 	Reason        string                       `json:"reason"`
-	// Prescribed is the exact runnable command for the oracle's lowest-cost next
-	// move. It is non-nil ONLY when the flow position resolves and the transition
-	// can be assembled faithfully; an unresolved position prescribes nothing rather
-	// than a guessed command.
+	// Prescribed is the exact runnable command for the next move. When the flow
+	// position resolves it is the oracle's lowest-cost transition; when it does
+	// not, it is the pre-activation prescription for the observed stage (marked by
+	// a planning./recovery. Transition). It is non-nil ONLY when the command can
+	// be assembled faithfully; otherwise nothing is prescribed rather than a
+	// guessed command.
 	Prescribed *PrescribedCommand `json:"prescribed,omitempty"`
+	// FollowUp names the step after the prescribed pre-activation command, set
+	// only by the planning prescription layer (e.g. record approval after
+	// check-plan; re-author via planning-write after repair-state). Empty for
+	// oracle moves.
+	FollowUp string `json:"follow_up,omitempty"`
 	// SubAction is the read-only next coding sub-action from the plan's task DAG,
 	// surfaced only while the active slice is in BUILD (where "build" is otherwise
 	// opaque). It is a pointer into the slice's dependency-ordered tasks; it is nil
@@ -113,7 +138,10 @@ type FlowNext struct {
 // human/CI and must NEVER be fabricated (evidence, gate status, the human-confirmed
 // preview fingerprint, reviewer identity); those flags are deliberately absent from
 // Args. AutoDerivable is true exactly when RequiresHumanInput is empty — the only
-// commands the opt-in execute driver may run.
+// commands the opt-in execute driver may run. Transition is the registry
+// TransitionID of an oracle move, or a planning./recovery.-prefixed marker for a
+// pre-activation prescription outside the delivery model; markers never pass the
+// auto-drive allowlist, so a marked prescription is always prescribe-and-stop.
 type PrescribedCommand struct {
 	Verb               string                       `json:"verb"`
 	Args               []string                     `json:"args,omitempty"`
@@ -169,6 +197,105 @@ func prescribeCommand(repo, feature string, status NextStatus, transition delive
 	return cmd, true
 }
 
+// prescribePlanning assembles the exact runnable command for a stage the
+// delivery oracle deliberately does not model: the pre-activation planning
+// stages and the blocked recovery stages. It closes the prescriptive loop —
+// every reachable pre-activation stage names at least one concrete command —
+// without adding planning states to deliverycontrol, whose declared scope is
+// the DELIVERY machine only. It returns (nil, "") exactly for the documented
+// exceptions: AMBIGUOUS (choosing a feature is a human act, and the candidates
+// already surface via Reason/BlockingAmbiguity) and unknown stages (never
+// guess). AutoDerivable here is a rendering fact ("all arguments follow from
+// state"), not an execution grant: markers are off the auto-drive allowlist
+// and have no executor, so the driver always prescribes-and-stops on them.
+// control-law: prescriptive-closure-every-stage-names-a-runnable-command
+func prescribePlanning(repo string, status NextStatus) (*PrescribedCommand, string) {
+	var repoArgs []string
+	if repo != "" && repo != "." {
+		repoArgs = []string{"--repo", repo}
+	}
+	featureDir := filepath.Join(repo, ".product-loop", "features", status.Feature)
+	finish := func(cmd *PrescribedCommand, followUp string) (*PrescribedCommand, string) {
+		cmd.AutoDerivable = len(cmd.RequiresHumanInput) == 0
+		return cmd, followUp
+	}
+	switch status.ObservedStage {
+	case "NOT_INITIALIZED":
+		return finish(&PrescribedCommand{
+			Verb: "init", Args: repoArgs, Transition: MarkerPlanningInit,
+		}, "")
+	case "NOT_STARTED":
+		// The host plan path is knowable only to the host conversation; owe it.
+		return finish(&PrescribedCommand{
+			Verb: "check-source-plan", Args: repoArgs,
+			RequiresHumanInput: []string{"--plan"},
+			Transition:         MarkerPlanningCheckSource,
+		}, "Then run auto-plan with the validated SOURCE_PLAN path; author every feature artifact through `boatstack-helper planning-write` (document on stdin).")
+	case "DRAFT_PLAN":
+		return finish(&PrescribedCommand{
+			Verb: "check-plan",
+			Args: []string{"--plan", filepath.Join(featureDir, "plan.md")},
+			Transition: MarkerPlanningCheckPlan,
+		}, "After the check passes, present the plan for approval and record it with `record-approval` using the exact PLAN_FINGERPRINT it printed.")
+	case "APPROVED", "POLICY_READY":
+		// ResolveNext already ordered the move: a fresh workspace cut when one is
+		// needed, otherwise activation. "build" is an operation name, not a verb;
+		// activate-plan is the build operation's first concrete command.
+		if status.NextOperation == "workspace-cut" {
+			return finish(&PrescribedCommand{
+				Verb: "workspace-cut",
+				Args: append(repoArgs, "--feature", status.Feature),
+				Transition: MarkerPlanningWorkspace,
+			}, "Then activate the plan from the fresh workspace with `activate-plan`.")
+		}
+		args := []string{
+			"--plan", filepath.Join(featureDir, "plan.md"),
+			"--out-dir", filepath.Join(featureDir, "compiled"),
+			"--output", filepath.Join(featureDir, "plan.lock.json"),
+		}
+		if status.ObservedStage == "APPROVED" {
+			args = append(args, "--approval", filepath.Join(featureDir, "approval.md"))
+		}
+		return finish(&PrescribedCommand{
+			Verb: "activate-plan", Args: args, Transition: MarkerPlanningActivate,
+		}, "")
+	case "INVALID_STATE":
+		switch status.NextOperation {
+		case "doctor":
+			return finish(&PrescribedCommand{
+				Verb: "doctor", Args: repoArgs, Transition: MarkerRecoveryDoctor,
+			}, "")
+		case "discard-delivery":
+			cmd := &PrescribedCommand{Verb: "discard-delivery", Args: repoArgs, Transition: MarkerRecoveryDiscard}
+			if len(status.BlockingAmbiguity) == 1 {
+				cmd.Args = append(cmd.Args, "--feature", status.BlockingAmbiguity[0])
+			} else {
+				cmd.RequiresHumanInput = []string{"--feature"}
+			}
+			return finish(cmd, "")
+		case "repair-state":
+			// ResolveNext never routes here today; the safety finding does. Keep the
+			// case so any carrier of the repair-state operation gets the full loop:
+			// quarantine, then re-author through the owned channel.
+			cmd := &PrescribedCommand{Verb: "repair-state", Args: repoArgs, Transition: MarkerRecoveryRepair}
+			slug := status.Feature
+			if slug == "" && len(status.BlockingAmbiguity) == 1 {
+				slug = status.BlockingAmbiguity[0]
+			}
+			if slug != "" {
+				cmd.Args = append(cmd.Args, "--feature", slug)
+			} else {
+				slug = "<feature>"
+			}
+			return finish(cmd, fmt.Sprintf("After repair, re-author the planning Markdown through the owned channel: `boatstack-helper planning-write --repo . --feature %s --artifact <name>` with the document on stdin.", slug))
+		}
+		return nil, ""
+	default:
+		// AMBIGUOUS and anything unrecognized: no prescription, never a guess.
+		return nil, ""
+	}
+}
+
 // NextControl composes the authoritative read-only recommendation (ResolveNext)
 // with the deterministic oracle to advise the lowest-cost next move toward a
 // published delivery. It performs no mutation and is safe to call at any time.
@@ -189,6 +316,13 @@ func NextControl(repo, feature string) (FlowNext, error) {
 		state, resolved = flowStateFromStage(status.ObservedStage)
 	}
 	if !resolved {
+		// Pre-activation and blocked stages sit outside the delivery oracle, but
+		// they still name their exact runnable command. Resolved stays false: the
+		// flow-state conservativeness contract is untouched.
+		if cmd, followUp := prescribePlanning(repo, status); cmd != nil {
+			out.Prescribed = cmd
+			out.FollowUp = followUp
+		}
 		return out, nil
 	}
 	out.State = state
@@ -230,12 +364,7 @@ func FormatFlowNext(next FlowNext) string {
 		fmt.Fprintf(&b, "Flow state: %s -> goal %s\n", next.State, next.Goal)
 		fmt.Fprintf(&b, "Advisory (flow oracle): next %s, remaining cost %d\n", next.OracleNext, next.RemainingCost)
 		if next.Prescribed != nil {
-			fmt.Fprintf(&b, "Run: %s\n", next.Prescribed.CommandLine())
-			if next.Prescribed.AutoDerivable {
-				fmt.Fprintf(&b, "  (auto-derivable — all arguments follow from state)\n")
-			} else {
-				fmt.Fprintf(&b, "  You must supply: %s (never auto-filled)\n", strings.Join(next.Prescribed.RequiresHumanInput, " "))
-			}
+			writePrescribed(&b, next.Prescribed)
 		}
 		if next.SubAction != nil {
 			title := next.SubAction.Title
@@ -244,8 +373,25 @@ func FormatFlowNext(next FlowNext) string {
 			}
 			fmt.Fprintf(&b, "Next sub-action: %s%s (from the plan task DAG; see `flow tasks`)\n", next.SubAction.ID, title)
 		}
+	} else if next.Prescribed != nil {
+		fmt.Fprintf(&b, "Flow state: pre-activation (delivery oracle not engaged)\n")
+		writePrescribed(&b, next.Prescribed)
+		if next.FollowUp != "" {
+			fmt.Fprintf(&b, "Then: %s\n", next.FollowUp)
+		}
 	} else {
-		fmt.Fprintf(&b, "Flow state: unresolved (no oracle advisory)\n")
+		fmt.Fprintf(&b, "Flow state: unresolved (no oracle advisory; follow the recommended operation above)\n")
 	}
 	return b.String()
+}
+
+// writePrescribed renders the Run line and its owed-input annotation for a
+// prescribed command, shared by the oracle and pre-activation branches.
+func writePrescribed(b *strings.Builder, p *PrescribedCommand) {
+	fmt.Fprintf(b, "Run: %s\n", p.CommandLine())
+	if p.AutoDerivable {
+		fmt.Fprintf(b, "  (auto-derivable — all arguments follow from state)\n")
+	} else {
+		fmt.Fprintf(b, "  You must supply: %s (never auto-filled)\n", strings.Join(p.RequiresHumanInput, " "))
+	}
 }
