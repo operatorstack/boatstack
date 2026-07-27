@@ -719,8 +719,12 @@ func nextStatusCommand(arguments []string) int {
 	feature := flags.String("feature", "", "optional specific managed feature to inspect")
 	jsonOutput := flags.Bool("json", false, "print the versioned structured status")
 	render := flags.Bool("render", false, "print the branded, human-facing status banner")
+	format := flags.String("format", "", `optional output format: "response" renders the canonical response contract (banner, outcome line, one ### Next step)`)
 	if err := flags.Parse(arguments); err != nil {
 		return 2
+	}
+	if *format != "" && *format != "response" {
+		return fail(fmt.Errorf(`unsupported format %q; use --format response`, *format))
 	}
 	status, err := boatstack.ResolveNext(*repo, *feature)
 	if err != nil {
@@ -732,6 +736,12 @@ func nextStatusCommand(arguments []string) int {
 			return fail(marshalErr)
 		}
 		fmt.Print(string(value))
+	} else if *format == "response" {
+		output, renderErr := boatstack.RenderNextStatusResponse(*repo, status)
+		if renderErr != nil {
+			return fail(renderErr)
+		}
+		fmt.Print(output)
 	} else if *render {
 		fmt.Print(boatstack.RenderNextStatusBanner(status))
 	} else {
