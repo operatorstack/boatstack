@@ -109,10 +109,19 @@ func TestGuardCorpusDualReward(t *testing.T) {
 			"content":   "Delivery state lives under `.git/boatstack/deliveries/` and is owned by the helper.",
 		}, "routine", false},
 		{"edit-note-mentions-git-reset", "Edit", map[string]any{
-			"file_path": filepath.Join(repo, "notes.md"),
+			"file_path":  filepath.Join(repo, "notes.md"),
 			"old_string": "TODO",
 			"new_string": "Never run `git reset --hard` on shared branches; use revert PRs.",
 		}, "routine", false},
+		// Solution-set picks: commands the guard itself enumerates as legal moves
+		// at THIS fixture's stage must pass the guard
+		// (guard-never-prescribes-what-it-would-deny). Stage-scoped picks like
+		// record-approval are held in their own fixture by the closure sweep.
+		{"pick-undo", "", `boatstack-helper undo --mutation abc123`, "routine", false},
+		{"pick-discard-delivery", "", `boatstack-helper discard-delivery --feature stale`, "routine", false},
+		{"pick-operation-status", "", `boatstack-helper operation-status`, "routine", false},
+		{"pick-record-change", "", `boatstack-helper record-change --feature demo --slice s1 --message fix --source-stage ci --classification implementation_repair`, "routine", false},
+		{"pick-next-status", "", `boatstack-helper next-status`, "routine", false},
 	}
 
 	var constTotal, constBlocked, routineTotal, routinePassed int
