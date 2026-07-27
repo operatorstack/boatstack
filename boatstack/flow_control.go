@@ -304,6 +304,13 @@ func NextControl(repo, feature string) (FlowNext, error) {
 	if err != nil {
 		return FlowNext{}, err
 	}
+	return nextControlFromStatus(repo, status)
+}
+
+// nextControlFromStatus is NextControl on an already-resolved status, so a
+// caller that renders both the friendly phrase and the prescription (the
+// response contract) observes state exactly once — one resolution, no drift.
+func nextControlFromStatus(repo string, status NextStatus) (FlowNext, error) {
 	out := FlowNext{
 		Goal:          flowGoal,
 		RecommendedOp: status.NextOperation,
@@ -334,14 +341,14 @@ func NextControl(repo, feature string) (FlowNext, error) {
 		out.OracleNext = advice.NextTransition
 		out.RemainingCost = advice.RemainingCost
 		if advice.NextTransition != "" {
-			if prescribed, ok := prescribeCommand(repo, feature, status, advice.NextTransition); ok {
+			if prescribed, ok := prescribeCommand(repo, status.Feature, status, advice.NextTransition); ok {
 				out.Prescribed = prescribed
 			}
 		}
 		// While the slice is building, "build" is opaque; surface the read-only
 		// dependency-ordered next sub-action from the plan's task DAG as a hint.
 		if state == deliverycontrol.StateBuild {
-			if tasks, err := FlowTasksForActiveSlice(repo, feature); err == nil && tasks.Resolved && len(tasks.Ordered) > 0 {
+			if tasks, err := FlowTasksForActiveSlice(repo, status.Feature); err == nil && tasks.Resolved && len(tasks.Ordered) > 0 {
 				hint := tasks.Ordered[0]
 				out.SubAction = &hint
 			}
