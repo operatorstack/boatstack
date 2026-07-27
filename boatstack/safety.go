@@ -51,7 +51,14 @@ func malformedHookInput(code string) error {
 	return hookDecodeError{code: code}
 }
 
-var readOnlyStage = regexp.MustCompile(`(?i)^\s*(?:env\s+[^ ]+\s+)*(?:rg|grep|git\s+(?:grep|diff|status|show|log)|cat|sed|head|tail|less|find\s+[^\n]*-(?:print|ls)|psql\s+[^\n]*\s-c\s+["']?\s*select\b|(?:[^\s]*/)?boatstack-helper(?:[_.-][a-z0-9._-]+)?\s+(?:recovery-status|mutation-status|operation-status|delivery-status|next-status|workspace-status|repair-status|check-plan|check-source-plan|check-safety|diagnose-hook|doctor|version)\b)`)
+// readOnlyStage recognizes one stage of a pipeline that is read-only by EFFECT: a
+// reader (rg/grep/git-read/cat/…), a read-only Boatstack status helper, or a pure
+// stdin→stdout inspection filter (wc/awk/sort/…). Effect-Typed Allowlist: a
+// pipeline is admitted iff EVERY stage is effect-read-only, so ordinary inspection
+// idioms — recovery-status | jq, git diff | wc -l, … | sort | uniq -c — compose
+// freely. Effect-CHANGING syntax (redirection > <, command substitution $()) is
+// still banned in isPureReadOnlyCommand, so no filter can be turned into a writer.
+var readOnlyStage = regexp.MustCompile(`(?i)^\s*(?:env\s+[^ ]+\s+)*(?:rg|grep|git\s+(?:grep|diff|status|show|log)|cat|sed|head|tail|less|wc|awk|sort|uniq|cut|tr|jq|column|nl|comm|rev|fold|find\s+[^\n]*-(?:print|ls)|psql\s+[^\n]*\s-c\s+["']?\s*select\b|(?:[^\s]*/)?boatstack-helper(?:[_.-][a-z0-9._-]+)?\s+(?:recovery-status|mutation-status|operation-status|delivery-status|next-status|workspace-status|repair-status|check-plan|check-source-plan|check-safety|diagnose-hook|doctor|version)\b)`)
 
 // irreversiblePatterns classify destruction by text. Rules whose regex names its
 // own EXECUTOR (rm, git, terraform, supabase db reset, …) are self-executing:
