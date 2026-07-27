@@ -44,6 +44,19 @@ func RenderNextStatusResponse(repo string, status NextStatus) (string, error) {
 			}
 			fmt.Fprintf(&b, "Next sub-action: %s%s (from the plan task DAG; see `flow tasks`)\n", next.SubAction.ID, title)
 		}
+		// The solution set as one short secondary sentence — the contract allows
+		// exactly one, and the verbs appear only in command position.
+		// control-law: solution-set-derives-from-guard-declarations
+		if len(next.Alternatives) > 0 {
+			verbs := make([]string, 0, solutionSetTextCap)
+			for _, alt := range next.Alternatives {
+				if len(verbs) == solutionSetTextCap {
+					break
+				}
+				verbs = append(verbs, "`"+alt.Verb+"`")
+			}
+			fmt.Fprintf(&b, "Other legal moves: %s.\n", strings.Join(verbs, ", "))
+		}
 	case status.ObservedStage == "FEATURE_COMPLETE",
 		status.ObservedStage == "PUBLISHED" && status.Lifecycle == "PUBLISHED_MERGED":
 		b.WriteString("No action required.\n")

@@ -142,6 +142,71 @@ var externalReadOnlyToolPattern = regexp.MustCompile(`(?i)(?:^|[_-])(?:get|list|
 // control-law: first-planning-write-uses-the-owned-channel
 var featuresCommandPathPattern = regexp.MustCompile(`(?i)(?:^|[\s"'=(])((?:\./)?\.product-loop[/\\]features[/\\][^\s"';&|)]+)`)
 
+// The guard's admissible-verb knowledge for the pre-activation interlock lives
+// in the three tables below so that the guard decision (controlledPhaseTransition)
+// and the solution-set enumerator (flow_solutions.go) read ONE declaration. A
+// verb admitted here is exactly a verb the enumerator may present as a legal
+// pick — the tables ARE the interlock law's computable solution set, and the
+// closure conformance sweep holds the two consumers to the same rows.
+// control-law: solution-set-derives-from-guard-declarations
+
+// readOnlyHelperVerbs never mutate workflow state and are admitted at every
+// stage.
+var readOnlyHelperVerbs = map[string]bool{
+	"check-plan": true, "check-source-plan": true, "next-status": true, "delivery-status": true,
+	"recovery-status": true, "repair-status": true, "operation-status": true, "check-safety": true, "workspace-status": true, "diagnose-hook": true,
+	"doctor": true, "version": true, "mutation-status": true,
+}
+
+// stageIndependentRecoveryVerbs mutate but self-guard, and are admitted at
+// every stage — the Coreachability invariant: the states that prescribe a
+// recovery verb must be a subset of the states that verb accepts, and the verb
+// must be reachable in-tool.
+//   - repair-state is the guard-prescribed recovery for a workflow stuck at
+//     INVALID_STATE because of an unregistered malformed draft. Those findings
+//     carry an empty stage, so it is stage-independent. It quarantines the
+//     draft; RepairState self-guards, refusing any registered, published, or
+//     tracked directory.
+//   - undo is the bounded actuator that reverses a Boatstack-generated managed
+//     artifact by re-applying its receipt's inverse through the transactional
+//     mutation boundary. It self-guards (UndoManagedMutation refuses to strand
+//     delivery state; the boundary's stale-base precondition refuses to clobber
+//     later work).
+//   - workspace-reap and workspace-cleanup reclaim finished managed worktrees
+//     and branches. They mutate only Boatstack-owned workspace bookkeeping and
+//     self-guard (refusing the base branch, the current worktree, and unmerged
+//     or dirty work without an explicit force). Without them the pre-activation
+//     interlock would deny post-merge cleanup and force raw, denied Git.
+//   - discard-delivery clears stuck or unverifiable managed delivery state (and
+//     orphaned feature artifacts). It is the verb the resolver prescribes for
+//     those causes, so it must be admitted wherever it is prescribed. It
+//     self-guards (DiscardDelivery archives rather than deletes and refuses
+//     published state without --force). Without this admission the resolver
+//     could name discard-delivery while the guard denied it — a fail-closed
+//     state with no reachable exit.
+var stageIndependentRecoveryVerbs = map[string]bool{
+	"repair-state": true, "undo": true, "workspace-reap": true, "workspace-cleanup": true, "discard-delivery": true,
+}
+
+// stageMutationVerbs maps each pre-activation stage to the mutation verbs the
+// interlock admits there. NOT_STARTED deliberately omits record-approval —
+// there is no plan to approve yet; the first-write latch denies raw writes into
+// .product-loop/features/ before any candidate exists and prescribes
+// planning-write, and Coreachability requires the guard to admit that verb at
+// the very stage that names it.
+var stageMutationVerbs = map[string][]string{
+	// No pre-activation finding carries NOT_INITIALIZED today (the interlock has
+	// nothing to protect before init), but the prescription layer names init
+	// there — declaring the row keeps the admission tables total over every
+	// stage the solution set can emit (guard-never-prescribes-what-it-would-deny).
+	"NOT_INITIALIZED": {"init"},
+	"DRAFT_PLAN":      {"planning-write", "record-approval"},
+	"INVALID_STATE":   {"planning-write", "record-approval"},
+	"APPROVED":        {"activate-plan", "workspace-cut"},
+	"POLICY_READY":    {"activate-plan", "workspace-cut"},
+	"NOT_STARTED":     {"planning-write"},
+}
+
 func controlledPhaseTransition(command, stage string) bool {
 	if strings.ContainsAny(command, "\n`><;&|") || strings.Contains(command, "$(") {
 		return false
@@ -154,69 +219,18 @@ func controlledPhaseTransition(command, stage string) bool {
 	if executable != "boatstack-helper" {
 		return false
 	}
-	readOnlyHelpers := map[string]bool{
-		"check-plan": true, "check-source-plan": true, "next-status": true, "delivery-status": true,
-		"recovery-status": true, "repair-status": true, "operation-status": true, "check-safety": true, "workspace-status": true, "diagnose-hook": true,
-		"doctor": true, "version": true, "mutation-status": true,
-	}
-	if readOnlyHelpers[fields[1]] {
+	if readOnlyHelperVerbs[fields[1]] {
 		return true
 	}
-	// repair-state is the guard-prescribed recovery for a workflow stuck at
-	// INVALID_STATE because of an unregistered malformed draft. Those findings
-	// carry an empty stage, so allow it independent of stage. It mutates (it
-	// quarantines the draft), so it is not a read-only helper; RepairState
-	// self-guards, refusing any registered, published, or tracked directory.
-	if fields[1] == "repair-state" {
+	if stageIndependentRecoveryVerbs[fields[1]] {
 		return true
 	}
-	// undo is the bounded actuator that reverses a Boatstack-generated managed
-	// artifact by re-applying its receipt's inverse through the same transactional
-	// mutation boundary. Like repair-state it is a stage-independent recovery verb;
-	// it mutates but self-guards (UndoManagedMutation refuses to strand delivery
-	// state and the boundary's stale-base precondition refuses to clobber later
-	// work), so it is not a read-only helper.
-	if fields[1] == "undo" {
-		return true
+	for _, verb := range stageMutationVerbs[stage] {
+		if fields[1] == verb {
+			return true
+		}
 	}
-	// workspace-reap and workspace-cleanup are the sanctioned actuators that
-	// reclaim finished managed worktrees and branches. They mutate only
-	// Boatstack-owned workspace bookkeeping — never product source or delivery
-	// state — and self-guard (refusing the base branch, the current worktree, and
-	// unmerged or dirty work without an explicit force). They are stage-independent
-	// like undo: without this the pre-activation interlock would deny post-merge
-	// cleanup and force the operator to reclaim worktrees with raw, denied Git.
-	if fields[1] == "workspace-reap" || fields[1] == "workspace-cleanup" {
-		return true
-	}
-	// discard-delivery is the bounded recovery that clears stuck or unverifiable
-	// managed delivery state (and orphaned feature artifacts). It is the verb the
-	// resolver prescribes for those causes, so it must be admitted wherever it is
-	// prescribed — the Coreachability invariant: the states that prescribe a
-	// recovery verb must be a subset of the states that verb accepts, and the verb
-	// must be reachable in-tool. It mutates but self-guards (DiscardDelivery archives
-	// rather than deletes and refuses published state without --force). Without this
-	// admission the resolver could name discard-delivery while the guard denied it —
-	// a fail-closed state with no reachable exit.
-	if fields[1] == "discard-delivery" {
-		return true
-	}
-	switch stage {
-	case "DRAFT_PLAN":
-		return fields[1] == "planning-write" || fields[1] == "record-approval"
-	case "INVALID_STATE":
-		return fields[1] == "planning-write" || fields[1] == "record-approval"
-	case "APPROVED", "POLICY_READY":
-		return fields[1] == "activate-plan" || fields[1] == "workspace-cut"
-	case "NOT_STARTED":
-		// The first-write latch denies raw writes into .product-loop/features/
-		// before any candidate exists and prescribes planning-write; Coreachability
-		// requires the guard to admit that verb at the very stage that names it.
-		// record-approval is NOT admitted here — there is no plan to approve yet.
-		return fields[1] == "planning-write"
-	default:
-		return false
-	}
+	return false
 }
 
 func controlledWorkspaceSync(repo, command string) bool {
