@@ -166,6 +166,38 @@ func TestInvokedSymlinkFailsClosed(t *testing.T) {
 	}
 }
 
+// Effect-Typed Allowlist: an inspection pipeline whose every stage is read-only by
+// effect is allowed (compose a reader/status helper with pure filters), while any
+// effect-changing syntax — redirection, command substitution, an in-place writer —
+// is still denied. Classify by effect type, not by metacharacter presence.
+func TestReadOnlyInspectionPipelinesAllowed(t *testing.T) {
+	repo := safetyTestRepo(t)
+	allowed := []string{
+		"boatstack-helper recovery-status --repo . | jq .next_operation",
+		"boatstack-helper mutation-status --repo . | grep active",
+		"git diff | wc -l",
+		"git log --oneline | head -20 | awk '{print $1}'",
+		"git status --short | sort | uniq -c",
+		"cat plan.md | cut -c1-80",
+	}
+	for _, command := range allowed {
+		if findings := ClassifyCommand(repo, command); len(findings) != 0 {
+			t.Errorf("read-only inspection pipeline wrongly blocked: %q -> %#v", command, findings)
+		}
+	}
+	denied := []string{
+		"git log > out.txt",           // redirection changes effect
+		"git diff | tee snapshot.txt", // tee writes
+		"echo $(git rev-parse HEAD)",  // command substitution
+		"git status && rm -rf build",  // command separator hides a mutator
+	}
+	for _, command := range denied {
+		if isPureReadOnlyCommand(command) {
+			t.Errorf("effect-changing command wrongly treated as read-only: %q", command)
+		}
+	}
+}
+
 func TestSafeDiagnosticsAndFixForwardCommandsRemainAllowed(t *testing.T) {
 	repo := safetyTestRepo(t)
 	safeScript := filepath.Join(repo, "scripts", "apply_schema.py")
