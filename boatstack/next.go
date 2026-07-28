@@ -27,6 +27,10 @@ type NextStatus struct {
 	Reason             string           `json:"reason"`
 	BlockingAmbiguity  []string         `json:"blocking_ambiguity,omitempty"`
 	Lifecycle          string           `json:"lifecycle,omitempty"`
+	PRPhase            string           `json:"pr_phase,omitempty"`
+	PRReviewDecision   string           `json:"pr_review_decision,omitempty"`
+	PRMergeState       string           `json:"pr_merge_state,omitempty"`
+	PRFailingChecks    []string         `json:"pr_failing_checks,omitempty"`
 	PRURL              string           `json:"pr_url,omitempty"`
 	HeadBranch         string           `json:"head_branch,omitempty"`
 	ParentDelivery     string           `json:"parent_delivery,omitempty"`
@@ -147,13 +151,31 @@ func nextForPublished(repo string, state DeliveryState) NextStatus {
 		TotalSlices: len(state.Slices), ObservedStage: "PUBLISHED", NextOperation: "none",
 		Lifecycle: pr.Lifecycle, PRURL: pr.URL, HeadBranch: pr.Branch,
 		ParentDelivery: state.ParentDelivery,
+		PRPhase:        string(pr.Phase), PRReviewDecision: pr.ReviewDecision,
+		PRMergeState: pr.MergeState, PRFailingChecks: pr.FailingChecks,
 	}
 	switch pr.Lifecycle {
 	case "PUBLISHED_MERGED":
 		status.ObservedStage = "FEATURE_COMPLETE"
 		status.Reason = fmt.Sprintf("The published PR for feature %q is merged.", state.Feature)
 	case "PUBLISHED_OPEN":
-		status.Reason = fmt.Sprintf("Feature %q is published in an open PR; review and required checks may still produce a corrective delivery.", state.Feature)
+		// The observed PR phase sharpens the reason when it is known; the
+		// pre-phase sentence remains the fallback so a degraded observation
+		// reads exactly as it always did.
+		switch pr.Phase {
+		case PRPhaseChecksPending:
+			status.Reason = fmt.Sprintf("Feature %q is published; checks on its PR are still running.", state.Feature)
+		case PRPhaseChecksFailing:
+			status.Reason = fmt.Sprintf("Feature %q is published; %d PR check(s) are failing (%s).", state.Feature, pr.ChecksFailed, strings.Join(pr.FailingChecks, ", "))
+		case PRPhaseChangesRequested:
+			status.Reason = fmt.Sprintf("Feature %q is published; its PR review requested changes.", state.Feature)
+		case PRPhaseReviewRequired:
+			status.Reason = fmt.Sprintf("Feature %q is published; its PR checks pass and a required review approval is still owed.", state.Feature)
+		case PRPhaseMergeEligible:
+			status.Reason = fmt.Sprintf("Feature %q is published; its PR has passing checks, satisfied reviews, and a clean merge state.", state.Feature)
+		default:
+			status.Reason = fmt.Sprintf("Feature %q is published in an open PR; review and required checks may still produce a corrective delivery.", state.Feature)
+		}
 	case "PUBLISHED_CLOSED":
 		status.Reason = fmt.Sprintf("The PR for feature %q is closed without a verified merge; a future correction requires a fresh PR.", state.Feature)
 	default:
@@ -410,6 +432,15 @@ func FormatNextStatus(status NextStatus) string {
 	}
 	if status.Lifecycle != "" {
 		parts = append(parts, "Lifecycle: "+status.Lifecycle)
+	}
+	// An Unknown phase adds nothing the lifecycle line does not already say,
+	// so only a positively derived phase earns a line.
+	if status.PRPhase != "" && status.PRPhase != string(PRPhaseUnknown) {
+		phase := "PR phase: " + status.PRPhase
+		if len(status.PRFailingChecks) > 0 {
+			phase += " (" + strings.Join(status.PRFailingChecks, ", ") + ")"
+		}
+		parts = append(parts, phase)
 	}
 	if status.PRURL != "" {
 		parts = append(parts, "PR: "+status.PRURL)
