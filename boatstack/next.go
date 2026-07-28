@@ -27,6 +27,7 @@ type NextStatus struct {
 	Reason             string           `json:"reason"`
 	BlockingAmbiguity  []string         `json:"blocking_ambiguity,omitempty"`
 	Lifecycle          string           `json:"lifecycle,omitempty"`
+	GoalEscape         string           `json:"goal_escape,omitempty"`
 	PRPhase            string           `json:"pr_phase,omitempty"`
 	PRReviewDecision   string           `json:"pr_review_decision,omitempty"`
 	PRMergeState       string           `json:"pr_merge_state,omitempty"`
@@ -144,14 +145,22 @@ func nextForDelivery(repo, feature string) (NextStatus, error) {
 func nextForPublished(repo string, state DeliveryState) NextStatus {
 	pr := observePublishedPR(repo, state)
 	persistObservedTerminalPRState(repo, state, pr)
-	return publishedNextStatus(state, pr)
+	terminal := resolveDeliveryTerminal(repo, state.Feature)
+	status := publishedNextStatus(state, pr, terminal)
+	// A fired escape is cached best-effort so the demotion holds offline in a
+	// fresh session — the same bounded bypass as the terminal PRState cache.
+	// control-law: goal-escape-demotes-to-operator-and-stops
+	if terminal == TerminalMerged && status.GoalEscape != "" && status.Lifecycle != "PUBLISHED_MERGED" {
+		persistGoalEscape(repo, state, status.GoalEscape)
+	}
+	return status
 }
 
 // publishedNextStatus is the pure mapping from one live PR observation to the
 // published NextStatus. Split from nextForPublished so the frontier report can
 // present the same projection without nextForPublished's best-effort terminal
 // cache write. control-law: frontier-reports-never-mutates
-func publishedNextStatus(state DeliveryState, pr publishedPRObservation) NextStatus {
+func publishedNextStatus(state DeliveryState, pr publishedPRObservation, terminal DeliveryTerminal) NextStatus {
 	_, sliceID, _ := deliveryBranchAndSlice(state)
 	status := NextStatus{
 		SchemaVersion: nextStatusSchemaVersion, VerificationStatus: "VERIFIED",
@@ -161,6 +170,13 @@ func publishedNextStatus(state DeliveryState, pr publishedPRObservation) NextSta
 		ParentDelivery: state.ParentDelivery,
 		PRPhase:        string(pr.Phase), PRReviewDecision: pr.ReviewDecision,
 		PRMergeState: pr.MergeState, PRFailingChecks: pr.FailingChecks,
+	}
+	if terminal == TerminalMerged && pr.Lifecycle != "PUBLISHED_MERGED" && len(state.Slices) > 0 {
+		index := state.ActiveIndex
+		if index >= len(state.Slices) {
+			index = len(state.Slices) - 1
+		}
+		status.GoalEscape = evaluateGoalEscape(state.Slices[index], pr)
 	}
 	switch pr.Lifecycle {
 	case "PUBLISHED_MERGED":
@@ -188,6 +204,9 @@ func publishedNextStatus(state DeliveryState, pr publishedPRObservation) NextSta
 		status.Reason = fmt.Sprintf("The PR for feature %q is closed without a verified merge; a future correction requires a fresh PR.", state.Feature)
 	default:
 		status.Reason = fmt.Sprintf("Feature %q is published, but its PR state could not be verified.", state.Feature)
+	}
+	if status.GoalEscape != "" {
+		status.Reason = fmt.Sprintf("Feature %q is published; the merged-goal pursuit is paused because %s. Record the correction to start a new cycle, or handle the pull request yourself.", state.Feature, goalEscapeReason(status.GoalEscape))
 	}
 	return status
 }

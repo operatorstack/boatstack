@@ -80,7 +80,7 @@ var registry = []TransitionDescriptor{
 		ID: "delivery.next", From: nil, To: "",
 		Kind: KindObserve, CostClass: CostObserve, Reversible: false,
 		HandlerRef: "ResolveNext", CLIVerb: "next-status",
-		Note: "Derives the recommended next move. Read-only, except that the published branch caches an observed terminal PRState as a best-effort side effect (a known bypass, modeled not fixed).",
+		Note: "Derives the recommended next move. Read-only, except that the published branch caches an observed terminal PRState — and, under the merged terminal, a fired goal-escape demotion — as a best-effort side effect (a known bypass, modeled not fixed).",
 	},
 	{
 		ID: "delivery.recovery_status", From: []StateID{StateBuild, StateTestPassed, StateReviewPassed, StatePublished}, To: "",
