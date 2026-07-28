@@ -97,6 +97,14 @@ const (
 	MarkerRecoveryDoctor      = deliverycontrol.TransitionID("recovery.doctor")
 	MarkerRecoveryDiscard     = deliverycontrol.TransitionID("recovery.discard_delivery")
 	MarkerRecoveryRepair      = deliverycontrol.TransitionID("recovery.repair_state")
+	// Post-publish markers (merged terminal only). The delivery machine
+	// deliberately models nothing past PUBLISHED — merging is not a Boatstack
+	// verb and FEATURE_COMPLETE is entered by observation — so the post-publish
+	// steps are markers like the planning ones: self-describing provenance,
+	// never legal registry transitions, never on the auto-drive allowlist.
+	// control-law: merged-terminal-prescribes-merge-never-executes-it
+	MarkerPublishedWatch = deliverycontrol.TransitionID("published.watch_checks")
+	MarkerPublishedMerge = deliverycontrol.TransitionID("published.merge")
 )
 
 // NextActor names who performs the prescribed next step. The operator owns a
@@ -148,7 +156,22 @@ func classifyNextActor(status NextStatus, next FlowNext) NextActor {
 		status.ObservedStage == "PUBLISHED" && status.Lifecycle == "PUBLISHED_MERGED":
 		return NextActorNone
 	case status.ObservedStage == "PUBLISHED":
-		// Reviewing the open pull request is the operator's act.
+		// Under the default published terminal, reviewing the open pull
+		// request is the operator's act — unchanged. Under the merged
+		// terminal, the frontier extends: the phases whose next step is
+		// work-derivable (watch running checks, fix failing checks from the
+		// check logs, run the prescribed merge of an eligible PR) are the
+		// agent's; every phase owing operator authority or knowledge — a
+		// review approval, a changes-requested verdict, a closed PR, an
+		// unknown position — stays the operator's. Fail-closed: the zero
+		// Terminal behaves as published.
+		// control-law: turn-ends-only-at-the-operator-frontier
+		if next.Terminal == TerminalMerged {
+			switch PRPhase(status.PRPhase) {
+			case PRPhaseChecksPending, PRPhaseChecksFailing, PRPhaseMergeEligible:
+				return NextActorAgent
+			}
+		}
 		return NextActorOperator
 	case next.Prescribed == nil:
 		// Ambiguity and unprescribed blocks resolve only by operator choice.
@@ -237,6 +260,14 @@ type PrescribedCommand struct {
 	RequiresHumanInput []string                     `json:"requires_human_input,omitempty"`
 	AutoDerivable      bool                         `json:"auto_derivable"`
 	Transition         deliverycontrol.TransitionID `json:"transition"`
+	// Program names the executable when the prescribed step is honestly NOT a
+	// boatstack-helper verb (today: `gh`, for the operator-frontier merge).
+	// Empty means boatstack-helper, exactly as before. A foreign-program
+	// command is rendering-only by construction: canAutoDrive refuses it
+	// categorically and executePrescribed has no executor for it, so the
+	// execute driver can never run a program that is not the helper.
+	// control-law: merged-terminal-prescribes-merge-never-executes-it
+	Program string `json:"program,omitempty"`
 }
 
 // CommandLine renders the auto-derivable part of the prescribed command as a
@@ -244,7 +275,11 @@ type PrescribedCommand struct {
 // placeholders so the rendering is never a fabricated, runnable-as-is command
 // when input is still owed.
 func (p PrescribedCommand) CommandLine() string {
-	parts := append([]string{"boatstack-helper", p.Verb}, p.Args...)
+	program := p.Program
+	if program == "" {
+		program = "boatstack-helper"
+	}
+	parts := append([]string{program, p.Verb}, p.Args...)
 	for _, flag := range p.RequiresHumanInput {
 		parts = append(parts, flag, "<REQUIRED>")
 	}
@@ -399,6 +434,84 @@ func prescribePlanning(repo string, status NextStatus) (*PrescribedCommand, stri
 	}
 }
 
+// prescribePostPublish closes the prescriptive loop past publish, but ONLY
+// under the merged terminal: with the published default this function returns
+// nothing and post-publish behavior is exactly what it always was. The
+// delivery oracle is at its sink at PUBLISHED, so these prescriptions derive
+// from the live PR observation instead of the registry graph:
+//
+//	checks running   -> flow watch (agent; read-only wait, exits on change)
+//	checks failing   -> record-change --source-stage ci (agent; the failure
+//	                    facts are work-derivable from the failing check logs,
+//	                    so this branch's owed flags do not cross the frontier)
+//	merge eligible   -> gh pr merge <url> --squash (agent, PRESCRIBE-ONLY:
+//	                    Program!="" is categorically undrivable and the agent
+//	                    runs gh under its own authority, never Boatstack's)
+//	everything else  -> nothing; approvals, changes-requested verdicts, closed
+//	                    PRs, and unknown positions are the operator's.
+//
+// FEATURE_COMPLETE and a merged lifecycle prescribe nothing: the goal is met.
+// control-law: merged-terminal-prescribes-merge-never-executes-it
+// control-law: prescriptive-closure-every-stage-names-a-runnable-command
+func prescribePostPublish(repo string, status NextStatus, terminal DeliveryTerminal) (*PrescribedCommand, string) {
+	if terminal != TerminalMerged || status.ObservedStage != "PUBLISHED" || status.Lifecycle == "PUBLISHED_MERGED" {
+		return nil, ""
+	}
+	var repoArgs []string
+	if repo != "" && repo != "." {
+		repoArgs = []string{"--repo", repo}
+	}
+	switch PRPhase(status.PRPhase) {
+	case PRPhaseChecksPending:
+		cmd := &PrescribedCommand{
+			Verb:       "flow",
+			Args:       append([]string{"watch"}, repoArgs...),
+			Transition: MarkerPublishedWatch,
+		}
+		cmd.AutoDerivable = true
+		return cmd, "When the watch exits, resolve the flow again and continue from the fresh state."
+	case PRPhaseChecksFailing:
+		if status.Feature == "" {
+			return nil, ""
+		}
+		desc, ok := deliverycontrol.Transition(deliverycontrol.TransitionID("delivery.record_change"))
+		if !ok || desc.CLIVerb == "" {
+			return nil, ""
+		}
+		// The registry transition IS the fix path — no new machinery. The
+		// source stage is derivable (this observation is the CI failure); the
+		// message and classification are owed, to be derived from the failing
+		// check logs, never fabricated.
+		cmd := &PrescribedCommand{Verb: desc.CLIVerb, Transition: deliverycontrol.TransitionID("delivery.record_change")}
+		cmd.Args = append(append([]string{}, repoArgs...), "--feature", status.Feature)
+		if status.ActiveSlice != "" {
+			cmd.Args = append(cmd.Args, "--slice", status.ActiveSlice)
+		}
+		cmd.Args = append(cmd.Args, "--source-stage", "ci")
+		cmd.RequiresHumanInput = []string{"--message", "--classification"}
+		followUp := "Read the failing check logs"
+		if len(status.PRFailingChecks) > 0 {
+			followUp += " (" + strings.Join(status.PRFailingChecks, ", ") + ")"
+		}
+		followUp += " to derive the exact message and classification; after the correction re-passes its gates, republish with publish-pr --action update."
+		return cmd, followUp
+	case PRPhaseMergeEligible:
+		if strings.TrimSpace(status.PRURL) == "" {
+			return nil, ""
+		}
+		cmd := &PrescribedCommand{
+			Program:    "gh",
+			Verb:       "pr",
+			Args:       []string{"merge", status.PRURL, "--squash"},
+			Transition: MarkerPublishedMerge,
+		}
+		cmd.AutoDerivable = len(cmd.RequiresHumanInput) == 0
+		return cmd, "Run it exactly as rendered — this merge is prescribed only from the live merge-eligible observation, never with --admin, and never for a different pull request."
+	default:
+		return nil, ""
+	}
+}
+
 // buildWorkspaceCut and buildActivatePlan are the single assembly points for
 // their commands, shared by prescribePlanning (the primary) and the solution-set
 // enumerator (the alternatives) so the two can never drift apart.
@@ -482,6 +595,16 @@ func nextControlFromStatus(repo string, status NextStatus) (FlowNext, error) {
 				hint := tasks.Ordered[0]
 				out.SubAction = &hint
 			}
+		}
+	}
+	// Past publish the oracle sits at its sink and prescribes nothing; under
+	// the merged terminal the observation-derived post-publish layer takes
+	// over. It fills only an empty prescription — it can never override an
+	// oracle move.
+	if out.Prescribed == nil {
+		if cmd, followUp := prescribePostPublish(repo, status, out.Terminal); cmd != nil {
+			out.Prescribed = cmd
+			out.FollowUp = followUp
 		}
 	}
 	out.Alternatives = alternativesFor(repo, status, out)
