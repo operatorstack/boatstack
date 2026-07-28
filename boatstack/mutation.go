@@ -40,12 +40,12 @@ const (
 // Sentinel errors let callers (and tests) distinguish deterministic refusals
 // from genuine I/O faults. Every refusal below leaves accepted state unchanged.
 var (
-	ErrMutationInvalidCandidate  = errors.New("mutation candidate failed validation before promotion")
-	ErrMutationStaleBase         = errors.New("mutation rejected: a base artifact changed since it was read")
-	ErrMutationOutdatedAuthority = errors.New("mutation rejected: supervisor authority changed since it was authorized")
+	ErrMutationInvalidCandidate   = errors.New("mutation candidate failed validation before promotion")
+	ErrMutationStaleBase          = errors.New("mutation rejected: a base artifact changed since it was read")
+	ErrMutationOutdatedAuthority  = errors.New("mutation rejected: supervisor authority changed since it was authorized")
 	ErrMutationVerificationFailed = errors.New("mutation rolled back: post-write verification failed")
-	ErrMutationScope             = errors.New("mutation operation falls outside its declared scope")
-	ErrMutationConflict          = errors.New("mutation cannot be undone: the artifact diverged from its recorded post-image")
+	ErrMutationScope              = errors.New("mutation operation falls outside its declared scope")
+	ErrMutationConflict           = errors.New("mutation cannot be undone: the artifact diverged from its recorded post-image")
 )
 
 // MutationOperation is a single file change within a transaction. Candidate holds
@@ -170,7 +170,7 @@ func withMutationLock(repo, id string, apply func() error) error {
 			defer os.Remove(lock)
 			return apply()
 		}
-		if !os.IsExist(openErr) {
+		if !isLockContention(openErr, lock) {
 			return openErr
 		}
 		if info, statErr := os.Stat(lock); statErr == nil && operationNow().Sub(info.ModTime()) > time.Minute {

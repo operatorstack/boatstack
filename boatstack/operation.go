@@ -246,7 +246,7 @@ func withOperationLock(repo, id string, apply func() error) error {
 			defer os.Remove(lock)
 			return apply()
 		}
-		if !os.IsExist(openErr) {
+		if !isLockContention(openErr, lock) {
 			return openErr
 		}
 		if info, statErr := os.Stat(lock); statErr == nil && operationNow().Sub(info.ModTime()) > time.Minute {
@@ -256,6 +256,20 @@ func withOperationLock(repo, id string, apply func() error) error {
 		time.Sleep(10 * time.Millisecond)
 	}
 	return fmt.Errorf("operation %s is busy", id)
+}
+
+// Windows can report ERROR_ACCESS_DENIED when another process owns an O_EXCL
+// lock file. Treat that as contention only when the lock path actually exists;
+// genuine directory/ACL permission failures still fail closed.
+func isLockContention(openErr error, lock string) bool {
+	if os.IsExist(openErr) {
+		return true
+	}
+	if !os.IsPermission(openErr) {
+		return false
+	}
+	_, statErr := os.Stat(lock)
+	return statErr == nil
 }
 
 func PrepareOperation(options OperationPrepareOptions) (OperationReceipt, error) {
