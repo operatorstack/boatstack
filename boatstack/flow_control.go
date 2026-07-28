@@ -166,7 +166,10 @@ func classifyNextActor(status NextStatus, next FlowNext) NextActor {
 		// unknown position — stays the operator's. Fail-closed: the zero
 		// Terminal behaves as published.
 		// control-law: turn-ends-only-at-the-operator-frontier
-		if next.Terminal == TerminalMerged {
+		// A fired goal escape demotes unconditionally: the pursuit contract
+		// ended, so no phase can hand the step back to the agent.
+		// control-law: goal-escape-demotes-to-operator-and-stops
+		if next.Terminal == TerminalMerged && status.GoalEscape == "" {
 			switch PRPhase(status.PRPhase) {
 			case PRPhaseChecksPending, PRPhaseChecksFailing, PRPhaseMergeEligible:
 				return NextActorAgent
@@ -455,6 +458,11 @@ func prescribePlanning(repo string, status NextStatus) (*PrescribedCommand, stri
 // control-law: prescriptive-closure-every-stage-names-a-runnable-command
 func prescribePostPublish(repo string, status NextStatus, terminal DeliveryTerminal) (*PrescribedCommand, string) {
 	if terminal != TerminalMerged || status.ObservedStage != "PUBLISHED" || status.Lifecycle == "PUBLISHED_MERGED" {
+		return nil, ""
+	}
+	// A fired escape prescribes nothing: demote-and-stop, never
+	// demote-and-suggest. control-law: goal-escape-demotes-to-operator-and-stops
+	if status.GoalEscape != "" {
 		return nil, ""
 	}
 	var repoArgs []string

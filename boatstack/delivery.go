@@ -51,6 +51,14 @@ type DeliverySlice struct {
 	// updatable in place while non-terminal; once terminal, in-place correction
 	// is refused and a corrective child delivery is the bounded forward actuator.
 	PRState string `json:"pr_state,omitempty"`
+	// PostPublishFixAttempts counts the post-publish correction cycles
+	// recorded against this published slice, and GoalEscape caches a fired
+	// merged-goal demotion (sticky offline until the next recorded correction
+	// clears it). Both are written only under delivery.terminal "merged"; a
+	// default-terminal state file never carries them.
+	// control-law: goal-escape-demotes-to-operator-and-stops
+	PostPublishFixAttempts int    `json:"post_publish_fix_attempts,omitempty"`
+	GoalEscape             string `json:"goal_escape,omitempty"`
 }
 
 type DeliveryState struct {
@@ -654,7 +662,19 @@ func RecordChangeObservation(options ChangeObservationOptions) (ChangeObservatio
 	if err := appendChangeObservation(repo, observation); err != nil {
 		return ChangeObservation{}, DeliveryState{}, err
 	}
+	// Under the merged terminal, a recorded post-publish correction advances
+	// the targeted published slice's fix-cycle bookkeeping (and, after an
+	// escape, is the operator's explicit reset for a fresh cycle). The
+	// published default records nothing — its state files stay byte-stable.
+	// control-law: goal-escape-demotes-to-operator-and-stops
+	trackPostPublishCycle := resolveDeliveryTerminal(repo, options.Feature) == TerminalMerged
 	if published {
+		if trackPostPublishCycle && len(state.Slices) > 0 {
+			bumpPostPublishFixCycle(&state.Slices[len(state.Slices)-1])
+			if err := saveDeliveryState(repo, state); err != nil {
+				return ChangeObservation{}, DeliveryState{}, err
+			}
+		}
 		return observation, state, nil
 	}
 	if publishedOpen {
@@ -682,6 +702,9 @@ func RecordChangeObservation(options ChangeObservationOptions) (ChangeObservatio
 			slice.Status = StatusTestPassed
 		} else {
 			slice.Status = StatusBuild
+		}
+		if trackPostPublishCycle {
+			bumpPostPublishFixCycle(slice)
 		}
 		if err := saveDeliveryState(repo, state); err != nil {
 			return ChangeObservation{}, DeliveryState{}, err

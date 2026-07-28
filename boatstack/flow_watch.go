@@ -130,6 +130,7 @@ func frontierSignatures(frontier FlowFrontier) map[string]string {
 		key := row.Feature + "/" + row.Slice
 		signatures[key] = strings.Join([]string{
 			row.Stage, row.Lifecycle, row.PRPhase, row.Actor, row.NextOperation,
+			row.GoalEscape,
 			fmt.Sprintf("blocked=%t", row.Blocked),
 			strings.Join(row.PRFailingChecks, "|"),
 		}, "·")

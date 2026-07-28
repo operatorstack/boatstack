@@ -24,6 +24,7 @@ type FrontierRow struct {
 	TotalSlices     int      `json:"total_slices,omitempty"`
 	Stage           string   `json:"stage"`
 	Lifecycle       string   `json:"lifecycle,omitempty"`
+	GoalEscape      string   `json:"goal_escape,omitempty"`
 	PRPhase         string   `json:"pr_phase,omitempty"`
 	PRFailingChecks []string `json:"pr_failing_checks,omitempty"`
 	PRURL           string   `json:"pr_url,omitempty"`
@@ -85,7 +86,7 @@ func ResolveFrontier(repoPath string) (FlowFrontier, error) {
 			continue
 		}
 		branch, _, prURL := deliveryBranchAndSlice(state)
-		status := publishedNextStatus(state, observePRTarget(repo, prURL, branch))
+		status := publishedNextStatus(state, observePRTarget(repo, prURL, branch), resolveDeliveryTerminal(repo, state.Feature))
 		frontier.Rows = append(frontier.Rows, frontierRowFromStatus(repo, status))
 	}
 	for _, row := range frontier.Rows {
@@ -139,6 +140,9 @@ func activeDeliveryRows(repo string, state DeliveryState) []FrontierRow {
 			PRMergeState: observation.MergeState, PRFailingChecks: observation.FailingChecks,
 			Reason: fmt.Sprintf("Slice %q is published with an open pull request while a later slice is active.", slice.ID),
 		}
+		if resolveDeliveryTerminal(repo, state.Feature) == TerminalMerged && observation.Lifecycle != "PUBLISHED_MERGED" {
+			sliceStatus.GoalEscape = evaluateGoalEscape(slice, observation)
+		}
 		rows = append(rows, frontierRowFromStatus(repo, sliceStatus))
 	}
 	return rows
@@ -153,7 +157,8 @@ func frontierRowFromStatus(repo string, status NextStatus) FrontierRow {
 		Feature: status.Feature, Slice: status.ActiveSlice,
 		SliceIndex: status.SliceIndex, TotalSlices: status.TotalSlices,
 		Stage: status.ObservedStage, Lifecycle: status.Lifecycle,
-		PRPhase: status.PRPhase, PRFailingChecks: status.PRFailingChecks,
+		GoalEscape: status.GoalEscape,
+		PRPhase:    status.PRPhase, PRFailingChecks: status.PRFailingChecks,
 		PRURL: status.PRURL, NextOperation: status.NextOperation,
 		Reason:  status.Reason,
 		Blocked: status.VerificationStatus == "BLOCKED",
