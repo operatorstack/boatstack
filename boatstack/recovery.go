@@ -24,6 +24,8 @@ type RecoveryStatus struct {
 	Slice                string   `json:"slice,omitempty"`
 	ParentDelivery       string   `json:"parent_delivery,omitempty"`
 	Lifecycle            string   `json:"lifecycle,omitempty"`
+	PRPhase              string   `json:"pr_phase,omitempty"`
+	PRFailingChecks      []string `json:"pr_failing_checks,omitempty"`
 	PRURL                string   `json:"pr_url,omitempty"`
 	HeadBranch           string   `json:"head_branch,omitempty"`
 	ObservedPRHeadSHA    string   `json:"observed_pr_head_sha,omitempty"`
@@ -49,7 +51,29 @@ type publishedPRObservation struct {
 	URL       string
 	Branch    string
 	HeadSHA   string
+	// Post-publish position, observed live and never persisted. Phase is the
+	// fail-closed classification; the remaining fields carry the raw facts it
+	// was derived from so status output can explain the classification.
+	// control-law: pr-phase-derives-only-from-live-observation
+	Phase          PRPhase
+	BaseBranch     string
+	ReviewDecision string
+	MergeState     string
+	FailingChecks  []string
+	ChecksTotal    int
+	ChecksPassed   int
+	ChecksFailed   int
+	ChecksPending  int
 }
+
+// publishedPRFields is the field list for the single live PR observation.
+// publishedPRLegacyFields is the pre-phase list kept as a fallback so an older
+// gh binary that rejects the newer fields still yields the basic lifecycle
+// observation it always did.
+const (
+	publishedPRFields       = "state,headRefName,headRefOid,url,baseRefName,statusCheckRollup,mergeable,mergeStateStatus,reviewDecision"
+	publishedPRLegacyFields = "state,headRefName,headRefOid,url"
+)
 
 var recoveryGh = func(repo string, arguments ...string) (string, error) {
 	return commandOutput(repo, "gh", arguments...)
@@ -173,7 +197,7 @@ func selectRecoveryDelivery(states []DeliveryState, explicitFeature, currentBran
 
 func observePublishedPR(repo string, state DeliveryState) publishedPRObservation {
 	branch, _, prURL := deliveryBranchAndSlice(state)
-	observation := publishedPRObservation{Lifecycle: "PUBLISHED_UNKNOWN", URL: prURL, Branch: branch}
+	observation := publishedPRObservation{Lifecycle: "PUBLISHED_UNKNOWN", URL: prURL, Branch: branch, Phase: PRPhaseUnknown}
 	target := prURL
 	if target == "" {
 		target = branch
@@ -181,15 +205,26 @@ func observePublishedPR(repo string, state DeliveryState) publishedPRObservation
 	if target == "" {
 		return observation
 	}
-	value, err := recoveryGh(repo, "pr", "view", target, "--json", "state,headRefName,headRefOid,url")
+	value, err := recoveryGh(repo, "pr", "view", target, "--json", publishedPRFields)
 	if err != nil {
-		return observation
+		// An older gh may reject the phase fields; fall back to the legacy
+		// list so the lifecycle observation this function always produced is
+		// never lost to the enrichment. The phase stays Unknown.
+		value, err = recoveryGh(repo, "pr", "view", target, "--json", publishedPRLegacyFields)
+		if err != nil {
+			return observation
+		}
 	}
 	var payload struct {
-		State       string `json:"state"`
-		HeadRefName string `json:"headRefName"`
-		HeadRefOID  string `json:"headRefOid"`
-		URL         string `json:"url"`
+		State             string          `json:"state"`
+		HeadRefName       string          `json:"headRefName"`
+		HeadRefOID        string          `json:"headRefOid"`
+		URL               string          `json:"url"`
+		BaseRefName       string          `json:"baseRefName"`
+		Mergeable         string          `json:"mergeable"`
+		MergeStateStatus  string          `json:"mergeStateStatus"`
+		ReviewDecision    string          `json:"reviewDecision"`
+		StatusCheckRollup []prStatusCheck `json:"statusCheckRollup"`
 	}
 	if DecodeJSON("inspect published PR", target, []byte(value), &payload) != nil {
 		return observation
@@ -209,6 +244,16 @@ func observePublishedPR(repo string, state DeliveryState) publishedPRObservation
 	case "CLOSED":
 		observation.Lifecycle = "PUBLISHED_CLOSED"
 	}
+	checks := summarizeCheckRollup(payload.StatusCheckRollup)
+	observation.BaseBranch = payload.BaseRefName
+	observation.ReviewDecision = payload.ReviewDecision
+	observation.MergeState = payload.MergeStateStatus
+	observation.FailingChecks = checks.Failing
+	observation.ChecksTotal = checks.Total
+	observation.ChecksPassed = checks.Passed
+	observation.ChecksFailed = checks.Failed
+	observation.ChecksPending = checks.Pending
+	observation.Phase = derivePRPhase(payload.State, checks, payload.ReviewDecision, payload.MergeStateStatus)
 	return observation
 }
 
@@ -417,6 +462,8 @@ func ResolveRecovery(options RecoveryStatusOptions) (RecoveryStatus, error) {
 	pr := observePublishedPR(repo, selected)
 	persistObservedTerminalPRState(repo, selected, pr)
 	status.Lifecycle = pr.Lifecycle
+	status.PRPhase = string(pr.Phase)
+	status.PRFailingChecks = pr.FailingChecks
 	status.PRURL = pr.URL
 	status.ObservedPRHeadSHA = pr.HeadSHA
 	if pr.Branch != "" {
