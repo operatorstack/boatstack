@@ -1,0 +1,3 @@
+User: open the PR — watch CI until every check passes, then merge it
+Agent: Working on it.
+User: thanks

@@ -1,0 +1,5 @@
+{"type":"user","sessionId":"cc-alpha","message":{"role":"user","content":"open the PR, watch CI until every check passes, then merge it"}}
+{"type":"assistant","sessionId":"cc-alpha","message":{"role":"assistant","content":[{"type":"text","text":"Opening the PR now."}]}}
+{"type":"user","sessionId":"cc-alpha","message":{"role":"user","content":"open the pr, watch ci until every check passes, then merge it."}}
+{"type":"user","sessionId":"cc-alpha","message":{"role":"user","content":"also rename the config key while you are at it"}}
+{"type":"summary","summary":"synthetic fixture"}
