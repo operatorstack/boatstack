@@ -144,6 +144,14 @@ func nextForDelivery(repo, feature string) (NextStatus, error) {
 func nextForPublished(repo string, state DeliveryState) NextStatus {
 	pr := observePublishedPR(repo, state)
 	persistObservedTerminalPRState(repo, state, pr)
+	return publishedNextStatus(state, pr)
+}
+
+// publishedNextStatus is the pure mapping from one live PR observation to the
+// published NextStatus. Split from nextForPublished so the frontier report can
+// present the same projection without nextForPublished's best-effort terminal
+// cache write. control-law: frontier-reports-never-mutates
+func publishedNextStatus(state DeliveryState, pr publishedPRObservation) NextStatus {
 	_, sliceID, _ := deliveryBranchAndSlice(state)
 	status := NextStatus{
 		SchemaVersion: nextStatusSchemaVersion, VerificationStatus: "VERIFIED",

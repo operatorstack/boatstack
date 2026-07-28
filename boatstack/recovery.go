@@ -197,6 +197,15 @@ func selectRecoveryDelivery(states []DeliveryState, explicitFeature, currentBran
 
 func observePublishedPR(repo string, state DeliveryState) publishedPRObservation {
 	branch, _, prURL := deliveryBranchAndSlice(state)
+	return observePRTarget(repo, prURL, branch)
+}
+
+// observePRTarget performs the single live, read-only PR observation for one
+// explicit PR URL or head branch. Split from observePublishedPR so callers
+// that must not write anything (the frontier report) and callers that need a
+// non-active slice's PR (an earlier published-but-open slice) share the exact
+// same observation.
+func observePRTarget(repo, prURL, branch string) publishedPRObservation {
 	observation := publishedPRObservation{Lifecycle: "PUBLISHED_UNKNOWN", URL: prURL, Branch: branch, Phase: PRPhaseUnknown}
 	target := prURL
 	if target == "" {
