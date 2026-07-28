@@ -128,11 +128,26 @@ func ValidateConfig(config ProjectConfig) error {
 	if err := validateWorkspaceConfig(config.Workspace); err != nil {
 		return err
 	}
+	if err := validateDeliveryConfig(config.Delivery); err != nil {
+		return err
+	}
 	if policy := strings.TrimSpace(config.Workflow.PRVisualEvidence); policy != "" && policy != "off" && policy != "suggest" && policy != "require" {
 		return fmt.Errorf("workflow.pr_visual_evidence must be \"off\", \"suggest\", or \"require\"")
 	}
 	if err := validateVisualEvidencePublish(config.Workflow.VisualEvidencePublish); err != nil {
 		return err
+	}
+	return nil
+}
+
+// validateDeliveryConfig rejects only explicit invalid enum values. A nil
+// block or empty terminal resolves to the published default at use.
+func validateDeliveryConfig(delivery *DeliveryPolicy) error {
+	if delivery == nil {
+		return nil
+	}
+	if terminal := delivery.Terminal; terminal != "" && terminal != "published" && terminal != "merged" {
+		return fmt.Errorf("delivery.terminal must be \"published\" or \"merged\"")
 	}
 	return nil
 }

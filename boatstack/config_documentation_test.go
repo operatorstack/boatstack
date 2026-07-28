@@ -113,6 +113,7 @@ func TestSerializedConfigurationSurfaceIsDocumentedInternally(t *testing.T) {
 func TestPublicConfigurationGuideContainsOnlySupportedUserControls(t *testing.T) {
 	want := []string{
 		"adapters",
+		"delivery.terminal",
 		"project.commands",
 		"project.context",
 		"project.default_branch",

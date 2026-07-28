@@ -34,8 +34,21 @@ type ProjectConfig struct {
 	Project       Project                     `json:"project"`
 	Workflow      Workflow                    `json:"workflow"`
 	Workspace     Workspace                   `json:"workspace,omitempty"`
+	Delivery      *DeliveryPolicy             `json:"delivery,omitempty"`
 	Adapters      []string                    `json:"adapters"`
 	Integrations  map[string]IntegrationState `json:"integrations,omitempty"`
+}
+
+// DeliveryPolicy declares the standing goal of the delivery flow. Terminal
+// names the state a delivery pursues before the flow reports "nothing left to
+// do": "published" (default — the flow ends when the slice's PR is open) or
+// "merged" (the flow keeps naming read-only post-publish steps until the PR
+// is observed merged). The nil zero value preserves the prior behavior
+// exactly: a goal this standing is widened only by an explicit operator
+// choice, never by an upgrade.
+// control-law: terminal-goal-defaults-to-published-and-hydrates-from-state-then-config
+type DeliveryPolicy struct {
+	Terminal string `json:"terminal,omitempty"` // "" | "published" | "merged"
 }
 
 type Project struct {

@@ -23,6 +23,8 @@ boatstack-config-field:workflow.visual_evidence_publish.mode
 boatstack-config-field:workflow.visual_evidence_publish.host
 boatstack-config-field:workflow.visual_evidence_publish.expiry
 boatstack-config-field:workflow.ignored_deliveries
+boatstack-config-field:delivery
+boatstack-config-field:delivery.terminal
 boatstack-config-field:workspace
 boatstack-config-field:workspace.enabled
 boatstack-config-field:workspace.mode
@@ -53,6 +55,7 @@ This is the exhaustive serialization contract, not a list of recommended user ed
 - `project` (object, required): General project definition.
 - `workflow` (object, required): Flags controlling state machine transitions and safety gates.
 - `workspace` (object, optional): Opt-in per-feature branch or worktree management.
+- `delivery` (object, optional): The standing goal of the delivery flow.
 - `adapters` (array of strings, optional): Enabled host environment adapters. If empty, defaults to enabling all.
 - `integrations` (object, optional): Installer-owned state for third-party integrations.
 
@@ -90,6 +93,10 @@ This is the exhaustive serialization contract, not a list of recommended user ed
 - `cleanup` (string, optional): `confirm`, `auto`, or `off`. Defaults to `confirm`. Governs single-feature cleanup of the named workspace.
 - `cleanup_after` (string, optional): `merge` or `ship`. Defaults to `merge`.
 - `reap` (string, optional): `confirm`, `auto`, or `off`. Defaults to `confirm`. Governs the post-merge sweep that reclaims all terminal (merged or abandoned) Boatstack workspaces at once. `confirm` prompts the operator once when reclaimable workspaces exist; `auto` reclaims them without prompting; `off` disables the sweep and its prompt.
+
+### delivery Fields
+
+- `terminal` (string, optional): `published` or `merged`. Defaults to `published`. Deterministic goal control: the state a delivery pursues before the flow reports nothing left to do. `published` ends the flow when the slice's pull request is open (the prior behavior, unchanged). `merged` keeps the read-only flow advisors naming post-publish steps until the pull request is observed merged. The goal a delivery is activated under is snapshotted on its state, so changing this value mid-flight never changes an in-progress delivery's goal; every invalid or unreadable value resolves to `published`.
 
 ### adapters Values
 

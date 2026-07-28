@@ -173,9 +173,17 @@ func classifyNextActor(status NextStatus, next FlowNext) NextActor {
 // authority. Resolved is false when the oracle cannot place the flow, in which
 // case only the real recommendation is meaningful.
 type FlowNext struct {
-	Resolved      bool                         `json:"resolved"`
-	State         deliverycontrol.StateID      `json:"state,omitempty"`
-	Goal          deliverycontrol.StateID      `json:"goal"`
+	Resolved bool                    `json:"resolved"`
+	State    deliverycontrol.StateID `json:"state,omitempty"`
+	Goal     deliverycontrol.StateID `json:"goal"`
+	// Terminal is the standing goal of this delivery ("published" or
+	// "merged"), resolved state-then-config-then-default. Goal above remains
+	// the ORACLE's sink (always StatePublished — the delivery machine has no
+	// modeled transition past it); Terminal is the operator-facing setpoint
+	// that decides whether anything is still owed after publish. In this
+	// slice it is surfaced only; post-publish prescriptions follow.
+	// control-law: terminal-goal-defaults-to-published-and-hydrates-from-state-then-config
+	Terminal DeliveryTerminal `json:"terminal"`
 	RecommendedOp string                       `json:"recommended_operation"`
 	OracleNext    deliverycontrol.TransitionID `json:"oracle_next_transition,omitempty"`
 	RemainingCost int                          `json:"remaining_flow_cost"`
@@ -432,6 +440,7 @@ func NextControl(repo, feature string) (FlowNext, error) {
 func nextControlFromStatus(repo string, status NextStatus) (FlowNext, error) {
 	out := FlowNext{
 		Goal:          flowGoal,
+		Terminal:      resolveDeliveryTerminal(repo, status.Feature),
 		RecommendedOp: status.NextOperation,
 		Reason:        status.Reason,
 	}
@@ -492,6 +501,11 @@ func FormatFlowNext(next FlowNext) string {
 	}
 	if next.Actor != "" {
 		fmt.Fprintf(&b, "Next actor: %s\n", next.Actor)
+	}
+	// The published default renders exactly as before; only the widened goal
+	// earns a line, so opting in is visible and not opting in changes nothing.
+	if next.Terminal == TerminalMerged {
+		fmt.Fprintf(&b, "Terminal goal: merged (delivery.terminal)\n")
 	}
 	if next.Resolved {
 		fmt.Fprintf(&b, "Flow state: %s -> goal %s\n", next.State, next.Goal)
