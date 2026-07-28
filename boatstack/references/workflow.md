@@ -487,6 +487,10 @@ When `workspace.enabled` is set and an approved feature is still on the default 
 
 When `workspace.enabled` is set, `boatstack-next` surfaces `workspace-cleanup` for a published feature whose managed worktree still exists locally. The `workspace-cleanup` operation checks the pull request's merge state (GitHub CLI, falling back to local ancestry) and reports it. When `workspace.cleanup_after` is `merge`, cleanup is offered only once the PR is confirmed merged; while it is still open, the workspace is kept and the human may keep waiting or override explicitly. Cleanup never removes a workspace with uncommitted or unmerged work without an explicit forced override, and it reclaims only the local worktree and branch — it never deletes a remote branch or merges anything. In `confirm` mode the human reclaims the workspace with the exact reply `c` (or keeps it with `k`); `auto` mode reclaims a merged workspace without a prompt; `off` disables cleanup. A fresh feature workspace is likewise cut from the up-to-date default branch when a new feature begins, so work never starts on a stale branch.
 
+### `PR_OPEN -> WATCH`
+
+A published pull request changes asynchronously: checks finish, reviews land, merges happen. `flow watch` is the bounded waiting primitive for that interval. It re-observes the read-only frontier on an interval and exits when a row's position or owner changes, when nothing on the frontier can move, or when its timeout passes (distinct exit code). It performs no writes and executes no operation — observation and actuation stay separate, so waiting can never become acting. When the watch exits, resolve `next-status` again and continue from the fresh state.
+
 ### `PR_OPEN -> RETRO`
 
 Record unexpected friction and outcomes. A retro may propose a loop move, but it may not mutate durable instructions automatically.

@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	boatstack "github.com/operatorstack/boatstack/boatstack"
 )
@@ -14,7 +15,7 @@ import (
 // gate, authority, or exit code.
 func flowCommand(arguments []string) int {
 	if len(arguments) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper flow <check|next|tasks|frontier|report>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper flow <check|next|tasks|frontier|watch|report>")
 		return 2
 	}
 	switch arguments[0] {
@@ -26,6 +27,8 @@ func flowCommand(arguments []string) int {
 		return flowTasksCommand(arguments[1:])
 	case "frontier":
 		return flowFrontierCommand(arguments[1:])
+	case "watch":
+		return flowWatchCommand(arguments[1:])
 	case "report":
 		return flowReportCommand(arguments[1:])
 	default:
@@ -173,6 +176,41 @@ func flowFrontierCommand(arguments []string) int {
 		fmt.Print(string(value))
 	} else {
 		fmt.Print(boatstack.FormatFlowFrontier(frontier))
+	}
+	return 0
+}
+
+// flowWatchCommand runs the bounded observe-compare loop: re-observe the
+// frontier on an interval, exit 0 the moment it changes (or when nothing can
+// move), exit 1 when the timeout passes with no change. It observes and
+// exits; it never acts on what it sees.
+// control-law: watch-observes-and-exits-never-acts
+func flowWatchCommand(arguments []string) int {
+	flags := flag.NewFlagSet("flow watch", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository whose delivery frontier should be watched")
+	interval := flags.Duration("interval", 30*time.Second, "time between frontier observations")
+	timeout := flags.Duration("timeout", 30*time.Minute, "maximum time to wait for a frontier change")
+	jsonOutput := flags.Bool("json", false, "print the structured watch result")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	result, err := boatstack.WatchFrontier(boatstack.FlowWatchOptions{
+		Repo: *repo, Interval: *interval, Timeout: *timeout,
+	})
+	if err != nil {
+		return fail(err)
+	}
+	if *jsonOutput {
+		value, marshalErr := boatstack.MarshalJSON(result)
+		if marshalErr != nil {
+			return fail(marshalErr)
+		}
+		fmt.Print(string(value))
+	} else {
+		fmt.Print(boatstack.FormatFlowWatch(result))
+	}
+	if result.Outcome == boatstack.WatchOutcomeTimeout {
+		return 1
 	}
 	return 0
 }
