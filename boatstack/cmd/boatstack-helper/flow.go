@@ -14,7 +14,7 @@ import (
 // gate, authority, or exit code.
 func flowCommand(arguments []string) int {
 	if len(arguments) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper flow <check|next|tasks|report>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper flow <check|next|tasks|frontier|report>")
 		return 2
 	}
 	switch arguments[0] {
@@ -24,6 +24,8 @@ func flowCommand(arguments []string) int {
 		return flowNextCommand(arguments[1:])
 	case "tasks":
 		return flowTasksCommand(arguments[1:])
+	case "frontier":
+		return flowFrontierCommand(arguments[1:])
 	case "report":
 		return flowReportCommand(arguments[1:])
 	default:
@@ -145,6 +147,34 @@ func executePrescribed(cmd *boatstack.PrescribedCommand) error {
 	default:
 		return fmt.Errorf("no registered auto-executor for verb %q; run it by hand: %s", cmd.Verb, cmd.CommandLine())
 	}
+}
+
+// flowFrontierCommand renders the cross-delivery frontier dashboard: one row
+// per managed delivery slice with its observed position and the actor who owes
+// the next step. Strictly read-only — it performs zero writes, including the
+// terminal PR-state cache that next/recovery maintain.
+// control-law: frontier-reports-never-mutates
+func flowFrontierCommand(arguments []string) int {
+	flags := flag.NewFlagSet("flow frontier", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository whose delivery frontier should be reported")
+	jsonOutput := flags.Bool("json", false, "print the structured frontier report")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	frontier, err := boatstack.ResolveFrontier(*repo)
+	if err != nil {
+		return fail(err)
+	}
+	if *jsonOutput {
+		value, marshalErr := boatstack.MarshalJSON(frontier)
+		if marshalErr != nil {
+			return fail(marshalErr)
+		}
+		fmt.Print(string(value))
+	} else {
+		fmt.Print(boatstack.FormatFlowFrontier(frontier))
+	}
+	return 0
 }
 
 // flowTasksCommand renders the active delivery slice's sub-actions from the
