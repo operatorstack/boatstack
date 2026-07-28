@@ -53,9 +53,16 @@ type DriveDecision struct {
 // human input. Both conditions must hold: the command owes no human input
 // (AutoDerivable) AND its transition is on the allowlist. A derivable command off
 // the allowlist is not driven, and an allowlisted transition that still owes input
-// is not driven.
+// is not driven. A foreign-program command (Program != "", e.g. the prescribed
+// `gh pr merge`) is refused CATEGORICALLY, before the allowlist is even
+// consulted: the driver executes boatstack-helper verbs only, so no future
+// allowlist entry can ever make Boatstack run someone else's program.
+// control-law: merged-terminal-prescribes-merge-never-executes-it
 func canAutoDrive(cmd *PrescribedCommand, allowlist map[deliverycontrol.TransitionID]bool) bool {
 	if cmd == nil || !cmd.AutoDerivable {
+		return false
+	}
+	if cmd.Program != "" {
 		return false
 	}
 	return allowlist[cmd.Transition]
