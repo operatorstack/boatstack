@@ -15,6 +15,7 @@ boatstack-user-config-field:workflow.visual_evidence_publish.mode
 boatstack-user-config-field:workflow.visual_evidence_publish.host
 boatstack-user-config-field:workflow.visual_evidence_publish.expiry
 boatstack-user-config-field:workflow.ignored_deliveries
+boatstack-user-config-field:delivery.terminal
 boatstack-user-config-field:workspace.enabled
 boatstack-user-config-field:workspace.mode
 boatstack-user-config-field:workspace.cleanup
@@ -41,6 +42,7 @@ Boatstack's installer owns the complete `.boatstack-project.json` shape. Edit on
 | Add frontend PR screenshots | `workflow.pr_visual_evidence` | `suggest` exposes missing screenshots as a gap; `require` blocks completed publication. |
 | Render screenshots inline on a private PR | `workflow.visual_evidence_publish.*` | `mode: external-host` uploads the captured PNGs to an anonymous expiring host so the comment renders inline even on a private repo; opt-in, never automatic. |
 | Ignore old ambiguous deliveries | `workflow.ignored_deliveries` | Listed feature slugs are excluded from delivery-ambiguity resolution so past work stops blocking new work; new, unlisted ambiguous deliveries still pause. |
+| Pursue the PR to merge, not just to open | `delivery.terminal` | `merged` keeps the read-only flow advisors naming post-publish steps (watch checks, route corrections) until the PR is observed merged; the default `published` ends the flow when the PR is open, exactly as before. |
 | Use fresh feature workspaces | `workspace.*` | Boatstack creates and cleans branches or linked worktrees under the selected policy. |
 | Limit generated host surfaces | `adapters` | Export generates only the selected supported adapters. |
 
@@ -142,6 +144,18 @@ List feature slugs here to drop past deliveries from the ambiguity check so hist
 ```
 
 Workspace `mode` is `worktree` or `branch`; cleanup is `confirm`, `auto`, or `off`; and cleanup eligibility begins after `merge` or `ship`. `reap` is `confirm`, `auto`, or `off`: when a delivery's PR is confirmed merged, Boatstack sweeps every terminal (merged or abandoned) Boatstack workspace at once — `confirm` asks the operator once before reclaiming them, `auto` reclaims without asking, and `off` disables the sweep. Supported adapters are `cursor`, `claude`, `codex`, `gemini`, and `github`. Empty or omitted adapters enable all supported surfaces.
+
+## Delivery goal
+
+```json
+{
+  "delivery": {
+    "terminal": "merged"
+  }
+}
+```
+
+`delivery.terminal` names the state a delivery pursues before the flow reports nothing left to do. The default `published` ends the flow when the slice's pull request is open, exactly as before. `merged` keeps the read-only flow advisors (`next-status`, `flow next`, `flow frontier`, `flow watch`) naming post-publish steps — watch the checks, route a correction, surface merge eligibility — until the pull request is observed merged. The goal a delivery starts under is snapshotted with the delivery, so changing this value never changes an in-progress delivery's goal. Boatstack itself never merges a pull request under any setting.
 
 ## Installer-owned fields
 

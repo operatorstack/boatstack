@@ -66,6 +66,13 @@ type DeliveryState struct {
 	RepairAttempt       int             `json:"repair_attempt,omitempty"`
 	SupersededReceipts  []string        `json:"superseded_receipts,omitempty"`
 	ParentDelivery      string          `json:"parent_delivery,omitempty"`
+	// Goal snapshots the non-default delivery terminal ("merged") this
+	// delivery was activated under, so a mid-flight config change never
+	// silently changes an in-progress delivery's goal. Empty means: resolve
+	// from config at read time (and keeps a default-config state file
+	// byte-identical to the pre-field format).
+	// control-law: terminal-goal-defaults-to-published-and-hydrates-from-state-then-config
+	Goal string `json:"goal,omitempty"`
 }
 
 type DeliveryGateReceipt struct {
@@ -377,6 +384,7 @@ func initializeDeliveryState(repo, feature, planPath, lockPath string) error {
 		SchemaVersion: deliveryStateSchemaVersion, Feature: feature, PlanLockHash: lockHash,
 		ActiveIndex: 0, Slices: slices, Mode: "NORMAL",
 		ParentDelivery: strings.TrimSpace(stringValue(plan["parent_delivery"])),
+		Goal:           deliveryGoalSnapshot(repo),
 	})
 }
 
@@ -485,6 +493,7 @@ func reconcileAmendedDeliveryState(existing DeliveryState, newSlices []DeliveryS
 		Slices:            merged,
 		Mode:              "NORMAL",
 		ParentDelivery:    existing.ParentDelivery,
+		Goal:              existing.Goal,
 	}
 }
 
