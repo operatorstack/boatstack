@@ -99,6 +99,73 @@ const (
 	MarkerRecoveryRepair      = deliverycontrol.TransitionID("recovery.repair_state")
 )
 
+// NextActor names who performs the prescribed next step. The operator owns a
+// step only when it owes operator knowledge or authority — an approval, a
+// publish decision, a feature choice, a plan path, a correction fact. The
+// agent owns every other step, including steps whose owed inputs are evidence
+// the agent produces by doing the work (test runs, the review protocol). A
+// working response may end only on an operator-owned step or a terminal
+// state; that boundary is the operator frontier.
+// control-law: turn-ends-only-at-the-operator-frontier
+type NextActor string
+
+const (
+	// NextActorAgent — the coding agent performs this step now. A working
+	// response never ends on an agent-owned step; the read-only status view
+	// renders it as a one-key delegation instead of executing it.
+	NextActorAgent NextActor = "agent"
+	// NextActorOperator — the step owes operator knowledge or authority; the
+	// response may end here.
+	NextActorOperator NextActor = "operator"
+	// NextActorNone — terminal; nobody owes an action.
+	NextActorNone NextActor = "none"
+)
+
+// operatorOwedFlags are the prescribed-command inputs that carry operator
+// knowledge or authority rather than work-derivable evidence. A prescription
+// owing any of these belongs to the operator. The evidence flags (--status,
+// --evidence, --reviewer-identity, --review-method) are deliberately absent:
+// the agent obtains those by doing the work — never by fabrication — so owing
+// them does not move the step across the frontier.
+// control-law: turn-ends-only-at-the-operator-frontier
+var operatorOwedFlags = map[string]bool{
+	"--plan":                true, // which source plan: product knowledge
+	"--feature":             true, // which delivery: the operator names the slug
+	"--mutation":            true, // which receipt to reverse: an operator decision
+	"--preview-fingerprint": true, // publish authority is human-confirmed
+	"--message":             true, // correction facts are human knowledge
+	"--source-stage":        true,
+	"--classification":      true,
+}
+
+// classifyNextActor types the next step by who must act. Fail-closed: anything
+// it cannot place returns operator, which preserves prescribe-and-stop — the
+// worst misclassification is today's behavior, never a runaway agent.
+// control-law: turn-ends-only-at-the-operator-frontier
+func classifyNextActor(status NextStatus, next FlowNext) NextActor {
+	switch {
+	case status.ObservedStage == "FEATURE_COMPLETE",
+		status.ObservedStage == "PUBLISHED" && status.Lifecycle == "PUBLISHED_MERGED":
+		return NextActorNone
+	case status.ObservedStage == "PUBLISHED":
+		// Reviewing the open pull request is the operator's act.
+		return NextActorOperator
+	case next.Prescribed == nil:
+		// Ambiguity and unprescribed blocks resolve only by operator choice.
+		return NextActorOperator
+	case next.Prescribed.Transition == PublishTransition:
+		// Opening or updating a PR is operator-confirmed (`o`/`u`), regardless
+		// of which flags happen to be owed.
+		return NextActorOperator
+	}
+	for _, flag := range next.Prescribed.RequiresHumanInput {
+		if operatorOwedFlags[flag] {
+			return NextActorOperator
+		}
+	}
+	return NextActorAgent
+}
+
 // FlowNext is the advisory answer for `flow next`: the current delivery-flow
 // state, the real recommended operation (from ResolveNext — the authoritative
 // next-move table), and the oracle's lowest-cost next control plus the remaining
@@ -138,6 +205,12 @@ type FlowNext struct {
 	// Advisory, never a second primary: the rendering keeps exactly one Run line.
 	// control-law: solution-set-derives-from-guard-declarations
 	Alternatives []PrescribedCommand `json:"alternatives,omitempty"`
+	// Actor names who performs the next step: "agent" when the step is the
+	// coding agent's to do now, "operator" when it owes operator knowledge or
+	// authority (the response may end there — the operator frontier), "none"
+	// when the flow is terminal.
+	// control-law: turn-ends-only-at-the-operator-frontier
+	Actor NextActor `json:"next_actor"`
 }
 
 // PrescribedCommand is the exact next command that makes the oracle's lowest-cost
@@ -377,6 +450,7 @@ func nextControlFromStatus(repo string, status NextStatus) (FlowNext, error) {
 			out.FollowUp = followUp
 		}
 		out.Alternatives = alternativesFor(repo, status, out)
+		out.Actor = classifyNextActor(status, out)
 		return out, nil
 	}
 	out.State = state
@@ -402,6 +476,7 @@ func nextControlFromStatus(repo string, status NextStatus) (FlowNext, error) {
 		}
 	}
 	out.Alternatives = alternativesFor(repo, status, out)
+	out.Actor = classifyNextActor(status, out)
 	return out, nil
 }
 
@@ -414,6 +489,9 @@ func FormatFlowNext(next FlowNext) string {
 	fmt.Fprintf(&b, "Recommended: %s\n", next.RecommendedOp)
 	if next.Reason != "" {
 		fmt.Fprintf(&b, "Reason: %s\n", next.Reason)
+	}
+	if next.Actor != "" {
+		fmt.Fprintf(&b, "Next actor: %s\n", next.Actor)
 	}
 	if next.Resolved {
 		fmt.Fprintf(&b, "Flow state: %s -> goal %s\n", next.State, next.Goal)

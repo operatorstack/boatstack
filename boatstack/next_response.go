@@ -33,6 +33,14 @@ func RenderNextStatusResponse(repo string, status NextStatus) (string, error) {
 
 	switch {
 	case next.Prescribed != nil:
+		if next.Actor == NextActorAgent {
+			// An agent-owned step is never the operator's to perform. This
+			// read-only status view renders it as a one-key delegation; a working
+			// response must not end here at all — it does the step, re-renders,
+			// and repeats until the next step reaches the operator frontier.
+			// control-law: turn-ends-only-at-the-operator-frontier
+			b.WriteString("This step is mine to do. Reply `g` and I will do it now, then continue to your next decision.\n")
+		}
 		writePrescribed(&b, next.Prescribed)
 		if next.FollowUp != "" {
 			fmt.Fprintf(&b, "Then: %s\n", next.FollowUp)
