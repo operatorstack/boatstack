@@ -254,6 +254,8 @@ This is a two-slice ZCA projection: the reviewer brief minimizes review effort, 
 
 Read [failure-moves.md](references/failure-moves.md) before proposing a loop change.
 
+For a retro over past sessions, run the read-only `.product-loop/bin/boatstack-helper retro derive --input <transcript> [--input <transcript> ...]`. It detects operator instructions that recur across sessions and classifies each as a missing observation, verb, setpoint, or guard, with a suggested typed promotion. It reads only the transcript files the user names, works fully offline, and writes nothing. A recurring instruction is evidence of a missing typed control — promote it by hand through the normal reviewed delivery flow; never turn it into a saved prompt, and never apply a proposal automatically.
+
 1. Classify the observed failure below the surface symptom.
 2. State a mechanism and the exact failure population the move targets.
 3. Estimate cost, risk, and possible regressions.
