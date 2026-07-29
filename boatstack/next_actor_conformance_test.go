@@ -96,7 +96,7 @@ func TestNextActorFrontierBoundaries(t *testing.T) {
 			Prescribed: &PrescribedCommand{Verb: "publish", Transition: PublishTransition},
 		}, NextActorOperator},
 		{"owed_knowledge_is_operators", NextStatus{ObservedStage: "BUILD"}, FlowNext{
-			Prescribed: &PrescribedCommand{Verb: "record-change", RequiresHumanInput: []string{"--message", "--source-stage", "--classification"}},
+			Prescribed: &PrescribedCommand{Verb: "record-change", RequiresHumanInput: []string{"--message", "--source-stage", "--classification", "--mechanism"}},
 		}, NextActorOperator},
 		{"owed_evidence_stays_agents", NextStatus{ObservedStage: "BUILD"}, FlowNext{
 			Prescribed: &PrescribedCommand{Verb: "record-delivery-gate", RequiresHumanInput: []string{"--status", "--evidence"}, Transition: deliverycontrol.TransitionID("delivery.record_gate_test")},

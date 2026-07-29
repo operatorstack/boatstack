@@ -26,6 +26,19 @@ boatstack-user-config-field:adapters
 
 Boatstack's installer owns the complete `.boatstack-project.json` shape. Edit only the controls below, then regenerate the export and review the infrastructure diff. Fields not listed here are identity, compatibility, or installer state rather than product policy.
 
+## Delivery readiness and journey evidence
+
+New Boatstack plans use schema v3. Before approval is shown, Boatstack fetches
+`origin` and verifies the current feature worktree, base/head commits, branch,
+upstream relation, and journey-oracle manifest. Activation repeats the check and
+stores the same readiness fingerprint in the immutable plan lock.
+
+Each plan declares `journey_evidence`. Use `not_relevant` with a reason when no
+user or operator journey can regress. Use `relevant` with typed runnable oracles
+mapped to acceptance criteria when a journey matters. Relevant results are
+recorded with `record-journey-results`; test and review gates reject missing,
+failed, or stale results.
+
 ## Choose the outcome
 
 | Outcome | Control | Enforcement |

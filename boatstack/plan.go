@@ -79,6 +79,71 @@ func validationSlice(value any) ([]map[string]any, bool) {
 	return result, true
 }
 
+func validateJourneyEvidence(plan map[string]any, version float64) error {
+	if version < 3 {
+		return nil
+	}
+	decision, ok := plan["journey_evidence"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("schema-v3 plan requires a journey_evidence decision")
+	}
+	relevance := strings.ToLower(strings.TrimSpace(stringValue(decision["relevance"])))
+	switch relevance {
+	case "not_relevant":
+		if strings.TrimSpace(stringValue(decision["reason"])) == "" {
+			return fmt.Errorf("journey_evidence not_relevant requires a reason")
+		}
+		if oracles, ok := objectSlice(decision["oracles"]); ok && len(oracles) > 0 {
+			return fmt.Errorf("journey_evidence not_relevant must not declare oracles")
+		}
+		return nil
+	case "relevant":
+	default:
+		return fmt.Errorf("journey_evidence.relevance must be relevant or not_relevant")
+	}
+	oracles, ok := objectSlice(decision["oracles"])
+	if !ok || len(oracles) == 0 {
+		return fmt.Errorf("relevant journey_evidence requires at least one typed oracle")
+	}
+	criteria, _ := objectSlice(plan["acceptance_criteria"])
+	criterionIDs := map[string]bool{}
+	for _, criterion := range criteria {
+		criterionIDs[stringValue(criterion["id"])] = true
+	}
+	seen := map[string]bool{}
+	for _, oracle := range oracles {
+		id := strings.TrimSpace(stringValue(oracle["id"]))
+		mapped, mappedOK := stringSlice(oracle["criteria"])
+		steps, stepsOK := stringSlice(oracle["steps"])
+		expected, expectedOK := stringSlice(oracle["expected"])
+		if id == "" || seen[id] {
+			return fmt.Errorf("journey oracle ids must be present and unique")
+		}
+		seen[id] = true
+		if !mappedOK || len(mapped) == 0 || !stepsOK || len(steps) == 0 || !expectedOK || len(expected) == 0 {
+			return fmt.Errorf("journey oracle %s requires criteria, steps, and expected lists", id)
+		}
+		for _, values := range [][]string{steps, expected} {
+			for _, value := range values {
+				if strings.TrimSpace(value) == "" {
+					return fmt.Errorf("journey oracle %s steps and expected values must be non-empty", id)
+				}
+			}
+		}
+		for _, criterion := range mapped {
+			if !criterionIDs[criterion] {
+				return fmt.Errorf("journey oracle %s maps unknown criterion: %s", id, criterion)
+			}
+		}
+		for _, field := range []string{"type", "entry_point", "run", "oracle", "independence"} {
+			if strings.TrimSpace(stringValue(oracle[field])) == "" {
+				return fmt.Errorf("journey oracle %s requires %s", id, field)
+			}
+		}
+	}
+	return nil
+}
+
 func fencedJSONBlocks(value string) ([]string, error) {
 	lines := strings.Split(value, "\n")
 	blocks := []string{}
@@ -355,14 +420,17 @@ func checkApprovalSourcePlan(options ApprovalOptions) error {
 
 func ValidatePlan(plan map[string]any, opts *ValidatePlanOptions) error {
 	version, ok := plan["schema_version"].(float64)
-	if !ok || (version != float64(1) && version != float64(2)) {
-		return fmt.Errorf("schema_version must be 1 or 2")
+	if !ok || (version != float64(1) && version != float64(2) && version != float64(3)) {
+		return fmt.Errorf("schema_version must be 1, 2, or 3")
 	}
 
-	if version == float64(2) {
+	if version >= float64(2) {
 		if err := validateArchitectureGrounding(plan, opts); err != nil {
 			return err
 		}
+	}
+	if err := validateJourneyEvidence(plan, version); err != nil {
+		return err
 	}
 
 	if err := validateSystemicBoundaries(plan); err != nil {
@@ -727,7 +795,7 @@ func compilePlanFiles(planPath, outDir, structuredPlanStatus string) error {
 	if err != nil {
 		return err
 	}
-	// Promote the compiled plan (three files that must land together) through the
+	// Promote the compiled plan (four files that must land together) through the
 	// transactional mutation boundary: an all-or-nothing atomic write with an
 	// automatic rollback on post-write verification failure and a durable receipt.
 	// This replaces three independent non-atomic os.WriteFile calls that could
@@ -747,18 +815,19 @@ func compilePlanFiles(planPath, outDir, structuredPlanStatus string) error {
 	return nil
 }
 
-// compiledArtifacts holds the compiled trio's mutation operations, their scope,
+// compiledArtifacts holds the compiled set's mutation operations, their scope,
 // per-path base preconditions, the authorizing plan fingerprint, the compiled
 // tasks.json bytes (so the plan lock can bind their hash without a disk read),
 // and a post-write verifier. It is the shared spine of both the compiled-plan
 // mutation and the fully atomic plan-activation mutation.
 type compiledArtifacts struct {
-	ops       []MutationOperation
-	scope     []string
-	base      map[string]string
-	authority string
-	tasksJSON []byte
-	postCheck func() error
+	ops         []MutationOperation
+	scope       []string
+	base        map[string]string
+	authority   string
+	tasksJSON   []byte
+	journeyJSON []byte
+	postCheck   func() error
 }
 
 func compileArtifacts(repoRoot, planPath, outDir, structuredPlanStatus string) (compiledArtifacts, error) {
@@ -790,6 +859,10 @@ func compileArtifacts(repoRoot, planPath, outDir, structuredPlanStatus string) (
 	if err != nil {
 		return compiledArtifacts{}, err
 	}
+	journeyJSON, err := CompileJourneyManifest(plan)
+	if err != nil {
+		return compiledArtifacts{}, err
+	}
 	absOut, err := filepath.Abs(outDir)
 	if err != nil {
 		return compiledArtifacts{}, err
@@ -811,11 +884,15 @@ func compileArtifacts(repoRoot, planPath, outDir, structuredPlanStatus string) (
 	if err != nil {
 		return compiledArtifacts{}, err
 	}
+	relJourney, err := repositoryRelativePath(repoRoot, filepath.Join(absOut, "journey-oracles.json"))
+	if err != nil {
+		return compiledArtifacts{}, err
+	}
 	authority := ""
 	if check, checkErr := CheckPlan(planPath); checkErr == nil {
 		authority = check.Fingerprint
 	}
-	scope := []string{relTasks, relMatrix, relEvidence}
+	scope := []string{relTasks, relMatrix, relEvidence, relJourney}
 	base := map[string]string{}
 	for _, rel := range scope {
 		if hash, hashErr := SHA256File(filepath.Join(repoRoot, filepath.FromSlash(rel))); hashErr == nil {
@@ -823,7 +900,7 @@ func compileArtifacts(repoRoot, planPath, outDir, structuredPlanStatus string) (
 		}
 	}
 	postCheck := func() error {
-		for _, rel := range []string{relTasks, relMatrix} {
+		for _, rel := range []string{relTasks, relMatrix, relJourney} {
 			value, readErr := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(rel)))
 			if readErr != nil {
 				return readErr
@@ -843,12 +920,14 @@ func compileArtifacts(repoRoot, planPath, outDir, structuredPlanStatus string) (
 			{Path: relTasks, Candidate: tasksJSON},
 			{Path: relMatrix, Candidate: matrixJSON},
 			{Path: relEvidence, Candidate: []byte(evidence)},
+			{Path: relJourney, Candidate: journeyJSON},
 		},
-		scope:     scope,
-		base:      base,
-		authority: authority,
-		tasksJSON: tasksJSON,
-		postCheck: postCheck,
+		scope:       scope,
+		base:        base,
+		authority:   authority,
+		tasksJSON:   tasksJSON,
+		journeyJSON: journeyJSON,
+		postCheck:   postCheck,
 	}, nil
 }
 
@@ -864,6 +943,7 @@ type ApprovalOptions struct {
 	OutputPath           string
 	BaselineDiffSHA256   string
 	BaselineChangedPaths []string
+	Readiness            ReadinessReceipt
 }
 
 type ApprovalReceipt struct {
@@ -874,6 +954,7 @@ type ApprovalReceipt struct {
 	Fingerprint          string
 	BaselineDiffSHA256   string
 	BaselineChangedPaths []string
+	Readiness            ReadinessReceipt
 }
 
 func LoadApprovalReceipt(path string) (ApprovalReceipt, error) {
@@ -892,14 +973,21 @@ func LoadApprovalReceipt(path string) (ApprovalReceipt, error) {
 		Fingerprint:          stringValue(value["approval_fingerprint"]),
 		BaselineDiffSHA256:   stringValue(value["baseline_diff_sha256"]),
 		BaselineChangedPaths: []string{},
+		Readiness: ReadinessReceipt{
+			Fingerprint: stringValue(value["readiness_fingerprint"]),
+			BaseBranch:  stringValue(value["base_branch"]), HeadBranch: stringValue(value["head_branch"]),
+			BaseCommit: stringValue(value["base_commit"]), HeadCommit: stringValue(value["head_commit"]),
+			Upstream: stringValue(value["upstream"]), Relation: stringValue(value["upstream_relation"]),
+			JourneyManifestSHA256: stringValue(value["journey_manifest_sha256"]),
+		},
 	}
 	if paths, ok := stringSlice(value["baseline_changed_paths"]); ok {
 		receipt.BaselineChangedPaths = paths
 	} else if receipt.SchemaVersion == 2 {
 		return ApprovalReceipt{}, fmt.Errorf("approval receipt baseline_changed_paths must be a string list")
 	}
-	if receipt.SchemaVersion != 1 && receipt.SchemaVersion != 2 {
-		return ApprovalReceipt{}, fmt.Errorf("approval receipt schema_version must be 1 or 2")
+	if receipt.SchemaVersion != 1 && receipt.SchemaVersion != 2 && receipt.SchemaVersion != 3 {
+		return ApprovalReceipt{}, fmt.Errorf("approval receipt schema_version must be 1, 2, or 3")
 	}
 	if receipt.Status != "APPROVED" {
 		return ApprovalReceipt{}, fmt.Errorf("approval receipt status must be APPROVED")
@@ -912,6 +1000,18 @@ func LoadApprovalReceipt(path string) (ApprovalReceipt, error) {
 	}
 	if strings.TrimSpace(receipt.Fingerprint) == "" {
 		return ApprovalReceipt{}, fmt.Errorf("approval receipt fingerprint is required")
+	}
+	if receipt.SchemaVersion == 3 && (receipt.Readiness.Fingerprint == "" || receipt.Readiness.BaseCommit == "" ||
+		receipt.Readiness.HeadCommit == "" || receipt.Readiness.BaseBranch == "" || receipt.Readiness.HeadBranch == "" ||
+		receipt.Readiness.Relation == "" || receipt.Readiness.JourneyManifestSHA256 == "") {
+		return ApprovalReceipt{}, fmt.Errorf("schema-v3 approval receipt requires complete readiness evidence")
+	}
+	if receipt.SchemaVersion == 3 {
+		receipt.Readiness.PlanFingerprint = receipt.Fingerprint
+		expected, err := readinessFingerprint(receipt.Readiness)
+		if err != nil || expected != receipt.Readiness.Fingerprint {
+			return ApprovalReceipt{}, fmt.Errorf("schema-v3 approval receipt readiness fingerprint does not match its fields")
+		}
 	}
 	return receipt, nil
 }
@@ -931,6 +1031,19 @@ func CheckApprovalReceipt(path string, planCheck PlanCheck) (ApprovalReceipt, er
 	}
 	if receipt.Fingerprint != planCheck.Fingerprint {
 		return ApprovalReceipt{}, fmt.Errorf("stale approval receipt: fingerprint does not match the current source plan, spec, and plan")
+	}
+	if version, _ := planCheck.Plan["schema_version"].(float64); version >= 3 && receipt.SchemaVersion < 3 {
+		return ApprovalReceipt{}, fmt.Errorf("legacy approval receipt has no readiness evidence; refresh approval against the current schema-v3 plan")
+	}
+	if receipt.SchemaVersion == 3 {
+		receipt.Readiness.PlanFingerprint = receipt.Fingerprint
+		current, readinessErr := CheckPlanReadiness(planCheck.PlanPath)
+		if readinessErr != nil {
+			return ApprovalReceipt{}, readinessErr
+		}
+		if current.Fingerprint != receipt.Readiness.Fingerprint {
+			return ApprovalReceipt{}, fmt.Errorf("stale approval receipt: readiness fingerprint changed after approval")
+		}
 	}
 	repo, err := ResolveRepository(filepath.Dir(planCheck.PlanPath))
 	if err != nil {
@@ -1019,6 +1132,13 @@ func ActivatePlan(options ActivationOptions) error {
 		OutputPath:           options.OutputPath,
 		BaselineDiffSHA256:   baseline.DiffSHA256,
 		BaselineChangedPaths: baseline.ChangedPaths,
+		Readiness:            receipt.Readiness,
+	}
+	if version, _ := check.Plan["schema_version"].(float64); version >= 3 && authorizationMode == "policy" {
+		approval.Readiness, err = CheckPlanReadiness(options.PlanPath)
+		if err != nil {
+			return err
+		}
 	}
 	if fileExists(options.OutputPath) {
 		if err := CheckApprovalLock(approval); err == nil {
@@ -1050,7 +1170,7 @@ func ActivatePlan(options ActivationOptions) error {
 	if err := guardReactivationPreservesProgress(repo, stringValue(check.Plan["feature_id"]), options.PlanPath); err != nil {
 		return err
 	}
-	// Assemble the single activation MutationSet: the compiled trio plus the plan
+	// Assemble the single activation MutationSet: the compiled set plus the plan
 	// lock, all promoted all-or-nothing through the transactional boundary so no
 	// crash or failed post-write check can leave a compiled graph without its lock
 	// (or a lock without its graph). The bytes are built before the atomic promote;
@@ -1069,16 +1189,26 @@ func ActivatePlan(options ActivationOptions) error {
 	if currentBaseline.DiffSHA256 != baseline.DiffSHA256 || strings.Join(currentBaseline.ChangedPaths, "\x00") != strings.Join(baseline.ChangedPaths, "\x00") {
 		return fmt.Errorf("pre-activation product baseline drifted before the plan lock could be created; expected paths %s, observed paths %s", strings.Join(baseline.ChangedPaths, ", "), strings.Join(currentBaseline.ChangedPaths, ", "))
 	}
+	if approval.Readiness.Fingerprint != "" {
+		currentReadiness, readinessErr := CheckPlanReadiness(options.PlanPath)
+		if readinessErr != nil {
+			return readinessErr
+		}
+		if currentReadiness.Fingerprint != approval.Readiness.Fingerprint {
+			return fmt.Errorf("pre-activation readiness drifted before the immutable plan lock could be created")
+		}
+	}
 	if _, err := ApplyMutation(repo, mutation); err != nil {
 		return err
 	}
 	return initializeDeliveryState(repo, stringValue(check.Plan["feature_id"]), options.PlanPath, options.OutputPath)
 }
 
-// activationMutation assembles the four-artifact activation MutationSet: the
-// compiled trio (tasks.json, test-matrix.json, evidence.md) and the plan lock.
+// activationMutation assembles the five-artifact activation MutationSet: the
+// compiled set (tasks.json, test-matrix.json, evidence.md, journey-oracles.json)
+// and the plan lock.
 // The lock binds the compiled task graph hash from the in-memory candidate bytes
-// so all four land in a single atomic promote, and its PostCheck verifies the
+// so all five land in a single atomic promote, and its PostCheck verifies the
 // promoted lock against the plan/spec/source-plan and the promoted task graph.
 func activationMutation(repoRoot string, options ActivationOptions, structuredPlanStatus string, approval ApprovalOptions) (MutationSet, error) {
 	artifacts, err := compileArtifacts(repoRoot, options.PlanPath, options.OutDir, structuredPlanStatus)
@@ -1194,6 +1324,18 @@ func buildApprovalLock(options ApprovalOptions, tasksSHA256 string) ([]byte, err
 		"baseline_diff_sha256":   options.BaselineDiffSHA256,
 		"baseline_changed_paths": baselinePaths,
 	}
+	if options.Readiness.Fingerprint != "" {
+		lock["schema_version"] = 3
+		lock["readiness_fingerprint"] = options.Readiness.Fingerprint
+		lock["readiness_plan_fingerprint"] = options.Readiness.PlanFingerprint
+		lock["base_branch"] = options.Readiness.BaseBranch
+		lock["head_branch"] = options.Readiness.HeadBranch
+		lock["base_commit"] = options.Readiness.BaseCommit
+		lock["head_commit"] = options.Readiness.HeadCommit
+		lock["upstream"] = options.Readiness.Upstream
+		lock["upstream_relation"] = options.Readiness.Relation
+		lock["journey_manifest_sha256"] = options.Readiness.JourneyManifestSHA256
+	}
 	if mode == "human" {
 		lock["approved_by"] = options.ApprovedBy
 		lock["approved_at"] = approvedAt
@@ -1239,7 +1381,7 @@ func CheckApprovalLock(options ApprovalOptions) error {
 	schemaVersion := intValue(lock["schema_version"])
 	mode := strings.ToLower(stringValue(lock["authorization_mode"]))
 	validStatus := schemaVersion == 1 && stringValue(lock["status"]) == "APPROVED"
-	if schemaVersion == 2 {
+	if schemaVersion == 2 || schemaVersion == 3 {
 		validStatus = stringValue(lock["status"]) == "LOCKED" && (mode == "human" || mode == "policy")
 	}
 	if !validStatus || lock["invalidated_at"] != nil {
@@ -1251,7 +1393,7 @@ func CheckApprovalLock(options ApprovalOptions) error {
 		}
 	}
 	expectedMode := strings.ToLower(strings.TrimSpace(options.AuthorizationMode))
-	if expectedMode != "" && schemaVersion == 2 && mode != expectedMode {
+	if expectedMode != "" && (schemaVersion == 2 || schemaVersion == 3) && mode != expectedMode {
 		mismatches = append(mismatches, "authorization_mode")
 	}
 	if expectedMode == "policy" && schemaVersion == 1 {
@@ -1260,7 +1402,34 @@ func CheckApprovalLock(options ApprovalOptions) error {
 	if options.BaselineDiffSHA256 != "" && stringValue(lock["baseline_diff_sha256"]) != options.BaselineDiffSHA256 {
 		mismatches = append(mismatches, "baseline_diff")
 	}
-	if schemaVersion != 1 && schemaVersion != 2 {
+	if schemaVersion == 3 {
+		for _, field := range []string{"readiness_fingerprint", "readiness_plan_fingerprint", "base_branch", "head_branch", "base_commit", "head_commit", "upstream_relation", "journey_manifest_sha256"} {
+			if stringValue(lock[field]) == "" {
+				mismatches = append(mismatches, field)
+			}
+		}
+		storedReadiness := ReadinessReceipt{
+			Fingerprint: stringValue(lock["readiness_fingerprint"]), PlanFingerprint: stringValue(lock["readiness_plan_fingerprint"]),
+			BaseBranch: stringValue(lock["base_branch"]), HeadBranch: stringValue(lock["head_branch"]),
+			BaseCommit: stringValue(lock["base_commit"]), HeadCommit: stringValue(lock["head_commit"]),
+			Upstream: stringValue(lock["upstream"]), Relation: stringValue(lock["upstream_relation"]),
+			JourneyManifestSHA256: stringValue(lock["journey_manifest_sha256"]),
+		}
+		if fingerprint, fingerprintErr := readinessFingerprint(storedReadiness); fingerprintErr != nil || fingerprint != storedReadiness.Fingerprint {
+			mismatches = append(mismatches, "readiness_fingerprint")
+		}
+		repo, repoErr := ResolveRepository(filepath.Dir(options.PlanPath))
+		plan, planErr := LoadPlan(options.PlanPath)
+		if repoErr != nil || planErr != nil {
+			mismatches = append(mismatches, "journey_manifest")
+		} else {
+			manifest, manifestErr := loadJourneyManifest(journeyManifestPath(repo, stringValue(plan["feature_id"])))
+			if manifestErr != nil || stringValue(manifest["manifest_sha256"]) != stringValue(lock["journey_manifest_sha256"]) {
+				mismatches = append(mismatches, "journey_manifest")
+			}
+		}
+	}
+	if schemaVersion != 1 && schemaVersion != 2 && schemaVersion != 3 {
 		mismatches = append(mismatches, "schema_version")
 	}
 	if len(mismatches) > 0 {

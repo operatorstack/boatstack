@@ -437,9 +437,6 @@ func managedPRSources(repo, feature string) ([]PRSource, map[string]string, erro
 	authorizationMode := "policy"
 	if config.Workflow.HumanPlanApproval {
 		authorizationMode = "human"
-		if _, err := CheckApprovalReceipt(approvalPath, check); err != nil {
-			return nil, nil, fmt.Errorf("managed PR requires current approval: %w", err)
-		}
 	}
 	tasksPath := featureArtifactPath(directory, filepath.Join("compiled", "tasks.json"), "tasks.json")
 	if err := CheckApprovalLock(ApprovalOptions{
@@ -452,6 +449,10 @@ func managedPRSources(repo, feature string) ([]PRSource, map[string]string, erro
 	}); err != nil {
 		return nil, nil, fmt.Errorf("managed PR requires a current build lock: %w", err)
 	}
+	// After activation the immutable lock, rather than the mutable pre-activation
+	// working-tree representation, is the authorization oracle. This preserves
+	// authority when approved dirty content is merely committed, while plan or
+	// compiled graph drift still fails the hash checks above.
 	evidencePath := featureEvidencePath(directory)
 	if err := checkNonEmptyFile(evidencePath, "feature evidence"); err != nil {
 		return nil, nil, err

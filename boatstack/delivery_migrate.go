@@ -19,9 +19,23 @@ type deliveryStateMigration struct {
 }
 
 // deliveryStateMigrations is the ordered, one-step-at-a-time upgrade chain for the
-// managed delivery state. It is intentionally empty at schema version 1; a schema
-// bump adds one entry per version step, each covered by conformance.
-var deliveryStateMigrations []deliveryStateMigration
+// managed delivery state. Schema v2 maps the legacy global repair attempt to every
+// typed counter so old exhaustion cannot create fresh authority.
+var deliveryStateMigrations = []deliveryStateMigration{
+	{
+		from: 1, to: 2,
+		apply: func(value map[string]any) (map[string]any, error) {
+			attempt := intValue(value["repair_attempt"])
+			value["repair_counters"] = map[string]any{
+				"implementation_repair": attempt,
+				"verification_repair":   attempt,
+				"review_repair":         attempt,
+			}
+			delete(value, "repair_attempt")
+			return value, nil
+		},
+	},
+}
 
 // migrateDeliveryStateBytes upgrades raw managed-delivery-state JSON to the current
 // deliveryStateSchemaVersion using the registered migration chain. It is the

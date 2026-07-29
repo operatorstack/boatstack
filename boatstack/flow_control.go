@@ -144,6 +144,7 @@ var operatorOwedFlags = map[string]bool{
 	"--message":             true, // correction facts are human knowledge
 	"--source-stage":        true,
 	"--classification":      true,
+	"--mechanism":           true,
 }
 
 // classifyNextActor types the next step by who must act. Fail-closed: anything
@@ -209,7 +210,7 @@ type FlowNext struct {
 	// that decides whether anything is still owed after publish. In this
 	// slice it is surfaced only; post-publish prescriptions follow.
 	// control-law: terminal-goal-defaults-to-published-and-hydrates-from-state-then-config
-	Terminal DeliveryTerminal `json:"terminal"`
+	Terminal      DeliveryTerminal             `json:"terminal"`
 	RecommendedOp string                       `json:"recommended_operation"`
 	OracleNext    deliverycontrol.TransitionID `json:"oracle_next_transition,omitempty"`
 	RemainingCost int                          `json:"remaining_flow_cost"`
@@ -325,7 +326,7 @@ func prescribeCommand(repo, feature string, status NextStatus, transition delive
 		if status.ActiveSlice != "" {
 			cmd.Args = append(cmd.Args, "--slice", status.ActiveSlice)
 		}
-		cmd.RequiresHumanInput = []string{"--message", "--source-stage", "--classification"}
+		cmd.RequiresHumanInput = []string{"--message", "--source-stage", "--classification", "--mechanism"}
 	case deliverycontrol.TransitionID("delivery.undo"):
 		// The mutation id names WHICH receipt to reverse — a human decision.
 		cmd.Args = repoArgs
@@ -496,12 +497,12 @@ func prescribePostPublish(repo string, status NextStatus, terminal DeliveryTermi
 			cmd.Args = append(cmd.Args, "--slice", status.ActiveSlice)
 		}
 		cmd.Args = append(cmd.Args, "--source-stage", "ci")
-		cmd.RequiresHumanInput = []string{"--message", "--classification"}
+		cmd.RequiresHumanInput = []string{"--message", "--classification", "--mechanism"}
 		followUp := "Read the failing check logs"
 		if len(status.PRFailingChecks) > 0 {
 			followUp += " (" + strings.Join(status.PRFailingChecks, ", ") + ")"
 		}
-		followUp += " to derive the exact message and classification; after the correction re-passes its gates, republish with publish-pr --action update."
+		followUp += " to derive the exact message, classification, and changed mechanism; after the correction re-passes its gates, republish with publish-pr --action update."
 		return cmd, followUp
 	case PRPhaseMergeEligible:
 		if strings.TrimSpace(status.PRURL) == "" {

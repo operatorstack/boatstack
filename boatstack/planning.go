@@ -304,15 +304,32 @@ func RecordApproval(options ApprovalRecordOptions) error {
 		}
 		return fmt.Errorf("baseline product diff drifted after it was displayed")
 	}
-	payload, err := MarshalJSON(map[string]any{
-		"schema_version":         2,
+	schemaVersion := 2
+	payloadValue := map[string]any{
+		"schema_version":         schemaVersion,
 		"status":                 "APPROVED",
 		"approved_by":            strings.TrimSpace(options.ApprovedBy),
 		"approved_at":            approvedAt.Format(time.RFC3339),
 		"approval_fingerprint":   check.Fingerprint,
 		"baseline_diff_sha256":   baseline.DiffSHA256,
 		"baseline_changed_paths": baseline.ChangedPaths,
-	})
+	}
+	if version, _ := check.Plan["schema_version"].(float64); version >= 3 {
+		readiness, readinessErr := CheckPlanReadiness(options.PlanPath)
+		if readinessErr != nil {
+			return readinessErr
+		}
+		payloadValue["schema_version"] = 3
+		payloadValue["readiness_fingerprint"] = readiness.Fingerprint
+		payloadValue["base_branch"] = readiness.BaseBranch
+		payloadValue["head_branch"] = readiness.HeadBranch
+		payloadValue["base_commit"] = readiness.BaseCommit
+		payloadValue["head_commit"] = readiness.HeadCommit
+		payloadValue["upstream"] = readiness.Upstream
+		payloadValue["upstream_relation"] = readiness.Relation
+		payloadValue["journey_manifest_sha256"] = readiness.JourneyManifestSHA256
+	}
+	payload, err := MarshalJSON(payloadValue)
 	if err != nil {
 		return err
 	}

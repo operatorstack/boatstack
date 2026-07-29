@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "status": "LOCKED",
   "authorization_mode": "human",
   "activated_at": "<ISO-8601 timestamp>",
@@ -16,6 +16,15 @@
   "task_graph_sha256": "<sha256>",
   "baseline_diff_sha256": "<empty only when the product baseline was clean>",
   "baseline_changed_paths": [],
+  "readiness_fingerprint": "<sha256>",
+  "readiness_plan_fingerprint": "<sha256>",
+  "base_branch": "<base branch>",
+  "head_branch": "<feature branch>",
+  "base_commit": "<base commit>",
+  "head_commit": "<head commit>",
+  "upstream": "<upstream or empty>",
+  "upstream_relation": "<CURRENT, AHEAD, or UNPUBLISHED>",
+  "journey_manifest_sha256": "<sha256>",
   "invalidated_at": null,
   "invalidation_reason": null
 }

@@ -32,7 +32,13 @@ var registry = []TransitionDescriptor{
 		ID: "delivery.record_change", From: []StateID{StateTestPassed, StateReviewPassed, StatePublished}, To: StateBuild,
 		Kind: KindCommittedMutation, CostClass: CostMutation, Reversible: true,
 		HandlerRef: "RecordChangeObservation", CLIVerb: "record-change",
-		Note: "Rework resets the addressable slice to BUILD (bounded by RepairAttempt<3); amendment/plan-invalid set Mode; a fully-published delivery emits a corrective child with no state mutation.",
+		Note: "Rework resets the addressable slice to BUILD (bounded by the typed failure-class counter and a changed mechanism); amendment/plan-invalid set Mode without consuming repair authority; a fully-published delivery emits a corrective child with no state mutation.",
+	},
+	{
+		ID: "delivery.record_journey_results", From: []StateID{StateBuild, StateTestPassed}, To: StateBuild,
+		Kind: KindCommittedMutation, CostClass: CostMutation, Reversible: true,
+		HandlerRef: "RecordJourneyResults", CLIVerb: "record-journey-results",
+		Note: "Records typed PASS/FAIL journey-oracle evidence bound to the compiled manifest, current head commit, and current delivery diff.",
 	},
 	{
 		ID: "delivery.publish", From: []StateID{StateReviewPassed, StatePublished}, To: StatePublished,

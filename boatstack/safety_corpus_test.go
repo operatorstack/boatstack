@@ -120,7 +120,7 @@ func TestGuardCorpusDualReward(t *testing.T) {
 		{"pick-undo", "", `boatstack-helper undo --mutation abc123`, "routine", false},
 		{"pick-discard-delivery", "", `boatstack-helper discard-delivery --feature stale`, "routine", false},
 		{"pick-operation-status", "", `boatstack-helper operation-status`, "routine", false},
-		{"pick-record-change", "", `boatstack-helper record-change --feature demo --slice s1 --message fix --source-stage ci --classification implementation_repair`, "routine", false},
+		{"pick-record-change", "", `boatstack-helper record-change --feature demo --slice s1 --message fix --source-stage ci --classification implementation_repair --mechanism retry-with-corrected-state`, "routine", false},
 		{"pick-next-status", "", `boatstack-helper next-status`, "routine", false},
 	}
 
