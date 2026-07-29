@@ -13,7 +13,7 @@
 <!-- boatstack-plan:v1 -->
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "feature_id": "<stable-feature-id>",
   "source_plan_path": "source-plan.md",
   "spec_path": "feature-spec.md",
@@ -44,6 +44,11 @@
     "relevance": "not_relevant",
     "reason": "<why screenshots do not help review this change>",
     "scenarios": []
+  },
+  "journey_evidence": {
+    "relevance": "not_relevant",
+    "reason": "<why no user or operator journey can regress in this change>",
+    "oracles": []
   },
   "tasks": [
     {

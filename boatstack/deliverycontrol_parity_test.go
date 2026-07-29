@@ -21,6 +21,7 @@ var realDeliveryHandlers = map[string]any{
 	"ActivatePlan":              ActivatePlan,
 	"RecordDeliveryGate":        RecordDeliveryGate,
 	"RecordChangeObservation":   RecordChangeObservation,
+	"RecordJourneyResults":      RecordJourneyResults,
 	"PublishPR":                 PublishPR,
 	"UndoManagedMutation":       UndoManagedMutation,
 	"DiscardDelivery":           DiscardDelivery,

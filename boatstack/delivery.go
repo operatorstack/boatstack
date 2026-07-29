@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const deliveryStateSchemaVersion = 1
+const deliveryStateSchemaVersion = 2
 
 // Slice-status lifecycle literals — the canonical string values stored in
 // DeliverySlice.Status. These are the single source for the slice-status
@@ -71,7 +71,8 @@ type DeliveryState struct {
 	Mode                string          `json:"mode,omitempty"`
 	ResumeStage         string          `json:"resume_stage,omitempty"`
 	ActiveObservationID string          `json:"active_observation_id,omitempty"`
-	RepairAttempt       int             `json:"repair_attempt,omitempty"`
+	RepairCounters      map[string]int  `json:"repair_counters"`
+	RepairAttempt       int             `json:"-"`
 	SupersededReceipts  []string        `json:"superseded_receipts,omitempty"`
 	ParentDelivery      string          `json:"parent_delivery,omitempty"`
 	// Goal snapshots the non-default delivery terminal ("merged") this
@@ -148,6 +149,7 @@ type ChangeObservationOptions struct {
 	Expected       string
 	Actual         string
 	Evidence       string
+	Mechanism      string
 	Classification string
 	// SliceID optionally targets a specific addressable slice — the active slice or
 	// a published-but-open earlier slice. Empty resolves to the correction's branch
@@ -163,6 +165,9 @@ type ChangeObservation struct {
 	Expected           string `json:"expected,omitempty"`
 	Actual             string `json:"actual,omitempty"`
 	Evidence           string `json:"evidence,omitempty"`
+	EvidenceSHA256     string `json:"evidence_sha256,omitempty"`
+	Mechanism          string `json:"mechanism,omitempty"`
+	MechanismSHA256    string `json:"mechanism_sha256,omitempty"`
 	Message            string `json:"message"`
 	Classification     string `json:"classification"`
 	ResumeStage        string `json:"resume_stage,omitempty"`
@@ -325,6 +330,24 @@ func saveDeliveryState(repo string, state DeliveryState) error {
 	if err != nil {
 		return err
 	}
+	if state.RepairCounters == nil {
+		state.RepairCounters = map[string]int{}
+	}
+	// Preserve source-level compatibility for callers that still populate the
+	// v1 shadow field: conservatively apply it to every typed counter.
+	allTypedZero := true
+	for _, class := range []string{"implementation_repair", "verification_repair", "review_repair"} {
+		if state.RepairCounters[class] != 0 {
+			allTypedZero = false
+		}
+	}
+	if state.RepairAttempt > 0 && allTypedZero {
+		for _, class := range []string{"implementation_repair", "verification_repair", "review_repair"} {
+			if state.RepairCounters[class] < state.RepairAttempt {
+				state.RepairCounters[class] = state.RepairAttempt
+			}
+		}
+	}
 	value, err := MarshalJSON(state)
 	if err != nil {
 		return err
@@ -355,6 +378,14 @@ func LoadDeliveryState(repo, feature string) (DeliveryState, error) {
 	}
 	if state.SchemaVersion != deliveryStateSchemaVersion || state.Feature != feature || len(state.Slices) == 0 || state.ActiveIndex < 0 || state.ActiveIndex > len(state.Slices) {
 		return DeliveryState{}, fmt.Errorf("managed delivery state is invalid")
+	}
+	if state.RepairCounters == nil {
+		state.RepairCounters = map[string]int{}
+	}
+	for _, class := range []string{"implementation_repair", "verification_repair", "review_repair"} {
+		if state.RepairCounters[class] > state.RepairAttempt {
+			state.RepairAttempt = state.RepairCounters[class]
+		}
 	}
 	return state, nil
 }
@@ -391,6 +422,7 @@ func initializeDeliveryState(repo, feature, planPath, lockPath string) error {
 	return saveDeliveryState(repo, DeliveryState{
 		SchemaVersion: deliveryStateSchemaVersion, Feature: feature, PlanLockHash: lockHash,
 		ActiveIndex: 0, Slices: slices, Mode: "NORMAL",
+		RepairCounters: map[string]int{"implementation_repair": 0, "verification_repair": 0, "review_repair": 0},
 		ParentDelivery: strings.TrimSpace(stringValue(plan["parent_delivery"])),
 		Goal:           deliveryGoalSnapshot(repo),
 	})
@@ -536,10 +568,11 @@ func appendChangeObservation(repo string, observation ChangeObservation) error {
 	if len(existing) == 0 {
 		existing = []byte("# Change observations\n\nAppend-only observations recorded after build activation.\n")
 	}
-	block := fmt.Sprintf("\n## %s\n\n- Recorded: `%s`\n- Source stage: `%s`\n- Classification: `%s`\n- Outcome: `%s`\n- Resume stage: `%s`\n- Parent delivery: `%s`\n- Suggested corrective feature: `%s`\n- User message: %s\n- Expected: %s\n- Actual: %s\n- Evidence: %s\n- Resolution: pending\n",
+	block := fmt.Sprintf("\n## %s\n\n- Recorded: `%s`\n- Source stage: `%s`\n- Classification: `%s`\n- Outcome: `%s`\n- Resume stage: `%s`\n- Parent delivery: `%s`\n- Suggested corrective feature: `%s`\n- User message: %s\n- Expected: %s\n- Actual: %s\n- Evidence: %s\n- Evidence SHA-256: `%s`\n- Mechanism: %s\n- Mechanism SHA-256: `%s`\n- Resolution: pending\n",
 		observation.ID, observation.RecordedAt, observation.SourceStage, observation.Classification,
 		observation.Outcome, observation.ResumeStage, observation.ParentDelivery, observation.SuggestedFeatureID,
-		observation.Message, observation.Expected, observation.Actual, observation.Evidence)
+		observation.Message, observation.Expected, observation.Actual, observation.Evidence,
+		observation.EvidenceSHA256, observation.Mechanism, observation.MechanismSHA256)
 	return atomicWriteMode(path, append(existing, []byte(block)...), 0o644)
 }
 
@@ -585,6 +618,24 @@ func RecordChangeObservation(options ChangeObservationOptions) (ChangeObservatio
 	if strings.TrimSpace(options.Message) == "" || strings.TrimSpace(options.SourceStage) == "" {
 		return ChangeObservation{}, DeliveryState{}, fmt.Errorf("change observation requires the user message and source stage")
 	}
+	repairClass := classification == "implementation_repair" || classification == "verification_repair" || classification == "review_repair"
+	if repairClass && strings.TrimSpace(options.Mechanism) == "" {
+		options.Mechanism = fmt.Sprintf("legacy API mechanism %d", time.Now().UnixNano())
+	}
+	evidenceHash := SHA256Bytes([]byte(strings.TrimSpace(options.Evidence)))
+	mechanismHash := SHA256Bytes([]byte(strings.TrimSpace(options.Mechanism)))
+	if repairClass {
+		changePath := filepath.Join(repo, ".product-loop", "features", options.Feature, "changes.md")
+		if prior, readErr := os.ReadFile(changePath); readErr == nil {
+			for _, block := range strings.Split(string(prior), "\n## ") {
+				if strings.Contains(block, "- Classification: `"+classification+"`") &&
+					strings.Contains(block, "- Evidence SHA-256: `"+evidenceHash+"`") &&
+					strings.Contains(block, "- Mechanism SHA-256: `"+mechanismHash+"`") {
+					return ChangeObservation{}, DeliveryState{}, fmt.Errorf("friction: identical %s evidence and mechanism retry denied; change the repair mechanism", classification)
+				}
+			}
+		}
+	}
 	published := state.ActiveIndex >= len(state.Slices)
 
 	// Resolve which addressable slice this correction targets before mutating any
@@ -623,20 +674,23 @@ func RecordChangeObservation(options ChangeObservationOptions) (ChangeObservatio
 		}
 	}
 
-	// The delivery-level repair budget governs only the active slice's build loop.
-	if !published && !publishedOpen {
-		if state.RepairAttempt >= 3 {
-			return ChangeObservation{}, DeliveryState{}, fmt.Errorf("persistent repair budget exhausted after %d attempts; preserve current state and require a reviewed recovery decision", state.RepairAttempt)
+	attempt := 0
+	if repairClass && !published && !publishedOpen {
+		if state.RepairCounters == nil {
+			state.RepairCounters = map[string]int{}
 		}
-		state.RepairAttempt++
+		attempt = state.RepairCounters[classification]
+		if attempt >= 3 {
+			return ChangeObservation{}, DeliveryState{}, fmt.Errorf("friction: persistent repair budget exhausted for %s after %d attempts; preserve current state and require a reviewed recovery decision", classification, attempt)
+		}
+		attempt++
+		state.RepairCounters[classification] = attempt
 	}
-	id := fmt.Sprintf("CHG-%03d", state.RepairAttempt)
-	if published || publishedOpen {
-		id = nextChangeObservationID(repo, options.Feature, state.RepairAttempt+1)
-	}
+	id := nextChangeObservationID(repo, options.Feature, 1)
 	observation := ChangeObservation{
 		ID: id, Feature: options.Feature, SourceStage: strings.ToUpper(strings.TrimSpace(options.SourceStage)),
 		Expected: strings.TrimSpace(options.Expected), Actual: strings.TrimSpace(options.Actual), Evidence: strings.TrimSpace(options.Evidence),
+		EvidenceSHA256: evidenceHash, Mechanism: strings.TrimSpace(options.Mechanism), MechanismSHA256: mechanismHash,
 		Message: strings.TrimSpace(options.Message), Classification: classification, ResumeStage: resume,
 		RecordedAt: time.Now().UTC().Truncate(time.Second).Format(time.RFC3339),
 	}
@@ -1023,6 +1077,9 @@ func RecordDeliveryGate(options DeliveryGateOptions) (DeliveryGateReceipt, error
 	if slice.HeadBranch != "" && slice.HeadBranch != head {
 		return DeliveryGateReceipt{}, fmt.Errorf("delivery slice %s requires head branch %s; current branch is %s", slice.ID, slice.HeadBranch, head)
 	}
+	if err := checkCurrentJourneyResults(repo, options.Feature, base, headCommit, diffHash); err != nil {
+		return DeliveryGateReceipt{}, fmt.Errorf("delivery gate requires current journey evidence: %w", err)
+	}
 	if gate == "review" {
 		if slice.Status != StatusTestPassed {
 			return DeliveryGateReceipt{}, fmt.Errorf("delivery slice %s must pass its test gate before review", slice.ID)
@@ -1199,6 +1256,7 @@ func MarkDeliveryPublished(repo, feature, sliceID, url string) error {
 		if state.ActiveIndex < len(state.Slices) {
 			state.Slices[state.ActiveIndex].Status = StatusBuild
 			state.RepairAttempt = 0
+			state.RepairCounters = map[string]int{"implementation_repair": 0, "verification_repair": 0, "review_repair": 0}
 			state.ActiveObservationID = ""
 			state.ResumeStage = ""
 			state.Mode = "NORMAL"

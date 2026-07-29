@@ -2,6 +2,7 @@ package boatstack
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/deliverycontrol"
@@ -44,6 +45,16 @@ func FormatFlowReport(report deliverycontrol.FlowTrajectoryReport) string {
 		fmt.Fprintf(&b, "J_flow=%d regret=unresolved (no oracle baseline for this start)\n", report.JFlow)
 	}
 	fmt.Fprintf(&b, "J_coding=%d (telemetry, separate from flow)\n", report.JCoding)
+	if len(report.PositiveGapByCategory) > 0 {
+		categories := make([]string, 0, len(report.PositiveGapByCategory))
+		for category := range report.PositiveGapByCategory {
+			categories = append(categories, category)
+		}
+		sort.Strings(categories)
+		for _, category := range categories {
+			fmt.Fprintf(&b, "positive_gap[%s]=%d\n", category, report.PositiveGapByCategory[category])
+		}
+	}
 	return b.String()
 }
 

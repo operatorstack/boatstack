@@ -66,7 +66,7 @@ func TestMergedTerminalPrescribesPostPublishSteps(t *testing.T) {
 			wantVerb:       "record-change",
 			wantTransition: "delivery.record_change",
 			wantInCommand:  "--source-stage ci",
-			wantOwed:       []string{"--message", "--classification"},
+			wantOwed:       []string{"--message", "--classification", "--mechanism"},
 		},
 		{
 			name:           "merge_eligible_prescribes_gh_merge",

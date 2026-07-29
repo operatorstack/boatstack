@@ -225,18 +225,19 @@ func activatePolicyPlan(t *testing.T) (root, planPath, compiled, lock, feature s
 	return root, planPath, compiled, lock, feature
 }
 
-// TestActivationPromotesFourArtifactsAtomically proves activation lands the
-// compiled trio and the plan lock as one transactional mutation: a single
+// TestActivationPromotesFiveArtifactsAtomically proves activation lands the
+// compiled artifact set and the plan lock as one transactional mutation: a single
 // receipt whose four recorded post-images match the bytes on disk. Because
 // ApplyMutation is all-or-nothing (proven at the primitive level), one receipt
-// covering all four files is the structural guarantee that no partial set can be
+// covering all five files is the structural guarantee that no partial set can be
 // left behind.
-func TestActivationPromotesFourArtifactsAtomically(t *testing.T) {
+func TestActivationPromotesFiveArtifactsAtomically(t *testing.T) {
 	root, _, compiled, lock, _ := activatePolicyPlan(t)
 	artifacts := []string{
 		filepath.Join(compiled, "tasks.json"),
 		filepath.Join(compiled, "test-matrix.json"),
 		filepath.Join(compiled, "evidence.md"),
+		filepath.Join(compiled, "journey-oracles.json"),
 		lock,
 	}
 	for _, path := range artifacts {
@@ -258,8 +259,8 @@ func TestActivationPromotesFourArtifactsAtomically(t *testing.T) {
 	if activation == nil {
 		t.Fatalf("no APPLIED plan-activation receipt among %d receipts", len(receipts))
 	}
-	if len(activation.Changes) != 4 {
-		t.Fatalf("expected one atomic mutation over four artifacts, got %d changes", len(activation.Changes))
+	if len(activation.Changes) != 5 {
+		t.Fatalf("expected one atomic mutation over five artifacts, got %d changes", len(activation.Changes))
 	}
 	for _, change := range activation.Changes {
 		hash, err := SHA256File(filepath.Join(root, filepath.FromSlash(change.Path)))

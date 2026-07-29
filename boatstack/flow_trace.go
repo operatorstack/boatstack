@@ -57,3 +57,23 @@ func RecordFlowTransition(repo string, transition deliverycontrol.TransitionID, 
 		CostClass:  deliverycontrol.ChargedCostClass(descriptor.Kind, descriptor.CostClass, outcome),
 	})
 }
+
+func RecordFlowAttribution(repo, category string, cost deliverycontrol.TransitionCostClass, denied bool, note string) {
+	defer func() { _ = recover() }()
+	if os.Getenv(flowTraceKillSwitch) == "0" {
+		return
+	}
+	directory, err := flowLogDirectory(repo)
+	if err != nil {
+		return
+	}
+	outcome := deliverycontrol.OutcomeAllowed
+	if denied {
+		outcome = deliverycontrol.OutcomeDenied
+	}
+	_ = deliverycontrol.AppendAttempt(directory, deliverycontrol.TransitionAttempt{
+		From:       deliverycontrol.StateUninitialized,
+		Transition: deliverycontrol.TransitionID("attribution." + category),
+		Outcome:    outcome, CostClass: cost, Category: category, Note: note,
+	})
+}

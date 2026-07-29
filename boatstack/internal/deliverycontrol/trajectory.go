@@ -22,6 +22,7 @@ type TransitionAttempt struct {
 	Outcome    Outcome             `json:"outcome"`
 	CostClass  TransitionCostClass `json:"cost_class"`
 	Note       string              `json:"note,omitempty"`
+	Category   string              `json:"category,omitempty"`
 }
 
 // Trajectory is an ordered walk of attempts — one real (or replayed) session.
@@ -56,9 +57,10 @@ type FlowTrajectoryReport struct {
 	// JCoding is coding effort measured as telemetry and reported ALONGSIDE J_flow.
 	// It is never summed into J_flow and never enters Regret — the decomposition
 	// J = J_flow + J_coding keeps the two costs separate by construction.
-	JCoding    int        `json:"j_coding"`
-	Steps      int        `json:"steps"`
-	Resolution Resolution `json:"resolution"`
+	JCoding               int            `json:"j_coding"`
+	Steps                 int            `json:"steps"`
+	Resolution            Resolution     `json:"resolution"`
+	PositiveGapByCategory map[string]int `json:"positive_gap_by_category,omitempty"`
 }
 
 // WalkCost sums a trajectory's observed J_flow: each attempt billed at its
@@ -93,6 +95,17 @@ func ComputeReport(t Trajectory, g *Graph, weights FlowCostWeights, goal StateID
 	if oracle.Resolution == Resolved {
 		report.JFlowStar = oracle.Cost
 		report.Regret = report.JFlow - oracle.Cost
+		if report.Regret > 0 {
+			report.PositiveGapByCategory = map[string]int{}
+			for _, attempt := range t {
+				if attempt.Category == "" {
+					continue
+				}
+				if cost, ok := weights.Cost(attempt.CostClass); ok {
+					report.PositiveGapByCategory[attempt.Category] += cost
+				}
+			}
+		}
 	}
 	return report
 }

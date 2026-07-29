@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	boatstack "github.com/operatorstack/boatstack/boatstack"
+	"github.com/operatorstack/boatstack/boatstack/internal/deliverycontrol"
 )
 
 func fail(err error) int {
@@ -454,8 +456,19 @@ func checkPlanCommand(arguments []string) int {
 	if err != nil {
 		return fail(fmt.Errorf("cannot fingerprint the pre-activation product baseline: %w", err))
 	}
+	readinessFingerprint := ""
+	if version, _ := check.Plan["schema_version"].(float64); version >= 3 {
+		readiness, readinessErr := boatstack.CheckPlanReadiness(*plan)
+		repo, _ := boatstack.ResolveRepository(filepath.Dir(*plan))
+		if readinessErr != nil {
+			boatstack.RecordFlowAttribution(repo, "readiness", deliverycontrol.CostQuery, true, readinessErr.Error())
+			return fail(readinessErr)
+		}
+		readinessFingerprint = readiness.Fingerprint
+		boatstack.RecordFlowAttribution(repo, "readiness", deliverycontrol.CostQuery, false, "current")
+	}
 	paths, _ := json.Marshal(baseline.ChangedPaths)
-	fmt.Printf("PASS: Markdown plan is structurally valid\nPLAN_FINGERPRINT=%s\nSOURCE_PLAN=%s\nSPEC=%s\nBASELINE_DIFF_SHA256=%s\nBASELINE_CHANGED_PATHS=%s\n", check.Fingerprint, check.SourcePlanPath, check.SpecPath, baseline.DiffSHA256, paths)
+	fmt.Printf("PASS: Markdown plan is structurally valid\nPLAN_FINGERPRINT=%s\nREADINESS_FINGERPRINT=%s\nSOURCE_PLAN=%s\nSPEC=%s\nBASELINE_DIFF_SHA256=%s\nBASELINE_CHANGED_PATHS=%s\n", check.Fingerprint, readinessFingerprint, check.SourcePlanPath, check.SpecPath, baseline.DiffSHA256, paths)
 	return 0
 }
 
@@ -491,6 +504,7 @@ func activatePlanCommand(arguments []string) int {
 	if err := boatstack.ActivatePlan(options); err != nil {
 		return fail(fmt.Errorf("plan activation failed: %w", err))
 	}
+	boatstack.RecordFlowAttribution(filepath.Dir(options.PlanPath), "authorization_freshness", deliverycontrol.CostQuery, false, "immutable lock current")
 	fmt.Printf("PASS: approved Markdown plan activated and locked: %s\n", options.OutputPath)
 	return 0
 }
@@ -921,6 +935,7 @@ func recordChangeCommand(arguments []string) int {
 	flags.StringVar(&options.Expected, "expected", "", "approved or requested expected behavior")
 	flags.StringVar(&options.Actual, "actual", "", "observed behavior")
 	flags.StringVar(&options.Evidence, "evidence", "", "bounded evidence or reproduction reference")
+	flags.StringVar(&options.Mechanism, "mechanism", "", "repair mechanism used to address the observed failure")
 	flags.StringVar(&options.Classification, "classification", "", "implementation_repair, verification_repair, review_repair, requirement_amendment, needs_clarification, or plan_invalid")
 	flags.StringVar(&options.SliceID, "slice", "", "delivery slice id the correction targets; redirects to the named active or published-open slice (default: the correction's branch, then the active slice)")
 	if err := flags.Parse(arguments); err != nil {
@@ -929,9 +944,19 @@ func recordChangeCommand(arguments []string) int {
 	if options.Feature == "" || options.Message == "" || options.SourceStage == "" || options.Classification == "" {
 		return fail(fmt.Errorf("record-change requires --feature, --message, --source-stage, and --classification"))
 	}
+	if strings.HasSuffix(strings.ToLower(options.Classification), "_repair") && strings.TrimSpace(options.Mechanism) == "" {
+		return fail(fmt.Errorf("record-change requires --mechanism for repair classifications"))
+	}
 	observation, state, err := boatstack.RecordChangeObservation(options)
 	if err != nil {
+		if strings.HasSuffix(strings.ToLower(options.Classification), "_repair") &&
+			(strings.Contains(err.Error(), "friction:") || strings.Contains(err.Error(), "budget exhausted")) {
+			boatstack.RecordFlowAttribution(options.Repo, "repair."+strings.ToLower(options.Classification), deliverycontrol.CostFriction, true, err.Error())
+		}
 		return fail(err)
+	}
+	if strings.HasSuffix(strings.ToLower(options.Classification), "_repair") {
+		boatstack.RecordFlowAttribution(options.Repo, "repair."+strings.ToLower(options.Classification), deliverycontrol.CostRecovery, false, options.Mechanism)
 	}
 	// A recorded correction is the honest moment coding rework is initiated;
 	// record one unit of coding effort as telemetry (never a gate, never J_flow).
@@ -940,6 +965,29 @@ func recordChangeCommand(arguments []string) int {
 	if observation.Outcome == "CORRECTIVE_CHILD_REQUIRED" {
 		fmt.Printf("PARENT_DELIVERY=%s\nSUGGESTED_FEATURE_ID=%s\n", observation.ParentDelivery, observation.SuggestedFeatureID)
 	}
+	return 0
+}
+
+func recordJourneyResultsCommand(arguments []string) int {
+	flags := flag.NewFlagSet("record-journey-results", flag.ContinueOnError)
+	options := boatstack.JourneyResultsOptions{}
+	flags.StringVar(&options.Repo, "repo", ".", "repository containing the managed delivery")
+	flags.StringVar(&options.Feature, "feature", "", "managed Boatstack feature slug")
+	flags.StringVar(&options.BaseBranch, "base", "", "delivery base branch")
+	flags.StringVar(&options.InputPath, "results", "", "JSON file containing typed oracle results")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if options.Feature == "" || options.InputPath == "" {
+		return fail(fmt.Errorf("record-journey-results requires --feature and --results"))
+	}
+	result, err := boatstack.RecordJourneyResults(options)
+	if err != nil {
+		boatstack.RecordFlowAttribution(options.Repo, "journey_discovery", deliverycontrol.CostQuery, false, err.Error())
+		return fail(err)
+	}
+	boatstack.RecordFlowAttribution(options.Repo, "journey_discovery", deliverycontrol.CostQuery, false, "results bound to manifest and diff")
+	fmt.Printf("PASS: journey results recorded\nMANIFEST_SHA256=%s\nHEAD_COMMIT=%s\nDIFF_SHA256=%s\n", result.ManifestSHA256, result.HeadCommit, result.DiffSHA256)
 	return 0
 }
 
@@ -1439,7 +1487,7 @@ func workspaceSyncCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <attach|detach|detached-status|context|activate|deactivate|init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|record-change|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|check-safety|migrate-config|safety-hook|ambient-safety-hook|diagnose-hook|render-denial|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-reap|workspace-status|workspace-sync|flow|retro|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <attach|detach|detached-status|context|activate|deactivate|init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|record-change|record-journey-results|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|check-safety|migrate-config|safety-hook|ambient-safety-hook|diagnose-hook|render-denial|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-reap|workspace-status|workspace-sync|flow|retro|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -1501,6 +1549,8 @@ func run() int {
 		return runPreflightCommand(os.Args[2:])
 	case "record-change":
 		return recordChangeCommand(os.Args[2:])
+	case "record-journey-results":
+		return recordJourneyResultsCommand(os.Args[2:])
 	case "ignore-delivery":
 		return ignoreDeliveryCommand(os.Args[2:])
 	case "discard-delivery":

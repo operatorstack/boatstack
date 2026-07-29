@@ -140,7 +140,7 @@ func TestPrescribeEmitsNothingForUnassemblableTransition(t *testing.T) {
 	}
 	// The rework/recovery edges owe exactly their human facts, never fabricated.
 	for id, owed := range map[deliverycontrol.TransitionID][]string{
-		"delivery.record_change":    {"--message", "--source-stage", "--classification"},
+		"delivery.record_change":    {"--message", "--source-stage", "--classification", "--mechanism"},
 		"delivery.undo":             {"--mutation"},
 		"delivery.discard_delivery": nil,
 	} {

@@ -55,3 +55,21 @@ func TestFlowReportEmptySession(t *testing.T) {
 		t.Errorf("empty session has no start, so the oracle must be unresolved; got %s", report.Resolution)
 	}
 }
+
+// control-law: positive-flow-gaps-are-attributable-by-control-class
+func TestFlowReportAttributesPositiveGapCategories(t *testing.T) {
+	repo := prTestRepo(t)
+	RecordFlowTransition(repo, PublishTransition, deliverycontrol.StateBuild, false)
+	RecordFlowAttribution(repo, "readiness", deliverycontrol.CostQuery, false, "blocked")
+	RecordFlowAttribution(repo, "repair.review_repair", deliverycontrol.CostFriction, true, "duplicate")
+	report, err := FlowReport(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Regret <= 0 {
+		t.Fatalf("fixture must produce positive regret: %+v", report)
+	}
+	if report.PositiveGapByCategory["readiness"] != 1 || report.PositiveGapByCategory["repair.review_repair"] != 3 {
+		t.Fatalf("unexpected positive-gap attribution: %+v", report.PositiveGapByCategory)
+	}
+}

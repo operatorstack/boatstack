@@ -13,9 +13,11 @@ Artifacts separate facts, decisions, unknowns, incompleteness, and evidence. Com
 | Markdown plan | Human-readable plan plus its one marked structured block; canonical before and during build | A spec is resolved enough to propose tasks and checks |
 | Approval receipt | Named human, timestamp, and fingerprint in Markdown; not executable state | The exact draft is explicitly approved in Plan mode |
 | Compiled tasks | Deterministic dependency graph generated from the approved Markdown plan | Build activation succeeds |
+| Journey oracle manifest | Fingerprinted typed journey oracles compiled from the plan-level decision | Build activation succeeds |
+| Journey results | PASS/FAIL and evidence bound to the oracle manifest, head commit, and diff | Before a relevant journey reaches test or review gate |
 | Delivery state | Ignored worktree-local Git active-slice state bound to the approved plan lock; never an approval artifact | Build activation and successful slice publication |
 | `changes.md` | Append-only, reviewable post-build observations with exact user message, expected/actual behavior, classification, evidence, and resolution | Controlled `record-change` transition |
-| Repair state | Ignored delivery mode, resume stage, active observation, attempt count, and superseded receipt references | Controlled repair and gate transitions |
+| Repair state | Ignored delivery mode, resume stage, class-specific attempt counters, active mechanism observation, and superseded receipt references | Controlled repair and gate transitions |
 | Recovery status | Read-only active/published delivery, PR lifecycle, branch/SHA identity, ambiguity, and safe next transition | Before responding to CI, review, publication denial, or ordinary correction language |
 | Operation receipt | Ignored Git-common identity, fingerprinted authority, lease, durable attempt budget, expected postcondition, and secret-free completion observation | Before and after each managed mutation or external side effect |
 | Installation repair receipt | Ignored Git-common installed/target version, direction, owned-state classifications, exact path hashes, repair fingerprint, and backup location | An update discovers or repairs Boatstack-owned control drift |
@@ -89,7 +91,7 @@ ledger while the publisher rechecks the matching receipts.
 
 ## Planning boundary
 
-`auto-plan` and `plan-gate` create or update Markdown only. `plan.md` is the canonical structured input and schema-v2 `approval.md` binds human approval to both the plan fingerprint and the displayed pre-activation product-diff baseline. Compiled JSON and `plan.lock.json` begin only at `build` activation, after the receipt and unchanged baseline are verified. Schema-v1 receipts remain compatible only when that baseline is clean. This keeps planning compatible with hosts that intentionally restrict Plan mode to documents while preserving edits that predated managed authority.
+`auto-plan` and `plan-gate` create or update Markdown only. `plan.md` is the canonical structured input. New schema-v3 plans require a journey-evidence decision, and schema-v3 `approval.md` binds human approval to the plan, displayed product baseline, exact branch/base/head relation, and compiled journey-manifest fingerprint. Activation repeats readiness and stores it in the immutable lock. Schema-v1/v2 receipts and active locks remain readable, but an unactivated legacy approval has no readiness authority and must be refreshed for a schema-v3 plan.
 
 ## Safety boundary
 
