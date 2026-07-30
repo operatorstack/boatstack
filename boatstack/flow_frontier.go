@@ -86,7 +86,7 @@ func ResolveFrontier(repoPath string) (FlowFrontier, error) {
 			continue
 		}
 		branch, _, prURL := deliveryBranchAndSlice(state)
-		status := publishedNextStatus(state, observePRTarget(repo, prURL, branch), resolveDeliveryTerminal(repo, state.Feature))
+		status := publishedNextStatus(state, observePRTarget(repo, prURL, branch), resolveDeliveryTerminal(repo, state.Feature), observeVisualPublication(repo, state.Feature))
 		frontier.Rows = append(frontier.Rows, frontierRowFromStatus(repo, status))
 	}
 	for _, row := range frontier.Rows {

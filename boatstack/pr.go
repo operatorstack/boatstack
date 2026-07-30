@@ -277,6 +277,15 @@ func publishPRVisualEvidence(repo, prURL string, context PRContext, publisher PR
 	if manifest.Publication.State == "published" && manifest.Publication.PRURL == prURL && strings.TrimSpace(manifest.Publication.CommentURL) != "" {
 		return nil
 	}
+	return attachVisualEvidence(repo, prURL, manifest, publisher, context.PRVisualEvidencePolicy)
+}
+
+// attachVisualEvidence performs the one publisher call and records the
+// observed outcome: manual_required without a publisher, visual_pending on a
+// publisher failure (PR preserved, fix forward), published on an observable
+// comment URL. Shared by first publication (publishPRVisualEvidence) and the
+// attach-evidence retry, so both paths record identical states.
+func attachVisualEvidence(repo, prURL string, manifest PRVisualEvidenceManifest, publisher PRVisualEvidencePublisher, policy string) error {
 	now := time.Now().UTC().Truncate(time.Second).Format(time.RFC3339)
 	if publisher == nil {
 		_, recordErr := recordPRVisualPublication(repo, manifest, PRVisualPublication{
@@ -286,7 +295,7 @@ func publishPRVisualEvidence(repo, prURL string, context PRContext, publisher PR
 		if recordErr != nil {
 			return fmt.Errorf("PR opened but manual visual-evidence fallback could not be recorded: %w", recordErr)
 		}
-		if context.PRVisualEvidencePolicy == "require" {
+		if policy == "require" {
 			return fmt.Errorf("PR opened at %s but required visual evidence still needs manual attachment; update the same PR after attachment", prURL)
 		}
 		return nil
@@ -302,10 +311,47 @@ func publishPRVisualEvidence(repo, prURL string, context PRContext, publisher PR
 	if strings.TrimSpace(commentURL) == "" {
 		return fmt.Errorf("visual evidence publisher returned no observable comment URL")
 	}
-	_, err = recordPRVisualPublication(repo, manifest, PRVisualPublication{
+	_, err := recordPRVisualPublication(repo, manifest, PRVisualPublication{
 		State: "published", PRURL: prURL, CommentURL: strings.TrimSpace(commentURL), UpdatedAt: now,
 	})
 	return err
+}
+
+// RetryVisualAttachment retries the owed evidence comment of an already
+// published feature PR — the exact fingerprinted package the operator
+// confirmed at publication; publication authority is never re-asked. It is
+// idempotent: an already published attachment is a no-op.
+func RetryVisualAttachment(repo, feature string, publisher PRVisualEvidencePublisher) (PRVisualEvidenceManifest, error) {
+	resolved, err := ResolveRepository(repo)
+	if err != nil {
+		return PRVisualEvidenceManifest{}, err
+	}
+	key, err := visualEvidenceKey("managed", feature, "")
+	if err != nil {
+		return PRVisualEvidenceManifest{}, err
+	}
+	manifest, err := LoadPRVisualEvidence(resolved, key)
+	if err != nil {
+		return PRVisualEvidenceManifest{}, fmt.Errorf("no recorded visual evidence for feature %q: %w", feature, err)
+	}
+	state := manifest.Publication.State
+	if state == "published" && strings.TrimSpace(manifest.Publication.CommentURL) != "" {
+		return manifest, nil
+	}
+	if state != "visual_pending" && state != "manual_required" {
+		return PRVisualEvidenceManifest{}, fmt.Errorf("visual evidence for %q owes no attachment retry (publication state %q); first publication is owned by publish-pr", feature, state)
+	}
+	prURL := strings.TrimSpace(manifest.Publication.PRURL)
+	if prURL == "" {
+		return PRVisualEvidenceManifest{}, fmt.Errorf("visual evidence for %q records no pull request; publish-pr owns first publication", feature)
+	}
+	if publisher == nil {
+		return PRVisualEvidenceManifest{}, fmt.Errorf("no visual publisher is available in this environment; attach the fingerprinted PNGs to one PR comment yourself and record the observed URL with record-pr-visual-publication --key %s --pr-url %s --comment-url <url>", key, prURL)
+	}
+	if err := attachVisualEvidence(resolved, prURL, manifest, publisher, ""); err != nil {
+		return PRVisualEvidenceManifest{}, err
+	}
+	return LoadPRVisualEvidence(resolved, key)
 }
 
 func gitCommand(repo string, arguments ...string) (string, error) {

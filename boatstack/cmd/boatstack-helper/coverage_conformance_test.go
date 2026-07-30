@@ -63,6 +63,7 @@ var nonDeliveryVerbs = map[string]bool{
 	"provision-capability":         true,
 	"capability-register":          true,
 	"record-pr-visual-publication": true,
+	"attach-evidence":              true,
 	// PR construction / verification helpers reached around the ship gate.
 	"check-pr": true,
 	// Detached Supervision lifecycle (control-plane ownership, not delivery moves).

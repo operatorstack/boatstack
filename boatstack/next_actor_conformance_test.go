@@ -101,6 +101,9 @@ func TestNextActorFrontierBoundaries(t *testing.T) {
 		{"owed_evidence_stays_agents", NextStatus{ObservedStage: "BUILD"}, FlowNext{
 			Prescribed: &PrescribedCommand{Verb: "record-delivery-gate", RequiresHumanInput: []string{"--status", "--evidence"}, Transition: deliverycontrol.TransitionID("delivery.record_gate_test")},
 		}, NextActorAgent},
+		{"owed_visual_attach_retry_is_agents", NextStatus{ObservedStage: "PUBLISHED", Lifecycle: "PUBLISHED_OPEN", VisualPublication: "visual_pending"}, FlowNext{}, NextActorAgent},
+		{"manual_visual_attachment_is_operators", NextStatus{ObservedStage: "PUBLISHED", Lifecycle: "PUBLISHED_OPEN", VisualPublication: "manual_required"}, FlowNext{}, NextActorOperator},
+		{"escaped_pursuit_demotes_despite_owed_attachment", NextStatus{ObservedStage: "PUBLISHED", Lifecycle: "PUBLISHED_OPEN", VisualPublication: "visual_pending", GoalEscape: "pr_closed"}, FlowNext{Terminal: TerminalMerged}, NextActorOperator},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

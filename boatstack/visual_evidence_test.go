@@ -194,3 +194,51 @@ func TestPRVisualPublisherReusesOneCommentAndRecordsPendingFailure(t *testing.T)
 		t.Fatalf("visual-pending state was not retained: %#v %v", failed.Publication, err)
 	}
 }
+
+// Invariant: the attach retry completes exactly the owed publication — the
+// confirmed fingerprinted package against its recorded PR — and an already
+// published attachment is a no-op that never re-consults the publisher.
+func TestRetryVisualAttachmentCompletesOwedPublication(t *testing.T) {
+	repo := visualTestRepo(t)
+	manifest := savedVisualManifest(t, repo, "feature-warning")
+	context := PRContext{PRVisualEvidencePolicy: "suggest", PRVisualEvidenceStatus: "PASS", PRVisualEvidence: &manifest}
+	prURL := "https://github.com/example/repo/pull/3"
+	if err := publishPRVisualEvidence(repo, prURL, context, &fakeVisualPublisher{err: os.ErrPermission}); err == nil {
+		t.Fatal("fixture publication was expected to fail into visual_pending")
+	}
+	retried, err := RetryVisualAttachment(repo, "feature-warning", &fakeVisualPublisher{commentURL: "https://github.com/example/repo/pull/3#issuecomment-9"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retried.Publication.State != "published" || retried.Publication.PRURL != prURL || retried.Publication.CommentURL == "" {
+		t.Fatalf("retry did not complete the owed publication: %#v", retried.Publication)
+	}
+	again, err := RetryVisualAttachment(repo, "feature-warning", &fakeVisualPublisher{err: os.ErrPermission})
+	if err != nil || again.Publication.State != "published" {
+		t.Fatalf("published attachment must be an idempotent no-op: %#v %v", again.Publication, err)
+	}
+}
+
+// Refusals: the retry never usurps first publication (publish-pr owns it) and
+// a missing publisher routes to the manual recording verb by name.
+func TestRetryVisualAttachmentRefusesWhatItDoesNotOwn(t *testing.T) {
+	repo := visualTestRepo(t)
+	if _, err := RetryVisualAttachment(repo, "missing-feature", &fakeVisualPublisher{commentURL: "x"}); err == nil || !strings.Contains(err.Error(), "no recorded visual evidence") {
+		t.Fatalf("missing manifest was not refused: %v", err)
+	}
+	manifest := savedVisualManifest(t, repo, "feature-warning")
+	if _, err := RetryVisualAttachment(repo, "feature-warning", &fakeVisualPublisher{commentURL: "x"}); err == nil || !strings.Contains(err.Error(), "publish-pr") {
+		t.Fatalf("pre-publication manifest was not routed to publish-pr: %v", err)
+	}
+	context := PRContext{PRVisualEvidencePolicy: "suggest", PRVisualEvidenceStatus: "PASS", PRVisualEvidence: &manifest}
+	if err := publishPRVisualEvidence(repo, "https://github.com/example/repo/pull/4", context, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RetryVisualAttachment(repo, "feature-warning", nil); err == nil || !strings.Contains(err.Error(), "record-pr-visual-publication") {
+		t.Fatalf("missing publisher must name the manual recording verb: %v", err)
+	}
+	recovered, err := RetryVisualAttachment(repo, "feature-warning", &fakeVisualPublisher{commentURL: "https://github.com/example/repo/pull/4#issuecomment-1"})
+	if err != nil || recovered.Publication.State != "published" {
+		t.Fatalf("manual_required with a live publisher should still recover: %#v %v", recovered.Publication, err)
+	}
+}
