@@ -35,6 +35,9 @@ type NextStatus struct {
 	PRURL              string           `json:"pr_url,omitempty"`
 	HeadBranch         string           `json:"head_branch,omitempty"`
 	ParentDelivery     string           `json:"parent_delivery,omitempty"`
+	// VisualPublication surfaces an owed evidence attachment of a published
+	// PR ("visual_pending" or "manual_required"); empty otherwise.
+	VisualPublication string `json:"visual_publication,omitempty"`
 }
 
 func blockedNextStatus(stage, operation, reason string, ambiguity ...string) NextStatus {
@@ -146,7 +149,7 @@ func nextForPublished(repo string, state DeliveryState) NextStatus {
 	pr := observePublishedPR(repo, state)
 	persistObservedTerminalPRState(repo, state, pr)
 	terminal := resolveDeliveryTerminal(repo, state.Feature)
-	status := publishedNextStatus(state, pr, terminal)
+	status := publishedNextStatus(state, pr, terminal, observeVisualPublication(repo, state.Feature))
 	// A fired escape is cached best-effort so the demotion holds offline in a
 	// fresh session — the same bounded bypass as the terminal PRState cache.
 	// control-law: goal-escape-demotes-to-operator-and-stops
@@ -160,7 +163,28 @@ func nextForPublished(repo string, state DeliveryState) NextStatus {
 // published NextStatus. Split from nextForPublished so the frontier report can
 // present the same projection without nextForPublished's best-effort terminal
 // cache write. control-law: frontier-reports-never-mutates
-func publishedNextStatus(state DeliveryState, pr publishedPRObservation, terminal DeliveryTerminal) NextStatus {
+// observeVisualPublication reads the owed-attachment state of a feature's
+// visual evidence, best-effort and read-only: any load failure is today's
+// empty answer, never a block, and only the two owed states surface —
+// "pending" belongs to first publication (publish-pr) and "published" owes
+// nothing. control-law: frontier-reports-never-mutates
+func observeVisualPublication(repo, feature string) string {
+	key, err := visualEvidenceKey("managed", feature, "")
+	if err != nil {
+		return ""
+	}
+	manifest, err := LoadPRVisualEvidence(repo, key)
+	if err != nil {
+		return ""
+	}
+	switch manifest.Publication.State {
+	case "visual_pending", "manual_required":
+		return manifest.Publication.State
+	}
+	return ""
+}
+
+func publishedNextStatus(state DeliveryState, pr publishedPRObservation, terminal DeliveryTerminal, visualPublication string) NextStatus {
 	_, sliceID, _ := deliveryBranchAndSlice(state)
 	status := NextStatus{
 		SchemaVersion: nextStatusSchemaVersion, VerificationStatus: "VERIFIED",
@@ -204,6 +228,15 @@ func publishedNextStatus(state DeliveryState, pr publishedPRObservation, termina
 		status.Reason = fmt.Sprintf("The PR for feature %q is closed without a verified merge; a future correction requires a fresh PR.", state.Feature)
 	default:
 		status.Reason = fmt.Sprintf("Feature %q is published, but its PR state could not be verified.", state.Feature)
+	}
+	if pr.Lifecycle == "PUBLISHED_OPEN" {
+		status.VisualPublication = visualPublication
+		switch visualPublication {
+		case "visual_pending":
+			status.Reason += " Its Boatstack visual-evidence comment is still owed; Boatstack can retry the attachment (attach-evidence)."
+		case "manual_required":
+			status.Reason += " Its visual-evidence comment needs manual attachment; record the observed URL with record-pr-visual-publication."
+		}
 	}
 	if status.GoalEscape != "" {
 		status.Reason = fmt.Sprintf("Feature %q is published; the merged-goal pursuit is paused because %s. Record the correction to start a new cycle, or handle the pull request yourself.", state.Feature, goalEscapeReason(status.GoalEscape))

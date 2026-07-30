@@ -123,7 +123,7 @@ func TestTamperDenialNamesDeclaredOwnerVerbs(t *testing.T) {
 		".git/boatstack/mutations/v1/abc.json":           {"activate-plan", "undo"},
 		".git/boatstack/quarantine/demo/receipt.json":    {"repair-state"},
 		"state-root/boatstack/registry.json":             {"attach", "detach"},
-		".git/boatstack/visual-evidence/x/manifest.json": {"record-pr-visual-evidence", "capture-evidence", "record-pr-visual-publication"},
+		".git/boatstack/visual-evidence/x/manifest.json": {"record-pr-visual-evidence", "capture-evidence", "record-pr-visual-publication", "attach-evidence"},
 		"boatstack/repositories/sample/binding.json":     {"attach", "detach", "activate"},
 	}
 	for attempted, want := range cases {

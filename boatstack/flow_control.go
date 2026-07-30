@@ -105,6 +105,11 @@ const (
 	// control-law: merged-terminal-prescribes-merge-never-executes-it
 	MarkerPublishedWatch = deliverycontrol.TransitionID("published.watch_checks")
 	MarkerPublishedMerge = deliverycontrol.TransitionID("published.merge")
+	// MarkerPublishedAttach names the owed-attachment retry of a published
+	// PR's visual-evidence comment. Unlike the merged-terminal markers above
+	// it fires under BOTH terminals: attaching evidence completes the
+	// publication itself, it is not merge pursuit.
+	MarkerPublishedAttach = deliverycontrol.TransitionID("published.attach_evidence")
 )
 
 // NextActor names who performs the prescribed next step. The operator owns a
@@ -157,6 +162,15 @@ func classifyNextActor(status NextStatus, next FlowNext) NextActor {
 		status.ObservedStage == "PUBLISHED" && status.Lifecycle == "PUBLISHED_MERGED":
 		return NextActorNone
 	case status.ObservedStage == "PUBLISHED":
+		// An owed visual attachment splits by what it owes: a transient
+		// publisher failure (visual_pending) is work-derivable — the agent
+		// retries attach-evidence; manual_required owes operator authority (a
+		// signed-in browser or an external-host opt-in) and stays theirs. A
+		// fired goal escape still demotes unconditionally.
+		// control-law: turn-ends-only-at-the-operator-frontier
+		if status.Lifecycle == "PUBLISHED_OPEN" && status.GoalEscape == "" && status.VisualPublication == "visual_pending" {
+			return NextActorAgent
+		}
 		// Under the default published terminal, reviewing the open pull
 		// request is the operator's act — unchanged. Under the merged
 		// terminal, the frontier extends: the phases whose next step is
@@ -438,6 +452,45 @@ func prescribePlanning(repo string, status NextStatus) (*PrescribedCommand, stri
 	}
 }
 
+// prescribeVisualAttach closes the owed-attachment gap of a published-open
+// PR so the flow never goes dark on visual_pending or manual_required. It
+// fires under BOTH terminals — the attachment completes publication, it is
+// not merge pursuit. visual_pending prescribes the attach-evidence retry
+// (work-derivable); manual_required prescribes recording the manually
+// attached comment, owing the operator-observed URL. A fired goal escape
+// prescribes nothing, exactly like the post-publish layer.
+// control-law: prescriptive-closure-every-stage-names-a-runnable-command
+func prescribeVisualAttach(repo string, status NextStatus) (*PrescribedCommand, string) {
+	if status.ObservedStage != "PUBLISHED" || status.Lifecycle != "PUBLISHED_OPEN" || status.Feature == "" || status.GoalEscape != "" {
+		return nil, ""
+	}
+	var repoArgs []string
+	if repo != "" && repo != "." {
+		repoArgs = []string{"--repo", repo}
+	}
+	switch status.VisualPublication {
+	case "visual_pending":
+		cmd := &PrescribedCommand{
+			Verb: "attach-evidence", Args: append(repoArgs, "--feature", status.Feature),
+			AutoDerivable: true, Transition: MarkerPublishedAttach,
+		}
+		return cmd, "The PR is open; only its Boatstack visual-evidence comment is owed. If the publisher keeps failing, attach the fingerprinted PNGs manually and record the URL with record-pr-visual-publication."
+	case "manual_required":
+		cmd := &PrescribedCommand{
+			Verb: "record-pr-visual-publication", Args: append(repoArgs, "--key", status.Feature),
+			RequiresHumanInput: []string{"--comment-url"},
+			Transition:         MarkerPublishedAttach,
+		}
+		if strings.TrimSpace(status.PRURL) != "" {
+			cmd.Args = append(cmd.Args, "--pr-url", status.PRURL)
+		} else {
+			cmd.RequiresHumanInput = append(cmd.RequiresHumanInput, "--pr-url")
+		}
+		return cmd, "No automatic publisher is available here: attach the fingerprinted PNGs to one PR comment yourself, then record the observed comment URL."
+	}
+	return nil, ""
+}
+
 // prescribePostPublish closes the prescriptive loop past publish, but ONLY
 // under the merged terminal: with the published default this function returns
 // nothing and post-publish behavior is exactly what it always was. The
@@ -606,10 +659,17 @@ func nextControlFromStatus(repo string, status NextStatus) (FlowNext, error) {
 			}
 		}
 	}
-	// Past publish the oracle sits at its sink and prescribes nothing; under
-	// the merged terminal the observation-derived post-publish layer takes
-	// over. It fills only an empty prescription — it can never override an
-	// oracle move.
+	// Past publish the oracle sits at its sink and prescribes nothing. An
+	// owed visual attachment is consulted first and under BOTH terminals —
+	// it completes the publication itself — then, under the merged terminal
+	// only, the observation-derived post-publish layer. Each fills only an
+	// empty prescription — neither can override an oracle move.
+	if out.Prescribed == nil {
+		if cmd, followUp := prescribeVisualAttach(repo, status); cmd != nil {
+			out.Prescribed = cmd
+			out.FollowUp = followUp
+		}
+	}
 	if out.Prescribed == nil {
 		if cmd, followUp := prescribePostPublish(repo, status, out.Terminal); cmd != nil {
 			out.Prescribed = cmd

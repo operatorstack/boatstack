@@ -705,6 +705,28 @@ func recordPRVisualPublicationCommand(arguments []string) int {
 	return 0
 }
 
+func attachEvidenceCommand(arguments []string) int {
+	flags := flag.NewFlagSet("attach-evidence", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository whose Git-common state owns the evidence")
+	feature := flags.String("feature", "", "managed Boatstack feature slug")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if *feature == "" {
+		return fail(fmt.Errorf("attach-evidence requires --feature"))
+	}
+	manifest, err := boatstack.RetryVisualAttachment(*repo, *feature, boatstack.SelectVisualPublisher(*repo))
+	if err != nil {
+		return fail(err)
+	}
+	value, err := boatstack.MarshalJSON(manifest)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Print(string(value))
+	return 0
+}
+
 func deliveryStatusCommand(arguments []string) int {
 	flags := flag.NewFlagSet("delivery-status", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository containing the managed delivery")
@@ -1487,7 +1509,7 @@ func workspaceSyncCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <attach|detach|detached-status|context|activate|deactivate|init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|record-change|record-journey-results|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|check-safety|migrate-config|safety-hook|ambient-safety-hook|diagnose-hook|render-denial|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-reap|workspace-status|workspace-sync|flow|retro|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <attach|detach|detached-status|context|activate|deactivate|init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|record-change|record-journey-results|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|attach-evidence|check-safety|migrate-config|safety-hook|ambient-safety-hook|diagnose-hook|render-denial|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-reap|workspace-status|workspace-sync|flow|retro|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -1567,6 +1589,8 @@ func run() int {
 		return capabilityRegisterCommand(os.Args[2:])
 	case "record-pr-visual-publication":
 		return recordPRVisualPublicationCommand(os.Args[2:])
+	case "attach-evidence":
+		return attachEvidenceCommand(os.Args[2:])
 	case "pr-context":
 		return prContextCommand(os.Args[2:])
 	case "check-pr":
