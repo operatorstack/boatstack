@@ -2,6 +2,7 @@ package boatstack
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -741,6 +742,120 @@ func TestProductDiffChangeInvalidatesPassVisualEvidence(t *testing.T) {
 	}
 	if status != "BLOCKED" {
 		t.Fatalf("require did not coerce stale evidence to BLOCKED: %s", status)
+	}
+}
+
+// Invariant: declared-relevant visual evidence is captured by ship itself,
+// never prescribed to the agent, and repeat context preparation is a no-op
+// while the product diff is unchanged.
+func TestPreparePRContextAutoCapturesRelevantVisualEvidence(t *testing.T) {
+	repo := prTestRepoConfigured(t, func(config *ProjectConfig) {
+		config.Workflow.PRVisualEvidence = "suggest"
+		config.Project.Commands["visual"] = "repo-owned-harness"
+	})
+	activateManagedFeature(t, repo, "reviewer-ready")
+	runner := &stubCaptureRunner{write: func(request CaptureRequest) error {
+		writeTestPNG(t, request.OutputPath)
+		return nil
+	}}
+	context, err := PreparePRContext(PRContextOptions{Repo: repo, Feature: "reviewer-ready", CaptureRunner: runner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if context.PRVisualEvidenceStatus != "PASS" || context.PRVisualEvidenceCount != 1 {
+		t.Fatalf("ship preparation did not capture declared evidence itself: %#v", context)
+	}
+	if context.PRVisualEvidenceCaptureDetail != "" {
+		t.Fatalf("successful auto-capture reported a gap: %s", context.PRVisualEvidenceCaptureDetail)
+	}
+	if runner.calls != 1 {
+		t.Fatalf("expected one harness run for one scenario, got %d", runner.calls)
+	}
+	again, err := PreparePRContext(PRContextOptions{Repo: repo, Feature: "reviewer-ready", CaptureRunner: runner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runner.calls != 1 {
+		t.Fatalf("auto-capture re-ran the harness for an unchanged product diff: %d calls", runner.calls)
+	}
+	if again.PRVisualEvidenceFingerprint != context.PRVisualEvidenceFingerprint {
+		t.Fatal("repeat context preparation destabilized the visual fingerprint")
+	}
+}
+
+// Invariant: a failing harness degrades to exactly today's suggest behavior —
+// a visible NOT_VERIFIED gap with a bounded detail, never a context error.
+func TestAutoCaptureFailureDegradesToTodayUnderSuggest(t *testing.T) {
+	repo := prTestRepoConfigured(t, func(config *ProjectConfig) {
+		config.Workflow.PRVisualEvidence = "suggest"
+		config.Project.Commands["visual"] = "repo-owned-harness"
+	})
+	activateManagedFeature(t, repo, "reviewer-ready")
+	runner := &stubCaptureRunner{write: func(request CaptureRequest) error {
+		return errors.New("dev server unreachable")
+	}}
+	context, err := PreparePRContext(PRContextOptions{Repo: repo, Feature: "reviewer-ready", CaptureRunner: runner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if context.PRVisualEvidenceStatus != "NOT_VERIFIED" {
+		t.Fatalf("harness failure should leave the recorded gap, got %s", context.PRVisualEvidenceStatus)
+	}
+	if !strings.Contains(context.PRVisualEvidenceCaptureDetail, "dev server unreachable") {
+		t.Fatalf("capture detail lost the harness failure: %q", context.PRVisualEvidenceCaptureDetail)
+	}
+}
+
+// Invariant (zero-value): without a registered repository command the runner
+// is never consulted and behavior is exactly the prior prescribed path.
+func TestAutoCaptureUnavailableCapabilityFallsBackToPrescribedPath(t *testing.T) {
+	repo := prTestRepoConfigured(t, func(config *ProjectConfig) {
+		config.Workflow.PRVisualEvidence = "suggest"
+	})
+	activateManagedFeature(t, repo, "reviewer-ready")
+	runner := &stubCaptureRunner{write: func(request CaptureRequest) error {
+		t.Fatal("runner must not run without a registered repository command")
+		return nil
+	}}
+	context, err := PreparePRContext(PRContextOptions{Repo: repo, Feature: "reviewer-ready", CaptureRunner: runner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runner.calls != 0 || context.PRVisualEvidenceStatus != "NOT_VERIFIED" {
+		t.Fatalf("unavailable capability did not fall back cleanly: calls=%d status=%s", runner.calls, context.PRVisualEvidenceStatus)
+	}
+	if !strings.Contains(context.PRVisualEvidenceCaptureDetail, "capability-register") {
+		t.Fatalf("capture detail does not name the provisioning verb: %q", context.PRVisualEvidenceCaptureDetail)
+	}
+}
+
+// Invariant: the require block is a calm denial carrying the computed
+// solution set, so a blocked publication names its own recovery ladder.
+func TestRequiredVisualEvidenceDenialCarriesSolutionSet(t *testing.T) {
+	repo := prTestRepoConfigured(t, func(config *ProjectConfig) {
+		config.Workflow.PRVisualEvidence = "require"
+	})
+	activateManagedFeature(t, repo, "reviewer-ready")
+	context, err := PreparePRContext(PRContextOptions{Repo: repo, Feature: "reviewer-ready"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if context.PRVisualEvidenceStatus != "BLOCKED" {
+		t.Fatalf("require with no evidence should block, got %s", context.PRVisualEvidenceStatus)
+	}
+	previewPath := writePreview(t, repo, context, "Require visual review evidence", visualEvidenceBody(managedPRBody(), context.PRVisualEvidenceStatus))
+	preview, _, err := CheckPRPreview(repo, previewPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = PublishPR(PRPublishOptions{Repo: repo, PreviewPath: previewPath, ExpectedFingerprint: preview.Fingerprint, Action: "open"})
+	if err == nil {
+		t.Fatal("required visual evidence did not block publication")
+	}
+	for _, needle := range []string{"required visual evidence", "capture-evidence", "reviewer-ready"} {
+		if !strings.Contains(err.Error(), needle) {
+			t.Fatalf("denial is missing %q:\n%s", needle, err.Error())
+		}
 	}
 }
 

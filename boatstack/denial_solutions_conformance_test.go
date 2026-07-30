@@ -27,6 +27,7 @@ var denialCategoryInventory = []SafetyFinding{
 	{Category: "workflow-phase-bypass", Source: "planning-state", WorkflowStage: "DRAFT_PLAN", NextOperation: "plan-gate", BlockingFeature: "demo"},
 	{Category: "workflow-phase-bypass", Source: "planning-state", WorkflowStage: "NOT_STARTED", NextOperation: "planning-write", AttemptedPath: ".product-loop/features/demo/plan.md"},
 	{Category: "workflow-publication-bypass", BlockingFeature: "demo", BlockingSlice: "s1", Source: "tool-input"},
+	{Category: "workflow-visual-evidence-missing", BlockingFeature: "demo", Source: "publication"},
 	{Category: "operation-in-flight", OperationID: "op_1", OperationState: "RUNNING", Source: "operation-state"},
 	{Category: "operation-already-succeeded", OperationID: "op_2", OperationState: "SUCCEEDED", Source: "operation-state"},
 	{Category: "operation-reconciliation-required", OperationID: "op_3", Source: "operation-state"},

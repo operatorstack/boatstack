@@ -81,6 +81,47 @@ func enumerateDenialSolutions(repo, host string, finding SafetyFinding) Solution
 		appendObserveOption(&set, repo, "", "delivery.next")
 		return set
 
+	case finding.Category == "workflow-visual-evidence-missing":
+		// Every rung of the recovery ladder, in preference order: run the
+		// registered harness, register or provision a harness, record
+		// externally captured evidence, or amend the plan's relevance —
+		// the only escape for a genuinely nonvisual change.
+		captureArgs := repoFlagArgs(repo)
+		captureOwed := []string{"--feature"}
+		if feature := strings.TrimSpace(finding.BlockingFeature); feature != "" {
+			captureArgs = append(captureArgs, "--feature", feature)
+			captureOwed = nil
+		}
+		appendSolution(&set, PrescribedCommand{
+			Verb: "capture-evidence", Args: captureArgs,
+			RequiresHumanInput: captureOwed, AutoDerivable: len(captureOwed) == 0,
+			Transition: denialMarker("capture-evidence"),
+		})
+		appendSolution(&set, PrescribedCommand{
+			Verb: "capability-register", Args: append(repoFlagArgs(repo), "--capability", "visual"),
+			RequiresHumanInput: []string{"--command"},
+			Transition:         denialMarker("capability-register"),
+		})
+		appendSolution(&set, PrescribedCommand{
+			Verb: "provision-capability", Args: append(repoFlagArgs(repo), "--capability", "visual"),
+			AutoDerivable: true,
+			Transition:    denialMarker("provision-capability"),
+		})
+		appendSolution(&set, PrescribedCommand{
+			Verb: "record-pr-visual-evidence", Args: repoFlagArgs(repo),
+			RequiresHumanInput: []string{"--manifest"},
+			Transition:         denialMarker("record-pr-visual-evidence"),
+		})
+		if feature := strings.TrimSpace(finding.BlockingFeature); feature != "" {
+			// The artifact name and its Markdown (stdin) are authored content — owed.
+			appendSolution(&set, PrescribedCommand{
+				Verb: "planning-write", Args: append(repoFlagArgs(repo), "--feature", feature),
+				RequiresHumanInput: []string{"--artifact"},
+				Transition:         denialMarker("planning-write"),
+			})
+		}
+		return set
+
 	case strings.HasPrefix(finding.Category, "operation-"):
 		// Observation-only by design: inspect the durable operation state before
 		// any retry (the observed-effect discipline).
