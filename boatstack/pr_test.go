@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func runGit(t *testing.T, repo string, arguments ...string) string {
@@ -645,6 +646,101 @@ func TestRequiredPRVisualEvidenceBlocksPublicationBeforeMutation(t *testing.T) {
 	}
 	if _, err := PublishPR(PRPublishOptions{Repo: repo, PreviewPath: previewPath, ExpectedFingerprint: preview.Fingerprint, Action: "open"}); err == nil || !strings.Contains(err.Error(), "required visual evidence") {
 		t.Fatalf("required visual evidence did not block publication: %v", err)
+	}
+}
+
+// savePassVisualManifest records PASS evidence for the fixture feature's
+// approved scenario, bound to the given source commit and product diff.
+func savePassVisualManifest(t *testing.T, repo, feature, sourceCommit, diffHash string) {
+	t.Helper()
+	pngPath := filepath.Join(t.TempDir(), "warning.png")
+	writeTestPNG(t, pngPath)
+	if _, err := SavePRVisualEvidence(repo, PRVisualEvidenceManifest{
+		Key: feature, Policy: "suggest", Relevance: "relevant", RelevanceSource: "managed-plan",
+		Status: "PASS", SourceCommit: sourceCommit, ProductDiffSHA256: diffHash,
+		Scenarios: []PRVisualScenario{{ID: "warning", Entry: "/onboarding", State: "picker open", Viewport: "1440x900", Expected: []string{"warning visible"}}},
+		Items: []PRVisualEvidenceItem{{
+			ScenarioID: "warning", Path: pngPath, Viewport: "1440x900",
+			CapturedAt: time.Now().UTC().Truncate(time.Second).Format(time.RFC3339),
+			Status:     "captured", PrivacyStatus: "human-reviewed",
+		}},
+		Publication: PRVisualPublication{State: "pending"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCommittingPreviewNeverInvalidatesPassVisualEvidence(t *testing.T) {
+	repo := prTestRepoConfigured(t, func(config *ProjectConfig) {
+		config.Workflow.PRVisualEvidence = "suggest"
+	})
+	activateManagedFeature(t, repo, "reviewer-ready")
+	captureCommit := runGit(t, repo, "rev-parse", "HEAD")
+	context, err := PreparePRContext(PRContextOptions{Repo: repo, Feature: "reviewer-ready"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	savePassVisualManifest(t, repo, "reviewer-ready", captureCommit, context.ProductDiffSHA256)
+	fresh, err := PreparePRContext(PRContextOptions{Repo: repo, Feature: "reviewer-ready"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fresh.PRVisualEvidenceStatus != "PASS" || fresh.PRVisualEvidenceCount != 1 {
+		t.Fatalf("recorded PASS evidence was not trusted: %#v", fresh)
+	}
+	previewPath := writePreview(t, repo, fresh, "Keep evidence trusted across the preview commit", visualEvidenceBody(managedPRBody(), fresh.PRVisualEvidenceStatus))
+	runGit(t, repo, "add", fresh.PreviewPath)
+	runGit(t, repo, "commit", "-m", "record exact PR preview")
+	committed, err := PreparePRContext(PRContextOptions{Repo: repo, Feature: "reviewer-ready"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if committed.PRVisualEvidenceStatus != "PASS" {
+		t.Fatalf("committing the reviewed pr.md invalidated PASS evidence: %s", committed.PRVisualEvidenceStatus)
+	}
+	if committed.PRVisualEvidenceFingerprint != fresh.PRVisualEvidenceFingerprint {
+		t.Fatalf("preview commit changed the visual evidence fingerprint")
+	}
+	if _, _, err := CheckPRPreview(repo, previewPath); err != nil {
+		t.Fatalf("committed preview no longer checks: %v", err)
+	}
+	if committed.PRVisualEvidence == nil || committed.PRVisualEvidence.SourceCommit != captureCommit {
+		t.Fatalf("evidence provenance lost its capture commit: %#v", committed.PRVisualEvidence)
+	}
+	if template := PRPreviewTemplate(committed); !strings.Contains(template, captureCommit) {
+		t.Fatalf("preview template does not name the capture commit")
+	}
+}
+
+func TestProductDiffChangeInvalidatesPassVisualEvidence(t *testing.T) {
+	repo := prTestRepoConfigured(t, func(config *ProjectConfig) {
+		config.Workflow.PRVisualEvidence = "suggest"
+	})
+	activateManagedFeature(t, repo, "reviewer-ready")
+	context, err := PreparePRContext(PRContextOptions{Repo: repo, Feature: "reviewer-ready"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	savePassVisualManifest(t, repo, "reviewer-ready", runGit(t, repo, "rev-parse", "HEAD"), context.ProductDiffSHA256)
+	config, _, err := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	changedDiff := strings.Repeat("c", 64)
+	_, status, _, _, _, _, _, err := resolvePRVisualEvidence(repo, config, "managed", "reviewer-ready", context.HeadBranch, changedDiff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status != "NOT_VERIFIED" {
+		t.Fatalf("product change did not stale the evidence: %s", status)
+	}
+	config.Workflow.PRVisualEvidence = "require"
+	_, status, _, _, _, _, _, err = resolvePRVisualEvidence(repo, config, "managed", "reviewer-ready", context.HeadBranch, changedDiff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status != "BLOCKED" {
+		t.Fatalf("require did not coerce stale evidence to BLOCKED: %s", status)
 	}
 }
 

@@ -109,7 +109,7 @@ func planVisualDecision(repo, feature string) (string, string, []PRVisualScenari
 	return relevance, "managed-plan", scenarios, nil
 }
 
-func resolvePRVisualEvidence(repo string, config ProjectConfig, mode, feature, head, headCommit, diffHash string) (string, string, int, string, string, string, *PRVisualEvidenceManifest, error) {
+func resolvePRVisualEvidence(repo string, config ProjectConfig, mode, feature, head, diffHash string) (string, string, int, string, string, string, *PRVisualEvidenceManifest, error) {
 	policy := normalizedPRVisualEvidencePolicy(config.Workflow.PRVisualEvidence)
 	relevance, source := "unresolved", "agent-proposed"
 	var scenarios []PRVisualScenario
@@ -131,7 +131,12 @@ func resolvePRVisualEvidence(repo string, config ProjectConfig, mode, feature, h
 		if loadErr == nil {
 			manifest = &loaded
 			relevance, source, scenarios = loaded.Relevance, loaded.RelevanceSource, loaded.Scenarios
-			if loaded.SourceCommit == headCommit && loaded.ProductDiffSHA256 == diffHash {
+			// Trust is keyed to product identity only: the preview pr.md is
+			// excluded from the product diff yet must be committed before
+			// publication, so a head-commit equality would invalidate every
+			// PASS manifest on that mandatory commit. SourceCommit stays
+			// recorded for provenance and the evidence comment.
+			if loaded.ProductDiffSHA256 == diffHash {
 				status = loaded.Status
 			} else {
 				status = "NOT_VERIFIED"
@@ -653,7 +658,7 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 		return PRContext{}, err
 	}
 	visualPolicy, visualStatus, visualCount, visualFingerprint, visualRelevance, visualSource, visualManifest, err := resolvePRVisualEvidence(
-		repo, config, mode, options.Feature, head, headCommit, SHA256Bytes(diff),
+		repo, config, mode, options.Feature, head, SHA256Bytes(diff),
 	)
 	if err != nil {
 		return PRContext{}, err
@@ -1240,11 +1245,18 @@ func PRPreviewTemplate(context PRContext) string {
 		"## Rollout and rollback", "", "Describe deployment impact and the smallest safe rollback.", "",
 	}
 	if context.PRVisualEvidenceStatus != "NOT_APPLICABLE" {
+		// The Commit column names the commit the pixels were captured from;
+		// evidence stays trusted across preview-only commits, so this can
+		// legitimately trail HeadCommit.
+		evidenceCommit := context.HeadCommit
+		if context.PRVisualEvidence != nil && strings.TrimSpace(context.PRVisualEvidence.SourceCommit) != "" {
+			evidenceCommit = context.PRVisualEvidence.SourceCommit
+		}
 		lines = append(lines,
 			"## Visual evidence", "",
 			"Screenshots are human-review evidence, not mechanical proof. Public-repository attachments are publicly accessible.", "",
 			"| Scenario | Viewport | Commit | Result | Publication |", "|---|---|---|---|---|",
-			"| Describe the approved state | viewport | "+context.HeadCommit+" | `"+context.PRVisualEvidenceStatus+"` | Boatstack evidence comment or manual fallback |", "",
+			"| Describe the approved state | viewport | "+evidenceCommit+" | `"+context.PRVisualEvidenceStatus+"` | Boatstack evidence comment or manual fallback |", "",
 		)
 	}
 	if context.TotalSlices > 1 {

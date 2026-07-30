@@ -180,8 +180,9 @@ func CaptureEvidence(options CaptureEvidenceOptions) (PRVisualEvidenceManifest, 
 }
 
 // captureProductDiff reproduces the pr-context product-diff fingerprint so a
-// captured manifest is trusted (PASS) by resolvePRVisualEvidence: same head
-// commit and same product diff.
+// captured manifest is trusted (PASS) by resolvePRVisualEvidence: same product
+// diff. The head commit is recorded for provenance only — trust is keyed to
+// product identity so committing the reviewed pr.md never stales evidence.
 func captureProductDiff(repo, base, feature, head string) (headCommit, diffHash string, err error) {
 	baseCommit, err := resolveBaseCommit(repo, base)
 	if err != nil {
