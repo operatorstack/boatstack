@@ -112,7 +112,7 @@ func TestCaptureEvidenceProducesManifestTrustedByPRContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, status, count, _, _, _, resolved, err := resolvePRVisualEvidence(repo, config, "managed", "reviewer-ready", head, diffHash)
+	_, status, count, _, _, _, _, resolved, err := resolvePRVisualEvidence(repo, config, "managed", "reviewer-ready", head, diffHash)
 	if err != nil {
 		t.Fatal(err)
 	}

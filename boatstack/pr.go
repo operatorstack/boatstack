@@ -64,6 +64,9 @@ type PRContext struct {
 	PRVisualEvidenceFingerprint string                    `json:"pr_visual_evidence_fingerprint"`
 	PRVisualEvidenceRelevance   string                    `json:"pr_visual_evidence_relevance"`
 	PRVisualEvidenceSource      string                    `json:"pr_visual_evidence_source"`
+	// PRVisualEvidencePolicySource is "configured", or "plan-escalated" when
+	// a plan-approved visual decision lifts suggest to require semantics.
+	PRVisualEvidencePolicySource string                   `json:"pr_visual_evidence_policy_source,omitempty"`
 	// PRVisualEvidenceCaptureDetail explains why automatic capture could not
 	// produce current evidence. Deliberately outside the context fingerprint:
 	// a flaky harness message must not destabilize preview equality.
@@ -183,7 +186,7 @@ func boundedCaptureDetail(detail string) string {
 	return detail
 }
 
-func resolvePRVisualEvidence(repo string, config ProjectConfig, mode, feature, head, diffHash string) (string, string, int, string, string, string, *PRVisualEvidenceManifest, error) {
+func resolvePRVisualEvidence(repo string, config ProjectConfig, mode, feature, head, diffHash string) (string, string, int, string, string, string, string, *PRVisualEvidenceManifest, error) {
 	policy := normalizedPRVisualEvidencePolicy(config.Workflow.PRVisualEvidence)
 	relevance, source := "unresolved", "agent-proposed"
 	var scenarios []PRVisualScenario
@@ -191,12 +194,20 @@ func resolvePRVisualEvidence(repo string, config ProjectConfig, mode, feature, h
 		var err error
 		relevance, source, scenarios, err = planVisualDecision(repo, feature)
 		if err != nil {
-			return "", "", 0, "", "", "", nil, err
+			return "", "", 0, "", "", "", "", nil, err
 		}
+	}
+	// The effective policy is what everything downstream (coercion, preview
+	// frontmatter, the publication block) reads. Escalation keys on the
+	// plan's own decision, before any manifest overrides it.
+	policySource := "configured"
+	if visualEscalationApplies(policy, relevance, len(scenarios)) {
+		policy = "require"
+		policySource = "plan-escalated"
 	}
 	key, err := visualEvidenceKey(mode, feature, head)
 	if err != nil {
-		return "", "", 0, "", "", "", nil, err
+		return "", "", 0, "", "", "", "", nil, err
 	}
 	status := "NOT_APPLICABLE"
 	var manifest *PRVisualEvidenceManifest
@@ -235,9 +246,9 @@ func resolvePRVisualEvidence(repo string, config ProjectConfig, mode, feature, h
 	}
 	raw, err := MarshalJSON(payload)
 	if err != nil {
-		return "", "", 0, "", "", "", nil, err
+		return "", "", 0, "", "", "", "", nil, err
 	}
-	return policy, status, count, SHA256Bytes(raw), relevance, source, manifest, nil
+	return policy, status, count, SHA256Bytes(raw), relevance, source, policySource, manifest, nil
 }
 
 type PRPublishOptions struct {
@@ -735,7 +746,7 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 	if err != nil {
 		return PRContext{}, err
 	}
-	visualPolicy, visualStatus, visualCount, visualFingerprint, visualRelevance, visualSource, visualManifest, err := resolvePRVisualEvidence(
+	visualPolicy, visualStatus, visualCount, visualFingerprint, visualRelevance, visualSource, visualPolicySource, visualManifest, err := resolvePRVisualEvidence(
 		repo, config, mode, options.Feature, head, SHA256Bytes(diff),
 	)
 	if err != nil {
@@ -762,6 +773,7 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 		PRVisualEvidencePolicy: visualPolicy, PRVisualEvidenceStatus: visualStatus,
 		PRVisualEvidenceCount: visualCount, PRVisualEvidenceFingerprint: visualFingerprint,
 		PRVisualEvidenceRelevance: visualRelevance, PRVisualEvidenceSource: visualSource,
+		PRVisualEvidencePolicySource:  visualPolicySource,
 		PRVisualEvidenceCaptureDetail: captureDetail,
 		PRVisualEvidence:              visualManifest,
 		PreviewPath:                   previewPath,
@@ -1127,6 +1139,7 @@ func PublishPR(options PRPublishOptions) (string, error) {
 			Source:          "publication",
 			BlockingFeature: context.Feature,
 			Reason:          context.PRVisualEvidenceCaptureDetail,
+			PolicySource:    context.PRVisualEvidencePolicySource,
 		}
 		return "", fmt.Errorf("%s", denialWithOptions(repo, "", finding).Render(RenderPlain))
 	}

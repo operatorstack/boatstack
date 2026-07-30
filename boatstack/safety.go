@@ -26,6 +26,9 @@ type SafetyFinding struct {
 	AttemptedPath          string `json:"attempted_path,omitempty"`
 	OperationID            string `json:"operation_id,omitempty"`
 	OperationState         string `json:"operation_state,omitempty"`
+	// PolicySource explains a policy-derived denial: "plan-escalated" when a
+	// plan-approved visual decision lifts suggest to require semantics.
+	PolicySource string `json:"policy_source,omitempty"`
 	AttemptNumber          int    `json:"attempt_number,omitempty"`
 	ReconciliationRequired bool   `json:"reconciliation_required,omitempty"`
 	// RepeatCount is how many times this same denial (category at stage) has
