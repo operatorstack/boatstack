@@ -41,7 +41,7 @@ var capabilityRegistry = map[string]Capability{
 	"visual": {
 		Name:           "visual",
 		CommandAliases: []string{"visual", "screenshot", "e2e"},
-		AdmittedStages: []string{"BUILD", "TEST_PASSED"},
+		AdmittedStages: []string{"BUILD", "TEST_PASSED", "REVIEW_PASSED", "PR_PREVIEW"},
 		RetryClass:     "IDEMPOTENT_EXTERNAL",
 	},
 }

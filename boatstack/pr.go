@@ -24,6 +24,9 @@ type PRContextOptions struct {
 	Feature string
 	SliceID string
 	Base    string
+	// CaptureRunner overrides the harness executor for automatic visual
+	// evidence capture (tests); nil uses the repository-command runner.
+	CaptureRunner CaptureRunner
 }
 
 type PRSource struct {
@@ -61,6 +64,10 @@ type PRContext struct {
 	PRVisualEvidenceFingerprint string                    `json:"pr_visual_evidence_fingerprint"`
 	PRVisualEvidenceRelevance   string                    `json:"pr_visual_evidence_relevance"`
 	PRVisualEvidenceSource      string                    `json:"pr_visual_evidence_source"`
+	// PRVisualEvidenceCaptureDetail explains why automatic capture could not
+	// produce current evidence. Deliberately outside the context fingerprint:
+	// a flaky harness message must not destabilize preview equality.
+	PRVisualEvidenceCaptureDetail string                  `json:"pr_visual_evidence_capture_detail,omitempty"`
 	PRVisualEvidence            *PRVisualEvidenceManifest `json:"pr_visual_evidence,omitempty"`
 	Sources                     []PRSource                `json:"sources,omitempty"`
 	PreviewPath                 string                    `json:"preview_path"`
@@ -107,6 +114,73 @@ func planVisualDecision(repo, feature string) (string, string, []PRVisualScenari
 		})
 	}
 	return relevance, "managed-plan", scenarios, nil
+}
+
+// ensureCurrentPRVisualEvidence runs the registered capture harness when ship
+// preparation finds declared-relevant visual evidence missing or stale, so
+// capture is a delivery property, never a prescribed agent step. It returns a
+// bounded detail string when automatic capture could not produce current
+// evidence (no repository command registered, or the harness failed after its
+// supervised attempts) — resolution then proceeds exactly as before this hook
+// existed. The returned error is reserved for a harness contract violation:
+// the capture command dirtied the working tree.
+func ensureCurrentPRVisualEvidence(repo string, config ProjectConfig, mode, feature, base, diffHash string, runner CaptureRunner) (string, error) {
+	if mode != "managed" || normalizedPRVisualEvidencePolicy(config.Workflow.PRVisualEvidence) == "off" {
+		return "", nil
+	}
+	relevance, _, scenarios, err := planVisualDecision(repo, feature)
+	if err != nil || relevance != "relevant" || len(scenarios) == 0 {
+		return "", nil
+	}
+	key, err := visualEvidenceKey("managed", feature, "")
+	if err != nil {
+		return "", nil
+	}
+	if loaded, loadErr := LoadPRVisualEvidence(repo, key); loadErr == nil && loaded.Status == "PASS" && loaded.ProductDiffSHA256 == diffHash {
+		return "", nil
+	}
+	resolution, err := ResolveCapability("visual", config)
+	if err != nil || resolution.Kind != "repository-command" {
+		// The agent-mediated capture rungs (host browser, supplied launch)
+		// are deliberately not automated here; without a repository-owned
+		// command the prescribed path stays exactly as it was.
+		return "no visual capture capability is registered; register one with capability-register --capability visual --command <command>", nil
+	}
+	dirtyBefore, err := dirtyPaths(repo)
+	if err != nil {
+		return "", err
+	}
+	_, captureErr := CaptureEvidence(CaptureEvidenceOptions{Repo: repo, Capability: "visual", Feature: feature, Base: base, Runner: runner})
+	dirtyAfter, dirtyErr := dirtyPaths(repo)
+	if dirtyErr == nil {
+		known := make(map[string]bool, len(dirtyBefore))
+		for _, path := range dirtyBefore {
+			known[path] = true
+		}
+		var introduced []string
+		for _, path := range dirtyAfter {
+			if !known[path] {
+				introduced = append(introduced, path)
+			}
+		}
+		if len(introduced) > 0 {
+			return "", fmt.Errorf("the visual capture harness modified the working tree (%s); the capture contract allows writing only the file named by BOATSTACK_CAPTURE_OUTPUT — revert these paths and fix the registered command", strings.Join(introduced, ", "))
+		}
+	}
+	if captureErr != nil {
+		return boundedCaptureDetail(captureErr.Error()), nil
+	}
+	return "", nil
+}
+
+// boundedCaptureDetail folds a harness error into a single bounded line so a
+// flaky harness cannot flood context JSON or denial text.
+func boundedCaptureDetail(detail string) string {
+	detail = strings.Join(strings.Fields(detail), " ")
+	if len(detail) > 300 {
+		detail = detail[:300] + "…"
+	}
+	return detail
 }
 
 func resolvePRVisualEvidence(repo string, config ProjectConfig, mode, feature, head, diffHash string) (string, string, int, string, string, string, *PRVisualEvidenceManifest, error) {
@@ -657,6 +731,10 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 	if err != nil {
 		return PRContext{}, err
 	}
+	captureDetail, err := ensureCurrentPRVisualEvidence(repo, config, mode, options.Feature, base, SHA256Bytes(diff), options.CaptureRunner)
+	if err != nil {
+		return PRContext{}, err
+	}
 	visualPolicy, visualStatus, visualCount, visualFingerprint, visualRelevance, visualSource, visualManifest, err := resolvePRVisualEvidence(
 		repo, config, mode, options.Feature, head, SHA256Bytes(diff),
 	)
@@ -684,8 +762,9 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 		PRVisualEvidencePolicy: visualPolicy, PRVisualEvidenceStatus: visualStatus,
 		PRVisualEvidenceCount: visualCount, PRVisualEvidenceFingerprint: visualFingerprint,
 		PRVisualEvidenceRelevance: visualRelevance, PRVisualEvidenceSource: visualSource,
-		PRVisualEvidence: visualManifest,
-		PreviewPath:      previewPath,
+		PRVisualEvidenceCaptureDetail: captureDetail,
+		PRVisualEvidence:              visualManifest,
+		PreviewPath:                   previewPath,
 	}, nil
 }
 
@@ -1043,7 +1122,13 @@ func PublishPR(options PRPublishOptions) (string, error) {
 		return "", fmt.Errorf("publication action must be open or update")
 	}
 	if context.PRVisualEvidencePolicy == "require" && context.PRVisualEvidenceStatus != "PASS" {
-		return "", fmt.Errorf("PR publication is blocked until required visual evidence is current")
+		finding := SafetyFinding{
+			Category:        "workflow-visual-evidence-missing",
+			Source:          "publication",
+			BlockingFeature: context.Feature,
+			Reason:          context.PRVisualEvidenceCaptureDetail,
+		}
+		return "", fmt.Errorf("%s", denialWithOptions(repo, "", finding).Render(RenderPlain))
 	}
 	dirty, err := dirtyPaths(repo)
 	if err != nil {

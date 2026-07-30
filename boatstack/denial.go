@@ -534,6 +534,20 @@ func denialFor(host string, finding SafetyFinding) Denial {
 		d.Reassurance = "No push or pull request was made."
 		return d
 
+	case "workflow-visual-evidence-missing":
+		target := "this delivery"
+		if finding.BlockingFeature != "" {
+			target = fmt.Sprintf("feature %q", finding.BlockingFeature)
+		}
+		d.Qualifier = "visual evidence is owed"
+		d.Detail = "PR publication is blocked until required visual evidence is current for " + target + "."
+		if reason := strings.TrimSpace(finding.Reason); reason != "" {
+			d.Detail += " Automatic capture reported: " + reason + "."
+		}
+		d.Detail += " Boatstack captures the plan's approved scenarios itself once a repository command is registered; declare pr_visual_evidence not_relevant (with a reason) only for a genuinely nonvisual change."
+		d.Reassurance = "No pull request was created or updated."
+		return d
+
 	case "operation-in-flight":
 		d.Severity = SeverityAdvisory
 		d.Qualifier = "already supervised"
