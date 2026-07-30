@@ -101,10 +101,10 @@ func TestCaptureEvidenceProducesManifestTrustedByPRContext(t *testing.T) {
 		t.Fatalf("capture mutated the product tree: %s", status)
 	}
 
-	// The manifest must be trusted by the same resolver pr-context uses: identical
-	// head commit and product diff → status is the manifest's PASS, not NOT_VERIFIED.
+	// The manifest must be trusted by the same resolver pr-context uses: an
+	// identical product diff → status is the manifest's PASS, not NOT_VERIFIED.
 	head := runGit(t, repo, "rev-parse", "--abbrev-ref", "HEAD")
-	headCommit, diffHash, err := captureProductDiff(repo, "main", "reviewer-ready", head)
+	_, diffHash, err := captureProductDiff(repo, "main", "reviewer-ready", head)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestCaptureEvidenceProducesManifestTrustedByPRContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, status, count, _, _, _, resolved, err := resolvePRVisualEvidence(repo, config, "managed", "reviewer-ready", head, headCommit, diffHash)
+	_, status, count, _, _, _, resolved, err := resolvePRVisualEvidence(repo, config, "managed", "reviewer-ready", head, diffHash)
 	if err != nil {
 		t.Fatal(err)
 	}
