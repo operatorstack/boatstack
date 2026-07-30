@@ -130,6 +130,19 @@ func normalizedPRVisualEvidencePolicy(value string) string {
 	return value
 }
 
+// visualEscalationApplies decides when the configured suggest policy ships
+// with require semantics: the approved plan declares visual relevance with
+// concrete scenarios. A plan that promises pixels cannot ship without them.
+// The escalation is deliberately independent of capture-capability
+// availability — a missing harness is a provisioning gap the publication
+// denial names, never a license to ship unverified. `off` remains the global
+// opt-out (the predicate never fires) and a not_relevant plan decision (with
+// its reason) remains the per-feature escape for genuinely nonvisual changes.
+// control-law: plan-approved-scenarios-imply-require
+func visualEscalationApplies(configured, relevance string, scenarioCount int) bool {
+	return configured == "suggest" && relevance == "relevant" && scenarioCount > 0
+}
+
 func visualEvidenceKey(mode, feature, head string) (string, error) {
 	key := feature
 	if mode == "ad-hoc" {

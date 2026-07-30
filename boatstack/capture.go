@@ -163,7 +163,10 @@ func CaptureEvidence(options CaptureEvidenceOptions) (PRVisualEvidenceManifest, 
 
 	manifest := PRVisualEvidenceManifest{
 		Key:               key,
-		Policy:            config.Workflow.PRVisualEvidence,
+		// The manifest records the configured policy verbatim (informational);
+		// the effective policy — including plan-escalated require semantics —
+		// is re-derived by resolvePRVisualEvidence at every decode.
+		Policy: config.Workflow.PRVisualEvidence,
 		Relevance:         relevance,
 		RelevanceSource:   source,
 		Status:            "PASS",

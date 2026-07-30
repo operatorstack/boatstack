@@ -541,6 +541,9 @@ func denialFor(host string, finding SafetyFinding) Denial {
 		}
 		d.Qualifier = "visual evidence is owed"
 		d.Detail = "PR publication is blocked until required visual evidence is current for " + target + "."
+		if finding.PolicySource == "plan-escalated" {
+			d.Detail += " The approved plan declares visual scenarios, so the configured suggest policy ships with require semantics for this feature."
+		}
 		if reason := strings.TrimSpace(finding.Reason); reason != "" {
 			d.Detail += " Automatic capture reported: " + reason + "."
 		}

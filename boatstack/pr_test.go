@@ -620,8 +620,13 @@ func TestManagedPRVisualEvidenceUsesApprovedPlanScenarios(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if context.Mode != "managed" || context.PRVisualEvidenceRelevance != "relevant" || context.PRVisualEvidenceSource != "managed-plan" || context.PRVisualEvidenceStatus != "NOT_VERIFIED" {
+	// A plan-approved visual decision escalates suggest to require semantics,
+	// so missing evidence is BLOCKED here, not a shippable NOT_VERIFIED gap.
+	if context.Mode != "managed" || context.PRVisualEvidenceRelevance != "relevant" || context.PRVisualEvidenceSource != "managed-plan" || context.PRVisualEvidenceStatus != "BLOCKED" {
 		t.Fatalf("managed visual decision was not projected: %#v", context)
+	}
+	if context.PRVisualEvidencePolicy != "require" || context.PRVisualEvidencePolicySource != "plan-escalated" {
+		t.Fatalf("plan-approved scenarios did not escalate suggest: %#v", context)
 	}
 	previewPath := writePreview(t, repo, context, "Expose approved visual review scenario", visualEvidenceBody(managedPRBody(), context.PRVisualEvidenceStatus))
 	if _, _, err := CheckPRPreview(repo, previewPath); err != nil {
@@ -728,20 +733,108 @@ func TestProductDiffChangeInvalidatesPassVisualEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	changedDiff := strings.Repeat("c", 64)
-	_, status, _, _, _, _, _, err := resolvePRVisualEvidence(repo, config, "managed", "reviewer-ready", context.HeadBranch, changedDiff)
+	// The plan declares relevant scenarios, so suggest ships with require
+	// semantics: stale evidence is BLOCKED, never a shippable gap.
+	_, status, _, _, _, _, _, _, err := resolvePRVisualEvidence(repo, config, "managed", "reviewer-ready", context.HeadBranch, changedDiff)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status != "NOT_VERIFIED" {
-		t.Fatalf("product change did not stale the evidence: %s", status)
+	if status != "BLOCKED" {
+		t.Fatalf("product change did not stale the evidence to a block: %s", status)
 	}
 	config.Workflow.PRVisualEvidence = "require"
-	_, status, _, _, _, _, _, err = resolvePRVisualEvidence(repo, config, "managed", "reviewer-ready", context.HeadBranch, changedDiff)
+	_, status, _, _, _, _, _, _, err = resolvePRVisualEvidence(repo, config, "managed", "reviewer-ready", context.HeadBranch, changedDiff)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if status != "BLOCKED" {
 		t.Fatalf("require did not coerce stale evidence to BLOCKED: %s", status)
+	}
+}
+
+// Invariant: a plan that promises pixels cannot ship without them — suggest
+// escalates to require semantics for plan-approved scenarios even when no
+// capture capability is registered, and the denial says why.
+func TestSuggestEscalatesToRequireWhenPlanDeclaresScenarios(t *testing.T) {
+	repo := prTestRepoConfigured(t, func(config *ProjectConfig) {
+		config.Workflow.PRVisualEvidence = "suggest"
+	})
+	activateManagedFeature(t, repo, "reviewer-ready")
+	context, err := PreparePRContext(PRContextOptions{Repo: repo, Feature: "reviewer-ready"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if context.PRVisualEvidencePolicy != "require" || context.PRVisualEvidencePolicySource != "plan-escalated" || context.PRVisualEvidenceStatus != "BLOCKED" {
+		t.Fatalf("plan-approved scenarios did not escalate: %#v", context)
+	}
+	previewPath := writePreview(t, repo, context, "Escalate approved visual scenarios", visualEvidenceBody(managedPRBody(), context.PRVisualEvidenceStatus))
+	preview, _, err := CheckPRPreview(repo, previewPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = PublishPR(PRPublishOptions{Repo: repo, PreviewPath: previewPath, ExpectedFingerprint: preview.Fingerprint, Action: "open"})
+	if err == nil {
+		t.Fatal("escalated require did not block publication")
+	}
+	for _, needle := range []string{"required visual evidence", "require semantics", "capability-register"} {
+		if !strings.Contains(err.Error(), needle) {
+			t.Fatalf("escalated denial is missing %q:\n%s", needle, err.Error())
+		}
+	}
+}
+
+// The escalation predicate's full semantics table: `off` is the global
+// opt-out, not_relevant the per-feature escape, and configured require needs
+// no escalation. Capability availability is deliberately absent — a missing
+// harness is a provisioning gap, not a license to ship unverified.
+func TestVisualEscalationPredicate(t *testing.T) {
+	cases := []struct {
+		policy, relevance string
+		scenarios         int
+		want              bool
+	}{
+		{"suggest", "relevant", 1, true},
+		{"suggest", "relevant", 3, true},
+		{"suggest", "relevant", 0, false},
+		{"suggest", "not_relevant", 0, false},
+		{"suggest", "unresolved", 1, false},
+		{"require", "relevant", 1, false},
+		{"off", "relevant", 1, false},
+	}
+	for _, c := range cases {
+		if got := visualEscalationApplies(c.policy, c.relevance, c.scenarios); got != c.want {
+			t.Errorf("visualEscalationApplies(%s, %s, %d) = %v, want %v", c.policy, c.relevance, c.scenarios, got, c.want)
+		}
+	}
+}
+
+// Invariant: a not_relevant plan decision (with its reason) keeps the
+// configured suggest semantics — the per-feature escape for nonvisual changes.
+func TestNotRelevantPlanKeepsSuggestSemantics(t *testing.T) {
+	repo := prTestRepoConfigured(t, func(config *ProjectConfig) {
+		config.Workflow.PRVisualEvidence = "suggest"
+	})
+	directory := filepath.Join(repo, ".product-loop", "features", "log-rotation")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plan := validPlan()
+	plan["feature_id"] = "log-rotation"
+	plan["pr_visual_evidence"] = map[string]any{
+		"relevance": "not_relevant",
+		"reason":    "backend log rotation has no reviewer-visible surface",
+	}
+	writeMarkdownPlan(t, filepath.Join(directory, "plan.md"), plan, true)
+	config, _, err := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy, status, _, _, _, _, policySource, _, err := resolvePRVisualEvidence(repo, config, "managed", "log-rotation", "feat/log-rotation", strings.Repeat("d", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if policy != "suggest" || policySource != "configured" || status != "NOT_APPLICABLE" {
+		t.Fatalf("not_relevant did not keep suggest semantics: policy=%s source=%s status=%s", policy, policySource, status)
 	}
 }
 
@@ -783,9 +876,9 @@ func TestPreparePRContextAutoCapturesRelevantVisualEvidence(t *testing.T) {
 	}
 }
 
-// Invariant: a failing harness degrades to exactly today's suggest behavior —
-// a visible NOT_VERIFIED gap with a bounded detail, never a context error.
-func TestAutoCaptureFailureDegradesToTodayUnderSuggest(t *testing.T) {
+// Invariant: a failing harness never errors context preparation — it records
+// a bounded detail, and the plan-escalated require semantics hold the block.
+func TestAutoCaptureFailureRecordsBoundedDetail(t *testing.T) {
 	repo := prTestRepoConfigured(t, func(config *ProjectConfig) {
 		config.Workflow.PRVisualEvidence = "suggest"
 		config.Project.Commands["visual"] = "repo-owned-harness"
@@ -798,8 +891,8 @@ func TestAutoCaptureFailureDegradesToTodayUnderSuggest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if context.PRVisualEvidenceStatus != "NOT_VERIFIED" {
-		t.Fatalf("harness failure should leave the recorded gap, got %s", context.PRVisualEvidenceStatus)
+	if context.PRVisualEvidenceStatus != "BLOCKED" {
+		t.Fatalf("escalated require should block on a failed capture, got %s", context.PRVisualEvidenceStatus)
 	}
 	if !strings.Contains(context.PRVisualEvidenceCaptureDetail, "dev server unreachable") {
 		t.Fatalf("capture detail lost the harness failure: %q", context.PRVisualEvidenceCaptureDetail)
@@ -821,7 +914,7 @@ func TestAutoCaptureUnavailableCapabilityFallsBackToPrescribedPath(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if runner.calls != 0 || context.PRVisualEvidenceStatus != "NOT_VERIFIED" {
+	if runner.calls != 0 || context.PRVisualEvidenceStatus != "BLOCKED" {
 		t.Fatalf("unavailable capability did not fall back cleanly: calls=%d status=%s", runner.calls, context.PRVisualEvidenceStatus)
 	}
 	if !strings.Contains(context.PRVisualEvidenceCaptureDetail, "capability-register") {
