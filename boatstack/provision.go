@@ -122,6 +122,7 @@ var captureContract = []string{
 	"BOATSTACK_CAPTURE_ENTRY — the scenario entry point (route or component).",
 	"BOATSTACK_CAPTURE_STATE — the scenario state to render.",
 	"BOATSTACK_CAPTURE_VIEWPORT — the required viewport, e.g. 1440x900.",
+	"BOATSTACK_CAPTURE_SURFACE — the scenario's declared product surface (empty when undeclared).",
 	"BOATSTACK_CAPTURE_OUTPUT — the absolute path the harness must write exactly one PNG to.",
 	"Render fixture or mock data only; never production secrets or PII.",
 }
@@ -210,7 +211,7 @@ type RegisteredCapability struct {
 // and regenerates the full export so the source and every generated file stay in
 // sync; otherwise it round-trips the generated project.json alone, matching the
 // IgnoreDelivery idiom.
-func RegisterCapabilityCommand(repo, name, command string) (RegisteredCapability, error) {
+func RegisterCapabilityCommand(repo, name, surface, command string) (RegisteredCapability, error) {
 	resolved, err := ResolveRepository(repo)
 	if err != nil {
 		return RegisteredCapability{}, err
@@ -223,6 +224,15 @@ func RegisterCapabilityCommand(repo, name, command string) (RegisteredCapability
 	if command == "" {
 		return RegisteredCapability{}, fmt.Errorf("capability-register requires a non-empty --command")
 	}
+	// A surface scopes the registration to one product surface's harness
+	// (project.commands["visual:<surface>"]); empty keeps the global key.
+	alias := capability.Name
+	if surface = strings.TrimSpace(surface); surface != "" {
+		if !surfaceSlugPattern.MatchString(surface) {
+			return RegisteredCapability{}, fmt.Errorf("capability-register --surface must be a lowercase kebab slug")
+		}
+		alias = capability.Name + ":" + surface
+	}
 
 	sourcePath := WorkspaceFor(resolved).SourceConfigPath()
 	if fileExists(sourcePath) {
@@ -230,7 +240,7 @@ func RegisterCapabilityCommand(repo, name, command string) (RegisteredCapability
 		if err != nil {
 			return RegisteredCapability{}, err
 		}
-		setCapabilityCommand(&config, capability.Name, command)
+		setCapabilityCommand(&config, alias, command)
 		if err := ValidateConfig(config); err != nil {
 			return RegisteredCapability{}, err
 		}
@@ -248,7 +258,7 @@ func RegisterCapabilityCommand(repo, name, command string) (RegisteredCapability
 		if err := atomicWriteMode(sourcePath, rawConfig, 0o644); err != nil {
 			return RegisteredCapability{}, err
 		}
-		return RegisteredCapability{Capability: capability.Name, Alias: capability.Name, Command: command, Source: "source-and-export"}, nil
+		return RegisteredCapability{Capability: capability.Name, Alias: alias, Command: command, Source: "source-and-export"}, nil
 	}
 
 	configPath := WorkspaceFor(resolved).ProjectConfigPath()
@@ -256,7 +266,7 @@ func RegisterCapabilityCommand(repo, name, command string) (RegisteredCapability
 	if err != nil {
 		return RegisteredCapability{}, err
 	}
-	setCapabilityCommand(&config, capability.Name, command)
+	setCapabilityCommand(&config, alias, command)
 	if err := ValidateConfig(config); err != nil {
 		return RegisteredCapability{}, err
 	}
@@ -267,7 +277,7 @@ func RegisterCapabilityCommand(repo, name, command string) (RegisteredCapability
 	if err := atomicWriteMode(configPath, value, 0o644); err != nil {
 		return RegisteredCapability{}, err
 	}
-	return RegisteredCapability{Capability: capability.Name, Alias: capability.Name, Command: command, Source: "generated-only"}, nil
+	return RegisteredCapability{Capability: capability.Name, Alias: alias, Command: command, Source: "generated-only"}, nil
 }
 
 func setCapabilityCommand(config *ProjectConfig, alias, command string) {

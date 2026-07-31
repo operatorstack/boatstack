@@ -113,7 +113,7 @@ func planVisualDecision(repo, feature string) (string, string, []PRVisualScenari
 		expected, _ := stringSlice(row["expected"])
 		scenarios = append(scenarios, PRVisualScenario{
 			ID: stringValue(row["id"]), Entry: stringValue(row["entry"]), State: stringValue(row["state"]),
-			Viewport: stringValue(row["viewport"]), Expected: expected,
+			Viewport: stringValue(row["viewport"]), Expected: expected, Surface: stringValue(row["surface"]),
 		})
 	}
 	return relevance, "managed-plan", scenarios, nil
@@ -142,12 +142,12 @@ func ensureCurrentPRVisualEvidence(repo string, config ProjectConfig, mode, feat
 	if loaded, loadErr := LoadPRVisualEvidence(repo, key); loadErr == nil && loaded.Status == "PASS" && loaded.ProductDiffSHA256 == diffHash {
 		return "", nil
 	}
-	resolution, err := ResolveCapability("visual", config)
-	if err != nil || resolution.Kind != "repository-command" {
-		// The agent-mediated capture rungs (host browser, supplied launch)
-		// are deliberately not automated here; without a repository-owned
-		// command the prescribed path stays exactly as it was.
-		return "no visual capture capability is registered; register one with capability-register --capability visual --command <command>", nil
+	// Every declared surface must resolve to a repository command for capture
+	// to be automatic; the agent-mediated rungs (host browser, supplied
+	// launch) are deliberately not automated here, so any unresolvable
+	// scenario keeps the prescribed path exactly as it was.
+	if _, resolveErr := resolveScenarioCaptureCommands("visual", scenarios, config); resolveErr != nil {
+		return boundedCaptureDetail(resolveErr.Error()), nil
 	}
 	dirtyBefore, err := dirtyPaths(repo)
 	if err != nil {

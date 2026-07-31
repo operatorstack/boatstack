@@ -662,6 +662,7 @@ func capabilityRegisterCommand(arguments []string) int {
 	flags := flag.NewFlagSet("capability-register", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository whose Boatstack configuration owns the command")
 	capability := flags.String("capability", "visual", "evidence capability to register a command for")
+	surface := flags.String("surface", "", "optional product surface (e.g. web, ops) to scope the command to")
 	command := flags.String("command", "", "repository command that produces the evidence")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
@@ -669,7 +670,7 @@ func capabilityRegisterCommand(arguments []string) int {
 	if *command == "" {
 		return fail(fmt.Errorf("capability-register requires --command"))
 	}
-	registered, err := boatstack.RegisterCapabilityCommand(*repo, *capability, *command)
+	registered, err := boatstack.RegisterCapabilityCommand(*repo, *capability, *surface, *command)
 	if err != nil {
 		return fail(err)
 	}

@@ -21,6 +21,11 @@ type PRVisualScenario struct {
 	State    string   `json:"state"`
 	Viewport string   `json:"viewport"`
 	Expected []string `json:"expected"`
+	// Surface optionally names the product surface this scenario captures
+	// (e.g. "web", "ops"), selecting a surface-scoped harness command
+	// (project.commands["visual:<surface>"]) over the global one. omitempty
+	// keeps existing manifest fingerprints byte-stable.
+	Surface string `json:"surface,omitempty"`
 }
 
 type PRVisualEvidenceItem struct {

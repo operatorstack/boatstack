@@ -47,6 +47,7 @@ func (execCaptureRunner) Run(request CaptureRequest) error {
 		"BOATSTACK_CAPTURE_ENTRY="+request.Scenario.Entry,
 		"BOATSTACK_CAPTURE_STATE="+request.Scenario.State,
 		"BOATSTACK_CAPTURE_VIEWPORT="+request.Scenario.Viewport,
+		"BOATSTACK_CAPTURE_SURFACE="+request.Scenario.Surface,
 		"BOATSTACK_CAPTURE_OUTPUT="+request.OutputPath,
 	)
 	// The harness's authoritative output is the PNG on disk, not stdout; only
@@ -96,14 +97,6 @@ func CaptureEvidence(options CaptureEvidenceOptions) (PRVisualEvidenceManifest, 
 	if err != nil {
 		return PRVisualEvidenceManifest{}, fmt.Errorf("capture requires a valid Boatstack project configuration: %w", err)
 	}
-	resolution, err := ResolveCapability(name, config)
-	if err != nil {
-		return PRVisualEvidenceManifest{}, err
-	}
-	if resolution.Kind != "repository-command" {
-		return PRVisualEvidenceManifest{}, fmt.Errorf("evidence capability %q is unavailable: register a repository command (project.commands) or provision it first", name)
-	}
-
 	relevance, source, scenarios, err := planVisualDecision(repo, feature)
 	if err != nil {
 		return PRVisualEvidenceManifest{}, err
@@ -113,6 +106,13 @@ func CaptureEvidence(options CaptureEvidenceOptions) (PRVisualEvidenceManifest, 
 	}
 	if len(scenarios) == 0 {
 		return PRVisualEvidenceManifest{}, fmt.Errorf("no %s scenarios declared in the plan (pr_visual_evidence.scenarios)", name)
+	}
+	// Every scenario's command must resolve before any capture runs — a
+	// surface-scoped key outranks the global alias; a missing surface key
+	// with no global fallback is named exactly, never captured around.
+	commands, err := resolveScenarioCaptureCommands(name, scenarios, config)
+	if err != nil {
+		return PRVisualEvidenceManifest{}, err
 	}
 
 	head, err := gitCommand(repo, "rev-parse", "--abbrev-ref", "HEAD")
@@ -147,7 +147,7 @@ func CaptureEvidence(options CaptureEvidenceOptions) (PRVisualEvidenceManifest, 
 	items := make([]PRVisualEvidenceItem, 0, len(scenarios))
 	for _, scenario := range scenarios {
 		outputPath := filepath.Join(stagingDir, scenario.ID+".png")
-		if err := captureScenario(repo, capability, resolution.Command, scenario, outputPath, feature, head, headCommit, diffHash, runner); err != nil {
+		if err := captureScenario(repo, capability, commands[scenario.ID], scenario, outputPath, feature, head, headCommit, diffHash, runner); err != nil {
 			return PRVisualEvidenceManifest{}, err
 		}
 		items = append(items, PRVisualEvidenceItem{
@@ -180,6 +180,28 @@ func CaptureEvidence(options CaptureEvidenceOptions) (PRVisualEvidenceManifest, 
 		return PRVisualEvidenceManifest{}, fmt.Errorf("captured %s evidence is non-conformant (BLOCKED): %w", name, err)
 	}
 	return saved, nil
+}
+
+// resolveScenarioCaptureCommands resolves the harness command for every
+// scenario up front (surface key first, global alias fallback), so capture
+// either runs with a complete command map or fails naming the exact missing
+// registration before any harness executes.
+func resolveScenarioCaptureCommands(name string, scenarios []PRVisualScenario, config ProjectConfig) (map[string]string, error) {
+	commands := make(map[string]string, len(scenarios))
+	for _, scenario := range scenarios {
+		resolution, err := ResolveCapabilityForSurface(name, scenario.Surface, config)
+		if err != nil {
+			return nil, err
+		}
+		if resolution.Kind != "repository-command" {
+			if surface := strings.TrimSpace(scenario.Surface); surface != "" {
+				return nil, fmt.Errorf("evidence capability %q is unavailable for surface %q: register project.commands[%q] (capability-register --capability %s --surface %s --command <command>) or a global command", name, surface, name+":"+surface, name, surface)
+			}
+			return nil, fmt.Errorf("evidence capability %q is unavailable: register a repository command (capability-register --capability %s --command <command>) or provision it first", name, name)
+		}
+		commands[scenario.ID] = resolution.Command
+	}
+	return commands, nil
 }
 
 // captureProductDiff reproduces the pr-context product-diff fingerprint so a

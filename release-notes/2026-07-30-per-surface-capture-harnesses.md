@@ -1,0 +1,3 @@
+### Per-surface visual capture harnesses
+
+A repository with more than one product surface (a web app and an ops console, for example) can now register one capture command per surface: `capability-register --capability visual --surface web --command <command>` writes `project.commands["visual:web"]`, and a plan scenario selects it with an optional `surface` field (lowercase kebab). The surface-scoped command outranks the global `visual` command; a scenario without a surface, or a surface without its own command, uses the global command exactly as before. Capture resolves every scenario's command before any harness runs, and an unresolvable surface is refused naming the exact missing key. The harness contract gains `BOATSTACK_CAPTURE_SURFACE`.

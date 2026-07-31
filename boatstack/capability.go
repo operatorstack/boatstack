@@ -68,3 +68,20 @@ func ResolveCapability(name string, config ProjectConfig) (CapabilityResolution,
 	}
 	return CapabilityResolution{Name: capability.Name, Kind: "unavailable"}, nil
 }
+
+// ResolveCapabilityForSurface resolves a capability command for one product
+// surface: the surface-scoped key ("visual:web") outranks the global alias
+// ladder, and an empty or unregistered surface falls back to it exactly — a
+// repository with only a global command keeps serving every surface.
+func ResolveCapabilityForSurface(name, surface string, config ProjectConfig) (CapabilityResolution, error) {
+	capability, ok := LookupCapability(name)
+	if !ok {
+		return CapabilityResolution{}, fmt.Errorf("unknown evidence capability %q", name)
+	}
+	if surface = strings.TrimSpace(surface); surface != "" {
+		if command := strings.TrimSpace(config.Project.Commands[capability.Name+":"+surface]); command != "" {
+			return CapabilityResolution{Name: capability.Name, Kind: "repository-command", Command: command}, nil
+		}
+	}
+	return ResolveCapability(name, config)
+}

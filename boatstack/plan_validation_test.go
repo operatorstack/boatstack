@@ -191,6 +191,20 @@ func TestValidatePRVisualEvidence(t *testing.T) {
 	if err := validatePRVisualEvidence(plan); err == nil || !strings.Contains(err.Error(), "one to three") {
 		t.Fatalf("empty relevant scenarios were not rejected: %v", err)
 	}
+	plan["pr_visual_evidence"] = map[string]any{
+		"relevance": "relevant",
+		"scenarios": []any{map[string]any{
+			"id": "warning", "entry": "/onboarding", "state": "picker open", "viewport": "1440x900",
+			"expected": []any{"warning visible"}, "surface": "admin-console",
+		}},
+	}
+	if err := validatePRVisualEvidence(plan); err != nil {
+		t.Fatalf("valid surface slug was rejected: %v", err)
+	}
+	plan["pr_visual_evidence"].(map[string]any)["scenarios"].([]any)[0].(map[string]any)["surface"] = "Web Ops"
+	if err := validatePRVisualEvidence(plan); err == nil || !strings.Contains(err.Error(), "surface") {
+		t.Fatalf("invalid surface slug was not rejected: %v", err)
+	}
 	plan["pr_visual_evidence"] = map[string]any{"relevance": "not_relevant", "scenarios": []any{}}
 	if err := validatePRVisualEvidence(plan); err == nil || !strings.Contains(err.Error(), "reason") {
 		t.Fatalf("missing not-relevant reason was not rejected: %v", err)

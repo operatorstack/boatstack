@@ -66,6 +66,7 @@ This is the exhaustive serialization contract, not a list of recommended user ed
 - `context` (array of strings, optional): Agent-mediated durable-context hints; the controller does not load every path automatically.
 - `commands` (object, required): Agent-mediated repository commands:
   - `test` (string, required): The exact command to execute project-local tests.
+  - `visual` / `screenshot` / `e2e` (string, optional): The repository-owned visual capture harness Boatstack runs automatically during ship. A surface-scoped key `visual:<surface>` (e.g. `visual:web`, `visual:ops`; lowercase kebab surface, registered with `capability-register --surface`) outranks the global key for scenarios that declare that `surface`; scenarios without one, or without a surface key, use the global command exactly as before.
   - Other command names (string, optional): Additional repository-owned commands such as `build`, `lint`, or `typecheck`.
 - `high_risk_paths` (array of strings, optional): Glob patterns of files requiring independent reviewer sign-off before shipping.
 - `migration` (object, optional): Declares how migrations are graded by EFFECT against a disposable database, so a committed migration stays a data artifact for the guard while its real effect is executed and observed by a conformance harness. Both commands run via `sh -c` with the disposable database coordinate in the environment as `BOATSTACK_MIGRATE_DB`; when `apply_command` is absent, grading is skipped.

@@ -121,7 +121,7 @@ func TestRegisterCapabilityCommandSyncsSourceAndExport(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := RegisterCapabilityCommand(repo, "visual", "pnpm run capture:visual")
+	result, err := RegisterCapabilityCommand(repo, "visual", "", "pnpm run capture:visual")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func TestRegisterCapabilityCommandSyncsSourceAndExport(t *testing.T) {
 func TestRegisterCapabilityCommandFallsBackToGeneratedConfig(t *testing.T) {
 	repo := t.TempDir()
 	writeProjectConfig(t, repo, nil) // generated project.json only, no source
-	result, err := RegisterCapabilityCommand(repo, "visual", "npm run capture:visual")
+	result, err := RegisterCapabilityCommand(repo, "visual", "", "npm run capture:visual")
 	if err != nil {
 		t.Fatal(err)
 	}

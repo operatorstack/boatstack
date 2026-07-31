@@ -3,7 +3,13 @@ package boatstack
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 )
+
+// surfaceSlugPattern names a product surface (web, ops, admin-console):
+// lowercase kebab, matching the project.commands["visual:<surface>"] key
+// convention shared by plan scenarios and capability-register --surface.
+var surfaceSlugPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
 type ValidatePlanOptions struct {
 	PlanPath     string
@@ -195,6 +201,9 @@ func validatePRVisualEvidence(plan map[string]any) error {
 			if stringValue(scenario[field]) == "" {
 				return fmt.Errorf("pr_visual_evidence scenario %s requires %s", id, field)
 			}
+		}
+		if surface := stringValue(scenario["surface"]); surface != "" && !surfaceSlugPattern.MatchString(surface) {
+			return fmt.Errorf("pr_visual_evidence scenario %s surface must be a lowercase kebab slug", id)
 		}
 		expected, ok := stringSlice(scenario["expected"])
 		if !ok || len(expected) == 0 {
