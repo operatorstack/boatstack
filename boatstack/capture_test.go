@@ -179,3 +179,112 @@ func TestCaptureEvidenceRequiresAResolvedCapabilityCommand(t *testing.T) {
 		t.Fatalf("capture ran without a resolved repository command: %v", err)
 	}
 }
+
+// Invariant: capture resolves the harness per scenario surface — each
+// scenario runs its own registered command with the surface in the request —
+// and an unresolvable surface fails before any harness runs, naming the exact
+// missing registration key.
+func TestCaptureEvidenceResolvesPerSurfaceCommands(t *testing.T) {
+	repo := captureTestRepo(t, "reviewer-ready")
+	directory := filepath.Join(repo, ".product-loop", "features", "reviewer-ready")
+	plan := validPlan()
+	plan["feature_id"] = "reviewer-ready"
+	plan["pr_visual_evidence"] = map[string]any{
+		"relevance": "relevant",
+		"scenarios": []any{
+			map[string]any{
+				"id": "warning", "entry": "/onboarding", "state": "picker open", "viewport": "1440x900",
+				"expected": []any{"warning visible"}, "surface": "web",
+			},
+			map[string]any{
+				"id": "console", "entry": "/ops/queues", "state": "backlog shown", "viewport": "1280x800",
+				"expected": []any{"queue depth visible"}, "surface": "ops",
+			},
+		},
+	}
+	writeMarkdownPlan(t, filepath.Join(directory, "plan.md"), plan, true)
+	runGit(t, repo, "add", ".")
+	runGit(t, repo, "commit", "-m", "declare per-surface scenarios")
+
+	configPath := filepath.Join(repo, ".product-loop", "project.json")
+	config, _, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.Project.Commands["visual:web"] = "run-web-harness"
+	value, err := MarshalJSON(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, value, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "add", ".")
+	runGit(t, repo, "commit", "-m", "register web surface harness")
+
+	// One surface key missing and no usable... the global "visual" command is
+	// still registered in the fixture, so ops falls back to it: capture runs.
+	commandsSeen := map[string]string{}
+	surfacesSeen := map[string]string{}
+	runner := &stubCaptureRunner{write: func(request CaptureRequest) error {
+		commandsSeen[request.Scenario.ID] = request.Command
+		surfacesSeen[request.Scenario.ID] = request.Scenario.Surface
+		writeTestPNG(t, request.OutputPath)
+		return nil
+	}}
+	if _, err := CaptureEvidence(CaptureEvidenceOptions{Repo: repo, Capability: "visual", Feature: "reviewer-ready", Runner: runner}); err != nil {
+		t.Fatalf("per-surface capture failed: %v", err)
+	}
+	if commandsSeen["warning"] != "run-web-harness" || surfacesSeen["warning"] != "web" {
+		t.Fatalf("web scenario did not run its surface harness: %q (%q)", commandsSeen["warning"], surfacesSeen["warning"])
+	}
+	if commandsSeen["console"] != "exit 1" || surfacesSeen["console"] != "ops" {
+		t.Fatalf("ops scenario did not fall back to the global command: %q (%q)", commandsSeen["console"], surfacesSeen["console"])
+	}
+
+	// Remove the global fallback: the ops surface now has no registration and
+	// capture refuses up front, naming the exact missing key.
+	delete(config.Project.Commands, "visual")
+	delete(config.Project.Commands, "screenshot")
+	delete(config.Project.Commands, "e2e")
+	value, err = MarshalJSON(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, value, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "add", ".")
+	runGit(t, repo, "commit", "-m", "remove global harness")
+	priorCalls := runner.calls
+	if _, err := CaptureEvidence(CaptureEvidenceOptions{Repo: repo, Capability: "visual", Feature: "reviewer-ready", Runner: runner}); err == nil || !strings.Contains(err.Error(), "visual:ops") {
+		t.Fatalf("unresolvable surface was not named: %v", err)
+	}
+	if runner.calls != priorCalls {
+		t.Fatal("capture ran a harness despite an unresolvable surface")
+	}
+}
+
+// Invariant: capability-register --surface writes the surface-scoped command
+// key, and the registered command is what surface resolution selects.
+func TestRegisterCapabilityCommandWithSurface(t *testing.T) {
+	repo := captureTestRepo(t, "reviewer-ready")
+	registered, err := RegisterCapabilityCommand(repo, "visual", "ops", "npm run capture:ops")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if registered.Alias != "visual:ops" {
+		t.Fatalf("surface registration wrote the wrong key: %#v", registered)
+	}
+	config, _, err := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolution, err := ResolveCapabilityForSurface("visual", "ops", config)
+	if err != nil || resolution.Command != "npm run capture:ops" {
+		t.Fatalf("registered surface command did not resolve: %#v %v", resolution, err)
+	}
+	if _, err := RegisterCapabilityCommand(repo, "visual", "Web Ops", "x"); err == nil || !strings.Contains(err.Error(), "kebab") {
+		t.Fatalf("invalid surface slug was not rejected: %v", err)
+	}
+}
