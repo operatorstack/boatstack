@@ -35,8 +35,24 @@ type ProjectConfig struct {
 	Workflow      Workflow                    `json:"workflow"`
 	Workspace     Workspace                   `json:"workspace,omitempty"`
 	Delivery      *DeliveryPolicy             `json:"delivery,omitempty"`
+	Insights      *InsightPolicy              `json:"insights,omitempty"`
 	Adapters      []string                    `json:"adapters"`
 	Integrations  map[string]IntegrationState `json:"integrations,omitempty"`
+}
+
+// InsightPolicy controls the repository-backed insight capture surface. The nil zero
+// value disables the entire capability so existing projects retain byte-for-byte
+// behavior. Captures are intentionally manual and human-confirmed in v1; the
+// confirmed capture and every event are tracked below docs/insights, while the
+// remaining switches control read-only enrichment and evaluation surfaces.
+type InsightPolicy struct {
+	Enabled         bool   `json:"enabled"`
+	CaptureMode     string `json:"capture_mode,omitempty"` // "" | "manual"
+	ValueMap        string `json:"value_map,omitempty"`    // "" | "required"
+	SuggestFeatures bool   `json:"suggest_features,omitempty"`
+	EvaluateOnPR    bool   `json:"evaluate_on_pr,omitempty"`
+	PendingFrontier bool   `json:"pending_frontier,omitempty"`
+	CompletionMode  string `json:"completion_mode,omitempty"` // "" | "human_confirmed"
 }
 
 // DeliveryPolicy declares the standing goal of the delivery flow. Terminal

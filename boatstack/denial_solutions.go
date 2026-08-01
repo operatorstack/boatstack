@@ -1,6 +1,7 @@
 package boatstack
 
 import (
+	"path/filepath"
 	"strings"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/deliverycontrol"
@@ -173,6 +174,15 @@ func tamperOwnerVerbs(repo, attempted string) []string {
 		sample, err := entry.Sample(w)
 		if err != nil {
 			continue
+		}
+		if entry.Class == ClassCommittedInsight {
+			root, rootErr := w.InsightDir()
+			if rootErr == nil {
+				relative, relErr := filepath.Rel(w.RepoRoot, root)
+				if relErr == nil && strings.Contains(normalized, filepath_ToSlashLower(relative)) {
+					return entry.OwnerVerbs
+				}
+			}
 		}
 		key := boatstackSubtreeKey(filepath_ToSlashLower(sample))
 		if key != "" && strings.Contains(normalized, "boatstack/"+key) {

@@ -25,6 +25,14 @@ boatstack-config-field:workflow.visual_evidence_publish.expiry
 boatstack-config-field:workflow.ignored_deliveries
 boatstack-config-field:delivery
 boatstack-config-field:delivery.terminal
+boatstack-config-field:insights
+boatstack-config-field:insights.enabled
+boatstack-config-field:insights.capture_mode
+boatstack-config-field:insights.value_map
+boatstack-config-field:insights.suggest_features
+boatstack-config-field:insights.evaluate_on_pr
+boatstack-config-field:insights.pending_frontier
+boatstack-config-field:insights.completion_mode
 boatstack-config-field:workspace
 boatstack-config-field:workspace.enabled
 boatstack-config-field:workspace.mode
@@ -56,6 +64,7 @@ This is the exhaustive serialization contract, not a list of recommended user ed
 - `workflow` (object, required): Flags controlling state machine transitions and safety gates.
 - `workspace` (object, optional): Opt-in per-feature branch or worktree management.
 - `delivery` (object, optional): The standing goal of the delivery flow.
+- `insights` (object, optional): Opt-in controls for independent, reviewable repository insight captures.
 - `adapters` (array of strings, optional): Enabled host environment adapters. If empty, defaults to enabling all.
 - `integrations` (object, optional): Installer-owned state for third-party integrations.
 
@@ -98,6 +107,18 @@ This is the exhaustive serialization contract, not a list of recommended user ed
 ### delivery Fields
 
 - `terminal` (string, optional): `published` or `merged`. Defaults to `published`. Deterministic goal control: the state a delivery pursues before the flow reports nothing left to do. `published` ends the flow when the slice's pull request is open (the prior behavior, unchanged). `merged` keeps the read-only flow advisors naming post-publish steps until the pull request is observed merged. The goal a delivery is activated under is snapshotted on its state, so changing this value mid-flight never changes an in-progress delivery's goal; every invalid or unreadable value resolves to `published`.
+
+### insights Fields
+
+This block is opt-in. When `enabled` is false or the block is absent, Boatstack preserves existing behavior. Every confirmed capture and every later insight event is written below `docs/insights/<id>/` so the handoff is a reviewable repository diff. Boatstack never stores insight content in detached state or the Git control directory.
+
+- `enabled` (boolean, optional): Enables independent insight capture and evaluation.
+- `capture_mode` (string, optional): `manual`. Boatstack previews each capture and requires a separate state-scoped save confirmation.
+- `value_map` (string, optional): `required`. The confirmed capture must contain the canonical Product Value Map lineage and exact source binding.
+- `suggest_features` (boolean, optional): Allows the host adapter to propose one primary topic and related topics without creating a delivery.
+- `evaluate_on_pr` (boolean, optional): Appends an evaluation event when Boatstack publishes or observes a terminal PR for a bound managed feature. Evaluation never completes a capture.
+- `pending_frontier` (boolean, optional): Enables the separate read-only insight frontier. It never replaces the delivery frontier.
+- `completion_mode` (string, optional): `human_confirmed`. A human records final disposition; completing before readiness requires a non-empty reason.
 
 ### adapters Values
 

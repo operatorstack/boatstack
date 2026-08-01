@@ -387,6 +387,13 @@ func TestAttachPopulatesExternalRuntimeSlot(t *testing.T) {
 			t.Fatalf("runtime slot must be external, got %s", p)
 		}
 	}
+	manifest, loadedPath, err := loadSharedRuntime(repo)
+	if err != nil {
+		t.Fatalf("detached runtime must load through its external ownership boundary: %v", err)
+	}
+	if loadedPath != binaryPath || manifest.BoatstackVersion != Version {
+		t.Fatalf("loaded detached runtime drifted: path=%s manifest=%+v", loadedPath, manifest)
+	}
 }
 
 // control-law: activation-preserves-existing-host-config

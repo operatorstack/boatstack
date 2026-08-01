@@ -211,6 +211,14 @@ func (w WorkspaceContext) FlowDir() (string, error) {
 	return filepath.Join(base, "flow"), nil
 }
 
+// InsightDir is the tracked repository inbox for independent insight captures.
+// Unlike controller state, insight content is a plant artifact: every capture
+// and event must be visible as a reviewable Git diff and must never be routed to
+// the Git directory or detached control root.
+func (w WorkspaceContext) InsightDir() (string, error) {
+	return filepath.Join(w.RepoRoot, "docs", "insights"), nil
+}
+
 // GuardDir holds the per-worktree guard bookkeeping (the denial ledger). It is
 // worktree-partitioned like the delivery state: one worktree's denial history
 // must never escalate a sibling's denials.

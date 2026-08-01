@@ -83,6 +83,9 @@ var nonDeliveryVerbs = map[string]bool{
 	"workspace-sync":        true,
 	// Flow layer itself is read-only navigation over the machine, not a transition.
 	"flow": true,
+	// Insight capture is a detached control-plane tenant. Its append-only events
+	// observe delivery evidence but never transition the delivery machine.
+	"insight": true,
 	// Retro derivation reads operator-supplied transcripts and proposes typed
 	// promotions; it mutates nothing, so it registers no delivery transition.
 	// control-law: retro-proposes-never-enforces

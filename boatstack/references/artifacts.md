@@ -77,6 +77,16 @@ A completed parent's delivery state, plan lock, and receipts remain immutable.
 Post-publication observations append to its `changes.md`; the linked corrective
 child owns all new approval, lock, gate, and publication evidence.
 
+## Insight intake boundary
+
+Each confirmed insight lives under `docs/insights/<id>/`. `capture.json` is the
+immutable machine record, `insight.md` is its human-readable projection, and
+`events.jsonl` is the append-only association, binding, evaluation, duplicate,
+and disposition history. These files are product-intake artifacts. Every insight
+mutation creates a Git diff that can move from nontechnical input to engineering
+review through a pull request. No insight content lives in detached state or the
+Git control directory.
+
 ## PR projection boundary
 
 `pr.md` is a lossy review projection, not a replacement for the feature package. Its visible body contains only why, changed behavior, review order, evidence, gaps/risks, rollout, and rollback. Approval hashes, source paths, and host attribution remain in non-rendered metadata or collapsed provenance.
@@ -130,6 +140,7 @@ clone, `external` outside the repository (Detached Supervision).
 | discard-archive | committed-planning | checkout | discard-delivery |
 | pr-briefs | committed-planning | checkout | pr-context |
 | verified-boundaries | committed-planning | checkout | record-delivery-gate |
+| insight-artifacts | committed-insight | checkout | insight |
 | worktree-helper | checkout-runtime | checkout | init, update, hydrate-runtime |
 | managed-worktrees | checkout-runtime | checkout | workspace-cut, workspace-cleanup, workspace-reap |
 | delivery-state | runtime-worktree | per-worktree | delivery transitions |

@@ -293,7 +293,9 @@ func persistObservedTerminalPRState(repo string, state DeliveryState, observatio
 			return
 		}
 		state.Slices[i].PRState = observation.Lifecycle
-		_ = saveDeliveryState(repo, state)
+		if saveDeliveryState(repo, state) == nil {
+			reconcileInsightsForFeature(repo, state.Feature)
+		}
 		return
 	}
 }

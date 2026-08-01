@@ -1241,7 +1241,11 @@ func MarkDeliveryPublished(repo, feature, sliceID, url string) error {
 		if strings.TrimSpace(state.Slices[sliceIndex].PRState) == "" {
 			state.Slices[sliceIndex].PRState = "OPEN"
 		}
-		return saveDeliveryState(repo, state)
+		if err := saveDeliveryState(repo, state); err != nil {
+			return err
+		}
+		reconcileInsightsForFeature(repo, feature)
+		return nil
 	}
 	if slice.Status != StatusReviewPassed {
 		return fmt.Errorf("delivery slice %s is not ready to publish", sliceID)
@@ -1262,7 +1266,11 @@ func MarkDeliveryPublished(repo, feature, sliceID, url string) error {
 			state.Mode = "NORMAL"
 		}
 	}
-	return saveDeliveryState(repo, state)
+	if err := saveDeliveryState(repo, state); err != nil {
+		return err
+	}
+	reconcileInsightsForFeature(repo, feature)
+	return nil
 }
 
 // scanManagedDeliveries partitions the delivery-state store into deliveries

@@ -125,6 +125,7 @@ func TestTamperDenialNamesDeclaredOwnerVerbs(t *testing.T) {
 		"state-root/boatstack/registry.json":             {"attach", "detach"},
 		".git/boatstack/visual-evidence/x/manifest.json": {"record-pr-visual-evidence", "capture-evidence", "record-pr-visual-publication", "attach-evidence"},
 		"boatstack/repositories/sample/binding.json":     {"attach", "detach", "activate"},
+		"docs/insights/ins-sample/capture.json":          {"insight"},
 	}
 	for attempted, want := range cases {
 		got := tamperOwnerVerbs(repo, attempted)

@@ -114,6 +114,13 @@ func TestPublicConfigurationGuideContainsOnlySupportedUserControls(t *testing.T)
 	want := []string{
 		"adapters",
 		"delivery.terminal",
+		"insights.capture_mode",
+		"insights.completion_mode",
+		"insights.enabled",
+		"insights.evaluate_on_pr",
+		"insights.pending_frontier",
+		"insights.suggest_features",
+		"insights.value_map",
 		"project.commands",
 		"project.context",
 		"project.default_branch",

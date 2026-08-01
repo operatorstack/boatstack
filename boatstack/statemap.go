@@ -23,6 +23,10 @@ const (
 	// ClassCommittedPlanning is the durable feature evidence authored through
 	// owned verbs and committed with the product (plans, approvals, locks, PRs).
 	ClassCommittedPlanning PathClass = "committed-planning"
+	// ClassCommittedInsight is the repository inbox for business and product
+	// insights. Captures and append-only events are reviewable Git artifacts;
+	// they are never runtime or detached controller state.
+	ClassCommittedInsight PathClass = "committed-insight"
 	// ClassCheckoutRuntime is reinstallable machine state living inside the
 	// checkout but gitignored (the pinned helper binary, managed worktrees).
 	ClassCheckoutRuntime PathClass = "checkout-runtime"
@@ -142,6 +146,17 @@ func StateRegistry() []StateEntry {
 			Name: "verified-boundaries", Class: ClassCommittedPlanning, Partition: "checkout",
 			OwnerVerbs: []string{"record-delivery-gate"},
 			Sample:     generatedSample("verified-boundaries.md"),
+		},
+		{
+			Name: "insight-artifacts", Class: ClassCommittedInsight, Partition: "checkout", GuardProtected: true,
+			OwnerVerbs: []string{"insight"},
+			Sample: func(w WorkspaceContext) (string, error) {
+				base, err := w.InsightDir()
+				if err != nil {
+					return "", err
+				}
+				return filepath.Join(base, "ins-sample", "capture.json"), nil
+			},
 		},
 		{
 			Name: "worktree-helper", Class: ClassCheckoutRuntime, Partition: "checkout", Gitignored: true,

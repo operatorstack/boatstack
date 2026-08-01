@@ -215,6 +215,8 @@ func TestExportAndDriftCheck(t *testing.T) {
 	build := string(bundle.Files[".cursor/commands/build.md"])
 	responseOutcomes := map[string][]string{
 		"boatstack-run":    {"Start a Boatstack feature", "Feature complete"},
+		"insight-capture":  {"Insight ready to save", "Insight saved"},
+		"insight-frontier": {"Insight frontier ready"},
 		"root-cause":       {"Root cause found"},
 		"auto-plan":        {"Plan ready", "I need your input"},
 		"plan-gate":        {"Ready for your approval", "Approved — ready to build"},
@@ -478,7 +480,7 @@ func TestPortableHostAdaptersShareWorkflowAndArtifactContract(t *testing.T) {
 
 	workflow := string(bundle.Files[".product-loop/workflow.md"])
 	artifacts := string(bundle.Files[".product-loop/artifacts.md"])
-	for _, expected := range []string{"boatstack-next", "boatstack-run", "root-cause", "auto-plan", "plan-gate", "build", "test-gate", "review-gate", "ship-gate", "boatstack-update", "retro"} {
+	for _, expected := range []string{"boatstack-next", "boatstack-run", "insight-capture", "insight-frontier", "root-cause", "auto-plan", "plan-gate", "build", "test-gate", "review-gate", "ship-gate", "boatstack-update", "retro"} {
 		if !strings.Contains(workflow, expected) {
 			t.Fatalf("canonical portable workflow is missing %q", expected)
 		}
@@ -527,7 +529,7 @@ func TestPortableHostAdaptersShareWorkflowAndArtifactContract(t *testing.T) {
 			t.Fatalf("%s adapter retains broad free-form repair capture", host)
 		}
 	}
-	for _, operation := range []string{"next", "boatstack-next", "run", "boatstack-run", "root-cause", "auto-plan", "plan-gate", "build", "test-gate", "review-gate", "ship-gate", "boatstack-update", "retro"} {
+	for _, operation := range []string{"next", "boatstack-next", "run", "boatstack-run", "insight-capture", "insight-frontier", "root-cause", "auto-plan", "plan-gate", "build", "test-gate", "review-gate", "ship-gate", "boatstack-update", "retro"} {
 		if !strings.Contains(hostSurfaces["codex"], operation) {
 			t.Fatalf("Codex router does not declare portable operation %q", operation)
 		}
