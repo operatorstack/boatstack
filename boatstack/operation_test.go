@@ -264,6 +264,21 @@ func TestOperationLifecycleAndReplayProtection(t *testing.T) {
 	}
 }
 
+func TestTerminalPostconditionReconciliationIsUpdateLocalOnly(t *testing.T) {
+	repo := operationTestRepo(t)
+	receipt := preparedOperation(t, repo, "generic-package", "ATOMIC_LOCAL", 2)
+	begin, err := BeginOperation(repo, receipt.OperationID, "generic-attempt", "Write")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CompleteOperation(repo, receipt.OperationID, begin.LeaseToken, "SUCCEEDED", "observed", "artifact"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reconcileSucceededInstallUpdate(repo, receipt.OperationID, "missing", "artifact"); err == nil || !strings.Contains(err.Error(), "does not support") {
+		t.Fatalf("generic terminal operation was reopened: %v", err)
+	}
+}
+
 func TestOperationRejectsChangedPackageAndAuthorization(t *testing.T) {
 	repo := operationTestRepo(t)
 	receipt := preparedOperation(t, repo, "package-auth", "ATOMIC_LOCAL", 2)
@@ -354,6 +369,18 @@ func TestOperationLedgerIsolatedPerWorktree(t *testing.T) {
 	}
 	if _, err := BeginOperation(linked, linkedReceipt.OperationID, "linked-attempt", "Write"); err != nil {
 		t.Fatalf("linked worktree blocked by another worktree's in-flight operation: %v", err)
+	}
+}
+
+func TestWindowsAccessDeniedLockRaceIsContentionAfterEntryDisappears(t *testing.T) {
+	lock := filepath.Join(t.TempDir(), "removed.lock")
+	openErr := &os.PathError{Op: "open", Path: lock, Err: os.ErrPermission}
+
+	if !isLockContentionForOS(openErr, lock, "windows") {
+		t.Fatal("Windows access-denied race was not classified as bounded contention")
+	}
+	if isLockContentionForOS(openErr, lock, "linux") {
+		t.Fatal("missing Unix lock path was misclassified as contention")
 	}
 }
 

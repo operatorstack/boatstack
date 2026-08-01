@@ -375,6 +375,99 @@ func TestDetachedUpdateRepairsInvalidLocalProvenanceEndToEnd(t *testing.T) {
 	}
 }
 
+func TestDetachedUpdateReconcilesSucceededReceiptAfterCommittedPinIsRestored(t *testing.T) {
+	now := time.Date(2026, 8, 1, 13, 0, 0, 0, time.UTC)
+	withUpdateGlobals(t, "v0.4.0", now, func() (ReleaseInfo, error) { return ReleaseInfo{}, nil })
+	repo, _ := updateInstalledRepo(t)
+	t.Setenv(stateRootEnv, t.TempDir())
+	invalidateWorkspaceCache()
+	if _, err := AttachDetached(AttachOptions{Repo: repo}); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "switch", "-c", "chore/update-boatstack-v0.5.0")
+	Version = "v0.5.0"
+	SourceCommit = "update-test-0.5.0"
+	options := InitOptions{Repo: repo, Repair: true, Yes: true, Input: strings.NewReader(""), Output: &bytes.Buffer{}}
+	if err := RunUpdate(options); err != nil {
+		t.Fatal(err)
+	}
+	receipts, err := operationReceipts(repo)
+	if err != nil || len(receipts) == 0 {
+		t.Fatalf("first update receipt missing: %#v %v", receipts, err)
+	}
+	var updateID string
+	for _, receipt := range receipts {
+		if receipt.Kind == "install-update" && receipt.State == OperationSucceeded {
+			updateID = receipt.OperationID
+		}
+	}
+	if updateID == "" {
+		t.Fatalf("successful update receipt missing: %#v", receipts)
+	}
+
+	// Simulate an operator discarding the generated update diff while ignored
+	// runtime state and the detached terminal receipt survive.
+	runGit(t, repo, "restore", ".")
+	if status := gitPorcelain(t, repo); status != "" {
+		t.Fatalf("fixture did not restore a clean old-pin worktree: %s", status)
+	}
+	if err := verifyGeneratedRuntime(repo); err == nil {
+		t.Fatal("restored old pin unexpectedly matched the target runtime")
+	}
+
+	options.Input = strings.NewReader("")
+	options.Output = &bytes.Buffer{}
+	if err := RunUpdate(options); err != nil {
+		t.Fatalf("clean retry did not reconcile the stale terminal receipt: %v", err)
+	}
+	if err := verifyGeneratedRuntime(repo); err != nil {
+		t.Fatalf("clean retry did not regenerate the target pin: %v", err)
+	}
+	reconciled, err := loadOperation(repo, updateID)
+	if err != nil || reconciled.State != OperationSucceeded || reconciled.Attempt != 1 || reconciled.Observation.Status != "SUCCEEDED" {
+		t.Fatalf("reconciled update did not finish as a fresh bounded attempt: %#v %v", reconciled, err)
+	}
+}
+
+func TestUpdatePostconditionVerifierIsReadOnlyWhenCurrent(t *testing.T) {
+	now := time.Date(2026, 8, 1, 13, 0, 0, 0, time.UTC)
+	withUpdateGlobals(t, "v0.4.0", now, func() (ReleaseInfo, error) { return ReleaseInfo{}, nil })
+	repo, _ := updateInstalledRepo(t)
+	runGit(t, repo, "switch", "-c", "chore/update-boatstack-v0.5.0")
+	Version = "v0.5.0"
+	SourceCommit = "update-test-0.5.0"
+	options := InitOptions{Repo: repo, Yes: true, Input: strings.NewReader(""), Output: &bytes.Buffer{}}
+	if err := RunUpdate(options); err != nil {
+		t.Fatal(err)
+	}
+	receipts, err := operationReceipts(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before OperationReceipt
+	for _, receipt := range receipts {
+		if receipt.Kind == "install-update" {
+			before = receipt
+		}
+	}
+	configPath := WorkspaceFor(repo).SourceConfigPath()
+	config, rawConfig, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preflight, err := ClassifyInstallationRepair(repo, config.Adapters, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyInstalledUpdatePostcondition(repo, configPath, config, rawConfig, preflight.PreservedIntegrations); err != nil {
+		t.Fatalf("current update postcondition did not verify: %v", err)
+	}
+	after, err := loadOperation(repo, before.OperationID)
+	if err != nil || after.Attempt != before.Attempt || after.UpdatedAt != before.UpdatedAt {
+		t.Fatalf("current terminal receipt was needlessly reopened: before=%#v after=%#v err=%v", before, after, err)
+	}
+}
+
 func TestRepairReconstructsCorruptGeneratedProvenance(t *testing.T) {
 	now := time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)
 	withUpdateGlobals(t, "v0.4.0", now, func() (ReleaseInfo, error) { return ReleaseInfo{}, nil })

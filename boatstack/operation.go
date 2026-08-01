@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -253,15 +254,27 @@ func withOperationLock(repo, id string, apply func() error) error {
 	return fmt.Errorf("operation %s is busy", id)
 }
 
-// Windows can report ERROR_ACCESS_DENIED when another process owns an O_EXCL
-// lock file. Treat that as contention only when the lock path actually exists;
-// genuine directory/ACL permission failures still fail closed.
+// Windows can report ERROR_ACCESS_DENIED while another process owns or has just
+// released an O_EXCL lock file. Retry that condition within the caller's bounded
+// budget; other platforms require the lock path to exist.
 func isLockContention(openErr error, lock string) bool {
+	return isLockContentionForOS(openErr, lock, runtime.GOOS)
+}
+
+func isLockContentionForOS(openErr error, lock, goos string) bool {
 	if os.IsExist(openErr) {
 		return true
 	}
 	if !os.IsPermission(openErr) {
 		return false
+	}
+	// Windows can keep an exclusive lock handle alive briefly after the owner
+	// removes its directory entry. During that interval OpenFile reports
+	// ERROR_ACCESS_DENIED while a following Stat can already report not-exist.
+	// Retry within the caller's fixed budget; a real ACL failure still exhausts
+	// that budget without entering the critical section.
+	if goos == "windows" {
+		return true
 	}
 	_, statErr := os.Stat(lock)
 	return statErr == nil
@@ -438,6 +451,42 @@ func BeginOperation(repoPath, id, attemptKey, tool string) (OperationBeginResult
 		}
 		result = OperationBeginResult{Receipt: receipt, LeaseToken: token}
 		return nil
+	})
+	return result, err
+}
+
+// reconcileSucceededInstallUpdate reopens only a local atomic Boatstack update
+// whose previously observed postcondition no longer holds. A terminal receipt is
+// evidence about an observation in time, not permanent authority to suppress a
+// later explicit update after the repository was restored or otherwise regressed.
+// Other operation kinds keep their existing terminal replay semantics.
+func reconcileSucceededInstallUpdate(repoPath, id, detail, evidence string) (OperationReceipt, error) {
+	repo, err := ResolveRepository(repoPath)
+	if err != nil {
+		return OperationReceipt{}, err
+	}
+	var result OperationReceipt
+	err = withOperationLock(repo, id, func() error {
+		receipt, loadErr := loadOperation(repo, id)
+		if loadErr != nil {
+			return loadErr
+		}
+		if receipt.State != OperationSucceeded {
+			return fmt.Errorf("operation %s is no longer a succeeded update", id)
+		}
+		if receipt.Kind != "install-update" || receipt.RetryClass != "ATOMIC_LOCAL" {
+			return fmt.Errorf("operation %s does not support terminal postcondition reconciliation", id)
+		}
+		receipt.State = OperationRetryable
+		receipt.Attempt = 0
+		receipt.Lease = nil
+		receipt.Observation = OperationObservation{
+			Status: "POSTCONDITION_MISSING", Detail: boundedObservation(detail),
+			Evidence: boundedObservation(evidence), At: operationTimestamp(),
+		}
+		receipt.UpdatedAt = operationTimestamp()
+		result = receipt
+		return saveOperation(repo, receipt)
 	})
 	return result, err
 }

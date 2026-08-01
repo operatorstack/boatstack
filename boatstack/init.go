@@ -793,7 +793,8 @@ func RunUpdate(options InitOptions) error {
 			return reexecUpdate(options.BinaryPath, options)
 		}
 	}
-	config, _, configErr := LoadConfig(WorkspaceFor(repo).SourceConfigPath())
+	configPath := WorkspaceFor(repo).SourceConfigPath()
+	config, rawConfig, configErr := LoadConfig(configPath)
 	if configErr != nil {
 		return configErr
 	}
@@ -827,15 +828,27 @@ func RunUpdate(options InitOptions) error {
 	if err != nil {
 		return err
 	}
+	if receipt.State == OperationSucceeded {
+		postconditionErr := verifyInstalledUpdatePostcondition(repo, configPath, config, rawConfig, preflight.PreservedIntegrations)
+		if postconditionErr == nil {
+			return nil
+		}
+		receipt, err = reconcileSucceededInstallUpdate(repo, receipt.OperationID,
+			"the previously successful local update no longer matches its target postcondition",
+			postconditionErr.Error())
+		if err != nil {
+			return err
+		}
+	}
 	begin, err := BeginOperation(repo, receipt.OperationID, SHA256Bytes([]byte("install-update\x00"+packageFingerprint)), "boatstack-helper update")
 	if err != nil {
 		if begin.Receipt.State == OperationSucceeded {
-			return nil
+			return verifyInstalledUpdatePostcondition(repo, configPath, config, rawConfig, preflight.PreservedIntegrations)
 		}
 		return err
 	}
 	if begin.Receipt.State == OperationSucceeded {
-		return nil
+		return verifyInstalledUpdatePostcondition(repo, configPath, config, rawConfig, preflight.PreservedIntegrations)
 	}
 	options.Update = true
 	if err := RunInit(options); err != nil {
@@ -844,4 +857,48 @@ func RunUpdate(options InitOptions) error {
 	}
 	_, err = CompleteOperation(repo, receipt.OperationID, begin.LeaseToken, "SUCCEEDED", "post-install doctor and generated projections passed", Version)
 	return err
+}
+
+func verifyInstalledUpdatePostcondition(repo, configPath string, config ProjectConfig, rawConfig []byte, expectedIntegrations map[string]IntegrationState) error {
+	bundle, err := BuildExportBundle(configPath, config, rawConfig, "boatstack")
+	if err != nil {
+		return err
+	}
+	if err := CheckExport(repo, bundle.Files); err != nil {
+		return err
+	}
+	if err := CheckHostHooks(repo, config.Adapters); err != nil {
+		return err
+	}
+	for _, host := range config.Adapters {
+		path := executionInterceptorPath(host)
+		if path == "" {
+			continue
+		}
+		items := classifyExecutionInterceptor(repo, host)
+		if len(items) != 1 || items[0].Classification != RepairCurrent {
+			return fmt.Errorf("target execution interceptor is not current: %s", path)
+		}
+	}
+	if err := verifyGeneratedRuntime(repo); err != nil {
+		return err
+	}
+	manifest, _, err := loadSharedRuntime(repo)
+	if err != nil {
+		return err
+	}
+	if err := verifyLocalRuntime(repo); err != nil {
+		return err
+	}
+	installedIntegrations, err := readInstalledIntegrations(repo, config)
+	if err != nil {
+		return err
+	}
+	if expectedIntegrations == nil {
+		expectedIntegrations = config.Integrations
+	}
+	if !sameJSON(installedIntegrations, expectedIntegrations) || !sameJSON(manifest.Integrations, expectedIntegrations) {
+		return fmt.Errorf("installed integration state does not match the update postcondition")
+	}
+	return nil
 }
