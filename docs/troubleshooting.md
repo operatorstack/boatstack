@@ -137,6 +137,8 @@ Use the installer for the target release in update mode. It downloads and verifi
 
 If the ignored local install lock says `dev`, has an unknown source commit, is malformed, or is absent, rerun the same verified target installer with `BOATSTACK_REPAIR=1`. The target helper recovers the prior stable version from the repository's committed generated pin and repairs only verified Boatstack-owned state. Do not delete repository files or move detached state by hand. Detached operation receipts and runtime slots are validated against their external Boatstack ownership root, so a path under `Application Support/boatstack` is not treated as a repository escape.
 
+If a previous update succeeded but its generated diff was later discarded, rerun the verified target installer. Boatstack now checks the current repository and runtime postcondition before consuming the detached success receipt. A clean old-pin worktree reopens only the same local update and regenerates it; publication and other external terminal receipts remain closed.
+
 ## A tool call repeats or publication appears stuck
 
 Run `.product-loop/bin/boatstack-helper operation-status --repo . --json`. `EXECUTING` means the exact call already has a live lease, so wait instead of launching it again. `RECONCILE_REQUIRED` means Boatstack did not observe completion; verify the reported Git, GitHub, file, browser, or MCP postcondition before retrying. A successful operation whose response was lost is recovered from that observation. Do not reset the task, repeat a denied push, or open another PR.
