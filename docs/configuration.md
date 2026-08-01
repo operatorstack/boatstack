@@ -16,6 +16,13 @@ boatstack-user-config-field:workflow.visual_evidence_publish.host
 boatstack-user-config-field:workflow.visual_evidence_publish.expiry
 boatstack-user-config-field:workflow.ignored_deliveries
 boatstack-user-config-field:delivery.terminal
+boatstack-user-config-field:insights.enabled
+boatstack-user-config-field:insights.capture_mode
+boatstack-user-config-field:insights.value_map
+boatstack-user-config-field:insights.suggest_features
+boatstack-user-config-field:insights.evaluate_on_pr
+boatstack-user-config-field:insights.pending_frontier
+boatstack-user-config-field:insights.completion_mode
 boatstack-user-config-field:workspace.enabled
 boatstack-user-config-field:workspace.mode
 boatstack-user-config-field:workspace.cleanup
@@ -56,6 +63,7 @@ failed, or stale results.
 | Render screenshots inline on a private PR | `workflow.visual_evidence_publish.*` | `mode: external-host` uploads the captured PNGs to an anonymous expiring host so the comment renders inline even on a private repo; opt-in, never automatic. |
 | Ignore old ambiguous deliveries | `workflow.ignored_deliveries` | Listed feature slugs are excluded from delivery-ambiguity resolution so past work stops blocking new work; new, unlisted ambiguous deliveries still pause. |
 | Pursue the PR to merge, not just to open | `delivery.terminal` | `merged` keeps the read-only flow advisors naming post-publish steps (watch checks, route corrections) until the PR is observed merged; the default `published` ends the flow when the PR is open, exactly as before. |
+| Preserve and evaluate product insights | `insights.*` | Manual, fingerprint-bound captures and events become tracked `docs/insights/` diffs; PR evidence can update readiness, but only a human completes an insight. |
 | Use fresh feature workspaces | `workspace.*` | Boatstack creates and cleans branches or linked worktrees under the selected policy. |
 | Limit generated host surfaces | `adapters` | Export generates only the selected supported adapters. |
 
@@ -169,6 +177,24 @@ Workspace `mode` is `worktree` or `branch`; cleanup is `confirm`, `auto`, or `of
 ```
 
 `delivery.terminal` names the state a delivery pursues before the flow reports nothing left to do. The default `published` ends the flow when the slice's pull request is open, exactly as before. `merged` keeps the read-only flow advisors (`next-status`, `flow next`, `flow frontier`, `flow watch`) naming post-publish steps — watch the checks, route a correction, surface merge eligibility — until the pull request is observed merged. The goal a delivery starts under is snapshotted with the delivery, so changing this value never changes an in-progress delivery's goal. Boatstack itself never merges a pull request under any setting.
+
+## Independent insight controls
+
+```json
+{
+  "insights": {
+    "enabled": true,
+    "capture_mode": "manual",
+    "value_map": "required",
+    "suggest_features": true,
+    "evaluate_on_pr": true,
+    "pending_frontier": true,
+    "completion_mode": "human_confirmed"
+  }
+}
+```
+
+Every save follows a complete Value Map preview, a warning that the exact content will enter Git history, and a separate confirmation bound to that preview. Captures, their human-readable projections, and append-only events live below `docs/insights/<id>/`. Each mutation is therefore a reviewable repository diff. Boatstack stores no insight content in detached or Git control state. Topic suggestions do not create deliveries. PR publication or terminal observation may append evaluation evidence, but never completes an insight. The insight frontier remains separate from Boatstack's authoritative delivery next action.
 
 ## Installer-owned fields
 

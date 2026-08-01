@@ -14,21 +14,21 @@ import (
 // SafetyFinding is intentionally small and secret-free. The guard reports the
 // class and a stable explanation, never the full command or tool arguments.
 type SafetyFinding struct {
-	Category               string `json:"category"`
-	Reason                 string `json:"reason"`
-	Source                 string `json:"source,omitempty"`
-	BlockingFeature        string `json:"blocking_feature,omitempty"`
-	BlockingSlice          string `json:"blocking_slice,omitempty"`
-	BranchRelation         string `json:"branch_relation,omitempty"`
-	NextOperation          string `json:"next_operation,omitempty"`
-	ParentDelivery         string `json:"parent_delivery,omitempty"`
-	WorkflowStage          string `json:"workflow_stage,omitempty"`
-	AttemptedPath          string `json:"attempted_path,omitempty"`
-	OperationID            string `json:"operation_id,omitempty"`
-	OperationState         string `json:"operation_state,omitempty"`
+	Category        string `json:"category"`
+	Reason          string `json:"reason"`
+	Source          string `json:"source,omitempty"`
+	BlockingFeature string `json:"blocking_feature,omitempty"`
+	BlockingSlice   string `json:"blocking_slice,omitempty"`
+	BranchRelation  string `json:"branch_relation,omitempty"`
+	NextOperation   string `json:"next_operation,omitempty"`
+	ParentDelivery  string `json:"parent_delivery,omitempty"`
+	WorkflowStage   string `json:"workflow_stage,omitempty"`
+	AttemptedPath   string `json:"attempted_path,omitempty"`
+	OperationID     string `json:"operation_id,omitempty"`
+	OperationState  string `json:"operation_state,omitempty"`
 	// PolicySource explains a policy-derived denial: "plan-escalated" when a
 	// plan-approved visual decision lifts suggest to require semantics.
-	PolicySource string `json:"policy_source,omitempty"`
+	PolicySource           string `json:"policy_source,omitempty"`
 	AttemptNumber          int    `json:"attempt_number,omitempty"`
 	ReconciliationRequired bool   `json:"reconciliation_required,omitempty"`
 	// RepeatCount is how many times this same denial (category at stage) has
@@ -67,7 +67,7 @@ func malformedHookInput(code string) error {
 // idioms — recovery-status | jq, git diff | wc -l, … | sort | uniq -c — compose
 // freely. Effect-CHANGING syntax (redirection > <, command substitution $()) is
 // still banned in isPureReadOnlyCommand, so no filter can be turned into a writer.
-var readOnlyStage = regexp.MustCompile(`(?i)^\s*(?:env\s+[^ ]+\s+)*(?:rg|grep|git\s+(?:grep|diff|status|show|log)|cat|sed|head|tail|less|wc|awk|sort|uniq|cut|tr|jq|column|nl|comm|rev|fold|find\s+[^\n]*-(?:print|ls)|psql\s+[^\n]*\s-c\s+["']?\s*select\b|(?:[^\s]*/)?boatstack-helper(?:[_.-][a-z0-9._-]+)?\s+(?:recovery-status|mutation-status|operation-status|delivery-status|next-status|workspace-status|repair-status|check-plan|check-source-plan|check-safety|diagnose-hook|doctor|version)\b)`)
+var readOnlyStage = regexp.MustCompile(`(?i)^\s*(?:env\s+[^ ]+\s+)*(?:rg|grep|git\s+(?:grep|diff|status|show|log)|cat|sed|head|tail|less|wc|awk|sort|uniq|cut|tr|jq|column|nl|comm|rev|fold|find\s+[^\n]*-(?:print|ls)|psql\s+[^\n]*\s-c\s+["']?\s*select\b|(?:[^\s]*/)?boatstack-helper(?:[_.-][a-z0-9._-]+)?\s+(?:recovery-status|mutation-status|operation-status|delivery-status|next-status|workspace-status|repair-status|check-plan|check-source-plan|check-safety|diagnose-hook|doctor|version)\b|(?:[^\s]*/)?boatstack-helper(?:[_.-][a-z0-9._-]+)?\s+insight\s+(?:check|list|show|frontier|evaluate)\b)`)
 
 // Constitutional/Optimization split. These destruction rules are CONSTITUTIONAL:
 // they define the real boundary (destroying a live resource) and are never traded
@@ -139,6 +139,15 @@ var approvedUpdatePublisherPattern = regexp.MustCompile(`(?i)^\s*(?:[^\s]*/)?boa
 // the version-namespaced boatstack/runtimes). Only Boatstack transitions and the
 // sanctioned publisher (approvedUpdatePublisherPattern) may name these paths.
 var deliveryStatePathPattern = regexp.MustCompile(`(?i)(?:boatstack[/\\](?:deliveries|operations|flow|repositories|runtimes|registry\.json)|\.git[/\\](?:worktrees[/\\][^/\\]+[/\\])?boatstack(?:[/\\]|$))`)
+
+// insightArtifactPathPattern protects the tracked insight inbox from raw edits.
+// The insight helper owns content mutation; ordinary Git staging remains allowed
+// so the resulting artifact can cross the review boundary as a PR.
+// control-law: confirmed-insight-becomes-reviewable-repository-diff
+var insightArtifactPathPattern = regexp.MustCompile(`(?i)(?:^|[/\\\s"'=])docs[/\\]insights(?:[/\\]|$)`)
+
+var insightGitStagingPattern = regexp.MustCompile(`(?i)^\s*git\s+(?:add|diff|status)\b`)
+var insightInPlaceMutationPattern = regexp.MustCompile(`(?i)\bsed\s+-[^\s]*i(?:\.[^\s]+)?\b`)
 var mutationToolPattern = regexp.MustCompile(`(?i)(?:write|edit|apply[_-]?patch|create|delete|remove|move|rename|update|insert|upload|install)`)
 var planningMutationToolPattern = regexp.MustCompile(`(?i)(?:write|edit|apply[_-]?patch|create)`)
 var externalReadOnlyToolPattern = regexp.MustCompile(`(?i)(?:^|[_-])(?:get|list|read|search|find|status|inspect|query|fetch|open)(?:[_-]|$)`)
@@ -821,6 +830,9 @@ func ClassifyCommand(repo, command string) []SafetyFinding {
 		// path's declared owner verbs from the state-ownership map.
 		return []SafetyFinding{{Category: "workflow-state-tamper", Reason: "managed delivery state may be changed only by Boatstack transitions", Source: "delivery-state", AttemptedPath: deliveryStatePathPattern.FindString(command)}}
 	}
+	if insightArtifactPathPattern.MatchString(command) && (!isPureReadOnlyCommand(command) || insightInPlaceMutationPattern.MatchString(command)) && !insightGitStagingPattern.MatchString(command) {
+		return []SafetyFinding{{Category: "workflow-state-tamper", Reason: "tracked insight artifacts may be changed only by Boatstack insight transitions", Source: "insight-state", AttemptedPath: insightArtifactPathPattern.FindString(command)}}
+	}
 	if directPublicationPattern.MatchString(command) && !approvedPublisherPattern.MatchString(command) {
 		if finding, blocked := publicationBypassFinding(repo, "direct push or PR mutation is denied while a managed delivery slice is active", "tool-input"); blocked {
 			return []SafetyFinding{finding}
@@ -908,6 +920,9 @@ func ClassifyTool(repo, name string, input any) []SafetyFinding {
 	publicationText := strings.ToLower(combined)
 	if deliveryStatePathPattern.MatchString(combined) && regexp.MustCompile(`(?:write|edit|delete|remove|move|rename|create|update)`).MatchString(nameLower) {
 		findings = append(findings, SafetyFinding{Category: "workflow-state-tamper", Reason: "managed delivery state may be changed only by Boatstack transitions", Source: "delivery-state", AttemptedPath: deliveryStatePathPattern.FindString(combined)})
+	}
+	if insightArtifactPathPattern.MatchString(combined) && regexp.MustCompile(`(?:write|edit|delete|remove|move|rename|create|update)`).MatchString(nameLower) {
+		findings = append(findings, SafetyFinding{Category: "workflow-state-tamper", Reason: "tracked insight artifacts may be changed only by Boatstack insight transitions", Source: "insight-state", AttemptedPath: insightArtifactPathPattern.FindString(combined)})
 	}
 	if (strings.Contains(publicationText, "pull_request") || strings.Contains(publicationText, "pull request")) &&
 		regexp.MustCompile(`(?:create|update|edit|merge|publish)`).MatchString(publicationText) {

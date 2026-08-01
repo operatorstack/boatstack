@@ -101,6 +101,19 @@ func sharedRuntimePaths(repo, version, sourceCommit string) (string, string, err
 	return filepath.Join(directory, helperName()), filepath.Join(directory, "runtime.lock.json"), nil
 }
 
+// runtimeSymlinkRoot returns the ownership boundary for the runtime selected by
+// WorkspaceFor. Embedded runtimes live under the Git common directory; detached
+// runtimes live under Boatstack's external control root. Keeping the check on the
+// same side of that projection prevents detached hydration and doctor from
+// rejecting their own external runtime as a repository escape.
+func runtimeSymlinkRoot(repo string) (string, error) {
+	ctx := WorkspaceFor(repo)
+	if ctx.Mode == SupervisionDetached {
+		return ctx.sharedControlDir()
+	}
+	return gitCommonDir(repo)
+}
+
 func atomicWriteMode(path string, content []byte, mode fs.FileMode) error {
 	directory := filepath.Dir(path)
 	if err := os.MkdirAll(directory, 0o755); err != nil {
@@ -140,11 +153,11 @@ func installSharedRuntime(source, repo string, integrations map[string]Integrati
 	if err != nil {
 		return runtimeManifest{}, err
 	}
-	common, err := gitCommonDir(repo)
+	root, err := runtimeSymlinkRoot(repo)
 	if err != nil {
 		return runtimeManifest{}, err
 	}
-	return writeRuntimeSlot(source, common, binaryPath, manifestPath, integrations)
+	return writeRuntimeSlot(source, root, binaryPath, manifestPath, integrations)
 }
 
 // installDetachedRuntime populates a detached repository's external shared-runtime
@@ -222,12 +235,12 @@ func loadSharedRuntime(repo string) (runtimeManifest, string, error) {
 	if err != nil {
 		return runtimeManifest{}, "", err
 	}
-	common, err := gitCommonDir(repo)
+	root, err := runtimeSymlinkRoot(repo)
 	if err != nil {
 		return runtimeManifest{}, "", err
 	}
 	for _, path := range []string{binaryPath, manifestPath} {
-		if err := rejectSymlinkComponents(common, path); err != nil {
+		if err := rejectSymlinkComponents(root, path); err != nil {
 			return runtimeManifest{}, "", err
 		}
 	}

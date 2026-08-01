@@ -68,6 +68,7 @@ func TestEveryWorkspaceResolverIsDeclared(t *testing.T) {
 		"OperationDir":      {resolve(w.OperationDir), ClassRuntimeWorktree},
 		"FlowDir":           {resolve(w.FlowDir), ClassRuntimeWorktree},
 		"GuardDir":          {resolve(w.GuardDir), ClassRuntimeWorktree},
+		"InsightDir":        {resolve(w.InsightDir), ClassCommittedInsight},
 		"RuntimeDir": {resolve(func() (string, error) {
 			return w.RuntimeDir("v0.0.0", "0000000")
 		}), ClassRuntimeShared},
@@ -133,8 +134,9 @@ func TestGuardClassifiersMatchDeclaredOwnership(t *testing.T) {
 	repoRoot := filepath.ToSlash(w.RepoRoot)
 	for _, entry := range StateRegistry() {
 		sample := entrySample(t, w, entry)
-		if got := deliveryStatePathPattern.MatchString(sample); got != entry.GuardProtected {
-			t.Errorf("guard pattern(%s)=%t but declaration says GuardProtected=%t (sample %s)", entry.Name, got, entry.GuardProtected, sample)
+		gotProtected := deliveryStatePathPattern.MatchString(sample) || insightArtifactPathPattern.MatchString(sample)
+		if gotProtected != entry.GuardProtected {
+			t.Errorf("guard pattern(%s)=%t but declaration says GuardProtected=%t (sample %s)", entry.Name, gotProtected, entry.GuardProtected, sample)
 		}
 		if entry.Class == ClassCommittedPlanning {
 			relative := strings.TrimPrefix(strings.TrimPrefix(sample, repoRoot), "/")
