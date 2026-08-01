@@ -297,6 +297,84 @@ func TestRepairPreservesIntegrationFallbackWhenInstallLockIsMissing(t *testing.T
 	}
 }
 
+func TestRepairFallsBackToCommittedPinWhenLocalProvenanceIsInvalid(t *testing.T) {
+	now := time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)
+	withUpdateGlobals(t, "v0.4.0", now, func() (ReleaseInfo, error) { return ReleaseInfo{}, nil })
+	for name, value := range map[string][]byte{
+		"development identity": []byte(`{"boatstack_version":"dev","source_commit":"unknown"}`),
+		"unknown source":       []byte(`{"boatstack_version":"v0.4.0","source_commit":"unknown"}`),
+		"malformed identity":   []byte("{\n"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo, _ := updateInstalledRepo(t)
+			lockPath := filepath.Join(repo, ".product-loop", "bin", "install.lock.json")
+			if err := os.WriteFile(lockPath, value, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			// Recovery authority comes from the committed pin, not a potentially
+			// drifted generated file in the worktree.
+			if err := os.WriteFile(filepath.Join(repo, ".product-loop", "generated.lock.json"), []byte("{\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			installed, err := installedVersion(repo)
+			if err != nil || installed != "v0.4.0" {
+				t.Fatalf("committed pin did not recover version identity: version=%q err=%v", installed, err)
+			}
+			config, _, err := LoadConfig(filepath.Join(repo, ".boatstack-project.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := ClassifyInstallationRepair(repo, config.Adapters, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.VerificationStatus != "REPAIR_AVAILABLE" || result.InstalledVersion != "v0.4.0" {
+				t.Fatalf("invalid local provenance was not safely repairable: %#v", result)
+			}
+		})
+	}
+}
+
+func TestDetachedUpdateRepairsInvalidLocalProvenanceEndToEnd(t *testing.T) {
+	now := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	withUpdateGlobals(t, "v0.4.0", now, func() (ReleaseInfo, error) { return ReleaseInfo{}, nil })
+	repo, _ := updateInstalledRepo(t)
+	t.Setenv(stateRootEnv, t.TempDir())
+	invalidateWorkspaceCache()
+	if _, err := AttachDetached(AttachOptions{Repo: repo}); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "switch", "-c", "chore/update-boatstack-v0.5.0")
+	if err := os.WriteFile(filepath.Join(repo, ".product-loop", "bin", "install.lock.json"), []byte(`{"boatstack_version":"dev","source_commit":"unknown"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	Version = "v0.5.0"
+	SourceCommit = "update-test-0.5.0"
+	if err := RunUpdate(InitOptions{Repo: repo, Repair: true, Yes: true, Input: strings.NewReader(""), Output: &bytes.Buffer{}}); err != nil {
+		t.Fatal(err)
+	}
+	receipts, err := operationReceipts(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, receipt := range receipts {
+		if receipt.Kind == "install-update" && receipt.State == OperationSucceeded {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("detached repair did not persist a successful update operation: %#v", receipts)
+	}
+	directory, err := WorkspaceFor(repo).OperationDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.HasPrefix(directory, repo+string(filepath.Separator)) {
+		t.Fatalf("detached update receipt entered the repository: %s", directory)
+	}
+}
+
 func TestRepairReconstructsCorruptGeneratedProvenance(t *testing.T) {
 	now := time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)
 	withUpdateGlobals(t, "v0.4.0", now, func() (ReleaseInfo, error) { return ReleaseInfo{}, nil })

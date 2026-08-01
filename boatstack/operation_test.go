@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -172,6 +173,69 @@ func preparedOperation(t *testing.T, repo, fingerprint, retryClass string, attem
 		t.Fatal(err)
 	}
 	return receipt
+}
+
+// control-law: controller-effects-use-the-owning-storage-boundary
+func TestDetachedOperationLifecycleUsesExternalOwnedBoundary(t *testing.T) {
+	repo := detachedTestRepo(t, "https://github.com/acme/detached-operations.git")
+	if _, err := AttachDetached(AttachOptions{Repo: repo}); err != nil {
+		t.Fatal(err)
+	}
+	receipt := preparedOperation(t, repo, "detached-package", "ATOMIC_LOCAL", 1)
+	if receipt.State != OperationAuthorized {
+		t.Fatalf("operation was not authorized: %+v", receipt)
+	}
+	path, err := operationPath(repo, receipt.OperationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := WorkspaceFor(repo)
+	directory, err := ctx.OperationDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(path, directory+string(filepath.Separator)) || strings.HasPrefix(path, repo+string(filepath.Separator)) {
+		t.Fatalf("detached operation escaped its external ledger: %s", path)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("detached operation receipt was not written: %v", err)
+	}
+	gitDir, err := worktreeGitDir(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(gitDir, "boatstack", "operations", "v2", filepath.Base(path))); !os.IsNotExist(err) {
+		t.Fatalf("detached receipt also entered the Git directory: %v", err)
+	}
+}
+
+// control-law: detached-owned-boundaries-reject-symlink-escapes
+func TestDetachedOperationRejectsSymlinkedControllerPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation requires privileges on Windows")
+	}
+	repo := detachedTestRepo(t, "https://github.com/acme/detached-operation-symlink.git")
+	if _, err := AttachDetached(AttachOptions{Repo: repo}); err != nil {
+		t.Fatal(err)
+	}
+	base, err := WorkspaceFor(repo).worktreeControlDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(base, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(t.TempDir(), filepath.Join(base, "operations")); err != nil {
+		t.Fatal(err)
+	}
+	_, err = PrepareOperation(OperationPrepareOptions{
+		Repo: repo, Kind: "test-write", Target: "artifact.json", PackageFingerprint: "escape",
+		AuthorizationFingerprint: "approved", RetryClass: "ATOMIC_LOCAL", MaxAttempts: 1,
+		ExpectedPostcondition: "artifact exists",
+	})
+	if err == nil || !strings.Contains(err.Error(), "symlinked path") {
+		t.Fatalf("symlinked detached operation path was not rejected: %v", err)
+	}
 }
 
 func TestOperationLifecycleAndReplayProtection(t *testing.T) {

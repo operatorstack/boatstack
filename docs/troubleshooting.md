@@ -135,6 +135,8 @@ Do not use `--repair` for user-owned or mixed changes. Move durable project cont
 
 Use the installer for the target release in update mode. It downloads and verifies the target helper before treating the installed helper's `doctor` result as diagnostic, so a missing helper or stale owned hook cannot disable recovery. Run `repair-status --repo . --json` to inspect the secret-free classification. Malformed host JSON, partial interceptor markers, symlinks, and unverifiable user content remain blocking and are never overwritten.
 
+If the ignored local install lock says `dev`, has an unknown source commit, is malformed, or is absent, rerun the same verified target installer with `BOATSTACK_REPAIR=1`. The target helper recovers the prior stable version from the repository's committed generated pin and repairs only verified Boatstack-owned state. Do not delete repository files or move detached state by hand. Detached operation receipts and runtime slots are validated against their external Boatstack ownership root, so a path under `Application Support/boatstack` is not treated as a repository escape.
+
 ## A tool call repeats or publication appears stuck
 
 Run `.product-loop/bin/boatstack-helper operation-status --repo . --json`. `EXECUTING` means the exact call already has a live lease, so wait instead of launching it again. `RECONCILE_REQUIRED` means Boatstack did not observe completion; verify the reported Git, GitHub, file, browser, or MCP postcondition before retrying. A successful operation whose response was lost is recovered from that observation. Do not reset the task, repeat a denied push, or open another PR.

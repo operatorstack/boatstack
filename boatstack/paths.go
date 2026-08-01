@@ -1,6 +1,7 @@
 package boatstack
 
 import (
+	"fmt"
 	"path/filepath"
 	"sync"
 )
@@ -59,6 +60,59 @@ type WorkspaceContext struct {
 	// mode it is left empty and derived lazily from the Git common directory; in
 	// detached mode it is the external shared root.
 	sharedControlRoot string
+}
+
+// controllerPath carries a Boatstack-owned path together with the boundary that
+// owns it. Effectful callers validate this value instead of independently
+// choosing a repository, Git, or detached-state root.
+type controllerPath struct {
+	path string
+	root string
+}
+
+func newControllerPath(root, target string) (controllerPath, error) {
+	if root == "" || target == "" {
+		return controllerPath{}, fmt.Errorf("controller path ownership is incomplete")
+	}
+	owned := controllerPath{path: filepath.Clean(target), root: filepath.Clean(root)}
+	if err := owned.Validate(); err != nil {
+		return controllerPath{}, err
+	}
+	return owned, nil
+}
+
+func (p controllerPath) Validate() error {
+	return rejectSymlinkComponents(p.root, p.path)
+}
+
+// Sibling derives another target without losing the owning boundary.
+func (p controllerPath) Sibling(name string) (controllerPath, error) {
+	if filepath.Base(name) != name || name == "." || name == ".." {
+		return controllerPath{}, fmt.Errorf("invalid controller path name: %s", name)
+	}
+	return newControllerPath(p.root, filepath.Join(filepath.Dir(p.path), name))
+}
+
+func (w WorkspaceContext) worktreeOwnedPath(target string) (controllerPath, error) {
+	if w.Mode == SupervisionDetached {
+		return newControllerPath(w.sharedControlRoot, target)
+	}
+	root, err := worktreeGitDir(w.RepoRoot)
+	if err != nil {
+		return controllerPath{}, err
+	}
+	return newControllerPath(root, target)
+}
+
+func (w WorkspaceContext) sharedOwnedPath(target string) (controllerPath, error) {
+	if w.Mode == SupervisionDetached {
+		return newControllerPath(w.sharedControlRoot, target)
+	}
+	root, err := gitCommonDir(w.RepoRoot)
+	if err != nil {
+		return controllerPath{}, err
+	}
+	return newControllerPath(root, target)
 }
 
 // WorkspaceFor returns the resolver for a repository. It consults the external
