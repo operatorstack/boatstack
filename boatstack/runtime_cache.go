@@ -94,24 +94,22 @@ func sharedRuntimeDirectory(repo, version, sourceCommit string) (string, error) 
 }
 
 func sharedRuntimePaths(repo, version, sourceCommit string) (string, string, error) {
-	directory, err := sharedRuntimeDirectory(repo, version, sourceCommit)
-	if err != nil {
-		return "", "", err
-	}
-	return filepath.Join(directory, helperName()), filepath.Join(directory, "runtime.lock.json"), nil
+	binary, manifest, err := sharedRuntimeOwnedPaths(repo, version, sourceCommit)
+	return binary.path, manifest.path, err
 }
 
-// runtimeSymlinkRoot returns the ownership boundary for the runtime selected by
-// WorkspaceFor. Embedded runtimes live under the Git common directory; detached
-// runtimes live under Boatstack's external control root. Keeping the check on the
-// same side of that projection prevents detached hydration and doctor from
-// rejecting their own external runtime as a repository escape.
-func runtimeSymlinkRoot(repo string) (string, error) {
+func sharedRuntimeOwnedPaths(repo, version, sourceCommit string) (controllerPath, controllerPath, error) {
 	ctx := WorkspaceFor(repo)
-	if ctx.Mode == SupervisionDetached {
-		return ctx.sharedControlDir()
+	directory, err := sharedRuntimeDirectory(repo, version, sourceCommit)
+	if err != nil {
+		return controllerPath{}, controllerPath{}, err
 	}
-	return gitCommonDir(repo)
+	binary, err := ctx.sharedOwnedPath(filepath.Join(directory, helperName()))
+	if err != nil {
+		return controllerPath{}, controllerPath{}, err
+	}
+	manifest, err := ctx.sharedOwnedPath(filepath.Join(directory, "runtime.lock.json"))
+	return binary, manifest, err
 }
 
 func atomicWriteMode(path string, content []byte, mode fs.FileMode) error {
@@ -149,15 +147,11 @@ func atomicWriteMode(path string, content []byte, mode fs.FileMode) error {
 }
 
 func installSharedRuntime(source, repo string, integrations map[string]IntegrationState) (runtimeManifest, error) {
-	binaryPath, manifestPath, err := sharedRuntimePaths(repo, Version, SourceCommit)
+	binaryPath, manifestPath, err := sharedRuntimeOwnedPaths(repo, Version, SourceCommit)
 	if err != nil {
 		return runtimeManifest{}, err
 	}
-	root, err := runtimeSymlinkRoot(repo)
-	if err != nil {
-		return runtimeManifest{}, err
-	}
-	return writeRuntimeSlot(source, root, binaryPath, manifestPath, integrations)
+	return writeRuntimeSlot(source, binaryPath, manifestPath, integrations)
 }
 
 // installDetachedRuntime populates a detached repository's external shared-runtime
@@ -171,22 +165,19 @@ func installDetachedRuntime(repo, source string) (runtimeManifest, error) {
 	if ctx.Mode != SupervisionDetached {
 		return runtimeManifest{}, fmt.Errorf("installDetachedRuntime requires an attached detached repository")
 	}
-	binaryPath, manifestPath, err := sharedRuntimePaths(repo, Version, SourceCommit)
+	binaryPath, manifestPath, err := sharedRuntimeOwnedPaths(repo, Version, SourceCommit)
 	if err != nil {
 		return runtimeManifest{}, err
 	}
-	root, err := ctx.sharedControlDir()
-	if err != nil {
-		return runtimeManifest{}, err
-	}
-	return writeRuntimeSlot(source, root, binaryPath, manifestPath, nil)
+	return writeRuntimeSlot(source, binaryPath, manifestPath, nil)
 }
 
 // writeRuntimeSlot copies a helper binary and its manifest into a version-labeled
-// runtime slot atomically, rejecting symlinked components under symlinkRoot and
+// runtime slot atomically, rejecting symlinked components under each path's
+// owning controller boundary and
 // verifying the written bytes against the manifest checksum. It is the shared core
 // of the embedded and detached runtime installers.
-func writeRuntimeSlot(source, symlinkRoot, binaryPath, manifestPath string, integrations map[string]IntegrationState) (runtimeManifest, error) {
+func writeRuntimeSlot(source string, binaryPath, manifestPath controllerPath, integrations map[string]IntegrationState) (runtimeManifest, error) {
 	value, err := os.ReadFile(source)
 	if err != nil {
 		return runtimeManifest{}, err
@@ -196,54 +187,51 @@ func writeRuntimeSlot(source, symlinkRoot, binaryPath, manifestPath string, inte
 		Platform: platformKey(), BinarySHA256: SHA256Bytes(value),
 		ReleaseChecksumsSHA256: ChecksumsSHA256, Integrations: integrations,
 	}
-	for _, path := range []string{binaryPath, manifestPath} {
-		if err := rejectSymlinkComponents(symlinkRoot, path); err != nil {
+	for _, path := range []controllerPath{binaryPath, manifestPath} {
+		if err := path.Validate(); err != nil {
 			return runtimeManifest{}, err
 		}
 	}
 	// This exact provenance path is Boatstack-owned. A verified installer is the
 	// repair surface for an interrupted or corrupted cache population, so it may
 	// atomically replace the cached bytes after the symlink checks above.
-	if err := atomicWriteMode(binaryPath, value, 0o755); err != nil {
+	if err := atomicWriteMode(binaryPath.path, value, 0o755); err != nil {
 		return runtimeManifest{}, err
 	}
 	encoded, err := MarshalJSON(manifest)
 	if err != nil {
 		return runtimeManifest{}, err
 	}
-	if err := atomicWriteMode(manifestPath, encoded, 0o644); err != nil {
+	if err := atomicWriteMode(manifestPath.path, encoded, 0o644); err != nil {
 		return runtimeManifest{}, err
 	}
 	// Post-write integrity: the bytes that landed in the version-labeled slot must
 	// be exactly what the manifest attests. A mismatch means the atomic replace
 	// raced or the slot was tampered mid-install; remove the slot rather than leave
 	// a mislabeled runtime that would pass the checksum gate but drift at hydration.
-	writtenHash, err := SHA256File(binaryPath)
+	writtenHash, err := SHA256File(binaryPath.path)
 	if err != nil {
 		return runtimeManifest{}, err
 	}
 	if writtenHash != manifest.BinarySHA256 {
-		_ = os.Remove(binaryPath)
-		_ = os.Remove(manifestPath)
-		return runtimeManifest{}, fmt.Errorf("installed runtime failed post-write verification: %s does not match its manifest checksum", binaryPath)
+		_ = os.Remove(binaryPath.path)
+		_ = os.Remove(manifestPath.path)
+		return runtimeManifest{}, fmt.Errorf("installed runtime failed post-write verification: %s does not match its manifest checksum", binaryPath.path)
 	}
 	return manifest, nil
 }
 
 func loadSharedRuntime(repo string) (runtimeManifest, string, error) {
-	binaryPath, manifestPath, err := sharedRuntimePaths(repo, Version, SourceCommit)
+	binaryOwned, manifestOwned, err := sharedRuntimeOwnedPaths(repo, Version, SourceCommit)
 	if err != nil {
 		return runtimeManifest{}, "", err
 	}
-	root, err := runtimeSymlinkRoot(repo)
-	if err != nil {
-		return runtimeManifest{}, "", err
-	}
-	for _, path := range []string{binaryPath, manifestPath} {
-		if err := rejectSymlinkComponents(root, path); err != nil {
+	for _, path := range []controllerPath{binaryOwned, manifestOwned} {
+		if err := path.Validate(); err != nil {
 			return runtimeManifest{}, "", err
 		}
 	}
+	binaryPath, manifestPath := binaryOwned.path, manifestOwned.path
 	value, err := os.ReadFile(manifestPath)
 	if err != nil {
 		return runtimeManifest{}, "", fmt.Errorf("shared Boatstack runtime is missing; run the verified installer once from any checkout in this Git clone: %w", err)

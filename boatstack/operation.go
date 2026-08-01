@@ -133,24 +133,22 @@ func pruneLegacyOperationLedger(repo string) {
 	_ = os.RemoveAll(legacy)
 }
 
-func operationPath(repo, operationID string) (string, error) {
+func operationOwnedPath(repo, operationID string) (controllerPath, error) {
 	id, err := safeCacheSegment(operationID, "operation id")
 	if err != nil {
-		return "", err
+		return controllerPath{}, err
 	}
-	directory, err := operationDirectory(repo)
+	ctx := WorkspaceFor(repo)
+	directory, err := ctx.OperationDir()
 	if err != nil {
-		return "", err
+		return controllerPath{}, err
 	}
-	path := filepath.Join(directory, id+".json")
-	gitDir, err := worktreeGitDir(repo)
-	if err != nil {
-		return "", err
-	}
-	if err := rejectSymlinkComponents(gitDir, path); err != nil {
-		return "", err
-	}
-	return path, nil
+	return ctx.worktreeOwnedPath(filepath.Join(directory, id+".json"))
+}
+
+func operationPath(repo, operationID string) (string, error) {
+	owned, err := operationOwnedPath(repo, operationID)
+	return owned.path, err
 }
 
 func operationID(kind, target, fingerprint string) string {
@@ -223,18 +221,15 @@ func saveOperation(repo string, receipt OperationReceipt) error {
 }
 
 func withOperationLock(repo, id string, apply func() error) error {
-	path, err := operationPath(repo, id)
+	path, err := operationOwnedPath(repo, id)
 	if err != nil {
 		return err
 	}
-	lock := strings.TrimSuffix(path, ".json") + ".lock"
-	gitDir, err := worktreeGitDir(repo)
+	lockPath, err := path.Sibling(strings.TrimSuffix(filepath.Base(path.path), ".json") + ".lock")
 	if err != nil {
 		return err
 	}
-	if err := rejectSymlinkComponents(gitDir, lock); err != nil {
-		return err
-	}
+	lock := lockPath.path
 	if err := os.MkdirAll(filepath.Dir(lock), 0o700); err != nil {
 		return err
 	}

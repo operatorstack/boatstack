@@ -62,22 +62,57 @@ type InstallationRepairResult struct {
 }
 
 func installedVersion(repo string) (string, error) {
-	for _, candidate := range []string{
-		filepath.Join(repo, ".product-loop", "bin", "install.lock.json"),
-		filepath.Join(repo, ".product-loop", "generated.lock.json"),
+	var failures []string
+	type candidate struct {
+		label string
+		value []byte
+		err   error
+	}
+	localPath := filepath.Join(repo, ".product-loop", "bin", "install.lock.json")
+	localValue, localErr := os.ReadFile(localPath)
+	committedValue, committedErr := exec.Command("git", "-C", repo, "show", "HEAD:.product-loop/generated.lock.json").Output()
+	for _, candidate := range []candidate{
+		{label: "install.lock.json", value: localValue, err: localErr},
+		{label: "committed generated.lock.json", value: committedValue, err: committedErr},
 	} {
-		value, err := os.ReadFile(candidate)
-		if err != nil {
+		if candidate.err != nil {
 			continue
 		}
 		var identity struct {
 			BoatstackVersion string `json:"boatstack_version"`
+			SourceCommit     string `json:"source_commit"`
+			Runtime          struct {
+				SourceCommit string `json:"source_commit"`
+			} `json:"runtime"`
 		}
-		if json.Unmarshal(value, &identity) == nil && strings.TrimSpace(identity.BoatstackVersion) != "" {
-			return normalizedVersion(identity.BoatstackVersion)
+		if err := json.Unmarshal(candidate.value, &identity); err != nil {
+			failures = append(failures, candidate.label+" is malformed")
+			continue
 		}
+		if strings.TrimSpace(identity.BoatstackVersion) == "" {
+			failures = append(failures, candidate.label+" has no version")
+			continue
+		}
+		sourceCommit := strings.TrimSpace(identity.SourceCommit)
+		if sourceCommit == "" {
+			sourceCommit = strings.TrimSpace(identity.Runtime.SourceCommit)
+		}
+		if sourceCommit == "" || strings.EqualFold(sourceCommit, "unknown") {
+			failures = append(failures, candidate.label+" has invalid source commit")
+			continue
+		}
+		version, err := normalizedVersion(identity.BoatstackVersion)
+		if err != nil {
+			failures = append(failures, candidate.label+" has invalid version")
+			continue
+		}
+		return version, nil
 	}
-	return "", fmt.Errorf("installed Boatstack version cannot be established from owned provenance")
+	detail := strings.Join(failures, "; ")
+	if detail != "" {
+		detail = ": " + detail
+	}
+	return "", fmt.Errorf("installed Boatstack version cannot be established from owned provenance%s", detail)
 }
 
 func updateDirection(installed, target string) (string, error) {

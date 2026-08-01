@@ -339,7 +339,7 @@ func CheckExistingInstallProvenance(repo string) error {
 	if err := DecodeJSON("check existing install provenance", path, value, &lock); err != nil {
 		return err
 	}
-	if _, err := parseStableVersion(lock.BoatstackVersion); err != nil || strings.TrimSpace(lock.SourceCommit) == "" {
+	if _, err := parseStableVersion(lock.BoatstackVersion); err != nil || strings.TrimSpace(lock.SourceCommit) == "" || strings.EqualFold(strings.TrimSpace(lock.SourceCommit), "unknown") {
 		return fmt.Errorf("previous local install lock has invalid release provenance")
 	}
 	binaryPath, err := resolveRepositoryRelativePath(repo, lock.BinaryPath)
