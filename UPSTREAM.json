@@ -12,7 +12,7 @@
   },
   "files": {
     ".gitignore": "a7079e923a776f14f1bb3a6aa0a11a133a8e1dfb35af020f327623357b7e3957",
-    "CONTRIBUTING.md": "f7c948dc98251cb45af96caf5988e1018e27e914820a91db6cb6b52d557e7463",
+    "CONTRIBUTING.md": "5972bb34fea69f854044bd649c6e5a61e0668461946cfcb67e0ce10fa87cc914",
     "README.md": "3ce3e95e511089b44e946a44b8d5f4f81d019ece5336db65b2cab1f9dc4d4dad",
     "assets/boatstack-journey.svg": "e465befc50c8ce30f3e07e8fd97012931beeb053392c8fbf38ad645023b3cc63",
     "assets/boatstack-mark.svg": "be1f984da1bfa69fa5d1f986d8343d21f7e20921b71db888c928b4d2e54b09b5",
@@ -235,10 +235,10 @@
     "docs/benchmark-corpus-audit.md": "f2d206fe8579a514f9da82b2c96c19b343ac004be67617e1bd34f0f8e0e5e6c6",
     "docs/benchmark-submission-audit.md": "9518abdd17690729c6423f87cab20418ed47b0915b5faa44b9ef975e9e9c3b79",
     "docs/configuration.md": "ed62dfd360377f7a15826ef5a2d3c9798d25c272168c65480961f9e0d011ccf1",
-    "docs/evidence-engineered-coding.md": "594cf1b5b3605b40f38ee937ef44f7fa477cc48e1f7a1e6847a42cfa4c8ec192",
+    "docs/evidence-engineered-coding.md": "d5d34eee3d7af847ab4eabf3a7be21709b7b0619b44bde505f744aa6a337129c",
     "docs/generated-files.md": "437791765b0a4015032ae21d1a6618563cad92b7402819e4f963bf5ae16284a3",
     "docs/getting-started.md": "51c2823f21e35140d31e6d5083dc4b89fddd24721ac6acc474154a4da53ee9f8",
-    "docs/public-claims.json": "235a98410d7be2206f5bd1141afcc3be47452e7a1edf248ac23189f7246b8a4c",
+    "docs/public-claims.json": "78230b15a4c7716e2ebbd3b864795cbbad8c25e48e2f7c1e50e9ad97dae23947",
     "docs/public-surface.md": "713f7a050b5f339cf948299103ef3800417dccfecf2cc1a4166397ea6f978907",
     "docs/research-and-design.md": "8d78678108f0a6c924e1ff9b32c0f81aae9d1f779e0082843b6f99ad993ae2b6",
     "docs/safety.md": "7b9b5c515d36e683767ec8d3d9d6d119ac93650b2f629d351deadd4c600ed6a6",
@@ -252,7 +252,7 @@
     "labs/diagram-json/compiled/evidence.md": "1ba1c989ade070a8ef9a508fbd788d100d7292f2dbacbb2bce895468019f619d",
     "labs/diagram-json/compiled/tasks.json": "88f60851abf79d851e9fccc754ff3040034ae595306bc87d64784c19eb403e71",
     "labs/diagram-json/compiled/test-matrix.json": "424657ff505768e50fa113801fd8363364a18269d5297480907a993d44063a39",
-    "labs/diagram-json/plan.lock.json": "3a787dabcb13db687488a6cc9605798c5208f3113cb596d40664726ec258ccdf",
+    "labs/diagram-json/plan.lock.json": "7d5c5cb554ec51e856437b4f359e45cd8b584262a7aca50f2b0d5b855124549f",
     "labs/diagram-json/plan.md": "3cc4f533b8d69386deff16b3a594a3ba09d4c0c3db636cccd8c4380084ce6a51",
     "labs/diagram-json/questions.md": "74733b015002c8a6777c558e7e997fa48c94850b9bd39054fe9366c97ecf728d",
     "labs/diagram-json/request.md": "0808fc41c36779c404f4a3a121167da6e76cac56df526e70f9ed6d3e0d4c02ed",
@@ -399,12 +399,13 @@
     "release-notes/2026-07-30-plan-approved-scenarios-escalate-to-require.md": "21c3f2be51b834fc2eb7662236db2549e80b1a1a0665a0721e773b7736e2c079",
     "release-notes/2026-07-30-visual-attach-retry-prescription.md": "38b610685a7a62c0341ba21b273b42c24d82ca803de6d8f694754156eaa606a9",
     "release-notes/2026-07-30-visual-evidence-survives-preview-commit.md": "71d19e9fabb40e8cb1e939f26bf288911d227979926f43f337046c6cf6b66551",
-    "release-notes/2026-08-01-independent-insight-captures.md": "5d18f26fced9589fc7cfd70eac1bfe28038f99b921a5ea7766c310d6595349c3"
+    "release-notes/2026-08-01-independent-insight-captures.md": "5d18f26fced9589fc7cfd70eac1bfe28038f99b921a5ea7766c310d6595349c3",
+    "release-notes/2026-08-01-readable-projection-history.md": "93c4db5c3935b4c4c251f2f8a5dd2925a7241f34f6dd7bb9602badca6ad367bc"
   },
   "generator": "operatorstack/intelligence-flow:boatstack-distribution",
   "schema_version": 1,
   "source": {
-    "commit": "6877a03c0381c7dec94a0d8a52c9f8c6a0954016",
+    "commit": "6149e9333caa3d936f69e03015252b712cf453ee",
     "path": "labs/12-product-engineering-loop",
     "repository": "operatorstack/intelligence-flow"
   }
