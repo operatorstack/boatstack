@@ -3,9 +3,11 @@ package boatstack
 import (
 	"bytes"
 	"fmt"
+	"html"
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -32,14 +34,8 @@ var (
 	originSlugHTTP   = regexp.MustCompile(`^https?://github\.com/([^/]+)/(.+?)(?:\.git)?$`)
 )
 
-// SelectVisualPublisher returns a programmatic publisher when the repository can
-// actually render committed evidence — a GitHub origin with gh available and
-// authenticated. The default publisher renders inline only for a PUBLIC repository
-// (raw.githubusercontent.com does not serve private content to anonymous markdown
-// renderers). A repository may opt into the external-host publisher via
-// workflow.visual_evidence_publish.mode="external-host" to render inline even when
-// private. Otherwise it returns nil so the caller's manual-attachment fallback stays
-// in force (which never blocks a suggest-policy PR).
+// SelectVisualPublisher always chooses external hosting. Screenshot bytes never
+// enter Git or a pull-request attachment path.
 func SelectVisualPublisher(repo string) PRVisualEvidencePublisher {
 	resolved, err := ResolveRepository(repo)
 	if err != nil {
@@ -51,23 +47,15 @@ func SelectVisualPublisher(repo string) PRVisualEvidencePublisher {
 	if _, _, err := originRepoSlug(resolved); err != nil {
 		return nil
 	}
-	// External-host mode is opt-in only: it publishes screenshot bytes to a
-	// third-party anonymous host, so it is never auto-selected — only this explicit
-	// config value turns it on, and it works for a private origin too.
-	if publish := visualPublishConfig(resolved); publish != nil && publish.Mode == "external-host" {
+	if publish := visualPublishConfig(resolved); publish != nil {
 		return ExternalHostVisualEvidencePublisher{Host: publish.Host, Expiry: publish.Expiry}
 	}
-	visibility, err := commandOutput(resolved, "gh", "repo", "view", "--json", "visibility", "--jq", ".visibility")
-	if err != nil || !strings.EqualFold(strings.TrimSpace(visibility), "public") {
-		return nil
-	}
-	return GitVisualEvidencePublisher{}
+	return ExternalHostVisualEvidencePublisher{Host: defaultExternalHost, Expiry: defaultExternalExpiry}
 }
 
 // visualPublishConfig reads the repository's visual-evidence publish preferences from
 // the generated project config, returning nil when the config is absent, unreadable,
-// or leaves the block unset so the caller falls back to the default public-branch
-// behavior.
+// or leaves the block unset so the caller uses the external-host defaults.
 func visualPublishConfig(repo string) *VisualEvidencePublish {
 	config, _, err := LoadConfig(WorkspaceFor(repo).ProjectConfigPath())
 	if err != nil {
@@ -76,92 +64,10 @@ func visualPublishConfig(repo string) *VisualEvidencePublish {
 	return config.Workflow.VisualEvidencePublish
 }
 
-// PublishVisualEvidence commits the manifest's exact PNG bytes to the evidence
-// branch, then posts or updates the single Boatstack-owned comment on the PR.
+// PublishVisualEvidence remains as a compatibility entry point but uses the
+// external-host path. No screenshot publisher writes image bytes to Git.
 func (GitVisualEvidencePublisher) PublishVisualEvidence(repo, prURL, existingCommentURL string, manifest PRVisualEvidenceManifest) (string, error) {
-	resolved, err := ResolveRepository(repo)
-	if err != nil {
-		return "", err
-	}
-	owner, name, err := originRepoSlug(resolved)
-	if err != nil {
-		return "", err
-	}
-	prNumber, err := prNumberFromURL(prURL)
-	if err != nil {
-		return "", err
-	}
-	if len(manifest.Items) == 0 {
-		return "", fmt.Errorf("visual evidence has no screenshots to publish")
-	}
-	commitSHA, err := pushEvidenceCommit(resolved, manifest)
-	if err != nil {
-		return "", err
-	}
-	body := composeVisualEvidenceComment(owner, name, commitSHA, manifest)
-	return upsertEvidenceComment(resolved, owner, name, prNumber, existingCommentURL, manifest.Key, body)
-}
-
-// pushEvidenceCommit builds a commit carrying the exact PNG bytes with Git plumbing
-// against a temporary index — never touching the working tree — and pushes it to the
-// Boatstack-owned evidence branch, accumulating onto the branch's prior tip when one
-// exists. It returns the commit SHA, which pins immutable raw content URLs.
-func pushEvidenceCommit(repo string, manifest PRVisualEvidenceManifest) (string, error) {
-	branch, err := evidenceBranchName(manifest.Key)
-	if err != nil {
-		return "", err
-	}
-	indexFile, err := os.CreateTemp("", "boatstack-evidence-index-*")
-	if err != nil {
-		return "", err
-	}
-	indexPath := indexFile.Name()
-	indexFile.Close()
-	os.Remove(indexPath) // git wants to create the index itself
-	defer os.Remove(indexPath)
-	git := func(arguments ...string) (string, error) {
-		return gitIndexedCommand(repo, indexPath, arguments...)
-	}
-
-	var parent string
-	if tip := strings.TrimSpace(gitOutput(repo, "ls-remote", "origin", "refs/heads/"+branch)); tip != "" {
-		parent = strings.Fields(tip)[0]
-		if _, err := commandOutput(repo, "git", "-C", repo, "fetch", "origin", branch); err != nil {
-			return "", fmt.Errorf("cannot fetch the visual-evidence branch to extend it: %w", err)
-		}
-		if _, err := git("read-tree", parent); err != nil {
-			return "", err
-		}
-	}
-	for _, item := range manifest.Items {
-		blob, err := git("hash-object", "-w", "--", item.Path)
-		if err != nil {
-			return "", err
-		}
-		path := evidenceBlobPath(manifest.Key, item.SHA256)
-		if _, err := git("update-index", "--add", "--cacheinfo", "100644,"+strings.TrimSpace(blob)+","+path); err != nil {
-			return "", err
-		}
-	}
-	tree, err := git("write-tree")
-	if err != nil {
-		return "", err
-	}
-	tree = strings.TrimSpace(tree)
-	message := "boatstack: visual evidence for " + manifest.Key + " (" + manifest.Fingerprint + ")"
-	commitArgs := []string{"commit-tree", tree, "-m", message}
-	if parent != "" {
-		commitArgs = append(commitArgs, "-p", parent)
-	}
-	commit, err := git(commitArgs...)
-	if err != nil {
-		return "", err
-	}
-	commit = strings.TrimSpace(commit)
-	if _, err := commandOutput(repo, "git", "-C", repo, "push", "origin", commit+":refs/heads/"+branch); err != nil {
-		return "", fmt.Errorf("cannot push the visual-evidence commit without rewriting history: %w", err)
-	}
-	return commit, nil
+	return (ExternalHostVisualEvidencePublisher{Host: defaultExternalHost, Expiry: defaultExternalExpiry}).PublishVisualEvidence(repo, prURL, existingCommentURL, manifest)
 }
 
 // upsertEvidenceComment posts the composed body to exactly one Boatstack-owned
@@ -204,12 +110,6 @@ func upsertEvidenceComment(repo, owner, name, prNumber, existingCommentURL, key,
 		"-F", "body=@"+bodyPath, "--jq", ".html_url")
 }
 
-// gitIndexedCommand runs git against a scoped, temporary index so evidence commits
-// never disturb the repository's real index or working tree.
-func gitIndexedCommand(repo, indexPath string, arguments ...string) (string, error) {
-	return commandOutputEnv(repo, []string{"GIT_INDEX_FILE=" + indexPath}, "git", append([]string{"-C", repo}, arguments...)...)
-}
-
 func originRepoSlug(repo string) (string, string, error) {
 	remote, err := commandOutput(repo, "git", "-C", repo, "remote", "get-url", "origin")
 	if err != nil {
@@ -238,55 +138,8 @@ func commentIDFromURL(commentURL string) string {
 	return ""
 }
 
-func evidenceBranchName(key string) (string, error) {
-	safe, err := safeCacheSegment(key, "visual evidence key")
-	if err != nil {
-		return "", err
-	}
-	return "boatstack-visual-evidence/" + safe, nil
-}
-
-func evidenceBlobPath(key, sha string) string {
-	return key + "/" + sha + ".png"
-}
-
-func rawContentURL(owner, name, commitSHA, path string) string {
-	return "https://raw.githubusercontent.com/" + owner + "/" + name + "/" + commitSHA + "/" + path
-}
-
 func visualEvidenceCommentMarker(key string) string {
 	return "<!-- boatstack-visual-evidence:" + key + " -->"
-}
-
-// composeVisualEvidenceComment renders the single Boatstack-owned comment: a hidden
-// marker for idempotent reuse, the trust fingerprints, the standing public-repository
-// privacy warning, and one image per scenario pinned to the evidence commit.
-func composeVisualEvidenceComment(owner, name, commitSHA string, manifest PRVisualEvidenceManifest) string {
-	itemsByScenario := make(map[string]PRVisualEvidenceItem, len(manifest.Items))
-	for _, item := range manifest.Items {
-		itemsByScenario[item.ScenarioID] = item
-	}
-	var builder strings.Builder
-	builder.WriteString(visualEvidenceCommentMarker(manifest.Key) + "\n")
-	builder.WriteString("### Visual evidence\n\n")
-	builder.WriteString("Screenshots are human-review evidence, not mechanical proof. These images are committed to a public branch and are publicly accessible.\n\n")
-	builder.WriteString(fmt.Sprintf("Source commit `%s` · product diff `%s` · fingerprint `%s`\n\n", manifest.SourceCommit, manifest.ProductDiffSHA256, manifest.Fingerprint))
-	rendered := 0
-	for _, scenario := range manifest.Scenarios {
-		item, ok := itemsByScenario[scenario.ID]
-		if !ok {
-			continue
-		}
-		caption := strings.Join(scenario.Expected, "; ")
-		builder.WriteString(fmt.Sprintf("**%s** — %s (`%s`)\n\n", scenario.ID, caption, scenario.Viewport))
-		url := rawContentURL(owner, name, commitSHA, evidenceBlobPath(manifest.Key, item.SHA256))
-		builder.WriteString(fmt.Sprintf("![%s](%s)\n\n", scenario.ID, url))
-		rendered++
-	}
-	if rendered == 0 {
-		builder.WriteString("_No captured scenarios to display._\n")
-	}
-	return builder.String()
 }
 
 // externalHostSpec describes an anonymous image host used by external-host mode.
@@ -341,6 +194,11 @@ func (p ExternalHostVisualEvidencePublisher) PublishVisualEvidence(repo, prURL, 
 	if len(manifest.Items) == 0 {
 		return "", fmt.Errorf("visual evidence has no screenshots to publish")
 	}
+	for _, item := range manifest.Items {
+		if item.PrivacyStatus != "human-reviewed" {
+			return "", fmt.Errorf("refusing external upload for scenario %s without HUMAN_REVIEWED privacy status", item.ScenarioID)
+		}
+	}
 	host := strings.TrimSpace(p.Host)
 	if host == "" {
 		host = defaultExternalHost
@@ -359,10 +217,42 @@ func (p ExternalHostVisualEvidencePublisher) PublishVisualEvidence(repo, prURL, 
 		if err != nil {
 			return "", err
 		}
+		if err := verifyHostedVisualURL(spec, url); err != nil {
+			return "", fmt.Errorf("verify hosted URL for %s: %w", item.ScenarioID, err)
+		}
 		urls[item.ScenarioID] = url
 	}
 	body := composeExternalHostComment(spec, expiry, urls, manifest)
 	return upsertEvidenceComment(resolved, owner, name, prNumber, existingCommentURL, manifest.Key, body)
+}
+
+func verifyHostedVisualURL(spec externalHostSpec, value string) error {
+	parsed, err := url.Parse(value)
+	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Hostname() == "" {
+		return fmt.Errorf("host returned an invalid absolute HTTP URL")
+	}
+	endpoint, endpointErr := url.Parse(spec.endpoint)
+	localTestHost := endpointErr == nil && (endpoint.Hostname() == "127.0.0.1" || endpoint.Hostname() == "localhost" || endpoint.Hostname() == "::1")
+	if !localTestHost && !strings.EqualFold(parsed.Hostname(), spec.label) {
+		return fmt.Errorf("host returned URL for unexpected domain %q", parsed.Hostname())
+	}
+	request, err := http.NewRequest(http.MethodGet, value, nil)
+	if err != nil {
+		return err
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 400 {
+		return fmt.Errorf("hosted URL returned HTTP %d", response.StatusCode)
+	}
+	contentType := strings.ToLower(response.Header.Get("Content-Type"))
+	if contentType != "" && !strings.HasPrefix(contentType, "image/") {
+		return fmt.Errorf("hosted URL returned non-image content type %q", contentType)
+	}
+	return nil
 }
 
 // uploadToExternalHost POSTs one PNG to an anonymous host and returns the hosted URL.
@@ -430,9 +320,10 @@ func composeExternalHostComment(spec externalHostSpec, expiry string, urls map[s
 		if !ok {
 			continue
 		}
-		caption := strings.Join(scenario.Expected, "; ")
-		builder.WriteString(fmt.Sprintf("**%s** — %s (`%s`)\n\n", scenario.ID, caption, scenario.Viewport))
-		builder.WriteString(fmt.Sprintf("![%s](%s)\n\n", scenario.ID, url))
+		caption := visualCommentText(strings.Join(scenario.Expected, "; "))
+		builder.WriteString(fmt.Sprintf("**%s** — %s (`%s`)\n\n", visualCommentText(scenario.ID), caption, visualCommentText(scenario.Viewport)))
+		builder.WriteString(fmt.Sprintf("User context: %s  \nUser goal: %s  \nJourney step: %s  \nReviewer context: %s  \nEntry: `%s` · State: `%s` · Surface: `%s`\n\n", visualCommentText(scenario.UserContext), visualCommentText(scenario.UserGoal), visualCommentText(scenario.JourneyStep), visualCommentText(scenario.ReviewerContext), visualCommentText(scenario.Entry), visualCommentText(scenario.State), visualCommentText(scenario.Surface)))
+		builder.WriteString(fmt.Sprintf("![%s](%s)\n\n", visualCommentText(scenario.ID), url))
 		rendered++
 	}
 	if rendered == 0 {
@@ -445,4 +336,10 @@ func composeExternalHostComment(spec externalHostSpec, expiry string, urls map[s
 		builder.WriteString(fmt.Sprintf("📌 These images are hosted on **%s** (permanent, public). They are uploaded to a third-party anonymous host, so do not use this mode for sensitive screenshots.\n", spec.label))
 	}
 	return builder.String()
+}
+
+func visualCommentText(value string) string {
+	value = strings.Join(strings.Fields(value), " ")
+	value = html.EscapeString(value)
+	return strings.NewReplacer("\\", "\\\\", "!", "\\!", "[", "\\[", "]", "\\]", "`", "\\`").Replace(value)
 }

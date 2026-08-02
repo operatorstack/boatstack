@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strings"
 )
 
 // surfaceSlugPattern names a product surface (web, ops, admin-console):
@@ -15,6 +17,55 @@ type ValidatePlanOptions struct {
 	PlanPath     string
 	RepoRoot     string
 	RepoRevision string
+}
+
+// requireVisualSurfaceEvidence makes registered surface paths a shared,
+// deterministic visual-impact input during planning. The approved decision is
+// then reused by capture, review, and ship.
+func requireVisualSurfaceEvidence(plan map[string]any, opts *ValidatePlanOptions) error {
+	if opts == nil || opts.RepoRoot == "" || opts.PlanPath == "" {
+		return nil
+	}
+	config, _, err := LoadConfig(WorkspaceFor(opts.RepoRoot).ProjectConfigPath())
+	if err != nil || len(config.Project.VisualSurfaces) == 0 {
+		return nil
+	}
+	baseline, err := productBaseline(opts.RepoRoot, opts.PlanPath)
+	if err != nil {
+		return err
+	}
+	matched := visualSurfaceChangedPaths(baseline.ChangedPaths, config.Project.VisualSurfaces)
+	if len(matched) == 0 {
+		return nil
+	}
+	decision, _ := plan["pr_visual_evidence"].(map[string]any)
+	if stringValue(decision["relevance"]) != "relevant" {
+		return fmt.Errorf("changes under registered visual surfaces require relevant pr_visual_evidence scenarios: %s", strings.Join(matched, ", "))
+	}
+	return nil
+}
+
+func visualSurfaceChangedPaths(changed []string, surfaces []VisualSurface) []string {
+	seen := map[string]bool{}
+	for _, changedPath := range changed {
+		path := filepath.ToSlash(filepath.Clean(changedPath))
+		for _, surface := range surfaces {
+			for _, pattern := range surface.Paths {
+				pattern = filepath.ToSlash(strings.TrimSpace(pattern))
+				matched, _ := filepath.Match(filepath.FromSlash(pattern), filepath.FromSlash(path))
+				prefix := strings.TrimSuffix(strings.TrimSuffix(pattern, "/**"), "/")
+				if matched || (prefix != pattern && (path == prefix || strings.HasPrefix(path, prefix+"/"))) {
+					seen[path] = true
+				}
+			}
+		}
+	}
+	result := make([]string, 0, len(seen))
+	for path := range seen {
+		result = append(result, path)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func validateArchitectureGrounding(plan map[string]any, opts *ValidatePlanOptions) error {
@@ -195,7 +246,7 @@ func validatePRVisualEvidence(plan map[string]any) error {
 		return fmt.Errorf("pr_visual_evidence.scenarios must be a list")
 	}
 	if relevance == "not_relevant" {
-		if stringValue(decision["reason"]) == "" {
+		if strings.TrimSpace(stringValue(decision["reason"])) == "" {
 			return fmt.Errorf("not-relevant pr_visual_evidence requires a reason")
 		}
 		if len(scenarios) != 0 {

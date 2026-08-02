@@ -463,6 +463,9 @@ func ValidatePlan(plan map[string]any, opts *ValidatePlanOptions) error {
 	if err := requireConfiguredPRVisualEvidenceDecision(plan, opts); err != nil {
 		return err
 	}
+	if err := requireVisualSurfaceEvidence(plan, opts); err != nil {
+		return err
+	}
 
 	if stringValue(plan["feature_id"]) == "" {
 		return fmt.Errorf("feature_id is required")

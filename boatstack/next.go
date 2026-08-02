@@ -260,7 +260,7 @@ func publishedNextStatus(state DeliveryState, pr publishedPRObservation, termina
 		case "visual_pending":
 			status.Reason += " Its Boatstack visual-evidence comment is still owed; Boatstack can retry the attachment (attach-evidence)."
 		case "manual_required":
-			status.Reason += " Its visual-evidence comment needs manual attachment; record the observed URL with record-pr-visual-publication."
+			status.Reason += " Its legacy visual-evidence state must be retried through external hosting."
 		}
 	}
 	if status.GoalEscape != "" {

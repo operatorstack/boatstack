@@ -8,6 +8,7 @@ boatstack-config-field:project.default_branch
 boatstack-config-field:project.context
 boatstack-config-field:project.commands
 boatstack-config-field:project.high_risk_paths
+boatstack-config-field:project.visual_surfaces
 boatstack-config-field:project.migration
 boatstack-config-field:project.migration.apply_command
 boatstack-config-field:project.migration.verify_command
@@ -78,6 +79,7 @@ This is the exhaustive serialization contract, not a list of recommended user ed
   - `visual` / `screenshot` / `e2e` (string, optional): The repository-owned visual capture harness Boatstack runs automatically during ship. A surface-scoped key `visual:<surface>` (e.g. `visual:web`, `visual:ops`; lowercase kebab surface, registered with `capability-register --surface`) outranks the global key for scenarios that declare that `surface`; scenarios without one, or without a surface key, use the global command exactly as before.
   - Other command names (string, optional): Additional repository-owned commands such as `build`, `lint`, or `typecheck`.
 - `high_risk_paths` (array of strings, optional): Glob patterns of files requiring independent reviewer sign-off before shipping.
+- `visual_surfaces` (array of objects, optional): Registered product surfaces. Each object has a lowercase-kebab `id` and repository-relative `paths`; changes below these paths are screenshot candidates and cannot use `not_relevant`.
 - `migration` (object, optional): Declares how migrations are graded by EFFECT against a disposable database, so a committed migration stays a data artifact for the guard while its real effect is executed and observed by a conformance harness. Both commands run via `sh -c` with the disposable database coordinate in the environment as `BOATSTACK_MIGRATE_DB`; when `apply_command` is absent, grading is skipped.
   - `apply_command` (string, optional): The command that applies the migration set to the disposable database.
   - `verify_command` (string, optional): The command that asserts the post-migration invariant; a non-zero exit grades the migration FAIL.
@@ -90,8 +92,8 @@ This is the exhaustive serialization contract, not a list of recommended user ed
 - `maintain_changelog` (boolean, optional): Whether a reader-visible `CHANGELOG.md` entry is required for each delivery slice.
 - `boundary_analysis` (boolean, optional): Agent-mediated planning guidance that presents local repair versus programmatic enforcement as a material product decision.
 - `pr_visual_evidence` (string, optional): `off`, `suggest`, or `require`. Omission is `off`. Relevant PRs use machine-local PNG evidence without committing media to Git; `suggest` records missing evidence as a visible gap and `require` blocks completed publication. When the approved plan declares `relevance: relevant` with scenarios, `suggest` ships with require semantics for that feature (a plan that promises pixels cannot ship without them) — even when no capture capability is registered yet. The two escapes are `off` (global) and a `not_relevant` plan decision with a reason (per feature, for genuinely nonvisual changes). Boatstack runs a registered capture command (`project.commands.visual`) automatically during ship, so under normal provisioning the escalation is invisible.
-- `visual_evidence_publish` (object, optional): Agent-mediated publish control for how captured PNG bytes reach the pull-request comment. Omission keeps the default: commit the bytes to a public Boatstack-owned evidence branch and render them inline, but only for a **public** GitHub origin (a private origin falls back to manual attachment). Fields:
-  - `mode` (string, optional): `external-host` opts the repository — including a **private** one — into uploading the exact PNG bytes to an anonymous expiring host so the comment renders inline anywhere. It is **never auto-selected** because it publishes screenshot bytes to a third party; only this explicit value turns it on. Empty keeps the default public-branch behavior.
+- `visual_evidence_publish` (object, optional): Publish control for externally hosted screenshots. Omission defaults to Litterbox with a 72-hour expiry. Upload is refused until every PNG has explicit human privacy review. Fields:
+  - `mode` (string, optional): Compatibility value `external-host`; external hosting is always used.
   - `host` (string, optional): `litterbox` (default) or `catbox`. Only meaningful when `mode` is `external-host`. `litterbox` auto-expires uploads; `catbox` is permanent.
   - `expiry` (string, optional): `1h`, `12h`, `24h`, or `72h` (default `72h`). Only meaningful for an expiring host; the PR comment reminds reviewers of the host and this window.
 - `ignored_deliveries` (array of strings, optional): Deterministic ambiguity control. Feature slugs of past deliveries to exclude from delivery-ambiguity resolution so historical work no longer blocks new work. New, unlisted ambiguous deliveries still pause the workflow.
