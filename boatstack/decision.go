@@ -8,6 +8,7 @@ const (
 	OperatorVerify   DecisionOperator = "verify"
 	OperatorReject   DecisionOperator = "reject"
 	OperatorEscalate DecisionOperator = "escalate"
+	OperatorPolicy   DecisionOperator = "policy"
 )
 
 type EvidenceLevel string
@@ -33,6 +34,7 @@ type PlanDecisionInput struct {
 	RepositoryEvidence []EvidenceRecord
 	EvidenceLevel      EvidenceLevel
 	PremiseStatus      PremiseStatus
+	AutonomyEligible   bool
 }
 
 type DecisionResolution struct {
@@ -77,6 +79,13 @@ func ResolvePlanDecision(input PlanDecisionInput) DecisionResolution {
 		resolution.Operator = OperatorVerify
 		resolution.RuleID = "supported-evidence-requires-verification"
 		resolution.Reason = "evidence is supported but requires independent verification"
+		return resolution
+	}
+
+	if !input.IsMaterial && input.AutonomyEligible && input.EvidenceLevel == EvidenceAbsent && input.PremiseStatus == PremiseValid {
+		resolution.Operator = OperatorPolicy
+		resolution.RuleID = "eligible-nonmaterial-policy-resolution"
+		resolution.Reason = "declared autonomy evidence permits a bounded policy decision"
 		return resolution
 	}
 

@@ -34,6 +34,7 @@ Boatstack stores feature artifacts under `.product-loop/features/<feature>/`:
 | `test-plan.md` | Connects promised outcomes to checks |
 | `plan.md` | Holds the human-readable approved plan |
 | `approval.md` | Records who approved which exact plan |
+| `autonomy.md` | Records one explicit run target and its bounded policy decisions without claiming human approval |
 | `compiled/` and `plan.lock.json` | Prove that build activated the approved inputs without drift |
 | `evidence.md` | Records commands, results, review findings, and gate status |
 | `pr.md` | Contains the exact reviewer-ready title and body preview |

@@ -138,6 +138,22 @@ func validateArchitectureGrounding(plan map[string]any, opts *ValidatePlanOption
 	return nil
 }
 
+func validatePlanAutonomy(plan map[string]any, opts *ValidatePlanOptions) error {
+	if _, present := plan["autonomy_decisions"]; !present {
+		return nil
+	}
+	var evidence map[string]EvidenceRecord
+	if opts != nil && opts.PlanPath != "" {
+		var err error
+		evidence, err = LoadEvidenceLedger(filepath.Join(filepath.Dir(opts.PlanPath), "evidence.json"))
+		if err != nil {
+			return err
+		}
+	}
+	_, err := validateAutonomyDecisions(plan, evidence)
+	return err
+}
+
 func validateSystemicBoundaries(plan map[string]any) error {
 	boundaries, ok := objectSlice(plan["systemic_boundaries"])
 	if !ok || len(boundaries) == 0 {

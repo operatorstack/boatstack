@@ -35,9 +35,32 @@ type NextStatus struct {
 	PRURL              string           `json:"pr_url,omitempty"`
 	HeadBranch         string           `json:"head_branch,omitempty"`
 	ParentDelivery     string           `json:"parent_delivery,omitempty"`
+	RunTarget          RunTarget        `json:"run_target,omitempty"`
+	PolicyDecisions    int              `json:"policy_decisions,omitempty"`
 	// VisualPublication surfaces an owed evidence attachment of a published
 	// PR ("visual_pending" or "manual_required"); empty otherwise.
 	VisualPublication string `json:"visual_publication,omitempty"`
+}
+
+func decorateAutonomyStatus(repo string, status NextStatus) NextStatus {
+	if status.Feature == "" {
+		return status
+	}
+	path := filepath.Join(repo, ".product-loop", "features", status.Feature, "autonomy.md")
+	value, err := loadJSONObject(path, "autonomy receipt", autonomyMarkerStart, autonomyMarkerEnd, true)
+	if err != nil {
+		return status
+	}
+	status.RunTarget = RunTarget(stringValue(value["target"]))
+	if decisions, ok := objectSlice(value["decisions"]); ok {
+		status.PolicyDecisions = len(decisions)
+	}
+	if status.RunTarget == RunTargetVerified && (status.ObservedStage == StatusReviewPassed || status.ObservedStage == "PR_PREVIEW") {
+		status.ObservedStage = "VERIFIED_TARGET_REACHED"
+		status.NextOperation = "none"
+		status.Reason = "The autonomous run reached its build, test, and review target without publishing."
+	}
+	return status
 }
 
 func blockedNextStatus(stage, operation, reason string, ambiguity ...string) NextStatus {
@@ -142,7 +165,7 @@ func nextForDelivery(repo, feature string) (NextStatus, error) {
 	default:
 		return NextStatus{}, fmt.Errorf("managed delivery slice %s has unsupported status %q", slice.ID, slice.Status)
 	}
-	return status, nil
+	return decorateAutonomyStatus(repo, status), nil
 }
 
 func nextForPublished(repo string, state DeliveryState) NextStatus {
@@ -295,7 +318,7 @@ func ResolveNext(repoPath, explicitFeature string) (NextStatus, error) {
 		base.ObservedStage = "NOT_INITIALIZED"
 		base.NextOperation = "init"
 		base.Reason = "This repository has no Boatstack project installation to inspect."
-		return base, nil
+		return decorateAutonomyStatus(repo, base), nil
 	}
 	config, _, configErr := LoadConfig(WorkspaceFor(repo).ProjectConfigPath())
 	if configErr != nil {
@@ -391,7 +414,26 @@ func ResolveNext(repoPath, explicitFeature string) (NextStatus, error) {
 		directory := filepath.Join(repo, ".product-loop", "features", feature)
 		base.VerificationStatus = "VERIFIED"
 		base.Feature = feature
-		if !config.Workflow.HumanPlanApproval {
+		policyReady := !config.Workflow.HumanPlanApproval
+		autonomyPath := filepath.Join(directory, "autonomy.md")
+		if fileExists(autonomyPath) {
+			check, checkErr := CheckPlan(filepath.Join(directory, "plan.md"))
+			if checkErr != nil {
+				return blockedNextStatus("INVALID_STATE", "auto-plan", "The autonomous run plan is no longer valid: "+checkErr.Error(), feature), nil
+			}
+			autonomy, autonomyErr := CheckAutonomyReceiptForPlanning(autonomyPath, check, repo, RunTargetPlan)
+			if autonomyErr != nil {
+				return blockedNextStatus("INVALID_STATE", "auto-plan", "The autonomous run receipt is stale or invalid: "+autonomyErr.Error(), feature), nil
+			}
+			if autonomy.Target == RunTargetPlan {
+				base.ObservedStage = "PLAN_READY"
+				base.NextOperation = "none"
+				base.Reason = "The autonomous run reached its reviewable-plan target."
+				return decorateAutonomyStatus(repo, base), nil
+			}
+			policyReady = true
+		}
+		if policyReady {
 			base.ObservedStage = "POLICY_READY"
 			base.NextOperation = "build"
 			base.Reason = "The saved feature is ready for fingerprinted policy activation without a human approval receipt."
@@ -414,7 +456,7 @@ func ResolveNext(repoPath, explicitFeature string) (NextStatus, error) {
 			base.NextOperation = "plan-gate"
 			base.Reason = "The saved feature plan has not been approved."
 		}
-		return base, nil
+		return decorateAutonomyStatus(repo, base), nil
 	}
 
 	completed, err := completedManagedStates(repo)
@@ -482,6 +524,9 @@ func FormatNextStatus(status NextStatus) string {
 	}
 	if status.Feature != "" {
 		parts = append(parts, "Feature: "+status.Feature)
+	}
+	if status.RunTarget != "" {
+		parts = append(parts, "Run target: "+string(status.RunTarget), fmt.Sprintf("Policy decisions: %d", status.PolicyDecisions))
 	}
 	if status.ActiveSlice != "" {
 		if status.TotalSlices > 1 {

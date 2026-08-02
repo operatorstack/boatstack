@@ -113,6 +113,11 @@ func StateRegistry() []StateEntry {
 			Sample:     generatedSample("features", "sample-feature", "approval.md"),
 		},
 		{
+			Name: "autonomy-receipt", Class: ClassCommittedPlanning, Partition: "checkout",
+			OwnerVerbs: []string{"record-autonomy"},
+			Sample:     generatedSample("features", "sample-feature", "autonomy.md"),
+		},
+		{
 			Name: "plan-lock", Class: ClassCommittedPlanning, Partition: "checkout",
 			OwnerVerbs: []string{"activate-plan"},
 			Sample:     generatedSample("features", "sample-feature", "plan.lock.json"),

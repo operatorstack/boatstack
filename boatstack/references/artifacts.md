@@ -12,6 +12,7 @@ Artifacts separate facts, decisions, unknowns, incompleteness, and evidence. Com
 | ADR | Accepted durable architecture decision and rationale | A meaningful architecture choice is accepted |
 | Markdown plan | Human-readable plan plus its one marked structured block; canonical before and during build | A spec is resolved enough to propose tasks and checks |
 | Approval receipt | Named human, timestamp, and fingerprint in Markdown; not executable state | The exact draft is explicitly approved in Plan mode |
+| Autonomy receipt | Invocation-scoped target, policy decisions, repository/branch identity, evidence, and plan fingerprint in Markdown | An explicit goal-driven run selects `plan`, `verified`, or `pr` |
 | Compiled tasks | Deterministic dependency graph generated from the approved Markdown plan | Build activation succeeds |
 | Journey oracle manifest | Fingerprinted typed journey oracles compiled from the plan-level decision | Build activation succeeds |
 | Journey results | PASS/FAIL and evidence bound to the oracle manifest, head commit, and diff | Before a relevant journey reaches test or review gate |
@@ -133,6 +134,7 @@ clone, `external` outside the repository (Detached Supervision).
 | generated-lock | committed-generated | checkout | init, update, export |
 | planning-artifacts | committed-planning | checkout | planning-write |
 | approval-receipt | committed-planning | checkout | record-approval |
+| autonomy-receipt | committed-planning | checkout | record-autonomy |
 | plan-lock | committed-planning | checkout | activate-plan |
 | compiled-artifacts | committed-planning | checkout | activate-plan |
 | pr-preview | committed-planning | checkout | ship-gate, publish-pr |
