@@ -68,12 +68,18 @@ type DeliveryPolicy struct {
 }
 
 type Project struct {
-	Name          string            `json:"name"`
-	DefaultBranch string            `json:"default_branch,omitempty"`
-	Context       []string          `json:"context,omitempty"`
-	Commands      map[string]string `json:"commands"`
-	HighRiskPaths []string          `json:"high_risk_paths,omitempty"`
-	Migration     MigrationConfig   `json:"migration,omitempty"`
+	Name           string            `json:"name"`
+	DefaultBranch  string            `json:"default_branch,omitempty"`
+	Context        []string          `json:"context,omitempty"`
+	Commands       map[string]string `json:"commands"`
+	HighRiskPaths  []string          `json:"high_risk_paths,omitempty"`
+	VisualSurfaces []VisualSurface   `json:"visual_surfaces,omitempty"`
+	Migration      MigrationConfig   `json:"migration,omitempty"`
+}
+
+type VisualSurface struct {
+	ID    string   `json:"id"`
+	Paths []string `json:"paths"`
 }
 
 // MigrationConfig declares how a project APPLIES and VERIFIES its migrations against
@@ -98,13 +104,8 @@ type Workflow struct {
 	BoundaryAnalysis             bool   `json:"boundary_analysis,omitempty"`
 	PRVisualEvidence             string `json:"pr_visual_evidence,omitempty"`
 	// VisualEvidencePublish selects how programmatic visual evidence reaches a PR.
-	// The nil zero value keeps Boatstack's default: commit the exact PNG bytes to a
-	// public Boatstack-owned evidence branch and render them inline, but only for a
-	// PUBLIC GitHub origin (a private origin falls back to manual attachment).
-	// Setting mode to "external-host" opts a repository — including a private one —
-	// into uploading the bytes to an anonymous expiring host so the comment renders
-	// inline anywhere; it is never auto-selected because it publishes screenshot
-	// bytes to a third party.
+	// The nil zero value uses Litterbox with a 72-hour expiry. Publication still
+	// requires explicit human privacy review for every screenshot.
 	VisualEvidencePublish *VisualEvidencePublish `json:"visual_evidence_publish,omitempty"`
 	// IgnoredDeliveries lists feature slugs of past deliveries to exclude from
 	// delivery-ambiguity resolution. New, unlisted ambiguous deliveries still
@@ -116,7 +117,7 @@ type Workflow struct {
 // zero value of each field resolves to a default at use, so a partially-specified
 // block (mode only) still works.
 type VisualEvidencePublish struct {
-	Mode   string `json:"mode,omitempty"`   // "" (default public-branch) | "external-host"
+	Mode   string `json:"mode,omitempty"`   // "" | "external-host" (external hosting is always used)
 	Host   string `json:"host,omitempty"`   // external-host only: "litterbox" (default) | "catbox"
 	Expiry string `json:"expiry,omitempty"` // expiring host only: "1h" | "12h" | "24h" | "72h" (default "72h")
 }

@@ -162,13 +162,10 @@ func classifyNextActor(status NextStatus, next FlowNext) NextActor {
 		status.ObservedStage == "PUBLISHED" && status.Lifecycle == "PUBLISHED_MERGED":
 		return NextActorNone
 	case status.ObservedStage == "PUBLISHED":
-		// An owed visual attachment splits by what it owes: a transient
-		// publisher failure (visual_pending) is work-derivable — the agent
-		// retries attach-evidence; manual_required owes operator authority (a
-		// signed-in browser or an external-host opt-in) and stays theirs. A
-		// fired goal escape still demotes unconditionally.
+		// Both the current visual_pending state and the legacy manual_required
+		// state are work-derivable external-host retries.
 		// control-law: turn-ends-only-at-the-operator-frontier
-		if status.Lifecycle == "PUBLISHED_OPEN" && status.GoalEscape == "" && status.VisualPublication == "visual_pending" {
+		if status.Lifecycle == "PUBLISHED_OPEN" && status.GoalEscape == "" && (status.VisualPublication == "visual_pending" || status.VisualPublication == "manual_required") {
 			return NextActorAgent
 		}
 		// Under the default published terminal, reviewing the open pull
@@ -455,10 +452,9 @@ func prescribePlanning(repo string, status NextStatus) (*PrescribedCommand, stri
 // prescribeVisualAttach closes the owed-attachment gap of a published-open
 // PR so the flow never goes dark on visual_pending or manual_required. It
 // fires under BOTH terminals — the attachment completes publication, it is
-// not merge pursuit. visual_pending prescribes the attach-evidence retry
-// (work-derivable); manual_required prescribes recording the manually
-// attached comment, owing the operator-observed URL. A fired goal escape
-// prescribes nothing, exactly like the post-publish layer.
+// not merge pursuit. Both current and legacy owed states prescribe the same
+// externally hosted attach-evidence retry. A fired goal escape prescribes
+// nothing, exactly like the post-publish layer.
 // control-law: prescriptive-closure-every-stage-names-a-runnable-command
 func prescribeVisualAttach(repo string, status NextStatus) (*PrescribedCommand, string) {
 	if status.ObservedStage != "PUBLISHED" || status.Lifecycle != "PUBLISHED_OPEN" || status.Feature == "" || status.GoalEscape != "" {
@@ -469,24 +465,12 @@ func prescribeVisualAttach(repo string, status NextStatus) (*PrescribedCommand, 
 		repoArgs = []string{"--repo", repo}
 	}
 	switch status.VisualPublication {
-	case "visual_pending":
+	case "visual_pending", "manual_required":
 		cmd := &PrescribedCommand{
 			Verb: "attach-evidence", Args: append(repoArgs, "--feature", status.Feature),
 			AutoDerivable: true, Transition: MarkerPublishedAttach,
 		}
-		return cmd, "The PR is open; only its Boatstack visual-evidence comment is owed. If the publisher keeps failing, attach the fingerprinted PNGs manually and record the URL with record-pr-visual-publication."
-	case "manual_required":
-		cmd := &PrescribedCommand{
-			Verb: "record-pr-visual-publication", Args: append(repoArgs, "--key", status.Feature),
-			RequiresHumanInput: []string{"--comment-url"},
-			Transition:         MarkerPublishedAttach,
-		}
-		if strings.TrimSpace(status.PRURL) != "" {
-			cmd.Args = append(cmd.Args, "--pr-url", status.PRURL)
-		} else {
-			cmd.RequiresHumanInput = append(cmd.RequiresHumanInput, "--pr-url")
-		}
-		return cmd, "No automatic publisher is available here: attach the fingerprinted PNGs to one PR comment yourself, then record the observed comment URL."
+		return cmd, "The PR is open; only its externally hosted Boatstack visual-evidence comment is owed. Retry the same evidence fingerprint and comment after host access recovers."
 	}
 	return nil, ""
 }

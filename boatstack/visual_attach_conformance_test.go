@@ -10,7 +10,7 @@ import (
 //
 // A published-open slice with an owed visual publication never resolves to a
 // dark prescription: visual_pending prescribes the agent-owned attach-evidence
-// retry, manual_required prescribes recording the operator-attached comment,
+// retry, and legacy manual_required maps to the same hosted retry,
 // and both fire under BOTH terminals because the attachment completes the
 // publication itself — it is not merge pursuit.
 
@@ -39,16 +39,13 @@ func TestOwedVisualAttachmentNeverResolvesDark(t *testing.T) {
 		}
 	})
 
-	t.Run("manual_required_prescribes_the_recording", func(t *testing.T) {
+	t.Run("manual_required_prescribes_the_hosted_retry", func(t *testing.T) {
 		cmd, _ := prescribeVisualAttach(".", publishedOpenStatus("manual_required"))
-		if cmd == nil || cmd.Verb != "record-pr-visual-publication" {
-			t.Fatalf("manual_required did not prescribe the recording: %+v", cmd)
+		if cmd == nil || cmd.Verb != "attach-evidence" || !cmd.AutoDerivable {
+			t.Fatalf("manual_required did not prescribe the hosted retry: %+v", cmd)
 		}
-		if cmd.AutoDerivable || strings.Join(cmd.RequiresHumanInput, " ") != "--comment-url" {
-			t.Fatalf("the observed comment URL must be owed to the operator: %+v", cmd)
-		}
-		if !strings.Contains(strings.Join(cmd.Args, " "), "--pr-url https://github.com/example/repo/pull/7") {
-			t.Fatalf("the recorded PR URL is state-derived and must be in Args: %v", cmd.Args)
+		if strings.Join(cmd.Args, " ") != "--feature demo" {
+			t.Fatalf("legacy retry arguments are not state-derived: %v", cmd.Args)
 		}
 	})
 

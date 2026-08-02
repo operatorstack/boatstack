@@ -114,6 +114,8 @@ func planVisualDecision(repo, feature string) (string, string, []PRVisualScenari
 		scenarios = append(scenarios, PRVisualScenario{
 			ID: stringValue(row["id"]), Entry: stringValue(row["entry"]), State: stringValue(row["state"]),
 			Viewport: stringValue(row["viewport"]), Expected: expected, Surface: stringValue(row["surface"]),
+			UserContext: stringValue(row["user_context"]), UserGoal: stringValue(row["user_goal"]),
+			JourneyStep: stringValue(row["journey_step"]), ReviewerContext: stringValue(row["reviewer_context"]),
 		})
 	}
 	return relevance, "managed-plan", scenarios, nil
@@ -139,7 +141,11 @@ func ensureCurrentPRVisualEvidence(repo string, config ProjectConfig, mode, feat
 	if err != nil {
 		return "", nil
 	}
-	if loaded, loadErr := LoadPRVisualEvidence(repo, key); loadErr == nil && loaded.Status == "PASS" && loaded.ProductDiffSHA256 == diffHash {
+	scenarioHash, commandHash, identityErr := currentVisualEvidenceIdentity(scenarios, config)
+	if identityErr != nil {
+		return boundedCaptureDetail(identityErr.Error()), nil
+	}
+	if loaded, loadErr := LoadPRVisualEvidence(repo, key); loadErr == nil && loaded.Status == "PASS" && loaded.ProductDiffSHA256 == diffHash && loaded.ScenarioDefinitionSHA256 == scenarioHash && loaded.CaptureCommandSHA256 == commandHash {
 		return "", nil
 	}
 	// Every declared surface must resolve to a repository command for capture
@@ -174,6 +180,30 @@ func ensureCurrentPRVisualEvidence(repo string, config ProjectConfig, mode, feat
 		return boundedCaptureDetail(captureErr.Error()), nil
 	}
 	return "", nil
+}
+
+func currentVisualEvidenceIdentity(scenarios []PRVisualScenario, config ProjectConfig) (string, string, error) {
+	scenarioHash, err := visualScenarioDefinitionHash(scenarios)
+	if err != nil {
+		return "", "", err
+	}
+	commands, err := resolveScenarioCaptureCommands("visual", scenarios, config)
+	if err != nil {
+		return scenarioHash, "", err
+	}
+	commandRaw, err := MarshalJSON(commands)
+	if err != nil {
+		return "", "", err
+	}
+	return scenarioHash, SHA256Bytes(commandRaw), nil
+}
+
+func visualScenarioDefinitionHash(scenarios []PRVisualScenario) (string, error) {
+	scenarioRaw, err := MarshalJSON(scenarios)
+	if err != nil {
+		return "", err
+	}
+	return SHA256Bytes(scenarioRaw), nil
 }
 
 // boundedCaptureDetail folds a harness error into a single bounded line so a
@@ -211,6 +241,7 @@ func resolvePRVisualEvidence(repo string, config ProjectConfig, mode, feature, h
 	}
 	status := "NOT_APPLICABLE"
 	var manifest *PRVisualEvidenceManifest
+	plannedScenarios := scenarios
 	if policy != "off" && relevance != "not_relevant" {
 		loaded, loadErr := LoadPRVisualEvidence(repo, key)
 		if loadErr == nil {
@@ -221,7 +252,15 @@ func resolvePRVisualEvidence(repo string, config ProjectConfig, mode, feature, h
 			// publication, so a head-commit equality would invalidate every
 			// PASS manifest on that mandatory commit. SourceCommit stays
 			// recorded for provenance and the evidence comment.
-			if loaded.ProductDiffSHA256 == diffHash {
+			identityCurrent := true
+			if mode == "managed" && relevance == "relevant" {
+				scenarioHash, commandHash, identityErr := currentVisualEvidenceIdentity(plannedScenarios, config)
+				identityCurrent = loaded.ScenarioDefinitionSHA256 == scenarioHash && loaded.CaptureCommandSHA256 != ""
+				if identityErr == nil {
+					identityCurrent = identityCurrent && loaded.CaptureCommandSHA256 == commandHash
+				}
+			}
+			if loaded.ProductDiffSHA256 == diffHash && identityCurrent {
 				status = loaded.Status
 			} else {
 				status = "NOT_VERIFIED"
@@ -282,24 +321,21 @@ func publishPRVisualEvidence(repo, prURL string, context PRContext, publisher PR
 }
 
 // attachVisualEvidence performs the one publisher call and records the
-// observed outcome: manual_required without a publisher, visual_pending on a
-// publisher failure (PR preserved, fix forward), published on an observable
-// comment URL. Shared by first publication (publishPRVisualEvidence) and the
+// observed outcome: visual_pending without a publisher or on a publisher
+// failure (PR preserved, fix forward), published on an observable comment URL.
+// Shared by first publication (publishPRVisualEvidence) and the
 // attach-evidence retry, so both paths record identical states.
 func attachVisualEvidence(repo, prURL string, manifest PRVisualEvidenceManifest, publisher PRVisualEvidencePublisher, policy string) error {
 	now := time.Now().UTC().Truncate(time.Second).Format(time.RFC3339)
 	if publisher == nil {
 		_, recordErr := recordPRVisualPublication(repo, manifest, PRVisualPublication{
-			State: "manual_required", PRURL: prURL, UpdatedAt: now,
-			Detail: "attach the fingerprinted local PNG files to the Boatstack visual-evidence comment",
+			State: "visual_pending", PRURL: prURL, CommentURL: manifest.Publication.CommentURL, UpdatedAt: now,
+			Detail: "external-host publication is unavailable; retry the same evidence fingerprint and comment",
 		})
 		if recordErr != nil {
-			return fmt.Errorf("PR opened but manual visual-evidence fallback could not be recorded: %w", recordErr)
+			return fmt.Errorf("PR opened but pending visual-evidence state could not be recorded: %w", recordErr)
 		}
-		if policy == "require" {
-			return fmt.Errorf("PR opened at %s but required visual evidence still needs manual attachment; update the same PR after attachment", prURL)
-		}
-		return nil
+		return fmt.Errorf("PR opened at %s but external visual evidence is pending; retry the same PR after host access is available", prURL)
 	}
 	commentURL, publishErr := publisher.PublishVisualEvidence(repo, prURL, manifest.Publication.CommentURL, manifest)
 	if publishErr != nil {
@@ -310,6 +346,10 @@ func attachVisualEvidence(repo, prURL string, manifest PRVisualEvidenceManifest,
 		return fmt.Errorf("PR opened at %s but visual evidence publication failed; preserve the PR and fix forward: %w", prURL, publishErr)
 	}
 	if strings.TrimSpace(commentURL) == "" {
+		_, _ = recordPRVisualPublication(repo, manifest, PRVisualPublication{
+			State: "visual_pending", PRURL: prURL, CommentURL: manifest.Publication.CommentURL,
+			UpdatedAt: now, Detail: "visual evidence publisher returned no observable comment URL",
+		})
 		return fmt.Errorf("visual evidence publisher returned no observable comment URL")
 	}
 	_, err := recordPRVisualPublication(repo, manifest, PRVisualPublication{
@@ -347,7 +387,7 @@ func RetryVisualAttachment(repo, feature string, publisher PRVisualEvidencePubli
 		return PRVisualEvidenceManifest{}, fmt.Errorf("visual evidence for %q records no pull request; publish-pr owns first publication", feature)
 	}
 	if publisher == nil {
-		return PRVisualEvidenceManifest{}, fmt.Errorf("no visual publisher is available in this environment; attach the fingerprinted PNGs to one PR comment yourself and record the observed URL with record-pr-visual-publication --key %s --pr-url %s --comment-url <url>", key, prURL)
+		return PRVisualEvidenceManifest{}, fmt.Errorf("no external visual publisher is available; retry the same evidence fingerprint and comment when host access is available")
 	}
 	if err := attachVisualEvidence(resolved, prURL, manifest, publisher, ""); err != nil {
 		return PRVisualEvidenceManifest{}, err

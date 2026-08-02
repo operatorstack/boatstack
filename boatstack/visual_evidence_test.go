@@ -213,6 +213,9 @@ func TestRetryVisualAttachmentCompletesOwedPublication(t *testing.T) {
 	if retried.Publication.State != "published" || retried.Publication.PRURL != prURL || retried.Publication.CommentURL == "" {
 		t.Fatalf("retry did not complete the owed publication: %#v", retried.Publication)
 	}
+	if retried.Fingerprint != manifest.Fingerprint {
+		t.Fatalf("retry changed the evidence fingerprint: before=%s after=%s", manifest.Fingerprint, retried.Fingerprint)
+	}
 	again, err := RetryVisualAttachment(repo, "feature-warning", &fakeVisualPublisher{err: os.ErrPermission})
 	if err != nil || again.Publication.State != "published" {
 		t.Fatalf("published attachment must be an idempotent no-op: %#v %v", again.Publication, err)
@@ -231,14 +234,14 @@ func TestRetryVisualAttachmentRefusesWhatItDoesNotOwn(t *testing.T) {
 		t.Fatalf("pre-publication manifest was not routed to publish-pr: %v", err)
 	}
 	context := PRContext{PRVisualEvidencePolicy: "suggest", PRVisualEvidenceStatus: "PASS", PRVisualEvidence: &manifest}
-	if err := publishPRVisualEvidence(repo, "https://github.com/example/repo/pull/4", context, nil); err != nil {
-		t.Fatal(err)
+	if err := publishPRVisualEvidence(repo, "https://github.com/example/repo/pull/4", context, nil); err == nil || !strings.Contains(err.Error(), "external visual evidence is pending") {
+		t.Fatalf("missing external publisher did not preserve a pending PR: %v", err)
 	}
-	if _, err := RetryVisualAttachment(repo, "feature-warning", nil); err == nil || !strings.Contains(err.Error(), "record-pr-visual-publication") {
-		t.Fatalf("missing publisher must name the manual recording verb: %v", err)
+	if _, err := RetryVisualAttachment(repo, "feature-warning", nil); err == nil || !strings.Contains(err.Error(), "external visual publisher") {
+		t.Fatalf("missing publisher must preserve the hosted retry: %v", err)
 	}
 	recovered, err := RetryVisualAttachment(repo, "feature-warning", &fakeVisualPublisher{commentURL: "https://github.com/example/repo/pull/4#issuecomment-1"})
 	if err != nil || recovered.Publication.State != "published" {
-		t.Fatalf("manual_required with a live publisher should still recover: %#v %v", recovered.Publication, err)
+		t.Fatalf("legacy owed state with a live publisher should still recover: %#v %v", recovered.Publication, err)
 	}
 }

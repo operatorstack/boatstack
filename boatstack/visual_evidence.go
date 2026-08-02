@@ -25,21 +25,41 @@ type PRVisualScenario struct {
 	// (e.g. "web", "ops"), selecting a surface-scoped harness command
 	// (project.commands["visual:<surface>"]) over the global one. omitempty
 	// keeps existing manifest fingerprints byte-stable.
-	Surface string `json:"surface,omitempty"`
+	Surface         string `json:"surface,omitempty"`
+	UserContext     string `json:"user_context,omitempty"`
+	UserGoal        string `json:"user_goal,omitempty"`
+	JourneyStep     string `json:"journey_step,omitempty"`
+	ReviewerContext string `json:"reviewer_context,omitempty"`
+}
+
+type PRVisualScenarioCheck struct {
+	Name   string `json:"name"`
+	Result string `json:"result"`
+}
+
+// PRVisualScenarioReceipt is optional harness output. A valid receipt proves the
+// named scenario checks; PNG validity alone never creates this status.
+type PRVisualScenarioReceipt struct {
+	ScenarioID    string                  `json:"scenario_id"`
+	Reached       string                  `json:"reached_state_or_url"`
+	Checks        []PRVisualScenarioCheck `json:"checks"`
+	OverallResult string                  `json:"overall_result"`
 }
 
 type PRVisualEvidenceItem struct {
-	ScenarioID    string `json:"scenario_id"`
-	Path          string `json:"path"`
-	SHA256        string `json:"sha256"`
-	MIMEType      string `json:"mime_type"`
-	Width         int    `json:"width"`
-	Height        int    `json:"height"`
-	DurationMS    int    `json:"duration_ms"`
-	Viewport      string `json:"viewport"`
-	CapturedAt    string `json:"captured_at"`
-	Status        string `json:"status"`
-	PrivacyStatus string `json:"privacy_status"`
+	ScenarioID         string                   `json:"scenario_id"`
+	Path               string                   `json:"path"`
+	SHA256             string                   `json:"sha256"`
+	MIMEType           string                   `json:"mime_type"`
+	Width              int                      `json:"width"`
+	Height             int                      `json:"height"`
+	DurationMS         int                      `json:"duration_ms"`
+	Viewport           string                   `json:"viewport"`
+	CapturedAt         string                   `json:"captured_at"`
+	Status             string                   `json:"status"`
+	PrivacyStatus      string                   `json:"privacy_status"`
+	VerificationStatus string                   `json:"verification_status,omitempty"`
+	Receipt            *PRVisualScenarioReceipt `json:"receipt,omitempty"`
 }
 
 type PRVisualPublication struct {
@@ -51,19 +71,21 @@ type PRVisualPublication struct {
 }
 
 type PRVisualEvidenceManifest struct {
-	SchemaVersion     int                    `json:"schema_version"`
-	Key               string                 `json:"key"`
-	Policy            string                 `json:"policy"`
-	Relevance         string                 `json:"relevance"`
-	RelevanceSource   string                 `json:"relevance_source"`
-	Reason            string                 `json:"reason,omitempty"`
-	Status            string                 `json:"status"`
-	SourceCommit      string                 `json:"source_commit"`
-	ProductDiffSHA256 string                 `json:"product_diff_sha256"`
-	Scenarios         []PRVisualScenario     `json:"scenarios,omitempty"`
-	Items             []PRVisualEvidenceItem `json:"items,omitempty"`
-	Publication       PRVisualPublication    `json:"publication"`
-	Fingerprint       string                 `json:"fingerprint"`
+	SchemaVersion            int                    `json:"schema_version"`
+	Key                      string                 `json:"key"`
+	Policy                   string                 `json:"policy"`
+	Relevance                string                 `json:"relevance"`
+	RelevanceSource          string                 `json:"relevance_source"`
+	Reason                   string                 `json:"reason,omitempty"`
+	Status                   string                 `json:"status"`
+	SourceCommit             string                 `json:"source_commit"`
+	ProductDiffSHA256        string                 `json:"product_diff_sha256"`
+	ScenarioDefinitionSHA256 string                 `json:"scenario_definition_sha256,omitempty"`
+	CaptureCommandSHA256     string                 `json:"capture_command_sha256,omitempty"`
+	Scenarios                []PRVisualScenario     `json:"scenarios,omitempty"`
+	Items                    []PRVisualEvidenceItem `json:"items,omitempty"`
+	Publication              PRVisualPublication    `json:"publication"`
+	Fingerprint              string                 `json:"fingerprint"`
 }
 
 type PRVisualCapabilityReceipt struct {
@@ -187,6 +209,9 @@ func visualCapabilityPath(repo string) (string, error) {
 func visualManifestFingerprint(manifest PRVisualEvidenceManifest) (string, error) {
 	copy := manifest
 	copy.Fingerprint = ""
+	// Publication is retry state, not evidence identity. A failed upload or
+	// comment update must retry the same package fingerprint and comment.
+	copy.Publication = PRVisualPublication{}
 	raw, err := MarshalJSON(copy)
 	if err != nil {
 		return "", err
@@ -236,7 +261,10 @@ func validateVisualManifest(manifest PRVisualEvidenceManifest) error {
 			return fmt.Errorf("visual evidence items must reference a scenario and describe a valid PNG")
 		}
 		seenItems[item.ScenarioID] = true
-		if item.Status != "captured" || item.Viewport != scenarioViewports[item.ScenarioID] {
+		if item.Status != "captured" && item.Status != "CAPTURED" {
+			return fmt.Errorf("visual evidence items require CAPTURED status")
+		}
+		if item.Viewport != scenarioViewports[item.ScenarioID] {
 			return fmt.Errorf("visual evidence items require captured status and the approved scenario viewport")
 		}
 		if item.PrivacyStatus != "clean" && item.PrivacyStatus != "human-reviewed" {
@@ -244,6 +272,24 @@ func validateVisualManifest(manifest PRVisualEvidenceManifest) error {
 		}
 		if _, err := time.Parse(time.RFC3339, item.CapturedAt); err != nil {
 			return fmt.Errorf("visual evidence captured_at must be RFC3339: %w", err)
+		}
+		if item.VerificationStatus == "" {
+			item.VerificationStatus = "CAPTURED"
+		}
+		if item.VerificationStatus != "CAPTURED" && item.VerificationStatus != "SCENARIO_VERIFIED" {
+			return fmt.Errorf("visual evidence verification_status must be CAPTURED or SCENARIO_VERIFIED")
+		}
+		if item.VerificationStatus == "SCENARIO_VERIFIED" {
+			if item.Receipt == nil || item.Receipt.ScenarioID != item.ScenarioID || strings.TrimSpace(item.Receipt.Reached) == "" || len(item.Receipt.Checks) == 0 || !strings.EqualFold(item.Receipt.OverallResult, "PASS") {
+				return fmt.Errorf("SCENARIO_VERIFIED requires a valid passing receipt for the same scenario")
+			}
+			for _, check := range item.Receipt.Checks {
+				if strings.TrimSpace(check.Name) == "" || !strings.EqualFold(check.Result, "PASS") {
+					return fmt.Errorf("SCENARIO_VERIFIED requires named passing checks")
+				}
+			}
+		} else if item.Receipt != nil {
+			return fmt.Errorf("a scenario receipt must produce SCENARIO_VERIFIED")
 		}
 	}
 	if manifest.Status == "PASS" && (manifest.Relevance != "relevant" || len(manifest.Items) != len(manifest.Scenarios)) {

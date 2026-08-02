@@ -659,11 +659,33 @@ func TestRequiredPRVisualEvidenceBlocksPublicationBeforeMutation(t *testing.T) {
 // approved scenario, bound to the given source commit and product diff.
 func savePassVisualManifest(t *testing.T, repo, feature, sourceCommit, diffHash string) {
 	t.Helper()
+	config, _, err := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, scenarios, err := planVisualDecision(repo, feature)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scenarioHash, commandHash, err := currentVisualEvidenceIdentity(scenarios, config)
+	if err != nil {
+		// Manual evidence remains bindable even when no automatic command is
+		// registered: use the explicit empty command-set identity.
+		scenarioRaw, marshalErr := MarshalJSON(scenarios)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		commandRaw, marshalErr := MarshalJSON(map[string]string{})
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		scenarioHash, commandHash = SHA256Bytes(scenarioRaw), SHA256Bytes(commandRaw)
+	}
 	pngPath := filepath.Join(t.TempDir(), "warning.png")
 	writeTestPNG(t, pngPath)
 	if _, err := SavePRVisualEvidence(repo, PRVisualEvidenceManifest{
 		Key: feature, Policy: "suggest", Relevance: "relevant", RelevanceSource: "managed-plan",
-		Status: "PASS", SourceCommit: sourceCommit, ProductDiffSHA256: diffHash,
+		Status: "PASS", SourceCommit: sourceCommit, ProductDiffSHA256: diffHash, ScenarioDefinitionSHA256: scenarioHash, CaptureCommandSHA256: commandHash,
 		Scenarios: []PRVisualScenario{{ID: "warning", Entry: "/onboarding", State: "picker open", Viewport: "1440x900", Expected: []string{"warning visible"}}},
 		Items: []PRVisualEvidenceItem{{
 			ScenarioID: "warning", Path: pngPath, Viewport: "1440x900",

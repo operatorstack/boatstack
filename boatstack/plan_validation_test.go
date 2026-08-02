@@ -1,6 +1,8 @@
 package boatstack
 
 import (
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -209,6 +211,10 @@ func TestValidatePRVisualEvidence(t *testing.T) {
 	if err := validatePRVisualEvidence(plan); err == nil || !strings.Contains(err.Error(), "reason") {
 		t.Fatalf("missing not-relevant reason was not rejected: %v", err)
 	}
+	plan["pr_visual_evidence"] = map[string]any{"relevance": "not_relevant", "reason": "   ", "scenarios": []any{}}
+	if err := validatePRVisualEvidence(plan); err == nil || !strings.Contains(err.Error(), "reason") {
+		t.Fatalf("whitespace-only not-relevant reason was not rejected: %v", err)
+	}
 }
 
 func TestConfiguredPRVisualEvidenceRequiresPlanDecision(t *testing.T) {
@@ -221,6 +227,31 @@ func TestConfiguredPRVisualEvidenceRequiresPlanDecision(t *testing.T) {
 	}
 	plan["pr_visual_evidence"] = map[string]any{"relevance": "not_relevant", "reason": "backend-only", "scenarios": []any{}}
 	if err := requireConfiguredPRVisualEvidenceDecision(plan, &ValidatePlanOptions{RepoRoot: repo}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// control-law: registered-visual-surfaces-share-one-impact-decision
+func TestRegisteredVisualSurfaceChangeRequiresRelevantDecision(t *testing.T) {
+	repo := prTestRepoConfigured(t, func(config *ProjectConfig) {
+		config.Workflow.PRVisualEvidence = "suggest"
+		config.Project.VisualSurfaces = []VisualSurface{{ID: "web", Paths: []string{"apps/web/**"}}}
+	})
+	path := filepath.Join(repo, "apps", "web", "page.tsx")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("export default function Page() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := validV2Plan()
+	plan["pr_visual_evidence"] = map[string]any{"relevance": "not_relevant", "reason": "no visual change", "scenarios": []any{}}
+	opts := &ValidatePlanOptions{RepoRoot: repo, PlanPath: filepath.Join(repo, ".product-loop", "features", "demo", "plan.md")}
+	if err := requireVisualSurfaceEvidence(plan, opts); err == nil || !strings.Contains(err.Error(), "apps/web/page.tsx") {
+		t.Fatalf("registered surface change did not trigger evidence: %v", err)
+	}
+	plan["pr_visual_evidence"] = map[string]any{"relevance": "relevant", "scenarios": []any{map[string]any{"id": "web", "entry": "/", "state": "ready", "viewport": "1440x900", "expected": []any{"page visible"}}}}
+	if err := requireVisualSurfaceEvidence(plan, opts); err != nil {
 		t.Fatal(err)
 	}
 }

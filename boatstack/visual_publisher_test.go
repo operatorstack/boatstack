@@ -59,76 +59,6 @@ func TestCommentIDFromURL(t *testing.T) {
 	}
 }
 
-func TestEvidenceBranchNameRejectsUnsafeKey(t *testing.T) {
-	if _, err := evidenceBranchName("../escape"); err == nil {
-		t.Fatal("path-traversal key must be rejected")
-	}
-	branch, err := evidenceBranchName("firm-status")
-	if err != nil || branch != "boatstack-visual-evidence/firm-status" {
-		t.Fatalf("got %q, %v", branch, err)
-	}
-}
-
-func TestRawContentURLPinsCommit(t *testing.T) {
-	url := rawContentURL("o", "n", "abc123", evidenceBlobPath("firm-status", "deadbeef"))
-	want := "https://raw.githubusercontent.com/o/n/abc123/firm-status/deadbeef.png"
-	if url != want {
-		t.Fatalf("got %q, want %q", url, want)
-	}
-}
-
-func TestComposeVisualEvidenceCommentRendersScenariosAndWarnings(t *testing.T) {
-	manifest := PRVisualEvidenceManifest{
-		Key:               "firm-status",
-		SourceCommit:      "src123",
-		ProductDiffSHA256: "diff456",
-		Fingerprint:       "fp789",
-		Scenarios: []PRVisualScenario{
-			{ID: "VS-1", Entry: "/clients", State: "hover", Viewport: "1440x900", Expected: []string{"portal card is blue"}},
-			{ID: "VS-2", Entry: "/clients", State: "default", Viewport: "1440x900", Expected: []string{"amber badge"}},
-		},
-		Items: []PRVisualEvidenceItem{
-			{ScenarioID: "VS-1", SHA256: "hash1"},
-			{ScenarioID: "VS-2", SHA256: "hash2"},
-		},
-	}
-	body := composeVisualEvidenceComment("o", "n", "commitSHA", manifest)
-
-	if !strings.HasPrefix(body, visualEvidenceCommentMarker("firm-status")) {
-		t.Fatal("comment must open with the idempotency marker")
-	}
-	for _, want := range []string{
-		"publicly accessible",        // standing privacy warning
-		"human-review evidence",      // not-mechanical-proof warning
-		"src123", "diff456", "fp789", // trust fingerprints
-		"VS-1", "VS-2", // both scenarios
-		"portal card is blue", "amber badge",
-		rawContentURL("o", "n", "commitSHA", "firm-status/hash1.png"),
-		rawContentURL("o", "n", "commitSHA", "firm-status/hash2.png"),
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("comment body missing %q\n---\n%s", want, body)
-		}
-	}
-}
-
-func TestComposeVisualEvidenceCommentSkipsUncapturedScenarios(t *testing.T) {
-	manifest := PRVisualEvidenceManifest{
-		Key: "firm-status",
-		Scenarios: []PRVisualScenario{
-			{ID: "VS-1", Viewport: "1440x900", Expected: []string{"x"}},
-		},
-		// No items → nothing captured.
-	}
-	body := composeVisualEvidenceComment("o", "n", "c", manifest)
-	if strings.Contains(body, "![VS-1]") {
-		t.Fatal("uncaptured scenario must not render an image")
-	}
-	if !strings.Contains(body, "No captured scenarios") {
-		t.Fatal("expected an explicit empty-state note")
-	}
-}
-
 func TestUploadToExternalHostPostsFormAndReturnsURL(t *testing.T) {
 	dir := t.TempDir()
 	png := filepath.Join(dir, "VS-1.png")
@@ -136,7 +66,8 @@ func TestUploadToExternalHostPostsFormAndReturnsURL(t *testing.T) {
 
 	var gotReqtype, gotTime, gotFilename string
 	var gotBytes int
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotReqtype = r.FormValue("reqtype")
 		gotTime = r.FormValue("time")
 		file, header, err := r.FormFile("fileToUpload")
@@ -280,12 +211,18 @@ func TestExternalHostPublishVisualEvidenceUploadsAndUpserts(t *testing.T) {
 	png := filepath.Join(repo, "VS-1.png")
 	writeTestPNG(t, png)
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write([]byte("png"))
+			return
+		}
 		if _, _, err := r.FormFile("fileToUpload"); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		_, _ = w.Write([]byte("https://litter.catbox.moe/hosted.png"))
+		_, _ = w.Write([]byte(server.URL + "/hosted.png"))
 	}))
 	defer server.Close()
 
@@ -316,8 +253,10 @@ exit 1
 		ProductDiffSHA256: "diff",
 		Fingerprint:       "fp",
 		Scenarios:         []PRVisualScenario{{ID: "VS-1", Viewport: "1440x900", Expected: []string{"blue"}}},
-		Items:             []PRVisualEvidenceItem{{ScenarioID: "VS-1", Path: png}},
+		Items:             []PRVisualEvidenceItem{{ScenarioID: "VS-1", Path: png, PrivacyStatus: "human-reviewed"}},
 	}
+	// Keep the returned hosted URL on the local verifier.
+	visualExternalHosts["litterbox"] = externalHostSpec{endpoint: server.URL, label: "litter.catbox.moe", withExpiry: true}
 	publisher := ExternalHostVisualEvidencePublisher{Host: "litterbox", Expiry: "24h"}
 	commentURL, err := publisher.PublishVisualEvidence(repo, "https://github.com/o/n/pull/9", "", manifest)
 	if err != nil {

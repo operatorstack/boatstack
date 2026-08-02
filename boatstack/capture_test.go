@@ -133,6 +133,49 @@ func TestCaptureEvidenceProducesManifestTrustedByPRContext(t *testing.T) {
 	}
 }
 
+// control-law: scenario-verification-requires-a-current-receipt
+func TestCaptureEvidenceDoesNotReuseStaleOptionalReceipt(t *testing.T) {
+	repo := captureTestRepo(t, "reviewer-ready")
+	withReceipt := true
+	runner := &stubCaptureRunner{write: func(request CaptureRequest) error {
+		writeTestPNG(t, request.OutputPath)
+		if withReceipt {
+			return os.WriteFile(request.ReceiptPath, []byte(`{"scenario_id":"warning","reached_state_or_url":"/onboarding","checks":[{"name":"warning visible","result":"PASS"}],"overall_result":"PASS"}`), 0o600)
+		}
+		return nil
+	}}
+	first, err := CaptureEvidence(CaptureEvidenceOptions{Repo: repo, Capability: "visual", Feature: "reviewer-ready", Runner: runner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Items[0].VerificationStatus != "SCENARIO_VERIFIED" {
+		t.Fatalf("valid receipt was not verified: %#v", first.Items[0])
+	}
+
+	config, _, err := LoadConfig(filepath.Join(repo, ".product-loop", "project.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.Project.Commands["visual"] = "changed-capture-command"
+	raw, err := MarshalJSON(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".product-loop", "project.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "add", ".product-loop/project.json")
+	runGit(t, repo, "commit", "-m", "change capture command")
+	withReceipt = false
+	second, err := CaptureEvidence(CaptureEvidenceOptions{Repo: repo, Capability: "visual", Feature: "reviewer-ready", Runner: runner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Items[0].VerificationStatus != "CAPTURED" || second.Items[0].Receipt != nil {
+		t.Fatalf("PNG-only rerun inherited a stale receipt: %#v", second.Items[0])
+	}
+}
+
 func TestCaptureEvidenceFailsClosedOnNonConformantOutput(t *testing.T) {
 	repo := captureTestRepo(t, "reviewer-ready")
 	runner := &stubCaptureRunner{write: func(request CaptureRequest) error {
