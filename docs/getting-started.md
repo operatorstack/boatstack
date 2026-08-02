@@ -18,7 +18,7 @@ Ask Boatstack for the next verified stage without changing anything:
 
 Boatstack reads repository-owned plans, approvals, delivery state, and gate receipts, then returns exactly one next action. Chat, terminal, worktree, and running-process observations may add context but never establish a workflow stage. If no managed work remains, Boatstack reports **Feature complete** and **No action required**.
 
-For a small verified feature, `/boatstack-run` in Cursor or Claude Code and `$boatstack run` in Codex drive every declared delivery slice through PR publication. The command fetches `origin` before mutation and pauses for required plan approval, product decisions, and the exact PR open/update confirmation. Managed side effects use durable attempt receipts, so a lost response or new chat resumes or reconciles the same work instead of repeating it. Merge and deploy remain separate.
+For a tiny, already-specified feature, use `/boatstack-run --to plan|verified|pr` in Cursor or Claude Code or `$boatstack run --to plan|verified|pr` in Codex. If you omit the target, Boatstack asks once. It may choose only non-material, reversible implementation options that remain inside the specification and have repository evidence plus an independent oracle. `plan` stops at the reviewable plan, `verified` stops after build/test/review, and `pr` authorizes one normal open or update action. Merge and deploy remain separate.
 
 ## 1. Install it separately
 

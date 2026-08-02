@@ -87,7 +87,7 @@ That is all you need to learn up front. Boatstack shows one next action at a tim
 
 When you return after an interruption, run `/boatstack-next` in Claude Code, Cursor, or Gemini CLI. In Codex, run `$boatstack next`. Boatstack reports the repository-verified stage and one next action. It does not change state. It tells apart a feature that has not started from one that is complete.
 
-`/boatstack-run` (or `$boatstack run` in Codex) starts from one saved plan. It continues through publication and pauses for approvals and product decisions. It checks branch freshness before delivery. It never merges or deploys.
+`/boatstack-run --to plan|verified|pr` (or `$boatstack run --to …` in Codex) starts from one saved plan and stops at the selected goal. An explicit goal-driven run can resolve only low-risk, reversible, evidence-backed implementation choices inside the specification. Any material or uncertain choice still pauses. The `pr` target authorizes one normal PR open or update; it never merges or deploys.
 
 In Claude Code, Cursor, and Gemini CLI, that guidance moves through `/plan-gate` → `/build` → `/test-gate` → `/review-gate` → `/ship-gate`. In Codex, use the same operation names after `$boatstack`.
 

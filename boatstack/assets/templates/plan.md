@@ -18,6 +18,7 @@
   "source_plan_path": "source-plan.md",
   "spec_path": "feature-spec.md",
   "blocking_questions": [],
+  "autonomy_decisions": [],
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -83,6 +84,13 @@
 }
 ```
 <!-- /boatstack-plan -->
+
+Keep `autonomy_decisions` empty for the normal human-driven flow. An explicit
+goal-driven run may add a decision only with `resolution: RESOLVED_BY_POLICY`,
+one selected recommended option, `material: false`, `within_spec: true`,
+`reversible: true`, every protected `impact` flag false, repository
+`evidence_ids`, a rationale, and a runnable `verification` with an independent
+oracle.
 
 For an external write, replace the empty `side_effects` list with entries such as:
 

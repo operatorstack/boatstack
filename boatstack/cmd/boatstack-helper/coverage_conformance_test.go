@@ -47,6 +47,7 @@ var nonDeliveryVerbs = map[string]bool{
 	"check-plan":        true,
 	"planning-write":    true,
 	"record-approval":   true,
+	"record-autonomy":   true,
 	// Read-only status / diagnostics (observe helpers, not modeled transitions).
 	"repair-status":    true,
 	"operation-status": true,

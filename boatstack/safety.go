@@ -218,8 +218,8 @@ var stageMutationVerbs = map[string][]string{
 	// there — declaring the row keeps the admission tables total over every
 	// stage the solution set can emit (guard-never-prescribes-what-it-would-deny).
 	"NOT_INITIALIZED": {"init"},
-	"DRAFT_PLAN":      {"planning-write", "record-approval"},
-	"INVALID_STATE":   {"planning-write", "record-approval"},
+	"DRAFT_PLAN":      {"planning-write", "record-approval", "record-autonomy"},
+	"INVALID_STATE":   {"planning-write", "record-approval", "record-autonomy"},
 	"APPROVED":        {"activate-plan", "workspace-cut"},
 	"POLICY_READY":    {"activate-plan", "workspace-cut"},
 	"NOT_STARTED":     {"planning-write"},

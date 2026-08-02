@@ -495,17 +495,42 @@ func activatePlanCommand(arguments []string) int {
 	flags.StringVar(&options.OutDir, "out-dir", "", "compiled artifact directory")
 	flags.StringVar(&options.OutputPath, "output", "", "plan lock path")
 	flags.StringVar(&options.SourceCommit, "source-commit", "", "source Git commit")
+	flags.StringVar(&options.AutonomyPath, "autonomy", "", "fingerprinted autonomy.md receipt")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}
 	if options.PlanPath == "" || options.OutDir == "" || options.OutputPath == "" {
-		return fail(fmt.Errorf("activate-plan requires --plan, --out-dir, and --output; --approval is required when human_plan_approval is enabled"))
+		return fail(fmt.Errorf("activate-plan requires --plan, --out-dir, and --output; human_plan_approval additionally requires --approval unless a valid --autonomy receipt targets verified or pr"))
 	}
 	if err := boatstack.ActivatePlan(options); err != nil {
 		return fail(fmt.Errorf("plan activation failed: %w", err))
 	}
 	boatstack.RecordFlowAttribution(filepath.Dir(options.PlanPath), "authorization_freshness", deliverycontrol.CostQuery, false, "immutable lock current")
 	fmt.Printf("PASS: approved Markdown plan activated and locked: %s\n", options.OutputPath)
+	return 0
+}
+
+func recordAutonomyCommand(arguments []string) int {
+	flags := flag.NewFlagSet("record-autonomy", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository containing the feature package")
+	plan := flags.String("plan", "", "validated Markdown plan")
+	target := flags.String("target", "", "plan, verified, or pr")
+	output := flags.String("output", "", "autonomy.md path; defaults beside plan.md")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if *plan == "" || *target == "" {
+		return fail(fmt.Errorf("record-autonomy requires --plan and --target plan|verified|pr"))
+	}
+	parsed, err := boatstack.ParseRunTarget(*target)
+	if err != nil {
+		return fail(err)
+	}
+	receipt, err := boatstack.RecordAutonomy(boatstack.AutonomyRecordOptions{Repo: *repo, PlanPath: *plan, Target: parsed, OutputPath: *output})
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Printf("PASS: scoped autonomous run recorded\nRUN_TARGET=%s\nAUTONOMY_FINGERPRINT=%s\n", receipt.Target, receipt.Fingerprint)
 	return 0
 }
 
@@ -1358,6 +1383,7 @@ func publishPRCommand(arguments []string) int {
 	previewPath := flags.String("preview", "", "reviewed pr.md preview")
 	fingerprint := flags.String("preview-fingerprint", "", "exact preview fingerprint confirmed by the human")
 	action := flags.String("action", "", "open or update")
+	autonomy := flags.String("autonomy", "", "fingerprinted autonomy.md receipt authorizing the PR target")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}
@@ -1375,6 +1401,7 @@ func publishPRCommand(arguments []string) int {
 	}
 	url, err := boatstack.PublishPR(boatstack.PRPublishOptions{
 		Repo: *repo, PreviewPath: *previewPath, ExpectedFingerprint: *fingerprint, Action: *action,
+		AutonomyPath:    *autonomy,
 		VisualPublisher: boatstack.SelectVisualPublisher(*repo),
 	})
 	boatstack.RecordFlowTransition(*repo, boatstack.PublishTransition, guard.From, err == nil)
@@ -1510,7 +1537,7 @@ func workspaceSyncCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <attach|detach|detached-status|context|activate|deactivate|init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|record-change|record-journey-results|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|attach-evidence|check-safety|migrate-config|safety-hook|ambient-safety-hook|diagnose-hook|render-denial|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-reap|workspace-status|workspace-sync|flow|retro|insight|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <attach|detach|detached-status|context|activate|deactivate|init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|record-autonomy|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|record-change|record-journey-results|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|attach-evidence|check-safety|migrate-config|safety-hook|ambient-safety-hook|diagnose-hook|render-denial|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-reap|workspace-status|workspace-sync|flow|retro|insight|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -1554,6 +1581,8 @@ func run() int {
 		return planningWriteCommand(os.Args[2:])
 	case "record-approval":
 		return recordApprovalCommand(os.Args[2:])
+	case "record-autonomy":
+		return recordAutonomyCommand(os.Args[2:])
 	case "activate-plan":
 		return activatePlanCommand(os.Args[2:])
 	case "delivery-status":

@@ -256,6 +256,7 @@ type PRPublishOptions struct {
 	PreviewPath         string
 	ExpectedFingerprint string
 	Action              string
+	AutonomyPath        string
 	VisualPublisher     PRVisualEvidencePublisher
 }
 
@@ -571,17 +572,29 @@ func managedPRSources(repo, feature string) ([]PRSource, map[string]string, erro
 		return nil, nil, fmt.Errorf("managed PR requires a valid Boatstack project configuration: %w", configErr)
 	}
 	authorizationMode := "policy"
+	autonomyPath := filepath.Join(directory, "autonomy.md")
+	autonomy := AutonomyReceipt{}
 	if config.Workflow.HumanPlanApproval {
 		authorizationMode = "human"
 	}
+	if fileExists(autonomyPath) {
+		autonomy, err = CheckAutonomyReceipt(autonomyPath, check, repo, RunTargetVerified, "")
+		if err != nil {
+			return nil, nil, fmt.Errorf("managed PR autonomy receipt is stale: %w", err)
+		}
+		authorizationMode = "policy"
+	}
 	tasksPath := featureArtifactPath(directory, filepath.Join("compiled", "tasks.json"), "tasks.json")
 	if err := CheckApprovalLock(ApprovalOptions{
-		SourcePlanPath:    check.SourcePlanPath,
-		SpecPath:          check.SpecPath,
-		PlanPath:          planPath,
-		TasksPath:         tasksPath,
-		AuthorizationMode: authorizationMode,
-		OutputPath:        lockPath,
+		SourcePlanPath:      check.SourcePlanPath,
+		SpecPath:            check.SpecPath,
+		PlanPath:            planPath,
+		TasksPath:           tasksPath,
+		AuthorizationMode:   authorizationMode,
+		OutputPath:          lockPath,
+		AutonomyPath:        autonomyPathIf(fileExists(autonomyPath), autonomyPath),
+		AutonomyFingerprint: autonomy.Fingerprint,
+		RunTarget:           autonomy.Target,
 	}); err != nil {
 		return nil, nil, fmt.Errorf("managed PR requires a current build lock: %w", err)
 	}
@@ -626,8 +639,11 @@ func managedPRSources(repo, feature string) ([]PRSource, map[string]string, erro
 		{"plan_lock", lockPath},
 		{"evidence", evidencePath},
 	}
-	if config.Workflow.HumanPlanApproval {
+	if authorizationMode == "human" {
 		paths = append(paths, struct{ kind, path string }{"approval", approvalPath})
+	}
+	if fileExists(autonomyPath) {
+		paths = append(paths, struct{ kind, path string }{"autonomy", autonomyPath})
 	}
 	for _, optional := range []struct{ kind, name string }{
 		{"questions", "questions.md"}, {"gaps", "gaps.md"}, {"test_plan", "test-plan.md"},
@@ -1178,6 +1194,19 @@ func PublishPR(options PRPublishOptions) (string, error) {
 	}
 	if options.Action != "open" && options.Action != "update" {
 		return "", fmt.Errorf("publication action must be open or update")
+	}
+	if strings.TrimSpace(options.AutonomyPath) != "" {
+		if context.Feature == "" {
+			return "", fmt.Errorf("autonomous publication requires a managed feature")
+		}
+		planPath := filepath.Join(repo, ".product-loop", "features", context.Feature, "plan.md")
+		check, checkErr := CheckPlan(planPath)
+		if checkErr != nil {
+			return "", checkErr
+		}
+		if _, checkErr = CheckAutonomyReceipt(options.AutonomyPath, check, repo, RunTargetPR, options.Action); checkErr != nil {
+			return "", checkErr
+		}
 	}
 	if context.PRVisualEvidencePolicy == "require" && context.PRVisualEvidenceStatus != "PASS" {
 		finding := SafetyFinding{

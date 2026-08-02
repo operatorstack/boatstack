@@ -57,6 +57,22 @@ func TestResolvePlanDecision(t *testing.T) {
 			},
 			expected: OperatorEscalate,
 		},
+		{
+			name: "eligible nonmaterial decision resolves by policy",
+			input: PlanDecisionInput{
+				PremiseStatus: PremiseValid, EvidenceLevel: EvidenceAbsent,
+				IsMaterial: false, AutonomyEligible: true,
+			},
+			expected: OperatorPolicy,
+		},
+		{
+			name: "material decision cannot resolve by policy",
+			input: PlanDecisionInput{
+				PremiseStatus: PremiseValid, EvidenceLevel: EvidenceAbsent,
+				IsMaterial: true, AutonomyEligible: true,
+			},
+			expected: OperatorQuery,
+		},
 	}
 
 	for _, tt := range tests {

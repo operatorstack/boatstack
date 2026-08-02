@@ -439,6 +439,9 @@ func ValidatePlan(plan map[string]any, opts *ValidatePlanOptions) error {
 	if err := validatePRVisualEvidence(plan); err != nil {
 		return err
 	}
+	if err := validatePlanAutonomy(plan, opts); err != nil {
+		return err
+	}
 	if err := requireConfiguredPRVisualEvidenceDecision(plan, opts); err != nil {
 		return err
 	}
@@ -944,6 +947,9 @@ type ApprovalOptions struct {
 	BaselineDiffSHA256   string
 	BaselineChangedPaths []string
 	Readiness            ReadinessReceipt
+	AutonomyPath         string
+	AutonomyFingerprint  string
+	RunTarget            RunTarget
 }
 
 type ApprovalReceipt struct {
@@ -1069,6 +1075,7 @@ type ActivationOptions struct {
 	OutDir       string
 	OutputPath   string
 	SourceCommit string
+	AutonomyPath string
 }
 
 func ActivatePlan(options ActivationOptions) error {
@@ -1095,7 +1102,17 @@ func ActivatePlan(options ActivationOptions) error {
 	structuredPlanStatus := "POLICY_ACTIVATED"
 	receipt := ApprovalReceipt{}
 	baseline := PlanningBaseline{}
-	if config.Workflow.HumanPlanApproval {
+	autonomy := AutonomyReceipt{}
+	if strings.TrimSpace(options.AutonomyPath) != "" {
+		autonomy, err = CheckAutonomyReceipt(options.AutonomyPath, check, repo, RunTargetVerified, "")
+		if err != nil {
+			return err
+		}
+		baseline, err = productBaseline(repo, options.PlanPath, check.SourcePlanPath, check.SpecPath, options.AutonomyPath, options.OutputPath)
+		if err != nil {
+			return err
+		}
+	} else if config.Workflow.HumanPlanApproval {
 		authorizationMode = "human"
 		structuredPlanStatus = "HUMAN_APPROVED"
 		if strings.TrimSpace(options.ApprovalPath) == "" {
@@ -1133,6 +1150,9 @@ func ActivatePlan(options ActivationOptions) error {
 		BaselineDiffSHA256:   baseline.DiffSHA256,
 		BaselineChangedPaths: baseline.ChangedPaths,
 		Readiness:            receipt.Readiness,
+		AutonomyPath:         options.AutonomyPath,
+		AutonomyFingerprint:  autonomy.Fingerprint,
+		RunTarget:            autonomy.Target,
 	}
 	if version, _ := check.Plan["schema_version"].(float64); version >= 3 && authorizationMode == "policy" {
 		approval.Readiness, err = CheckPlanReadiness(options.PlanPath)
@@ -1182,7 +1202,7 @@ func ActivatePlan(options ActivationOptions) error {
 	// Baseline drift guard runs immediately before the atomic promote so a product
 	// change concurrent with approval cannot be sealed into the lock. The compiled
 	// output directory and the lock path are excluded from the baseline.
-	currentBaseline, err := productBaseline(repo, options.PlanPath, check.SourcePlanPath, check.SpecPath, options.ApprovalPath, options.OutputPath, options.OutDir)
+	currentBaseline, err := productBaseline(repo, options.PlanPath, check.SourcePlanPath, check.SpecPath, options.ApprovalPath, options.AutonomyPath, options.OutputPath, options.OutDir)
 	if err != nil {
 		return err
 	}
@@ -1324,6 +1344,16 @@ func buildApprovalLock(options ApprovalOptions, tasksSHA256 string) ([]byte, err
 		"baseline_diff_sha256":   options.BaselineDiffSHA256,
 		"baseline_changed_paths": baselinePaths,
 	}
+	if options.AutonomyPath != "" {
+		autonomyHash, err := SHA256File(options.AutonomyPath)
+		if err != nil {
+			return nil, fmt.Errorf("autonomy receipt is missing or unreadable: %w", err)
+		}
+		lock["autonomy_path"] = options.AutonomyPath
+		lock["autonomy_sha256"] = autonomyHash
+		lock["autonomy_fingerprint"] = options.AutonomyFingerprint
+		lock["run_target"] = options.RunTarget
+	}
 	if options.Readiness.Fingerprint != "" {
 		lock["schema_version"] = 3
 		lock["readiness_fingerprint"] = options.Readiness.Fingerprint
@@ -1398,6 +1428,12 @@ func CheckApprovalLock(options ApprovalOptions) error {
 	}
 	if expectedMode == "policy" && schemaVersion == 1 {
 		mismatches = append(mismatches, "authorization_mode")
+	}
+	if options.AutonomyPath != "" {
+		hash, hashErr := SHA256File(options.AutonomyPath)
+		if hashErr != nil || stringValue(lock["autonomy_sha256"]) != hash || stringValue(lock["autonomy_fingerprint"]) != options.AutonomyFingerprint || stringValue(lock["run_target"]) != string(options.RunTarget) {
+			mismatches = append(mismatches, "autonomy")
+		}
 	}
 	if options.BaselineDiffSHA256 != "" && stringValue(lock["baseline_diff_sha256"]) != options.BaselineDiffSHA256 {
 		mismatches = append(mismatches, "baseline_diff")
