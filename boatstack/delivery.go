@@ -560,7 +560,7 @@ func archiveDeliveryReceipt(repo, feature, sliceID, gate, observationID string) 
 }
 
 func appendChangeObservation(repo string, observation ChangeObservation) error {
-	path := filepath.Join(repo, ".product-loop", "features", observation.Feature, "changes.md")
+	path := filepath.Join(WorkspaceFor(repo).FeatureDir(observation.Feature), "changes.md")
 	existing, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		return err
@@ -577,7 +577,7 @@ func appendChangeObservation(repo string, observation ChangeObservation) error {
 }
 
 func nextChangeObservationID(repo, feature string, fallback int) string {
-	path := filepath.Join(repo, ".product-loop", "features", feature, "changes.md")
+	path := filepath.Join(WorkspaceFor(repo).FeatureDir(feature), "changes.md")
 	value, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Sprintf("CHG-%03d", fallback)
@@ -625,7 +625,7 @@ func RecordChangeObservation(options ChangeObservationOptions) (ChangeObservatio
 	evidenceHash := SHA256Bytes([]byte(strings.TrimSpace(options.Evidence)))
 	mechanismHash := SHA256Bytes([]byte(strings.TrimSpace(options.Mechanism)))
 	if repairClass {
-		changePath := filepath.Join(repo, ".product-loop", "features", options.Feature, "changes.md")
+		changePath := filepath.Join(WorkspaceFor(repo).FeatureDir(options.Feature), "changes.md")
 		if prior, readErr := os.ReadFile(changePath); readErr == nil {
 			for _, block := range strings.Split(string(prior), "\n## ") {
 				if strings.Contains(block, "- Classification: `"+classification+"`") &&
@@ -905,7 +905,7 @@ func resolveAddressableSliceByBranch(state DeliveryState, branch string) (int, D
 }
 
 func checkDeliveryPlanLock(repo, feature string, state DeliveryState) error {
-	lockPath := filepath.Join(repo, ".product-loop", "features", feature, "plan.lock.json")
+	lockPath := filepath.Join(WorkspaceFor(repo).FeatureDir(feature), "plan.lock.json")
 	lockHash, err := SHA256File(lockPath)
 	if err != nil {
 		return fmt.Errorf("managed delivery requires its current plan lock: %w", err)
@@ -1109,7 +1109,7 @@ func RecordDeliveryGate(options DeliveryGateOptions) (DeliveryGateReceipt, error
 	}
 	evidencePath := strings.TrimSpace(options.EvidencePath)
 	if evidencePath == "" {
-		evidencePath = featureEvidencePath(filepath.Join(repo, ".product-loop", "features", options.Feature))
+		evidencePath = featureEvidencePath(WorkspaceFor(repo).FeatureDir(options.Feature))
 	} else if !filepath.IsAbs(evidencePath) {
 		evidencePath = filepath.Join(repo, evidencePath)
 	}
@@ -1129,7 +1129,7 @@ func RecordDeliveryGate(options DeliveryGateOptions) (DeliveryGateReceipt, error
 	if recorded := deliveryEvidenceGateStatus(string(evidenceValue), gateLabel, slice.ID, explicit); recorded != status {
 		return DeliveryGateReceipt{}, fmt.Errorf("evidence ledger must mark the %s gate for delivery slice %s as %s; found %q", gate, slice.ID, status, recorded)
 	}
-	relEvidence, err := repositoryRelativePath(repo, evidencePath)
+	relEvidence, err := repositoryRelativePath(WorkspaceFor(repo).ExportRoot(), evidencePath)
 	if err != nil {
 		return DeliveryGateReceipt{}, err
 	}
@@ -1451,7 +1451,7 @@ type DiscardDeliveryResult struct {
 // orphan, so discard-delivery must clear it. It refuses a dir carrying a
 // plan.lock.json (a registered, live feature) so it never touches active work.
 func discardOrphanFeatureArtifacts(repo, feature string) (DiscardDeliveryResult, bool, error) {
-	dir := filepath.Join(repo, ".product-loop", "features", feature)
+	dir := WorkspaceFor(repo).FeatureDir(feature)
 	info, statErr := os.Stat(dir)
 	if os.IsNotExist(statErr) {
 		return DiscardDeliveryResult{}, false, nil

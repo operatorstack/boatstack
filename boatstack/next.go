@@ -16,6 +16,8 @@ const nextStatusSchemaVersion = 2
 // adapters may present them as context, but they are not workflow evidence.
 type NextStatus struct {
 	SchemaVersion      int              `json:"schema_version"`
+	SupervisionMode    string           `json:"supervision_mode"`
+	ControllerRoot     string           `json:"controller_root"`
 	VerificationStatus string           `json:"verification_status"`
 	Feature            string           `json:"feature,omitempty"`
 	ActiveSlice        string           `json:"active_slice,omitempty"`
@@ -46,7 +48,7 @@ func decorateAutonomyStatus(repo string, status NextStatus) NextStatus {
 	if status.Feature == "" {
 		return status
 	}
-	path := filepath.Join(repo, ".product-loop", "features", status.Feature, "autonomy.md")
+	path := filepath.Join(WorkspaceFor(repo).FeatureDir(status.Feature), "autonomy.md")
 	value, err := loadJSONObject(path, "autonomy receipt", autonomyMarkerStart, autonomyMarkerEnd, true)
 	if err != nil {
 		return status
@@ -72,7 +74,7 @@ func blockedNextStatus(stage, operation, reason string, ambiguity ...string) Nex
 }
 
 func featurePlanCandidates(repo string) ([]string, error) {
-	root := filepath.Join(repo, ".product-loop", "features")
+	root := WorkspaceFor(repo).FeatureRoot()
 	entries, err := os.ReadDir(root)
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -110,7 +112,7 @@ func featurePlanCandidates(repo string) ([]string, error) {
 }
 
 func orphanedFeatureArtifacts(repo string) ([]string, error) {
-	root := filepath.Join(repo, ".product-loop", "features")
+	root := WorkspaceFor(repo).FeatureRoot()
 	entries, err := os.ReadDir(root)
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -154,7 +156,7 @@ func nextForDelivery(repo, feature string) (NextStatus, error) {
 		status.NextOperation = "review-gate"
 		status.Reason = "The active delivery slice has current test evidence and still requires review."
 	case StatusReviewPassed:
-		previewPath := filepath.Join(repo, ".product-loop", "features", feature, "pr.md")
+		previewPath := filepath.Join(WorkspaceFor(repo).FeatureDir(feature), "pr.md")
 		if preview, previewErr := ParsePRPreview(previewPath); previewErr == nil && preview.Feature == feature && preview.SliceID == slice.ID {
 			status.ObservedStage = "PR_PREVIEW"
 			status.Reason = "A reviewer-ready PR preview exists for the reviewed active slice and must be reconfirmed through the ship gate."
@@ -307,11 +309,23 @@ func completedManagedStates(repo string) ([]DeliveryState, error) {
 // ResolveNext performs bounded, read-only state inspection. Published states
 // use the recorded PR identity when GitHub is available; conversation and
 // process history are never treated as evidence.
-func ResolveNext(repoPath, explicitFeature string) (NextStatus, error) {
+func ResolveNext(repoPath, explicitFeature string) (result NextStatus, resultErr error) {
 	repo, err := ResolveRepository(repoPath)
 	if err != nil {
 		return NextStatus{}, err
 	}
+	defer func() {
+		ctx, ok, verifyErr := detachedContextFor(repo)
+		if verifyErr != nil {
+			result.SupervisionMode = string(SupervisionDetached)
+			return
+		}
+		if !ok {
+			ctx = embeddedWorkspace(repo)
+		}
+		result.SupervisionMode = string(ctx.Mode)
+		result.ControllerRoot = ctx.ExportRoot()
+	}()
 	base := NextStatus{SchemaVersion: nextStatusSchemaVersion}
 	if !fileExists(WorkspaceFor(repo).ProjectConfigPath()) {
 		base.VerificationStatus = "UNVERIFIED"
@@ -411,7 +425,7 @@ func ResolveNext(repoPath, explicitFeature string) (NextStatus, error) {
 	}
 	if len(candidates) == 1 {
 		feature := candidates[0]
-		directory := filepath.Join(repo, ".product-loop", "features", feature)
+		directory := WorkspaceFor(repo).FeatureDir(feature)
 		base.VerificationStatus = "VERIFIED"
 		base.Feature = feature
 		policyReady := !config.Workflow.HumanPlanApproval
@@ -521,6 +535,8 @@ func FormatNextStatus(status NextStatus) string {
 	parts := []string{
 		"Boatstack stage: " + status.ObservedStage,
 		"Verification: " + status.VerificationStatus,
+		"Supervision: " + status.SupervisionMode,
+		"Controller root: " + status.ControllerRoot,
 	}
 	if status.Feature != "" {
 		parts = append(parts, "Feature: "+status.Feature)

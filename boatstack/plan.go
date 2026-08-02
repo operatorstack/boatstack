@@ -295,7 +295,25 @@ func SourcePlanForStructuredPlan(planPath string) (string, error) {
 		return "", fmt.Errorf("source_plan_path is required")
 	}
 	if !filepath.IsAbs(sourcePlan) {
-		sourcePlan = filepath.Join(filepath.Dir(planPath), sourcePlan)
+		planRelative := filepath.Clean(filepath.Join(filepath.Dir(planPath), sourcePlan))
+		if fileExists(planRelative) {
+			return planRelative, nil
+		}
+		if repo, repoErr := ResolveControllerRepository(filepath.Dir(planPath)); repoErr == nil {
+			repoRelative := filepath.Clean(filepath.Join(repo, sourcePlan))
+			if fileExists(repoRelative) {
+				return repoRelative, nil
+			}
+			// Packages imported from the embedded layout retain their original
+			// relative source-plan reference. Resolve it against the virtual
+			// embedded feature directory without rewriting fingerprinted bytes.
+			feature := stringValue(plan["feature_id"])
+			legacyRelative := filepath.Clean(filepath.Join(repo, productLoopDirName, "features", feature, sourcePlan))
+			if fileExists(legacyRelative) {
+				return legacyRelative, nil
+			}
+		}
+		sourcePlan = planRelative
 	}
 	return filepath.Clean(sourcePlan), nil
 }
@@ -346,7 +364,7 @@ func CheckPlan(planPath string) (PlanCheck, error) {
 	if err != nil {
 		return PlanCheck{}, err
 	}
-	repoRoot, _ := ResolveRepository(filepath.Dir(planPath))
+	repoRoot, _ := ResolveControllerRepository(filepath.Dir(planPath))
 	opts := &ValidatePlanOptions{
 		PlanPath: planPath,
 		RepoRoot: repoRoot,
@@ -790,7 +808,7 @@ func canonicalizeExistingAncestor(path string) string {
 }
 
 func compilePlanFiles(planPath, outDir, structuredPlanStatus string) error {
-	repoRoot, err := ResolveRepository(filepath.Dir(planPath))
+	repoRoot, err := ResolveControllerRepository(filepath.Dir(planPath))
 	if err != nil {
 		return err
 	}
@@ -812,7 +830,7 @@ func compilePlanFiles(planPath, outDir, structuredPlanStatus string) error {
 		Operations: artifacts.ops,
 		PostCheck:  artifacts.postCheck,
 	}
-	if _, err := ApplyMutation(repoRoot, mutation); err != nil {
+	if _, err := ApplyControllerMutation(repoRoot, mutation); err != nil {
 		return err
 	}
 	return nil
@@ -875,19 +893,24 @@ func compileArtifacts(repoRoot, planPath, outDir, structuredPlanStatus string) (
 	// directory (and one or more of its parents) may not exist yet, so resolve the
 	// deepest existing ancestor and rejoin the not-yet-created remainder.
 	absOut = canonicalizeExistingAncestor(absOut)
-	relTasks, err := repositoryRelativePath(repoRoot, filepath.Join(absOut, "tasks.json"))
+	workspace, err := ResolveWorkspaceContext(repoRoot)
 	if err != nil {
 		return compiledArtifacts{}, err
 	}
-	relMatrix, err := repositoryRelativePath(repoRoot, filepath.Join(absOut, "test-matrix.json"))
+	artifactRoot := workspace.ExportRoot()
+	relTasks, err := repositoryRelativePath(artifactRoot, filepath.Join(absOut, "tasks.json"))
 	if err != nil {
 		return compiledArtifacts{}, err
 	}
-	relEvidence, err := repositoryRelativePath(repoRoot, filepath.Join(absOut, "evidence.md"))
+	relMatrix, err := repositoryRelativePath(artifactRoot, filepath.Join(absOut, "test-matrix.json"))
 	if err != nil {
 		return compiledArtifacts{}, err
 	}
-	relJourney, err := repositoryRelativePath(repoRoot, filepath.Join(absOut, "journey-oracles.json"))
+	relEvidence, err := repositoryRelativePath(artifactRoot, filepath.Join(absOut, "evidence.md"))
+	if err != nil {
+		return compiledArtifacts{}, err
+	}
+	relJourney, err := repositoryRelativePath(artifactRoot, filepath.Join(absOut, "journey-oracles.json"))
 	if err != nil {
 		return compiledArtifacts{}, err
 	}
@@ -898,13 +921,13 @@ func compileArtifacts(repoRoot, planPath, outDir, structuredPlanStatus string) (
 	scope := []string{relTasks, relMatrix, relEvidence, relJourney}
 	base := map[string]string{}
 	for _, rel := range scope {
-		if hash, hashErr := SHA256File(filepath.Join(repoRoot, filepath.FromSlash(rel))); hashErr == nil {
+		if hash, hashErr := SHA256File(filepath.Join(artifactRoot, filepath.FromSlash(rel))); hashErr == nil {
 			base[rel] = hash
 		}
 	}
 	postCheck := func() error {
 		for _, rel := range []string{relTasks, relMatrix, relJourney} {
-			value, readErr := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(rel)))
+			value, readErr := os.ReadFile(filepath.Join(artifactRoot, filepath.FromSlash(rel)))
 			if readErr != nil {
 				return readErr
 			}
@@ -912,7 +935,7 @@ func compileArtifacts(repoRoot, planPath, outDir, structuredPlanStatus string) (
 				return validateErr
 			}
 		}
-		info, statErr := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(relEvidence)))
+		info, statErr := os.Stat(filepath.Join(artifactRoot, filepath.FromSlash(relEvidence)))
 		if statErr != nil || info.Size() == 0 {
 			return fmt.Errorf("promoted evidence ledger is missing or empty")
 		}
@@ -1051,7 +1074,7 @@ func CheckApprovalReceipt(path string, planCheck PlanCheck) (ApprovalReceipt, er
 			return ApprovalReceipt{}, fmt.Errorf("stale approval receipt: readiness fingerprint changed after approval")
 		}
 	}
-	repo, err := ResolveRepository(filepath.Dir(planCheck.PlanPath))
+	repo, err := ResolveControllerRepository(filepath.Dir(planCheck.PlanPath))
 	if err != nil {
 		return ApprovalReceipt{}, err
 	}
@@ -1083,7 +1106,7 @@ func ActivatePlan(options ActivationOptions) error {
 	if err != nil {
 		return err
 	}
-	repo, err := ResolveRepository(filepath.Dir(options.PlanPath))
+	repo, err := ResolveControllerRepository(filepath.Dir(options.PlanPath))
 	if err != nil {
 		return err
 	}
@@ -1218,7 +1241,7 @@ func ActivatePlan(options ActivationOptions) error {
 			return fmt.Errorf("pre-activation readiness drifted before the immutable plan lock could be created")
 		}
 	}
-	if _, err := ApplyMutation(repo, mutation); err != nil {
+	if _, err := ApplyControllerMutation(repo, mutation); err != nil {
 		return err
 	}
 	return initializeDeliveryState(repo, stringValue(check.Plan["feature_id"]), options.PlanPath, options.OutputPath)
@@ -1244,7 +1267,12 @@ func activationMutation(repoRoot string, options ActivationOptions, structuredPl
 		return MutationSet{}, err
 	}
 	absLock = canonicalizeExistingAncestor(absLock)
-	relLock, err := repositoryRelativePath(repoRoot, absLock)
+	workspace, err := ResolveWorkspaceContext(repoRoot)
+	if err != nil {
+		return MutationSet{}, err
+	}
+	artifactRoot := workspace.ExportRoot()
+	relLock, err := repositoryRelativePath(artifactRoot, absLock)
 	if err != nil {
 		return MutationSet{}, err
 	}
@@ -1253,7 +1281,7 @@ func activationMutation(repoRoot string, options ActivationOptions, structuredPl
 	for rel, hash := range artifacts.base {
 		base[rel] = hash
 	}
-	if hash, hashErr := SHA256File(filepath.Join(repoRoot, filepath.FromSlash(relLock))); hashErr == nil {
+	if hash, hashErr := SHA256File(filepath.Join(artifactRoot, filepath.FromSlash(relLock))); hashErr == nil {
 		base[relLock] = hash
 	}
 	ops := append(append([]MutationOperation{}, artifacts.ops...), MutationOperation{Path: relLock, Candidate: lockBytes})
@@ -1454,7 +1482,7 @@ func CheckApprovalLock(options ApprovalOptions) error {
 		if fingerprint, fingerprintErr := readinessFingerprint(storedReadiness); fingerprintErr != nil || fingerprint != storedReadiness.Fingerprint {
 			mismatches = append(mismatches, "readiness_fingerprint")
 		}
-		repo, repoErr := ResolveRepository(filepath.Dir(options.PlanPath))
+		repo, repoErr := ResolveControllerRepository(filepath.Dir(options.PlanPath))
 		plan, planErr := LoadPlan(options.PlanPath)
 		if repoErr != nil || planErr != nil {
 			mismatches = append(mismatches, "journey_manifest")

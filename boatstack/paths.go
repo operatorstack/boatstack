@@ -3,6 +3,7 @@ package boatstack
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -161,6 +162,41 @@ func embeddedWorkspace(repo string) WorkspaceContext {
 	return WorkspaceContext{Mode: SupervisionEmbedded, RepoRoot: repo, controlRoot: repo}
 }
 
+func pathWithin(root, target string) bool {
+	root = canonicalizeExistingAncestor(root)
+	target = canonicalizeExistingAncestor(target)
+	relative, err := filepath.Rel(filepath.Clean(root), filepath.Clean(target))
+	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+}
+
+// ResolveControllerRepository maps either a product path or a detached
+// controller path back to the repository whose identity owns it. This is the
+// inverse boundary required by plan validation after FeatureDir moves outside
+// the Git worktree.
+func ResolveControllerRepository(path string) (string, error) {
+	stateRoot, err := detachedStateRoot()
+	if err != nil {
+		return "", err
+	}
+	registry, err := loadRegistry(stateRoot)
+	if err != nil {
+		return "", err
+	}
+	for repo := range registry.Repositories {
+		ctx, ok, verifyErr := detachedContextFor(repo)
+		if !ok || verifyErr != nil {
+			continue
+		}
+		if pathWithin(ctx.ExportRoot(), path) {
+			return repo, nil
+		}
+	}
+	if repo, err := ResolveRepository(path); err == nil {
+		return repo, nil
+	}
+	return "", fmt.Errorf("path is not owned by a repository or verified detached controller: %s", path)
+}
+
 var (
 	workspaceCacheMu sync.Mutex
 	workspaceCache   = map[string]WorkspaceContext{}
@@ -189,6 +225,29 @@ func (w WorkspaceContext) configBase() string {
 // (references, templates, project.json). Embedded: <repo>/.product-loop.
 func (w WorkspaceContext) GeneratedRoot() string {
 	return filepath.Join(w.configBase(), productLoopDirName)
+}
+
+// ExportRoot is the base beneath which generated bundle paths are materialized.
+// Bundle keys include .product-loop and host-adapter directories, so callers
+// must pass this root — never RepoRoot — to export write/check operations.
+func (w WorkspaceContext) ExportRoot() string {
+	return w.configBase()
+}
+
+// FeatureRoot owns generated planning and delivery artifacts. Source plans are
+// product inputs and remain at their declared repository paths; everything
+// compiled from them lives below this controller-owned root.
+func (w WorkspaceContext) FeatureRoot() string {
+	return filepath.Join(w.GeneratedRoot(), "features")
+}
+
+// FeatureDir returns one validated feature package directory. Invalid slugs
+// return an empty path so no caller can accidentally escape the ownership root.
+func (w WorkspaceContext) FeatureDir(feature string) string {
+	if !featureSlugPattern.MatchString(feature) {
+		return ""
+	}
+	return filepath.Join(w.FeatureRoot(), feature)
 }
 
 // ProjectConfigPath is the generated runtime configuration copy that runtime

@@ -209,7 +209,7 @@ func TestInsightCaptureRejectsStaleInputAndSupportsEmbeddedMode(t *testing.T) {
 
 func installInsightDelivery(t *testing.T, repo string, ctx WorkspaceContext, feature string, terminal DeliveryTerminal) {
 	t.Helper()
-	directory := filepath.Join(repo, ".product-loop", "features", feature)
+	directory := ctx.FeatureDir(feature)
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		t.Fatal(err)
 	}

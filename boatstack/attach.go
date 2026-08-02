@@ -21,14 +21,15 @@ type AttachOptions struct {
 
 // AttachResult is the deterministic outcome of an attach request.
 type AttachResult struct {
-	SchemaVersion      int    `json:"schema_version"`
-	VerificationStatus string `json:"verification_status"` // VERIFIED | BLOCKED
-	Mode               string `json:"mode,omitempty"`
-	RepoID             string `json:"repo_id,omitempty"`
-	RepoRoot           string `json:"repo_root,omitempty"`
-	ControlRoot        string `json:"control_root,omitempty"`
-	WorktreeID         string `json:"worktree_id,omitempty"`
-	Reason             string `json:"reason"`
+	SchemaVersion      int                        `json:"schema_version"`
+	VerificationStatus string                     `json:"verification_status"` // VERIFIED | BLOCKED
+	Mode               string                     `json:"mode,omitempty"`
+	RepoID             string                     `json:"repo_id,omitempty"`
+	RepoRoot           string                     `json:"repo_root,omitempty"`
+	ControlRoot        string                     `json:"control_root,omitempty"`
+	WorktreeID         string                     `json:"worktree_id,omitempty"`
+	Reason             string                     `json:"reason"`
+	FeatureMigrations  []DetachedFeatureMigration `json:"feature_migrations,omitempty"`
 }
 
 func blockedAttach(reason string) AttachResult {
@@ -62,12 +63,22 @@ func AttachDetached(opts AttachOptions) (AttachResult, error) {
 
 	ctx := detachedContextFromIdentity(stateRoot, identity)
 
-	// Synthesize configuration from the repository (test command, default branch,
-	// context) exactly as embedded init does.
-	config := defaultConfig(root, detectTestCommand(root))
-	rawConfig, err := MarshalJSON(config)
+	// Prefer the repository's declared source configuration during explicit
+	// reattachment. Falling back to discovery is valid only when no source exists.
+	configPath := filepath.Join(root, sourceConfigName)
+	config, rawConfig, err := LoadConfig(configPath)
+	if os.IsNotExist(err) {
+		config = defaultConfig(root, detectTestCommand(root))
+		rawConfig, err = MarshalJSON(config)
+	}
 	if err != nil {
-		return blockedAttach(err.Error()), nil
+		return blockedAttach("Boatstack could not load the repository source configuration: " + err.Error()), nil
+	}
+	imports, migrationResults, migrationErr := planDetachedFeatureImports(root, ctx)
+	if migrationErr != nil {
+		result := blockedAttach("Boatstack refused detached feature migration: " + migrationErr.Error())
+		result.FeatureMigrations = migrationResults
+		return result, nil
 	}
 
 	// Generate the controller bundle and write it under the external control root.
@@ -85,6 +96,10 @@ func AttachDetached(opts AttachOptions) (AttachResult, error) {
 	}
 	if err := os.WriteFile(ctx.SourceConfigPath(), rawConfig, 0o644); err != nil {
 		return blockedAttach(err.Error()), nil
+	}
+	migrationResults, err = applyDetachedFeatureImports(imports, migrationResults)
+	if err != nil {
+		return blockedAttach("Boatstack could not import embedded feature state: " + err.Error()), nil
 	}
 
 	// Write the binding and index it in the registry.
@@ -132,6 +147,7 @@ func AttachDetached(opts AttachOptions) (AttachResult, error) {
 		RepoRoot:           root,
 		ControlRoot:        ctx.controlRoot,
 		WorktreeID:         identity.WorktreeID,
+		FeatureMigrations:  migrationResults,
 		Reason:             "Attached Boatstack in detached mode. The repository was not modified; all controller state lives under the external control root.",
 	}, nil
 }

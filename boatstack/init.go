@@ -599,6 +599,18 @@ func RunInit(options InitOptions) (returnErr error) {
 	if writeErr != nil {
 		return writeErr
 	}
+	// An attached repository still receives the reviewed embedded update package,
+	// but its active controller reads the detached projection. Refresh that same
+	// bundle under the resolved export root before any smoke check; feature state
+	// is outside the bundle key set and remains untouched.
+	if ctx := WorkspaceFor(repo); ctx.Mode == SupervisionDetached {
+		if err := writeExport(ctx.ExportRoot(), bundle.Files, nil); err != nil {
+			return fmt.Errorf("refresh detached controller bundle: %w", err)
+		}
+		if err := atomicWriteMode(ctx.SourceConfigPath(), rawConfig, 0o644); err != nil {
+			return fmt.Errorf("refresh detached source configuration: %w", err)
+		}
+	}
 	if err := initCheckpoint("export-written"); err != nil {
 		return fmt.Errorf("initialization checkpoint export-written: %w", err)
 	}

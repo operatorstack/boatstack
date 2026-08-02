@@ -74,7 +74,7 @@ func FlowTasksForActiveSlice(repo, feature string) (FlowTasks, error) {
 // the graph is absent or malformed, so the caller stays Unresolved rather than
 // ordering a guess.
 func readCompiledTasks(repo, feature string) ([]FlowTask, bool) {
-	directory := filepath.Join(repo, ".product-loop", "features", feature)
+	directory := WorkspaceFor(repo).FeatureDir(feature)
 	tasksPath := featureArtifactPath(directory, filepath.Join("compiled", "tasks.json"), "tasks.json")
 	raw, err := os.ReadFile(tasksPath)
 	if err != nil {
