@@ -39,7 +39,7 @@ func CheckPlanReadiness(planPath string) (ReadinessReceipt, error) {
 	if err != nil {
 		return ReadinessReceipt{}, err
 	}
-	repo, err := ResolveRepository(filepath.Dir(planPath))
+	repo, err := ResolveControllerRepository(filepath.Dir(planPath))
 	if err != nil {
 		return ReadinessReceipt{}, err
 	}

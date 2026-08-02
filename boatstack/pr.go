@@ -36,44 +36,44 @@ type PRSource struct {
 }
 
 type PRContext struct {
-	SchemaVersion               int                       `json:"schema_version"`
-	Mode                        string                    `json:"mode"`
-	Feature                     string                    `json:"feature,omitempty"`
-	SliceID                     string                    `json:"slice_id,omitempty"`
-	SliceIndex                  int                       `json:"slice_index,omitempty"`
-	TotalSlices                 int                       `json:"total_slices,omitempty"`
-	BaseBranch                  string                    `json:"base_branch"`
-	HeadBranch                  string                    `json:"head_branch"`
-	BaseCommit                  string                    `json:"base_commit"`
-	MergeBaseCommit             string                    `json:"merge_base_commit"`
-	HeadCommit                  string                    `json:"head_commit"`
-	ProductDiffSHA256           string                    `json:"product_diff_sha256"`
-	ContextFingerprint          string                    `json:"context_fingerprint"`
-	ChangedFiles                []string                  `json:"changed_files"`
-	Commits                     []string                  `json:"commits"`
-	DiffStat                    string                    `json:"diff_stat"`
-	ContextPaths                []string                  `json:"context_paths,omitempty"`
-	ProjectCommands             map[string]string         `json:"project_commands,omitempty"`
-	HighRiskFiles               []string                  `json:"high_risk_files,omitempty"`
-	GateStatus                  map[string]string         `json:"gate_status,omitempty"`
-	SafetyStatus                string                    `json:"safety_status"`
-	SafetyFindings              []SafetyFinding           `json:"safety_findings,omitempty"`
-	PRVisualEvidencePolicy      string                    `json:"pr_visual_evidence_policy"`
-	PRVisualEvidenceStatus      string                    `json:"pr_visual_evidence_status"`
-	PRVisualEvidenceCount       int                       `json:"pr_visual_evidence_count"`
-	PRVisualEvidenceFingerprint string                    `json:"pr_visual_evidence_fingerprint"`
-	PRVisualEvidenceRelevance   string                    `json:"pr_visual_evidence_relevance"`
-	PRVisualEvidenceSource      string                    `json:"pr_visual_evidence_source"`
+	SchemaVersion               int               `json:"schema_version"`
+	Mode                        string            `json:"mode"`
+	Feature                     string            `json:"feature,omitempty"`
+	SliceID                     string            `json:"slice_id,omitempty"`
+	SliceIndex                  int               `json:"slice_index,omitempty"`
+	TotalSlices                 int               `json:"total_slices,omitempty"`
+	BaseBranch                  string            `json:"base_branch"`
+	HeadBranch                  string            `json:"head_branch"`
+	BaseCommit                  string            `json:"base_commit"`
+	MergeBaseCommit             string            `json:"merge_base_commit"`
+	HeadCommit                  string            `json:"head_commit"`
+	ProductDiffSHA256           string            `json:"product_diff_sha256"`
+	ContextFingerprint          string            `json:"context_fingerprint"`
+	ChangedFiles                []string          `json:"changed_files"`
+	Commits                     []string          `json:"commits"`
+	DiffStat                    string            `json:"diff_stat"`
+	ContextPaths                []string          `json:"context_paths,omitempty"`
+	ProjectCommands             map[string]string `json:"project_commands,omitempty"`
+	HighRiskFiles               []string          `json:"high_risk_files,omitempty"`
+	GateStatus                  map[string]string `json:"gate_status,omitempty"`
+	SafetyStatus                string            `json:"safety_status"`
+	SafetyFindings              []SafetyFinding   `json:"safety_findings,omitempty"`
+	PRVisualEvidencePolicy      string            `json:"pr_visual_evidence_policy"`
+	PRVisualEvidenceStatus      string            `json:"pr_visual_evidence_status"`
+	PRVisualEvidenceCount       int               `json:"pr_visual_evidence_count"`
+	PRVisualEvidenceFingerprint string            `json:"pr_visual_evidence_fingerprint"`
+	PRVisualEvidenceRelevance   string            `json:"pr_visual_evidence_relevance"`
+	PRVisualEvidenceSource      string            `json:"pr_visual_evidence_source"`
 	// PRVisualEvidencePolicySource is "configured", or "plan-escalated" when
 	// a plan-approved visual decision lifts suggest to require semantics.
-	PRVisualEvidencePolicySource string                   `json:"pr_visual_evidence_policy_source,omitempty"`
+	PRVisualEvidencePolicySource string `json:"pr_visual_evidence_policy_source,omitempty"`
 	// PRVisualEvidenceCaptureDetail explains why automatic capture could not
 	// produce current evidence. Deliberately outside the context fingerprint:
 	// a flaky harness message must not destabilize preview equality.
-	PRVisualEvidenceCaptureDetail string                  `json:"pr_visual_evidence_capture_detail,omitempty"`
-	PRVisualEvidence            *PRVisualEvidenceManifest `json:"pr_visual_evidence,omitempty"`
-	Sources                     []PRSource                `json:"sources,omitempty"`
-	PreviewPath                 string                    `json:"preview_path"`
+	PRVisualEvidenceCaptureDetail string                    `json:"pr_visual_evidence_capture_detail,omitempty"`
+	PRVisualEvidence              *PRVisualEvidenceManifest `json:"pr_visual_evidence,omitempty"`
+	Sources                       []PRSource                `json:"sources,omitempty"`
+	PreviewPath                   string                    `json:"preview_path"`
 }
 
 type PRPreview struct {
@@ -95,7 +95,7 @@ type PRPreview struct {
 }
 
 func planVisualDecision(repo, feature string) (string, string, []PRVisualScenario, error) {
-	plan, err := LoadPlan(filepath.Join(repo, ".product-loop", "features", feature, "plan.md"))
+	plan, err := LoadPlan(filepath.Join(WorkspaceFor(repo).FeatureDir(feature), "plan.md"))
 	if err != nil {
 		return "unresolved", "managed-plan", nil, err
 	}
@@ -559,7 +559,7 @@ func featureEvidencePath(featureDir string) string {
 }
 
 func managedPRSources(repo, feature string) ([]PRSource, map[string]string, error) {
-	directory := filepath.Join(repo, ".product-loop", "features", feature)
+	directory := WorkspaceFor(repo).FeatureDir(feature)
 	planPath := filepath.Join(directory, "plan.md")
 	approvalPath := filepath.Join(directory, "approval.md")
 	lockPath := filepath.Join(directory, "plan.lock.json")
@@ -1199,7 +1199,7 @@ func PublishPR(options PRPublishOptions) (string, error) {
 		if context.Feature == "" {
 			return "", fmt.Errorf("autonomous publication requires a managed feature")
 		}
-		planPath := filepath.Join(repo, ".product-loop", "features", context.Feature, "plan.md")
+		planPath := filepath.Join(WorkspaceFor(repo).FeatureDir(context.Feature), "plan.md")
 		check, checkErr := CheckPlan(planPath)
 		if checkErr != nil {
 			return "", checkErr
@@ -1356,7 +1356,7 @@ func PublishPR(options PRPublishOptions) (string, error) {
 }
 
 func extractSystemicBoundaries(repo, feature string) error {
-	lockPath := filepath.Join(repo, ".product-loop", "features", feature, "plan.lock.json")
+	lockPath := filepath.Join(WorkspaceFor(repo).FeatureDir(feature), "plan.lock.json")
 	value, err := os.ReadFile(lockPath)
 	if err != nil {
 		return nil // if it doesn't exist, ignore
@@ -1369,7 +1369,7 @@ func extractSystemicBoundaries(repo, feature string) error {
 	if !ok || len(boundaries) == 0 {
 		return nil
 	}
-	outPath := filepath.Join(repo, ".product-loop", "verified-boundaries.md")
+	outPath := filepath.Join(WorkspaceFor(repo).GeneratedRoot(), "verified-boundaries.md")
 	f, err := os.OpenFile(outPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err

@@ -159,6 +159,27 @@ clone, `external` outside the repository (Detached Supervision).
 | detached-registry | detached | external | attach, detach |
 | detached-repositories | detached | external | attach, detach, activate |
 
+In detached mode, `WorkspaceContext` remaps the controller bundle and every
+feature package to the external repository control root. Source plans stay at
+their declared repository paths. Installation, update, hydration, host-hook,
+and managed-worktree paths remain repository-owned.
+
+Direct `.product-loop` literals are frozen by a conformance inventory. Each
+production file is classified as one of: canonical owner, controller bundle or
+syntax, embedded installation, product-diff syntax, policy syntax, repository
+workspace, or user guidance. A new unclassified literal fails the test. Runtime
+controller reads and writes must use `WorkspaceContext.GeneratedRoot`,
+`FeatureRoot`, or `FeatureDir`.
+
+## Detached feature reattachment
+
+Run `boatstack-helper attach --repo . --force` to reattach an older embedded
+open-feature package. Boatstack verifies the plan and approval or autonomy
+fingerprints, copies the package atomically, and verifies the copied hash. The
+machine result is `IMPORTED`, `UNCHANGED`, `CONFLICTING`, or `REJECTED`.
+Conflicts and stale receipts fail closed. Boatstack never chooses by recency and
+never deletes the embedded source package.
+
 ## Templates
 
 Copy only the templates required for the current slice from `assets/templates/`. Do not create empty ceremony. The feature spec, question ledger, test plan, gap ledger, and evidence ledger are the usual minimum for material product work.

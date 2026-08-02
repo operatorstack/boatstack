@@ -66,7 +66,7 @@ func CompileJourneyManifest(plan map[string]any) ([]byte, error) {
 }
 
 func journeyManifestPath(repo, feature string) string {
-	directory := filepath.Join(WorkspaceFor(repo).GeneratedRoot(), "features", feature)
+	directory := WorkspaceFor(repo).FeatureDir(feature)
 	return featureArtifactPath(directory, filepath.Join("compiled", "journey-oracles.json"), "journey-oracles.json")
 }
 

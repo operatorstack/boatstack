@@ -152,18 +152,19 @@ func TestGuardClassifiersMatchDeclaredOwnership(t *testing.T) {
 // extending this allowlist — the frozen inventory of declaring files. Growth
 // pressure should flow toward WorkspaceContext/statemap, not new literals.
 func TestProductLoopLiteralsStayInDeclaredFiles(t *testing.T) {
-	allowed := map[string]bool{
-		"activation.go": true, "delivery.go": true, "export.go": true,
-		"flow_control.go": true, "flow_tasks.go": true, "hooks.go": true,
-		"init.go": true, "installation_repair.go": true, "mutation_undo.go": true,
-		"next.go": true, "paths.go": true, "planning.go": true, "pr.go": true,
-		"recovery.go": true, "runtime_cache.go": true, "safety.go": true,
-		"update.go": true, "update_publication.go": true,
-		"workspace.go": true,
+	allowed := map[string]string{
+		"activation.go": "controller-syntax", "delivery.go": "controller-syntax", "export.go": "controller-bundle",
+		"hooks.go": "embedded-installation",
+		"init.go":  "embedded-installation", "installation_repair.go": "embedded-installation", "mutation_undo.go": "controller-syntax",
+		"paths.go": "canonical-owner", "planning.go": "product-diff-syntax", "pr.go": "product-diff-syntax",
+		"recovery.go": "product-diff-syntax", "runtime_cache.go": "embedded-installation", "safety.go": "policy-syntax",
+		"update.go": "embedded-installation", "update_publication.go": "embedded-installation",
+		"workspace.go": "repository-workspace",
 		// denial.go names .product-loop/features/ only in user-facing denial
 		// copy (the owned-channel guidance), never as a joined path.
-		"denial.go": true,
+		"denial.go": "user-guidance",
 	}
+	validClass := map[string]bool{"canonical-owner": true, "controller-bundle": true, "controller-syntax": true, "embedded-installation": true, "policy-syntax": true, "product-diff-syntax": true, "repository-workspace": true, "user-guidance": true}
 
 	fset := token.NewFileSet()
 	entries, err := os.ReadDir(".")
@@ -191,7 +192,7 @@ func TestProductLoopLiteralsStayInDeclaredFiles(t *testing.T) {
 			if err != nil {
 				return true
 			}
-			if strings.Contains(value, ".product-loop") && !allowed[name] {
+			if strings.Contains(value, ".product-loop") && allowed[name] == "" {
 				offenders[name] = true
 			}
 			return true
@@ -210,7 +211,10 @@ func TestProductLoopLiteralsStayInDeclaredFiles(t *testing.T) {
 	}
 	// Reverse check: a file on the allowlist that no longer carries a literal is
 	// stale — shrink the list so the freeze stays honest.
-	for name := range allowed {
+	for name, class := range allowed {
+		if !validClass[class] {
+			t.Errorf("allowlist entry %s has unknown ownership class %q", name, class)
+		}
 		content, err := os.ReadFile(name)
 		if err != nil {
 			t.Fatalf("allowlisted file %s unreadable: %v", name, err)

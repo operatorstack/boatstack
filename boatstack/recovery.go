@@ -552,7 +552,7 @@ func RepairState(repoPath, feature string) (RepairStateResult, error) {
 		}
 		eligible := []string{}
 		for _, candidate := range candidates {
-			if _, checkErr := CheckPlan(filepath.Join(repo, ".product-loop", "features", candidate, "plan.md")); checkErr != nil {
+			if _, checkErr := CheckPlan(filepath.Join(WorkspaceFor(repo).FeatureDir(candidate), "plan.md")); checkErr != nil {
 				eligible = append(eligible, candidate)
 			}
 		}
@@ -578,7 +578,7 @@ func RepairState(repoPath, feature string) (RepairStateResult, error) {
 		return RepairStateResult{}, fmt.Errorf("invalid feature slug: %q", feature)
 	}
 
-	directory := filepath.Join(repo, ".product-loop", "features", feature)
+	directory := WorkspaceFor(repo).FeatureDir(feature)
 	planPath := filepath.Join(directory, "plan.md")
 	if !fileExists(planPath) {
 		return refusedRepairState(feature, "no plan.md exists for this feature; nothing to repair"), nil

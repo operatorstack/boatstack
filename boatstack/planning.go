@@ -163,7 +163,7 @@ func PlanningBaselineForPlan(planPath string) (PlanningBaseline, error) {
 	if err != nil {
 		return PlanningBaseline{}, err
 	}
-	repo, err := ResolveRepository(filepath.Dir(planPath))
+	repo, err := ResolveControllerRepository(filepath.Dir(planPath))
 	if err != nil {
 		return PlanningBaseline{}, err
 	}
@@ -238,14 +238,18 @@ func WritePlanningArtifact(options PlanningWriteOptions) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	destination := filepath.Join(repo, ".product-loop", "features", options.Feature, options.Artifact)
-	if err := rejectSymlinkComponents(repo, destination); err != nil {
+	ctx, err := ResolveWorkspaceContext(repo)
+	if err != nil {
+		return "", err
+	}
+	destination := filepath.Join(ctx.FeatureDir(options.Feature), options.Artifact)
+	if err := rejectSymlinkComponents(ctx.ExportRoot(), destination); err != nil {
 		return "", err
 	}
 	if err := atomicWrite(destination, options.Content); err != nil {
 		return "", err
 	}
-	relative, err := filepath.Rel(repo, destination)
+	relative, err := filepath.Rel(ctx.ExportRoot(), destination)
 	if err != nil {
 		return "", err
 	}
@@ -267,7 +271,7 @@ func RecordApproval(options ApprovalRecordOptions) error {
 	if options.Fingerprint != check.Fingerprint {
 		return fmt.Errorf("approval fingerprint does not match the current plan; the plan now fingerprints as %s — re-approve against that value (run check-plan to confirm)", check.Fingerprint)
 	}
-	repo, err := ResolveRepository(filepath.Dir(options.PlanPath))
+	repo, err := ResolveControllerRepository(filepath.Dir(options.PlanPath))
 	if err != nil {
 		return err
 	}
@@ -360,7 +364,7 @@ func Doctor(repoPath string) error {
 	if err != nil {
 		return err
 	}
-	if err := CheckExport(repo, bundle.Files); err != nil {
+	if err := CheckExport(WorkspaceFor(repo).ExportRoot(), bundle.Files); err != nil {
 		return err
 	}
 	// Best-effort hygiene: drop the orphaned clone-shared operation ledger left by

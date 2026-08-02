@@ -459,7 +459,7 @@ func checkPlanCommand(arguments []string) int {
 	readinessFingerprint := ""
 	if version, _ := check.Plan["schema_version"].(float64); version >= 3 {
 		readiness, readinessErr := boatstack.CheckPlanReadiness(*plan)
-		repo, _ := boatstack.ResolveRepository(filepath.Dir(*plan))
+		repo, _ := boatstack.ResolveControllerRepository(filepath.Dir(*plan))
 		if readinessErr != nil {
 			boatstack.RecordFlowAttribution(repo, "readiness", deliverycontrol.CostQuery, true, readinessErr.Error())
 			return fail(readinessErr)
@@ -1102,7 +1102,16 @@ func doctorCommand(arguments []string) int {
 	if err := boatstack.DoctorRepairHint(boatstack.Doctor(*repo)); err != nil {
 		return fail(err)
 	}
+	root, err := boatstack.ResolveRepository(*repo)
+	if err != nil {
+		return fail(err)
+	}
+	ctx, err := boatstack.ResolveWorkspaceContext(root)
+	if err != nil {
+		return fail(err)
+	}
 	fmt.Printf("PASS: Boatstack %s installation and generated adapters are healthy\n", boatstack.Version)
+	fmt.Printf("SUPERVISION_MODE=%s\nCONTROLLER_ROOT=%s\nHEALTH=VERIFIED\n", ctx.Mode, ctx.ExportRoot())
 	hosts, err := boatstack.DoctorHookHosts(*repo)
 	if err != nil {
 		return fail(err)

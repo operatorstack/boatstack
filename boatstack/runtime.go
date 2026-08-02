@@ -163,6 +163,8 @@ func SHA256File(path string) (string, error) {
 }
 
 func repositoryRelativePath(repo, target string) (string, error) {
+	repo = canonicalizeExistingAncestor(repo)
+	target = canonicalizeExistingAncestor(target)
 	relative, err := filepath.Rel(repo, target)
 	if err != nil {
 		return "", fmt.Errorf("cannot make path repository-relative: %w", err)

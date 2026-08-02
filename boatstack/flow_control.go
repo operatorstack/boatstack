@@ -375,7 +375,7 @@ func prescribeCommand(repo, feature string, status NextStatus, transition delive
 // planningFeatureDir is the single joined form of a feature's planning
 // directory used by the prescription layer and the solution-set enumerator.
 func planningFeatureDir(repo, feature string) string {
-	return filepath.Join(repo, ".product-loop", "features", feature)
+	return WorkspaceFor(repo).FeatureDir(feature)
 }
 
 func prescribePlanning(repo string, status NextStatus) (*PrescribedCommand, string) {

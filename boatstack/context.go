@@ -37,7 +37,7 @@ func ProjectOperatorContext(repoPath, operation, host string) (OperatorContext, 
 	}
 	out := OperatorContext{
 		SchemaVersion: detachedSchemaVersion, Mode: string(SupervisionEmbedded),
-		RepoRoot: root, Operation: operation, Host: host,
+		RepoRoot: root, ControlRoot: root, Operation: operation, Host: host,
 	}
 
 	if ctx, ok, verifyErr := detachedContextFor(root); verifyErr != nil {

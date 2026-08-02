@@ -487,7 +487,7 @@ func preActivationFinding(repo, attemptedPath string) (SafetyFinding, bool) {
 		return SafetyFinding{}, false
 	}
 	if len(candidates) == 1 && status.ObservedStage != "AMBIGUOUS" {
-		planPath := filepath.Join(repo, ".product-loop", "features", candidates[0], "plan.md")
+		planPath := filepath.Join(WorkspaceFor(repo).FeatureDir(candidates[0]), "plan.md")
 		check, checkErr := CheckPlan(planPath)
 		if checkErr != nil {
 			return SafetyFinding{

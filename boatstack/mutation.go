@@ -114,6 +114,7 @@ type MutationReceipt struct {
 	Changes       []MutationFileChange `json:"changes"`
 	Authority     string               `json:"authority_sha256,omitempty"`
 	RecordedAt    string               `json:"recorded_at"`
+	Root          string               `json:"root,omitempty"`
 }
 
 func mutationDirectory(repo string) (string, error) {
@@ -238,12 +239,15 @@ func currentImage(native string) (string, bool, error) {
 // an identical proposal replays and a different proposal is a distinct mutation.
 // It deliberately excludes the transient Authority.Observed value so a rejected
 // authority check does not fork the identity of the corrected retry.
-func mutationIdentity(m MutationSet, ops []resolvedOperation) string {
+func mutationIdentity(m MutationSet, ops []resolvedOperation, root string) string {
 	parts := make([]string, 0, len(ops))
 	for _, op := range ops {
 		parts = append(parts, op.rel+"\x1f"+op.candidateHash+"\x1f"+m.Base[op.rel])
 	}
 	sort.Strings(parts)
+	if root != "" {
+		parts = append(parts, "root\x1f"+root)
+	}
 	fingerprint := SHA256Bytes([]byte(strings.Join(parts, "\x1e")))
 	target := SHA256Bytes([]byte(strings.Join(sortedScope(m.Scope), "\x1e")))
 	return operationID("mutation\x00"+strings.TrimSpace(m.Kind), target, fingerprint)
@@ -264,7 +268,7 @@ type resolvedOperation struct {
 	absent        bool
 }
 
-func (m MutationSet) resolve(repo string) ([]resolvedOperation, error) {
+func (m MutationSet) resolve(root string) ([]resolvedOperation, error) {
 	if strings.TrimSpace(m.Protocol) != MutationProtocol {
 		return nil, fmt.Errorf("mutation protocol must be %s", MutationProtocol)
 	}
@@ -292,11 +296,11 @@ func (m MutationSet) resolve(repo string) ([]resolvedOperation, error) {
 			return nil, fmt.Errorf("mutation names %s more than once", rel)
 		}
 		seen[rel] = true
-		native, err := resolveRepositoryRelativePath(repo, rel)
+		native, err := resolveRepositoryRelativePath(root, rel)
 		if err != nil {
 			return nil, err
 		}
-		if err := rejectSymlinkComponents(repo, native); err != nil {
+		if err := rejectSymlinkComponents(root, native); err != nil {
 			return nil, err
 		}
 		if op.Absent {
@@ -324,11 +328,35 @@ func ApplyMutation(repoPath string, m MutationSet) (MutationReceipt, error) {
 	if err != nil {
 		return MutationReceipt{}, err
 	}
-	ops, err := m.resolve(repo)
+	return applyMutationAt(repo, repo, "", m)
+}
+
+// ApplyControllerMutation promotes controller-owned artifacts beneath the
+// active WorkspaceContext export root while retaining receipts in the owning
+// repository's Git-common ledger.
+func ApplyControllerMutation(repoPath string, m MutationSet) (MutationReceipt, error) {
+	repo, err := ResolveRepository(repoPath)
 	if err != nil {
 		return MutationReceipt{}, err
 	}
-	id := mutationIdentity(m, ops)
+	ctx, err := ResolveWorkspaceContext(repo)
+	if err != nil {
+		return MutationReceipt{}, err
+	}
+	root := ctx.ExportRoot()
+	rootMarker := ""
+	if filepath.Clean(root) != filepath.Clean(repo) {
+		rootMarker = root
+	}
+	return applyMutationAt(repo, root, rootMarker, m)
+}
+
+func applyMutationAt(repo, root, rootMarker string, m MutationSet) (MutationReceipt, error) {
+	ops, err := m.resolve(root)
+	if err != nil {
+		return MutationReceipt{}, err
+	}
+	id := mutationIdentity(m, ops, rootMarker)
 	authorityHash := SHA256Bytes([]byte(m.Authority.Expected))
 
 	var result MutationReceipt
@@ -349,6 +377,7 @@ func ApplyMutation(repoPath string, m MutationSet) (MutationReceipt, error) {
 				SchemaVersion: mutationSchemaVersion, MutationID: id, Protocol: MutationProtocol,
 				Kind: m.Kind, Status: "REJECTED", Reason: "outdated supervisor authority",
 				Scope: sortedScope(m.Scope), RecordedAt: operationTimestamp(),
+				Root: rootMarker,
 			}
 			return ErrMutationOutdatedAuthority
 		}
@@ -367,6 +396,7 @@ func ApplyMutation(repoPath string, m MutationSet) (MutationReceipt, error) {
 					SchemaVersion: mutationSchemaVersion, MutationID: id, Protocol: MutationProtocol,
 					Kind: m.Kind, Status: "REJECTED", Reason: "stale base artifact: " + op.rel,
 					Scope: sortedScope(m.Scope), RecordedAt: operationTimestamp(),
+					Root: rootMarker,
 				}
 				return ErrMutationStaleBase
 			}
@@ -383,6 +413,7 @@ func ApplyMutation(repoPath string, m MutationSet) (MutationReceipt, error) {
 					SchemaVersion: mutationSchemaVersion, MutationID: id, Protocol: MutationProtocol,
 					Kind: m.Kind, Status: "REJECTED", Reason: "invalid candidate: " + checkErr.Error(),
 					Scope: sortedScope(m.Scope), RecordedAt: operationTimestamp(),
+					Root: rootMarker,
 				}
 				return fmt.Errorf("%w: %v", ErrMutationInvalidCandidate, checkErr)
 			}
@@ -447,6 +478,7 @@ func ApplyMutation(repoPath string, m MutationSet) (MutationReceipt, error) {
 					SchemaVersion: mutationSchemaVersion, MutationID: id, Protocol: MutationProtocol,
 					Kind: m.Kind, Status: "ROLLED_BACK", Reason: "post-write verification failed: " + checkErr.Error(),
 					Scope: sortedScope(m.Scope), RecordedAt: operationTimestamp(),
+					Root: rootMarker,
 				}
 				return fmt.Errorf("%w: %v", ErrMutationVerificationFailed, checkErr)
 			}
@@ -456,6 +488,7 @@ func ApplyMutation(repoPath string, m MutationSet) (MutationReceipt, error) {
 			SchemaVersion: mutationSchemaVersion, MutationID: id, Protocol: MutationProtocol,
 			Kind: m.Kind, Status: "APPLIED", Scope: sortedScope(m.Scope),
 			Changes: changes, Authority: authorityHash, RecordedAt: operationTimestamp(),
+			Root: rootMarker,
 		}
 		return saveMutationReceipt(repo, result)
 	})
@@ -506,8 +539,16 @@ func rollbackMutation(promoted []promotedChange) {
 // on-disk truth, which is the precondition for treating a repeat call as a
 // no-op replay rather than a fresh mutation.
 func receiptStillApplied(repo string, receipt MutationReceipt) bool {
+	root := repo
+	if receipt.Root != "" {
+		ctx, err := ResolveWorkspaceContext(repo)
+		if err != nil || filepath.Clean(receipt.Root) != filepath.Clean(ctx.ExportRoot()) {
+			return false
+		}
+		root = receipt.Root
+	}
 	for _, change := range receipt.Changes {
-		native, err := resolveRepositoryRelativePath(repo, change.Path)
+		native, err := resolveRepositoryRelativePath(root, change.Path)
 		if err != nil {
 			return false
 		}
@@ -582,7 +623,13 @@ func UndoMutation(repoPath, mutationID string) (MutationReceipt, error) {
 		Base:       base,
 		Operations: ops,
 	}
-	undone, applyErr := ApplyMutation(repo, inverse)
+	var undone MutationReceipt
+	var applyErr error
+	if receipt.Root != "" {
+		undone, applyErr = ApplyControllerMutation(repo, inverse)
+	} else {
+		undone, applyErr = ApplyMutation(repo, inverse)
+	}
 	if errors.Is(applyErr, ErrMutationStaleBase) {
 		return undone, fmt.Errorf("%w: %s diverged from its recorded post-image", ErrMutationConflict, receipt.MutationID)
 	}
