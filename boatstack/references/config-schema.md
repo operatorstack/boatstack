@@ -23,6 +23,9 @@ boatstack-config-field:workflow.visual_evidence_publish
 boatstack-config-field:workflow.visual_evidence_publish.mode
 boatstack-config-field:workflow.visual_evidence_publish.host
 boatstack-config-field:workflow.visual_evidence_publish.expiry
+boatstack-config-field:workflow.external_authority
+boatstack-config-field:workflow.external_authority.mode
+boatstack-config-field:workflow.external_authority.trust_store
 boatstack-config-field:workflow.ignored_deliveries
 boatstack-config-field:delivery
 boatstack-config-field:delivery.terminal
@@ -96,6 +99,9 @@ This is the exhaustive serialization contract, not a list of recommended user ed
   - `mode` (string, optional): Compatibility value `external-host`; external hosting is always used.
   - `host` (string, optional): `litterbox` (default) or `catbox`. Only meaningful when `mode` is `external-host`. `litterbox` auto-expires uploads; `catbox` is permanent.
   - `expiry` (string, optional): `1h`, `12h`, `24h`, or `72h` (default `72h`). Only meaningful for an expiring host; the PR comment reminds reviewers of the host and this window.
+- `external_authority` (object, optional): Declares the credential boundary for managed runs. Omission or `mode: "hook-only"` reports `HOOK_GUARDED`; it never claims cloud credentials are constrained. `mode: "credential-enforced"` requires a short-lived external receipt signed by an issuer in a protected external trust store.
+  - `mode` (string): `hook-only` or `credential-enforced`.
+  - `trust_store` (string): Absolute path to an operator-provisioned JSON file mapping issuer IDs to base64 Ed25519 public keys. Boatstack rejects a trust store or parent directory owned or writable by the managed principal and never holds a signing key.
 - `ignored_deliveries` (array of strings, optional): Deterministic ambiguity control. Feature slugs of past deliveries to exclude from delivery-ambiguity resolution so historical work no longer blocks new work. New, unlisted ambiguous deliveries still pause the workflow.
 
 ### workspace Fields

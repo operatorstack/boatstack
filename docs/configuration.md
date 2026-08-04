@@ -14,6 +14,8 @@ boatstack-user-config-field:workflow.pr_visual_evidence
 boatstack-user-config-field:workflow.visual_evidence_publish.mode
 boatstack-user-config-field:workflow.visual_evidence_publish.host
 boatstack-user-config-field:workflow.visual_evidence_publish.expiry
+boatstack-user-config-field:workflow.external_authority.mode
+boatstack-user-config-field:workflow.external_authority.trust_store
 boatstack-user-config-field:workflow.ignored_deliveries
 boatstack-user-config-field:delivery.terminal
 boatstack-user-config-field:insights.enabled
@@ -61,6 +63,7 @@ failed, or stale results.
 | Check for a systemic boundary | `workflow.boundary_analysis` | Planning guidance asks whether the request is a local symptom before scope expands. |
 | Add frontend PR screenshots | `workflow.pr_visual_evidence` | `suggest` exposes missing screenshots as a gap; `require` blocks completed publication. A plan that approves visual scenarios lifts `suggest` to require semantics for that feature; `off` and a per-feature `not_relevant` decision (with a reason) are the escapes. Boatstack captures registered scenarios automatically during ship; per-surface harnesses register as `project.commands["visual:<surface>"]` (`capability-register --surface`) and scenarios select them with a `surface` field. |
 | Render screenshots inline on a private PR | `workflow.visual_evidence_publish.*` | `mode: external-host` uploads the captured PNGs to an anonymous expiring host so the comment renders inline even on a private repo; opt-in, never automatic. |
+| Require repository-only credentials | `workflow.external_authority.*` | `credential-enforced` blocks managed execution without a current external receipt signed by a configured Ed25519 issuer. Omission stays explicitly `HOOK_GUARDED`. |
 | Ignore old ambiguous deliveries | `workflow.ignored_deliveries` | Listed feature slugs are excluded from delivery-ambiguity resolution so past work stops blocking new work; new, unlisted ambiguous deliveries still pause. |
 | Pursue the PR to merge, not just to open | `delivery.terminal` | `merged` keeps the read-only flow advisors naming post-publish steps (watch checks, route corrections) until the PR is observed merged; the default `published` ends the flow when the PR is open, exactly as before. |
 | Preserve and evaluate product insights | `insights.*` | Manual, fingerprint-bound captures and events become tracked `docs/insights/` diffs; PR evidence can update readiness, but only a human completes an insight. |
@@ -112,6 +115,19 @@ When human approval is disabled, Boatstack still locks the exact plan and inputs
 ```
 
 Changelog enforcement is mechanical. Boundary analysis is model-mediated planning guidance and cannot silently expand approved scope.
+
+```json
+{
+  "workflow": {
+    "external_authority": {
+      "mode": "credential-enforced",
+      "trust_store": "/etc/boatstack/authority-issuers.json"
+    }
+  }
+}
+```
+
+Strict mode requires an external service-IAM, credential-broker, or isolated-host attestor. The JSON trust store maps issuer IDs to base64 Ed25519 public keys and must be operator-owned outside the repository; Boatstack rejects a file or parent directory owned or writable by the managed principal. Obtain the expected binding with `boatstack-helper authority-context --repo .`; the attestor signs a receipt for that repository, worktree, host session, principal, and a maximum 15-minute lifetime. Set the absolute receipt path in `BOATSTACK_AUTHORITY_RECEIPT`, the attested session in `BOATSTACK_HOST_SESSION`, and the attested principal fingerprint in `BOATSTACK_PRINCIPAL_FINGERPRINT`. Boatstack never holds the signing key. Missing or invalid evidence blocks `run-preflight` and remains `HOOK_GUARDED`; only a valid external receipt reports `CREDENTIAL_ENFORCED`.
 
 ```json
 {

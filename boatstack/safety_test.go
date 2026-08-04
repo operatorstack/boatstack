@@ -46,23 +46,28 @@ func writeValidSavedFeaturePlan(t *testing.T, repo, feature string) string {
 func TestIrreversibleCommandCorpusIsDenied(t *testing.T) {
 	repo := safetyTestRepo(t)
 	cases := map[string]string{
-		"schema drop":        `psql -c "DROP SCHEMA public CASCADE"`,
-		"truncate":           `psql -c "TRUNCATE TABLE accounts"`,
-		"unbounded delete":   `psql -c "DELETE FROM accounts"`,
-		"multiline update":   "psql <<'SQL'\nUPDATE accounts\nSET active = false;\nSQL",
-		"database reset":     `supabase db reset`,
-		"recursive root":     `rm -rf /`,
-		"wildcard deletion":  `rm -rf build/*`,
-		"compound pipeline":  `rg reset scripts | rm -rf .`,
-		"subshell":           `echo $(git reset --hard HEAD~1)`,
-		"environment prefix": `TARGET=dev sh -c 'psql -c "DROP SCHEMA public CASCADE"'`,
-		"hard reset":         `git reset --hard HEAD~1`,
-		"force push":         `git push --force origin main`,
-		"cloud deletion":     `gcloud sql instances delete primary`,
-		"namespace deletion": `kubectl delete namespace production`,
-		"volume deletion":    `docker volume rm data-volume`,
-		"backup deletion":    `aws rds delete-db-snapshot --db-snapshot-identifier backup-1`,
-		"powershell":         `Remove-Item -Recurse -Force $HOME`,
+		"schema drop":                  `psql -c "DROP SCHEMA public CASCADE"`,
+		"truncate":                     `psql -c "TRUNCATE TABLE accounts"`,
+		"unbounded delete":             `psql -c "DELETE FROM accounts"`,
+		"multiline update":             "psql <<'SQL'\nUPDATE accounts\nSET active = false;\nSQL",
+		"database reset":               `supabase db reset`,
+		"Supabase branch delete":       `supabase branches delete dev_engineer --project-ref example --yes`,
+		"Supabase lifecycle downgrade": `supabase branches update dev_engineer --project-ref example --persistent=false --yes`,
+		"Cloud Run public exposure":    `gcloud run deploy api --allow-unauthenticated`,
+		"Cloud Run public IAM":         `gcloud run services add-iam-policy-binding api --member=allUsers --role=roles/run.invoker`,
+		"Kubernetes public service":    `kubectl expose deployment api --type=LoadBalancer`,
+		"recursive root":               `rm -rf /`,
+		"wildcard deletion":            `rm -rf build/*`,
+		"compound pipeline":            `rg reset scripts | rm -rf .`,
+		"subshell":                     `echo $(git reset --hard HEAD~1)`,
+		"environment prefix":           `TARGET=dev sh -c 'psql -c "DROP SCHEMA public CASCADE"'`,
+		"hard reset":                   `git reset --hard HEAD~1`,
+		"force push":                   `git push --force origin main`,
+		"cloud deletion":               `gcloud sql instances delete primary`,
+		"namespace deletion":           `kubectl delete namespace production`,
+		"volume deletion":              `docker volume rm data-volume`,
+		"backup deletion":              `aws rds delete-db-snapshot --db-snapshot-identifier backup-1`,
+		"powershell":                   `Remove-Item -Recurse -Force $HOME`,
 	}
 	for name, command := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -70,6 +75,118 @@ func TestIrreversibleCommandCorpusIsDenied(t *testing.T) {
 				t.Fatalf("dangerous command was allowed: %s", command)
 			}
 		})
+	}
+}
+
+// control-law: external-control-plane-effects-stay-operator-only
+func TestExternalControlPlaneReadOnlyCommandsRemainAllowed(t *testing.T) {
+	repo := safetyTestRepo(t)
+	for _, command := range []string{
+		"supabase branches list --project-ref example -o json",
+		"supabase branches get dev_engineer --project-ref example",
+		"gcloud run services describe api",
+	} {
+		if findings := ClassifyCommand(repo, command); len(findings) != 0 {
+			t.Fatalf("read-only control-plane command was denied: %s: %#v", command, findings)
+		}
+	}
+}
+
+// control-law: external-control-plane-effects-stay-operator-only
+func TestExternalControlPlaneInvocationVariantsAreDenied(t *testing.T) {
+	repo := safetyTestRepo(t)
+	for name, command := range map[string]string{
+		"whitespace":         "supabase\tbranches\tdelete dev_engineer",
+		"environment prefix": "env SUPABASE_ACCESS_TOKEN=example supabase branches delete dev_engineer",
+		"shell":              "sh -c 'supabase branches update dev_engineer --persistent=false'",
+		"tokenized argv":     `python -c "import subprocess; subprocess.run(['supabase','branches','delete','dev_engineer'])"`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if findings := ClassifyCommand(repo, command); len(findings) == 0 {
+				t.Fatalf("external mutation variant was allowed: %s", command)
+			}
+		})
+	}
+}
+
+// control-law: external-control-plane-effects-stay-operator-only
+func TestSupabaseRecreateWrapperIsDeniedThroughExecutedFileInspection(t *testing.T) {
+	repo := safetyTestRepo(t)
+	script := filepath.Join(repo, "scripts", "dev_environment.py")
+	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	value := []byte("import subprocess\nsubprocess.run(['supabase', 'branches', 'delete', 'dev_engineer'])\n")
+	if err := os.WriteFile(script, value, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	findings := ClassifyCommand(repo, "python scripts/dev_environment.py recreate --confirm dev_engineer")
+	if len(findings) == 0 || findings[0].Category != "external-resource-destruction" || findings[0].Source != "scripts/dev_environment.py" {
+		t.Fatalf("destructive wrapper was not denied at the shared guard: %#v", findings)
+	}
+}
+
+// control-law: external-control-plane-effects-stay-operator-only
+func TestIndirectShellWrapperIsDeniedThroughExecutedFileInspection(t *testing.T) {
+	repo := safetyTestRepo(t)
+	script := filepath.Join(repo, "scripts", "delete-branch.sh")
+	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nsupabase branches delete dev_engineer\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if findings := ClassifyCommand(repo, "bash scripts/delete-branch.sh"); len(findings) == 0 {
+		t.Fatal("indirect destructive shell wrapper was allowed")
+	}
+}
+
+// control-law: external-control-plane-effects-stay-operator-only
+func TestExternalControlPlaneMCPMutationsAreDenied(t *testing.T) {
+	repo := safetyTestRepo(t)
+	cases := []struct {
+		name     string
+		input    map[string]any
+		category string
+	}{
+		{"mcp__supabase__delete_branch", map[string]any{"branch": "dev_engineer"}, "external-resource-destruction"},
+		{"mcp__cloud__update_service", map[string]any{"service": "api", "allow_unauthenticated": true}, "external-public-exposure"},
+	}
+	for _, test := range cases {
+		findings := ClassifyTool(repo, test.name, test.input)
+		if len(findings) == 0 || findings[0].Category != test.category {
+			t.Fatalf("%s was not denied as %s: %#v", test.name, test.category, findings)
+		}
+	}
+}
+
+// control-law: external-control-plane-effects-stay-operator-only
+func TestIncidentCommandsAreDeniedThroughCodexHook(t *testing.T) {
+	repo := safetyTestRepo(t)
+	script := filepath.Join(repo, "scripts", "dev_environment.py")
+	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(script, []byte("import subprocess\nsubprocess.run(['supabase', 'branches', 'delete', 'dev_engineer'])\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	commands := []string{
+		"supabase branches delete dev_engineer --project-ref example --yes",
+		"supabase branches update dev_engineer --project-ref example --persistent=false --yes",
+		"python scripts/dev_environment.py recreate --confirm dev_engineer",
+	}
+	for _, command := range commands {
+		input, err := json.Marshal(map[string]any{
+			"hook_event_name": "PreToolUse", "tool_name": "Bash",
+			"tool_input": map[string]any{"command": command},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		output, denied := HookDecision(SafetyHookOptions{Host: "codex", Repo: repo, Input: input})
+		if !denied || !strings.Contains(string(output), `"permissionDecision":"deny"`) {
+			t.Fatalf("Codex hook allowed incident command %q: %s", command, output)
+		}
 	}
 }
 

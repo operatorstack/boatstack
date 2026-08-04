@@ -46,7 +46,7 @@ When `delivery.terminal` is `merged`, follow the post-publish prescriptions exac
 
 Read [irreversible-operation-boundary.md](references/irreversible-operation-boundary.md). Project hooks hard-deny high-confidence destructive shell and MCP operations on every supported agent call. Never request or invent an in-session bypass. After an external-write failure, preserve state, use read-only diagnosis, retain the immutable target boundary, and choose only proven transactional retry or fix-forward recovery. Source edits may be reviewed, but an executable destructive capability blocks activation and every later gate.
 
-This enforcement is defense in depth, not a complete sandbox. Keep least-privilege service credentials and service-side destructive approval in place.
+This enforcement is defense in depth, not a complete sandbox. Keep least-privilege service credentials and service-side destructive approval in place. Read `authority_status` from `run-preflight`: `HOOK_GUARDED` never proves ambient cloud authority absent, while `CREDENTIAL_ENFORCED` means a trusted external attestor supplied a current repository-only receipt. Never strengthen the former into the latter in prose.
 
 ## Keep repository administration outside delivery
 
