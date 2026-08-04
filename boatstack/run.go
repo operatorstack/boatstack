@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-const runPreflightSchemaVersion = 1
+const runPreflightSchemaVersion = 2
 
 var runGitCommand = gitCommand
 
@@ -19,14 +19,26 @@ type RunPreflight struct {
 	HeadBranch         string `json:"head_branch,omitempty"`
 	Upstream           string `json:"upstream,omitempty"`
 	Relation           string `json:"relation,omitempty"`
+	AuthorityStatus    string `json:"authority_status"`
+	AuthorityReason    string `json:"authority_reason"`
 	Reason             string `json:"reason"`
 }
 
 func blockedRunPreflight(base, head, upstream, relation, reason string) RunPreflight {
 	return RunPreflight{
 		SchemaVersion: runPreflightSchemaVersion, VerificationStatus: "BLOCKED",
-		BaseBranch: base, HeadBranch: head, Upstream: upstream, Relation: relation, Reason: reason,
+		BaseBranch: base, HeadBranch: head, Upstream: upstream, Relation: relation,
+		AuthorityStatus: AuthorityHookGuarded,
+		AuthorityReason: "Boatstack hooks guard known irreversible operations; cloud authority is not externally attested.",
+		Reason:          reason,
 	}
+}
+
+func blockedRunPreflightWithAuthority(base, head, upstream, relation, reason, authorityStatus, authorityReason string) RunPreflight {
+	status := blockedRunPreflight(base, head, upstream, relation, reason)
+	status.AuthorityStatus = authorityStatus
+	status.AuthorityReason = authorityReason
+	return status
 }
 
 func runBranches(repo, explicitFeature string) (string, string, error) {
@@ -98,23 +110,34 @@ func CheckRunPreflight(repoPath, explicitFeature string) RunPreflight {
 	if !fileExists(WorkspaceFor(repo).ProjectConfigPath()) {
 		return blockedRunPreflight("", "", "", "NOT_INITIALIZED", "This repository has no Boatstack project installation to run.")
 	}
+	config, _, configErr := LoadConfig(WorkspaceFor(repo).ProjectConfigPath())
+	if configErr != nil {
+		return blockedRunPreflight("", "", "", "INVALID_CONFIG", "Boatstack could not validate the project configuration.")
+	}
+	authorityStatus, authorityReason := verifyAuthorityBoundary(repo, config.Workflow.ExternalAuthority)
+	block := func(base, head, upstream, relation, reason string) RunPreflight {
+		return blockedRunPreflightWithAuthority(base, head, upstream, relation, reason, authorityStatus, authorityReason)
+	}
+	if normalizedAuthorityMode(config.Workflow.ExternalAuthority) == "credential-enforced" && authorityStatus != AuthorityCredentialEnforced {
+		return block("", "", "", "AUTHORITY_BOUNDARY", authorityReason)
+	}
 	if _, err := runGitCommand(repo, "remote", "get-url", "origin"); err != nil {
-		return blockedRunPreflight("", "", "", "MISSING_ORIGIN", "Boatstack run requires a usable origin remote.")
+		return block("", "", "", "MISSING_ORIGIN", "Boatstack run requires a usable origin remote.")
 	}
 	if _, err := runGitCommand(repo, "fetch", "origin"); err != nil {
-		return blockedRunPreflight("", "", "", "FETCH_FAILED", "Boatstack could not fetch origin: "+err.Error())
+		return block("", "", "", "FETCH_FAILED", "Boatstack could not fetch origin: "+err.Error())
 	}
 
 	base, head, err := runBranches(repo, explicitFeature)
 	if err != nil {
-		return blockedRunPreflight(base, head, "", "BRANCH_MISMATCH", err.Error())
+		return block(base, head, "", "BRANCH_MISMATCH", err.Error())
 	}
 	remoteBase := "refs/remotes/origin/" + base
 	if _, err := runGitCommand(repo, "rev-parse", "--verify", remoteBase+"^{commit}"); err != nil {
-		return blockedRunPreflight(base, head, "", "MISSING_REMOTE_BASE", fmt.Sprintf("Fetched origin does not contain base branch %s.", base))
+		return block(base, head, "", "MISSING_REMOTE_BASE", fmt.Sprintf("Fetched origin does not contain base branch %s.", base))
 	}
 	if _, err := runGitCommand(repo, "merge-base", "--is-ancestor", remoteBase, "HEAD"); err != nil {
-		return blockedRunPreflight(base, head, "", "STALE_BASE", fmt.Sprintf("Current branch %s does not contain fetched origin/%s; synchronize it outside Boatstack run.", head, base))
+		return block(base, head, "", "STALE_BASE", fmt.Sprintf("Current branch %s does not contain fetched origin/%s; synchronize it outside Boatstack run.", head, base))
 	}
 
 	upstream, upstreamErr := runGitCommand(repo, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
@@ -122,22 +145,22 @@ func CheckRunPreflight(repoPath, explicitFeature string) RunPreflight {
 	if upstreamErr == nil && upstream != "" {
 		counts, countErr := runGitCommand(repo, "rev-list", "--left-right", "--count", "HEAD...@{upstream}")
 		if countErr != nil {
-			return blockedRunPreflight(base, head, upstream, "UPSTREAM_UNKNOWN", "Boatstack could not compare the current branch with its upstream: "+countErr.Error())
+			return block(base, head, upstream, "UPSTREAM_UNKNOWN", "Boatstack could not compare the current branch with its upstream: "+countErr.Error())
 		}
 		fields := strings.Fields(counts)
 		if len(fields) != 2 {
-			return blockedRunPreflight(base, head, upstream, "UPSTREAM_UNKNOWN", "Boatstack received an invalid Git upstream comparison.")
+			return block(base, head, upstream, "UPSTREAM_UNKNOWN", "Boatstack received an invalid Git upstream comparison.")
 		}
 		ahead, aheadErr := strconv.Atoi(fields[0])
 		behind, behindErr := strconv.Atoi(fields[1])
 		if aheadErr != nil || behindErr != nil {
-			return blockedRunPreflight(base, head, upstream, "UPSTREAM_UNKNOWN", "Boatstack received an invalid Git upstream comparison.")
+			return block(base, head, upstream, "UPSTREAM_UNKNOWN", "Boatstack received an invalid Git upstream comparison.")
 		}
 		switch {
 		case ahead > 0 && behind > 0:
-			return blockedRunPreflight(base, head, upstream, "DIVERGED", fmt.Sprintf("Current branch %s has diverged from %s; synchronize it outside Boatstack run.", head, upstream))
+			return block(base, head, upstream, "DIVERGED", fmt.Sprintf("Current branch %s has diverged from %s; synchronize it outside Boatstack run.", head, upstream))
 		case behind > 0:
-			return blockedRunPreflight(base, head, upstream, "BEHIND", fmt.Sprintf("Current branch %s is behind %s; synchronize it outside Boatstack run.", head, upstream))
+			return block(base, head, upstream, "BEHIND", fmt.Sprintf("Current branch %s is behind %s; synchronize it outside Boatstack run.", head, upstream))
 		case ahead > 0:
 			relation = "AHEAD"
 		default:
@@ -148,6 +171,7 @@ func CheckRunPreflight(repoPath, explicitFeature string) RunPreflight {
 	return RunPreflight{
 		SchemaVersion: runPreflightSchemaVersion, VerificationStatus: "VERIFIED",
 		BaseBranch: base, HeadBranch: head, Upstream: upstream, Relation: relation,
+		AuthorityStatus: authorityStatus, AuthorityReason: authorityReason,
 		Reason: "Origin was fetched and the current branch is fresh enough to run Boatstack.",
 	}
 }

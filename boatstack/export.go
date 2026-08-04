@@ -149,6 +149,9 @@ func ValidateConfig(config ProjectConfig) error {
 	if err := validateVisualEvidencePublish(config.Workflow.VisualEvidencePublish); err != nil {
 		return err
 	}
+	if err := validateExternalAuthorityPolicy(config.Workflow.ExternalAuthority); err != nil {
+		return err
+	}
 	for _, surface := range config.Project.VisualSurfaces {
 		if !surfaceSlugPattern.MatchString(surface.ID) || len(surface.Paths) == 0 {
 			return fmt.Errorf("project.visual_surfaces require a lowercase-kebab id and at least one path")

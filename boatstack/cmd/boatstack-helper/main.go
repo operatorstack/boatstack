@@ -965,11 +965,29 @@ func runPreflightCommand(arguments []string) int {
 		}
 		fmt.Print(string(value))
 	} else {
-		fmt.Printf("Boatstack run preflight: %s\nReason: %s\n", status.VerificationStatus, status.Reason)
+		fmt.Printf("Boatstack run preflight: %s\nAuthority: %s\nAuthority reason: %s\nReason: %s\n", status.VerificationStatus, status.AuthorityStatus, status.AuthorityReason, status.Reason)
 	}
 	if status.VerificationStatus != "VERIFIED" {
 		return 1
 	}
+	return 0
+}
+
+func authorityContextCommand(arguments []string) int {
+	flags := flag.NewFlagSet("authority-context", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository whose authority binding should be projected")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	context, err := boatstack.ResolveAuthorityContext(*repo)
+	if err != nil {
+		return fail(err)
+	}
+	value, err := boatstack.MarshalJSON(context)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Print(string(value))
 	return 0
 }
 
@@ -1546,7 +1564,7 @@ func workspaceSyncCommand(arguments []string) int {
 
 func run() int {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <attach|detach|detached-status|context|activate|deactivate|init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|record-autonomy|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|record-change|record-journey-results|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|attach-evidence|check-safety|migrate-config|safety-hook|ambient-safety-hook|diagnose-hook|render-denial|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-reap|workspace-status|workspace-sync|flow|retro|insight|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <attach|detach|detached-status|context|activate|deactivate|init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|record-autonomy|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|authority-context|record-change|record-journey-results|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|attach-evidence|check-safety|migrate-config|safety-hook|ambient-safety-hook|diagnose-hook|render-denial|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-reap|workspace-status|workspace-sync|flow|retro|insight|doctor|version>")
 		return 2
 	}
 	switch os.Args[1] {
@@ -1608,6 +1626,8 @@ func run() int {
 		return undoCommand(os.Args[2:])
 	case "run-preflight":
 		return runPreflightCommand(os.Args[2:])
+	case "authority-context":
+		return authorityContextCommand(os.Args[2:])
 	case "record-change":
 		return recordChangeCommand(os.Args[2:])
 	case "record-journey-results":

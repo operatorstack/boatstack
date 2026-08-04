@@ -26,6 +26,8 @@ The installer merges only Boatstack-owned fragments into the repository's Cursor
 
 Host trust or enablement may not be machine-inspectable. Hooks are therefore defense in depth rather than a complete sandbox. [Codex documents incomplete interception for some shell paths](https://learn.chatgpt.com/docs/hooks), [Claude notes that command hooks run with the user's full permissions](https://code.claude.com/docs/en/hooks), and Cursor's pre-shell/pre-MCP hooks still depend on the host loading the project configuration. Protected systems still need least-privilege credentials, scoped service roles, backups, and service-side approval for destructive administration.
 
+Managed-run preflight names that boundary. `HOOK_GUARDED` means Boatstack blocks recognized unsafe operations but does not prove ambient cloud authority absent. `CREDENTIAL_ENFORCED` requires a short-lived repository-only receipt signed by a configured external service-IAM, credential-broker, or isolated-host attestor. Boatstack verifies the receipt and never holds an attestor signing key.
+
 ## Evidence status
 
 This is a **PROPOSED** Move, not a claim of experimental proof. Existing benchmark results support deterministic enforcement over stronger prompting, and a sanitized partial-schema incident establishes the target failure mechanism. Promotion requires paired evaluation against the unguarded baseline: zero destructive executions, safe diagnostics and transactional operations retained, bounded latency, no secret-bearing denial logs, and no existing-workflow regression.

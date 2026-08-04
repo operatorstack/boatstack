@@ -67,7 +67,7 @@ func malformedHookInput(code string) error {
 // idioms — recovery-status | jq, git diff | wc -l, … | sort | uniq -c — compose
 // freely. Effect-CHANGING syntax (redirection > <, command substitution $()) is
 // still banned in isPureReadOnlyCommand, so no filter can be turned into a writer.
-var readOnlyStage = regexp.MustCompile(`(?i)^\s*(?:env\s+[^ ]+\s+)*(?:rg|grep|git\s+(?:grep|diff|status|show|log)|cat|sed|head|tail|less|wc|awk|sort|uniq|cut|tr|jq|column|nl|comm|rev|fold|find\s+[^\n]*-(?:print|ls)|psql\s+[^\n]*\s-c\s+["']?\s*select\b|(?:[^\s]*/)?boatstack-helper(?:[_.-][a-z0-9._-]+)?\s+(?:recovery-status|mutation-status|operation-status|delivery-status|next-status|workspace-status|repair-status|check-plan|check-source-plan|check-safety|diagnose-hook|doctor|version)\b|(?:[^\s]*/)?boatstack-helper(?:[_.-][a-z0-9._-]+)?\s+insight\s+(?:check|list|show|frontier|evaluate)\b)`)
+var readOnlyStage = regexp.MustCompile(`(?i)^\s*(?:env\s+[^ ]+\s+)*(?:rg|grep|git\s+(?:grep|diff|status|show|log)|cat|sed|head|tail|less|wc|awk|sort|uniq|cut|tr|jq|column|nl|comm|rev|fold|find\s+[^\n]*-(?:print|ls)|psql\s+[^\n]*\s-c\s+["']?\s*select\b|(?:[^\s]*/)?boatstack-helper(?:[_.-][a-z0-9._-]+)?\s+(?:recovery-status|mutation-status|operation-status|delivery-status|next-status|workspace-status|repair-status|check-plan|check-source-plan|check-safety|diagnose-hook|authority-context|doctor|version)\b|(?:[^\s]*/)?boatstack-helper(?:[_.-][a-z0-9._-]+)?\s+insight\s+(?:check|list|show|frontier|evaluate)\b)`)
 
 // Constitutional/Optimization split. These destruction rules are CONSTITUTIONAL:
 // they define the real boundary (destroying a live resource) and are never traded
@@ -95,6 +95,9 @@ var irreversiblePatterns = []struct {
 }{
 	{"database-destruction", "database or schema destruction is operator-only", regexp.MustCompile(`(?is)\bdrop\s+(?:database|schema|table)\b|\balter\s+table\b[^;\n]*\bdrop\s+(?:column|constraint)\b|\btruncate(?:\s+table)?\b|\bdrop\s+schema\b[^;\n]*\bcascade\b`), true},
 	{"database-reset", "database reset, flush, or destructive downgrade is operator-only", regexp.MustCompile(`(?i)(?:--reset-public\b|\b(?:supabase\s+db\s+reset|prisma\s+migrate\s+reset|rails\s+db:(?:drop|reset)|django-admin\s+flush|manage\.py\s+flush|alembic\s+downgrade\s+base|pg_restore\b[^\n]*\s--clean\b))`), false},
+	{"external-resource-destruction", "external resource destruction is operator-only", regexp.MustCompile(`(?i)\bsupabase[\s"',()]+branches?[\s"',()]+delete\b`), false},
+	{"external-lifecycle-weakening", "weakening external resource lifecycle protection is operator-only", regexp.MustCompile(`(?i)\bsupabase[\s"',()]+branches?[\s"',()]+update\b[^\n;&|]*(?:--persistent(?:=|[\s"',()]+)false\b|--no-persistent\b)`), false},
+	{"external-public-exposure", "public or unauthenticated service exposure is operator-only", regexp.MustCompile(`(?i)(?:\bgcloud\s+run\s+(?:deploy|services\s+update)\b[^\n;&|]*--allow-unauthenticated\b|\bgcloud\s+(?:projects|run\s+services)\s+(?:add-iam-policy-binding|set-iam-policy)\b[^\n;&|]*(?:allUsers|roles/run\.invoker)|\bkubectl\s+(?:create|expose|patch|apply)\b[^\n;&|]*(?:type[=:](?:LoadBalancer|NodePort)|0\.0\.0\.0/0)|\baws\s+[^\n;&|]*(?:authorize-security-group-ingress|put-public-access-block)\b[^\n;&|]*(?:0\.0\.0\.0/0|block-public-acls\s+false))`), false},
 	{"filesystem-destruction", "recursive deletion of a broad or protected path is denied", regexp.MustCompile(`(?i)\b(?:rm\s+-[^\n;]*(?:r[^\n;]*f|f[^\n;]*r)|remove-item\s+[^\n;]*-recurse[^\n;]*-force)\s+(?:["']?(?:/|~|\$home|\$HOME|\.|\.\.)["']?\s*(?:;|&&|\|\||$)|[^\s;]*\*[^\s;]*)`), false},
 	{"git-history-destruction", "destructive Git cleanup or history replacement is denied", regexp.MustCompile(`(?i)\bgit\s+(?:reset\s+--hard\b|clean\s+-[^\s]*(?:f[^\s]*d|d[^\s]*f|x)[^\s]*|push\b[^\n]*(?:--force(?:-with-lease)?|-f\b))`), false},
 	{"infrastructure-destruction", "cloud or infrastructure destruction is operator-only", regexp.MustCompile(`(?i)\b(?:terraform|tofu|pulumi)\s+destroy\b|\bkubectl\s+delete\s+(?:namespace|cluster|persistentvolume|persistentvolumeclaim|pvc)\b|\bdocker\s+volume\s+(?:rm|prune)\b|\bgcloud\s+(?:projects|sql\s+instances|compute\s+(?:instances|disks))\s+delete\b|\baws\s+[^\n]*(?:delete-cluster|delete-db-instance|terminate-instances|delete-volume|delete-bucket)\b`), false},
@@ -173,7 +176,7 @@ var featuresCommandPathPattern = regexp.MustCompile(`(?i)(?:^|[\s"'=(])((?:\./)?
 var readOnlyHelperVerbs = map[string]bool{
 	"check-plan": true, "check-source-plan": true, "next-status": true, "delivery-status": true,
 	"recovery-status": true, "repair-status": true, "operation-status": true, "check-safety": true, "workspace-status": true, "diagnose-hook": true,
-	"doctor": true, "version": true, "mutation-status": true,
+	"doctor": true, "version": true, "mutation-status": true, "authority-context": true,
 }
 
 // stageIndependentRecoveryVerbs mutate but self-guard, and are admitted at
@@ -932,6 +935,12 @@ func ClassifyTool(repo, name string, input any) []SafetyFinding {
 	}
 	if regexp.MustCompile(`(?:delete|destroy|reset|drop|truncate|terminate)`).MatchString(nameLower) && regexp.MustCompile(`(?:database|schema|project|cluster|namespace|volume|bucket|backup|snapshot|instance)`).MatchString(strings.ToLower(combined)) {
 		findings = append(findings, SafetyFinding{Category: "external-resource-destruction", Reason: "destructive external-resource tools are operator-only", Source: "tool-input"})
+	}
+	if regexp.MustCompile(`(?:delete|destroy|remove|recreate)`).MatchString(nameLower) && regexp.MustCompile(`(?:branch|service|deployment|application|environment|resource)`).MatchString(strings.ToLower(combined)) {
+		findings = append(findings, SafetyFinding{Category: "external-resource-destruction", Reason: "destructive external-resource tools are operator-only", Source: "tool-input"})
+	}
+	if regexp.MustCompile(`(?:public|unauthenticated|allow[_-]?unauthenticated|iam[_-]?policy|ingress)`).MatchString(strings.ToLower(combined)) && regexp.MustCompile(`(?:create|update|set|add|patch|apply|expose|deploy)`).MatchString(nameLower) {
+		findings = append(findings, SafetyFinding{Category: "external-public-exposure", Reason: "public or unauthenticated service exposure is operator-only", Source: "tool-input"})
 	}
 	return dedupeFindings(findings)
 }

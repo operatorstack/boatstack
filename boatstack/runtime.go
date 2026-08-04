@@ -103,6 +103,10 @@ type Workflow struct {
 	MaintainChangelog            bool   `json:"maintain_changelog"`
 	BoundaryAnalysis             bool   `json:"boundary_analysis,omitempty"`
 	PRVisualEvidence             string `json:"pr_visual_evidence,omitempty"`
+	// ExternalAuthority distinguishes hook-only interception from an externally
+	// attested repository-only credential boundary. Omission preserves existing
+	// installs as HOOK_GUARDED and never implies credential enforcement.
+	ExternalAuthority *ExternalAuthorityPolicy `json:"external_authority,omitempty"`
 	// VisualEvidencePublish selects how programmatic visual evidence reaches a PR.
 	// The nil zero value uses Litterbox with a 72-hour expiry. Publication still
 	// requires explicit human privacy review for every screenshot.
