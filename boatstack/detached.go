@@ -18,8 +18,12 @@ const (
 	// stateRootEnv overrides the external control-state root. Tests inject a temp
 	// directory through it so they never read or write a real home directory.
 	stateRootEnv = "BOATSTACK_STATE_ROOT"
-	// detachedSchemaVersion versions the registry and binding records.
-	detachedSchemaVersion = 1
+	// detachedSchemaVersion versions the public detached status and binding
+	// records. Version 2 binds the exact detached project configuration bytes.
+	detachedSchemaVersion = 2
+	// The registry remains a path-to-repository index. Configuration provenance
+	// belongs to the authoritative per-repository binding, not this index.
+	detachedRegistrySchemaVersion = 1
 	// repoIDLength is the hex width of a repository identity key.
 	repoIDLength = 16
 	// worktreeIDLength is the hex width of a per-worktree identity key.
@@ -150,6 +154,7 @@ type DetachedBinding struct {
 	GitCommonIdentity string `json:"git_common_identity"`
 	InitialCommit     string `json:"initial_commit"`
 	NormalizedOrigin  string `json:"normalized_origin"`
+	ConfigSHA256      string `json:"config_sha256"`
 	CreatedByVersion  string `json:"created_by_version"`
 	CreatedAt         string `json:"created_at"`
 }
@@ -173,7 +178,7 @@ func bindingPath(stateRoot, repoID string) string {
 }
 
 func loadRegistry(stateRoot string) (detachedRegistry, error) {
-	registry := detachedRegistry{SchemaVersion: detachedSchemaVersion, Repositories: map[string]string{}}
+	registry := detachedRegistry{SchemaVersion: detachedRegistrySchemaVersion, Repositories: map[string]string{}}
 	raw, err := os.ReadFile(registryPath(stateRoot))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -191,7 +196,7 @@ func loadRegistry(stateRoot string) (detachedRegistry, error) {
 }
 
 func saveRegistry(stateRoot string, registry detachedRegistry) error {
-	registry.SchemaVersion = detachedSchemaVersion
+	registry.SchemaVersion = detachedRegistrySchemaVersion
 	raw, err := MarshalJSON(registry)
 	if err != nil {
 		return err
@@ -231,6 +236,55 @@ func bindingMatchesIdentity(binding DetachedBinding, identity RepoIdentity) bool
 	return true
 }
 
+type detachedGeneratedLock struct {
+	ConfigSHA256 string            `json:"config_sha256"`
+	Files        map[string]string `json:"files"`
+}
+
+// verifyDetachedConfiguration proves that the authoritative source copy, its
+// generated snapshot, and the generated runtime configuration still describe
+// the exact bytes accepted at attachment.
+// control-law: detached-config-digest-gates-resume
+func verifyDetachedConfiguration(ctx WorkspaceContext, binding DetachedBinding) error {
+	if binding.SchemaVersion != detachedSchemaVersion {
+		return fmt.Errorf("detached binding schema_version %d is unsupported; reattach with `boatstack-helper attach --repo %s --mode detached --force --config <path>`", binding.SchemaVersion, ctx.RepoRoot)
+	}
+	if strings.TrimSpace(binding.ConfigSHA256) == "" {
+		return fmt.Errorf("detached binding is missing config_sha256; reattach with `boatstack-helper attach --repo %s --mode detached --force --config <path>`", ctx.RepoRoot)
+	}
+	sourceSHA, err := SHA256File(ctx.SourceConfigPath())
+	if err != nil {
+		return fmt.Errorf("detached project configuration is missing or unreadable: %w", err)
+	}
+	if sourceSHA != binding.ConfigSHA256 {
+		return fmt.Errorf("detached project configuration drifted from bound SHA-256 %s; restore the exact attached bytes or reattach with `boatstack-helper attach --repo %s --mode detached --force --config <path>`", binding.ConfigSHA256, ctx.RepoRoot)
+	}
+	lockPath := filepath.Join(ctx.GeneratedRoot(), "generated.lock.json")
+	lockRaw, err := os.ReadFile(lockPath)
+	if err != nil {
+		return fmt.Errorf("detached generated configuration snapshot is missing or unreadable: %w", err)
+	}
+	var lock detachedGeneratedLock
+	if err := DecodeJSON("verify detached generated configuration snapshot", lockPath, lockRaw, &lock); err != nil {
+		return err
+	}
+	if lock.ConfigSHA256 != binding.ConfigSHA256 {
+		return fmt.Errorf("detached generated configuration snapshot does not match bound SHA-256 %s", binding.ConfigSHA256)
+	}
+	expectedProjectSHA := lock.Files[productLoopDirName+"/project.json"]
+	if expectedProjectSHA == "" {
+		return fmt.Errorf("detached generated configuration snapshot does not bind %s/project.json", productLoopDirName)
+	}
+	projectSHA, err := SHA256File(ctx.ProjectConfigPath())
+	if err != nil {
+		return fmt.Errorf("detached generated project configuration is missing or unreadable: %w", err)
+	}
+	if projectSHA != expectedProjectSHA {
+		return fmt.Errorf("detached generated project configuration drifted from its snapshot")
+	}
+	return nil
+}
+
 // detachedContextFor returns the detached WorkspaceContext for repo when the
 // repository is attached and its binding verifies. ok is false for an unattached
 // repository (the caller should use the embedded layout). err is non-nil only for
@@ -265,13 +319,17 @@ func detachedContextFor(repo string) (ctx WorkspaceContext, ok bool, err error) 
 		return WorkspaceContext{}, true, fmt.Errorf("detached binding cannot be verified: %w", idErr)
 	}
 	binding, bindErr := loadBinding(stateRoot, repoID)
+	ctx = detachedContextFromIdentity(stateRoot, identity)
 	if bindErr != nil {
-		return WorkspaceContext{}, true, fmt.Errorf("detached binding for %s is missing or unreadable: %w", repo, bindErr)
+		return ctx, true, fmt.Errorf("detached binding for %s is missing or unreadable: %w", repo, bindErr)
 	}
 	if !bindingMatchesIdentity(binding, identity) {
-		return WorkspaceContext{}, true, fmt.Errorf("detached binding does not match this repository's identity; reattach with `boatstack-helper attach` or migrate the binding")
+		return ctx, true, fmt.Errorf("detached binding does not match this repository's identity; reattach with `boatstack-helper attach` or migrate the binding")
 	}
-	return detachedContextFromIdentity(stateRoot, identity), true, nil
+	if configErr := verifyDetachedConfiguration(ctx, binding); configErr != nil {
+		return ctx, true, configErr
+	}
+	return ctx, true, nil
 }
 
 // detachedContextFromIdentity builds the detached WorkspaceContext for a resolved

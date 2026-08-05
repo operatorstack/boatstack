@@ -117,7 +117,11 @@ func operationTimestamp() string {
 // so bumping the version cleanly orphans the legacy clone-shared "v1" ledger for
 // every worktree — including main — instead of silently inheriting its receipts.
 func operationDirectory(repo string) (string, error) {
-	return WorkspaceFor(repo).OperationDir()
+	ctx, err := ResolveWorkspaceContext(repo)
+	if err != nil {
+		return "", err
+	}
+	return ctx.OperationDir()
 }
 
 // pruneLegacyOperationLedger removes the pre-isolation clone-shared "v1" ledger
@@ -285,6 +289,9 @@ func PrepareOperation(options OperationPrepareOptions) (OperationReceipt, error)
 	if err != nil {
 		return OperationReceipt{}, err
 	}
+	if _, err := ResolveWorkspaceContext(repo); err != nil {
+		return OperationReceipt{}, err
+	}
 	// Retention is best-effort and never prevents a new supervised operation.
 	_ = compactOperations(repo)
 	kind := strings.TrimSpace(options.Kind)
@@ -353,6 +360,9 @@ func AuthorizeOperation(repoPath, id, packageFingerprint, authorizationFingerpri
 	if err != nil {
 		return OperationReceipt{}, err
 	}
+	if _, err := ResolveWorkspaceContext(repo); err != nil {
+		return OperationReceipt{}, err
+	}
 	var result OperationReceipt
 	err = withOperationLock(repo, id, func() error {
 		receipt, loadErr := loadOperation(repo, id)
@@ -388,6 +398,9 @@ func randomLeaseToken() (string, error) {
 func BeginOperation(repoPath, id, attemptKey, tool string) (OperationBeginResult, error) {
 	repo, err := ResolveRepository(repoPath)
 	if err != nil {
+		return OperationBeginResult{}, err
+	}
+	if _, err := ResolveWorkspaceContext(repo); err != nil {
 		return OperationBeginResult{}, err
 	}
 	attemptKey = strings.TrimSpace(attemptKey)
@@ -465,6 +478,9 @@ func reconcileSucceededInstallUpdate(repoPath, id, detail, evidence string) (Ope
 	if err != nil {
 		return OperationReceipt{}, err
 	}
+	if _, err := ResolveWorkspaceContext(repo); err != nil {
+		return OperationReceipt{}, err
+	}
 	var result OperationReceipt
 	err = withOperationLock(repo, id, func() error {
 		receipt, loadErr := loadOperation(repo, id)
@@ -494,6 +510,9 @@ func reconcileSucceededInstallUpdate(repoPath, id, detail, evidence string) (Ope
 func completeOperation(repoPath, id, leaseToken, attemptKey, outcome, detail, evidence string, trustedAttempt bool) (OperationReceipt, error) {
 	repo, err := ResolveRepository(repoPath)
 	if err != nil {
+		return OperationReceipt{}, err
+	}
+	if _, err := ResolveWorkspaceContext(repo); err != nil {
 		return OperationReceipt{}, err
 	}
 	var result OperationReceipt
@@ -568,6 +587,9 @@ func CompleteOperationAttempt(repo, id, attemptKey, outcome, detail, evidence st
 func RecordOperationReconciliation(repoPath, id, result, detail, evidence string) (OperationReceipt, error) {
 	repo, err := ResolveRepository(repoPath)
 	if err != nil {
+		return OperationReceipt{}, err
+	}
+	if _, err := ResolveWorkspaceContext(repo); err != nil {
 		return OperationReceipt{}, err
 	}
 	var output OperationReceipt
@@ -656,6 +678,9 @@ func refreshExpiredOperation(repo, id string) (OperationReceipt, error) {
 func ResolveOperationStatus(repoPath, id string) (OperationStatusResult, error) {
 	repo, err := ResolveRepository(repoPath)
 	if err != nil {
+		return OperationStatusResult{}, err
+	}
+	if _, err := ResolveWorkspaceContext(repo); err != nil {
 		return OperationStatusResult{}, err
 	}
 	if strings.TrimSpace(id) != "" {

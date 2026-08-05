@@ -300,7 +300,11 @@ func deliveryDefinitions(plan map[string]any) ([]DeliverySlice, error) {
 }
 
 func deliveryStateDirectory(repo string) (string, error) {
-	return WorkspaceFor(repo).DeliveryDir()
+	ctx, err := ResolveWorkspaceContext(repo)
+	if err != nil {
+		return "", err
+	}
+	return ctx.DeliveryDir()
 }
 
 func deliveryStatePath(repo, feature string) (string, error) {
@@ -1386,7 +1390,11 @@ func IgnoreDelivery(repo, feature string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	configPath := WorkspaceFor(resolved).ProjectConfigPath()
+	ctx, err := ResolveWorkspaceContext(resolved)
+	if err != nil {
+		return false, err
+	}
+	configPath := ctx.ProjectConfigPath()
 	config, _, err := LoadConfig(configPath)
 	if err != nil {
 		return false, err

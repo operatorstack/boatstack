@@ -710,6 +710,10 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 	if err != nil {
 		return PRContext{}, err
 	}
+	ctx, err := ResolveWorkspaceContext(repo)
+	if err != nil {
+		return PRContext{}, err
+	}
 	if strings.TrimSpace(options.Feature) == "" {
 		active, activeErr := ActiveManagedDeliveries(repo)
 		if activeErr != nil {
@@ -723,7 +727,7 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 	if err != nil || head == "" {
 		return PRContext{}, fmt.Errorf("PR preparation requires a named branch")
 	}
-	configPath := WorkspaceFor(repo).ProjectConfigPath()
+	configPath := ctx.ProjectConfigPath()
 	config, _, err := LoadConfig(configPath)
 	if err != nil {
 		return PRContext{}, fmt.Errorf("PR preparation requires a valid Boatstack project configuration: %w", err)
@@ -1121,6 +1125,9 @@ func ParsePRPreview(path string) (PRPreview, error) {
 func CheckPRPreview(repoPath, previewPath string) (PRPreview, PRContext, error) {
 	repo, err := ResolveRepository(repoPath)
 	if err != nil {
+		return PRPreview{}, PRContext{}, err
+	}
+	if _, err := ResolveWorkspaceContext(repo); err != nil {
 		return PRPreview{}, PRContext{}, err
 	}
 	if !filepath.IsAbs(previewPath) {

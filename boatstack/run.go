@@ -107,6 +107,9 @@ func CheckRunPreflight(repoPath, explicitFeature string) RunPreflight {
 	if err != nil {
 		return blockedRunPreflight("", "", "", "INVALID_REPOSITORY", err.Error())
 	}
+	if _, workspaceErr := ResolveWorkspaceContext(repo); workspaceErr != nil {
+		return blockedRunPreflight("", "", "", "DETACHED_CONFIG_DRIFT", workspaceErr.Error())
+	}
 	if !fileExists(WorkspaceFor(repo).ProjectConfigPath()) {
 		return blockedRunPreflight("", "", "", "NOT_INITIALIZED", "This repository has no Boatstack project installation to run.")
 	}

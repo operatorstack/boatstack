@@ -99,6 +99,7 @@ func attachCommand(arguments []string) int {
 	repo := flags.String("repo", ".", "repository to attach")
 	mode := flags.String("mode", "detached", "supervision mode; only \"detached\" is supported by attach")
 	stateRoot := flags.String("state-root", "", "external control-state root (overrides the default user state directory)")
+	config := flags.String("config", "", "external project configuration to validate and copy into detached control state")
 	force := flags.Bool("force", false, "re-attach even if the repository is already attached")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
@@ -107,7 +108,7 @@ func attachCommand(arguments []string) int {
 		return fail(fmt.Errorf("attach supports only --mode detached"))
 	}
 	applyStateRoot(*stateRoot)
-	result, err := boatstack.AttachDetached(boatstack.AttachOptions{Repo: *repo, Force: *force})
+	result, err := boatstack.AttachDetached(boatstack.AttachOptions{Repo: *repo, ConfigPath: *config, Force: *force})
 	if err != nil {
 		return fail(err)
 	}

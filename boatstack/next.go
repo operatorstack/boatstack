@@ -314,6 +314,11 @@ func ResolveNext(repoPath, explicitFeature string) (result NextStatus, resultErr
 	if err != nil {
 		return NextStatus{}, err
 	}
+	if _, workspaceErr := ResolveWorkspaceContext(repo); workspaceErr != nil {
+		status := blockedNextStatus("INVALID_STATE", "attach", workspaceErr.Error())
+		status.SupervisionMode = string(SupervisionDetached)
+		return status, nil
+	}
 	defer func() {
 		ctx, ok, verifyErr := detachedContextFor(repo)
 		if verifyErr != nil {
