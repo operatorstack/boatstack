@@ -389,6 +389,9 @@ func ResolveRecovery(options RecoveryStatusOptions) (RecoveryStatus, error) {
 	if err != nil {
 		return RecoveryStatus{}, err
 	}
+	if _, workspaceErr := ResolveWorkspaceContext(repo); workspaceErr != nil {
+		return blockedRecovery(workspaceErr.Error()), nil
+	}
 	if strings.TrimSpace(options.Message) == "" || strings.TrimSpace(options.SourceStage) == "" {
 		return RecoveryStatus{}, fmt.Errorf("recovery status requires the exact message and source stage")
 	}

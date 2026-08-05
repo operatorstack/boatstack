@@ -277,12 +277,23 @@ Boatstack files.
 Attach the repository, then install the developer-level guard once per coding agent:
 
 ```bash
-boatstack-helper attach --repo . --mode detached
+boatstack-helper attach \
+  --repo . \
+  --mode detached \
+  --config /stationkeep/task/project.json
 boatstack-helper activate --repo .
 ```
 
-`attach` inspects the repository and writes the controller state and a binding to the external
-control root, leaving the working tree byte-for-byte unchanged. `activate` merges a
+The external file uses the normal Boatstack project-config schema. This is useful when the
+repository root does not describe the project you want to supervise, such as a package inside
+a monorepo. `attach` validates the file, copies its exact bytes into the external control root,
+and binds their SHA-256 to detached status and generated provenance. Boatstack never writes the
+file into the repository or `.git`. A changed detached copy blocks resume until you restore the
+exact bytes or explicitly reattach with `--force --config <path>`.
+
+Without `--config`, `attach` keeps the existing repository discovery behavior. In either mode it
+writes the controller state and binding only to the external control root, leaving the working
+tree byte-for-byte unchanged. `activate` merges a
 developer-level ambient guard into each agent's global configuration; that guard enforces
 Boatstack only on repositories you have attached and is a no-op everywhere else, and it never
 removes your own hooks. Use `activate --print` to review the exact per-agent configuration

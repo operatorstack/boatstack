@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Attach, detach, and status operations for Detached Supervision. Attaching a
@@ -15,8 +16,9 @@ import (
 // AttachOptions requests a detached attachment. StateRoot, when set, overrides the
 // external control-state root for this process (the CLI wires --state-root to it).
 type AttachOptions struct {
-	Repo  string
-	Force bool
+	Repo       string
+	ConfigPath string
+	Force      bool
 }
 
 // AttachResult is the deterministic outcome of an attach request.
@@ -28,8 +30,48 @@ type AttachResult struct {
 	RepoRoot           string                     `json:"repo_root,omitempty"`
 	ControlRoot        string                     `json:"control_root,omitempty"`
 	WorktreeID         string                     `json:"worktree_id,omitempty"`
+	ConfigSHA256       string                     `json:"config_sha256,omitempty"`
 	Reason             string                     `json:"reason"`
 	FeatureMigrations  []DetachedFeatureMigration `json:"feature_migrations,omitempty"`
+}
+
+func loadDetachedAttachConfig(root, explicitPath string) (ProjectConfig, []byte, error) {
+	if strings.TrimSpace(explicitPath) == "" {
+		configPath := filepath.Join(root, sourceConfigName)
+		config, raw, err := LoadConfig(configPath)
+		if os.IsNotExist(err) {
+			config = defaultConfig(root, detectTestCommand(root))
+			raw, err = MarshalJSON(config)
+		}
+		return config, raw, err
+	}
+	absolute, err := filepath.Abs(explicitPath)
+	if err != nil {
+		return ProjectConfig{}, nil, err
+	}
+	inputInfo, err := os.Lstat(absolute)
+	if err != nil {
+		return ProjectConfig{}, nil, fmt.Errorf("external project configuration is missing or unreadable: %w", err)
+	}
+	if inputInfo.Mode()&os.ModeSymlink != 0 {
+		return ProjectConfig{}, nil, fmt.Errorf("external project configuration must be a regular non-symlink file")
+	}
+	resolved, err := filepath.EvalSymlinks(absolute)
+	if err != nil {
+		return ProjectConfig{}, nil, fmt.Errorf("external project configuration is missing or unreadable: %w", err)
+	}
+	info, err := os.Lstat(resolved)
+	if err != nil || !info.Mode().IsRegular() {
+		return ProjectConfig{}, nil, fmt.Errorf("external project configuration must be a readable regular file")
+	}
+	common, err := gitCommonDir(root)
+	if err != nil {
+		return ProjectConfig{}, nil, err
+	}
+	if pathWithin(root, resolved) || pathWithin(common, resolved) {
+		return ProjectConfig{}, nil, fmt.Errorf("external project configuration must be outside the repository and its Git directory")
+	}
+	return LoadConfig(resolved)
 }
 
 func blockedAttach(reason string) AttachResult {
@@ -63,17 +105,11 @@ func AttachDetached(opts AttachOptions) (AttachResult, error) {
 
 	ctx := detachedContextFromIdentity(stateRoot, identity)
 
-	// Prefer the repository's declared source configuration during explicit
-	// reattachment. Falling back to discovery is valid only when no source exists.
-	configPath := filepath.Join(root, sourceConfigName)
-	config, rawConfig, err := LoadConfig(configPath)
-	if os.IsNotExist(err) {
-		config = defaultConfig(root, detectTestCommand(root))
-		rawConfig, err = MarshalJSON(config)
-	}
+	config, rawConfig, err := loadDetachedAttachConfig(root, opts.ConfigPath)
 	if err != nil {
-		return blockedAttach("Boatstack could not load the repository source configuration: " + err.Error()), nil
+		return blockedAttach("Boatstack could not load the detached project configuration: " + err.Error()), nil
 	}
+	configSHA256 := SHA256Bytes(rawConfig)
 	imports, migrationResults, migrationErr := planDetachedFeatureImports(root, ctx)
 	if migrationErr != nil {
 		result := blockedAttach("Boatstack refused detached feature migration: " + migrationErr.Error())
@@ -94,7 +130,11 @@ func AttachDetached(opts AttachOptions) (AttachResult, error) {
 	if err := writeExport(ctx.controlRoot, bundle.Files, nil); err != nil {
 		return blockedAttach("Boatstack could not write the controller bundle: " + err.Error()), nil
 	}
-	if err := os.WriteFile(ctx.SourceConfigPath(), rawConfig, 0o644); err != nil {
+	sourcePath, err := newControllerPath(ctx.controlRoot, ctx.SourceConfigPath())
+	if err != nil {
+		return blockedAttach(err.Error()), nil
+	}
+	if err := atomicWrite(sourcePath.path, rawConfig); err != nil {
 		return blockedAttach(err.Error()), nil
 	}
 	migrationResults, err = applyDetachedFeatureImports(imports, migrationResults)
@@ -111,6 +151,7 @@ func AttachDetached(opts AttachOptions) (AttachResult, error) {
 		GitCommonIdentity: identity.GitCommonIdentity,
 		InitialCommit:     identity.InitialCommit,
 		NormalizedOrigin:  identity.NormalizedOrigin,
+		ConfigSHA256:      configSHA256,
 		CreatedByVersion:  Version,
 		CreatedAt:         nowRFC3339(),
 	}
@@ -121,7 +162,7 @@ func AttachDetached(opts AttachOptions) (AttachResult, error) {
 	if err := os.MkdirAll(filepath.Dir(bindingPath(stateRoot, identity.RepoID)), 0o755); err != nil {
 		return blockedAttach(err.Error()), nil
 	}
-	if err := os.WriteFile(bindingPath(stateRoot, identity.RepoID), bindingRaw, 0o644); err != nil {
+	if err := atomicWrite(bindingPath(stateRoot, identity.RepoID), bindingRaw); err != nil {
 		return blockedAttach(err.Error()), nil
 	}
 	registry.Repositories[root] = identity.RepoID
@@ -147,6 +188,7 @@ func AttachDetached(opts AttachOptions) (AttachResult, error) {
 		RepoRoot:           root,
 		ControlRoot:        ctx.controlRoot,
 		WorktreeID:         identity.WorktreeID,
+		ConfigSHA256:       configSHA256,
 		FeatureMigrations:  migrationResults,
 		Reason:             "Attached Boatstack in detached mode. The repository was not modified; all controller state lives under the external control root.",
 	}, nil
@@ -223,6 +265,7 @@ type DetachedStatusResult struct {
 	RepoRoot      string `json:"repo_root,omitempty"`
 	ControlRoot   string `json:"control_root,omitempty"`
 	WorktreeID    string `json:"worktree_id,omitempty"`
+	ConfigSHA256  string `json:"config_sha256,omitempty"`
 	Reason        string `json:"reason"`
 }
 
@@ -241,14 +284,38 @@ func DetachedStatus(repoPath string) (DetachedStatusResult, error) {
 		}, nil
 	}
 	if verifyErr != nil {
+		configSHA256 := ""
+		stateRoot, rootErr := detachedStateRoot()
+		if rootErr == nil {
+			registry, registryErr := loadRegistry(stateRoot)
+			if registryErr == nil {
+				if binding, bindingErr := loadBinding(stateRoot, registry.Repositories[root]); bindingErr == nil {
+					configSHA256 = binding.ConfigSHA256
+				}
+			}
+		}
 		return DetachedStatusResult{
 			SchemaVersion: detachedSchemaVersion, Attached: true, Verified: false, Mode: string(SupervisionDetached),
-			RepoRoot: root, Reason: verifyErr.Error(),
+			RepoID: ctx.RepoID, RepoRoot: root, ControlRoot: ctx.controlRoot, WorktreeID: ctx.WorktreeID,
+			ConfigSHA256: configSHA256, Reason: verifyErr.Error(),
 		}, nil
 	}
 	return DetachedStatusResult{
 		SchemaVersion: detachedSchemaVersion, Attached: true, Verified: true, Mode: string(SupervisionDetached),
 		RepoID: ctx.RepoID, RepoRoot: ctx.RepoRoot, ControlRoot: ctx.controlRoot, WorktreeID: ctx.WorktreeID,
-		Reason: "This repository is attached in detached mode and its binding verifies.",
+		ConfigSHA256: bindingConfigSHA256(ctx),
+		Reason:       "This repository is attached in detached mode and its binding verifies.",
 	}, nil
+}
+
+func bindingConfigSHA256(ctx WorkspaceContext) string {
+	stateRoot, err := detachedStateRoot()
+	if err != nil {
+		return ""
+	}
+	binding, err := loadBinding(stateRoot, ctx.RepoID)
+	if err != nil {
+		return ""
+	}
+	return binding.ConfigSHA256
 }

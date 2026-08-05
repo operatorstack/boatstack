@@ -49,6 +49,42 @@ func TestBootstrapFailureUsesBlockingExitCode(t *testing.T) {
 	}
 }
 
+// control-law: detached-config-input-stays-outside-plant
+func TestAttachCommandAcceptsExternalConfigFlag(t *testing.T) {
+	repo := t.TempDir()
+	commands := [][]string{
+		{"git", "-C", repo, "init", "-b", "main"},
+		{"git", "-C", repo, "config", "user.name", "Boatstack Test"},
+		{"git", "-C", repo, "config", "user.email", "boatstack@example.invalid"},
+	}
+	for _, arguments := range commands {
+		if output, err := exec.Command(arguments[0], arguments[1:]...).CombinedOutput(); err != nil {
+			t.Fatalf("%v: %v: %s", arguments, err, output)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("# app\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, arguments := range [][]string{{"git", "-C", repo, "add", "README.md"}, {"git", "-C", repo, "commit", "-m", "initial"}} {
+		if output, err := exec.Command(arguments[0], arguments[1:]...).CombinedOutput(); err != nil {
+			t.Fatalf("%v: %v: %s", arguments, err, output)
+		}
+	}
+	configPath := filepath.Join(t.TempDir(), "project.json")
+	config := []byte(`{"schema_version":1,"project":{"name":"works-yield","commands":{"test":"pnpm test"}}}` + "\n")
+	if err := os.WriteFile(configPath, config, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stateRoot := t.TempDir()
+	var code int
+	output := captureStdout(t, func() {
+		code = attachCommand([]string{"--repo", repo, "--mode", "detached", "--config", configPath, "--state-root", stateRoot})
+	})
+	if code != 0 || !strings.Contains(output, `"verification_status": "VERIFIED"`) || !strings.Contains(output, `"config_sha256":`) {
+		t.Fatalf("attach --config failed: code=%d output=%s", code, output)
+	}
+}
+
 // captureStdout runs fn with os.Stdout redirected and returns what it printed,
 // so read-only CLI verbs can be asserted without polluting test output.
 func captureStdout(t *testing.T, fn func()) string {

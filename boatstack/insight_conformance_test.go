@@ -14,14 +14,7 @@ func configureInsights(t *testing.T, repo string, terminal DeliveryTerminal) Wor
 	t.Helper()
 	stateRoot := t.TempDir()
 	t.Setenv("BOATSTACK_STATE_ROOT", stateRoot)
-	if _, err := AttachDetached(AttachOptions{Repo: repo}); err != nil {
-		t.Fatal(err)
-	}
-	ctx := WorkspaceFor(repo)
-	config, _, err := LoadConfig(ctx.ProjectConfigPath())
-	if err != nil {
-		t.Fatal(err)
-	}
+	config := testConfig()
 	config.Insights = &InsightPolicy{
 		Enabled: true, CaptureMode: "manual", ValueMap: "required", SuggestFeatures: true,
 		EvaluateOnPR: true, PendingFrontier: true, CompletionMode: "human_confirmed",
@@ -33,10 +26,14 @@ func configureInsights(t *testing.T, repo string, terminal DeliveryTerminal) Wor
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(ctx.ProjectConfigPath(), value, 0o600); err != nil {
+	configPath := filepath.Join(t.TempDir(), "project.json")
+	if err := os.WriteFile(configPath, value, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return ctx
+	if _, err := AttachDetached(AttachOptions{Repo: repo, ConfigPath: configPath}); err != nil {
+		t.Fatal(err)
+	}
+	return WorkspaceFor(repo)
 }
 
 func configureEmbeddedInsights(t *testing.T, repo string, terminal DeliveryTerminal) WorkspaceContext {

@@ -117,13 +117,11 @@ func (w WorkspaceContext) sharedOwnedPath(target string) (controllerPath, error)
 }
 
 // WorkspaceFor returns the resolver for a repository. It consults the external
-// attachment registry and returns a detached context when the repository is
-// attached and its binding verifies; otherwise it returns the embedded layout.
-// An attached-but-unverifiable repository resolves to embedded here (best effort,
-// so deep path callers stay total) — the fail-closed denial with a bounded
-// recovery action is raised at the safety and CLI entry points via
-// ResolveWorkspaceContext. Results are cached per input path; attach/detach
-// invalidate the cache.
+// attachment registry and returns a detached context whenever the repository is
+// attached. Verification failures do not redirect paths into the repository:
+// strict operational entry points deny through ResolveWorkspaceContext, while
+// best-effort path projection remains external. Results are cached per input
+// path; attach/detach invalidate the cache.
 func WorkspaceFor(repo string) WorkspaceContext {
 	workspaceCacheMu.Lock()
 	if cached, ok := workspaceCache[repo]; ok {
@@ -133,7 +131,7 @@ func WorkspaceFor(repo string) WorkspaceContext {
 	workspaceCacheMu.Unlock()
 
 	resolved := embeddedWorkspace(repo)
-	if ctx, ok, err := detachedContextFor(repo); ok && err == nil {
+	if ctx, ok, _ := detachedContextFor(repo); ok {
 		resolved = ctx
 	}
 
@@ -183,8 +181,8 @@ func ResolveControllerRepository(path string) (string, error) {
 		return "", err
 	}
 	for repo := range registry.Repositories {
-		ctx, ok, verifyErr := detachedContextFor(repo)
-		if !ok || verifyErr != nil {
+		ctx, ok, _ := detachedContextFor(repo)
+		if !ok {
 			continue
 		}
 		if pathWithin(ctx.ExportRoot(), path) {

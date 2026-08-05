@@ -1105,15 +1105,19 @@ type ActivationOptions struct {
 }
 
 func ActivatePlan(options ActivationOptions) error {
-	check, err := CheckPlan(options.PlanPath)
-	if err != nil {
-		return err
-	}
 	repo, err := ResolveControllerRepository(filepath.Dir(options.PlanPath))
 	if err != nil {
 		return err
 	}
-	config, _, err := LoadConfig(WorkspaceFor(repo).ProjectConfigPath())
+	ctx, err := ResolveWorkspaceContext(repo)
+	if err != nil {
+		return err
+	}
+	check, err := CheckPlan(options.PlanPath)
+	if err != nil {
+		return err
+	}
+	config, _, err := LoadConfig(ctx.ProjectConfigPath())
 	if err != nil {
 		return fmt.Errorf("plan activation requires a valid Boatstack project configuration: %w", err)
 	}
