@@ -288,6 +288,16 @@ description: %s
 `, spec.Name, spec.Description, argumentHint, strings.TrimSpace(operationBody), arguments)
 }
 
+func codexOperationSkill(spec claudeSkillSpec, operationBody string) string {
+	return fmt.Sprintf(`---
+name: %s
+description: %s
+---
+
+%s
+`, spec.Name, spec.Description, strings.TrimSpace(operationBody))
+}
+
 func BuildExportBundle(configPath string, config ProjectConfig, rawConfig []byte, adapterName string) (ExportBundle, error) {
 	if !adapterNamePattern.MatchString(adapterName) {
 		return ExportBundle{}, fmt.Errorf("adapter name must be a lowercase kebab-case slug")
@@ -517,6 +527,19 @@ If gstack is enabled, use only its namespaced /gstack-* specialist lenses inside
 		files[fmt.Sprintf(".agents/skills/%s/SKILL.md", adapterName)], err = GeneratedFrontmatter(codexAdapterSkill)
 		if err != nil {
 			return ExportBundle{}, err
+		}
+		for _, spec := range claudeVisibleSkills {
+			extra, ok := operations[spec.Name]
+			if !ok {
+				return ExportBundle{}, fmt.Errorf("missing operation instructions for Codex skill %s", spec.Name)
+			}
+			path := fmt.Sprintf(".agents/skills/%s/SKILL.md", spec.Name)
+			files[path], err = GeneratedFrontmatter(
+				codexOperationSkill(spec, commandBody(spec.Name, extra)),
+			)
+			if err != nil {
+				return ExportBundle{}, err
+			}
 		}
 	}
 	if contains(adapters, "github") {
