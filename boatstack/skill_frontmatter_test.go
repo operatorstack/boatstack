@@ -34,7 +34,7 @@ func TestGeneratedSkillFrontmatterIsValidYAML(t *testing.T) {
 		expected += len(claudeVisibleSkills) + 1
 	}
 	if contains(config.Adapters, "codex") {
-		expected += 1
+		expected += len(claudeVisibleSkills) + 1
 	}
 	if skillCount != expected {
 		t.Fatalf("validated %d generated skills, want %d", skillCount, expected)

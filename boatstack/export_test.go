@@ -110,6 +110,8 @@ func TestExportAndDriftCheck(t *testing.T) {
 		".gemini/skills/auto-plan/SKILL.md",
 		".gemini/skills/boatstack-update/SKILL.md",
 		".agents/skills/boatstack/SKILL.md",
+		".agents/skills/boatstack-run/SKILL.md",
+		".agents/skills/auto-plan/SKILL.md",
 		".product-loop/.gitignore",
 		".product-loop/templates/plan.md",
 		".product-loop/templates/approval.md",
@@ -160,6 +162,40 @@ func TestExportAndDriftCheck(t *testing.T) {
 		path := ".claude/skills/" + operation + "/SKILL.md"
 		if claudeSkillPaths[path] {
 			t.Fatalf("internal or alias operation must not be a visible Claude skill: %s", path)
+		}
+	}
+
+	codexSkillPaths := map[string]bool{}
+	for path := range bundle.Files {
+		if strings.HasPrefix(path, ".agents/skills/") && strings.HasSuffix(path, "/SKILL.md") {
+			codexSkillPaths[path] = true
+		}
+	}
+	if len(codexSkillPaths) != len(claudeVisibleSkills)+1 {
+		t.Fatalf("generated %d Codex skills, want %d: %#v", len(codexSkillPaths), len(claudeVisibleSkills)+1, codexSkillPaths)
+	}
+	for _, spec := range claudeVisibleSkills {
+		path := ".agents/skills/" + spec.Name + "/SKILL.md"
+		skill := string(bundle.Files[path])
+		for _, expected := range []string{
+			"name: " + spec.Name,
+			"description: " + spec.Description,
+			"Run the " + spec.Name + " operation",
+			".product-loop/workflow.md",
+			"User-facing response contract",
+		} {
+			if !strings.Contains(skill, expected) {
+				t.Fatalf("%s is missing %q", path, expected)
+			}
+		}
+	}
+	codexRun := string(bundle.Files[".agents/skills/boatstack-run/SKILL.md"])
+	for _, expected := range []string{
+		"If status is NOT_STARTED, route to auto-plan",
+		"planning and plan-gate do not require delivery preflight",
+	} {
+		if !strings.Contains(codexRun, expected) {
+			t.Fatalf("Codex boatstack-run skill is missing operation boundary %q", expected)
 		}
 	}
 
@@ -494,6 +530,9 @@ func TestPortableHostAdaptersShareWorkflowAndArtifactContract(t *testing.T) {
 		}
 		if _, exists := bundle.Files[".gemini/skills/"+spec.Name+"/SKILL.md"]; !exists {
 			t.Fatalf("Gemini does not expose user operation %q", spec.Name)
+		}
+		if _, exists := bundle.Files[".agents/skills/"+spec.Name+"/SKILL.md"]; !exists {
+			t.Fatalf("Codex does not expose user operation %q", spec.Name)
 		}
 	}
 	for _, expected := range []string{"source plan", "plan.md", "approval.md", "evidence", "gaps", "review", "pr.md"} {
