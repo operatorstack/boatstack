@@ -91,7 +91,7 @@ func TestGuardCorpusDualReward(t *testing.T) {
 		}, "routine", false},
 		// The owned planning channel and ordinary product writes stay open at zero
 		// candidates — the first-write latch is path-scoped, never a blanket deny.
-		{"planning-write-first-artifact", "", `boatstack-helper planning-write --repo . --feature checkout --artifact plan.md`, "routine", false},
+		{"planning-write-first-artifact", "", ".product-loop/bin/boatstack-helper planning-write --repo . --feature checkout --artifact plan.md <<'BOATSTACK_PLAN_EOF'\n# Plan\nBOATSTACK_PLAN_EOF\n", "routine", false},
 		{"check-source-plan", "", `boatstack-helper check-source-plan --repo . --plan docs/plan.md`, "routine", false},
 		{"write-product-source", "Write", map[string]any{
 			"file_path": filepath.Join(repo, "src", "app.ts"),

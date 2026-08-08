@@ -225,6 +225,22 @@ func (w WorkspaceContext) GeneratedRoot() string {
 	return filepath.Join(w.configBase(), productLoopDirName)
 }
 
+// HelperPath is the generated checkout runtime binary owned by this workspace.
+func (w WorkspaceContext) HelperPath() string {
+	return filepath.Join(w.GeneratedRoot(), "bin", helperName())
+}
+
+// projectLocalHelperCommand is the portable repository-relative spelling used
+// in rendered embedded-mode prescriptions. Path ownership remains centralized
+// here even though the command is displayed before a concrete workspace exists.
+func projectLocalHelperCommand() string {
+	return filepath.ToSlash(filepath.Join(productLoopDirName, "bin", helperName()))
+}
+
+func generatedWorkflowReference() string {
+	return filepath.ToSlash(filepath.Join(productLoopDirName, "workflow.md"))
+}
+
 // ExportRoot is the base beneath which generated bundle paths are materialized.
 // Bundle keys include .product-loop and host-adapter directories, so callers
 // must pass this root — never RepoRoot — to export write/check operations.

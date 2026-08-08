@@ -473,6 +473,13 @@ func denialFor(host string, finding SafetyFinding) Denial {
 		}
 		return d
 
+	case "planning-transport-invalid":
+		d.Severity = SeverityAdvisory
+		d.Qualifier = "planning input incomplete"
+		d.Detail = "Boatstack did not run the planning write because its literal Markdown envelope was incomplete or ambiguous (PLANNING_TRANSPORT_INVALID:" + finding.Reason + "). Use the single-quoted heredoc or UTF-8-scoped single-quoted PowerShell here-string in `.product-loop/workflow.md` and send it in one call. Do not paste the Markdown at a shell prompt or retry a truncated command."
+		d.Reassurance = reassureUntouched
+		return d
+
 	case "workflow-state-invalid":
 		d.Severity = SeverityAdvisory
 		d.Qualifier = "delivery state unverified"
@@ -511,7 +518,7 @@ func denialFor(host string, finding SafetyFinding) Denial {
 			if finding.BlockingFeature != "" {
 				slug = finding.BlockingFeature
 			}
-			d.Detail += fmt.Sprintf(" Planning Markdown is authored through the owned channel: `boatstack-helper planning-write --repo . --feature %s --artifact <name>` with the document on stdin — never a raw host write into `.product-loop/features/`.", slug)
+			d.Detail += fmt.Sprintf(" Planning Markdown is authored through the owned channel: one complete literal `.product-loop/bin/boatstack-helper planning-write --repo . --feature %s --artifact <name>` envelope from `.product-loop/workflow.md` — never a raw host write into `.product-loop/features/` or a manual shell paste.", slug)
 		}
 		d.Reassurance = reassureUntouched
 		return d

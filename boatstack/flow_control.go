@@ -261,10 +261,11 @@ type FlowNext struct {
 
 // PrescribedCommand is the exact next command that makes the oracle's lowest-cost
 // move. Args carries only auto-derivable flags (repo/feature/slice/gate/preview
-// path/action). RequiresHumanInput names the flags that must be supplied by a
-// human/CI and must NEVER be fabricated (evidence, gate status, the human-confirmed
-// preview fingerprint, reviewer identity); those flags are deliberately absent from
-// Args. AutoDerivable is true exactly when RequiresHumanInput is empty — the only
+// path/action). RequiresHumanInput names flags or bounded content that must be
+// supplied by a human/CI/authoring agent and must NEVER be fabricated (evidence,
+// gate status, the planning document, the human-confirmed preview fingerprint,
+// reviewer identity); those inputs are deliberately absent from Args.
+// AutoDerivable is true exactly when RequiresHumanInput is empty — the only
 // commands the opt-in execute driver may run. Transition is the registry
 // TransitionID of an oracle move, or a planning./recovery.-prefixed marker for a
 // pre-activation prescription outside the delivery model; markers never pass the
@@ -285,20 +286,61 @@ type PrescribedCommand struct {
 	Program string `json:"program,omitempty"`
 }
 
+const planningMarkdownInput = "stdin:markdown"
+
+func posixPlanningWord(value string) string {
+	if value != "" {
+		safe := true
+		for _, char := range []byte(value) {
+			if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || strings.ContainsRune("_@%+=:,./-", rune(char))) {
+				safe = false
+				break
+			}
+		}
+		if safe {
+			return value
+		}
+	}
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+}
+
 // CommandLine renders the auto-derivable part of the prescribed command as a
-// runnable string. Human-required flags are appended as explicit <REQUIRED>
-// placeholders so the rendering is never a fabricated, runnable-as-is command
-// when input is still owed.
+// runnable string. Human-required inputs use explicit <REQUIRED> placeholders;
+// planning Markdown is placed inside the same literal envelope the hook admits.
+// The rendering is never fabricated or runnable as-is while input is still owed.
 func (p PrescribedCommand) CommandLine() string {
+	literalPlanningInput := false
+	for _, input := range p.RequiresHumanInput {
+		if input == planningMarkdownInput {
+			literalPlanningInput = true
+			break
+		}
+	}
 	program := p.Program
 	if program == "" {
-		program = "boatstack-helper"
+		if literalPlanningInput {
+			program = projectLocalHelperCommand()
+		} else {
+			program = "boatstack-helper"
+		}
 	}
 	parts := append([]string{program, p.Verb}, p.Args...)
 	for _, flag := range p.RequiresHumanInput {
+		if flag == planningMarkdownInput {
+			literalPlanningInput = true
+			continue
+		}
 		parts = append(parts, flag, "<REQUIRED>")
 	}
-	return strings.Join(parts, " ")
+	line := strings.Join(parts, " ")
+	if literalPlanningInput {
+		for index := range parts {
+			parts[index] = posixPlanningWord(parts[index])
+		}
+		line = strings.Join(parts, " ")
+		return line + " <<'BOATSTACK_PLAN_EOF'\n<REQUIRED>\nBOATSTACK_PLAN_EOF"
+	}
+	return line
 }
 
 // prescribeCommand assembles the runnable command for a forward delivery
@@ -396,7 +438,7 @@ func prescribePlanning(repo string, status NextStatus) (*PrescribedCommand, stri
 			Verb: "check-source-plan", Args: repoArgs,
 			RequiresHumanInput: []string{"--plan"},
 			Transition:         MarkerPlanningCheckSource,
-		}, "Then run auto-plan with the validated SOURCE_PLAN path; author every feature artifact through `boatstack-helper planning-write` (document on stdin).")
+		}, fmt.Sprintf("Then run auto-plan with the validated SOURCE_PLAN path; author every feature artifact through one complete literal `%s planning-write` envelope from `%s`.", projectLocalHelperCommand(), generatedWorkflowReference()))
 	case "DRAFT_PLAN":
 		return finish(&PrescribedCommand{
 			Verb:       "check-plan",
@@ -440,7 +482,7 @@ func prescribePlanning(repo string, status NextStatus) (*PrescribedCommand, stri
 			} else {
 				slug = "<feature>"
 			}
-			return finish(cmd, fmt.Sprintf("After repair, re-author the planning Markdown through the owned channel: `boatstack-helper planning-write --repo . --feature %s --artifact <name>` with the document on stdin.", slug))
+			return finish(cmd, fmt.Sprintf("After repair, re-author the planning Markdown through the owned channel: one complete literal `%s planning-write --repo . --feature %s --artifact <name>` envelope from `%s`.", projectLocalHelperCommand(), slug, generatedWorkflowReference()))
 		}
 		return nil, ""
 	default:

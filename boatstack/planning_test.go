@@ -50,6 +50,30 @@ func TestPlanningWriteIsBoundedMarkdownOnly(t *testing.T) {
 	}
 }
 
+func TestPlanningWriteNormalizesPowerShellUTF8BOM(t *testing.T) {
+	repo := planningRepo(t)
+	path, err := WritePlanningArtifact(PlanningWriteOptions{
+		Repo: repo, Feature: "powershell-transport", Artifact: "plan.md",
+		Content: append([]byte{0xef, 0xbb, 0xbf}, []byte("# Plan\r\n")...),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	written, err := os.ReadFile(filepath.Join(repo, filepath.FromSlash(path)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(written) != "# Plan\r\n" {
+		t.Fatalf("PowerShell transport BOM reached the Markdown artifact: %q", written)
+	}
+	if _, err := WritePlanningArtifact(PlanningWriteOptions{
+		Repo: repo, Feature: "powershell-transport", Artifact: "questions.md",
+		Content: []byte{0xef, 0xbb, 0xbf},
+	}); err == nil || !strings.Contains(err.Error(), "must not be empty") {
+		t.Fatalf("a BOM without Markdown must remain empty input: %v", err)
+	}
+}
+
 // Discoverability: the natural guess for an artifact token is "plan" — but the
 // tokens carry a .md suffix, so it is always wrong. The rejection must name the
 // accepted set and the transform at the point of failure, so the caller is not

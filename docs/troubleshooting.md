@@ -79,7 +79,28 @@ Finish the host's Plan-mode exploration and save it as a durable file, then reru
 
 ## Plan mode cannot write an artifact
 
-Planning is Markdown-only. The adapter may use Boatstack's bounded planning writer for known feature documents; it must not use arbitrary shell redirection or edit product code. If the host cannot support the bounded write, keep the plan and report the missing permission rather than leaving Plan mode early.
+Planning is Markdown-only. Send the complete command and document in one shell-tool call. For Bash, zsh, or Git Bash:
+
+```bash
+.product-loop/bin/boatstack-helper planning-write --repo . --feature <feature> --artifact <name> <<'BOATSTACK_PLAN_EOF'
+<complete Markdown document>
+BOATSTACK_PLAN_EOF
+```
+
+In Git Bash on Windows, use `.product-loop/bin/boatstack-helper.exe` in the same envelope.
+
+For Windows PowerShell:
+
+```powershell
+& {
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+@'
+<complete Markdown document>
+'@ | & '.product-loop\bin\boatstack-helper.exe' planning-write --repo . --feature <feature> --artifact <name>
+}
+```
+
+The adapter must not run a bare helper, split the envelope across calls, prepend or append another command, use an expansion-capable delimiter, paste the Markdown at a shell prompt, or edit product code. `PLANNING_TRANSPORT_INVALID` means Boatstack stopped the command before execution; correct the complete envelope. If a PowerShell document contains a line beginning with `'@`, use Git Bash and choose a heredoc token that does not occur as its own line in the document.
 
 ## `/build` says it is ready but cannot start
 
