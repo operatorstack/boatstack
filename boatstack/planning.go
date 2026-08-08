@@ -228,10 +228,15 @@ func WritePlanningArtifact(options PlanningWriteOptions) (string, error) {
 	if !planningArtifacts[options.Artifact] {
 		return "", fmt.Errorf("unsupported planning artifact %q; use one of: %s (note the .md suffix)", options.Artifact, strings.Join(planningArtifactNames(), ", "))
 	}
-	if !utf8.Valid(options.Content) {
+	// Windows PowerShell 5.1 may prepend the UTF-8 byte-order mark when a
+	// here-string is piped to a native command even when $OutputEncoding uses a
+	// no-BOM encoder. Treat that transport signature as encoding metadata, not
+	// Markdown content, so every supported shell produces the same artifact.
+	content := bytes.TrimPrefix(options.Content, []byte{0xef, 0xbb, 0xbf})
+	if !utf8.Valid(content) {
 		return "", fmt.Errorf("planning artifact must be valid UTF-8 Markdown")
 	}
-	if strings.TrimSpace(string(options.Content)) == "" {
+	if strings.TrimSpace(string(content)) == "" {
 		return "", fmt.Errorf("planning artifact must not be empty")
 	}
 	repo, err := ResolveRepository(options.Repo)
@@ -246,7 +251,7 @@ func WritePlanningArtifact(options PlanningWriteOptions) (string, error) {
 	if err := rejectSymlinkComponents(ctx.ExportRoot(), destination); err != nil {
 		return "", err
 	}
-	if err := atomicWrite(destination, options.Content); err != nil {
+	if err := atomicWrite(destination, content); err != nil {
 		return "", err
 	}
 	relative, err := filepath.Rel(ctx.ExportRoot(), destination)

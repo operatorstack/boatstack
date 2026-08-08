@@ -173,6 +173,7 @@ func prescribePlanningVerb(repo string, status NextStatus, verb string) (*Prescr
 		}
 		// The artifact name and its Markdown (stdin) are authored content — owed.
 		cmd.RequiresHumanInput = append(cmd.RequiresHumanInput, "--artifact")
+		cmd.RequiresHumanInput = append(cmd.RequiresHumanInput, planningMarkdownInput)
 	case "record-approval":
 		if status.Feature == "" {
 			return nil, false

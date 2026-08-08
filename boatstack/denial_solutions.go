@@ -28,9 +28,10 @@ func denialMarker(verb string) deliverycontrol.TransitionID {
 // no solution set, with the reason. The totality sweep fails a new category
 // until it gains an enumeration rule or an entry here.
 var denialSolutionExceptions = map[string]string{
-	"malformed-tool-input":  "the tool event itself is unreadable; the Detail already names diagnose-hook with the exact host",
-	"unsupported-host":      "an unknown host has no trusted verb surface to enumerate",
-	"unresolved-repository": "without a repository identity no command can be assembled faithfully",
+	"malformed-tool-input":       "the tool event itself is unreadable; the Detail already names diagnose-hook with the exact host",
+	"planning-transport-invalid": "the Markdown body is owed input; the Detail names both complete literal transport forms without fabricating content",
+	"unsupported-host":           "an unknown host has no trusted verb surface to enumerate",
+	"unresolved-repository":      "without a repository identity no command can be assembled faithfully",
 }
 
 // enumerateDenialSolutions computes the solution set for a denial finding.
@@ -117,7 +118,7 @@ func enumerateDenialSolutions(repo, host string, finding SafetyFinding) Solution
 			// The artifact name and its Markdown (stdin) are authored content — owed.
 			appendSolution(&set, PrescribedCommand{
 				Verb: "planning-write", Args: append(repoFlagArgs(repo), "--feature", feature),
-				RequiresHumanInput: []string{"--artifact"},
+				RequiresHumanInput: []string{"--artifact", planningMarkdownInput},
 				Transition:         denialMarker("planning-write"),
 			})
 		}

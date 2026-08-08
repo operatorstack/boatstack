@@ -229,14 +229,19 @@ var stageMutationVerbs = map[string][]string{
 }
 
 func controlledPhaseTransition(command, stage string) bool {
-	if strings.ContainsAny(command, "\n`><;&|") || strings.Contains(command, "$(") {
+	if transport := inspectPlanningWriteTransport(command); transport.Matched {
+		if transport.InvalidReason != "" && transport.InvalidReason != "missing-literal-input" {
+			return false
+		}
+		if transport.Header != "" {
+			command = transport.Header
+		}
+	}
+	fields, complete := literalCommandWords(command)
+	if !complete || len(fields) < 2 {
 		return false
 	}
-	fields := strings.Fields(strings.TrimSpace(command))
-	if len(fields) < 2 {
-		return false
-	}
-	executable := strings.TrimSuffix(strings.ToLower(filepath.Base(fields[0])), ".exe")
+	executable := portableExecutableBase(fields[0])
 	if executable != "boatstack-helper" {
 		return false
 	}
@@ -827,7 +832,29 @@ func ClassifyCommand(repo, command string) []SafetyFinding {
 	if strings.TrimSpace(command) == "" {
 		return []SafetyFinding{{Category: "malformed-tool-input", Reason: "empty-command", Source: "tool-input"}}
 	}
-	if deliveryStatePathPattern.MatchString(command) && !isPureReadOnlyCommand(command) && !approvedUpdatePublisherPattern.MatchString(command) {
+	validatedPlanningTransport := false
+	// A complete literal planning envelope carries two different types in one
+	// host command: an executable helper header and inert Markdown bytes. Parse
+	// that boundary before applying any effect classifier. An incomplete or
+	// ambiguous envelope is denied before the shell can interpret its body.
+	// control-law: planning-document-body-is-literal-data
+	if transport := inspectPlanningWriteTransport(command); transport.Matched {
+		if transport.InvalidReason != "" {
+			return []SafetyFinding{{
+				Category: "planning-transport-invalid", Reason: transport.InvalidReason, Source: "planning-transport",
+				BlockingFeature: transport.Feature, NextOperation: "planning-write",
+			}}
+		}
+		if reason := planningTransportBinding(repo, transport); reason != "" {
+			return []SafetyFinding{{
+				Category: "planning-transport-invalid", Reason: reason, Source: "planning-transport",
+				BlockingFeature: transport.Feature, NextOperation: "planning-write",
+			}}
+		}
+		validatedPlanningTransport = true
+		command = transport.Header
+	}
+	if deliveryStatePathPattern.MatchString(command) && !validatedPlanningTransport && !isPureReadOnlyCommand(command) && !approvedUpdatePublisherPattern.MatchString(command) {
 		// AttemptedPath carries the matched managed-path fragment (bounded and
 		// secret-free, like the phase-bypass finding) so the denial can name the
 		// path's declared owner verbs from the state-ownership map.

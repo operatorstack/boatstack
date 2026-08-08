@@ -279,7 +279,7 @@ func TestExportAndDriftCheck(t *testing.T) {
 			}
 		}
 	}
-	if !strings.Contains(autoPlan, "Markdown-only") || !strings.Contains(autoPlan, "Never silently choose a default") || !strings.Contains(autoPlan, "planning-write") || !strings.Contains(autoPlan, "PROPOSED") {
+	if !strings.Contains(autoPlan, "Markdown-only") || !strings.Contains(autoPlan, "Never silently choose a default") || !strings.Contains(autoPlan, "planning-write") || !strings.Contains(autoPlan, "complete literal envelope") || !strings.Contains(autoPlan, "PROPOSED") {
 		t.Fatal("auto-plan adapter does not enforce the Markdown and question boundaries")
 	}
 	// Conformance: no ambient plan context. The exported auto-plan adapter must
@@ -438,6 +438,10 @@ func TestExportAndDriftCheck(t *testing.T) {
 	}
 	workflow := string(bundle.Files[".product-loop/workflow.md"])
 	for _, expected := range []string{
+		"### Literal planning transport",
+		"<<'BOATSTACK_PLAN_EOF'",
+		"$OutputEncoding = [System.Text.UTF8Encoding]::new($false)",
+		"PLANNING_TRANSPORT_INVALID",
 		"## User-facing response contract",
 		"Exactly one primary action",
 		"### Reply shortcuts",

@@ -22,6 +22,7 @@ import (
 // is neither enumerated nor excepted.
 var denialCategoryInventory = []SafetyFinding{
 	{Category: "malformed-tool-input", Reason: "empty-command", Source: "hook"},
+	{Category: "planning-transport-invalid", Reason: "missing-terminator", Source: "planning-transport"},
 	{Category: "workflow-state-invalid", NextOperation: "discard-delivery", BlockingFeature: "stale", Source: "delivery-state"},
 	{Category: "workflow-state-tamper", Source: "delivery-state", AttemptedPath: ".git/boatstack/deliveries/demo/state.json"},
 	{Category: "workflow-phase-bypass", Source: "planning-state", WorkflowStage: "DRAFT_PLAN", NextOperation: "plan-gate", BlockingFeature: "demo"},
