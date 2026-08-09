@@ -207,6 +207,85 @@ func saveRegistry(stateRoot string, registry detachedRegistry) error {
 	return os.WriteFile(registryPath(stateRoot), raw, 0o644)
 }
 
+// registerDetachedWorkspaceAlias binds another worktree path of the same Git
+// repository to the existing detached controller. It never creates new
+// authority: origin, initial history, repository id, and Git common directory
+// must match the already-verified source binding.
+func registerDetachedWorkspaceAlias(sourceRepo, destinationRepo string) (bool, error) {
+	source, ok, err := detachedContextFor(sourceRepo)
+	if err != nil || !ok {
+		if err == nil {
+			err = fmt.Errorf("source repository is not attached in detached mode")
+		}
+		return false, err
+	}
+	destination, err := repoIdentity(destinationRepo)
+	if err != nil {
+		return false, err
+	}
+	if destination.RepoID != source.RepoID {
+		return false, fmt.Errorf("destination repository identity does not match the detached controller")
+	}
+	binding, err := loadBinding(filepath.Dir(filepath.Dir(source.controlRoot)), source.RepoID)
+	if err != nil {
+		// controlRoot is <state>/repositories/<repoID>; resolve the state root
+		// directly when a non-standard layout makes the derivation ambiguous.
+		stateRoot, rootErr := detachedStateRoot()
+		if rootErr != nil {
+			return false, rootErr
+		}
+		binding, err = loadBinding(stateRoot, source.RepoID)
+	}
+	if err != nil || !bindingMatchesIdentity(binding, destination) || binding.GitCommonIdentity != destination.GitCommonIdentity {
+		return false, fmt.Errorf("destination worktree does not match the detached binding")
+	}
+	stateRoot, err := detachedStateRoot()
+	if err != nil {
+		return false, err
+	}
+	registry, err := loadRegistry(stateRoot)
+	if err != nil {
+		return false, err
+	}
+	root := destination.CanonicalRepoPath
+	if existing, found := registry.Repositories[root]; found {
+		if existing != source.RepoID {
+			return false, fmt.Errorf("destination worktree is already bound to another controller")
+		}
+		return false, nil
+	}
+	registry.Repositories[root] = source.RepoID
+	if err := saveRegistry(stateRoot, registry); err != nil {
+		return false, err
+	}
+	invalidateWorkspaceCache()
+	return true, nil
+}
+
+func unregisterDetachedWorkspaceAlias(repo string) error {
+	root, err := ResolveRepository(repo)
+	if err != nil {
+		return err
+	}
+	stateRoot, err := detachedStateRoot()
+	if err != nil {
+		return err
+	}
+	registry, err := loadRegistry(stateRoot)
+	if err != nil {
+		return err
+	}
+	if _, found := registry.Repositories[root]; !found {
+		return nil
+	}
+	delete(registry.Repositories, root)
+	if err := saveRegistry(stateRoot, registry); err != nil {
+		return err
+	}
+	invalidateWorkspaceCache()
+	return nil
+}
+
 func loadBinding(stateRoot, repoID string) (DetachedBinding, error) {
 	var binding DetachedBinding
 	raw, err := os.ReadFile(bindingPath(stateRoot, repoID))

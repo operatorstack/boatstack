@@ -132,6 +132,12 @@ func enumeratePlanningSolutions(repo string, status NextStatus, next FlowNext) S
 		appendSolution(&set, *next.Prescribed)
 	}
 	for _, verb := range stageMutationVerbs[status.ObservedStage] {
+		// workspace-cut gains authority from a successful plan check, not from
+		// DRAFT_PLAN alone. Keep it out of the alternative set unless ResolveNext
+		// selected that exact transition for the current validated package.
+		if verb == "workspace-cut" && status.NextOperation != "workspace-cut" {
+			continue
+		}
 		if cmd, ok := prescribePlanningVerb(repo, status, verb); ok {
 			appendSolution(&set, *cmd)
 		}

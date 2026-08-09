@@ -59,28 +59,13 @@ func TestAutonomyReceiptOverridesHumanPlanGateOnlyForExactPlan(t *testing.T) {
 	}
 }
 
-// control-law: pre-cut-policy-authority-binds-the-future-managed-branch
-func TestAutonomyReceiptBindsFreshWorkspaceBranch(t *testing.T) {
+// control-law: autonomy-receipt-binds-policy-activation-to-plan-repository-and-branch
+func TestAutonomyReceiptRequiresFreshWorkspaceBranch(t *testing.T) {
 	root := workspaceRepo(t, defaultWorkspace())
 	runGit(t, root, "remote", "add", "origin", "https://example.invalid/operatorstack/example.git")
 	_, _, planPath := writePlanInputs(t, root, true)
-	receipt, err := RecordAutonomy(AutonomyRecordOptions{Repo: root, PlanPath: planPath, Target: RunTargetVerified})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if receipt.IssuingBranch != "main" || receipt.Branch != "feat/feature-one" {
-		t.Fatalf("receipt branches = issuing %q target %q", receipt.IssuingBranch, receipt.Branch)
-	}
-	check, err := CheckPlan(planPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(filepath.Dir(planPath), "autonomy.md")
-	if _, err := CheckAutonomyReceiptForPlanning(path, check, root, RunTargetPlan); err != nil {
-		t.Fatalf("pre-cut planning check: %v", err)
-	}
-	if _, err := CheckAutonomyReceipt(path, check, root, RunTargetVerified, ""); err == nil || !strings.Contains(err.Error(), "branch identity changed") {
-		t.Fatalf("activation on issuing branch should fail, got %v", err)
+	if _, err := RecordAutonomy(AutonomyRecordOptions{Repo: root, PlanPath: planPath, Target: RunTargetVerified}); err == nil || !strings.Contains(err.Error(), "workspace-cut") {
+		t.Fatalf("pre-cut autonomy should name the workspace transition, got %v", err)
 	}
 }
 

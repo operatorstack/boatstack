@@ -35,6 +35,7 @@ var planningStages = []NextStatus{
 	{ObservedStage: "NOT_INITIALIZED", NextOperation: "init"},
 	{ObservedStage: "NOT_STARTED", NextOperation: "auto-plan"},
 	{ObservedStage: "DRAFT_PLAN", NextOperation: "plan-gate", Feature: "demo"},
+	{ObservedStage: "DRAFT_PLAN", NextOperation: "workspace-cut", Feature: "demo"},
 	{ObservedStage: "APPROVED", NextOperation: "build", Feature: "demo"},
 	{ObservedStage: "APPROVED", NextOperation: "workspace-cut", Feature: "demo"},
 	{ObservedStage: "POLICY_READY", NextOperation: "build", Feature: "demo"},

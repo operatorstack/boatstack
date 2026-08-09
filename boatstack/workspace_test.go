@@ -132,6 +132,7 @@ func TestCutFeatureWorkspaceBranchMode(t *testing.T) {
 	ws := defaultWorkspace()
 	ws.Mode = "branch"
 	repo := workspaceRepo(t, ws)
+	commitWorkspaceController(t, repo)
 	result, err := CutFeatureWorkspace(WorkspaceCutOptions{Repo: repo, Branch: "feat/inline"})
 	if err != nil {
 		t.Fatal(err)
@@ -145,12 +146,12 @@ func TestCutFeatureWorkspaceBranchMode(t *testing.T) {
 	}
 }
 
-func TestCutFeatureWorkspaceRefusesExistingBranch(t *testing.T) {
+func TestCutFeatureWorkspaceAdoptsExactBaseBranch(t *testing.T) {
 	repo := workspaceRepo(t, defaultWorkspace())
 	workspaceGitDo(t, repo, "branch", "feat/dupe")
 	result, _ := CutFeatureWorkspace(WorkspaceCutOptions{Repo: repo, Feature: "dupe"})
-	if result.VerificationStatus != "BLOCKED" || !strings.Contains(result.Reason, "already exists") {
-		t.Fatalf("expected existing-branch block: %+v", result)
+	if result.VerificationStatus != "VERIFIED" || result.Outcome != "adopted" || result.WorktreePath == "" {
+		t.Fatalf("expected exact-base branch adoption: %+v", result)
 	}
 }
 
@@ -354,18 +355,25 @@ func TestResolveNextRoutesToWorkspaceCutWhenApprovedOnBase(t *testing.T) {
 	}
 }
 
-func TestResolveNextApprovedBuildsWhenWorkspaceExists(t *testing.T) {
+func TestResolveNextRoutesSourceCheckoutToExistingWorkspace(t *testing.T) {
 	repo := workspaceRepo(t, defaultWorkspace())
 	writeApprovedFeature(t, repo, "cutdone")
-	if _, err := CutFeatureWorkspace(WorkspaceCutOptions{Repo: repo, Feature: "cutdone"}); err != nil {
+	cut, err := CutFeatureWorkspace(WorkspaceCutOptions{Repo: repo, Feature: "cutdone"})
+	if err != nil || cut.VerificationStatus != "BLOCKED" {
+		// The dummy historical plan is intentionally invalid. The branch/worktree
+		// was rolled back, proving invalid packages never cross the boundary.
+		t.Fatalf("invalid package should block and roll back: %+v (%v)", cut, err)
+	}
+	workspaceGitDo(t, repo, "branch", "feat/cutdone")
+	if _, err := workspaceGit(repo, "worktree", "add", filepath.Join(repo, ".product-loop", "worktrees", "cutdone"), "feat/cutdone"); err != nil {
 		t.Fatal(err)
 	}
 	status, err := ResolveNext(repo, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.NextOperation != "build" {
-		t.Fatalf("expected build once workspace exists: %+v", status)
+	if status.NextOperation != "workspace-cut" {
+		t.Fatalf("source checkout must route into the existing workspace: %+v", status)
 	}
 }
 

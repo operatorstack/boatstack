@@ -14,6 +14,8 @@ const (
 
 type RunTarget string
 
+var autonomyRecommendedPRAction = RecommendedPRAction
+
 const (
 	RunTargetPlan     RunTarget = "plan"
 	RunTargetVerified RunTarget = "verified"
@@ -219,23 +221,23 @@ func RecordAutonomy(options AutonomyRecordOptions) (AutonomyReceipt, error) {
 	if err != nil {
 		return AutonomyReceipt{}, err
 	}
+	feature := stringValue(check.Plan["feature_id"])
+	if workspaceEnabled(repo) && needsFreshCut(repo, feature) {
+		return AutonomyReceipt{}, fmt.Errorf("autonomy requires the feature workspace; run workspace-cut --repo %s --feature %s and continue from destination_repository", repo, feature)
+	}
 	branch, err := gitCommand(repo, "rev-parse", "--abbrev-ref", "HEAD")
 	branch = strings.TrimSpace(branch)
 	if err != nil || branch == "" || branch == "HEAD" {
 		return AutonomyReceipt{}, fmt.Errorf("autonomy requires an identifiable current branch")
 	}
 	issuingBranch := branch
-	feature := stringValue(check.Plan["feature_id"])
-	if workspaceEnabled(repo) && needsFreshCut(repo, feature) {
-		branch = branchForFeature(feature)
-	}
 	repository, err := gitCommand(repo, "remote", "get-url", "origin")
 	if err != nil {
 		return AutonomyReceipt{}, fmt.Errorf("autonomy requires an origin repository identity")
 	}
 	action := ""
 	if target == RunTargetPR {
-		action, _, err = RecommendedPRAction(repo)
+		action, _, err = autonomyRecommendedPRAction(repo)
 		if err != nil {
 			return AutonomyReceipt{}, fmt.Errorf("PR target requires a stable open or update action: %w", err)
 		}

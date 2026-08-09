@@ -47,7 +47,11 @@ func CheckPlanReadiness(planPath string) (ReadinessReceipt, error) {
 	if err != nil {
 		return ReadinessReceipt{}, fmt.Errorf("readiness requires valid Boatstack configuration: %w", err)
 	}
-	if err := guardManagedActivationWorktree(repo, config, stringValue(check.Plan["feature_id"])); err != nil {
+	feature := stringValue(check.Plan["feature_id"])
+	if resolveWorkspace(config.Workspace).Enabled && needsFreshCut(repo, feature) {
+		return ReadinessReceipt{}, fmt.Errorf("readiness requires the feature workspace; run workspace-cut --repo %s --feature %s and continue from destination_repository", repo, feature)
+	}
+	if err := guardManagedActivationWorktree(repo, config, feature); err != nil {
 		return ReadinessReceipt{}, err
 	}
 	preflight := CheckRunPreflight(repo, "")

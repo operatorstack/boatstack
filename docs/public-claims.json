@@ -8,7 +8,7 @@
       "status": "verified",
       "originating_observation": "Coding-host configuration, model choice, and specialist skills otherwise become separate places where a product-development process and its working state can fragment.",
       "safeguard": "Portable host adapters project one workflow contract while canonical feature artifacts remain repository-owned and model-neutral.",
-      "readable_evidence": "why-these-steps.md#portable-workflow-and-state",
+      "readable_evidence": "research-and-design.md#host-portability",
       "implementation": ["../boatstack/export.go", "../boatstack/references/artifacts.md", "../boatstack/references/workflow.md"],
       "verification": ["../boatstack/export_test.go"],
       "last_verified_version": "v0.7.120"
@@ -19,7 +19,7 @@
       "status": "verified",
       "originating_observation": "A password-reset request conflicted with a passwordless product model and required a human product choice.",
       "safeguard": "Question states, explicit Markdown approval, approval fingerprints, and stale-plan rejection.",
-      "readable_evidence": "why-these-steps.md#human-decisions",
+      "readable_evidence": "research-and-design.md#commands-and-the-approval-boundary",
       "implementation": ["../boatstack/references/workflow.md", "../boatstack/plan.go"],
       "verification": ["../boatstack/plan_test.go", "../boatstack/planning_test.go"],
       "last_verified_version": "v0.7.120"
@@ -30,7 +30,7 @@
       "status": "verified",
       "originating_observation": "Stronger verification wording and same-model checks did not reliably distinguish correct completion from unsupported claims.",
       "safeguard": "Criterion coverage, validation origin, named falsifier, and independence level.",
-      "readable_evidence": "why-these-steps.md#validation-provenance",
+      "readable_evidence": "validation-and-evidence.md#the-validation-contract",
       "implementation": ["validation-and-evidence.md", "../boatstack/plan.go"],
       "verification": ["../boatstack/plan_test.go"],
       "last_verified_version": "v0.7.120"
@@ -42,7 +42,7 @@
       "evaluation_status": "still_being_evaluated",
       "originating_observation": "A failed external schema apply led to an invented reset path before human review removed it.",
       "safeguard": "Fail-closed host hooks, immutable destructive classes, and read-only diagnosis after failure.",
-      "readable_evidence": "why-these-steps.md#irreversible-operations",
+      "readable_evidence": "safety.md#evidence-status",
       "implementation": ["safety.md", "../boatstack/safety.go", "../boatstack/hooks.go"],
       "verification": ["../boatstack/safety_test.go", "../boatstack/hooks_test.go"],
       "last_verified_version": "v0.7.120"
@@ -53,7 +53,7 @@
       "status": "verified",
       "originating_observation": "A generated PR summary omitted product decisions, accepted gaps, review findings, rollout, and rollback context.",
       "safeguard": "Managed and evidence-limited PR projection, stale-preview checks, and explicit open or update confirmation.",
-      "readable_evidence": "why-these-steps.md#reviewer-ready-pr",
+      "readable_evidence": "evidence-engineered-coding.md#what-is-evidence-backed",
       "implementation": ["../boatstack/pr.go", "getting-started.md"],
       "verification": ["../boatstack/pr_test.go"],
       "last_verified_version": "v0.7.120"
@@ -64,7 +64,7 @@
       "status": "verified",
       "originating_observation": "A coding host treated an approved multi-phase plan as standing permission to open several PRs during build without returning through the gates.",
       "safeguard": "Explicit task-to-slice partitioning, affected-path scope, diff-bound gate receipts, active-slice publication, and direct push/PR hook denial.",
-      "readable_evidence": "why-these-steps.md#phase-scoped-delivery",
+      "readable_evidence": "evidence-engineered-coding.md#the-graph-follows-the-work",
       "implementation": ["../boatstack/delivery.go", "../boatstack/safety.go", "../boatstack/hooks.go", "../boatstack/references/workflow.md"],
       "verification": ["../boatstack/delivery_test.go", "../boatstack/pr_test.go"],
       "last_verified_version": "v0.7.120"
@@ -75,7 +75,7 @@
       "status": "verified",
       "originating_observation": "Changing models relocated the dominant benchmark bottleneck instead of producing one stable lower-cost-model or frontier-model failure profile.",
       "safeguard": "One model-neutral workflow that branches on observable decisions, risk, tool outcomes, convergence, and evidence rather than model identity.",
-      "readable_evidence": "why-these-steps.md#model-choice-and-budget",
+      "readable_evidence": "research-and-design.md#why-the-workflow-has-no-model-conditions",
       "implementation": ["research-and-design.md", "../boatstack/references/workflow.md"],
       "verification": ["../boatstack/export_test.go", "../boatstack/planning_test.go"],
       "last_verified_version": "v0.7.120"
@@ -86,7 +86,7 @@
       "status": "observed",
       "originating_observation": "The audited Gemini, Qwen, and submission runs recorded malformed responses, context-window regression, unsupported verification, step exhaustion, near misses, and unsafe recovery behavior.",
       "safeguard": "Trace safeguards to observed failure mechanics without treating model provider or price as the failure state.",
-      "readable_evidence": "why-these-steps.md#model-choice-and-budget",
+      "readable_evidence": "research-and-design.md#outcome-sizing-and-where-value-emerges",
       "implementation": ["research-and-design.md"],
       "verification": ["benchmark-corpus-audit.md", "benchmark-submission-audit.md"],
       "last_verified_version": "v0.7.120"
@@ -97,20 +97,20 @@
       "status": "still_being_evaluated",
       "originating_observation": "The existing corpus supports specific failure mechanisms but contains no paired product-feature result proving a lower-cost-model outcome uplift.",
       "safeguard": "Keep the outcome claim unpromoted until the same feature, model, budget, environment, and host are evaluated with and without Boatstack.",
-      "readable_evidence": "why-these-steps.md#model-choice-and-budget",
+      "readable_evidence": "research-and-design.md#evaluation-of-the-finished-node",
       "implementation": ["research-and-design.md"],
       "verification": ["benchmark-corpus-audit.md", "benchmark-submission-audit.md"],
       "last_verified_version": "v0.7.120"
     },
     {
       "id": "git-worktree-activation",
-      "public_claim": "Boatstack tracks exact-runtime launchers in every generated repository. A linked worktree verifies and activates only its pinned Git-common runtime before command dispatch, independently of hook trust.",
+      "public_claim": "Boatstack tracks exact-runtime launchers in every generated repository. A linked worktree verifies its pinned Git-common runtime, and a managed transition verifies the exact planning package and controller identity before approval or autonomy.",
       "status": "verified",
-      "originating_observation": "A linked Claude Code worktree inherited committed fail-closed hooks but not the ignored helper, causing every shell call—including installation—to be denied.",
-      "safeguard": "Tracked launchers with baked release identity, versioned Git-common runtime slots, manifest and checksum verification, atomic local activation, and fail-closed mismatch handling.",
-      "readable_evidence": "why-these-steps.md#git-worktree-activation",
-      "implementation": ["../boatstack/launcher.go", "../boatstack/runtime_cache.go"],
-      "verification": ["../boatstack/launcher_test.go", "../boatstack/runtime_cache_test.go", "../boatstack/hooks_hydrate_test.go"],
+      "originating_observation": "A linked Claude Code worktree inherited committed fail-closed hooks but not the ignored helper, causing every shell call—including installation—to be denied. A later transition could strand a validated plan in the source checkout before approval or autonomy.",
+      "safeguard": "Tracked launchers verify the pinned runtime. Transactional workspace cuts verify the fetched base, complete plan fingerprint, destination ownership, and controller identity before authority moves.",
+      "readable_evidence": "generated-files.md#worktrees-fresh-clones-and-updates",
+      "implementation": ["../boatstack/launcher.go", "../boatstack/runtime_cache.go", "../boatstack/workspace.go", "../boatstack/detached.go"],
+      "verification": ["../boatstack/launcher_test.go", "../boatstack/runtime_cache_test.go", "../boatstack/hooks_hydrate_test.go", "../boatstack/workspace_transition_conformance_test.go", "../boatstack/solution_closure_conformance_test.go"],
       "last_verified_version": "v0.7.120"
     },
     {
@@ -119,7 +119,7 @@
       "status": "verified",
       "originating_observation": "Installer-based updates depended on remembered commands and could be mixed into feature work or reset optional integration choices.",
       "safeguard": "Cached post-ship discovery, clean-default-branch enforcement, exact release verification, integration preservation, diff preview, and explicit update-PR publication.",
-      "readable_evidence": "why-these-steps.md#visible-updates",
+      "readable_evidence": "generated-files.md#worktrees-fresh-clones-and-updates",
       "implementation": ["../boatstack/update.go", "../boatstack/init.go"],
       "verification": ["../boatstack/update_test.go", "../boatstack/init_test.go", "../boatstack/export_test.go"],
       "last_verified_version": "v0.7.120"

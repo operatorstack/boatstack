@@ -152,7 +152,7 @@ Boatstack is a repository-local delivery harness.
 - <!-- boatstack-claim:cross-model-failures -->**Observed:** benchmark runs exposed failures in protocol handling, context, verification, and recovery — not only model capability.
 - <!-- boatstack-claim:lower-cost-outcomes -->**Being evaluated:** whether this improves product quality, cost, or delivery time with lower-cost models.
 
-This does not mean every model performs equally. [See the evidence and paired evaluation design](docs/why-these-steps.md#model-choice-and-budget).
+This does not mean every model performs equally. [See the evidence and evaluation design](docs/research-and-design.md#evaluation-of-the-finished-node).
 
 ## Built from failures observed in real coding work
 
@@ -165,9 +165,9 @@ These behaviors come from coding failures observed in benchmark and product work
 | <!-- boatstack-claim:irreversible-operations -->A failed write led to an invented reset path | Denies high-confidence destructive recovery | Hook behavior verified; outcome benefit still being evaluated |
 | <!-- boatstack-claim:reviewer-ready-pr -->A PR lost decisions and accepted gaps | Builds a review brief from scope, diff, and evidence | Projection and stale-preview tests |
 | <!-- boatstack-claim:phase-scoped-delivery -->A phased plan opened PRs during build | Gates and publishes one delivery slice at a time | Slice-state and bypass tests |
-| <!-- boatstack-claim:git-worktree-activation -->A worktree inherited no ignored helper | Uses its tracked pinned launcher to verify and activate the exact runtime before command dispatch | Linked-worktree, identity, and tamper tests |
+| <!-- boatstack-claim:git-worktree-activation -->A feature worktree lost its helper or stranded its validated plan | Verifies the pinned runtime and moves the exact planning package before approval or autonomy | Linked-worktree, identity, rollback, and plan-fingerprint tests |
 
-[Read what happened, what is tested, and what remains open](docs/why-these-steps.md). The [claim record](docs/public-claims.json) keeps every material statement tied to its sources.
+The [claim record](docs/public-claims.json) keeps every material statement tied to its sources and tests.
 
 ## A small example
 
@@ -204,7 +204,7 @@ The installer previews generated paths, verifies the platform helper, offers opt
 
 **Start:** [Getting started](docs/getting-started.md) · [Files](docs/generated-files.md) · [Troubleshooting](docs/troubleshooting.md)
 
-**Inspect:** [Why these steps](docs/why-these-steps.md) · [Validation and evidence](docs/validation-and-evidence.md) · [Safety](docs/safety.md)
+**Inspect:** [Research and design](docs/research-and-design.md) · [Validation and evidence](docs/validation-and-evidence.md) · [Safety](docs/safety.md)
 
 **Go deeper:** [Coding](docs/evidence-engineered-coding.md) · [Design](docs/research-and-design.md) · [Contributing](CONTRIBUTING.md)
 
