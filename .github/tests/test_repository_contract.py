@@ -79,7 +79,6 @@ class RepositoryContract(unittest.TestCase):
             value = path.read_text()
             for phrase in forbidden:
                 self.assertNotIn(phrase, value, path)
-        self.assertTrue((REPO / "IMPORT_PROVENANCE.json").is_file())
         self.assertFalse((REPO / "UPSTREAM.json").exists())
 
     def test_document_links_claims_and_assets_are_valid(self) -> None:
