@@ -338,7 +338,7 @@ func TestWorkspaceTransitionReusesMatchingWorktree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.VerificationStatus != "VERIFIED" || result.Outcome != "current" || result.DestinationRepo != expectedDestination || result.PlanFingerprint != fingerprint {
+	if result.VerificationStatus != "VERIFIED" || result.Outcome != "current" || !samePath(result.DestinationRepo, expectedDestination) || result.PlanFingerprint != fingerprint {
 		t.Fatalf("matching worktree was not reused: %+v", result)
 	}
 	if fileExists(sourcePlan) {
