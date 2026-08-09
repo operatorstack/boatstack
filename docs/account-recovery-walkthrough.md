@@ -1,5 +1,3 @@
-<!-- Generated from operatorstack/intelligence-flow. Edit the upstream public source, not this file. -->
-
 # Example: account recovery in a passwordless product
 
 **For:** someone who wants to see why Boatstack asks questions before code.

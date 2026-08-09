@@ -9,9 +9,9 @@ The proposed product is not a large prompt and not a Codex-, Cursor-, Claude-, o
 3. a human approval boundary between planning and executable work;
 4. a separate evidence-gated loop for improving the protocol itself.
 
-The initial implementation is in [`product-engineering-loop/`](product-engineering-loop/). Its exporter generates Cursor rules/commands, Claude Code and Codex skills, and a GitHub PR template from one source.
+The implementation is in [`boatstack/`](../boatstack/). Its exporter generates Cursor rules/commands, Claude Code and Codex skills, and a GitHub PR template from one source.
 
-The public [Boatstack](https://github.com/operatorstack/boatstack) repository is a compiled distribution, not a second source of product/runtime truth. `scripts/build_boatstack.py` projects this package into a branded README, evidence-engineered-coding explanation, worked example, tests, and installable skill; `UPSTREAM.json` binds every projected file to its Intelligence Flow commit. The README and beginner guides remain ordinary human-authored Markdown copied byte-for-byte, while the Go helper embeds only install-time workflow references and templates. A machine-readable public claim record keeps homepage wording tied to observations, safeguards, tests, and explicit evaluation status. A Boatstack-owned scheduled workflow polls this public source and proposes content changes by PR. Boatstack's `.github/workflows` directory is a deliberately separate control-plane slice: it originates and changes in Boatstack through ordinary, manually reviewed PRs and is never emitted, owned, or removed by the Intelligence Flow projector.
+The public [Boatstack](https://github.com/operatorstack/boatstack) repository is the source of product and runtime truth. The README, guides, tests, installable skill, and Go helper change together through ordinary reviewed pull requests. A machine-readable public claim record keeps homepage wording tied to observations, safeguards, tests, and explicit evaluation status. The repository contract checks these surfaces directly, while the cross-platform runtime jobs verify the helper and installers. `IMPORT_PROVENANCE.json` preserves the immutable record of the final historical import; it has no publishing authority.
 
 ## Outcome sizing and where value emerges
 
@@ -67,8 +67,8 @@ This still allows a repository owner to choose any model or routing service. It 
 
 The evidence was audited in two reproducible passes:
 
-- [`BENCHMARK_CORPUS_AUDIT.md`](BENCHMARK_CORPUS_AUDIT.md): **3,571** historical per-trial results across 19 run/corpus groups; 3,540 signal streams; no unreadable results.
-- [`BENCHMARK_SUBMISSION_2_1_AUDIT.md`](BENCHMARK_SUBMISSION_2_1_AUDIT.md): all **445** July Terminal-Bench 2.1 submission trials and all 445 signal streams.
+- [`benchmark-corpus-audit.md`](benchmark-corpus-audit.md): **3,571** historical per-trial results across 19 run/corpus groups; 3,540 signal streams; no unreadable results.
+- [`benchmark-submission-audit.md`](benchmark-submission-audit.md): all **445** July Terminal-Bench 2.1 submission trials and all 445 signal streams.
 
 Combined mechanical coverage is **4,016 trial results** and **3,985 signal streams**. The JSON companions preserve group-level outcomes, terminal reasons, protocol errors, timeouts, and loop-event aggregates.
 
@@ -100,7 +100,7 @@ Those are **summary-only evidence** in this design. They are not represented as 
 | Mid-run aggregates changed direction | Qwen board interpretation moved as task coverage deepened | Compare paired completed coverage and uncertainty, not early aggregate rank |
 | External failure invited destructive recovery | A sanitized partial schema apply failure led to an invented reset path before review removed it | Treat recovery authority as a deterministic boundary: preserve state, diagnose read-only, transact or fix forward |
 
-Sources: [`RESEARCH_LOG.md`](../11-harbor-submit/RESEARCH_LOG.md), [`EXPERIMENT_GEMINI20_2026-07-15.md`](../11-harbor-submit/EXPERIMENT_GEMINI20_2026-07-15.md), [`ZERO_TO_QWEN.md`](../11-harbor-submit/ZERO_TO_QWEN.md), and [`docs/12-self-verification-fidelity.md`](../../docs/12-self-verification-fidelity.md).
+Public evidence: [`benchmark-corpus-audit.md`](benchmark-corpus-audit.md) and [`benchmark-submission-audit.md`](benchmark-submission-audit.md). `IMPORT_PROVENANCE.json` records the final historical import that supplied the earlier private research references.
 
 The irreversible-operation boundary is a **PROPOSED** Move. The incident supports the target failure mechanism, while the benchmark campaign supports deterministic enforcement over stronger wording. Neither proves the new guard's net effect. Promotion requires a paired unguarded baseline, destructive and safe corpora, real host events, bounded latency, secret-free denials, and no workflow regression.
 

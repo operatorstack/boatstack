@@ -1,5 +1,3 @@
-<!-- Generated from operatorstack/intelligence-flow. -->
-
 # Evidence-engineered coding
 
 Boatstack is a mathematically modeled coding node, not a prescribed loop. It leaves implementation open and makes authority, evidence, and accepted outcomes observable at the node boundary.
@@ -146,6 +144,6 @@ Delivery and system improvement also remain separate. A failed task may suggest 
 
 ## What is evidence-backed
 
-The current moves were derived from the Intelligence Flow benchmark corpus and product-repository studies. The generated source commit is [`4f00d6d7338b12116fd5757238dd45a2ae344237`](https://github.com/operatorstack/intelligence-flow/tree/4f00d6d7338b12116fd5757238dd45a2ae344237/labs/12-product-engineering-loop).
+The current moves were derived from an audited benchmark corpus and product-repository studies. Current implementation and verification evidence lives in this repository; the final historical import is recorded in `IMPORT_PROVENANCE.json`.
 
 The evidence supports specific failure mechanisms and guardrails. It does not establish that Boatstack is optimal, that control-theory notation proves software quality, or that one workflow dominates every team. Those are evaluation questions, so the distribution preserves measurements, provenance, gaps, and negative results.

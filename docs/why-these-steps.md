@@ -1,5 +1,3 @@
-<!-- Generated from operatorstack/intelligence-flow. Edit the upstream public source, not this file. -->
-
 # Why Boatstack has these steps
 
 **For:** anyone who wants to see the work behind Boatstack's safeguards.
@@ -19,7 +17,7 @@ Those labels prevent an implementation test from being presented as proof that t
 
 **What Boatstack does.** Cursor, Codex, and Claude Code receive adapters for the same path from planning through PR preparation. The durable state behind that path—source plan, specification, human answers, accepted gaps, approval, evidence, and review findings—lives in the repository instead of belonging to one model or chat session. Models and skills may contribute work without changing the completion requirements.
 
-**How we check it.** Export tests verify that all supported host adapters expose the same lifecycle and reference the same canonical repository artifact contract. Projection tests verify that the public workflow, adapters, and artifact definitions are generated from one upstream source.
+**How we check it.** Export tests verify that all supported host adapters expose the same lifecycle and reference the same canonical repository artifact contract. Repository-contract tests verify the public workflow, adapters, and artifact definitions directly in Boatstack.
 
 **What it does not mean.** Boatstack does not copy private chat history or move a command already in progress between agents. Portability covers the workflow and saved repository state available at the next transition.
 
@@ -81,7 +79,7 @@ Those labels prevent an implementation test from being presented as proof that t
 
 **What Boatstack does.** Boatstack keeps one planning, approval, validation, review, and shipping contract across models. It reacts to observable conditions such as unanswered decisions, risk, reversibility, tool outcomes, convergence, and evidence. This lets a repository owner choose a lower-cost, general, or frontier model without silently changing what “ready” means.
 
-**How we check it.** Export and projection tests verify the same workflow and gate vocabulary across supported coding hosts. The benchmark audits preserve the recorded trial coverage and the research record traces the model-dependent bottlenecks and failure mechanisms behind this design.
+**How we check it.** Export and repository-contract tests verify the same workflow and gate vocabulary across supported coding hosts. The benchmark audits preserve the recorded trial coverage and the research record traces the model-dependent bottlenecks and failure mechanisms behind this design.
 
 **Status:** the model-neutral contract is verified and the cross-model failure patterns are observed. Whether Boatstack improves correctness, cost, or delivery time for lower-cost models is **still being evaluated**; it is not a claim that models perform equally.
 

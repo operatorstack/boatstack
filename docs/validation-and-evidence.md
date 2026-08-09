@@ -1,5 +1,3 @@
-<!-- Generated from operatorstack/intelligence-flow. -->
-
 # Validation and evidence
 
 ## External-write safety evidence

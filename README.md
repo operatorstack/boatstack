@@ -1,5 +1,3 @@
-<!-- Generated from operatorstack/intelligence-flow. Edit the upstream public source, not this file. -->
-
 <p align="center">
   <img src="assets/boatstack-mark.svg" width="96" height="96" alt="Boatstack stacked-bar mark">
 </p>
@@ -214,4 +212,4 @@ The installer previews generated paths, verifies the platform helper, offers opt
 
 Boatstack is an open-source research prototype. Its workflow and enforcement behavior are tested. But the current record does not prove improved delivery success. The next evaluation is a paired feature benchmark with the same model, task, and budget.
 
-Exact Intelligence Flow provenance and generated file hashes are recorded in [`UPSTREAM.json`](UPSTREAM.json).
+Boatstack is developed directly in this repository. The immutable provenance of the final historical import is recorded in [`IMPORT_PROVENANCE.json`](IMPORT_PROVENANCE.json).

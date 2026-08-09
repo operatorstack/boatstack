@@ -1,5 +1,3 @@
-<!-- Generated from operatorstack/intelligence-flow. Edit the upstream public source, not this file. -->
-
 # Boatstack public-surface contract
 
 Boatstack's README is a product-builder homepage, not the complete manual. Public presentation may change freely inside this contract while the runtime remains deterministic.

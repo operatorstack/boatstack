@@ -55,13 +55,10 @@ estimated cost, place each on the currently-lightest shard.
   duplicated test). This invariant is unit-tested in `test_ci_shard.py`, which
   the `ci-policy` workflow runs — a broken partition can't merge.
 
-## Keep the two copies in sync
+## Canonical location
 
-`.github/` is control-plane and is **not** projected by labkit, so the upstream
-`operatorstack/intelligence-flow` monorepo carries its own copy of `ci_shard.py`
-and its own sharded `runtime-windows` job in
-`.github/workflows/boatstack-lab.yml`. When you change the controller here,
-mirror it there (and vice versa).
+This repository owns `ci_shard.py` and the sharded runtime workflow. There is no
+upstream mirror or external CI authority.
 
 ## Operational note
 

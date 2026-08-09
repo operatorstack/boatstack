@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: boatstack-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Unix runs the full suite serially (~1-2 min) and is the unsharded correctness
   # reference. Windows is sharded in `test-windows` (see below).
@@ -19,64 +23,21 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Verify upstream sync contract
-        shell: bash
-        run: |
-          workflow=".github/workflows/sync-upstream.yml"
-          current="labs/12-product-engineering-loop"
-          retired="examples/12-product-engineering-loop"
-          count="$(grep -cF "$current" "$workflow")"
-          if [[ "$count" != "2" ]]; then
-            echo "Expected exactly two sync references to $current; found $count." >&2
-            exit 1
-          fi
-          if grep -Fq "$retired" "$workflow"; then
-            echo "Sync workflow still references retired path $retired." >&2
-            exit 1
-          fi
-          title='Sync Boatstack from Intelligence Flow Labs @ $short'
-          title_count="$(grep -cF "$title" "$workflow")"
-          if [[ "$title_count" != "2" ]]; then
-            echo "Expected commit and PR titles to use $title; found $title_count." >&2
-            exit 1
-          fi
-      - name: Detect projected runtime
-        id: runtime
-        shell: bash
-        run: |
-          if [[ -f boatstack/go.mod ]]; then
-            echo "go=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "go=false" >> "$GITHUB_OUTPUT"
-          fi
-      - uses: actions/setup-go@v5
-        if: steps.runtime.outputs.go == 'true'
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: boatstack/go.mod
-          cache-dependency-path: boatstack/go.mod
-      - run: go test ./...
-        if: steps.runtime.outputs.go == 'true'
+          cache-dependency-path: boatstack/go.sum
+      - name: Show toolchain
+        run: go version
         working-directory: boatstack
-      - run: go build ./cmd/boatstack-helper
-        if: steps.runtime.outputs.go == 'true'
+      - name: Test runtime
+        run: go test ./...
         working-directory: boatstack
-      - uses: actions/setup-python@v5
-        if: steps.runtime.outputs.go != 'true'
-        with:
-          python-version: "3.11"
-      - name: Verify legacy projection during migration
-        if: steps.runtime.outputs.go != 'true'
-        env:
-          PYTHONUTF8: "1"
-        run: python3 -m unittest discover -s tests -v
-      - name: Compile legacy projection during migration
-        if: steps.runtime.outputs.go != 'true'
-        env:
-          PYTHONUTF8: "1"
-        run: python3 -m compileall -q boatstack
+      - name: Build helper
+        run: go build ./cmd/boatstack-helper
+        working-directory: boatstack
       - name: Validate Bash installer
-        if: steps.runtime.outputs.go == 'true'
         shell: bash
         run: bash -n install.sh
 
@@ -94,22 +55,12 @@ jobs:
         shard: [0, 1, 2, 3, 4, 5]
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Detect projected runtime
-        id: runtime
-        shell: bash
-        run: |
-          if [[ -f boatstack/go.mod ]]; then
-            echo "go=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "go=false" >> "$GITHUB_OUTPUT"
-          fi
+      - uses: actions/checkout@v7
       # Windows `go test`/`go build` is dominated by Microsoft Defender scanning
       # the many small files the Go toolchain emits during compile/link. Excluding
       # the Go caches, the workspace, and go.exe is a major wall-clock lever;
       # sharding on top of this is what gets the suite under 5 min.
       - name: Exclude Go caches from Microsoft Defender (Windows)
-        if: steps.runtime.outputs.go == 'true'
         shell: pwsh
         run: |
           $targets = @(
@@ -127,17 +78,18 @@ jobs:
             }
           }
           try { Add-MpPreference -ExclusionProcess 'go.exe' -ErrorAction Stop } catch {}
-      - uses: actions/setup-go@v5
-        if: steps.runtime.outputs.go == 'true'
+      - uses: actions/setup-go@v7
         with:
           go-version-file: boatstack/go.mod
-          cache-dependency-path: boatstack/go.mod
+          cache-dependency-path: boatstack/go.sum
+      - name: Show toolchain
+        run: go version
+        working-directory: boatstack
       # Enumerate tests, pick this shard's balanced subset, and run only those.
       # `go test -list` and `go test -run` share the warm GOCACHE, so the second
       # compile is a cache hit. An empty shard is a clean skip — never
       # `go test -run ''`, which would run the whole suite.
       - name: Test shard ${{ matrix.shard }}
-        if: steps.runtime.outputs.go == 'true'
         shell: bash
         working-directory: boatstack
         run: |
@@ -150,11 +102,11 @@ jobs:
           go test -run "$regex" ./...
       # Windows-only, non-test validation runs once (on shard 0), not per shard.
       - name: Build helper
-        if: steps.runtime.outputs.go == 'true' && matrix.shard == '0'
+        if: matrix.shard == '0'
         working-directory: boatstack
         run: go build ./cmd/boatstack-helper
       - name: Validate PowerShell installer
-        if: steps.runtime.outputs.go == 'true' && matrix.shard == '0'
+        if: matrix.shard == '0'
         shell: pwsh
         run: |
           $tokens = $null
@@ -165,77 +117,28 @@ jobs:
             exit 1
           }
 
-  auto-merge-sync:
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      startsWith(github.head_ref, 'sync/intelligence-flow-')
-    needs: [test, test-windows]
+  repository-contract:
+    name: repository-contract
     runs-on: ubuntu-latest
     steps:
-      - name: Create repository automation token
-        id: app-token
-        uses: actions/create-github-app-token@v3
+      - uses: actions/checkout@v7
         with:
-          client-id: ${{ vars.BOATSTACK_APP_CLIENT_ID }}
-          private-key: ${{ secrets.BOATSTACK_APP_PRIVATE_KEY }}
-          owner: operatorstack
-          repositories: boatstack
-          permission-contents: write
-          permission-pull-requests: write
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-      - name: Verify generated projection provenance
-        env:
-          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
-          HEAD_BRANCH: ${{ github.head_ref }}
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-        shell: bash
-        run: |
-          source_repo="$(jq -r '.source.repository' UPSTREAM.json)"
-          source_commit="$(jq -r '.source.commit' UPSTREAM.json)"
-          short="${source_commit:0:12}"
-          [[ "$PR_AUTHOR" == "${APP_SLUG}[bot]" ]]
-          [[ "$source_repo" == "operatorstack/intelligence-flow" ]]
-          [[ "$HEAD_BRANCH" == "sync/intelligence-flow-$short" ]]
-      - name: Merge verified generated PR
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-        run: gh pr merge "$PR_URL" --squash
-      # After a sync lands, close any older sync PR it supersedes. A sync PR that
-      # failed CI is never merged by this job, so without this it lingers as an
-      # orphan once a newer sync overtakes it (see the pile-up that motivated this).
-      # intelligence-flow is public, so the default token can read its history for
-      # the ancestry check; closing uses the app token (pull-requests: write).
-      - name: Check out Intelligence Flow for ancestry
-        uses: actions/checkout@v4
-        with:
-          repository: operatorstack/intelligence-flow
           fetch-depth: 0
-          path: intelligence-flow
-      - name: Close superseded sync PRs
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: boatstack/go.mod
+          cache-dependency-path: boatstack/go.sum
+      - name: Require an append-only release message
+        if: github.event_name == 'pull_request'
+        run: >-
+          python .github/scripts/release_notes.py check-policy
+          --repo .
+          --base "${{ github.event.pull_request.base.sha }}"
+          --head "${{ github.event.pull_request.head.sha }}"
+      - name: Verify repository contract
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        shell: bash
-        run: |
-          merged="$(jq -r '.source.commit' UPSTREAM.json)"
-          if [[ -z "$merged" || "$merged" == "null" ]]; then
-            echo "No recorded source commit; skipping supersession cleanup."
-            exit 0
-          fi
-          gh pr list --state open --json number,headRefName \
-            --jq '.[] | select(.headRefName | startswith("sync/intelligence-flow-")) | [.number, .headRefName] | @tsv' \
-          | while IFS=$'\t' read -r number branch; do
-              short="${branch#sync/intelligence-flow-}"
-              # Skip the sync that just merged (its own branch), not a supersession.
-              [[ "${merged:0:12}" == "$short" ]] && continue
-              # Close only PRs whose source is an ancestor of the merged source —
-              # i.e. already included. A newer, not-yet-merged sync (descendant) is
-              # left untouched.
-              if git -C intelligence-flow merge-base --is-ancestor "$short" "$merged" 2>/dev/null; then
-                echo "Closing superseded sync PR #$number ($short)."
-                gh pr close "$number" --comment "Superseded by the sync at ${merged:0:12}, which already includes this PR's source ($short). Closing the stale sync PR automatically."
-              fi
-            done
+          PYTHONUTF8: "1"
+        run: python -m unittest discover -s .github/tests -p 'test_*.py' -v
