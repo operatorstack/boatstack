@@ -128,6 +128,10 @@ func CaptureEvidence(options CaptureEvidenceOptions) (PRVisualEvidenceManifest, 
 	if base == "" {
 		base = defaultPRBase(repo)
 	}
+	base, err = canonicalPRBase(repo, base)
+	if err != nil {
+		return PRVisualEvidenceManifest{}, err
+	}
 	headCommit, diffHash, err := captureProductDiff(repo, base, feature, head)
 	if err != nil {
 		return PRVisualEvidenceManifest{}, err

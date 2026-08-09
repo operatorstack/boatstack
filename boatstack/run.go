@@ -10,6 +10,10 @@ const runPreflightSchemaVersion = 2
 
 var runGitCommand = gitCommand
 
+// Tests may replace this seam. Nil selects the production pure health check
+// without creating an initialization cycle through plan/readiness guards.
+var runInstallationHealth func(string) error
+
 // RunPreflight is the deterministic Git freshness boundary used before the
 // host-driven run operation is allowed to mutate workflow or product state.
 type RunPreflight struct {
@@ -93,16 +97,19 @@ func runBranches(repo, explicitFeature string) (string, string, error) {
 			return base, head, fmt.Errorf("active delivery slice %s requires head branch %s; current branch is %s", slice.ID, slice.HeadBranch, head)
 		}
 	}
+	base, err = canonicalPRBaseName(base)
+	if err != nil {
+		return "", head, err
+	}
 	if head == base {
 		return base, head, fmt.Errorf("Boatstack run requires a feature branch; current branch %s is the configured base branch", head)
 	}
 	return base, head, nil
 }
 
-// CheckRunPreflight fetches origin and proves that the current branch contains
-// the fetched base and is not behind or diverged from its configured upstream.
-// It never merges, rebases, switches branches, discards changes, or pushes.
-func CheckRunPreflight(repoPath, explicitFeature string) RunPreflight {
+// CheckInstallationPreflight is the pure planning/readiness cut. It performs no
+// fetch, repair, dependency installation, feature write, or bookkeeping write.
+func CheckInstallationPreflight(repoPath string) RunPreflight {
 	repo, err := ResolveRepository(repoPath)
 	if err != nil {
 		return blockedRunPreflight("", "", "", "INVALID_REPOSITORY", err.Error())
@@ -113,10 +120,34 @@ func CheckRunPreflight(repoPath, explicitFeature string) RunPreflight {
 	if !fileExists(WorkspaceFor(repo).ProjectConfigPath()) {
 		return blockedRunPreflight("", "", "", "NOT_INITIALIZED", "This repository has no Boatstack project installation to run.")
 	}
-	config, _, configErr := LoadConfig(WorkspaceFor(repo).ProjectConfigPath())
-	if configErr != nil {
+	if _, _, configErr := LoadConfig(WorkspaceFor(repo).ProjectConfigPath()); configErr != nil {
 		return blockedRunPreflight("", "", "", "INVALID_CONFIG", "Boatstack could not validate the project configuration.")
 	}
+	healthCheck := CheckInstallationHealth
+	if runInstallationHealth != nil {
+		healthCheck = runInstallationHealth
+	}
+	if healthErr := healthCheck(repo); healthErr != nil {
+		return blockedRunPreflight("", "", "", "INSTALLATION_UNHEALTHY", DoctorRepairHint(healthErr).Error())
+	}
+	return RunPreflight{
+		SchemaVersion: runPreflightSchemaVersion, VerificationStatus: "VERIFIED", Relation: "INSTALLATION_HEALTHY",
+		AuthorityStatus: AuthorityHookGuarded,
+		AuthorityReason: "Installation/generated-state health is verified; external authority is evaluated by delivery preflight.",
+		Reason:          "Boatstack installation and generated state are healthy.",
+	}
+}
+
+// CheckRunPreflight fetches origin and proves that the current branch contains
+// the fetched base and is not behind or diverged from its configured upstream.
+// It never merges, rebases, switches branches, discards changes, or pushes.
+func CheckRunPreflight(repoPath, explicitFeature string) RunPreflight {
+	health := CheckInstallationPreflight(repoPath)
+	if health.VerificationStatus != "VERIFIED" {
+		return health
+	}
+	repo, _ := ResolveRepository(repoPath)
+	config, _, _ := LoadConfig(WorkspaceFor(repo).ProjectConfigPath())
 	authorityStatus, authorityReason := verifyAuthorityBoundary(repo, config.Workflow.ExternalAuthority)
 	block := func(base, head, upstream, relation, reason string) RunPreflight {
 		return blockedRunPreflightWithAuthority(base, head, upstream, relation, reason, authorityStatus, authorityReason)

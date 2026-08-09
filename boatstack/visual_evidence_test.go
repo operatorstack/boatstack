@@ -116,6 +116,69 @@ func TestPRVisualEvidenceRequiresPrivacyReview(t *testing.T) {
 	}
 }
 
+func TestAutomatedVisualPrivacyReviewBindsExactPixelsAndReplaysIdempotently(t *testing.T) {
+	repo := visualTestRepo(t)
+	pngPath := filepath.Join(t.TempDir(), "warning.png")
+	writeTestPNG(t, pngPath)
+	manifest, err := SavePRVisualEvidence(repo, PRVisualEvidenceManifest{
+		Key: "automated-warning", Policy: "require", Relevance: "relevant", RelevanceSource: "repository-evidenced",
+		Status: "PASS", SourceCommit: runGit(t, repo, "rev-parse", "HEAD"), ProductDiffSHA256: strings.Repeat("a", 64),
+		Scenarios:   []PRVisualScenario{{ID: "warning", Entry: "/onboarding", State: "picker open", Viewport: "1440x900", Expected: []string{"warning visible"}}},
+		Items:       []PRVisualEvidenceItem{{ScenarioID: "warning", Path: pngPath, Viewport: "1440x900", CapturedAt: time.Now().UTC().Truncate(time.Second).Format(time.RFC3339), Status: "captured", PrivacyStatus: "clean"}},
+		Publication: PRVisualPublication{State: "pending"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, fingerprint, err := ResolvePRVisualPrivacyStatus(repo, &manifest); err != nil || status != "REVIEW_REQUIRED" || fingerprint != "" {
+		t.Fatalf("automated capture bypassed human review: %s %q %v", status, fingerprint, err)
+	}
+	if _, err := RecordPRVisualPrivacyReview(repo, manifest.Key, strings.Repeat("0", 64), "reviewer@example.invalid"); err == nil {
+		t.Fatal("mismatched evidence fingerprint was accepted")
+	}
+	review, err := RecordPRVisualPrivacyReview(repo, manifest.Key, manifest.Fingerprint, "reviewer@example.invalid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := RecordPRVisualPrivacyReview(repo, manifest.Key, manifest.Fingerprint, "reviewer@example.invalid")
+	if err != nil || replayed.Fingerprint != review.Fingerprint || replayed.ReviewedAt != review.ReviewedAt {
+		t.Fatalf("exact review replay was not idempotent: %#v %#v %v", review, replayed, err)
+	}
+	if status, fingerprint, err := ResolvePRVisualPrivacyStatus(repo, &manifest); err != nil || status != "PASS" || fingerprint != review.Fingerprint {
+		t.Fatalf("current privacy review was not accepted: %s %q %v", status, fingerprint, err)
+	}
+	changedPath := filepath.Join(t.TempDir(), "changed.png")
+	file, err := os.Create(changedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canvas := image.NewRGBA(image.Rect(0, 0, 4, 3))
+	canvas.Set(1, 1, color.RGBA{R: 10, G: 20, B: 240, A: 255})
+	if err := png.Encode(file, canvas); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := SavePRVisualEvidence(repo, PRVisualEvidenceManifest{
+		Key: manifest.Key, Policy: manifest.Policy, Relevance: manifest.Relevance, RelevanceSource: manifest.RelevanceSource,
+		Status: manifest.Status, SourceCommit: manifest.SourceCommit, ProductDiffSHA256: manifest.ProductDiffSHA256,
+		Scenarios:   manifest.Scenarios,
+		Items:       []PRVisualEvidenceItem{{ScenarioID: "warning", Path: changedPath, Viewport: "1440x900", CapturedAt: time.Now().UTC().Truncate(time.Second).Format(time.RFC3339), Status: "captured", PrivacyStatus: "clean"}},
+		Publication: PRVisualPublication{State: "pending"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, fingerprint, err := ResolvePRVisualPrivacyStatus(repo, &changed); err != nil || status != "REVIEW_REQUIRED" || fingerprint != "" {
+		t.Fatalf("changed current pixels did not require a fresh review: %s %q %v", status, fingerprint, err)
+	}
+	if _, err := LoadPRVisualPrivacyReview(repo, manifest.Key); err == nil || !strings.Contains(err.Error(), "stale") {
+		t.Fatalf("changed pixels did not invalidate privacy review: %v", err)
+	}
+}
+
 func TestPRVisualCapabilityReceiptInvalidatesChangedInputs(t *testing.T) {
 	repo := visualTestRepo(t)
 	receipt := PRVisualCapabilityReceipt{

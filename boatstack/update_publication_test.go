@@ -91,6 +91,39 @@ func TestPrepareUpdatePublicationIsAtomicAndRejectsProductPaths(t *testing.T) {
 	}
 }
 
+// control-law: published-generated-lock-cannot-name-ignored-untracked-output
+func TestPrepareUpdatePublicationRejectsIgnoredGeneratedOutput(t *testing.T) {
+	repo := updatePublicationTestRepo(t, "v9.8.7")
+	ignoredPath := ".agents/skills/build/SKILL.md"
+	if err := os.WriteFile(filepath.Join(repo, ".gitignore"), []byte("build/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "add", ".gitignore")
+	runGit(t, repo, "commit", "-m", "ignore build directories")
+	runGit(t, repo, "push", "origin", "HEAD:main")
+	absolute := filepath.Join(repo, filepath.FromSlash(ignoredPath))
+	if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	value := []byte("generated\n")
+	if err := os.WriteFile(absolute, value, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lock, err := MarshalJSON(map[string]any{"files": map[string]string{
+		".cursor/commands/boatstack-update.md": SHA256Bytes([]byte("<!-- " + Marker + " -->\nnew\n")),
+		ignoredPath:                            SHA256Bytes(value),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".product-loop", "generated.lock.json"), lock, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PrepareUpdatePublication(repo, "v9.8.7"); err == nil || !strings.Contains(err.Error(), ignoredPath) {
+		t.Fatalf("ignored generated output was accepted: %v", err)
+	}
+}
+
 func TestUpdatePreviewCarriesFingerprintRepairProvenance(t *testing.T) {
 	repo := updatePublicationTestRepo(t, "v9.8.7")
 	result := InstallationRepairResult{

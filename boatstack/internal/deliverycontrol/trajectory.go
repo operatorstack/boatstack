@@ -57,10 +57,19 @@ type FlowTrajectoryReport struct {
 	// JCoding is coding effort measured as telemetry and reported ALONGSIDE J_flow.
 	// It is never summed into J_flow and never enters Regret — the decomposition
 	// J = J_flow + J_coding keeps the two costs separate by construction.
-	JCoding               int            `json:"j_coding"`
-	Steps                 int            `json:"steps"`
-	Resolution            Resolution     `json:"resolution"`
-	PositiveGapByCategory map[string]int `json:"positive_gap_by_category,omitempty"`
+	JCoding                  int            `json:"j_coding"`
+	Steps                    int            `json:"steps"`
+	Resolution               Resolution     `json:"resolution"`
+	PositiveGapByCategory    map[string]int `json:"positive_gap_by_category,omitempty"`
+	Feature                  string         `json:"feature,omitempty"`
+	CommandCoverageStatus    string         `json:"command_coverage_status"`
+	CommandEvents            int            `json:"command_events"`
+	CommandFailures          int            `json:"command_failures"`
+	ObservedCommandMS        int64          `json:"observed_command_ms"`
+	CommandWallSpanMS        int64          `json:"command_wall_span_ms"`
+	FirstCommandAt           string         `json:"first_command_at,omitempty"`
+	LastCommandAt            string         `json:"last_command_at,omitempty"`
+	CommandFailureByCategory map[string]int `json:"command_failure_by_category,omitempty"`
 }
 
 // WalkCost sums a trajectory's observed J_flow: each attempt billed at its

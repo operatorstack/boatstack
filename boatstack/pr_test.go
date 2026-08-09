@@ -79,7 +79,7 @@ func quoted(value string) string {
 func previewDocument(context PRContext, title, body string) string {
 	return strings.Join([]string{
 		"---",
-		"boatstack_pr_version: 3",
+		"boatstack_pr_version: 4",
 		"title: " + quoted(title),
 		"mode: " + quoted(context.Mode),
 		"feature: " + quoted(context.Feature),
@@ -91,6 +91,8 @@ func previewDocument(context PRContext, title, body string) string {
 		"pr_visual_evidence_status: " + quoted(context.PRVisualEvidenceStatus),
 		"pr_visual_evidence_count: " + strconv.Itoa(context.PRVisualEvidenceCount),
 		"pr_visual_evidence_fingerprint: " + quoted(context.PRVisualEvidenceFingerprint),
+		"pr_visual_privacy_status: " + quoted(context.PRVisualPrivacyStatus),
+		"pr_visual_privacy_receipt_fingerprint: " + quoted(context.PRVisualPrivacyFingerprint),
 		"---",
 		strings.TrimSpace(body),
 		"",
@@ -116,6 +118,33 @@ func writePreview(t *testing.T, repo string, context PRContext, title, body stri
 		t.Fatal(err)
 	}
 	return path
+}
+
+func TestPRBaseCanonicalizationAcceptsOnlyOriginSpellings(t *testing.T) {
+	repo := prTestRepo(t)
+	for _, input := range []string{"main", "origin/main", "refs/remotes/origin/main", "refs/heads/main"} {
+		t.Run(strings.ReplaceAll(input, "/", "_"), func(t *testing.T) {
+			base, err := canonicalPRBase(repo, input)
+			if err != nil || base != "main" {
+				t.Fatalf("canonicalPRBase(%q) = %q, %v", input, base, err)
+			}
+			context, err := PreparePRContext(PRContextOptions{Repo: repo, Base: input})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if context.BaseBranch != "main" {
+				t.Fatalf("context retained noncanonical base %q", context.BaseBranch)
+			}
+		})
+	}
+	for _, input := range []string{"refs/remotes/upstream/main", "HEAD", "-main", "refs/tags/main"} {
+		if _, err := canonicalPRBase(repo, input); err == nil {
+			t.Fatalf("malformed or foreign base %q was accepted", input)
+		}
+	}
+	if _, err := resolveFetchedOriginBaseCommit(repo, "missing"); err == nil || !strings.Contains(err.Error(), "origin/missing") {
+		t.Fatalf("unavailable origin ref did not fail precisely: %v", err)
+	}
 }
 
 func TestAdHocPRContextAndPreviewAreEvidenceLimited(t *testing.T) {
@@ -880,6 +909,9 @@ func TestPreparePRContextAutoCapturesRelevantVisualEvidence(t *testing.T) {
 	if context.PRVisualEvidenceStatus != "PASS" || context.PRVisualEvidenceCount != 1 {
 		t.Fatalf("ship preparation did not capture declared evidence itself: %#v", context)
 	}
+	if context.PRVisualPrivacyStatus != "REVIEW_REQUIRED" || context.PRVisualPrivacyFingerprint != "" {
+		t.Fatalf("automated clean capture bypassed human privacy review: %#v", context)
+	}
 	if context.PRVisualEvidenceCaptureDetail != "" {
 		t.Fatalf("successful auto-capture reported a gap: %s", context.PRVisualEvidenceCaptureDetail)
 	}
@@ -895,6 +927,58 @@ func TestPreparePRContextAutoCapturesRelevantVisualEvidence(t *testing.T) {
 	}
 	if again.PRVisualEvidenceFingerprint != context.PRVisualEvidenceFingerprint {
 		t.Fatal("repeat context preparation destabilized the visual fingerprint")
+	}
+	review, err := RecordPRVisualPrivacyReview(repo, context.PRVisualEvidence.Key, context.PRVisualEvidence.Fingerprint, "reviewer@example.invalid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewed, err := PreparePRContext(PRContextOptions{Repo: repo, Feature: "reviewer-ready", CaptureRunner: runner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reviewed.PRVisualPrivacyStatus != "PASS" || reviewed.PRVisualPrivacyFingerprint != review.Fingerprint || runner.calls != 1 {
+		t.Fatalf("exact human review did not unlock current pixels: %#v", reviewed)
+	}
+}
+
+// Bypass: neither check-pr nor publish-pr may contact GitHub while automated
+// pixels still lack the exact human privacy receipt.
+func TestPublishPRRunsNoGitHubCommandBeforeAutomatedPrivacyReview(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake gh fixture uses a POSIX shell")
+	}
+	repo := prTestRepoConfigured(t, func(config *ProjectConfig) {
+		config.Workflow.PRVisualEvidence = "suggest"
+		config.Project.Commands["visual"] = "repo-owned-harness"
+	})
+	activateManagedFeature(t, repo, "reviewer-ready")
+	runner := &stubCaptureRunner{write: func(request CaptureRequest) error {
+		writeTestPNG(t, request.OutputPath)
+		return nil
+	}}
+	context, err := PreparePRContext(PRContextOptions{Repo: repo, Feature: "reviewer-ready", CaptureRunner: runner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	previewPath := writePreview(t, repo, context, "Require exact pixel privacy review", visualEvidenceBody(managedPRBody(), context.PRVisualEvidenceStatus))
+	preview, err := ParsePRPreview(previewPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fakeDir := t.TempDir()
+	logPath := filepath.Join(fakeDir, "gh.log")
+	script := filepath.Join(fakeDir, "gh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho called >> \"$BOATSTACK_GH_LOG\"\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakeDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("BOATSTACK_GH_LOG", logPath)
+	_, err = PublishPR(PRPublishOptions{Repo: repo, PreviewPath: previewPath, ExpectedFingerprint: preview.Fingerprint, Action: "open"})
+	if err == nil || !strings.Contains(err.Error(), "privacy review") {
+		t.Fatalf("pre-review publication did not fail at privacy boundary: %v", err)
+	}
+	if _, statErr := os.Stat(logPath); !os.IsNotExist(statErr) {
+		t.Fatalf("GitHub command ran before privacy review: %v", statErr)
 	}
 }
 

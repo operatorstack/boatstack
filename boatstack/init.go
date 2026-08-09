@@ -231,6 +231,17 @@ func copyHelper(source, repo string) (string, string, error) {
 	return destination, SHA256Bytes(value), nil
 }
 
+func installControllerLocalRuntime(root, source string, integrations map[string]IntegrationState) (string, string, error) {
+	binaryPath, binaryHash, err := copyHelper(source, root)
+	if err != nil {
+		return "", "", err
+	}
+	if err := writeInstallLock(root, binaryPath, binaryHash, integrations); err != nil {
+		return "", "", err
+	}
+	return binaryPath, binaryHash, nil
+}
+
 func writeInstallLock(repo, binaryPath, binaryHash string, integrations map[string]IntegrationState) error {
 	value, err := buildInstallLock(repo, binaryPath, binaryHash, integrations)
 	if err != nil {
@@ -638,6 +649,11 @@ func RunInit(options InitOptions) (returnErr error) {
 	}
 	if err := writeInstallLock(repo, binaryPath, binaryHash, states); err != nil {
 		return err
+	}
+	if ctx := WorkspaceFor(repo); ctx.Mode == SupervisionDetached {
+		if _, _, err := installControllerLocalRuntime(ctx.ExportRoot(), helperSource, states); err != nil {
+			return fmt.Errorf("refresh detached controller helper: %w", err)
+		}
 	}
 	if err := initCheckpoint("install-lock-written"); err != nil {
 		return fmt.Errorf("initialization checkpoint install-lock-written: %w", err)

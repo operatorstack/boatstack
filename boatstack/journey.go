@@ -158,6 +158,10 @@ func RecordJourneyResults(options JourneyResultsOptions) (JourneyResults, error)
 	if base == "" {
 		base = defaultPRBase(repo)
 	}
+	base, err = canonicalPRBase(repo, base)
+	if err != nil {
+		return JourneyResults{}, err
+	}
 	_, headCommit, diffSHA, _, err := currentDiffIdentity(repo, base, "")
 	if err != nil {
 		return JourneyResults{}, err

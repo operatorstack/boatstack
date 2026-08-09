@@ -251,17 +251,11 @@ func TestDoctor_SchemaBehindAndAhead(t *testing.T) {
 
 func TestValidateUpdateWorkspace_ConformanceBlock(t *testing.T) {
 	oldOverride := currentConfigSchemaVersionOverride
-	oldVersion := Version
-	oldSourceCommit := SourceCommit
-	defer func() {
+	t.Cleanup(func() {
 		currentConfigSchemaVersionOverride = oldOverride
-		Version = oldVersion
-		SourceCommit = oldSourceCommit
-	}()
+	})
 
 	currentConfigSchemaVersionOverride = 1
-	Version = "v0.5.0"
-	SourceCommit = "update-test-0.5.0"
 
 	now := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
 	withUpdateGlobals(t, "v0.5.0", now, func() (ReleaseInfo, error) { return ReleaseInfo{}, nil })

@@ -25,6 +25,9 @@ import (
 // creates the artifact.
 func TestFirstPlanningWriteOwnedChannelStaysOpen(t *testing.T) {
 	repo := safetyTestRepo(t)
+	previousHealth := planningInstallationHealth
+	planningInstallationHealth = func(string) error { return nil }
+	t.Cleanup(func() { planningInstallationHealth = previousHealth })
 
 	for _, command := range []string{
 		".product-loop/bin/boatstack-helper planning-write --repo . --feature checkout --artifact plan.md <<'BOATSTACK_PLAN_EOF'\n# Plan\nBOATSTACK_PLAN_EOF\n",

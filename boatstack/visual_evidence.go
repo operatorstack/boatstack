@@ -88,6 +88,19 @@ type PRVisualEvidenceManifest struct {
 	Fingerprint              string                 `json:"fingerprint"`
 }
 
+// PRVisualPrivacyReview is deliberately separate from the capture manifest.
+// Human review authorizes the exact immutable pixels without rewriting their
+// evidence identity.
+type PRVisualPrivacyReview struct {
+	SchemaVersion       int      `json:"schema_version"`
+	Key                 string   `json:"key"`
+	EvidenceFingerprint string   `json:"evidence_fingerprint"`
+	PNGHashes           []string `json:"png_sha256"`
+	ReviewerIdentity    string   `json:"reviewer_identity"`
+	ReviewedAt          string   `json:"reviewed_at"`
+	Fingerprint         string   `json:"fingerprint"`
+}
+
 type PRVisualCapabilityReceipt struct {
 	SchemaVersion      int    `json:"schema_version"`
 	BoatstackVersion   string `json:"boatstack_version"`
@@ -196,6 +209,166 @@ func visualEvidenceManifestPath(repo, key string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(directory, "manifest.json"), nil
+}
+
+func visualPrivacyReviewPath(repo, key string) (string, error) {
+	directory, err := visualEvidenceDirectory(repo, key)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(directory, "privacy-review.json"), nil
+}
+
+func visualPrivacyReviewFingerprint(review PRVisualPrivacyReview) (string, error) {
+	copy := review
+	copy.Fingerprint = ""
+	raw, err := MarshalJSON(copy)
+	if err != nil {
+		return "", err
+	}
+	return SHA256Bytes(raw), nil
+}
+
+func manifestPNGHashes(manifest PRVisualEvidenceManifest) []string {
+	hashes := make([]string, 0, len(manifest.Items))
+	for _, item := range manifest.Items {
+		hashes = append(hashes, item.SHA256)
+	}
+	sort.Strings(hashes)
+	return hashes
+}
+
+func validateVisualPrivacyReview(review PRVisualPrivacyReview, manifest PRVisualEvidenceManifest) error {
+	if review.SchemaVersion != visualEvidenceSchemaVersion || review.Key != manifest.Key || review.EvidenceFingerprint != manifest.Fingerprint {
+		return fmt.Errorf("visual privacy review is stale for the current evidence manifest")
+	}
+	if strings.TrimSpace(review.ReviewerIdentity) == "" {
+		return fmt.Errorf("visual privacy review requires reviewer_identity")
+	}
+	if _, err := time.Parse(time.RFC3339, review.ReviewedAt); err != nil {
+		return fmt.Errorf("visual privacy reviewed_at must be RFC3339: %w", err)
+	}
+	expected := manifestPNGHashes(manifest)
+	actual := append([]string(nil), review.PNGHashes...)
+	sort.Strings(actual)
+	if len(expected) != len(actual) {
+		return fmt.Errorf("visual privacy review does not bind every current PNG")
+	}
+	for i := range expected {
+		if expected[i] != actual[i] {
+			return fmt.Errorf("visual privacy review is stale because screenshot pixels changed")
+		}
+	}
+	fingerprint, err := visualPrivacyReviewFingerprint(review)
+	if err != nil {
+		return err
+	}
+	if review.Fingerprint != fingerprint {
+		return fmt.Errorf("visual privacy review fingerprint is stale")
+	}
+	return nil
+}
+
+// RecordPRVisualPrivacyReview records one human decision over the exact current
+// manifest fingerprint and PNG hashes. It never modifies capture evidence.
+// control-law: pixels-require-exact-human-privacy-receipt-before-github
+func RecordPRVisualPrivacyReview(repo, key, evidenceFingerprint, reviewerIdentity string) (PRVisualPrivacyReview, error) {
+	repo, err := ResolveRepository(repo)
+	if err != nil {
+		return PRVisualPrivacyReview{}, err
+	}
+	manifest, err := LoadPRVisualEvidence(repo, key)
+	if err != nil {
+		return PRVisualPrivacyReview{}, err
+	}
+	if strings.TrimSpace(evidenceFingerprint) == "" || evidenceFingerprint != manifest.Fingerprint {
+		return PRVisualPrivacyReview{}, fmt.Errorf("evidence fingerprint does not match the exact visual manifest under review")
+	}
+	if len(manifest.Items) == 0 {
+		return PRVisualPrivacyReview{}, fmt.Errorf("visual privacy review requires at least one PNG")
+	}
+	if current, loadErr := LoadPRVisualPrivacyReview(repo, key); loadErr == nil && current.EvidenceFingerprint == manifest.Fingerprint && current.ReviewerIdentity == strings.TrimSpace(reviewerIdentity) {
+		return current, nil
+	}
+	review := PRVisualPrivacyReview{
+		SchemaVersion: visualEvidenceSchemaVersion, Key: manifest.Key, EvidenceFingerprint: manifest.Fingerprint,
+		PNGHashes: manifestPNGHashes(manifest), ReviewerIdentity: strings.TrimSpace(reviewerIdentity),
+		ReviewedAt: time.Now().UTC().Truncate(time.Second).Format(time.RFC3339),
+	}
+	review.Fingerprint, err = visualPrivacyReviewFingerprint(review)
+	if err != nil {
+		return PRVisualPrivacyReview{}, err
+	}
+	if err := validateVisualPrivacyReview(review, manifest); err != nil {
+		return PRVisualPrivacyReview{}, err
+	}
+	path, err := visualPrivacyReviewPath(repo, key)
+	if err != nil {
+		return PRVisualPrivacyReview{}, err
+	}
+	raw, err := MarshalJSON(review)
+	if err != nil {
+		return PRVisualPrivacyReview{}, err
+	}
+	if err := atomicWriteMode(path, raw, 0o600); err != nil {
+		return PRVisualPrivacyReview{}, err
+	}
+	return review, nil
+}
+
+func LoadPRVisualPrivacyReview(repo, key string) (PRVisualPrivacyReview, error) {
+	manifest, err := LoadPRVisualEvidence(repo, key)
+	if err != nil {
+		return PRVisualPrivacyReview{}, err
+	}
+	path, err := visualPrivacyReviewPath(repo, key)
+	if err != nil {
+		return PRVisualPrivacyReview{}, err
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return PRVisualPrivacyReview{}, err
+	}
+	var review PRVisualPrivacyReview
+	if err := DecodeJSON("load PR visual privacy review", path, raw, &review); err != nil {
+		return PRVisualPrivacyReview{}, err
+	}
+	if err := validateVisualPrivacyReview(review, manifest); err != nil {
+		return PRVisualPrivacyReview{}, err
+	}
+	return review, nil
+}
+
+// ResolvePRVisualPrivacyStatus keeps legacy human-reviewed imports valid while
+// requiring automated clean captures to obtain a separate exact-pixel receipt.
+func ResolvePRVisualPrivacyStatus(repo string, manifest *PRVisualEvidenceManifest) (string, string, error) {
+	if manifest == nil || manifest.Relevance != "relevant" || len(manifest.Items) == 0 {
+		return "NOT_APPLICABLE", "", nil
+	}
+	allHumanReviewed := true
+	for _, item := range manifest.Items {
+		allHumanReviewed = allHumanReviewed && item.PrivacyStatus == "human-reviewed"
+	}
+	if allHumanReviewed {
+		return "PASS", SHA256Bytes([]byte("legacy-human-reviewed\x00" + manifest.Fingerprint)), nil
+	}
+	review, err := LoadPRVisualPrivacyReview(repo, manifest.Key)
+	if err == nil {
+		return "PASS", review.Fingerprint, nil
+	}
+	path, pathErr := visualPrivacyReviewPath(repo, manifest.Key)
+	if pathErr == nil && os.IsNotExist(err) {
+		return "REVIEW_REQUIRED", "", nil
+	}
+	if pathErr == nil {
+		if _, statErr := os.Stat(path); os.IsNotExist(statErr) {
+			return "REVIEW_REQUIRED", "", nil
+		}
+	}
+	if strings.Contains(err.Error(), "visual privacy review is stale") || strings.Contains(err.Error(), "screenshot pixels changed") || strings.Contains(err.Error(), "does not bind every current PNG") {
+		return "REVIEW_REQUIRED", "", nil
+	}
+	return "", "", err
 }
 
 func visualCapabilityPath(repo string) (string, error) {

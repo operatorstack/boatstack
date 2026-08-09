@@ -639,6 +639,30 @@ func recordPRVisualEvidenceCommand(arguments []string) int {
 	return 0
 }
 
+func reviewPRVisualEvidenceCommand(arguments []string) int {
+	flags := flag.NewFlagSet("review-pr-visual-evidence", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository whose Git-common state owns the evidence")
+	key := flags.String("key", "", "managed feature or ad-hoc visual evidence key")
+	evidenceFingerprint := flags.String("evidence-fingerprint", "", "exact capture manifest fingerprint reviewed")
+	reviewerIdentity := flags.String("reviewer-identity", "", "human reviewer identity")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if *key == "" || *evidenceFingerprint == "" || *reviewerIdentity == "" {
+		return fail(fmt.Errorf("review-pr-visual-evidence requires --key, --evidence-fingerprint, and --reviewer-identity"))
+	}
+	review, err := boatstack.RecordPRVisualPrivacyReview(*repo, *key, *evidenceFingerprint, *reviewerIdentity)
+	if err != nil {
+		return fail(err)
+	}
+	value, err := boatstack.MarshalJSON(review)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Print(string(value))
+	return 0
+}
+
 func captureEvidenceCommand(arguments []string) int {
 	flags := flag.NewFlagSet("capture-evidence", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository whose Git-common state owns the evidence")
@@ -954,11 +978,17 @@ func runPreflightCommand(arguments []string) int {
 	flags := flag.NewFlagSet("run-preflight", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository whose Git state should be verified before boatstack run")
 	feature := flags.String("feature", "", "optional specific managed feature to verify")
+	healthOnly := flags.Bool("health-only", false, "verify installation and generated state without Git network or branch checks")
 	jsonOutput := flags.Bool("json", false, "print the versioned structured preflight")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}
-	status := boatstack.CheckRunPreflight(*repo, *feature)
+	var status boatstack.RunPreflight
+	if *healthOnly {
+		status = boatstack.CheckInstallationPreflight(*repo)
+	} else {
+		status = boatstack.CheckRunPreflight(*repo, *feature)
+	}
 	if *jsonOutput {
 		value, err := boatstack.MarshalJSON(status)
 		if err != nil {
@@ -1563,10 +1593,13 @@ func workspaceSyncCommand(arguments []string) int {
 	return 0
 }
 
-func run() int {
+func run() (result int) {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <attach|detach|detached-status|context|activate|deactivate|init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|record-autonomy|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|authority-context|record-change|record-journey-results|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|attach-evidence|check-safety|migrate-config|safety-hook|ambient-safety-hook|diagnose-hook|render-denial|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-reap|workspace-status|workspace-sync|flow|retro|insight|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <attach|detach|detached-status|context|activate|deactivate|init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|record-autonomy|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|authority-context|record-change|record-journey-results|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|review-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|attach-evidence|check-safety|migrate-config|safety-hook|ambient-safety-hook|diagnose-hook|render-denial|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-reap|workspace-status|workspace-sync|flow|retro|insight|doctor|version>")
 		return 2
+	}
+	if complete := commandTraceCompletion(os.Args[1], os.Args[2:]); complete != nil {
+		defer func() { complete(result) }()
 	}
 	switch os.Args[1] {
 	case "attach":
@@ -1641,6 +1674,8 @@ func run() int {
 		return recordDeliveryGateCommand(os.Args[2:])
 	case "record-pr-visual-evidence":
 		return recordPRVisualEvidenceCommand(os.Args[2:])
+	case "review-pr-visual-evidence":
+		return reviewPRVisualEvidenceCommand(os.Args[2:])
 	case "capture-evidence":
 		return captureEvidenceCommand(os.Args[2:])
 	case "provision-capability":

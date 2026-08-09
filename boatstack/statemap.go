@@ -248,7 +248,7 @@ func StateRegistry() []StateEntry {
 		},
 		{
 			Name: "visual-evidence", Class: ClassRuntimeShared, Partition: "git-common", Gitignored: true, GuardProtected: true,
-			OwnerVerbs: []string{"record-pr-visual-evidence", "capture-evidence", "record-pr-visual-publication", "attach-evidence"},
+			OwnerVerbs: []string{"record-pr-visual-evidence", "review-pr-visual-evidence", "capture-evidence", "record-pr-visual-publication", "attach-evidence"},
 			Sample:     staticSample(filepath.FromSlash(".git/boatstack/visual-evidence/sample/manifest.json")),
 		},
 		{

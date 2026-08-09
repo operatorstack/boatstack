@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -81,6 +82,33 @@ func installedGeneratedPaths(repo string) map[string]bool {
 		result[filepath.ToSlash(path)] = true
 	}
 	return result
+}
+
+// validateGeneratedCommitReadiness prevents a locally healthy update from
+// publishing a lock that names an untracked file hidden by repository ignore
+// rules. Tracked files remain valid even when a later broad ignore rule matches.
+func validateGeneratedCommitReadiness(repo string) error {
+	for path := range installedGeneratedPaths(repo) {
+		absolute, err := resolveRepositoryRelativePath(repo, path)
+		if err != nil {
+			return err
+		}
+		if _, err := os.Lstat(absolute); os.IsNotExist(err) {
+			continue
+		} else if err != nil {
+			return err
+		}
+		if _, err := gitCommand(repo, "ls-files", "--error-unmatch", "--", path); err == nil {
+			continue
+		}
+		command := exec.Command("git", "-C", repo, "check-ignore", "-q", "--", path)
+		if err := command.Run(); err == nil {
+			return fmt.Errorf("generated update path is ignored and untracked: %s; add an explicit repository-owned ignore exception before publishing the update", path)
+		} else if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 1 {
+			return fmt.Errorf("cannot verify generated update path ignore state for %s: %w", path, err)
+		}
+	}
+	return nil
 }
 
 func updateOwnedPaths(repo string, config ProjectConfig) map[string]bool {
@@ -183,6 +211,9 @@ func PrepareUpdatePublication(repoPath, requestedVersion string) (UpdatePublicat
 	headBranch := strings.TrimSpace(gitOutput(repo, "branch", "--show-current"))
 	if headBranch != "chore/update-boatstack-"+version {
 		return UpdatePublicationPreview{}, fmt.Errorf("update preview requires branch chore/update-boatstack-%s; current branch is %s", version, headBranch)
+	}
+	if err := validateGeneratedCommitReadiness(repo); err != nil {
+		return UpdatePublicationPreview{}, err
 	}
 	paths, err := updateChangedPathsAgainst(repo, baseRef)
 	if err != nil {

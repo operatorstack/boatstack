@@ -348,6 +348,28 @@ func (p PrescribedCommand) CommandLine() string {
 // faithfully — so the caller emits nothing rather than a guessed command. The
 // emitted verb is always the registry CLIVerb of the transition (single source),
 // and human-owed inputs are listed, never filled.
+var deriveAutonomousPRPublish = func(repo, feature, previewPath string) (string, string, string, bool) {
+	preview, _, err := CheckPRPreview(repo, previewPath)
+	if err != nil {
+		return "", "", "", false
+	}
+	action, _, err := RecommendedPRAction(repo)
+	if err != nil || (action != "open" && action != "update") {
+		return "", "", "", false
+	}
+	planPath := filepath.Join(WorkspaceFor(repo).FeatureDir(feature), "plan.md")
+	check, err := CheckPlan(planPath)
+	if err != nil {
+		return "", "", "", false
+	}
+	autonomyPath := filepath.Join(filepath.Dir(planPath), "autonomy.md")
+	receipt, err := CheckAutonomyReceipt(autonomyPath, check, repo, RunTargetPR, action)
+	if err != nil || receipt.PRAction != action {
+		return "", "", "", false
+	}
+	return action, preview.Fingerprint, autonomyPath, true
+}
+
 func prescribeCommand(repo, feature string, status NextStatus, transition deliverycontrol.TransitionID) (*PrescribedCommand, bool) {
 	desc, ok := deliverycontrol.Transition(transition)
 	if !ok || desc.CLIVerb == "" {
@@ -367,8 +389,12 @@ func prescribeCommand(repo, feature string, status NextStatus, transition delive
 		cmd.RequiresHumanInput = []string{"--status", "--evidence", "--reviewer-identity", "--review-method"}
 	case PublishTransition:
 		preview := filepath.Join(WorkspaceFor(repo).GeneratedRoot(), "features", feature, "pr.md")
-		cmd.Args = append(repoArgs, "--preview", preview, "--action", "open")
-		cmd.RequiresHumanInput = []string{"--preview-fingerprint"}
+		if action, fingerprint, autonomyPath, authorized := deriveAutonomousPRPublish(repo, feature, preview); authorized {
+			cmd.Args = append(repoArgs, "--preview", preview, "--action", action, "--preview-fingerprint", fingerprint, "--autonomy", autonomyPath)
+		} else {
+			cmd.Args = append(repoArgs, "--preview", preview, "--action", "open")
+			cmd.RequiresHumanInput = []string{"--preview-fingerprint"}
+		}
 	case deliverycontrol.TransitionID("delivery.record_change"):
 		if feature == "" {
 			return nil, false

@@ -54,6 +54,36 @@ func TestPrescribePublishFromReviewPassed(t *testing.T) {
 	}
 }
 
+// Positive/replay: an already-validated PR-target receipt supplies the exact
+// action, preview fingerprint, and receipt path. No new authority is fabricated.
+func TestPrescribePublishBecomesDerivableOnlyWithExactPRAuthority(t *testing.T) {
+	original := deriveAutonomousPRPublish
+	t.Cleanup(func() { deriveAutonomousPRPublish = original })
+	deriveAutonomousPRPublish = func(repo, feature, preview string) (string, string, string, bool) {
+		return "update", strings.Repeat("a", 64), "/repo/.product-loop/features/demo/autonomy.md", true
+	}
+	cmd, ok := prescribeCommand("/repo", "demo", syntheticStatus(), PublishTransition)
+	if !ok || !cmd.AutoDerivable || len(cmd.RequiresHumanInput) != 0 {
+		t.Fatalf("valid PR authority did not produce a derivable command: %#v", cmd)
+	}
+	for _, expected := range []string{"--action", "update", "--preview-fingerprint", strings.Repeat("a", 64), "--autonomy", "/repo/.product-loop/features/demo/autonomy.md"} {
+		if !contains(cmd.Args, expected) {
+			t.Fatalf("authorized command omitted %q: %v", expected, cmd.Args)
+		}
+	}
+	if !canAutoDrive(cmd, autoDrivableTransitions) {
+		t.Fatal("exact receipt-bound publish should be executable")
+	}
+
+	deriveAutonomousPRPublish = func(repo, feature, preview string) (string, string, string, bool) {
+		return "", "", "", false
+	}
+	stale, _ := prescribeCommand("/repo", "demo", syntheticStatus(), PublishTransition)
+	if stale.AutoDerivable || !contains(stale.RequiresHumanInput, "--preview-fingerprint") {
+		t.Fatalf("stale or mismatched authority bypassed the stop: %#v", stale)
+	}
+}
+
 // Relation: the emitted verb is exactly the registry CLIVerb of the transition,
 // and the transition prescribed for each state is exactly the oracle's lowest-cost
 // next edge from that state. Prescription can never diverge from the registry or
