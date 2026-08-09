@@ -168,7 +168,11 @@ if (($manifest.binary_sha256 -notmatch '^[0-9a-f]{64}$') -or ($actual -ne $manif
 if ($LASTEXITCODE -ne 0) { Fail-Activation "the pinned runtime could not activate this worktree" }
 $local = Join-Path $root ".product-loop/bin/boatstack-helper.exe"
 if (-not (Test-Path -LiteralPath $local -PathType Leaf)) { Fail-Activation "worktree runtime activation did not produce a safe helper" }
-& $local @args
+if ($MyInvocation.ExpectingInput) {
+  $input | & $local @args
+} else {
+  & $local @args
+}
 exit $LASTEXITCODE
 `, recovery, Version, SourceCommit, recovery))
 }
