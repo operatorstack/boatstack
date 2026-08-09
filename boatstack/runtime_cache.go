@@ -112,6 +112,29 @@ func sharedRuntimeOwnedPaths(repo, version, sourceCommit string) (controllerPath
 	return binary, manifest, err
 }
 
+func bootstrapRuntimePaths(repo, version, sourceCommit string) (string, string, error) {
+	binary, manifest, err := bootstrapRuntimeOwnedPaths(repo, version, sourceCommit)
+	return binary.path, manifest.path, err
+}
+
+func bootstrapRuntimeOwnedPaths(repo, version, sourceCommit string) (controllerPath, controllerPath, error) {
+	ctx := WorkspaceFor(repo)
+	directory, err := ctx.BootstrapRuntimeDir(version, sourceCommit)
+	if err != nil {
+		return controllerPath{}, controllerPath{}, err
+	}
+	common, err := gitCommonDir(repo)
+	if err != nil {
+		return controllerPath{}, controllerPath{}, err
+	}
+	binary, err := newControllerPath(common, filepath.Join(directory, helperName()))
+	if err != nil {
+		return controllerPath{}, controllerPath{}, err
+	}
+	manifest, err := newControllerPath(common, filepath.Join(directory, "runtime.lock.json"))
+	return binary, manifest, err
+}
+
 func atomicWriteMode(path string, content []byte, mode fs.FileMode) error {
 	directory := filepath.Dir(path)
 	if err := os.MkdirAll(directory, 0o755); err != nil {
@@ -152,6 +175,31 @@ func installSharedRuntime(source, repo string, integrations map[string]Integrati
 		return runtimeManifest{}, err
 	}
 	return writeRuntimeSlot(source, binaryPath, manifestPath, integrations)
+}
+
+// installCommandRuntime publishes the exact runtime needed by both sides of
+// tracked command activation. The mode-aware shared slot is installed first so
+// the Git-common bootstrap is never made admissible before it can activate the
+// worktree-local helper. Embedded mode uses one physical slot; detached mode
+// deliberately uses an external shared slot plus a Git-common bootstrap slot.
+// control-law: tracked-launcher-selects-only-the-pinned-runtime
+func installCommandRuntime(source, repo string, integrations map[string]IntegrationState) (runtimeManifest, error) {
+	sharedManifest, err := installSharedRuntime(source, repo, integrations)
+	if err != nil {
+		return runtimeManifest{}, err
+	}
+	sharedBinary, _, err := sharedRuntimePaths(repo, Version, SourceCommit)
+	if err != nil {
+		return runtimeManifest{}, err
+	}
+	bootstrapBinary, bootstrapLock, err := bootstrapRuntimeOwnedPaths(repo, Version, SourceCommit)
+	if err != nil {
+		return runtimeManifest{}, err
+	}
+	if filepath.Clean(sharedBinary) == bootstrapBinary.path {
+		return sharedManifest, nil
+	}
+	return writeRuntimeSlot(source, bootstrapBinary, bootstrapLock, integrations)
 }
 
 // installDetachedRuntime populates a detached repository's external shared-runtime
@@ -369,7 +417,7 @@ func HydrateWorktree(repoPath string) error {
 // this, the running binary equals the repo's committed pin by construction. The
 // verifyGeneratedRuntime gate refuses to populate a slot for any other version,
 // so hydration can never write a mislabeled runtime (the taxweave incident's
-// invariant), and installSharedRuntime's own post-write verify+rollback is the
+// invariant), and installCommandRuntime's own post-write verify+rollback is the
 // backstop. The operation is idempotent and safe under concurrent first use.
 func RunHydrateRuntime(repoPath string) error {
 	repo, err := ResolveRepository(repoPath)
@@ -387,8 +435,8 @@ func RunHydrateRuntime(repoPath string) error {
 	if err != nil {
 		return fmt.Errorf("load project configuration for runtime hydration: %w", err)
 	}
-	if _, err := installSharedRuntime(source, repo, config.Integrations); err != nil {
-		return fmt.Errorf("populate the repository-family Boatstack runtime: %w", err)
+	if _, err := installCommandRuntime(source, repo, config.Integrations); err != nil {
+		return fmt.Errorf("populate the Boatstack command runtime: %w", err)
 	}
 	return HydrateWorktree(repo)
 }

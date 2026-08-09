@@ -566,7 +566,7 @@ func RunInit(options InitOptions) (returnErr error) {
 			}
 		}
 	}()
-	if _, err := installSharedRuntime(helperSource, repo, config.Integrations); err != nil {
+	if _, err := installCommandRuntime(helperSource, repo, config.Integrations); err != nil {
 		return fmt.Errorf("cannot install the repository-family Boatstack runtime: %w", err)
 	}
 	var states map[string]IntegrationState
@@ -644,7 +644,7 @@ func RunInit(options InitOptions) (returnErr error) {
 	if err := initCheckpoint("helper-written"); err != nil {
 		return fmt.Errorf("initialization checkpoint helper-written: %w", err)
 	}
-	if _, err := installSharedRuntime(helperSource, repo, states); err != nil {
+	if _, err := installCommandRuntime(helperSource, repo, states); err != nil {
 		return fmt.Errorf("cannot finalize the repository-family Boatstack runtime: %w", err)
 	}
 	if err := writeInstallLock(repo, binaryPath, binaryHash, states); err != nil {

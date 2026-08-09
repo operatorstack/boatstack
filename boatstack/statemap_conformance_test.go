@@ -72,6 +72,9 @@ func TestEveryWorkspaceResolverIsDeclared(t *testing.T) {
 		"RuntimeDir": {resolve(func() (string, error) {
 			return w.RuntimeDir("v0.0.0", "0000000")
 		}), ClassRuntimeShared},
+		"BootstrapRuntimeDir": {resolve(func() (string, error) {
+			return w.BootstrapRuntimeDir("v0.0.0", "0000000")
+		}), ClassRuntimeShared},
 	}
 
 	for name, want := range resolverOutputs {

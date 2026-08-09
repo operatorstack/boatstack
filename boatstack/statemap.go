@@ -237,6 +237,17 @@ func StateRegistry() []StateEntry {
 			},
 		},
 		{
+			Name: "runtime-bootstrap-slots", Class: ClassRuntimeShared, Partition: "git-common", Gitignored: true, GuardProtected: true,
+			OwnerVerbs: []string{"init", "update", "hydrate-runtime"},
+			Sample: func(w WorkspaceContext) (string, error) {
+				base, err := w.BootstrapRuntimeDir("v0.0.0", "0000000")
+				if err != nil {
+					return "", err
+				}
+				return filepath.Join(base, "runtime.lock.json"), nil
+			},
+		},
+		{
 			Name: "mutation-receipts", Class: ClassRuntimeShared, Partition: "git-common", Gitignored: true, GuardProtected: true,
 			OwnerVerbs: []string{"activate-plan", "undo"},
 			Sample:     staticSample(filepath.FromSlash(".git/boatstack/mutations/v1/sample.json")),
