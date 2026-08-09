@@ -386,3 +386,23 @@ func (w WorkspaceContext) RuntimeDir(version, sourceCommit string) (string, erro
 	}
 	return filepath.Join(base, "runtimes", version, sourceCommit, platformKey()), nil
 }
+
+// BootstrapRuntimeDir holds the exact runtime used by tracked launchers and
+// repository guards before supervision mode can be resolved by trusted Go code.
+// It is always Git-common, including for detached supervision. The bootstrap
+// helper then activates the mode-aware shared runtime through HydrateWorktree.
+func (w WorkspaceContext) BootstrapRuntimeDir(version, sourceCommit string) (string, error) {
+	version, err := safeCacheSegment(version, "Boatstack version")
+	if err != nil {
+		return "", err
+	}
+	sourceCommit, err = safeCacheSegment(sourceCommit, "source commit")
+	if err != nil {
+		return "", err
+	}
+	common, err := gitCommonDir(w.RepoRoot)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(common, controlDirName, "runtimes", version, sourceCommit, platformKey()), nil
+}

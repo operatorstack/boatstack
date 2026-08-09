@@ -148,6 +148,53 @@ func TestTrackedLauncherActivatesFreshLinkedWorktreeWithoutHookTrust(t *testing.
 	}
 }
 
+// control-law: tracked-launcher-selects-only-the-pinned-runtime
+// Relation conformance for the detached failure mode: tracked launcher -> exact
+// hydrate operation -> Git-common bootstrap -> detached shared activation ->
+// verified local command dispatch.
+func TestTrackedLauncherHydratesDetachedRepositoryThroughGitCommonBootstrap(t *testing.T) {
+	t.Setenv(stateRootEnv, t.TempDir())
+	invalidateWorkspaceCache()
+	primary, _ := launcherTestRepository(t)
+	helper := buildLauncherTestHelper(t)
+	result, err := AttachDetached(AttachOptions{Repo: primary, BinaryPath: helper})
+	if err != nil || result.VerificationStatus != "VERIFIED" {
+		t.Fatalf("attach failed: %v %+v", err, result)
+	}
+	sharedBinary, _, err := sharedRuntimePaths(primary, Version, SourceCommit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bootstrapBinary, _, err := bootstrapRuntimePaths(primary, Version, SourceCommit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{filepath.Dir(sharedBinary), filepath.Dir(bootstrapBinary), filepath.Join(primary, ".product-loop", "bin")} {
+		if err := os.RemoveAll(path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hydrate := quotedLiteral(t, helper) + " hydrate-runtime --repo " + quotedLiteral(t, primary)
+	if runtime.GOOS == "windows" {
+		hydrate = "& " + hydrate
+	}
+	command := launcherCommand(primary, "version")
+	command.Dir = primary
+	command.Env = append(os.Environ(), "BOATSTACK_HYDRATE_COMMAND="+hydrate)
+	value, runErr := command.CombinedOutput()
+	if runErr != nil || !strings.Contains(string(value), Version) {
+		t.Fatalf("detached launcher hydration failed: %v\n%s", runErr, value)
+	}
+	for name, path := range map[string]string{"Git-common bootstrap": bootstrapBinary, "detached shared runtime": sharedBinary} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("%s missing after launcher hydration: %v", name, err)
+		}
+	}
+	if err := verifyLocalRuntime(primary); err != nil {
+		t.Fatalf("launcher did not dispatch through a verified local runtime: %v", err)
+	}
+}
+
 func runErrString(err error, output []byte) string {
 	if err == nil {
 		return string(output)
