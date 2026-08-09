@@ -20,6 +20,8 @@ func planningRepo(t *testing.T) string {
 	if output, err := exec.Command("git", "-C", repo, "init").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v: %s", err, output)
 	}
+	runGit(t, repo, "config", "user.name", "Boatstack Test")
+	runGit(t, repo, "config", "user.email", "boatstack@example.invalid")
 	return repo
 }
 

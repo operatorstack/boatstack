@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -112,7 +113,15 @@ func TestExportAndDriftCheck(t *testing.T) {
 		".agents/skills/boatstack/SKILL.md",
 		".agents/skills/boatstack-run/SKILL.md",
 		".agents/skills/auto-plan/SKILL.md",
+		".agents/skills/.gitattributes",
+		".claude/skills/.gitattributes",
+		".cursor/.gitattributes",
+		".gemini/skills/.gitattributes",
+		".github/PULL_REQUEST_TEMPLATE/.gitattributes",
+		".product-loop/.gitattributes",
 		".product-loop/.gitignore",
+		".product-loop/boatstack",
+		".product-loop/boatstack.ps1",
 		".product-loop/templates/plan.md",
 		".product-loop/templates/approval.md",
 		".product-loop/hooks/guard.sh",
@@ -121,6 +130,30 @@ func TestExportAndDriftCheck(t *testing.T) {
 	} {
 		if !fileExists(filepath.Join(repo, filepath.FromSlash(path))) {
 			t.Fatalf("expected generated file %s", path)
+		}
+	}
+	launcherPath := filepath.Join(repo, ".product-loop", "boatstack")
+	launcherInfo, err := os.Stat(launcherPath)
+	if err != nil || (runtime.GOOS != "windows" && launcherInfo.Mode().Perm()&0o111 == 0) {
+		t.Fatalf("POSIX launcher does not have its generated mode: %v", err)
+	}
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(launcherPath, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := CheckExport(repo, bundle.Files); err == nil || !strings.Contains(err.Error(), "non-executable .product-loop/boatstack") {
+			t.Fatalf("export check accepted a non-executable launcher: %v", err)
+		}
+		if err := os.Chmod(launcherPath, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for path, content := range bundle.Files {
+		if path == ".product-loop/boatstack" || path == ".product-loop/boatstack.ps1" {
+			continue
+		}
+		if strings.Contains(string(content), ".product-loop/bin/boatstack-helper") {
+			t.Fatalf("generated surface %s invokes the internal runtime directly", path)
 		}
 	}
 	claudeSkillPaths := map[string]bool{}
@@ -433,8 +466,9 @@ func TestExportAndDriftCheck(t *testing.T) {
 		t.Fatal("ship adapter permits unrelated scope expansion")
 	}
 	lock := string(bundle.Files[".product-loop/generated.lock.json"])
-	if !strings.Contains(lock, `"source_commit"`) || !strings.Contains(lock, `"integrations"`) {
-		t.Fatal("generated lock must record runtime provenance and integrations")
+	if !strings.Contains(lock, `"source_commit"`) || !strings.Contains(lock, `"integrations"`) ||
+		!strings.Contains(lock, `".product-loop/boatstack"`) || !strings.Contains(lock, `".product-loop/boatstack.ps1"`) {
+		t.Fatal("generated lock must record runtime provenance, integrations, and tracked launchers")
 	}
 	workflow := string(bundle.Files[".product-loop/workflow.md"])
 	for _, expected := range []string{
@@ -487,6 +521,14 @@ func TestExportAndDriftCheck(t *testing.T) {
 		if !strings.Contains(questions, expected) {
 			t.Fatalf("question template is missing shortcut rule %q", expected)
 		}
+	}
+}
+
+func TestGeneratedMarkdownIsIndependentOfBuilderLineEndings(t *testing.T) {
+	want := GeneratedMarkdown("# Contract\n\nStable bytes.\n")
+	got := GeneratedMarkdown("# Contract\r\n\r\nStable bytes.\r\n")
+	if string(got) != string(want) {
+		t.Fatalf("generated Markdown retained builder line endings:\nwant %q\n got %q", want, got)
 	}
 }
 
@@ -559,7 +601,7 @@ func TestPortableHostAdaptersShareWorkflowAndArtifactContract(t *testing.T) {
 			"Branch synchronization, status, switching, worktree maintenance",
 			"must never route to auto-plan or repair",
 			"ensure main is same is origin/main remove any current changes",
-			".product-loop/bin/boatstack-helper workspace-sync --repo . --branch main --source origin/main",
+			".product-loop/boatstack workspace-sync --repo . --branch main --source origin/main",
 			"do not inspect plans, scan the repository, search for the helper",
 		} {
 			if !strings.Contains(surface, expected) {

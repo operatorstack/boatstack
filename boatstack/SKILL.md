@@ -30,9 +30,9 @@ For the full state machine, read [workflow.md](references/workflow.md). For arti
 
 ## Report what is next
 
-Run the project-local helper's read-only `next-status --repo . --json` inspection. Repository artifacts, managed delivery state, gate receipts, and the recorded PR identity are evidence; conversation, terminal, worktree, and process observations are context only. Never run the returned operation automatically. `NOT_STARTED` points to `auto-plan` (run it with the plan path via `--plan`); `PUBLISHED` means a PR exists but is not a verified merge; only `FEATURE_COMPLETE` requires no action. If state is ambiguous, stale, or invalid, name the blocker instead of choosing by recency or clearing artifacts. When an `AMBIGUOUS` block names only past deliveries the user no longer cares about, name the ignorable delivery slug(s) and offer to exclude them from ambiguity resolution; only after explicit user confirmation, add each slug with `.product-loop/bin/boatstack-helper ignore-delivery --repo . --feature <slug>` (a bounded, provenance-safe write to `workflow.ignored_deliveries` — never hand-edit config or delivery state). Any new, unlisted ambiguous delivery still pauses the workflow.
+Run the project-local helper's read-only `next-status --repo . --json` inspection. Repository artifacts, managed delivery state, gate receipts, and the recorded PR identity are evidence; conversation, terminal, worktree, and process observations are context only. Never run the returned operation automatically. `NOT_STARTED` points to `auto-plan` (run it with the plan path via `--plan`); `PUBLISHED` means a PR exists but is not a verified merge; only `FEATURE_COMPLETE` requires no action. If state is ambiguous, stale, or invalid, name the blocker instead of choosing by recency or clearing artifacts. When an `AMBIGUOUS` block names only past deliveries the user no longer cares about, name the ignorable delivery slug(s) and offer to exclude them from ambiguity resolution; only after explicit user confirmation, add each slug with `.product-loop/boatstack ignore-delivery --repo . --feature <slug>` (a bounded, provenance-safe write to `workflow.ignored_deliveries` — never hand-edit config or delivery state). Any new, unlisted ambiguous delivery still pauses the workflow.
 
-To see every feature at once, run the read-only `.product-loop/bin/boatstack-helper flow frontier --repo .`. It lists each delivery, its observed position, and who owes the next step. To wait for a published PR to move (checks finish, a review lands, a merge happens), run the read-only `.product-loop/bin/boatstack-helper flow watch --repo .`. The watch observes on an interval and exits when the frontier changes, when nothing can move, or at its timeout. It never acts on what it sees. When it exits, run `next-status` again and continue from the fresh state.
+To see every feature at once, run the read-only `.product-loop/boatstack flow frontier --repo .`. It lists each delivery, its observed position, and who owes the next step. To wait for a published PR to move (checks finish, a review lands, a merge happens), run the read-only `.product-loop/boatstack flow watch --repo .`. The watch observes on an interval and exits when the frontier changes, when nothing can move, or at its timeout. It never acts on what it sees. When it exits, run `next-status` again and continue from the fresh state.
 
 ## Run to an explicit goal
 
@@ -52,7 +52,7 @@ This enforcement is defense in depth, not a complete sandbox. Keep least-privile
 
 Branch synchronization, status, switching, worktree maintenance, and requests to discard local changes are repository administration, not product intent. Never route them to `auto-plan` or `repair` unless the exact target branch belongs to an active managed delivery. For an explicit branch and remote ref, use the project-local `workspace-sync` helper. It fetches the exact source, checkpoints branch and dirty-worktree state, aligns the branch in its owning worktree, and returns verified recovery refs.
 
-For requests such as “ensure main is same as origin/main remove any current changes,” inspect only the named refs and worktree, then invoke `.product-loop/bin/boatstack-helper workspace-sync --repo . --branch main --source origin/main`. If the guard denies a raw hard reset or clean, report the denial and this single recovery action immediately. Do not inspect feature plans, scan the repository, search for the helper, or retry destructive Git.
+For requests such as “ensure main is same as origin/main remove any current changes,” inspect only the named refs and worktree, then invoke `.product-loop/boatstack workspace-sync --repo . --branch main --source origin/main`. If the guard denies a raw hard reset or clean, report the denial and this single recovery action immediately. Do not inspect feature plans, scan the repository, search for the helper, or retry destructive Git.
 
 ## Bound the outcome
 
@@ -84,7 +84,7 @@ Do not scan the entire repository by default. Record discovered paths and comman
 
 ## Respond to the developer
 
-Follow the **User-facing response contract** in `references/workflow.md` for every operation. Begin every Boatstack response with the status banner (`boatstack-helper next-status --repo . --render`), then lead with the mapped plain-language outcome, show only decision-relevant content, end with one `### Next step`, and put machine status, helper output, fingerprints, artifact paths, receipts, and locks inside collapsed **Technical details**. Internal operations such as `check-plan`, `record-approval`, and `activate-plan` must not appear in the primary response. Write every response in Simplified Technical English: short sentences, the active voice, the present tense, one idea per sentence, the condition first, and the simple common word.
+Follow the **User-facing response contract** in `references/workflow.md` for every operation. Begin every Boatstack response with the status banner (`.product-loop/boatstack next-status --repo . --render`), then lead with the mapped plain-language outcome, show only decision-relevant content, end with one `### Next step`, and put machine status, helper output, fingerprints, artifact paths, receipts, and locks inside collapsed **Technical details**. Internal operations such as `check-plan`, `record-approval`, and `activate-plan` must not appear in the primary response. Write every response in Simplified Technical English: short sentences, the active voice, the present tense, one idea per sentence, the condition first, and the simple common word.
 
 Use the global, state-scoped reply shortcuts for finite input: `a` approves the pending plan, `o` opens the currently previewed feature/ad-hoc/update PR, `u` updates the currently previewed existing PR, and `r` accepts every recommendation displayed in the current finite-question response. Trim surrounding whitespace and match the complete reply case-insensitively. Bracketed forms such as `[o]`, embedded letters, and shortcuts from another state are ordinary text. Continue accepting `approve`, `open PR`, `update PR`, and `open update PR` for compatibility, but do not advertise them in user-facing responses.
 
@@ -100,7 +100,7 @@ Before starting `/auto-plan` for a new feature, check `next-status --repo . --js
 
 ## Run `auto-plan`
 
-0. Require the plan file produced in the active host's Plan mode, passed explicitly. Validate it with `.product-loop/bin/boatstack-helper check-source-plan --repo . --plan <host-path>`. Boatstack never scans directories for plans, so `--plan` is required and no unshipped saved plan becomes ambient context. If no plan path is supplied or the file is missing, empty, or unreadable, return `BLOCKED`; do not write or guess the missing source plan inside `auto-plan`. Because its hash is re-checked through `build`, point `--plan` at a durable in-repo path that stays present and unchanged; a path outside the repository is rejected.
+0. Require the plan file produced in the active host's Plan mode, passed explicitly. Validate it with `.product-loop/boatstack check-source-plan --repo . --plan <host-path>`. Boatstack never scans directories for plans, so `--plan` is required and no unshipped saved plan becomes ambient context. If no plan path is supplied or the file is missing, empty, or unreadable, return `BLOCKED`; do not write or guess the missing source plan inside `auto-plan`. Because its hash is re-checked through `build`, point `--plan` at a durable in-repo path that stays present and unchanged; a path outside the repository is rejected.
 1. Treat the supplied plan as an initial proposal, not approved truth. Record its path as `source_plan_path` in the structured plan.
 2. Write the bounded outcome definition before proposing architecture.
 3. Separate facts, decisions, unknowns, and safely deferrable gaps.
@@ -117,7 +117,7 @@ Before starting `/auto-plan` for a new feature, check `next-status --repo . --js
 13. If Spec Kit is installed, use its constitution/specify/clarify/plan/tasks/analyze/checklist flow as an artifact generator. The canonical artifact contract remains authoritative.
 14. For every planned validation, record the exact `criteria` it can support plus `run`, `origin`, `oracle`, and `independence`. Commands, automated tests, external checks, and named human review procedures are all valid forms, but an ambiguous claim without a threshold/rubric and authorized decision remains `BLOCKED`.
 14. For every external write, record `affected_paths` plus side-effect kind, immutable target identity, reversibility, failure policy, and `destructive: false`. Reject ambiguous reset rollback or target names.
-15. Write only Markdown feature artifacts, including the canonical structured `plan.md`. Author every feature artifact through the owned channel: pass the complete document to `.product-loop/bin/boatstack-helper planning-write --repo . --feature <feature> --artifact <known-name>` using the literal planning transport in `.product-loop/workflow.md` — a single-quoted heredoc in a POSIX shell or the UTF-8-scoped single-quoted here-string in PowerShell. This is the primary writer for `.product-loop/features/`, not a fallback, and it remains available after the planning latch denies raw writes. Send the complete envelope in one tool call. Never run the helper without input, split the envelope across calls, use an expansion-capable delimiter, target another repository or helper, or paste Markdown at a shell prompt. Put the authoritative JSON inside the marked Boatstack block and run `.product-loop/bin/boatstack-helper check-plan --plan <feature>/plan.md`; this command is read-only. The host's ordinary Markdown writer may be used only where the host explicitly permits it. Never use arbitrary shell redirection to evade a host write boundary.
+15. Write only Markdown feature artifacts, including the canonical structured `plan.md`. Author every feature artifact through the owned channel: pass the complete document to `.product-loop/boatstack planning-write --repo . --feature <feature> --artifact <known-name>` using the literal planning transport in `.product-loop/workflow.md` — a single-quoted heredoc in a POSIX shell or the UTF-8-scoped single-quoted here-string in PowerShell. This is the primary writer for `.product-loop/features/`, not a fallback, and it remains available after the planning latch denies raw writes. Send the complete envelope in one tool call. Never run the helper without input, split the envelope across calls, use an expansion-capable delimiter, target another repository or helper, or paste Markdown at a shell prompt. Put the authoritative JSON inside the marked Boatstack block and run `.product-loop/boatstack check-plan --plan <feature>/plan.md`; this command is read-only. The host's ordinary Markdown writer may be used only where the host explicitly permits it. Never use arbitrary shell redirection to evade a host write boundary.
 16. Keep implementation tasks separate from publication authority. Internal phases remain tasks inside one delivery slice. When the accepted outcome explicitly requires multiple PRs, declare ordered `delivery_slices`; assign every task exactly once and give each slice its own optional base/head branch contract. Plan approval approves this structure but never authorizes a push or PR.
 17. End with a **draft**, never an implied approval. Do not generate executable task state, JSON artifacts, locks, or implementation changes from `auto-plan`.
 
@@ -130,14 +130,14 @@ Treat repository-owned product context as canonical. Do not require it to be mig
 1. Run the read-only Markdown preflight and retain its exact fingerprint:
 
 ```bash
-.product-loop/bin/boatstack-helper check-plan \
+.product-loop/boatstack check-plan \
   --plan .product-loop/features/<feature>/plan.md
 ```
 
 2. Present the draft spec, plan, open decisions, accepted assumptions, gaps, risks, validation provenance, `PLAN_FINGERPRINT`, and `READINESS_FINGERPRINT` in a reviewable form. A schema-v3 plan must decide `journey_evidence`: `relevant` with complete typed runnable oracles, or `not_relevant` with a reason.
 3. When `workflow.human_plan_approval` is true, ask the developer to approve it or request changes and end with: Reply `a` to approve. When false, state that Build will create a policy-activation lock and do not imply human approval.
 4. On changes, return to `auto-plan`, preserve the feedback in the question ledger, and issue a new draft.
-5. When human approval is enabled, invoke `boatstack-helper record-approval` with the plan, named human, RFC3339 timestamp, and exact fingerprint. When disabled, create no `approval.md`.
+5. When human approval is enabled, invoke `.product-loop/boatstack record-approval` with the plan, named human, RFC3339 timestamp, and exact fingerprint. When disabled, create no `approval.md`.
 6. End in Plan mode and tell the developer the feature is authorized for the host's normal Build transition. Do not compile tasks, create a lock, request Agent mode merely to write a file, or edit product code.
 
 All files created or updated by `auto-plan` and `plan-gate` must be Markdown. gstack and Spec Kit may help produce those documents, but their implementation stages and non-Markdown executable state are deferred to `build`.
@@ -148,7 +148,7 @@ All files created or updated by `auto-plan` and `plan-gate` must be Markdown. gs
 - Before the first product-code edit, activate the exact authorized Markdown plan. Include `--approval` only when `workflow.human_plan_approval` is true:
 
 ```bash
-.product-loop/bin/boatstack-helper activate-plan \
+.product-loop/boatstack activate-plan \
   --plan .product-loop/features/<feature>/plan.md \
   --out-dir .product-loop/features/<feature>/compiled \
   --output .product-loop/features/<feature>/plan.lock.json
@@ -176,7 +176,7 @@ Before any product edit or explicit `repair`, run `recovery-status` with the exa
 
 If Cursor reports `MainThreadShellExec not initialized`, the host failed before Boatstack's hook process started. Keep the hook fail-closed and make **Developer: Reload Window** the primary recovery, then retry the operation. Recommend the verified installer only when Boatstack itself reports a missing, drifted, unsafe, or checksum-invalid helper/runtime.
 
-If any host reports `HOST_PAYLOAD_MALFORMED`, Boatstack received an event it could not safely decode; no unsafe operation was detected. Retry once with an explicit non-empty command. If the same code repeats, stop shell and tool retries, preserve current edits, and run `.product-loop/bin/boatstack-helper diagnose-hook --host <host> --repo .` from an external terminal. For Cursor, start a new task after the probe. The diagnostic proves the installed guard with a canonical event but cannot inspect the live event supplied by the host. Do not recommend reinstall or hydration unless Boatstack separately reports a missing, drifted, unsafe, or checksum-invalid runtime.
+If any host reports `HOST_PAYLOAD_MALFORMED`, Boatstack received an event it could not safely decode; no unsafe operation was detected. Retry once with an explicit non-empty command. If the same code repeats, stop shell and tool retries, preserve current edits, and run `.product-loop/boatstack diagnose-hook --host <host> --repo .` from an external terminal. For Cursor, start a new task after the probe. The diagnostic proves the installed guard with a canonical event but cannot inspect the live event supplied by the host. Do not recommend reinstall or hydration unless Boatstack separately reports a missing, drifted, unsafe, or checksum-invalid runtime.
 
 Same-intent repair resumes at the helper-reported stage and reuses the existing gates. Pass `--mechanism` for every repair classification. Implementation, verification, and review repairs each have an independent three-attempt budget. Requirement amendments and readiness recovery consume none. An identical failure-class, evidence, and mechanism retry is denied. A requirement amendment or ambiguous expected behavior blocks product edits and returns to a concise Plan Gate delta. Never edit `changes.md`, ignored delivery state, or receipts directly; those are emitted by controlled transitions. Conversation history is never workflow authority.
 
@@ -255,7 +255,7 @@ This is a two-slice ZCA projection: the reviewer brief minimizes review effort, 
 
 Read [failure-moves.md](references/failure-moves.md) before proposing a loop change.
 
-For a retro over past sessions, run the read-only `.product-loop/bin/boatstack-helper retro derive --input <transcript> [--input <transcript> ...]`. It detects operator instructions that recur across sessions and classifies each as a missing observation, verb, setpoint, or guard, with a suggested typed promotion. It reads only the transcript files the user names, works fully offline, and writes nothing. A recurring instruction is evidence of a missing typed control — promote it by hand through the normal reviewed delivery flow; never turn it into a saved prompt, and never apply a proposal automatically.
+For a retro over past sessions, run the read-only `.product-loop/boatstack retro derive --input <transcript> [--input <transcript> ...]`. It detects operator instructions that recur across sessions and classifies each as a missing observation, verb, setpoint, or guard, with a suggested typed promotion. It reads only the transcript files the user names, works fully offline, and writes nothing. A recurring instruction is evidence of a missing typed control — promote it by hand through the normal reviewed delivery flow; never turn it into a saved prompt, and never apply a proposal automatically.
 
 1. Classify the observed failure below the surface symptom.
 2. State a mechanism and the exact failure population the move targets.
@@ -271,7 +271,7 @@ More steps, more context, stronger wording, more tests, or more retries are not 
 Read [portability.md](references/portability.md), then use:
 
 ```bash
-.product-loop/bin/boatstack-helper export --repo /path/to/repo --config /path/to/project.json --write
+.product-loop/boatstack export --repo /path/to/repo --config /path/to/project.json --write
 ```
 
 Run with `--check` in CI to detect drift. The exporter writes generated files only and refuses to overwrite user-owned files. Review the generated diff in a branch and ship it through a PR.

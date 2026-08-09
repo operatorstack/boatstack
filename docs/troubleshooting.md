@@ -6,7 +6,7 @@
 Start with:
 
 ```bash
-.product-loop/bin/boatstack-helper doctor --repo .
+.product-loop/boatstack doctor --repo .
 ```
 
 ## A command is denied as destructive
@@ -15,9 +15,11 @@ Boatstack has no in-session bypass. Preserve the current external state and diag
 
 If a safe diagnostic was denied, keep the denial output and report the smallest reproducible command. Do not rename or wrap it to evade the check.
 
-## The safety helper or hook is missing
+## The runtime or hook is missing
 
-The hook fails closed. In a linked worktree, the first guarded call should restore the ignored local helper from the verified repository-family cache. If Boatstack reports that the shared runtime is missing, run the official installer once from any checkout belonging to that Git clone, run `doctor`, and reload the coding host. Do not copy an executable without its verified runtime manifest.
+Run `.product-loop/boatstack doctor --repo .` from the linked worktree. The tracked launcher verifies the committed pin and exact shared runtime before it restores the ignored local helper. This activation does not depend on hook trust. If the exact shared runtime is absent, the launcher runs the tag-pinned, checksum-verified installer and reports one pinned recovery command if activation still fails. Do not copy an executable from another worktree or select a newer cached runtime.
+
+A missing `.product-loop/bin/` directory is activation state, not evidence that a newer Boatstack release is required.
 
 `doctor` proves the generated host contract, not host activation. In Codex, trust the exact linked-worktree path, open `/hooks`, review and trust the current Boatstack hook hash, and start a new task. In Claude Code, reload and use `/hooks` to confirm the `PreToolUse` hook; Bash is required. In Cursor, reload the window and confirm both pre-execution hooks are enabled. Cursor hooks remain defense in depth because host-side output handling can change independently of Boatstack.
 
@@ -32,7 +34,7 @@ This is a Cursor host initialization failure: Boatstack's hook process did not s
 Boatstack received a hook event without a decodable command or tool call. It fails closed, but no unsafe operation was detected. Retry once with an explicit non-empty command. If the same code repeats, stop agent shell and tool retries, preserve edits, and run this from a normal terminal outside the blocked agent path:
 
 ```bash
-.product-loop/bin/boatstack-helper diagnose-hook --host cursor --repo .
+.product-loop/boatstack diagnose-hook --host cursor --repo .
 ```
 
 Replace `cursor` with `claude` or `codex` for those hosts. A passing probe proves the installed wrapper, shared runtime, decoder, and canonical allow response; it cannot reveal the live payload emitted by the coding host. For Cursor, start a new task after a passing probe. Do not reinstall or hydrate Boatstack unless it separately reports a missing, drifted, unsafe, or checksum-invalid runtime.
@@ -55,7 +57,7 @@ Cursor reads project commands from `.cursor/commands/*.md`:
 
 ```bash
 ls .cursor/commands
-.product-loop/bin/boatstack-helper doctor --repo .
+.product-loop/boatstack doctor --repo .
 ```
 
 Rerun the installer and reload Cursor when files are missing. Commit the restored adapter in a dedicated infrastructure PR.
@@ -66,7 +68,7 @@ Claude Code reads Boatstack's user-facing workflow skills from `.claude/skills/<
 
 ```bash
 ls .claude/skills
-.product-loop/bin/boatstack-helper doctor --repo .
+.product-loop/boatstack doctor --repo .
 ```
 
 If Boatstack created `.claude/skills/` while Claude Code was already running, reload Claude Code once. Rerun the installer when `doctor` reports a missing generated skill, and never replace a user-owned skill with the same name without reviewing the collision.
@@ -80,12 +82,12 @@ Finish the host's Plan-mode exploration and save it as a durable file, then reru
 Planning is Markdown-only. Send the complete command and document in one shell-tool call. For Bash, zsh, or Git Bash:
 
 ```bash
-.product-loop/bin/boatstack-helper planning-write --repo . --feature <feature> --artifact <name> <<'BOATSTACK_PLAN_EOF'
+.product-loop/boatstack planning-write --repo . --feature <feature> --artifact <name> <<'BOATSTACK_PLAN_EOF'
 <complete Markdown document>
 BOATSTACK_PLAN_EOF
 ```
 
-In Git Bash on Windows, use `.product-loop/bin/boatstack-helper.exe` in the same envelope.
+In Git Bash on Windows, use `.product-loop/boatstack` in the same envelope.
 
 For Windows PowerShell:
 
@@ -94,7 +96,7 @@ For Windows PowerShell:
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 @'
 <complete Markdown document>
-'@ | & '.product-loop\bin\boatstack-helper.exe' planning-write --repo . --feature <feature> --artifact <name>
+'@ | & '.product-loop\boatstack.ps1' planning-write --repo . --feature <feature> --artifact <name>
 }
 ```
 
@@ -132,7 +134,7 @@ Boatstack detects common package-manager tests, `scripts/check.sh`, Go, Rust, Ma
 
 ## A fresh clone has no helper
 
-This is expected: the repository-family cache lives inside that clone's Git common directory and `.product-loop/bin/` is ignored. Run the installer once from the repository root. Future linked worktrees of that clone hydrate automatically without another download.
+This is expected: the repository-family cache lives inside that clone's Git common directory and `.product-loop/bin/` is ignored. Run `.product-loop/boatstack doctor --repo .`. The tracked launcher hydrates the exact pinned runtime through the tag-pinned, checksum-verified installer. Future linked worktrees reuse that clone-wide runtime without another download.
 
 ## `/boatstack-update` is postponed
 
@@ -160,7 +162,7 @@ If a previous update succeeded but its generated diff was later discarded, rerun
 
 ## A tool call repeats or publication appears stuck
 
-Run `.product-loop/bin/boatstack-helper operation-status --repo . --json`. `EXECUTING` means the exact call already has a live lease, so wait instead of launching it again. `RECONCILE_REQUIRED` means Boatstack did not observe completion; verify the reported Git, GitHub, file, browser, or MCP postcondition before retrying. A successful operation whose response was lost is recovered from that observation. Do not reset the task, repeat a denied push, or open another PR.
+Run `.product-loop/boatstack operation-status --repo . --json`. `EXECUTING` means the exact call already has a live lease, so wait instead of launching it again. `RECONCILE_REQUIRED` means Boatstack did not observe completion; verify the reported Git, GitHub, file, browser, or MCP postcondition before retrying. A successful operation whose response was lost is recovered from that observation. Do not reset the task, repeat a denied push, or open another PR.
 
 Operation receipts are shared by linked worktrees and retry budgets survive new chats and host restarts. If more than one unfinished operation matches, rerun status with the reported operation ID rather than choosing the newest. The receipts contain fingerprints and secret-free observations; no command payload or credential should be added to them.
 

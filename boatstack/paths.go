@@ -230,11 +230,22 @@ func (w WorkspaceContext) HelperPath() string {
 	return filepath.Join(w.GeneratedRoot(), "bin", helperName())
 }
 
-// projectLocalHelperCommand is the portable repository-relative spelling used
+// LauncherPath is the tracked exact-runtime command boundary in embedded mode.
+// Detached supervision has no repository-owned launcher and continues to use
+// HelperPath from its external controller root.
+func (w WorkspaceContext) LauncherPath(powerShell bool) string {
+	name := "boatstack"
+	if powerShell {
+		name += ".ps1"
+	}
+	return filepath.Join(w.GeneratedRoot(), name)
+}
+
+// projectLocalLauncherCommand is the portable repository-relative spelling used
 // in rendered embedded-mode prescriptions. Path ownership remains centralized
 // here even though the command is displayed before a concrete workspace exists.
-func projectLocalHelperCommand() string {
-	return filepath.ToSlash(filepath.Join(productLoopDirName, "bin", helperName()))
+func projectLocalLauncherCommand() string {
+	return filepath.ToSlash(filepath.Join(productLoopDirName, "boatstack"))
 }
 
 func generatedWorkflowReference() string {

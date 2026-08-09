@@ -234,6 +234,8 @@ func GeneratedJSON(value any) ([]byte, error) {
 }
 
 func GeneratedMarkdown(body string) []byte {
+	body = strings.ReplaceAll(body, "\r\n", "\n")
+	body = strings.ReplaceAll(body, "\r", "\n")
 	return []byte(fmt.Sprintf("<!-- %s -->\n\n%s\n", Marker, strings.TrimSpace(body)))
 }
 

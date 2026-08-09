@@ -98,6 +98,11 @@ func StateRegistry() []StateEntry {
 			Sample:     generatedSample("hooks", "guard.sh"),
 		},
 		{
+			Name: "runtime-launchers", Class: ClassCommittedGenerated, Partition: "checkout",
+			OwnerVerbs: []string{"init", "update", "export"},
+			Sample:     generatedSample("boatstack"),
+		},
+		{
 			Name: "generated-lock", Class: ClassCommittedGenerated, Partition: "checkout",
 			OwnerVerbs: []string{"init", "update", "export"},
 			Sample:     generatedSample("generated.lock.json"),
@@ -165,7 +170,7 @@ func StateRegistry() []StateEntry {
 		},
 		{
 			Name: "worktree-helper", Class: ClassCheckoutRuntime, Partition: "checkout", Gitignored: true,
-			OwnerVerbs: []string{"init", "update", "hydrate-runtime"},
+			OwnerVerbs: []string{"init", "update", "hydrate-runtime", "activate-worktree-runtime"},
 			Sample:     generatedSample("bin", "install.lock.json"),
 		},
 		{

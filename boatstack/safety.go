@@ -67,7 +67,7 @@ func malformedHookInput(code string) error {
 // idioms — recovery-status | jq, git diff | wc -l, … | sort | uniq -c — compose
 // freely. Effect-CHANGING syntax (redirection > <, command substitution $()) is
 // still banned in isPureReadOnlyCommand, so no filter can be turned into a writer.
-var readOnlyStage = regexp.MustCompile(`(?i)^\s*(?:env\s+[^ ]+\s+)*(?:rg|grep|git\s+(?:grep|diff|status|show|log)|cat|sed|head|tail|less|wc|awk|sort|uniq|cut|tr|jq|column|nl|comm|rev|fold|find\s+[^\n]*-(?:print|ls)|psql\s+[^\n]*\s-c\s+["']?\s*select\b|(?:[^\s]*/)?boatstack-helper(?:[_.-][a-z0-9._-]+)?\s+(?:recovery-status|mutation-status|operation-status|delivery-status|next-status|workspace-status|repair-status|check-plan|check-source-plan|check-safety|diagnose-hook|authority-context|doctor|version)\b|(?:[^\s]*/)?boatstack-helper(?:[_.-][a-z0-9._-]+)?\s+insight\s+(?:check|list|show|frontier|evaluate)\b)`)
+var readOnlyStage = regexp.MustCompile(`(?i)^\s*(?:env\s+[^ ]+\s+)*(?:rg|grep|git\s+(?:grep|diff|status|show|log)|cat|sed|head|tail|less|wc|awk|sort|uniq|cut|tr|jq|column|nl|comm|rev|fold|find\s+[^\n]*-(?:print|ls)|psql\s+[^\n]*\s-c\s+["']?\s*select\b|(?:[^\s]*/)?boatstack(?:\.ps1)?\s+(?:recovery-status|mutation-status|operation-status|delivery-status|next-status|workspace-status|repair-status|check-plan|check-source-plan|check-safety|diagnose-hook|authority-context|doctor|version)\b|(?:[^\s]*/)?boatstack(?:\.ps1)?\s+insight\s+(?:check|list|show|frontier|evaluate)\b)`)
 
 // Constitutional/Optimization split. These destruction rules are CONSTITUTIONAL:
 // they define the real boundary (destroying a live resource) and are never traded
@@ -121,7 +121,7 @@ var operationalPathPattern = regexp.MustCompile(`(?i)(?:^|/)(?:scripts?|migratio
 // without treating names such as check-update or API method labels as queries.
 var mutationStatementPattern = regexp.MustCompile(`(?is)\b(?:delete\s+from\s+(?:[a-z_][a-z0-9_$.-]*|"[^"]+")|update\s+(?:[a-z_][a-z0-9_$.-]*|"[^"]+")\s+set\b)[^;]*`)
 var directPublicationPattern = regexp.MustCompile(`(?i)(?:\bgit\b[^\n;&|]*\bpush\b|\bgh\s+pr\s+(?:create|edit|ready|merge)\b|\bgh\s+api\b[^\n;&|]*(?:/pulls\b|/pull-requests\b)|\bhub\s+pull-request\b|\bcurl\b[^\n;&|]*(?:api\.github\.com|/pulls\b)[^\n;&|]*(?:\s-X\s*(?:POST|PATCH)|--request\s+(?:POST|PATCH)))`)
-var approvedPublisherPattern = regexp.MustCompile(`(?i)^\s*(?:[^\s]*/)?boatstack-helper\s+publish-pr\b[^\n;&|]*$`)
+var approvedPublisherPattern = regexp.MustCompile(`(?i)^\s*(?:&\s+)?['"]?\.product-loop[/\\]boatstack(?:\.ps1)?['"]?\s+publish-pr\b[^\n;&|]*$`)
 
 // approvedUpdatePublisherPattern recognizes the sanctioned Boatstack version-update
 // publisher. That command must be passed the update preview path, which lives under
@@ -133,7 +133,7 @@ var approvedPublisherPattern = regexp.MustCompile(`(?i)^\s*(?:[^\s]*/)?boatstack
 // chained after it, and it tolerates the platform-suffixed helper binary (for example
 // boatstack-helper_darwin_arm64) that a running update may invoke after the installed
 // helper is swapped or removed.
-var approvedUpdatePublisherPattern = regexp.MustCompile(`(?i)^\s*(?:[^\s]*/)?boatstack-helper(?:[_.-][a-z0-9._-]+)?\s+publish-update-pr\b[^\n;&|]*$`)
+var approvedUpdatePublisherPattern = regexp.MustCompile(`(?i)^\s*(?:&\s+)?['"]?\.product-loop[/\\]boatstack(?:\.ps1)?['"]?\s+publish-update-pr\b[^\n;&|]*$`)
 
 // deliveryStatePathPattern matches Boatstack's managed runtime/control state so
 // the guard denies direct model mutation of it. It covers the embedded homes
@@ -242,7 +242,7 @@ func controlledPhaseTransition(command, stage string) bool {
 		return false
 	}
 	executable := portableExecutableBase(fields[0])
-	if executable != "boatstack-helper" {
+	if executable != "boatstack" && executable != "boatstack-helper" {
 		return false
 	}
 	if readOnlyHelperVerbs[fields[1]] {
@@ -275,7 +275,11 @@ func controlledWorkspaceSync(repo, command string) bool {
 	if err != nil {
 		return false
 	}
-	expected := filepath.Join(repo, ".product-loop", "bin", helperName())
+	launcherName := "boatstack"
+	if strings.EqualFold(filepath.Ext(executable), ".ps1") {
+		launcherName = "boatstack.ps1"
+	}
+	expected := filepath.Join(repo, ".product-loop", launcherName)
 	expected, err = filepath.Abs(expected)
 	if err != nil || filepath.Clean(executable) != filepath.Clean(expected) {
 		return false

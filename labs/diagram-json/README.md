@@ -50,7 +50,7 @@ The result is a draft, not code:
 The agent first validates `plan.md` without creating files:
 
 ```bash
-.product-loop/bin/boatstack-helper check-plan --plan plan.md
+.product-loop/boatstack check-plan --plan plan.md
 ```
 
 It then presents the draft, its fingerprint, and the three contract decisions
@@ -72,7 +72,7 @@ When the developer uses the host's normal Build transition, `/build` activates
 the exact approved plan before its first product-code edit:
 
 ```bash
-.product-loop/bin/boatstack-helper activate-plan \
+.product-loop/boatstack activate-plan \
   --plan plan.md \
   --approval approval.md \
   --out-dir compiled \
@@ -92,7 +92,7 @@ approved state into deterministic machine artifacts. Editing `source-plan.md`,
 implementation.
 
 ```bash
-.product-loop/bin/boatstack-helper activate-plan \
+.product-loop/boatstack activate-plan \
   --plan plan.md \
   --approval approval.md \
   --out-dir compiled \

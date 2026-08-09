@@ -1298,6 +1298,21 @@ func hydrateRuntimeCommand(arguments []string) int {
 	return 0
 }
 
+// activateWorktreeRuntimeCommand installs or repairs only this worktree's
+// ignored helper from the already verified exact shared runtime. Unlike the
+// safety-hook bootstrap it reads no hook payload and makes no policy decision.
+func activateWorktreeRuntimeCommand(arguments []string) int {
+	flags := flag.NewFlagSet("activate-worktree-runtime", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "worktree whose local runtime should be activated")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if err := boatstack.HydrateWorktree(*repo); err != nil {
+		return fail(fmt.Errorf("worktree runtime activation failed: %w", err))
+	}
+	return 0
+}
+
 func checkSafetyCommand(arguments []string) int {
 	flags := flag.NewFlagSet("check-safety", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository whose operational diff should be checked")
@@ -1595,7 +1610,7 @@ func workspaceSyncCommand(arguments []string) int {
 
 func run() (result int) {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <attach|detach|detached-status|context|activate|deactivate|init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|record-autonomy|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|authority-context|record-change|record-journey-results|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|review-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|attach-evidence|check-safety|migrate-config|safety-hook|ambient-safety-hook|diagnose-hook|render-denial|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-reap|workspace-status|workspace-sync|flow|retro|insight|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <attach|detach|detached-status|context|activate|deactivate|init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|record-autonomy|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|authority-context|record-change|record-journey-results|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|review-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|attach-evidence|check-safety|migrate-config|safety-hook|ambient-safety-hook|bootstrap-safety-hook|hydrate-runtime|activate-worktree-runtime|diagnose-hook|render-denial|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-reap|workspace-status|workspace-sync|flow|retro|insight|doctor|version>")
 		return 2
 	}
 	if complete := commandTraceCompletion(os.Args[1], os.Args[2:]); complete != nil {
@@ -1706,6 +1721,8 @@ func run() (result int) {
 		return bootstrapSafetyHookCommand(os.Args[2:])
 	case "hydrate-runtime":
 		return hydrateRuntimeCommand(os.Args[2:])
+	case "activate-worktree-runtime":
+		return activateWorktreeRuntimeCommand(os.Args[2:])
 	case "check-safety":
 		return checkSafetyCommand(os.Args[2:])
 	case "workspace-cut":

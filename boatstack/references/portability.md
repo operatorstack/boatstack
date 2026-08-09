@@ -9,7 +9,8 @@ The source of truth is `.product-loop/`:
 - `artifacts.md`: document contract;
 - `failure-moves.md`: failure taxonomy and experimental rules;
 - `templates/`: artifact templates;
-- `bin/boatstack-helper`: ignored, platform-native deterministic helper installed locally;
+- `boatstack` and `boatstack.ps1`: tracked, pinned command launchers available in every worktree;
+- `bin/boatstack-helper`: ignored, platform-native deterministic runtime activated internally by the launchers;
 - `generated.lock.json`: generator version, config hash, and generated file list.
 
 Host-specific files are compiled adapters:

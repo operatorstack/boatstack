@@ -154,8 +154,9 @@ func TestGuardClassifiersMatchDeclaredOwnership(t *testing.T) {
 func TestProductLoopLiteralsStayInDeclaredFiles(t *testing.T) {
 	allowed := map[string]string{
 		"activation.go": "controller-syntax", "delivery.go": "controller-syntax", "export.go": "controller-bundle",
-		"hooks.go": "embedded-installation",
-		"init.go":  "embedded-installation", "installation_repair.go": "embedded-installation", "mutation_undo.go": "controller-syntax",
+		"hooks.go":    "embedded-installation",
+		"launcher.go": "embedded-installation",
+		"init.go":     "embedded-installation", "installation_repair.go": "embedded-installation", "mutation_undo.go": "controller-syntax",
 		"paths.go": "canonical-owner", "planning.go": "product-diff-syntax", "pr.go": "product-diff-syntax",
 		"recovery.go": "product-diff-syntax", "runtime_cache.go": "embedded-installation", "safety.go": "policy-syntax",
 		"update.go": "embedded-installation", "update_publication.go": "embedded-installation",

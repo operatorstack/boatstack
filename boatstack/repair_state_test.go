@@ -29,17 +29,17 @@ func writeMalformedDraft(t *testing.T, repo, feature string) string {
 }
 
 func TestControlledPhaseTransitionAllowsRepairStateAcrossStages(t *testing.T) {
-	command := ".product-loop/bin/boatstack-helper repair-state --repo . --feature stuck"
+	command := ".product-loop/boatstack repair-state --repo . --feature stuck"
 	for _, stage := range []string{"", "INVALID_STATE", "DRAFT_PLAN", "APPROVED"} {
 		if !controlledPhaseTransition(command, stage) {
 			t.Fatalf("repair-state was denied at stage %q; recovery must be reachable", stage)
 		}
 	}
 	// The escape hatch must not widen the surface for real transitions or metachars.
-	if controlledPhaseTransition(".product-loop/bin/boatstack-helper activate-plan", "INVALID_STATE") {
+	if controlledPhaseTransition(".product-loop/boatstack activate-plan", "INVALID_STATE") {
 		t.Fatal("activate-plan escaped the INVALID_STATE interlock")
 	}
-	if controlledPhaseTransition(".product-loop/bin/boatstack-helper repair-state; rm -rf .", "INVALID_STATE") {
+	if controlledPhaseTransition(".product-loop/boatstack repair-state; rm -rf .", "INVALID_STATE") {
 		t.Fatal("chained destruction was allowed to ride on repair-state")
 	}
 	if controlledPhaseTransition("python scripts/migrate.py", "INVALID_STATE") {
@@ -59,7 +59,7 @@ func TestRepairStateClosesTheInvalidStateLoop(t *testing.T) {
 	if len(findings) == 0 || findings[0].WorkflowStage != "INVALID_STATE" || findings[0].NextOperation != "repair-state" {
 		t.Fatalf("product mutation was not denied with a repair-state prescription: %#v", findings)
 	}
-	if denied := ClassifyCommand(repo, ".product-loop/bin/boatstack-helper repair-state --repo . --feature stuck-feature"); len(denied) != 0 {
+	if denied := ClassifyCommand(repo, ".product-loop/boatstack repair-state --repo . --feature stuck-feature"); len(denied) != 0 {
 		t.Fatalf("the prescribed recovery was itself denied: %#v", denied)
 	}
 }

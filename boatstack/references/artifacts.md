@@ -131,6 +131,7 @@ clone, `external` outside the repository (Detached Supervision).
 | source-config | committed-generated | checkout | init, migrate-config, update |
 | generated-references | committed-generated | checkout | init, update, export |
 | guard-hooks | committed-generated | checkout | init, update, export |
+| runtime-launchers | committed-generated | checkout | init, update, export |
 | generated-lock | committed-generated | checkout | init, update, export |
 | planning-artifacts | committed-planning | checkout | planning-write |
 | approval-receipt | committed-planning | checkout | record-approval |
@@ -143,7 +144,7 @@ clone, `external` outside the repository (Detached Supervision).
 | pr-briefs | committed-planning | checkout | pr-context |
 | verified-boundaries | committed-planning | checkout | record-delivery-gate |
 | insight-artifacts | committed-insight | checkout | insight |
-| worktree-helper | checkout-runtime | checkout | init, update, hydrate-runtime |
+| worktree-helper | checkout-runtime | checkout | init, update, hydrate-runtime, activate-worktree-runtime |
 | managed-worktrees | checkout-runtime | checkout | workspace-cut, workspace-cleanup, workspace-reap |
 | delivery-state | runtime-worktree | per-worktree | delivery transitions |
 | operation-ledger | runtime-worktree | per-worktree | run-preflight, publishers |
@@ -173,7 +174,7 @@ controller reads and writes must use `WorkspaceContext.GeneratedRoot`,
 
 ## Detached feature reattachment
 
-Run `boatstack-helper attach --repo . --force` to reattach an older embedded
+Run `.product-loop/boatstack attach --repo . --force` to reattach an older embedded
 open-feature package. Boatstack verifies the plan and approval or autonomy
 fingerprints, copies the package atomically, and verifies the copied hash. The
 machine result is `IMPORTED`, `UNCHANGED`, `CONFLICTING`, or `REJECTED`.

@@ -24,15 +24,31 @@ func TestUpdatePublisherIsExemptFromStateTamper(t *testing.T) {
 	preview := updatePreviewArg(repo)
 	fingerprint := strings.Repeat("a", 64)
 	commands := map[string]string{
-		"installed helper": ".product-loop/bin/boatstack-helper publish-update-pr --repo . --preview " + preview + " --preview-fingerprint " + fingerprint,
-		"absolute path":    "/usr/local/bin/boatstack-helper publish-update-pr --preview " + preview + " --preview-fingerprint " + fingerprint,
-		"suffixed binary":  "/tmp/boatstack-helper_darwin_arm64 publish-update-pr --repo . --preview " + preview + " --preview-fingerprint " + fingerprint,
-		"bare name":        "boatstack-helper publish-update-pr --preview " + preview + " --preview-fingerprint " + fingerprint,
+		"POSIX launcher":      ".product-loop/boatstack publish-update-pr --repo . --preview " + preview + " --preview-fingerprint " + fingerprint,
+		"PowerShell launcher": "& '.product-loop\\boatstack.ps1' publish-update-pr --repo . --preview " + preview + " --preview-fingerprint " + fingerprint,
 	}
 	for name, command := range commands {
 		t.Run(name, func(t *testing.T) {
 			if findings := ClassifyCommand(repo, command); len(findings) != 0 {
 				t.Fatalf("the update publisher was denied: %#v", findings)
+			}
+		})
+	}
+}
+
+func TestUpdatePublisherRejectsForeignRuntimeEntrypoints(t *testing.T) {
+	repo := safetyTestRepo(t)
+	preview := updatePreviewArg(repo)
+	fingerprint := strings.Repeat("a", 64)
+	for name, command := range map[string]string{
+		"internal helper": ".product-loop/bin/boatstack-helper publish-update-pr --preview " + preview + " --preview-fingerprint " + fingerprint,
+		"foreign helper":  "/tmp/boatstack-helper publish-update-pr --preview " + preview + " --preview-fingerprint " + fingerprint,
+		"launcher alias":  "/tmp/boatstack publish-update-pr --preview " + preview + " --preview-fingerprint " + fingerprint,
+	} {
+		t.Run(name, func(t *testing.T) {
+			findings := ClassifyCommand(repo, command)
+			if len(findings) == 0 || findings[0].Category != "workflow-state-tamper" {
+				t.Fatalf("foreign runtime entrypoint was admitted: %#v", findings)
 			}
 		})
 	}
@@ -50,7 +66,7 @@ func TestUpdatePublisherIsExemptWithActiveDelivery(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	command := ".product-loop/bin/boatstack-helper publish-update-pr --repo . --preview " + updatePreviewArg(repo) + " --preview-fingerprint " + strings.Repeat("a", 64)
+	command := ".product-loop/boatstack publish-update-pr --repo . --preview " + updatePreviewArg(repo) + " --preview-fingerprint " + strings.Repeat("a", 64)
 	if findings := ClassifyCommand(repo, command); len(findings) != 0 {
 		t.Fatalf("the update publisher was denied while a delivery was active: %#v", findings)
 	}
@@ -93,9 +109,9 @@ func TestUpdatePublisherExemptionRejectsChaining(t *testing.T) {
 	preview := updatePreviewArg(repo)
 	fingerprint := strings.Repeat("a", 64)
 	for name, command := range map[string]string{
-		"semicolon": "boatstack-helper publish-update-pr --preview " + preview + " --preview-fingerprint " + fingerprint + "; rm -rf important",
-		"and":       "boatstack-helper publish-update-pr --preview " + preview + " --preview-fingerprint " + fingerprint + " && rm -rf important",
-		"pipe":      "boatstack-helper publish-update-pr --preview " + preview + " --preview-fingerprint " + fingerprint + " | tee steal",
+		"semicolon": ".product-loop/boatstack publish-update-pr --preview " + preview + " --preview-fingerprint " + fingerprint + "; rm -rf important",
+		"and":       ".product-loop/boatstack publish-update-pr --preview " + preview + " --preview-fingerprint " + fingerprint + " && rm -rf important",
+		"pipe":      ".product-loop/boatstack publish-update-pr --preview " + preview + " --preview-fingerprint " + fingerprint + " | tee steal",
 	} {
 		t.Run(name, func(t *testing.T) {
 			findings := ClassifyCommand(repo, command)
@@ -121,7 +137,7 @@ func TestApprovedPublishPRStaysAllowedDuringActiveDelivery(t *testing.T) {
 	if findings := ClassifyCommand(repo, "gh pr create --title phase-one"); len(findings) == 0 || findings[0].Category != "workflow-publication-bypass" {
 		t.Fatalf("sanity: a direct PR creation should be denied while a delivery is active: %#v", findings)
 	}
-	allowed := ".product-loop/bin/boatstack-helper publish-pr --preview .product-loop/features/phased-feature/pr.md --preview-fingerprint " + strings.Repeat("a", 64) + " --action create"
+	allowed := ".product-loop/boatstack publish-pr --preview .product-loop/features/phased-feature/pr.md --preview-fingerprint " + strings.Repeat("a", 64) + " --action create"
 	if findings := ClassifyCommand(repo, allowed); len(findings) != 0 {
 		t.Fatalf("the sanctioned publish-pr helper was denied: %#v", findings)
 	}

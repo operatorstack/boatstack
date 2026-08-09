@@ -10,7 +10,9 @@ Boatstack creates installation state once and feature evidence repeatedly. Keepi
 | Path | What it is | What you do |
 |---|---|---|
 | `.boatstack-project.json` | Project-owned repository facts and commands | Review and edit |
-| `.product-loop/` references, templates, hooks, and generated lock | Shared Boatstack runtime | Commit; regenerate rather than hand-edit |
+| `.product-loop/` references, templates, hooks, launchers, and generated lock | Shared Boatstack contract | Commit; regenerate rather than hand-edit |
+| `.product-loop/boatstack` | POSIX exact-runtime command launcher | Commit with executable mode; invoke for Boatstack commands |
+| `.product-loop/boatstack.ps1` | PowerShell exact-runtime command launcher | Commit; invoke with `& .product-loop/boatstack.ps1` |
 | `.cursor/`, `.agents/`, and `.claude/` Boatstack adapters | Cursor commands, the Codex router, and Claude's visible workflow skills plus hidden natural-language router | Commit |
 | `.github/PULL_REQUEST_TEMPLATE/boatstack.md` | Fallback PR structure | Commit |
 | `.cursor/hooks.json`, `.claude/settings.json`, `.codex/hooks.json` | Boatstack fragments merged with existing host settings | Review and commit |
@@ -49,9 +51,9 @@ PR schema v3 includes structural visual-evidence policy, status, count, and fing
 
 ## Worktrees, fresh clones, and updates
 
-One verified runtime is cached under the clone's Git common directory and keyed by Boatstack version, source commit, operating system, and architecture. Linked worktrees share that cache. Their first guarded command atomically restores the ignored local helper and install lock, then evaluates the original command. Hydration uses no network and produces no tracked diff.
+One verified runtime is cached under the clone's Git common directory and keyed by Boatstack version, source commit, operating system, and architecture. Linked worktrees share that cache and inherit tracked POSIX and PowerShell launchers. A launcher resolves only its baked version and source commit, verifies the manifest and checksum, atomically restores the ignored local helper and install lock, then dispatches the requested command. It does not inspect sibling worktrees or select `latest`. A missing shared slot hydrates through the exact tag-pinned, checksum-verified installer.
 
-Independent clones do not share a Git common directory. Committed adapters survive a clone, but the ignored helper and repository-family cache do not; run the installer once in the new clone.
+Independent clones do not share a Git common directory. The committed launchers survive a clone, while the ignored helper and repository-family cache do not. The first launcher invocation hydrates the exact pinned runtime through the verified installer.
 
 For an update, run `/boatstack-update` from a current default branch with no product or user-owned edits. Boatstack creates `chore/update-boatstack-v<version>`, verifies the target helper before inspecting the installed runtime, preserves integrations, and stores a fingerprinted non-empty update-PR preview under Git-common Boatstack state before asking for `o`. Exact owned migrations are automatic. Explicit `--repair` backs up recoverable owned drift under Git-common `boatstack/repair-backups/<fingerprint>` and keeps the repaired files in the same update PR.
 
@@ -62,7 +64,7 @@ An update refuses feature branches, stale default branches, product edits, user-
 If generated state looks wrong, run:
 
 ```bash
-.product-loop/bin/boatstack-helper doctor --repo .
+.product-loop/boatstack doctor --repo .
 ```
 
 Do not delete adapters merely to make a feature diff smaller. If the original installation was never committed, stop and create its infrastructure PR first.

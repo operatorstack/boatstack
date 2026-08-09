@@ -67,7 +67,7 @@ Copy this into Cursor, Codex, Claude Code, or Gemini CLI while the repository is
 Install Boatstack in this repository from https://github.com/operatorstack/boatstack. Detect whether you are running in Cursor, Codex, Claude Code, or Gemini CLI; create or use a chore/install-boatstack branch; run the official installer for this operating system; default to core unless I request gstack or Spec Kit; keep all portable host adapters; run Boatstack doctor; show me the generated files and installation diff; and prepare the installation PR without merging it or starting product work.
 ```
 
-Install Boatstack in its own infrastructure PR. Merge that PR before you start a feature. Install once per Git clone. Linked worktrees reuse the verified runtime and restore their ignored local helper automatically.
+Install Boatstack in its own infrastructure PR. Merge that PR before you start a feature. After that one repository adoption, fresh clones and linked worktrees inherit tracked launchers that activate the exact verified runtime automatically.
 
 ## Start with two moves
 
@@ -165,7 +165,7 @@ These behaviors come from coding failures observed in benchmark and product work
 | <!-- boatstack-claim:irreversible-operations -->A failed write led to an invented reset path | Denies high-confidence destructive recovery | Hook behavior verified; outcome benefit still being evaluated |
 | <!-- boatstack-claim:reviewer-ready-pr -->A PR lost decisions and accepted gaps | Builds a review brief from scope, diff, and evidence | Projection and stale-preview tests |
 | <!-- boatstack-claim:phase-scoped-delivery -->A phased plan opened PRs during build | Gates and publishes one delivery slice at a time | Slice-state and bypass tests |
-| <!-- boatstack-claim:git-worktree-activation -->A worktree had the hook but not its ignored helper | Restores the verified local runtime before judging the command | Linked-worktree and tamper tests |
+| <!-- boatstack-claim:git-worktree-activation -->A worktree inherited no ignored helper | Uses its tracked pinned launcher to verify and activate the exact runtime before command dispatch | Linked-worktree, identity, and tamper tests |
 
 [Read what happened, what is tested, and what remains open](docs/why-these-steps.md). The [claim record](docs/public-claims.json) keeps every material statement tied to its sources.
 

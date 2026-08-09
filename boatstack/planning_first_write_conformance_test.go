@@ -30,7 +30,7 @@ func TestFirstPlanningWriteOwnedChannelStaysOpen(t *testing.T) {
 	t.Cleanup(func() { planningInstallationHealth = previousHealth })
 
 	for _, command := range []string{
-		".product-loop/bin/boatstack-helper planning-write --repo . --feature checkout --artifact plan.md <<'BOATSTACK_PLAN_EOF'\n# Plan\nBOATSTACK_PLAN_EOF\n",
+		".product-loop/boatstack planning-write --repo . --feature checkout --artifact plan.md <<'BOATSTACK_PLAN_EOF'\n# Plan\nBOATSTACK_PLAN_EOF\n",
 		"boatstack-helper check-source-plan --repo . --plan docs/plan.md",
 	} {
 		if findings := ClassifyCommand(repo, command); len(findings) > 0 {

@@ -102,7 +102,10 @@ func installPlanningTransportFixture(t *testing.T, repo string) string {
 	}); err != nil {
 		t.Fatalf("install healthy planning transport fixture: %v", err)
 	}
-	return WorkspaceFor(repo).HelperPath()
+	if runtime.GOOS == "windows" {
+		return filepath.Join(repo, ".product-loop", "boatstack.ps1")
+	}
+	return filepath.Join(repo, ".product-loop", "boatstack")
 }
 
 func executePlanningEnvelope(t *testing.T, repo, command string) {
@@ -231,13 +234,13 @@ func TestPlanningTransportTreatsDocumentTextAsInertAcrossHosts(t *testing.T) {
 		"terraform destroy | Remove-Item -Recurse -Force $HOME",
 		"secret-marker-that-must-never-be-rendered",
 	}, "\n") + "\n"
-	posix := posixPlanningEnvelope(t, ".product-loop/bin/boatstack-helper", repo, "threat-model", "questions.md", body)
+	posix := posixPlanningEnvelope(t, ".product-loop/boatstack", repo, "threat-model", "questions.md", body)
 	commands := []struct {
 		command, expected  string
 		hostConformanceRun bool
 	}{
 		{posix, body, true},
-		{powerShellPlanningEnvelope(t, `.product-loop\bin\boatstack-helper.exe`, repo, "threat-model", "questions.md", body), body, runtime.GOOS == "windows"},
+		{powerShellPlanningEnvelope(t, `.product-loop\boatstack.ps1`, repo, "threat-model", "questions.md", body), body, runtime.GOOS == "windows"},
 		{strings.ReplaceAll(posix, "\n", "\r\n"), strings.ReplaceAll(body, "\n", "\r\n"), true},
 	}
 	for _, test := range commands {
@@ -260,9 +263,9 @@ func TestPlanningTransportTreatsDocumentTextAsInertAcrossHosts(t *testing.T) {
 func TestPlanningTransportFailureClassesFailClosedWithoutExecuting(t *testing.T) {
 	repo := safetyTestRepo(t)
 	otherRepo := t.TempDir()
-	header := planningHeader(t, ".product-loop/bin/boatstack-helper", repo, "transport-failures", "plan.md")
-	valid := posixPlanningEnvelope(t, ".product-loop/bin/boatstack-helper", repo, "transport-failures", "plan.md", "# Plan\n")
-	powerShellValid := powerShellPlanningEnvelope(t, `.product-loop\bin\boatstack-helper.exe`, repo, "transport-failures", "plan.md", "# Plan\n")
+	header := planningHeader(t, ".product-loop/boatstack", repo, "transport-failures", "plan.md")
+	valid := posixPlanningEnvelope(t, ".product-loop/boatstack", repo, "transport-failures", "plan.md", "# Plan\n")
+	powerShellValid := powerShellPlanningEnvelope(t, `.product-loop\boatstack.ps1`, repo, "transport-failures", "plan.md", "# Plan\n")
 	cases := map[string]string{
 		"bare command":                   header,
 		"leading command":                "touch sentinel\n" + valid,
@@ -279,13 +282,13 @@ func TestPlanningTransportFailureClassesFailClosedWithoutExecuting(t *testing.T)
 		"missing feature value":          strings.Replace(valid, "--feature transport-failures", "--feature --artifact", 1),
 		"command substitution header":    strings.Replace(valid, "--repo "+quotedLiteral(t, repo), "--repo $(touch sentinel)", 1),
 		"repository mismatch":            strings.Replace(valid, quotedLiteral(t, repo), quotedLiteral(t, otherRepo), 1),
-		"helper path mismatch":           strings.Replace(valid, ".product-loop/bin/boatstack-helper", "/tmp/boatstack-helper", 1),
-		"helper alias":                   strings.Replace(valid, ".product-loop/bin/boatstack-helper", ".product-loop/bin/helper-alias", 1),
+		"helper path mismatch":           strings.Replace(valid, ".product-loop/boatstack", "/tmp/boatstack-helper", 1),
+		"helper alias":                   strings.Replace(valid, ".product-loop/boatstack", ".product-loop/bin/helper-alias", 1),
 		"invalid UTF-8":                  header + " <<'BOATSTACK_PLAN_EOF'\n" + string([]byte{0xff}) + "\nBOATSTACK_PLAN_EOF\n",
 		"NUL content":                    header + " <<'BOATSTACK_PLAN_EOF'\nplan\x00body\nBOATSTACK_PLAN_EOF\n",
 		"PowerShell no UTF-8 scope":      "@'\n# Plan\n'@ | & " + header,
 		"PowerShell truncated":           "& {\n" + powerShellPlanningEncodingLine + "\n@'\n# Plan\n",
-		"PowerShell delimiter collision": powerShellPlanningEnvelope(t, `.product-loop\bin\boatstack-helper.exe`, repo, "transport-failures", "plan.md", "# Plan\n'@\ntouch sentinel\n"),
+		"PowerShell delimiter collision": powerShellPlanningEnvelope(t, `.product-loop\boatstack.ps1`, repo, "transport-failures", "plan.md", "# Plan\n'@\ntouch sentinel\n"),
 		"PowerShell trailing command":    strings.TrimSuffix(powerShellValid, "\n") + "; touch sentinel\n",
 	}
 	for name, command := range cases {
@@ -329,7 +332,7 @@ func TestPlanningTransportDoesNotClaimUnrelatedPowerShellHereStrings(t *testing.
 }
 
 func TestPlanningTransportPreservesStageAdmissions(t *testing.T) {
-	command := posixPlanningEnvelope(t, "/path with spaces/boatstack-helper", "/repo with spaces", "stage-matrix", "questions.md", "# Questions\n")
+	command := posixPlanningEnvelope(t, "/path with spaces/boatstack", "/repo with spaces", "stage-matrix", "questions.md", "# Questions\n")
 	inspection := inspectPlanningWriteTransport(command)
 	if !inspection.Matched || inspection.InvalidReason != "" {
 		t.Fatalf("valid path variant did not parse: %#v", inspection)

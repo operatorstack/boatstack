@@ -319,7 +319,7 @@ func (p PrescribedCommand) CommandLine() string {
 	program := p.Program
 	if program == "" {
 		if literalPlanningInput {
-			program = projectLocalHelperCommand()
+			program = projectLocalLauncherCommand()
 		} else {
 			program = "boatstack-helper"
 		}
@@ -464,7 +464,7 @@ func prescribePlanning(repo string, status NextStatus) (*PrescribedCommand, stri
 			Verb: "check-source-plan", Args: repoArgs,
 			RequiresHumanInput: []string{"--plan"},
 			Transition:         MarkerPlanningCheckSource,
-		}, fmt.Sprintf("Then run auto-plan with the validated SOURCE_PLAN path; author every feature artifact through one complete literal `%s planning-write` envelope from `%s`.", projectLocalHelperCommand(), generatedWorkflowReference()))
+		}, fmt.Sprintf("Then run auto-plan with the validated SOURCE_PLAN path; author every feature artifact through one complete literal `%s planning-write` envelope from `%s`.", projectLocalLauncherCommand(), generatedWorkflowReference()))
 	case "DRAFT_PLAN":
 		return finish(&PrescribedCommand{
 			Verb:       "check-plan",
@@ -508,7 +508,7 @@ func prescribePlanning(repo string, status NextStatus) (*PrescribedCommand, stri
 			} else {
 				slug = "<feature>"
 			}
-			return finish(cmd, fmt.Sprintf("After repair, re-author the planning Markdown through the owned channel: one complete literal `%s planning-write --repo . --feature %s --artifact <name>` envelope from `%s`.", projectLocalHelperCommand(), slug, generatedWorkflowReference()))
+			return finish(cmd, fmt.Sprintf("After repair, re-author the planning Markdown through the owned channel: one complete literal `%s planning-write --repo . --feature %s --artifact <name>` envelope from `%s`.", projectLocalLauncherCommand(), slug, generatedWorkflowReference()))
 		}
 		return nil, ""
 	default:
@@ -661,6 +661,24 @@ func NextControl(repo, feature string) (FlowNext, error) {
 	return nextControlFromStatus(repo, status)
 }
 
+func bindFlowCommandPrograms(repo string, next *FlowNext) {
+	bind := func(command *PrescribedCommand) {
+		if command == nil || command.Program != "" || command.Verb == "init" {
+			return
+		}
+		workspace := WorkspaceFor(repo)
+		if workspace.Mode == SupervisionDetached {
+			command.Program = workspace.HelperPath()
+			return
+		}
+		command.Program = projectLocalLauncherCommand()
+	}
+	bind(next.Prescribed)
+	for index := range next.Alternatives {
+		bind(&next.Alternatives[index])
+	}
+}
+
 // nextControlFromStatus is NextControl on an already-resolved status, so a
 // caller that renders both the friendly phrase and the prescription (the
 // response contract) observes state exactly once — one resolution, no drift.
@@ -686,6 +704,7 @@ func nextControlFromStatus(repo string, status NextStatus) (FlowNext, error) {
 			out.FollowUp = followUp
 		}
 		out.Alternatives = alternativesFor(repo, status, out)
+		bindFlowCommandPrograms(repo, &out)
 		out.Actor = classifyNextActor(status, out)
 		return out, nil
 	}
@@ -729,6 +748,7 @@ func nextControlFromStatus(repo string, status NextStatus) (FlowNext, error) {
 		}
 	}
 	out.Alternatives = alternativesFor(repo, status, out)
+	bindFlowCommandPrograms(repo, &out)
 	out.Actor = classifyNextActor(status, out)
 	return out, nil
 }

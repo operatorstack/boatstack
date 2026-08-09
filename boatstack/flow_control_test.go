@@ -99,7 +99,7 @@ func TestNextControlPrescribesWithoutResolvingBeforeActivation(t *testing.T) {
 		t.Fatalf("DRAFT_PLAN must prescribe check-plan: %+v", next.Prescribed)
 	}
 	out := FormatFlowNext(next)
-	if !strings.Contains(out, "pre-activation (delivery oracle not engaged)") || !strings.Contains(out, "Run: boatstack-helper check-plan") {
+	if !strings.Contains(out, "pre-activation (delivery oracle not engaged)") || !strings.Contains(out, "Run: .product-loop/boatstack check-plan") {
 		t.Fatalf("pre-activation rendering must label the state and carry the Run line: %q", out)
 	}
 }

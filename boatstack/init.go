@@ -471,7 +471,7 @@ func RunInit(options InitOptions) (returnErr error) {
 			return recoverErr
 		}
 	}
-	bundle, err := BuildExportBundle(configPath, config, rawConfig, "boatstack")
+	bundle, err := BuildExportBundle(configPath, config, embeddedConfigBytes(rawConfig), "boatstack")
 	if err != nil {
 		return err
 	}
@@ -721,8 +721,8 @@ func RunInit(options InitOptions) (returnErr error) {
 		fmt.Fprintln(options.Output, "  git commit -m \"chore: install Boatstack\"")
 		fmt.Fprintln(options.Output, "  git push -u origin chore/install-boatstack")
 	}
-	fmt.Fprintln(options.Output, "The verified runtime is shared by worktrees in this Git clone; each worktree hydrates its ignored .product-loop/bin/ files automatically on first use.")
-	fmt.Fprintln(options.Output, "A separate fresh clone still requires one verified installer run.")
+	fmt.Fprintln(options.Output, "The verified runtime is shared by worktrees in this Git clone; each worktree inherits tracked launchers that activate its ignored .product-loop/bin/ files on first use.")
+	fmt.Fprintln(options.Output, "A fresh clone inherits the tracked launcher; its first invocation hydrates the exact pinned runtime through the verified installer.")
 	if options.Update {
 		fmt.Fprintln(options.Output, "\nAfter the update PR is merged, reload Cursor, Codex, or Claude.")
 	} else {
@@ -888,7 +888,7 @@ func RunUpdate(options InitOptions) error {
 }
 
 func verifyInstalledUpdatePostcondition(repo, configPath string, config ProjectConfig, rawConfig []byte, expectedIntegrations map[string]IntegrationState) error {
-	bundle, err := BuildExportBundle(configPath, config, rawConfig, "boatstack")
+	bundle, err := BuildExportBundle(configPath, config, embeddedConfigBytes(rawConfig), "boatstack")
 	if err != nil {
 		return err
 	}
