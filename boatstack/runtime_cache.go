@@ -416,7 +416,7 @@ func HydrateWorktree(repoPath string) error {
 // Because the guard downloads and runs the exact pinned release before calling
 // this, the running binary equals the repo's committed pin by construction. The
 // verifyGeneratedRuntime gate refuses to populate a slot for any other version,
-// so hydration can never write a mislabeled runtime (the taxweave incident's
+// so hydration can never write a mislabeled runtime (the original incident's
 // invariant), and installCommandRuntime's own post-write verify+rollback is the
 // backstop. The operation is idempotent and safe under concurrent first use.
 func RunHydrateRuntime(repoPath string) error {
