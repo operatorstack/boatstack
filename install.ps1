@@ -1,4 +1,4 @@
-# Generated from operatorstack/intelligence-flow.
+# Boatstack installer maintained in operatorstack/boatstack.
 [CmdletBinding()]
 param(
     [switch]$Repair,

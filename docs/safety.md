@@ -1,5 +1,3 @@
-<!-- Generated from operatorstack/intelligence-flow. Edit the upstream product-loop source, not this file. -->
-
 # Irreversible-operation safety
 
 Boatstack leaves implementation open while removing high-confidence irreversible side effects from the coding agent's reachable action space.

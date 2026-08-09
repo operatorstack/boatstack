@@ -1,5 +1,3 @@
-<!-- Generated from operatorstack/intelligence-flow. Edit the upstream public source, not this file. -->
-
 # Install Boatstack and ship a first feature
 
 **For:** a product builder or engineer using Cursor, Codex, or Claude Code.

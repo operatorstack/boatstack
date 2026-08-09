@@ -12,8 +12,8 @@ import (
 
 var stableReleaseVersion = regexp.MustCompile(`^v(\d+)\.(\d+)\.(\d+)$`)
 
-// ReleaseClassification separates a projected documentation sync from a
-// change that alters the installed Boatstack delivery harness.
+// ReleaseClassification separates a documentation-only change from a change
+// that alters the installed Boatstack delivery harness.
 type ReleaseClassification struct {
 	Required bool
 	Paths    []string
@@ -29,7 +29,7 @@ func isReleaseBearingPath(value string) bool {
 		return false
 	}
 	for _, exact := range []string{
-		".gitignore", "CONTRIBUTING.md", "README.md", "UPSTREAM.json",
+		".gitignore", "CONTRIBUTING.md", "README.md", "IMPORT_PROVENANCE.json",
 		"project.example.json",
 	} {
 		if path == exact {
@@ -66,7 +66,7 @@ func ClassifyReleasePaths(paths []string) ReleaseClassification {
 	return ReleaseClassification{Required: len(releasePaths) > 0, Paths: releasePaths}
 }
 
-// ClassifyReleaseDiff reads the exact projected Git diff used by the release
+// ClassifyReleaseDiff reads the exact Boatstack Git diff used by the release
 // workflow and applies the same deterministic path policy as unit tests.
 func ClassifyReleaseDiff(repo, base, head string) (ReleaseClassification, error) {
 	if strings.TrimSpace(base) == "" || strings.TrimSpace(head) == "" {

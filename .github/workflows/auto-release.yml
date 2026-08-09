@@ -30,16 +30,16 @@ jobs:
           owner: operatorstack
           repositories: boatstack
           permission-contents: write
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: boatstack/go.mod
           cache-dependency-path: boatstack/go.mod
-      - name: Detect release-bearing projection
+      - name: Detect release-bearing change
         id: classify
         shell: bash
         run: |

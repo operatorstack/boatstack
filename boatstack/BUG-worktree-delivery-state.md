@@ -1,6 +1,6 @@
 # Bug: shipped features re-register as ambiguous plan candidates from worktrees
 
-**Component:** `boatstack-helper` (labs/12-product-engineering-loop/product-engineering-loop)
+**Component:** `boatstack-helper` (`boatstack/`)
 **Observed in:** v0.7.45 (commit 91e33a95)
 **Severity:** blocks `next-status` (BLOCKED / AMBIGUOUS) for any repo that has shipped >1 feature and uses worktree delivery mode.
 **Goal of fix:** stop miscounting shipped features as unshipped, WITHOUT deleting the committed

@@ -1,5 +1,3 @@
-<!-- Generated from operatorstack/intelligence-flow. Edit the upstream public source, not this file. -->
-
 # Troubleshooting Boatstack
 
 **For:** someone blocked during installation or a feature.

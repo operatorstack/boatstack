@@ -14,10 +14,10 @@ The source of truth is `.product-loop/`:
 
 Host-specific files are compiled adapters:
 
-- Cursor: `.cursor/rules/product-engineering-loop.mdc` and `.cursor/commands/*.md`;
-- Claude Code: `.claude/skills/product-engineering-loop/SKILL.md`;
-- Codex: `.agents/skills/product-engineering-loop/SKILL.md`;
-- GitHub: `.github/PULL_REQUEST_TEMPLATE/product-engineering-loop.md`.
+- Cursor: `.cursor/rules/boatstack.mdc` and `.cursor/commands/*.md`;
+- Claude Code: `.claude/skills/boatstack/SKILL.md`;
+- Codex: `.agents/skills/boatstack/SKILL.md`;
+- GitHub: `.github/PULL_REQUEST_TEMPLATE/boatstack.md`.
 
 Adapters point to the canonical package; they do not copy its full reasoning. This keeps behavior consistent while letting each host expose its native invocation surface.
 

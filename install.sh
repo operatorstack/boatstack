@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Generated from operatorstack/intelligence-flow.
+# Boatstack installer maintained in operatorstack/boatstack.
 set -euo pipefail
 
 repository="operatorstack/boatstack"
