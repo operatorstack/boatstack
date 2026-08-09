@@ -474,6 +474,15 @@ func ResolveNext(repoPath, explicitFeature string) (result NextStatus, resultErr
 			base.ObservedStage = "DRAFT_PLAN"
 			base.NextOperation = "plan-gate"
 			base.Reason = "The saved feature plan has not been approved."
+			// Bind the plan to its final feature workspace before readiness,
+			// approval, or autonomy records branch identity. Incomplete plans stay
+			// on plan-gate and never gain workspace authority.
+			if workspaceEnabled(repo) && needsFreshCut(repo, feature) {
+				if _, planErr := CheckPlan(filepath.Join(directory, "plan.md")); planErr == nil {
+					base.NextOperation = "workspace-cut"
+					base.Reason = fmt.Sprintf("Feature %q has a valid plan; establish its branch workspace before readiness and approval.", feature)
+				}
+			}
 		}
 		return decorateAutonomyStatus(repo, base), nil
 	}

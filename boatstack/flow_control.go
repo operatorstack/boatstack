@@ -466,6 +466,10 @@ func prescribePlanning(repo string, status NextStatus) (*PrescribedCommand, stri
 			Transition:         MarkerPlanningCheckSource,
 		}, fmt.Sprintf("Then run auto-plan with the validated SOURCE_PLAN path; author every feature artifact through one complete literal `%s planning-write` envelope from `%s`.", projectLocalLauncherCommand(), generatedWorkflowReference()))
 	case "DRAFT_PLAN":
+		if status.NextOperation == "workspace-cut" {
+			return finish(buildWorkspaceCut(repoArgs, status.Feature),
+				"Continue from destination_repository, then check and approve the same plan fingerprint.")
+		}
 		return finish(&PrescribedCommand{
 			Verb:       "check-plan",
 			Args:       []string{"--plan", filepath.Join(featureDir, "plan.md")},

@@ -1,6 +1,7 @@
 package boatstack
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -85,6 +86,36 @@ func TestPlanningSolutionSetIsClosedUnderGuardAdmission(t *testing.T) {
 		if !controlledPhaseTransition(substituteOwedFlags(option.CommandLine()), "AMBIGUOUS") {
 			t.Errorf("AMBIGUOUS pick %q must be guard-admitted", option.CommandLine())
 		}
+	}
+}
+
+// Relation/effect: the prescribed workspace command must not merely pass the
+// text guard. Its verified post-state must expose the identical plan on the
+// feature branch and make activation the next concrete command after approval.
+// control-law: prescriptive-closure-every-stage-names-a-runnable-command
+// control-law: workspace-transition-preserves-plan-authority
+func TestPrescribedWorkspaceTransitionReachesActivatableState(t *testing.T) {
+	repo := workspaceRepo(t, defaultWorkspace())
+	commitWorkspaceController(t, repo)
+	addWorkspaceOrigin(t, repo)
+	_, fingerprint := writeWorkspacePlanPackage(t, repo, "feature-one")
+	next, err := NextControl(repo, "")
+	if err != nil || next.Prescribed == nil || next.Prescribed.Verb != "workspace-cut" {
+		t.Fatalf("valid draft did not prescribe workspace-cut: %+v (%v)", next, err)
+	}
+	result, err := CutFeatureWorkspace(WorkspaceCutOptions{Repo: repo, Feature: "feature-one"})
+	if err != nil || result.VerificationStatus != "VERIFIED" || result.PlanFingerprint != fingerprint {
+		t.Fatalf("prescribed transition did not establish its post-state: %+v (%v)", result, err)
+	}
+	planPath := filepath.Join(WorkspaceFor(result.DestinationRepo).FeatureDir("feature-one"), "plan.md")
+	check, err := CheckPlan(planPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeApprovalReceipt(t, filepath.Join(filepath.Dir(planPath), "approval.md"), check.Fingerprint)
+	after, err := NextControl(result.DestinationRepo, "")
+	if err != nil || after.Prescribed == nil || after.Prescribed.Verb != "activate-plan" {
+		t.Fatalf("workspace post-state is not activatable: %+v (%v)", after, err)
 	}
 }
 

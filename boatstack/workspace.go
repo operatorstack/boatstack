@@ -1,13 +1,16 @@
 package boatstack
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-const workspaceSchemaVersion = 1
+const workspaceSchemaVersion = 2
 
 // workspaceGit and workspaceGh are indirected so tests can substitute
 // deterministic git and GitHub CLI behavior. They default to the same helpers
@@ -17,6 +20,11 @@ var (
 	workspaceGh  = func(repo string, arguments ...string) (string, error) {
 		return commandOutput(repo, "gh", arguments...)
 	}
+	workspacePackageCopy         = copyFeaturePackage
+	workspaceSourcePackageRemove = os.RemoveAll
+	workspaceDetachedAlias       = registerDetachedWorkspaceAlias
+	workspaceAfterDestination    = func(string) error { return nil }
+	workspaceAfterDetachedAlias  = func(string) error { return nil }
 )
 
 // ResolvedWorkspace is the workspace policy with empty fields filled from the
@@ -74,20 +82,17 @@ func reapEnabled(repo string) bool {
 	return policy.Enabled && policy.Reap != "off"
 }
 
-// needsFreshCut reports whether an approved feature still has to be moved off the
-// base branch onto its own fresh workspace. It is a local-only check: true only
-// when the feature has no existing branch or worktree and the working tree is
-// still on the default branch.
+// needsFreshCut reports whether the caller still has to enter the feature's
+// branch workspace. Existence is not readiness: a detached HEAD, the base branch,
+// another feature branch, or a sibling worktree all require the managed
+// transition so the planning package and execution directory move together.
 func needsFreshCut(repo, feature string) bool {
 	branch := branchForFeature(feature)
 	if branch == "" {
 		return false
 	}
-	if branchExists(repo, branch) || worktreePathForBranch(repo, branch) != "" {
-		return false
-	}
 	current, _ := workspaceGit(repo, "branch", "--show-current")
-	return strings.TrimSpace(current) == defaultPRBase(repo)
+	return strings.TrimSpace(current) != branch
 }
 
 // isMainWorktree reports whether repo is checked out in the repository's main
@@ -171,9 +176,15 @@ type WorkspaceCut struct {
 	SchemaVersion      int    `json:"schema_version"`
 	VerificationStatus string `json:"verification_status"`
 	Mode               string `json:"mode,omitempty"`
+	ControllerMode     string `json:"controller_mode,omitempty"`
+	Outcome            string `json:"outcome,omitempty"` // created | adopted | current
 	BaseBranch         string `json:"base_branch,omitempty"`
+	BaseCommit         string `json:"base_commit,omitempty"`
 	Branch             string `json:"branch,omitempty"`
 	WorktreePath       string `json:"worktree_path,omitempty"`
+	SourceRepository   string `json:"source_repository,omitempty"`
+	DestinationRepo    string `json:"destination_repository,omitempty"`
+	PlanFingerprint    string `json:"plan_fingerprint,omitempty"`
 	Created            bool   `json:"created"`
 	Reason             string `json:"reason"`
 }
@@ -182,10 +193,217 @@ func blockedCut(reason string) WorkspaceCut {
 	return WorkspaceCut{SchemaVersion: workspaceSchemaVersion, VerificationStatus: "BLOCKED", Reason: reason}
 }
 
-// CutFeatureWorkspace creates a fresh branch (and, in worktree mode, a linked
-// worktree) rooted at the freshly-fetched default branch. It never switches an
-// existing branch's history, never deletes anything, and refuses to reuse a
-// branch name that already exists.
+type workspaceTransition struct {
+	branchCreated   bool
+	branchSwitched  bool
+	worktreeCreated bool
+	detachedAlias   bool
+	originalBranch  string
+	originalHead    string
+}
+
+func rollbackWorkspaceTransition(repo, branch, worktreePath string, transition workspaceTransition) {
+	if transition.detachedAlias {
+		_ = unregisterDetachedWorkspaceAlias(worktreePath)
+	}
+	if transition.worktreeCreated && worktreePath != "" {
+		_, _ = workspaceGit(repo, "worktree", "remove", "--force", worktreePath)
+	}
+	if transition.branchSwitched {
+		if transition.originalBranch != "" {
+			_, _ = workspaceGit(repo, "switch", transition.originalBranch)
+		} else if transition.originalHead != "" {
+			_, _ = workspaceGit(repo, "checkout", "--detach", transition.originalHead)
+		}
+	}
+	if transition.branchCreated {
+		_, _ = workspaceGit(repo, "branch", "-D", branch)
+	}
+}
+
+func featurePackageFingerprint(directory string) (string, error) {
+	planPath := filepath.Join(directory, "plan.md")
+	if !fileExists(planPath) {
+		return "", nil
+	}
+	check, err := CheckPlan(planPath)
+	if err != nil {
+		return "", err
+	}
+	return check.Fingerprint, nil
+}
+
+func featurePackageDigest(directory string) (string, error) {
+	digest := sha256.New()
+	err := filepath.WalkDir(directory, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(directory, path)
+		if err != nil || relative == "." {
+			return err
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 || (!info.Mode().IsRegular() && !info.IsDir()) {
+			return fmt.Errorf("planning package contains unsupported entry %s", relative)
+		}
+		kind := "file"
+		if info.IsDir() {
+			kind = "directory"
+		}
+		_, _ = digest.Write([]byte(kind + "\x00" + filepath.ToSlash(relative) + "\x00"))
+		if info.IsDir() {
+			return nil
+		}
+		value, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		_, _ = digest.Write(value)
+		_, _ = digest.Write([]byte{0})
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(digest.Sum(nil)), nil
+}
+
+func copyFeaturePackage(source, destination string) error {
+	parent := filepath.Dir(destination)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return err
+	}
+	temporary, err := os.MkdirTemp(parent, ".boatstack-workspace-transfer-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(temporary)
+	err = filepath.WalkDir(source, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(source, path)
+		if err != nil || relative == "." {
+			return err
+		}
+		target := filepath.Join(temporary, relative)
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 || (!info.Mode().IsRegular() && !info.IsDir()) {
+			return fmt.Errorf("planning package contains unsupported entry %s", relative)
+		}
+		if info.IsDir() {
+			return os.MkdirAll(target, info.Mode().Perm())
+		}
+		value, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(target, value, info.Mode().Perm())
+	})
+	if err != nil {
+		return err
+	}
+	return os.Rename(temporary, destination)
+}
+
+func dirtyOutsideFeature(repo, feature string) (bool, error) {
+	output, err := workspaceGit(repo, "status", "--porcelain=v1", "--untracked-files=all")
+	if err != nil {
+		return false, err
+	}
+	prefix := filepath.ToSlash(filepath.Join(productLoopDirName, "features", feature)) + "/"
+	for _, line := range strings.Split(output, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		path := strings.TrimSpace(line[2:])
+		if arrow := strings.LastIndex(path, " -> "); arrow >= 0 {
+			path = path[arrow+4:]
+		}
+		path = strings.Trim(path, "\"")
+		normalized := filepath.ToSlash(path)
+		if !strings.HasPrefix(normalized, prefix) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// transferFeaturePackage moves a validated embedded planning package into the
+// destination worktree. The source remains authoritative until the destination
+// fingerprint verifies. A failed source cleanup removes the new copy, so the
+// boundary never leaves two authoritative packages.
+func transferFeaturePackage(sourceRepo, destinationRepo, feature string, controllerMode SupervisionMode) (string, error) {
+	if feature == "" {
+		return "", nil
+	}
+	source := WorkspaceFor(sourceRepo).FeatureDir(feature)
+	if source == "" || !dirExists(source) {
+		destination := WorkspaceFor(destinationRepo).FeatureDir(feature)
+		if destination == "" || !dirExists(destination) {
+			return "", nil
+		}
+		return featurePackageFingerprint(destination)
+	}
+	sourceFingerprint, err := featurePackageFingerprint(source)
+	if err != nil {
+		return "", fmt.Errorf("source planning package is invalid: %w", err)
+	}
+	if sourceFingerprint == "" {
+		return "", nil
+	}
+	sourceDigest, err := featurePackageDigest(source)
+	if err != nil {
+		return "", fmt.Errorf("source planning package cannot be fingerprinted: %w", err)
+	}
+	destination := WorkspaceFor(destinationRepo).FeatureDir(feature)
+	if filepath.Clean(source) == filepath.Clean(destination) {
+		return sourceFingerprint, nil
+	}
+	if dirExists(destination) {
+		destinationFingerprint, fingerprintErr := featurePackageFingerprint(destination)
+		destinationDigest, digestErr := featurePackageDigest(destination)
+		if fingerprintErr != nil || digestErr != nil || destinationFingerprint != sourceFingerprint || destinationDigest != sourceDigest {
+			return "", fmt.Errorf("destination workspace contains a conflicting planning package")
+		}
+		if controllerMode == SupervisionEmbedded {
+			if err := workspaceSourcePackageRemove(source); err != nil {
+				return "", fmt.Errorf("remove transferred source package: %w", err)
+			}
+		}
+		return sourceFingerprint, nil
+	}
+	if err := workspacePackageCopy(source, destination); err != nil {
+		return "", fmt.Errorf("copy planning package: %w", err)
+	}
+	destinationFingerprint, err := featurePackageFingerprint(destination)
+	destinationDigest, digestErr := featurePackageDigest(destination)
+	if err != nil || digestErr != nil || destinationFingerprint != sourceFingerprint || destinationDigest != sourceDigest {
+		_ = os.RemoveAll(destination)
+		return "", fmt.Errorf("destination planning package fingerprint did not verify")
+	}
+	if controllerMode == SupervisionEmbedded {
+		if err := workspaceSourcePackageRemove(source); err != nil {
+			_ = os.RemoveAll(destination)
+			return "", fmt.Errorf("remove transferred source package: %w", err)
+		}
+	}
+	return sourceFingerprint, nil
+}
+
+// CutFeatureWorkspace establishes the feature's execution workspace and carries
+// its validated planning package across the boundary. Existing branches are
+// adopted only when unowned and byte-identical to the fetched base.
 func CutFeatureWorkspace(options WorkspaceCutOptions) (WorkspaceCut, error) {
 	repo, err := ResolveRepository(options.Repo)
 	if err != nil {
@@ -227,36 +445,142 @@ func CutFeatureWorkspace(options WorkspaceCutOptions) (WorkspaceCut, error) {
 		return blockedCut(err.Error()), nil
 	}
 
-	if _, existsErr := workspaceGit(repo, "rev-parse", "--verify", "refs/heads/"+branch+"^{commit}"); existsErr == nil {
-		return blockedCut(fmt.Sprintf("Branch %q already exists; choose a new feature or clean up the old workspace first.", branch)), nil
+	sourceContext, err := ResolveWorkspaceContext(repo)
+	if err != nil {
+		return blockedCut(err.Error()), nil
 	}
-
 	result := WorkspaceCut{
 		SchemaVersion:      workspaceSchemaVersion,
 		VerificationStatus: "VERIFIED",
 		Mode:               policy.Mode,
+		ControllerMode:     string(sourceContext.Mode),
 		BaseBranch:         base,
+		BaseCommit:         strings.TrimSpace(baseCommit),
 		Branch:             branch,
-		Created:            true,
+		SourceRepository:   repo,
 	}
+	originalBranch, _ := workspaceGit(repo, "branch", "--show-current")
+	originalHead, _ := workspaceGit(repo, "rev-parse", "HEAD^{commit}")
+	transition := workspaceTransition{
+		originalBranch: strings.TrimSpace(originalBranch),
+		originalHead:   strings.TrimSpace(originalHead),
+	}
+	destinationRepo := repo
 
 	switch policy.Mode {
 	case "branch":
-		if _, err := workspaceGit(repo, "switch", "-c", branch, baseCommit); err != nil {
-			return blockedCut("Boatstack could not create the branch: " + err.Error()), nil
+		current, _ := workspaceGit(repo, "branch", "--show-current")
+		if strings.TrimSpace(current) == branch {
+			headCommit, _ := workspaceGit(repo, "rev-parse", "HEAD^{commit}")
+			if strings.TrimSpace(headCommit) != strings.TrimSpace(baseCommit) {
+				return blockedCut(fmt.Sprintf("Current branch %q diverges from the fetched base.", branch)), nil
+			}
+			result.Outcome = "current"
+		} else if branchExists(repo, branch) {
+			branchCommit, _ := workspaceGit(repo, "rev-parse", "refs/heads/"+branch+"^{commit}")
+			if strings.TrimSpace(branchCommit) != strings.TrimSpace(baseCommit) {
+				return blockedCut(fmt.Sprintf("Branch %q diverges from the fetched base and cannot be adopted.", branch)), nil
+			}
+			owner, ownerErr := activeDeliveryOwningBranch(repo, branch)
+			if ownerErr != nil {
+				return blockedCut(fmt.Sprintf("Boatstack could not verify whether branch %q has an active owner: %v", branch, ownerErr)), nil
+			}
+			if owner != "" {
+				return blockedCut(fmt.Sprintf("Branch %q is owned by an active delivery and cannot be adopted.", branch)), nil
+			}
+			if _, err := workspaceGit(repo, "switch", branch); err != nil {
+				return blockedCut("Boatstack could not adopt the branch: " + err.Error()), nil
+			}
+			transition.branchSwitched = true
+			result.Outcome = "adopted"
+		} else {
+			if _, err := workspaceGit(repo, "switch", "-c", branch, baseCommit); err != nil {
+				return blockedCut("Boatstack could not create the branch: " + err.Error()), nil
+			}
+			transition.branchCreated = true
+			transition.branchSwitched = true
+			result.Created = true
+			result.Outcome = "created"
 		}
-		result.Reason = fmt.Sprintf("Cut fresh branch %q from %s.", branch, base)
 	default: // "worktree"
-		path := filepath.Join(repo, ".product-loop", "worktrees", previewSlug(branch))
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return blockedCut("Boatstack could not prepare the worktree directory: " + err.Error()), nil
-		}
-		if _, err := workspaceGit(repo, "worktree", "add", "-b", branch, path, baseCommit); err != nil {
-			return blockedCut("Boatstack could not add the worktree: " + err.Error()), nil
+		path := worktreePathForBranch(repo, branch)
+		if path != "" {
+			branchCommit, _ := workspaceGit(repo, "rev-parse", "refs/heads/"+branch+"^{commit}")
+			if strings.TrimSpace(branchCommit) != strings.TrimSpace(baseCommit) {
+				return blockedCut(fmt.Sprintf("Branch %q diverges from the fetched base and cannot be reused.", branch)), nil
+			}
+			owner, ownerErr := activeDeliveryOwningBranch(repo, branch)
+			if ownerErr != nil {
+				return blockedCut(fmt.Sprintf("Boatstack could not verify whether branch %q has an active owner: %v", branch, ownerErr)), nil
+			}
+			if owner != "" {
+				return blockedCut(fmt.Sprintf("Branch %q is owned by an active delivery and cannot be reused.", branch)), nil
+			}
+			destinationRepo = path
+			result.Outcome = "current"
+		} else {
+			path = filepath.Join(repo, ".product-loop", "worktrees", previewSlug(branch))
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				return blockedCut("Boatstack could not prepare the worktree directory: " + err.Error()), nil
+			}
+			if branchExists(repo, branch) {
+				branchCommit, _ := workspaceGit(repo, "rev-parse", "refs/heads/"+branch+"^{commit}")
+				if strings.TrimSpace(branchCommit) != strings.TrimSpace(baseCommit) {
+					return blockedCut(fmt.Sprintf("Branch %q diverges from the fetched base and cannot be adopted.", branch)), nil
+				}
+				owner, ownerErr := activeDeliveryOwningBranch(repo, branch)
+				if ownerErr != nil {
+					return blockedCut(fmt.Sprintf("Boatstack could not verify whether branch %q has an active owner: %v", branch, ownerErr)), nil
+				}
+				if owner != "" {
+					return blockedCut(fmt.Sprintf("Branch %q is owned by an active delivery and cannot be adopted.", branch)), nil
+				}
+				if _, err := workspaceGit(repo, "worktree", "add", path, branch); err != nil {
+					return blockedCut("Boatstack could not adopt the branch into a worktree: " + err.Error()), nil
+				}
+				result.Outcome = "adopted"
+			} else {
+				if _, err := workspaceGit(repo, "worktree", "add", "-b", branch, path, baseCommit); err != nil {
+					return blockedCut("Boatstack could not add the worktree: " + err.Error()), nil
+				}
+				transition.branchCreated = true
+				result.Created = true
+				result.Outcome = "created"
+			}
+			transition.worktreeCreated = true
+			destinationRepo = path
 		}
 		result.WorktreePath = path
-		result.Reason = fmt.Sprintf("Cut fresh worktree for branch %q from %s at %s.", branch, base, path)
 	}
+
+	if err := workspaceAfterDestination(destinationRepo); err != nil {
+		rollbackWorkspaceTransition(repo, branch, result.WorktreePath, transition)
+		return blockedCut("Boatstack could not verify the destination workspace: " + err.Error()), nil
+	}
+	if dirty, dirtyErr := dirtyOutsideFeature(destinationRepo, options.Feature); dirtyErr != nil || dirty {
+		rollbackWorkspaceTransition(repo, branch, result.WorktreePath, transition)
+		return blockedCut("Destination workspace contains changes outside the managed feature package."), nil
+	}
+	if sourceContext.Mode == SupervisionDetached && filepath.Clean(destinationRepo) != filepath.Clean(repo) {
+		added, err := workspaceDetachedAlias(repo, destinationRepo)
+		if err != nil {
+			rollbackWorkspaceTransition(repo, branch, result.WorktreePath, transition)
+			return blockedCut("Boatstack could not bind detached controller state to the destination: " + err.Error()), nil
+		}
+		transition.detachedAlias = added
+		if err := workspaceAfterDetachedAlias(destinationRepo); err != nil {
+			rollbackWorkspaceTransition(repo, branch, result.WorktreePath, transition)
+			return blockedCut("Boatstack could not verify detached controller state after registration: " + err.Error()), nil
+		}
+	}
+	fingerprint, err := transferFeaturePackage(repo, destinationRepo, options.Feature, sourceContext.Mode)
+	if err != nil {
+		rollbackWorkspaceTransition(repo, branch, result.WorktreePath, transition)
+		return blockedCut("Boatstack could not transfer the planning package: " + err.Error()), nil
+	}
+	result.PlanFingerprint = fingerprint
+	result.DestinationRepo = destinationRepo
+	result.Reason = fmt.Sprintf("Workspace %q is ready at %s; continue Boatstack from that repository path.", branch, destinationRepo)
 	return result, nil
 }
 

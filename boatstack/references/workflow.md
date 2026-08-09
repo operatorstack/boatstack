@@ -139,7 +139,7 @@ The read-only `next` status query is the one exception, because a status questio
 | `ship-gate` preview / published | **PR ready** -> reply `o` to open or `u` to update the previewed PR; **PR opened** -> review the PR; never imply merge authorization |
 | `boatstack-update` current / postponed / prepared / published / blocked | **Boatstack is current** -> no action required; **Update postponed** -> finish feature work and rerun from the clean default branch; **Boatstack update ready** -> reply `o` to open the update PR; **Update PR opened** -> review the PR; **Update needs attention** -> address the one reported collision or health failure |
 | `retro` | **Improvement proposed** -> review or authorize the experiment |
-| `workspace-cut` (surfaced by `boatstack-next` at approved -> build) | **Fresh workspace cut** -> build on the new branch/worktree; **Workspace already fresh** -> continue to build |
+| `workspace-cut` (surfaced after plan validation and before approval or autonomy) | **Fresh workspace ready** -> continue every later command from the returned destination; **Workspace already current** -> continue there |
 | `workspace-cleanup` (surfaced by `boatstack-next` after publication) | **Workspace ready to clean up** -> reply `c` to remove the worktree and branch, or `k` to keep; **Workspace kept** -> no action required; **Workspace still open** -> the PR is not merged yet, keep waiting or override explicitly |
 
 ### Foreground run coordinator
@@ -513,9 +513,11 @@ There is no public `/pr-brief` operation. When the user asks in natural language
 
 Adaptive sections for security/privacy, migrations, UI evidence, or operations appear only when relevant. Model attribution belongs inside collapsed provenance. If GitHub CLI authentication is unavailable, keep the validated preview and provide one manual publication action instead of losing the work.
 
-### `PLAN_APPROVED -> WORKSPACE_CUT`
+### `DRAFT_PLAN -> WORKSPACE_CUT -> APPROVAL OR AUTONOMY`
 
-When `workspace.enabled` is set and an approved feature is still on the default branch with no branch or worktree of its own, `boatstack-next` routes to `workspace-cut` before `build`. The `workspace-cut` operation fetches `origin`, cuts a fresh branch from the up-to-date default branch, and in `worktree` mode adds a linked worktree; in `branch` mode it switches in place. It never rewrites history, reuses an existing branch, or names the workspace after the base branch. Once the feature already has its own branch or worktree, this step is skipped and the flow proceeds straight to `build`, so a workspace you cut yourself is respected.
+When `workspace.enabled` is set and a draft plan passes validation, `boatstack-next` routes to `workspace-cut` before human approval or autonomy is recorded. The operation fetches `origin` and selects the feature branch from that exact base. It creates a branch or worktree, adopts an unowned exact-base branch, or reuses a matching current worktree. It returns the destination repository, branch, base commit, plan fingerprint, controller mode, and outcome. The host continues every later command from that destination, so approval, autonomy, readiness, and activation bind the final feature branch.
+
+In embedded mode, the complete planning package moves transactionally. Boatstack verifies the destination fingerprint before removing the source. In detached mode, the destination registers against the same repository controller identity. A divergent, dirty, owned, or conflicting destination fails closed before plan authority moves. A failed copy, registration, cleanup, or postcondition check restores the source package and removes partial branch, worktree, and controller authority. Workspace-disabled repositories keep their manual branch policy.
 
 ### `PR_OPEN -> WORKSPACE_CLEANUP`
 

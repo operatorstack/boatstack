@@ -61,4 +61,4 @@ vague request
 
 The safeguard behavior is covered by planning, approval, review, and PR-projection tests. Whether the complete Boatstack workflow improves product-delivery success remains a separate paired evaluation.
 
-Next: [install and ship a first feature](getting-started.md) or read [why these steps exist](why-these-steps.md).
+Next: [install and ship a first feature](getting-started.md) or read the [research and design notes](research-and-design.md).
