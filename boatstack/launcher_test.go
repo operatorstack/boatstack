@@ -175,6 +175,9 @@ func TestTrackedLauncherHydratesDetachedRepositoryThroughGitCommonBootstrap(t *t
 		}
 	}
 	hydrate := quotedLiteral(t, helper) + " hydrate-runtime --repo " + quotedLiteral(t, primary)
+	if runtime.GOOS == "windows" {
+		hydrate = "& " + hydrate
+	}
 	command := launcherCommand(primary, "version")
 	command.Dir = primary
 	command.Env = append(os.Environ(), "BOATSTACK_HYDRATE_COMMAND="+hydrate)
