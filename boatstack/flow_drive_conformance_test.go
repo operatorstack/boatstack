@@ -103,19 +103,25 @@ func TestDecideDriveHumanGatedNeverExecutes(t *testing.T) {
 	}
 }
 
-// Bypass (production allowlist): none of the real forward productive transitions is
-// auto-drivable today — every one owes human input — so the production driver can
-// never execute a forward move. This pins the honest scope of the shipped allowlist.
-func TestProductionAllowlistDrivesNoForwardMove(t *testing.T) {
-	forward := []deliverycontrol.TransitionID{
+// Bypass (production allowlist): gate moves remain excluded. Publish eligibility
+// alone is insufficient because canAutoDrive also requires an exact fully-derived
+// command (which only a current PR receipt can produce).
+func TestProductionAllowlistContainsOnlyReceiptBoundPublish(t *testing.T) {
+	gates := []deliverycontrol.TransitionID{
 		deliverycontrol.TransitionID("delivery.record_gate_test"),
 		deliverycontrol.TransitionID("delivery.record_gate_review"),
-		PublishTransition,
 	}
-	for _, tr := range forward {
+	for _, tr := range gates {
 		if autoDrivableTransitions[tr] {
-			t.Errorf("forward transition %s must not be on the auto-drive allowlist", tr)
+			t.Errorf("human-gated transition %s must not be on the auto-drive allowlist", tr)
 		}
+	}
+	if !autoDrivableTransitions[PublishTransition] {
+		t.Fatal("receipt-bound publish transition must be allowlisted")
+	}
+	manual := &PrescribedCommand{Verb: "publish-pr", Transition: PublishTransition, RequiresHumanInput: []string{"--preview-fingerprint"}}
+	if canAutoDrive(manual, autoDrivableTransitions) {
+		t.Fatal("allowlisted publish with unresolved human input must not execute")
 	}
 }
 

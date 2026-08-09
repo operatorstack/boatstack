@@ -137,16 +137,15 @@ func driveExecute(repo, feature string, next boatstack.FlowNext) int {
 
 // executePrescribed is the driver's second, independent gate: even a move the pure
 // decision blessed as auto-drivable runs only if an executor is explicitly
-// registered here for its verb. Nothing is registered today — every real forward
-// move owes human input and is refused by the decision before reaching here — so
-// this defends against a future allowlist entry landing without a deliberate,
-// reviewed executor. It never synthesizes arguments; it would only ever invoke the
+// registered here for its verb. It never synthesizes arguments; it only invokes the
 // same verb dispatch a human would run.
 func executePrescribed(cmd *boatstack.PrescribedCommand) error {
 	switch cmd.Verb {
-	// No verbs are registered for auto-execution. Add a case here only together with
-	// an allowlist entry in flow_drive.go, and only for a verb whose arguments are
-	// fully state-derivable with nothing to fabricate.
+	case "publish-pr":
+		if code := publishPRCommand(cmd.Args); code != 0 {
+			return fmt.Errorf("publish-pr exited with status %d", code)
+		}
+		return nil
 	default:
 		return fmt.Errorf("no registered auto-executor for verb %q; run it by hand: %s", cmd.Verb, cmd.CommandLine())
 	}
@@ -249,11 +248,12 @@ func flowTasksCommand(arguments []string) int {
 func flowReportCommand(arguments []string) int {
 	flags := flag.NewFlagSet("flow report", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository whose flow session should be reported")
+	feature := flags.String("feature", "", "optional managed feature used to filter command telemetry")
 	jsonOutput := flags.Bool("json", false, "print the structured report")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}
-	report, err := boatstack.FlowReport(*repo)
+	report, err := boatstack.FlowReportFor(*repo, *feature)
 	if err != nil {
 		return fail(err)
 	}

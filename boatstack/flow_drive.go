@@ -18,15 +18,13 @@ const flowDriveKillSwitch = "BOATSTACK_FLOW_DRIVE"
 // argument set is state-derivable and it is read-only or reversible with nothing to
 // fabricate (no evidence, gate status, preview fingerprint, or reviewer identity).
 //
-// Today every forward productive move owes human input — the test/review gate
-// recordings need evidence and a status; publish needs a human-confirmed
-// fingerprint — so none of them are auto-drivable and this allowlist is
-// deliberately empty of forward moves. The driver therefore prescribes-and-stops
-// at the first move, which is the correct, safe behavior. The allowlist is the
-// mechanism: it grows only as specific verbs gain provably-derivable defaults, and
+// Test/review gate recordings still owe evidence and a status. Publication is
+// eligible only when prescription has already revalidated an exact preview and a
+// PR-target autonomy receipt for the exact open/update action. The allowlist is
+// the mechanism: it grows only as specific verbs gain provably-derivable inputs, and
 // execution is double-gated (a verb must be BOTH allowlisted here AND have an
 // explicit executor handler), so nothing runs by accident.
-var autoDrivableTransitions = map[deliverycontrol.TransitionID]bool{}
+var autoDrivableTransitions = map[deliverycontrol.TransitionID]bool{PublishTransition: true}
 
 // DriveAction is the driver's decision for one step.
 type DriveAction string

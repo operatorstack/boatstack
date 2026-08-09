@@ -12,6 +12,9 @@ import (
 
 func runTestRepo(t *testing.T) string {
 	t.Helper()
+	previousHealth := runInstallationHealth
+	runInstallationHealth = func(string) error { return nil }
+	t.Cleanup(func() { runInstallationHealth = previousHealth })
 	repo := t.TempDir()
 	for _, args := range [][]string{
 		{"init", "-b", "main"},
@@ -39,6 +42,24 @@ func runTestRepo(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return repo
+}
+
+// control-law: run-mutation-requires-pure-installation-health
+func TestCheckRunPreflightBlocksUnhealthyInstallationBeforeGitEffects(t *testing.T) {
+	repo := runTestRepo(t)
+	called := false
+	runInstallationHealth = func(string) error {
+		called = true
+		return fmt.Errorf("generated adapter is missing")
+	}
+	withRunGit(t, map[string]struct {
+		value string
+		err   error
+	}{})
+	status := CheckRunPreflight(repo, "")
+	if !called || status.VerificationStatus != "BLOCKED" || status.Relation != "INSTALLATION_UNHEALTHY" {
+		t.Fatalf("unexpected preflight: %+v", status)
+	}
 }
 
 func withRunGit(t *testing.T, responses map[string]struct {

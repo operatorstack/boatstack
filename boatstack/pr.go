@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-const prPreviewSchemaVersion = 3
+const prPreviewSchemaVersion = 4
 
 var prStatusPattern = regexp.MustCompile(`(?i)^(PASS|PASS_WITH_GAPS|NOT_VERIFIED|BLOCKED)$`)
 
@@ -62,6 +62,8 @@ type PRContext struct {
 	PRVisualEvidenceStatus      string            `json:"pr_visual_evidence_status"`
 	PRVisualEvidenceCount       int               `json:"pr_visual_evidence_count"`
 	PRVisualEvidenceFingerprint string            `json:"pr_visual_evidence_fingerprint"`
+	PRVisualPrivacyStatus       string            `json:"pr_visual_privacy_status"`
+	PRVisualPrivacyFingerprint  string            `json:"pr_visual_privacy_receipt_fingerprint"`
 	PRVisualEvidenceRelevance   string            `json:"pr_visual_evidence_relevance"`
 	PRVisualEvidenceSource      string            `json:"pr_visual_evidence_source"`
 	// PRVisualEvidencePolicySource is "configured", or "plan-escalated" when
@@ -89,6 +91,8 @@ type PRPreview struct {
 	PRVisualEvidenceStatus      string
 	PRVisualEvidenceCount       int
 	PRVisualEvidenceFingerprint string
+	PRVisualPrivacyStatus       string
+	PRVisualPrivacyFingerprint  string
 	Body                        string
 	Path                        string
 	Fingerprint                 string
@@ -402,7 +406,9 @@ func gitCommand(repo string, arguments ...string) (string, error) {
 func defaultPRBase(repo string) string {
 	configPath := WorkspaceFor(repo).ProjectConfigPath()
 	if config, _, err := LoadConfig(configPath); err == nil && strings.TrimSpace(config.Project.DefaultBranch) != "" {
-		return strings.TrimSpace(config.Project.DefaultBranch)
+		if base, err := canonicalPRBaseName(config.Project.DefaultBranch); err == nil {
+			return base
+		}
 	}
 	if branch := strings.TrimPrefix(gitOutput(repo, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"), "origin/"); branch != "" {
 		return branch
@@ -410,13 +416,58 @@ func defaultPRBase(repo string) string {
 	return "main"
 }
 
+// canonicalPRBaseName reduces every accepted spelling to the short branch name
+// GitHub expects. Other remote/ref namespaces are rejected instead of being
+// accidentally embedded below refs/remotes/origin.
+// control-law: pr-base-is-one-fetched-origin-branch
+func canonicalPRBaseName(value string) (string, error) {
+	base := strings.TrimSpace(value)
+	for _, prefix := range []string{"refs/remotes/origin/", "refs/heads/", "origin/"} {
+		if strings.HasPrefix(base, prefix) {
+			base = strings.TrimPrefix(base, prefix)
+			break
+		}
+	}
+	if base == "" || base == "HEAD" || strings.HasPrefix(base, "refs/") || strings.HasPrefix(base, "remotes/") {
+		return "", fmt.Errorf("PR base %q is not an origin branch", value)
+	}
+	return base, nil
+}
+
+func canonicalPRBase(repo, value string) (string, error) {
+	base, err := canonicalPRBaseName(value)
+	if err != nil {
+		return "", err
+	}
+	if _, err := gitCommand(repo, "check-ref-format", "--branch", base); err != nil {
+		return "", fmt.Errorf("PR base %q is not a valid branch name", value)
+	}
+	return base, nil
+}
+
 func resolveBaseCommit(repo, base string) (string, error) {
-	for _, candidate := range []string{"refs/remotes/origin/" + base, "refs/heads/" + base, base} {
+	canonical, err := canonicalPRBase(repo, base)
+	if err != nil {
+		return "", err
+	}
+	for _, candidate := range []string{"refs/remotes/origin/" + canonical, "refs/heads/" + canonical} {
 		if commit, err := gitCommand(repo, "rev-parse", "--verify", candidate+"^{commit}"); err == nil {
 			return commit, nil
 		}
 	}
 	return "", fmt.Errorf("base branch %q is not available locally; fetch it and try again", base)
+}
+
+func resolveFetchedOriginBaseCommit(repo, base string) (string, error) {
+	canonical, err := canonicalPRBase(repo, base)
+	if err != nil {
+		return "", err
+	}
+	candidate := "refs/remotes/origin/" + canonical
+	if commit, err := gitCommand(repo, "rev-parse", "--verify", candidate+"^{commit}"); err == nil {
+		return commit, nil
+	}
+	return "", fmt.Errorf("base branch %q is not available at origin/%s; fetch it and try again", base, canonical)
 }
 
 func previewSlug(branch string) string {
@@ -739,10 +790,14 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 			base = defaultPRBase(repo)
 		}
 	}
+	base, err = canonicalPRBase(repo, base)
+	if err != nil {
+		return PRContext{}, err
+	}
 	if head == base {
 		return PRContext{}, fmt.Errorf("current branch %q is the configured base branch", head)
 	}
-	baseCommit, err := resolveBaseCommit(repo, base)
+	baseCommit, err := resolveFetchedOriginBaseCommit(repo, base)
 	if err != nil {
 		return PRContext{}, err
 	}
@@ -858,10 +913,15 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 	if err != nil {
 		return PRContext{}, err
 	}
+	privacyStatus, privacyFingerprint, err := ResolvePRVisualPrivacyStatus(repo, visualManifest)
+	if err != nil {
+		return PRContext{}, err
+	}
 	fingerprintPayload, err = MarshalJSON(map[string]any{
 		"base":                      json.RawMessage(fingerprintPayload),
 		"pr_visual_evidence_policy": visualPolicy, "pr_visual_evidence_status": visualStatus,
 		"pr_visual_evidence_count": visualCount, "pr_visual_evidence_fingerprint": visualFingerprint,
+		"pr_visual_privacy_status": privacyStatus, "pr_visual_privacy_receipt_fingerprint": privacyFingerprint,
 	})
 	if err != nil {
 		return PRContext{}, err
@@ -878,6 +938,7 @@ func PreparePRContext(options PRContextOptions) (PRContext, error) {
 		SafetyStatus: safety.Status, SafetyFindings: safety.Findings,
 		PRVisualEvidencePolicy: visualPolicy, PRVisualEvidenceStatus: visualStatus,
 		PRVisualEvidenceCount: visualCount, PRVisualEvidenceFingerprint: visualFingerprint,
+		PRVisualPrivacyStatus: privacyStatus, PRVisualPrivacyFingerprint: privacyFingerprint,
 		PRVisualEvidenceRelevance: visualRelevance, PRVisualEvidenceSource: visualSource,
 		PRVisualEvidencePolicySource:  visualPolicySource,
 		PRVisualEvidenceCaptureDetail: captureDetail,
@@ -902,6 +963,7 @@ func parsePRFrontmatter(value string) (map[string]string, string, error) {
 		"slice": true, "base": true, "head": true, "context_fingerprint": true,
 		"pr_visual_evidence_policy": true, "pr_visual_evidence_status": true,
 		"pr_visual_evidence_count": true, "pr_visual_evidence_fingerprint": true,
+		"pr_visual_privacy_status": true, "pr_visual_privacy_receipt_fingerprint": true,
 	}
 	for _, line := range strings.Split(frontmatter, "\n") {
 		key, raw, found := strings.Cut(line, ":")
@@ -926,7 +988,7 @@ func parsePRFrontmatter(value string) (map[string]string, string, error) {
 		}
 		fields[key] = decoded
 	}
-	for _, key := range []string{"boatstack_pr_version", "title", "mode", "feature", "base", "head", "context_fingerprint", "pr_visual_evidence_policy", "pr_visual_evidence_status", "pr_visual_evidence_count", "pr_visual_evidence_fingerprint"} {
+	for _, key := range []string{"boatstack_pr_version", "title", "mode", "feature", "base", "head", "context_fingerprint", "pr_visual_evidence_policy", "pr_visual_evidence_status", "pr_visual_evidence_count", "pr_visual_evidence_fingerprint", "pr_visual_privacy_status", "pr_visual_privacy_receipt_fingerprint"} {
 		if _, exists := fields[key]; !exists {
 			return nil, "", fmt.Errorf("PR frontmatter is missing %s", key)
 		}
@@ -1063,7 +1125,8 @@ func ParsePRPreview(path string) (PRPreview, error) {
 		ContextFingerprint: fields["context_fingerprint"], Body: body, Path: path,
 		PRVisualEvidencePolicy: fields["pr_visual_evidence_policy"], PRVisualEvidenceStatus: fields["pr_visual_evidence_status"],
 		PRVisualEvidenceFingerprint: fields["pr_visual_evidence_fingerprint"],
-		Fingerprint:                 SHA256Bytes(value),
+		PRVisualPrivacyStatus:       fields["pr_visual_privacy_status"], PRVisualPrivacyFingerprint: fields["pr_visual_privacy_receipt_fingerprint"],
+		Fingerprint: SHA256Bytes(value),
 	}
 	preview.PRVisualEvidenceCount, err = strconv.Atoi(fields["pr_visual_evidence_count"])
 	if err != nil || preview.PRVisualEvidenceCount < 0 || preview.PRVisualEvidenceCount > 3 {
@@ -1101,6 +1164,15 @@ func ParsePRPreview(path string) (PRPreview, error) {
 	}
 	if len(preview.PRVisualEvidenceFingerprint) != 64 {
 		return PRPreview{}, fmt.Errorf("PR preview requires a valid pr_visual_evidence_fingerprint")
+	}
+	if !map[string]bool{"PASS": true, "REVIEW_REQUIRED": true, "NOT_APPLICABLE": true}[preview.PRVisualPrivacyStatus] {
+		return PRPreview{}, fmt.Errorf("unsupported pr_visual_privacy_status")
+	}
+	if preview.PRVisualPrivacyStatus == "PASS" && len(preview.PRVisualPrivacyFingerprint) != 64 {
+		return PRPreview{}, fmt.Errorf("PASS visual privacy review requires a valid receipt fingerprint")
+	}
+	if preview.PRVisualPrivacyStatus != "PASS" && preview.PRVisualPrivacyFingerprint != "" {
+		return PRPreview{}, fmt.Errorf("visual privacy receipt fingerprint is allowed only for PASS")
 	}
 	for _, heading := range []string{
 		"## Why this change", "## What changed", "## Review order", "## Evidence",
@@ -1172,6 +1244,12 @@ func CheckPRPreview(repoPath, previewPath string) (PRPreview, PRContext, error) 
 		preview.PRVisualEvidenceCount != context.PRVisualEvidenceCount || preview.PRVisualEvidenceFingerprint != context.PRVisualEvidenceFingerprint {
 		return PRPreview{}, PRContext{}, fmt.Errorf("PR preview is stale or does not match the current branch context; regenerate it")
 	}
+	if preview.PRVisualPrivacyStatus != context.PRVisualPrivacyStatus || preview.PRVisualPrivacyFingerprint != context.PRVisualPrivacyFingerprint {
+		return PRPreview{}, PRContext{}, fmt.Errorf("PR preview visual privacy review is stale; regenerate it")
+	}
+	if context.PRVisualPrivacyStatus == "REVIEW_REQUIRED" {
+		return PRPreview{}, PRContext{}, fmt.Errorf("PR visual evidence requires human privacy review before check or publication")
+	}
 	if context.Mode == "managed" {
 		if err := validateManagedEvidenceSources(preview.Body, context.Sources); err != nil {
 			return PRPreview{}, PRContext{}, err
@@ -1225,6 +1303,27 @@ func RecommendedPRAction(repo string) (string, string, error) {
 		return "update", url, nil
 	}
 	return "open", "", nil
+}
+
+func revalidatePRVisualPrivacy(repo string, context PRContext) error {
+	if context.PRVisualPrivacyStatus == "NOT_APPLICABLE" {
+		return nil
+	}
+	if context.PRVisualEvidence == nil {
+		return fmt.Errorf("PR visual privacy status has no current evidence manifest")
+	}
+	manifest, err := LoadPRVisualEvidence(repo, context.PRVisualEvidence.Key)
+	if err != nil {
+		return err
+	}
+	status, fingerprint, err := ResolvePRVisualPrivacyStatus(repo, &manifest)
+	if err != nil {
+		return err
+	}
+	if status != "PASS" || status != context.PRVisualPrivacyStatus || fingerprint != context.PRVisualPrivacyFingerprint {
+		return fmt.Errorf("PR visual privacy review is missing or stale; review the exact current PNGs before GitHub mutation")
+	}
+	return nil
 }
 
 func PublishPR(options PRPublishOptions) (string, error) {
@@ -1341,6 +1440,9 @@ func PublishPR(options PRPublishOptions) (string, error) {
 		_, _ = CompleteOperation(repo, receipt.OperationID, begin.LeaseToken, "UNKNOWN", "publication ended without a verifiable complete postcondition", observedURL)
 		return "", cause
 	}
+	if err := revalidatePRVisualPrivacy(repo, context); err != nil {
+		return completeUnknown(err, existingURL)
+	}
 	if _, err := gitCommand(repo, "push", "--set-upstream", "origin", context.HeadBranch); err != nil {
 		return completeUnknown(fmt.Errorf("cannot push %s without rewriting history: %w", context.HeadBranch, err), existingURL)
 	}
@@ -1355,6 +1457,9 @@ func PublishPR(options PRPublishOptions) (string, error) {
 		return completeUnknown(err, existingURL)
 	}
 	if err := temporary.Close(); err != nil {
+		return completeUnknown(err, existingURL)
+	}
+	if err := revalidatePRVisualPrivacy(repo, context); err != nil {
 		return completeUnknown(err, existingURL)
 	}
 	if options.Action == "open" {
@@ -1443,7 +1548,7 @@ func PRPreviewTemplate(context PRContext) string {
 	safetySummary := "Repository safety scan: `" + context.SafetyStatus + "`. Destructive recovery remains operator-only outside Boatstack."
 	lines := []string{
 		"---",
-		"boatstack_pr_version: 3",
+		fmt.Sprintf("boatstack_pr_version: %d", prPreviewSchemaVersion),
 		"title: " + quote("Describe the product or user value of this change (e.g., 'Enable historical data migration')"),
 		"mode: " + quote(context.Mode),
 		"feature: " + quote(context.Feature),
@@ -1455,6 +1560,8 @@ func PRPreviewTemplate(context PRContext) string {
 		"pr_visual_evidence_status: " + quote(context.PRVisualEvidenceStatus),
 		fmt.Sprintf("pr_visual_evidence_count: %d", context.PRVisualEvidenceCount),
 		"pr_visual_evidence_fingerprint: " + quote(context.PRVisualEvidenceFingerprint),
+		"pr_visual_privacy_status: " + quote(context.PRVisualPrivacyStatus),
+		"pr_visual_privacy_receipt_fingerprint: " + quote(context.PRVisualPrivacyFingerprint),
 		"---",
 		"## Why this change", "", "Explain the user or engineering outcome.", "",
 		"## What changed", "", "| Area | Before | After | Reviewer focus |", "|---|---|---|---|", "| | | | |", "",

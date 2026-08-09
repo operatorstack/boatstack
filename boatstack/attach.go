@@ -18,6 +18,10 @@ import (
 type AttachOptions struct {
 	Repo       string
 	ConfigPath string
+	// BinaryPath is the already verified helper to install into detached
+	// controller state. The CLI leaves it empty and uses its running binary;
+	// tests and embedders may bind an equivalent verified helper explicitly.
+	BinaryPath string
 	Force      bool
 }
 
@@ -174,10 +178,18 @@ func AttachDetached(opts AttachOptions) (AttachResult, error) {
 	// Populate the external shared-runtime slot from the running helper so the
 	// developer-level ambient guard has a stable helper to invoke. The binding is
 	// written above, so WorkspaceFor now resolves detached and the slot is external.
-	if source, execErr := os.Executable(); execErr == nil {
-		if _, runtimeErr := installDetachedRuntime(root, source); runtimeErr != nil {
-			return blockedAttach("Boatstack could not install the external runtime: " + runtimeErr.Error()), nil
+	source := strings.TrimSpace(opts.BinaryPath)
+	if source == "" {
+		source, err = os.Executable()
+		if err != nil {
+			return blockedAttach("Boatstack could not locate its running helper: " + err.Error()), nil
 		}
+	}
+	if _, runtimeErr := installDetachedRuntime(root, source); runtimeErr != nil {
+		return blockedAttach("Boatstack could not install the external runtime: " + runtimeErr.Error()), nil
+	}
+	if _, _, runtimeErr := installControllerLocalRuntime(ctx.ExportRoot(), source, config.Integrations); runtimeErr != nil {
+		return blockedAttach("Boatstack could not install the detached controller helper: " + runtimeErr.Error()), nil
 	}
 
 	return AttachResult{

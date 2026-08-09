@@ -80,8 +80,8 @@ func TestDetachedAttachImportsFeatureAndIgnoresEmbeddedDrift(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, productLoopDirName, "project.json"), []byte("{}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := Doctor(repo); err == nil || !strings.Contains(err.Error(), "runtime provenance") {
-		t.Fatalf("doctor did not pass detached generated-state verification before the fixture's intentionally absent runtime: %v", err)
+	if err := Doctor(repo); err != nil {
+		t.Fatalf("doctor did not validate the complete detached controller without consulting embedded drift: %v", err)
 	}
 	status, err := ResolveNext(repo, "")
 	if err != nil || status.Feature != "feature-one" || status.ObservedStage != "POLICY_READY" {

@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/deliverycontrol"
@@ -61,6 +62,7 @@ var nonDeliveryVerbs = map[string]bool{
 	"workspace-status":  true,
 	// Evidence / capability substrate (a separate tenant, not the delivery graph).
 	"record-pr-visual-evidence":    true,
+	"review-pr-visual-evidence":    true,
 	"capture-evidence":             true,
 	"provision-capability":         true,
 	"capability-register":          true,
@@ -134,6 +136,33 @@ func dispatchVerbs(t *testing.T) map[string]bool {
 		t.Fatalf("dispatch switch parse found only %d verbs; expected the full run() command set — the coverage guard would be vacuous", len(verbs))
 	}
 	return verbs
+}
+
+// control-law: every-helper-dispatch-is-observed-or-explicitly-excluded
+func TestCommandTraceInventoryCoversDispatchSurfaceExactly(t *testing.T) {
+	dispatch := dispatchVerbs(t)
+	for verb := range dispatch {
+		policy, ok := commandTracePolicies[verb]
+		if !ok {
+			t.Errorf("dispatch verb %q has no command trace policy", verb)
+			continue
+		}
+		_ = policy
+	}
+	for verb := range commandTracePolicies {
+		if !dispatch[verb] {
+			t.Errorf("command trace policy names stale verb %q", verb)
+		}
+	}
+	allowedExcluded := map[string]bool{"safety-hook": true, "ambient-safety-hook": true, "bootstrap-safety-hook": true}
+	for verb, policy := range commandTracePolicies {
+		if policy.ExcludedReason != "" && !allowedExcluded[verb] {
+			t.Errorf("only latency-sensitive safety hooks may be excluded; found %q", verb)
+		}
+		if allowedExcluded[verb] && strings.TrimSpace(policy.ExcludedReason) == "" {
+			t.Errorf("excluded safety hook %q has no reason", verb)
+		}
+	}
 }
 
 // switchesOnArgs reports whether a switch tag is an index into os.Args (the

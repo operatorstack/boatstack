@@ -1067,6 +1067,10 @@ func RecordDeliveryGate(options DeliveryGateOptions) (DeliveryGateReceipt, error
 	if base == "" {
 		base = defaultPRBase(repo)
 	}
+	base, err = canonicalPRBase(repo, base)
+	if err != nil {
+		return DeliveryGateReceipt{}, err
+	}
 	previewPath, _ := expectedPRPreviewPath("managed", options.Feature, "")
 	head, headCommit, diffHash, changed, err := currentDiffIdentity(repo, base, previewPath)
 	if err != nil {

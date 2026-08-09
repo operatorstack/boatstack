@@ -59,6 +59,10 @@ type PlanningBaseline struct {
 	ChangedPaths []string
 }
 
+// Tests may replace this seam. Nil selects the production pure installation
+// health check immediately before the first feature artifact can be written.
+var planningInstallationHealth func(string) error
+
 func relativeBaselineExclusions(repo string, paths ...string) map[string]bool {
 	excluded := map[string]bool{}
 	for _, path := range paths {
@@ -243,6 +247,13 @@ func WritePlanningArtifact(options PlanningWriteOptions) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	healthCheck := CheckInstallationHealth
+	if planningInstallationHealth != nil {
+		healthCheck = planningInstallationHealth
+	}
+	if err := healthCheck(repo); err != nil {
+		return "", fmt.Errorf("planning write requires a healthy Boatstack installation: %w", DoctorRepairHint(err))
+	}
 	ctx, err := ResolveWorkspaceContext(repo)
 	if err != nil {
 		return "", err
@@ -355,12 +366,18 @@ type installLock struct {
 	Integrations     map[string]IntegrationState `json:"integrations,omitempty"`
 }
 
-func Doctor(repoPath string) error {
+// CheckInstallationHealth validates installed and generated state without
+// changing repository, runtime, or bookkeeping state.
+func CheckInstallationHealth(repoPath string) error {
 	repo, err := ResolveRepository(repoPath)
 	if err != nil {
 		return err
 	}
-	configPath := WorkspaceFor(repo).SourceConfigPath()
+	ctx, err := ResolveWorkspaceContext(repo)
+	if err != nil {
+		return err
+	}
+	configPath := ctx.SourceConfigPath()
 	config, raw, err := LoadConfig(configPath)
 	if err != nil {
 		return fmt.Errorf("invalid or missing .boatstack-project.json: %w", err)
@@ -369,14 +386,18 @@ func Doctor(repoPath string) error {
 	if err != nil {
 		return err
 	}
-	if err := CheckExport(WorkspaceFor(repo).ExportRoot(), bundle.Files); err != nil {
+	if err := CheckExport(ctx.ExportRoot(), bundle.Files); err != nil {
 		return err
 	}
-	// Best-effort hygiene: drop the orphaned clone-shared operation ledger left by
-	// pre-isolation versions. Never fails doctor.
-	pruneLegacyOperationLedger(repo)
-	if err := CheckHostHooks(repo, config.Adapters); err != nil {
-		return err
+	// Embedded installations own merged host settings in the repository and can
+	// verify them here. Detached controller state owns generated hook fragments;
+	// developer-level host activation is a separate, operator-visible boundary.
+	// CheckExport above verifies those fragments without misreading them as merged
+	// .cursor/.claude/.codex/.gemini configurations.
+	if ctx.Mode == SupervisionEmbedded {
+		if err := CheckHostHooks(ctx.HostActivationRoot(), config.Adapters); err != nil {
+			return err
+		}
 	}
 	hostAdapters := normalizedAdapters(config.Adapters)
 	if contains(hostAdapters, "claude") {
@@ -384,7 +405,7 @@ func Doctor(repoPath string) error {
 			return fmt.Errorf("Claude Code safety hooks require Bash; install Git Bash or Bash, then rerun doctor")
 		}
 	}
-	if err := verifyGeneratedRuntime(repo); err != nil {
+	if err := verifyGeneratedRuntime(ctx.ExportRoot()); err != nil {
 		return err
 	}
 	if _, _, err := loadSharedRuntime(repo); err != nil {
@@ -412,7 +433,21 @@ func Doctor(repoPath string) error {
 			return fmt.Errorf("%s safety hook did not fail closed on malformed input", host)
 		}
 	}
-	return verifyLocalRuntime(repo)
+	return verifyLocalRuntime(ctx.ExportRoot())
+}
+
+func Doctor(repoPath string) error {
+	if err := CheckInstallationHealth(repoPath); err != nil {
+		return err
+	}
+	repo, err := ResolveRepository(repoPath)
+	if err != nil {
+		return err
+	}
+	// Doctor keeps its legacy best-effort hygiene, but the preflight health
+	// boundary above remains pure.
+	pruneLegacyOperationLedger(repo)
+	return nil
 }
 
 func DoctorHookHosts(repoPath string) ([]string, error) {

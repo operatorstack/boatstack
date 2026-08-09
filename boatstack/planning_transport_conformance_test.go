@@ -2,6 +2,7 @@ package boatstack
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -83,6 +84,27 @@ func buildPlanningHelper(t *testing.T, repo string) string {
 	return buildPlanningHelperAt(t, filepath.Join(repo, ".product-loop", "bin", helperName()))
 }
 
+// installPlanningTransportFixture gives execution tests the same healthy,
+// generated state that production planning-write requires. Classifier-only
+// tests intentionally keep using the smaller uninstalled repository fixture.
+func installPlanningTransportFixture(t *testing.T, repo string) string {
+	t.Helper()
+	if !fileExists(filepath.Join(repo, "go.mod")) {
+		if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module planning-transport\n\ngo 1.22\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		runGit(t, repo, "add", "go.mod")
+		runGit(t, repo, "commit", "-m", "add test command")
+	}
+	source := buildPlanningHelperAt(t, filepath.Join(t.TempDir(), helperName()))
+	if err := RunInit(InitOptions{
+		Repo: repo, BinaryPath: source, IntegrationChoice: "core", Yes: true, Output: io.Discard,
+	}); err != nil {
+		t.Fatalf("install healthy planning transport fixture: %v", err)
+	}
+	return WorkspaceFor(repo).HelperPath()
+}
+
 func executePlanningEnvelope(t *testing.T, repo, command string) {
 	t.Helper()
 	var execution *exec.Cmd
@@ -113,7 +135,7 @@ func executePlanningEnvelope(t *testing.T, repo, command string) {
 // write), which never exercised the transport between the hook and stdin.
 func TestPlanningTransportRunsHookShellHelperAndSavedArtifact(t *testing.T) {
 	repo := safetyTestRepo(t)
-	helper := buildPlanningHelper(t, repo)
+	helper := installPlanningTransportFixture(t, repo)
 	body := "# Literal transport\n\nUnicode survives: ü 船\n`rm -rf /` and $(git reset --hard HEAD~1) are documentation.\n"
 
 	var command string
@@ -143,7 +165,8 @@ func TestPlanningTransportRunsHookShellHelperAndSavedArtifact(t *testing.T) {
 
 func TestPlanningTransportRunsThroughDetachedWorkspaceBinding(t *testing.T) {
 	repo := detachedTestRepo(t, "https://github.com/acme/planning-transport.git")
-	result, err := AttachDetached(AttachOptions{Repo: repo})
+	source := buildPlanningHelperAt(t, filepath.Join(t.TempDir(), helperName()))
+	result, err := AttachDetached(AttachOptions{Repo: repo, BinaryPath: source})
 	if err != nil || result.VerificationStatus != "VERIFIED" {
 		t.Fatalf("attach detached workspace: %+v %v", result, err)
 	}
@@ -151,7 +174,7 @@ func TestPlanningTransportRunsThroughDetachedWorkspaceBinding(t *testing.T) {
 	if err != nil || workspace.Mode != SupervisionDetached {
 		t.Fatalf("resolve detached workspace: %+v %v", workspace, err)
 	}
-	helper := buildPlanningHelperAt(t, workspace.HelperPath())
+	helper := workspace.HelperPath()
 	body := "# Detached literal transport\n\nThe controller remains outside the product repository.\n"
 	command := posixPlanningEnvelope(t, helper, repo, "detached-transport", "plan.md", body)
 	if runtime.GOOS == "windows" {
@@ -366,7 +389,7 @@ func TestPlanningPrescriptionQuotesRepositoryPath(t *testing.T) {
 		t.Fatalf("guard denied the quoted repository prescription: %#v", findings)
 	}
 	if runtime.GOOS != "windows" {
-		buildPlanningHelper(t, repo)
+		installPlanningTransportFixture(t, repo)
 		executePlanningEnvelope(t, repo, line)
 		written, err := os.ReadFile(filepath.Join(repo, productLoopDirName, "features", "quoted-path", "plan.md"))
 		if err != nil || string(written) != "test-value\n" {

@@ -2,6 +2,7 @@ package boatstack
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,11 +13,26 @@ import (
 
 func planningRepo(t *testing.T) string {
 	t.Helper()
+	previousHealth := planningInstallationHealth
+	planningInstallationHealth = func(string) error { return nil }
+	t.Cleanup(func() { planningInstallationHealth = previousHealth })
 	repo := t.TempDir()
 	if output, err := exec.Command("git", "-C", repo, "init").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v: %s", err, output)
 	}
 	return repo
+}
+
+func TestPlanningWriteBlocksBeforeArtifactWhenInstallationIsUnhealthy(t *testing.T) {
+	repo := planningRepo(t)
+	planningInstallationHealth = func(string) error { return fmt.Errorf("generated state drift") }
+	_, err := WritePlanningArtifact(PlanningWriteOptions{Repo: repo, Feature: "blocked-plan", Artifact: "plan.md", Content: []byte("# Plan\n")})
+	if err == nil || !strings.Contains(err.Error(), "generated state drift") {
+		t.Fatalf("unhealthy installation did not block precisely: %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(repo, ".product-loop", "features", "blocked-plan")); !os.IsNotExist(statErr) {
+		t.Fatalf("planning artifact directory exists after failed health check: %v", statErr)
+	}
 }
 
 func TestPlanningWriteIsBoundedMarkdownOnly(t *testing.T) {
