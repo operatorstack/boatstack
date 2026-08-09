@@ -382,7 +382,11 @@ func CheckInstallationHealth(repoPath string) error {
 	if err != nil {
 		return fmt.Errorf("invalid or missing .boatstack-project.json: %w", err)
 	}
-	bundle, err := BuildExportBundle(configPath, config, raw, "boatstack")
+	configBytes := raw
+	if ctx.Mode == SupervisionEmbedded {
+		configBytes = embeddedConfigBytes(raw)
+	}
+	bundle, err := BuildExportBundle(configPath, config, configBytes, "boatstack")
 	if err != nil {
 		return err
 	}

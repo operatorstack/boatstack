@@ -471,7 +471,7 @@ func RunInit(options InitOptions) (returnErr error) {
 			return recoverErr
 		}
 	}
-	bundle, err := BuildExportBundle(configPath, config, rawConfig, "boatstack")
+	bundle, err := BuildExportBundle(configPath, config, embeddedConfigBytes(rawConfig), "boatstack")
 	if err != nil {
 		return err
 	}
@@ -888,7 +888,7 @@ func RunUpdate(options InitOptions) error {
 }
 
 func verifyInstalledUpdatePostcondition(repo, configPath string, config ProjectConfig, rawConfig []byte, expectedIntegrations map[string]IntegrationState) error {
-	bundle, err := BuildExportBundle(configPath, config, rawConfig, "boatstack")
+	bundle, err := BuildExportBundle(configPath, config, embeddedConfigBytes(rawConfig), "boatstack")
 	if err != nil {
 		return err
 	}

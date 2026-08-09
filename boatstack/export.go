@@ -13,6 +13,13 @@ import (
 
 var adapterNamePattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
+// embeddedConfigBytes removes only Git's platform line-ending transport from
+// the editable embedded config. Detached supervision keeps its exact-byte
+// digest and never calls this helper.
+func embeddedConfigBytes(value []byte) []byte {
+	return []byte(strings.ReplaceAll(string(value), "\r\n", "\n"))
+}
+
 var allowedAdapters = map[string]bool{
 	"cursor": true,
 	"claude": true,
@@ -594,6 +601,23 @@ List explicit gaps with impact and revisit trigger, or state that no material ga
 	}
 	if err := validateGeneratedSkills(files); err != nil {
 		return ExportBundle{}, err
+	}
+
+	lineEndingAttributes := []byte("# " + Marker + "\n* text eol=lf\n")
+	for prefix, attributesPath := range map[string]string{
+		".agents/skills/":                ".agents/skills/.gitattributes",
+		".claude/skills/":                ".claude/skills/.gitattributes",
+		".cursor/":                       ".cursor/.gitattributes",
+		".gemini/skills/":                ".gemini/skills/.gitattributes",
+		".github/PULL_REQUEST_TEMPLATE/": ".github/PULL_REQUEST_TEMPLATE/.gitattributes",
+		".product-loop/":                 ".product-loop/.gitattributes",
+	} {
+		for path := range files {
+			if strings.HasPrefix(path, prefix) {
+				files[attributesPath] = lineEndingAttributes
+				break
+			}
+		}
 	}
 
 	hashes := map[string]string{}
