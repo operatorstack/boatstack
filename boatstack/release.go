@@ -29,7 +29,7 @@ func isReleaseBearingPath(value string) bool {
 		return false
 	}
 	for _, exact := range []string{
-		".gitignore", "CONTRIBUTING.md", "README.md", "IMPORT_PROVENANCE.json",
+		".gitignore", "CONTRIBUTING.md", "README.md",
 		"project.example.json",
 	} {
 		if path == exact {

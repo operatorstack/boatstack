@@ -10,7 +10,7 @@ import (
 func TestClassifyReleasePaths(t *testing.T) {
 	documentation := []string{
 		"README.md", "docs/getting-started.md", "assets/boatstack-mark.svg",
-		"release-notes/2026-07-18-copy.md", "IMPORT_PROVENANCE.json",
+		"release-notes/2026-07-18-copy.md",
 		"boatstack/export_test.go", "boatstack/testdata/example.txt",
 		".github/workflows/sync-upstream.yml", "automation/release-policy.md",
 	}

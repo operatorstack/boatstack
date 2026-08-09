@@ -11,7 +11,7 @@ The proposed product is not a large prompt and not a Codex-, Cursor-, Claude-, o
 
 The implementation is in [`boatstack/`](../boatstack/). Its exporter generates Cursor rules/commands, Claude Code and Codex skills, and a GitHub PR template from one source.
 
-The public [Boatstack](https://github.com/operatorstack/boatstack) repository is the source of product and runtime truth. The README, guides, tests, installable skill, and Go helper change together through ordinary reviewed pull requests. A machine-readable public claim record keeps homepage wording tied to observations, safeguards, tests, and explicit evaluation status. The repository contract checks these surfaces directly, while the cross-platform runtime jobs verify the helper and installers. `IMPORT_PROVENANCE.json` preserves the immutable record of the final historical import; it has no publishing authority.
+The public [Boatstack](https://github.com/operatorstack/boatstack) repository is the source of product and runtime truth. The README, guides, tests, installable skill, and Go helper change together through ordinary reviewed pull requests. A machine-readable public claim record keeps homepage wording tied to observations, safeguards, tests, and explicit evaluation status. The repository contract checks these surfaces directly, while the cross-platform runtime jobs verify the helper and installers.
 
 ## Outcome sizing and where value emerges
 
@@ -100,7 +100,7 @@ Those are **summary-only evidence** in this design. They are not represented as 
 | Mid-run aggregates changed direction | Qwen board interpretation moved as task coverage deepened | Compare paired completed coverage and uncertainty, not early aggregate rank |
 | External failure invited destructive recovery | A sanitized partial schema apply failure led to an invented reset path before review removed it | Treat recovery authority as a deterministic boundary: preserve state, diagnose read-only, transact or fix forward |
 
-Public evidence: [`benchmark-corpus-audit.md`](benchmark-corpus-audit.md) and [`benchmark-submission-audit.md`](benchmark-submission-audit.md). `IMPORT_PROVENANCE.json` records the final historical import that supplied the earlier private research references.
+Public evidence: [`benchmark-corpus-audit.md`](benchmark-corpus-audit.md) and [`benchmark-submission-audit.md`](benchmark-submission-audit.md).
 
 The irreversible-operation boundary is a **PROPOSED** Move. The incident supports the target failure mechanism, while the benchmark campaign supports deterministic enforcement over stronger wording. Neither proves the new guard's net effect. Promotion requires a paired unguarded baseline, destructive and safe corpora, real host events, bounded latency, secret-free denials, and no workflow regression.
 
