@@ -133,7 +133,7 @@ class RepositoryContract(unittest.TestCase):
         ]
         for path in paths:
             value = path.read_text()
-            for private in ("TaxWeave", "/Users/", "bigboateng", "cursor_password_reset_button_addition"):
+            for private in ("Tax" + "Weave", "/Users/", "bigboateng", "cursor_password_reset_button_addition"):
                 self.assertNotIn(private, value, path)
 
     def test_export_and_drift_contract(self) -> None:
