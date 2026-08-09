@@ -212,4 +212,4 @@ The installer previews generated paths, verifies the platform helper, offers opt
 
 Boatstack is an open-source research prototype. Its workflow and enforcement behavior are tested. But the current record does not prove improved delivery success. The next evaluation is a paired feature benchmark with the same model, task, and budget.
 
-Boatstack is developed directly in this repository. The immutable provenance of the final historical import is recorded in [`IMPORT_PROVENANCE.json`](IMPORT_PROVENANCE.json).
+Boatstack is developed directly in this repository.

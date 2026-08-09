@@ -14,7 +14,7 @@ func TestOriginRepoSlugParsesSSHAndHTTPS(t *testing.T) {
 	repo := t.TempDir()
 	runGit(t, repo, "init", "-b", "main")
 	cases := map[string]struct{ owner, name string }{
-		"git@github.com:millennialcpa/taxweave.git":      {"millennialcpa", "taxweave"},
+		"git@github.com:example-org/sample-app.git":     {"example-org", "sample-app"},
 		"https://github.com/operatorstack/boatstack.git": {"operatorstack", "boatstack"},
 		"https://github.com/operatorstack/boatstack":     {"operatorstack", "boatstack"},
 	}

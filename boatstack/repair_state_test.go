@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// writeMalformedDraft models the taxweave-roles failure: an agent hand-authored a
+// writeMalformedDraft models a legacy failure: an agent hand-authored a
 // feature directory with a prose plan.md but never let the helper register it, so
 // there is no plan.lock.json and no delivery state. CheckPlan fails on it, which
 // the guard escalates to INVALID_STATE and denies every product mutation.

@@ -49,7 +49,7 @@ func TestFeatureEvidencePathResolvesBothLayouts(t *testing.T) {
 }
 
 // TestRecordGateResolvesCompiledEvidenceLedger is the proof of fix: a delivery whose
-// ledger lives ONLY at compiled/evidence.md (the taxweave state) must gate cleanly
+// ledger lives ONLY at compiled/evidence.md (the legacy repository state) must gate cleanly
 // with no explicit --evidence. This fails on the pre-fix recorder, which resolved
 // only the feature root.
 func TestRecordGateResolvesCompiledEvidenceLedger(t *testing.T) {

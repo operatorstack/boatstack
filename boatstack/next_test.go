@@ -204,7 +204,7 @@ func TestFeaturePlanCandidatesExcludesLockedAndShippedFeatures(t *testing.T) {
 	}
 }
 
-// TestResolveNextIgnoresShippedFeatureCandidates reproduces the taxweave scenario
+// TestResolveNextIgnoresShippedFeatureCandidates reproduces the linked-worktree scenario
 // through ResolveNext: one genuinely open feature plus several shipped dirs whose
 // state.json was destroyed by worktree cleanup must resolve to the single open
 // candidate, not AMBIGUOUS.
