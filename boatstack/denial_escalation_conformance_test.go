@@ -46,7 +46,7 @@ func TestThirdIdenticalDenialEscalates(t *testing.T) {
 			if !strings.Contains(string(output), fmt.Sprintf("repeated %d times", denialEscalationThreshold)) {
 				t.Fatalf("escalation must carry the repeat count:\n%s", output)
 			}
-			if !strings.Contains(string(output), "boatstack-helper doctor") {
+			if !strings.Contains(string(output), ".product-loop/boatstack doctor") {
 				t.Fatalf("escalation must prescribe the fresh diagnostic:\n%s", output)
 			}
 		}

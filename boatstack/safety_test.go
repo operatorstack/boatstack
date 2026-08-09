@@ -234,21 +234,21 @@ func TestReapHelperIsExemptWhileRawWorktreeRemovalStaysDenied(t *testing.T) {
 func TestWorkspaceSyncIsTheOnlyAllowedRepositoryAlignmentCommand(t *testing.T) {
 	repo := safetyTestRepo(t)
 	writeValidSavedFeaturePlan(t, repo, "pending-feature")
-	helper := filepath.Join(repo, ".product-loop", "bin", helperName())
-	if err := os.MkdirAll(filepath.Dir(helper), 0o755); err != nil {
+	launcher := filepath.Join(repo, ".product-loop", "boatstack")
+	if err := os.MkdirAll(filepath.Dir(launcher), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(helper, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := os.WriteFile(launcher, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	command := ".product-loop/bin/" + helperName() + " workspace-sync --repo . --branch main --source origin/main"
+	command := ".product-loop/boatstack workspace-sync --repo . --branch main --source origin/main"
 	if findings := ClassifyCommand(repo, command); len(findings) != 0 {
 		t.Fatalf("exact project-local workspace sync was denied: %#v", findings)
 	}
 	for _, command := range []string{
 		"boatstack-helper workspace-sync --repo . --branch main --source origin/main",
 		"/tmp/boatstack-helper workspace-sync --repo . --branch main --source origin/main",
-		".product-loop/bin/" + helperName() + " workspace-sync --repo /tmp --branch main --source origin/main",
+		".product-loop/boatstack workspace-sync --repo /tmp --branch main --source origin/main",
 	} {
 		findings := ClassifyCommand(repo, command)
 		if len(findings) == 0 || findings[0].Category != "workspace-sync-bypass" {
@@ -370,7 +370,7 @@ func TestSafeDiagnosticsAndFixForwardCommandsRemainAllowed(t *testing.T) {
 		`git diff -- scripts/apply_schema.py | head -20`,
 		`python scripts/apply_schema.py --dry-run`,
 		`psql -c "SELECT current_database()"`,
-		`.product-loop/bin/boatstack-helper check-update --repo . --force`,
+		`.product-loop/boatstack check-update --repo . --force`,
 		`psql -c "UPDATE accounts SET active = false WHERE id = 7"`,
 	}
 	for _, command := range commands {
@@ -798,13 +798,13 @@ func TestPreActivationMutationInterlockLatchesAfterAutoPlan(t *testing.T) {
 	if findings := ClassifyTool(repo, "mcp__files__read", map[string]any{"path": "src/app.ts"}); len(findings) != 0 {
 		t.Fatalf("explicitly read-only MCP inspection was denied: %#v", findings)
 	}
-	if findings := ClassifyCommand(repo, ".product-loop/bin/boatstack-helper check-plan --plan .product-loop/features/guarded-feature/plan.md"); len(findings) != 0 {
+	if findings := ClassifyCommand(repo, ".product-loop/boatstack check-plan --plan .product-loop/features/guarded-feature/plan.md"); len(findings) != 0 {
 		t.Fatalf("bounded plan inspection was denied: %#v", findings)
 	}
 	if findings := ClassifyTool(repo, "Write", map[string]any{"file_path": ".product-loop/features/guarded-feature/plan.md", "content": "# revised plan"}); len(findings) != 0 {
 		t.Fatalf("bounded planning Markdown was denied: %#v", findings)
 	}
-	if findings := ClassifyCommand(repo, ".product-loop/bin/boatstack-helper record-approval --plan .product-loop/features/guarded-feature/plan.md"); len(findings) != 0 {
+	if findings := ClassifyCommand(repo, ".product-loop/boatstack record-approval --plan .product-loop/features/guarded-feature/plan.md"); len(findings) != 0 {
 		t.Fatalf("exact approval transition was denied: %#v", findings)
 	}
 	statusAfter, err := gitCommand(repo, "status", "--short")

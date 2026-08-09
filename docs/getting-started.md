@@ -3,7 +3,7 @@
 **For:** a product builder or engineer using Cursor, Codex, or Claude Code.
 **Outcome:** install Boatstack in one infrastructure PR, then take one ordinary request through approval, build, evidence, review, and PR preparation.
 
-Boatstack is repository-local. Install it once per Git clone and commit the shared workflow before starting product work. Linked Git worktrees reuse the clone's verified runtime automatically.
+Boatstack is repository-local. Adopt it once in the repository and commit the shared workflow before starting product work. Fresh clones and linked worktrees inherit tracked launchers that activate the pinned runtime automatically.
 
 ## Return after an interruption
 
@@ -39,18 +39,18 @@ irm https://raw.githubusercontent.com/operatorstack/boatstack/main/install.ps1 |
 Choose `core` unless you already want gstack, GitHub Spec Kit, or both. Confirm the real repository test command when asked. The installer previews paths, verifies the helper, installs portable host adapters, and runs:
 
 ```bash
-.product-loop/bin/boatstack-helper doctor --repo .
+.product-loop/boatstack doctor --repo .
 ```
 
 Review and commit the paths printed by the installer. Merge this infrastructure PR before creating a feature branch. Later feature PRs then contain the product change and its evidence rather than one-time setup noise.
 
 ### Git worktrees
 
-The installer keeps a versioned, verified runtime under Git's common directory. A linked worktree still starts without the ignored `.product-loop/bin/` directory, but its first guarded Cursor, Codex, or Claude call restores that local runtime automatically before evaluating the original command. This performs no download and changes no tracked files.
+The installer keeps a versioned, verified runtime under Git's common directory. Every linked worktree inherits `.product-loop/boatstack` and `.product-loop/boatstack.ps1` from Git. Its first launcher invocation verifies the exact pinned shared runtime, restores the ignored `.product-loop/bin/` runtime, and dispatches the command without requiring hook trust. This performs no download and changes no tracked files when the shared runtime is present.
 
 Host activation is separate from runtime installation. Codex requires the exact linked-worktree project path and pre/post tool hook definitions to be reviewed and trusted through `/hooks`; start a new task after trusting them. Claude Code requires Bash and exposes `PreToolUse`, `PostToolUse`, and failure observation through `/hooks`. Cursor requires a window reload and enabled before/after native, shell, and MCP hooks.
 
-Different Boatstack versions use separate cached runtimes, so an older worktree is not silently run with a newer helper. A separate clone has a different Git common directory and still needs one installer run.
+Different Boatstack versions use separate cached runtimes, so an older worktree is not silently run with a newer helper. The launcher never searches sibling worktrees or selects `latest`. A separate clone has a different Git common directory; its first launcher invocation hydrates the exact pinned release through the verified installer when needed.
 
 ## 2. Start with the idea
 

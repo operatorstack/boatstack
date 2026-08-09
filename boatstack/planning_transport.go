@@ -4,7 +4,6 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -25,7 +24,7 @@ const powerShellPlanningEncodingLine = `$OutputEncoding = [System.Text.UTF8Encod
 
 var posixPlanningHeader = regexp.MustCompile(`^(.*\S)[ \t]+<<'([A-Za-z_][A-Za-z0-9_]{0,63})'[ \t]*$`)
 var powerShellPlanningClose = regexp.MustCompile(`^'@[ \t]+\|[ \t]+&[ \t]+(.+)$`)
-var planningWriteMention = regexp.MustCompile(`(?i)\bboatstack-helper(?:\.exe)?['"]?[ \t]+planning-write(?:[ \t]|$)`)
+var planningWriteMention = regexp.MustCompile(`(?i)\bboatstack(?:\.ps1)?['"]?[ \t]+planning-write(?:[ \t]|$)`)
 
 type planningTransportInspection struct {
 	Matched       bool
@@ -129,12 +128,19 @@ func literalCommandWords(value string) (words []string, complete bool) {
 }
 
 func portableExecutableBase(value string) string {
-	return strings.TrimSuffix(strings.ToLower(path.Base(strings.ReplaceAll(value, "\\", "/"))), ".exe")
+	base := strings.ToLower(path.Base(strings.ReplaceAll(value, "\\", "/")))
+	base = strings.TrimSuffix(base, ".exe")
+	return strings.TrimSuffix(base, ".ps1")
+}
+
+func planningExecutable(value string) bool {
+	base := portableExecutableBase(value)
+	return base == "boatstack" || base == "boatstack-helper"
 }
 
 func planningWriteAttempt(value string) bool {
 	words, _ := literalCommandWords(value)
-	return len(words) >= 2 && portableExecutableBase(words[0]) == "boatstack-helper" && words[1] == "planning-write"
+	return len(words) >= 2 && planningExecutable(words[0]) && words[1] == "planning-write"
 }
 
 func planningVerbInvocationAttempt(value string) bool {
@@ -158,7 +164,7 @@ func powerShellPlanningAttempt(command string) bool {
 
 func planningWriteHeader(value string) (planningWriteInvocation, bool) {
 	words, complete := literalCommandWords(value)
-	if !complete || len(words) < 2 || portableExecutableBase(words[0]) != "boatstack-helper" || words[1] != "planning-write" {
+	if !complete || len(words) < 2 || !planningExecutable(words[0]) || words[1] != "planning-write" {
 		return planningWriteInvocation{}, false
 	}
 	values := map[string]string{}
@@ -230,17 +236,18 @@ func planningTransportBinding(repo string, transport planningTransportInspection
 		executable = canonical
 	}
 	base := strings.ToLower(filepath.Base(executable))
-	canonicalBase := strings.ToLower(helperName())
-	if base != canonicalBase && !(runtime.GOOS == "windows" && base == "boatstack-helper") {
-		return "helper-path-mismatch"
-	}
 	workspace, workspaceErr := ResolveWorkspaceContext(root)
 	if workspaceErr != nil {
 		return "workspace-binding-unverified"
 	}
 	expected := workspace.HelperPath()
-	if runtime.GOOS == "windows" && base == "boatstack-helper" {
-		expected = strings.TrimSuffix(expected, ".exe")
+	if workspace.Mode == SupervisionEmbedded {
+		if base != "boatstack" && base != "boatstack.ps1" {
+			return "helper-path-mismatch"
+		}
+		expected = workspace.LauncherPath(base == "boatstack.ps1")
+	} else if portableExecutableBase(base) != "boatstack-helper" {
+		return "helper-path-mismatch"
 	}
 	if canonical, canonicalErr := filepath.EvalSymlinks(expected); canonicalErr == nil {
 		expected = canonical

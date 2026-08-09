@@ -94,7 +94,7 @@ func (d Denial) escalationLine() string {
 	if !d.Escalated {
 		return ""
 	}
-	return fmt.Sprintf("This denial repeated %d times. Run: boatstack-helper doctor --repo .", d.RepeatCount)
+	return fmt.Sprintf("This denial repeated %d times. Run: .product-loop/boatstack doctor --repo .", d.RepeatCount)
 }
 
 // --- ANSI palette (truecolor; matches the approved mockup) -------------------
@@ -162,7 +162,7 @@ func (d Denial) optionLines(limit int) []string {
 	}
 	hidden := len(d.Options) - len(shown)
 	if d.OptionsTruncated || hidden > 0 {
-		lines = append(lines, "  (more legal moves: run boatstack-helper next-status)")
+		lines = append(lines, "  (more legal moves: run .product-loop/boatstack next-status)")
 	}
 	return lines
 }
@@ -467,9 +467,9 @@ func denialFor(host string, finding SafetyFinding) Denial {
 		d.Detail = "Boatstack could not inspect the " + name + " hook event (HOST_PAYLOAD_MALFORMED:" + finding.Reason +
 			"). No unsafe operation was detected; execution is denied because the intended command or tool call is unavailable. Retry once with an explicit non-empty command. If this repeats, stop shell and tool retries and preserve current edits."
 		if strings.EqualFold(host, "cursor") {
-			d.Detail += " Start a new Cursor task and run `.product-loop/bin/boatstack-helper diagnose-hook --host cursor --repo .` from an external terminal. Do not reinstall Boatstack unless it separately reports a missing, drifted, unsafe, or checksum-invalid runtime."
+			d.Detail += " Start a new Cursor task and run `.product-loop/boatstack diagnose-hook --host cursor --repo .` from an external terminal. Do not reinstall Boatstack unless it separately reports a missing, drifted, unsafe, or checksum-invalid runtime."
 		} else {
-			d.Detail += " Run `.product-loop/bin/boatstack-helper diagnose-hook --host " + strings.ToLower(host) + " --repo .` from an external terminal before changing the installation."
+			d.Detail += " Run `.product-loop/boatstack diagnose-hook --host " + strings.ToLower(host) + " --repo .` from an external terminal before changing the installation."
 		}
 		return d
 
@@ -518,7 +518,7 @@ func denialFor(host string, finding SafetyFinding) Denial {
 			if finding.BlockingFeature != "" {
 				slug = finding.BlockingFeature
 			}
-			d.Detail += fmt.Sprintf(" Planning Markdown is authored through the owned channel: one complete literal `.product-loop/bin/boatstack-helper planning-write --repo . --feature %s --artifact <name>` envelope from `.product-loop/workflow.md` — never a raw host write into `.product-loop/features/` or a manual shell paste.", slug)
+			d.Detail += fmt.Sprintf(" Planning Markdown is authored through the owned channel: one complete literal `.product-loop/boatstack planning-write --repo . --feature %s --artifact <name>` envelope from `.product-loop/workflow.md` — never a raw host write into `.product-loop/features/` or a manual shell paste.", slug)
 		}
 		d.Reassurance = reassureUntouched
 		return d

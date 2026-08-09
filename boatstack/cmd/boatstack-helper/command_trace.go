@@ -25,7 +25,7 @@ var commandTracePolicies = map[string]commandTracePolicy{
 	"prepare-update-pr": {Category: "update-publication"}, "publish-update-pr": {Category: "update-publication"},
 	"release-classify": {Category: "release"}, "next-patch": {Category: "release"},
 	"export": {Category: "installation"}, "migrate-config": {Category: "installation"},
-	"hydrate-runtime": {Category: "installation"}, "doctor": {Category: "readiness"},
+	"hydrate-runtime": {Category: "installation"}, "activate-worktree-runtime": {Category: "installation"}, "doctor": {Category: "readiness"},
 	"check-source-plan": {Category: "planning"}, "check-plan": {Category: "planning"},
 	"planning-write": {Category: "planning"}, "record-approval": {Category: "planning"},
 	"record-autonomy": {Category: "planning"}, "activate-plan": {Category: "delivery"},

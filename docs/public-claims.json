@@ -104,13 +104,13 @@
     },
     {
       "id": "git-worktree-activation",
-      "public_claim": "Boatstack installs one verified runtime per Git clone and automatically restores ignored local runtime state for linked worktrees before evaluating their first guarded command.",
+      "public_claim": "Boatstack tracks exact-runtime launchers in every generated repository. A linked worktree verifies and activates only its pinned Git-common runtime before command dispatch, independently of hook trust.",
       "status": "verified",
       "originating_observation": "A linked Claude Code worktree inherited committed fail-closed hooks but not the ignored helper, causing every shell call—including installation—to be denied.",
-      "safeguard": "Versioned Git-common-directory runtime cache, generated provenance selection, atomic local hydration, and fail-closed mismatch handling.",
+      "safeguard": "Tracked launchers with baked release identity, versioned Git-common runtime slots, manifest and checksum verification, atomic local activation, and fail-closed mismatch handling.",
       "readable_evidence": "why-these-steps.md#git-worktree-activation",
-      "implementation": ["../boatstack/runtime_cache.go", "../boatstack/hooks.go"],
-      "verification": ["../boatstack/runtime_cache_test.go", "../boatstack/hooks_test.go"],
+      "implementation": ["../boatstack/launcher.go", "../boatstack/runtime_cache.go"],
+      "verification": ["../boatstack/launcher_test.go", "../boatstack/runtime_cache_test.go", "../boatstack/hooks_hydrate_test.go"],
       "last_verified_version": "v0.7.120"
     },
     {

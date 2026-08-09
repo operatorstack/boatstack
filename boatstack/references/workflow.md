@@ -61,7 +61,7 @@ the structure below, with a host-compatible rendering for **Technical details**.
 
 Begin every Boatstack response with the status banner, so the reader can tell Boatstack's
 output apart from ordinary prose and see where their work stands at a glance. Emit the exact
-output of `boatstack-helper next-status --repo . --render` verbatim (a fenced code block or as
+output of `.product-loop/boatstack next-status --repo . --render` verbatim (a fenced code block or as
 plain lines), above the `## <Plain-language outcome>` heading. The banner is presentation only:
 it does not replace the single `### Next step`, does not add a second action, and never
 introduces machine codes or internal stage names (the renderer already hides them). The `--json`
@@ -184,7 +184,7 @@ For bug-shaped intent (a crash, stack trace, or failing signal), the read-only `
 Before repository inspection, run:
 
 ```bash
-.product-loop/bin/boatstack-helper check-source-plan --repo . --plan <host-context-path>
+.product-loop/boatstack check-source-plan --repo . --plan <host-context-path>
 ```
 
 Boatstack never scans directories for plans, so `--plan` is required and no unshipped saved plan becomes ambient context. If no plan path is supplied, or the file is missing, empty, or unreadable, `auto-plan` is `BLOCKED` and must request the plan to build. It must not manufacture the missing input. Because the file's hash is recorded and re-checked through `BUILD`, `--plan` must point at a durable in-repo path that stays present and unchanged; a path outside the repository is rejected. This source plan is an initial proposal rather than human approval.
@@ -269,12 +269,12 @@ If gstack is installed, its review skills can execute these lenses. If Spec Kit 
 
 ### Literal planning transport
 
-Feature artifacts are authored through the owned channel `.product-loop/bin/boatstack-helper planning-write --repo . --feature <feature> --artifact <name>`. The complete Markdown document and command must cross the host hook in one literal envelope. The hook binds the command to the current repository's project-local helper, validates the command and closing delimiter, treats the body as data, and denies truncation or trailing commands before the shell runs.
+Feature artifacts are authored through the owned channel `.product-loop/boatstack planning-write --repo . --feature <feature> --artifact <name>`. The complete Markdown document and command must cross the host hook in one literal envelope. The hook binds the command to the current repository's project-local helper, validates the command and closing delimiter, treats the body as data, and denies truncation or trailing commands before the shell runs.
 
 In Bash, zsh, and Git Bash, use a single-quoted heredoc. The closing token must not occur as a line in the Markdown; choose another simple token when it does. In Git Bash on Windows, append `.exe` to the project-local helper path.
 
 ```bash
-.product-loop/bin/boatstack-helper planning-write --repo . --feature <feature> --artifact <name> <<'BOATSTACK_PLAN_EOF'
+.product-loop/boatstack planning-write --repo . --feature <feature> --artifact <name> <<'BOATSTACK_PLAN_EOF'
 <complete Markdown document>
 BOATSTACK_PLAN_EOF
 ```
@@ -286,7 +286,7 @@ In Windows PowerShell, keep UTF-8 local to a child scope and use a single-quoted
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 @'
 <complete Markdown document>
-'@ | & '.product-loop\bin\boatstack-helper.exe' planning-write --repo . --feature <feature> --artifact <name>
+'@ | & '.product-loop\boatstack.ps1' planning-write --repo . --feature <feature> --artifact <name>
 }
 ```
 
@@ -306,7 +306,7 @@ When `workflow.pr_visual_evidence` is `suggest` or `require`, every managed plan
 
 ### `PLAN -> PLAN_GATE`
 
-Run `boatstack-helper check-plan --plan <feature>/plan.md` and present the full draft, plan fingerprint, and product baseline returned by the check. A non-empty baseline includes its exact diff, changed paths, and SHA-256 so edits that existed when managed planning began remain visible and preserved. When `workflow.human_plan_approval` is `true`, require an exact standalone `a`, the compatible full reply `approve`, or a change request, and end the pending response with: Reply `a` to approve. When it is `false`, report that Build will create a policy-activation lock and do not create or imply human approval. The check is read-only.
+Run `.product-loop/boatstack check-plan --plan <feature>/plan.md` and present the full draft, plan fingerprint, and product baseline returned by the check. A non-empty baseline includes its exact diff, changed paths, and SHA-256 so edits that existed when managed planning began remain visible and preserved. When `workflow.human_plan_approval` is `true`, require an exact standalone `a`, the compatible full reply `approve`, or a change request, and end the pending response with: Reply `a` to approve. When it is `false`, report that Build will create a policy-activation lock and do not create or imply human approval. The check is read-only.
 
 ### `PLAN_GATE -> PLAN_APPROVED`
 

@@ -23,7 +23,7 @@ import (
 // skill prose to POINTING at the renderer rather than restating a state table.
 
 // machineTokens must never appear as status prose in a rendered response.
-// Lines that carry the runnable command (`boatstack-helper …`) are the one
+// Lines that carry the runnable command (`.product-loop/boatstack …`) are the one
 // legitimate exception — the verb IS the next step there.
 var machineTokens = regexp.MustCompile(`DRAFT_PLAN|APPROVED|POLICY_READY|NOT_INITIALIZED|INVALID_STATE|AMBIGUOUS|NOT_STARTED|TEST_PASSED|REVIEW_PASSED|PR_PREVIEW|FEATURE_COMPLETE|repair-state|discard-delivery|plan-gate|ship-gate|review-gate|auto-plan`)
 
@@ -47,7 +47,7 @@ func TestResponseContractPerStage(t *testing.T) {
 		repo := nextTestRepo(t)
 		status, output := renderedResponse(t, repo)
 		assertResponseShape(t, status, output)
-		if !strings.Contains(output, "Run: boatstack-helper check-source-plan") {
+		if !strings.Contains(output, "Run: .product-loop/boatstack check-source-plan") {
 			t.Fatalf("NOT_STARTED must carry the prescribed command: %q", output)
 		}
 	})
@@ -57,7 +57,7 @@ func TestResponseContractPerStage(t *testing.T) {
 		writeSavedFeaturePlan(t, repo, "demo")
 		status, output := renderedResponse(t, repo)
 		assertResponseShape(t, status, output)
-		if !strings.Contains(output, "Run: boatstack-helper check-plan") {
+		if !strings.Contains(output, "Run: .product-loop/boatstack check-plan") {
 			t.Fatalf("DRAFT_PLAN must carry the prescribed command: %q", output)
 		}
 		if !strings.Contains(output, "Then: ") {
@@ -73,7 +73,7 @@ func TestResponseContractPerStage(t *testing.T) {
 		}
 		status, output := renderedResponse(t, repo)
 		assertResponseShape(t, status, output)
-		if !strings.Contains(output, "Run: boatstack-helper activate-plan") {
+		if !strings.Contains(output, "Run: .product-loop/boatstack activate-plan") {
 			t.Fatalf("APPROVED must carry the prescribed command: %q", output)
 		}
 	})
@@ -89,7 +89,7 @@ func TestResponseContractPerStage(t *testing.T) {
 			t.Fatal(err)
 		}
 		assertResponseShape(t, status, output)
-		if !strings.Contains(output, "Run: boatstack-helper record-delivery-gate") {
+		if !strings.Contains(output, "Run: .product-loop/boatstack record-delivery-gate") {
 			t.Fatalf("BUILD must carry the oracle-prescribed command: %q", output)
 		}
 	})
@@ -143,7 +143,7 @@ func TestResponseHidesMachineTokens(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			_, output := renderedResponse(t, fixture(t))
 			for _, line := range strings.Split(output, "\n") {
-				if strings.Contains(line, "boatstack-helper") {
+				if strings.Contains(line, ".product-loop/boatstack") {
 					continue // the runnable command line is the legitimate exception
 				}
 				if match := machineTokens.FindString(line); match != "" {
