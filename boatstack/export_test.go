@@ -524,6 +524,14 @@ func TestExportAndDriftCheck(t *testing.T) {
 	}
 }
 
+func TestGeneratedMarkdownIsIndependentOfBuilderLineEndings(t *testing.T) {
+	want := GeneratedMarkdown("# Contract\n\nStable bytes.\n")
+	got := GeneratedMarkdown("# Contract\r\n\r\nStable bytes.\r\n")
+	if string(got) != string(want) {
+		t.Fatalf("generated Markdown retained builder line endings:\nwant %q\n got %q", want, got)
+	}
+}
+
 func TestExportPreservesOptionalChangelogPolicy(t *testing.T) {
 	config := testConfig()
 	config.Workflow.MaintainChangelog = true
