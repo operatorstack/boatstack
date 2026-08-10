@@ -1396,12 +1396,9 @@ func withoutIgnoredDeliveryStates(states []DeliveryState, ignored []string) []De
 	return kept
 }
 
-// IgnoreDelivery appends a feature slug to workflow.ignored_deliveries in the
-// repository's project.json, deduplicating and preserving all other config. It
-// is the bounded, provenance-safe write behind the ignore-delivery helper
-// subcommand: the config round-trips through LoadConfig -> GeneratedJSON so the
-// serialization contract and generator metadata are preserved. It returns
-// whether the slug was newly added.
+// IgnoreDelivery appends a feature slug to workflow.ignored_deliveries through
+// the authority-aware configuration mutation boundary. It deduplicates while
+// preserving order and returns whether the slug was newly added.
 func IgnoreDelivery(repo, feature string) (bool, error) {
 	feature = strings.TrimSpace(feature)
 	if feature == "" {
@@ -1410,33 +1407,19 @@ func IgnoreDelivery(repo, feature string) (bool, error) {
 	if !featureSlugPattern.MatchString(feature) {
 		return false, fmt.Errorf("feature slug %q is not a valid Boatstack feature slug", feature)
 	}
-	resolved, err := ResolveRepository(repo)
-	if err != nil {
-		return false, err
-	}
-	ctx, err := ResolveWorkspaceContext(resolved)
-	if err != nil {
-		return false, err
-	}
-	configPath := ctx.ProjectConfigPath()
-	config, _, err := LoadConfig(configPath)
-	if err != nil {
-		return false, err
-	}
-	for _, existing := range config.Workflow.IgnoredDeliveries {
-		if existing == feature {
-			return false, nil
+	mutation, err := mutateManagedConfiguration(repo, func(config *ProjectConfig) (bool, error) {
+		for _, existing := range config.Workflow.IgnoredDeliveries {
+			if existing == feature {
+				return false, nil
+			}
 		}
-	}
-	config.Workflow.IgnoredDeliveries = append(config.Workflow.IgnoredDeliveries, feature)
-	value, err := GeneratedJSON(config)
+		config.Workflow.IgnoredDeliveries = append(config.Workflow.IgnoredDeliveries, feature)
+		return true, nil
+	})
 	if err != nil {
 		return false, err
 	}
-	if err := atomicWriteMode(configPath, value, 0o644); err != nil {
-		return false, err
-	}
-	return true, nil
+	return mutation.Changed, nil
 }
 
 // DiscardDeliveryResult is the host-neutral outcome of discarding one managed

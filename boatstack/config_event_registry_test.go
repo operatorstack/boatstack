@@ -28,6 +28,12 @@ var configEventClasses = map[string]string{
 	"ResolveConfigurationTopology": "resolver",
 	"RequireManagedConfiguration":  "admission",
 	"ConfigRebind":                 "writer",
+	"mutateManagedConfiguration":   "writer",
+}
+
+var ordinaryConfigurationWriters = map[string]bool{
+	"IgnoreDelivery":            true,
+	"RegisterCapabilityCommand": true,
 }
 
 func calledName(call *ast.CallExpr) string {
@@ -80,9 +86,63 @@ func TestConfigurationEventRegistryIsComplete(t *testing.T) {
 	}
 	sort.Strings(entries)
 	digest := SHA256Bytes([]byte(strings.Join(entries, "\n")))
-	const expected = "dfcbdc50fdfbda0d505ce7b04f55f6289622adad74a8fd01fc5fb13e6a00979b"
+	const expected = "ed524f110b7ade6e3a5795c5f26ee20db87153a0c91865c8e7cd63a9ee133f0f"
 	if digest != expected {
 		_ = os.WriteFile(filepath.Join(t.TempDir(), "config-events.txt"), []byte(strings.Join(entries, "\n")+"\n"), 0o644)
 		t.Fatalf("configuration event registry changed: got %s; classify the new or removed site and update the reviewed digest", digest)
+	}
+}
+
+// Ordinary command handlers may describe a configuration change, but only the
+// shared mutation boundary may resolve sources, render projections, or write
+// accepted bytes. This prevents another generated-only writer from recreating
+// the detached self-invalidation class.
+func TestOrdinaryConfigurationWritersUseManagedBoundary(t *testing.T) {
+	found := map[string]bool{}
+	set := token.NewFileSet()
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range files {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		parsed, err := parser.ParseFile(set, path, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, declaration := range parsed.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Body == nil || !ordinaryConfigurationWriters[function.Name.Name] {
+				continue
+			}
+			found[function.Name.Name] = true
+			usesBoundary := false
+			rawWriters := []string{}
+			ast.Inspect(function.Body, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				name := calledName(call)
+				if name == "mutateManagedConfiguration" {
+					usesBoundary = true
+				}
+				switch name {
+				case "atomicWrite", "atomicWriteMode", "WriteExport", "writeExport", "GeneratedJSON", "BuildExportBundle":
+					rawWriters = append(rawWriters, name)
+				}
+				return true
+			})
+			if !usesBoundary || len(rawWriters) > 0 {
+				t.Errorf("%s must use only mutateManagedConfiguration; boundary=%v raw=%v", function.Name.Name, usesBoundary, rawWriters)
+			}
+		}
+	}
+	for name := range ordinaryConfigurationWriters {
+		if !found[name] {
+			t.Errorf("ordinary configuration writer %s was not found", name)
+		}
 	}
 }

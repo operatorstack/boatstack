@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -136,6 +139,254 @@ func TestCapabilityRegistrationCannotInvalidateItsRepositoryBinding(t *testing.T
 	repository, _, err := LoadConfig(filepath.Join(repo, sourceConfigName))
 	if err != nil || repository.Project.Commands["visual:settings"] != "npm run capture:settings" {
 		t.Fatalf("repository authority was not updated: %+v %v", repository, err)
+	}
+}
+
+// Failure-state conformance for:
+// control-law: successful-config-mutations-preserve-detached-verification.
+func TestIgnoreDeliveryCannotInvalidateItsRepositoryBinding(t *testing.T) {
+	repo := detachedTestRepo(t, "https://github.com/acme/ignore-authority.git")
+	writeRepositoryConfig(t, repo, "ignore-authority")
+	if result, err := AttachDetached(AttachOptions{Repo: repo}); err != nil || result.VerificationStatus != "VERIFIED" {
+		t.Fatalf("attach: %+v %v", result, err)
+	}
+
+	for _, feature := range []string{"old-one", "old-two"} {
+		added, err := IgnoreDelivery(repo, feature)
+		if err != nil || !added {
+			t.Fatalf("ignore %s: added=%v err=%v", feature, added, err)
+		}
+		status, statusErr := DetachedStatus(repo)
+		if statusErr != nil || !status.Verified || status.ConfigRelation != ConfigRelationMatch {
+			t.Fatalf("ignore %s invalidated detached binding: %+v %v", feature, status, statusErr)
+		}
+	}
+
+	repository, _, err := LoadConfig(filepath.Join(repo, sourceConfigName))
+	if err != nil || !reflect.DeepEqual(repository.Workflow.IgnoredDeliveries, []string{"old-one", "old-two"}) {
+		t.Fatalf("repository authority was not updated: %+v %v", repository.Workflow.IgnoredDeliveries, err)
+	}
+}
+
+// Positive and relation conformance for:
+// control-law: successful-config-mutations-preserve-declared-authority.
+func TestConfigurationMutationPreservesEveryAuthorityMode(t *testing.T) {
+	t.Run("embedded-source", func(t *testing.T) {
+		repo := detachedTestRepo(t, "https://github.com/acme/embedded-source.git")
+		raw := writeRepositoryConfig(t, repo, "embedded-source")
+		config, _, err := LoadConfig(filepath.Join(repo, sourceConfigName))
+		if err != nil {
+			t.Fatal(err)
+		}
+		bundle, err := BuildExportBundle(filepath.Join(repo, sourceConfigName), config, embeddedConfigBytes(raw), "boatstack")
+		if err != nil || WriteExport(repo, bundle.Files) != nil {
+			t.Fatalf("embedded fixture: %v", err)
+		}
+		if added, err := IgnoreDelivery(repo, "old-embedded"); err != nil || !added {
+			t.Fatalf("ignore: added=%v err=%v", added, err)
+		}
+		for _, path := range []string{filepath.Join(repo, sourceConfigName), filepath.Join(repo, productLoopDirName, "project.json")} {
+			loaded, _, err := LoadConfig(path)
+			if err != nil || !reflect.DeepEqual(loaded.Workflow.IgnoredDeliveries, []string{"old-embedded"}) {
+				t.Fatalf("%s did not receive mutation: %+v %v", path, loaded.Workflow.IgnoredDeliveries, err)
+			}
+		}
+	})
+
+	t.Run("detached-repository-hybrid", func(t *testing.T) {
+		repo := detachedTestRepo(t, "https://github.com/acme/hybrid-authority.git")
+		raw := writeRepositoryConfig(t, repo, "hybrid-authority")
+		config, _, err := LoadConfig(filepath.Join(repo, sourceConfigName))
+		if err != nil {
+			t.Fatal(err)
+		}
+		bundle, err := BuildExportBundle(filepath.Join(repo, sourceConfigName), config, embeddedConfigBytes(raw), "boatstack")
+		if err != nil || WriteExport(repo, bundle.Files) != nil {
+			t.Fatalf("hybrid fixture: %v", err)
+		}
+		if result, err := AttachDetached(AttachOptions{Repo: repo}); err != nil || result.VerificationStatus != "VERIFIED" {
+			t.Fatalf("attach: %+v %v", result, err)
+		}
+		if added, err := IgnoreDelivery(repo, "old-hybrid"); err != nil || !added {
+			t.Fatalf("ignore: added=%v err=%v", added, err)
+		}
+		status, statusErr := DetachedStatus(repo)
+		if statusErr != nil || !status.Verified || status.ConfigRelation != ConfigRelationMatch {
+			t.Fatalf("hybrid mutation invalidated binding: %+v %v", status, statusErr)
+		}
+		repository, _, repositoryErr := LoadConfig(filepath.Join(repo, productLoopDirName, "project.json"))
+		controller, _, controllerErr := LoadConfig(WorkspaceFor(repo).ProjectConfigPath())
+		if repositoryErr != nil || controllerErr != nil {
+			t.Fatalf("load hybrid projections: repository=%v controller=%v", repositoryErr, controllerErr)
+		}
+		if !reflect.DeepEqual(repository.Workflow.IgnoredDeliveries, []string{"old-hybrid"}) ||
+			!reflect.DeepEqual(controller.Workflow.IgnoredDeliveries, []string{"old-hybrid"}) {
+			t.Fatalf("hybrid projections diverged: repo=%v controller=%v", repository.Workflow.IgnoredDeliveries, controller.Workflow.IgnoredDeliveries)
+		}
+	})
+
+	for _, test := range []struct {
+		name       string
+		authority  string
+		configPath func(*testing.T) string
+	}{
+		{name: "detached-external", authority: ConfigAuthorityExternalSnapshot, configPath: func(t *testing.T) string {
+			path, _ := externalConfigFixture(t, "external-ignore", "go test ./...")
+			return path
+		}},
+		{name: "detached-synthesized", authority: ConfigAuthoritySynthesized},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repo := detachedTestRepo(t, "https://github.com/acme/"+test.name+".git")
+			options := AttachOptions{Repo: repo}
+			if test.configPath != nil {
+				options.ConfigPath = test.configPath(t)
+			}
+			before := filesystemSnapshot(t, repo)
+			attached, err := AttachDetached(options)
+			if err != nil || attached.VerificationStatus != "VERIFIED" || attached.ConfigAuthority != test.authority {
+				t.Fatalf("attach: %+v %v", attached, err)
+			}
+			if added, err := IgnoreDelivery(repo, "old-local"); err != nil || !added {
+				t.Fatalf("ignore: added=%v err=%v", added, err)
+			}
+			if after := filesystemSnapshot(t, repo); after != before {
+				t.Fatal("controller-authority mutation changed repository bytes")
+			}
+			status, statusErr := DetachedStatus(repo)
+			if statusErr != nil || !status.Verified || status.ConfigAuthority != test.authority || status.ConfigRelation == ConfigRelationDiverged {
+				t.Fatalf("controller-authority mutation invalidated binding: %+v %v", status, statusErr)
+			}
+			controller, _, err := LoadConfig(WorkspaceFor(repo).SourceConfigPath())
+			if err != nil || !reflect.DeepEqual(controller.Workflow.IgnoredDeliveries, []string{"old-local"}) {
+				t.Fatalf("controller source was not updated: %+v %v", controller.Workflow.IgnoredDeliveries, err)
+			}
+		})
+	}
+}
+
+// Failure-state conformance for:
+// control-law: failed-config-mutations-restore-every-projection.
+func TestConfigurationMutationRollsBackEveryDetachedCheckpoint(t *testing.T) {
+	for _, checkpoint := range []string{
+		"controller-projection-written",
+		"repository-source-written",
+		"controller-source-written",
+		"binding-written",
+	} {
+		t.Run(checkpoint, func(t *testing.T) {
+			repo := detachedTestRepo(t, "https://github.com/acme/rollback-"+checkpoint+".git")
+			writeRepositoryConfig(t, repo, "rollback")
+			attached, err := AttachDetached(AttachOptions{Repo: repo})
+			if err != nil || attached.VerificationStatus != "VERIFIED" {
+				t.Fatalf("attach: %+v %v", attached, err)
+			}
+			ctx := WorkspaceFor(repo)
+			beforeRepo := filesystemSnapshot(t, repo)
+			beforeController := filesystemSnapshot(t, ctx.controlRoot)
+			previous := configMutationCheckpoint
+			configMutationCheckpoint = func(stage string) error {
+				if stage == checkpoint {
+					return fmt.Errorf("simulated interruption at %s", stage)
+				}
+				return nil
+			}
+			t.Cleanup(func() { configMutationCheckpoint = previous })
+
+			if added, err := IgnoreDelivery(repo, "must-rollback"); err == nil || added {
+				t.Fatalf("checkpoint did not fail: added=%v err=%v", added, err)
+			}
+			if after := filesystemSnapshot(t, repo); after != beforeRepo {
+				t.Fatalf("repository bytes changed after rollback at %s", checkpoint)
+			}
+			if after := filesystemSnapshot(t, ctx.controlRoot); after != beforeController {
+				t.Fatalf("controller bytes changed after rollback at %s", checkpoint)
+			}
+			status, statusErr := DetachedStatus(repo)
+			if statusErr != nil || !status.Verified || status.ConfigRelation != ConfigRelationMatch {
+				t.Fatalf("rollback left controller invalid: %+v %v", status, statusErr)
+			}
+		})
+	}
+}
+
+// Correlation and relation conformance for:
+// control-law: concurrent-config-mutations-cannot-lose-accepted-updates.
+func TestConfigurationMutationSerializesConcurrentWriters(t *testing.T) {
+	repo := detachedTestRepo(t, "https://github.com/acme/concurrent-config.git")
+	writeRepositoryConfig(t, repo, "concurrent-config")
+	if result, err := AttachDetached(AttachOptions{Repo: repo}); err != nil || result.VerificationStatus != "VERIFIED" {
+		t.Fatalf("attach: %+v %v", result, err)
+	}
+
+	features := []string{"old-alpha", "old-beta"}
+	errors := make(chan error, len(features))
+	var wait sync.WaitGroup
+	for _, feature := range features {
+		feature := feature
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			added, err := IgnoreDelivery(repo, feature)
+			if err != nil {
+				errors <- err
+				return
+			}
+			if !added {
+				errors <- fmt.Errorf("%s was not added", feature)
+			}
+		}()
+	}
+	wait.Wait()
+	close(errors)
+	for err := range errors {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	config, _, err := LoadConfig(filepath.Join(repo, sourceConfigName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := append([]string(nil), config.Workflow.IgnoredDeliveries...)
+	sort.Strings(got)
+	if !reflect.DeepEqual(got, features) {
+		t.Fatalf("concurrent update lost a slug: %v", got)
+	}
+	status, statusErr := DetachedStatus(repo)
+	if statusErr != nil || !status.Verified {
+		t.Fatalf("concurrent update invalidated binding: %+v %v", status, statusErr)
+	}
+}
+
+// Negative and failure-state conformance for:
+// control-law: ambiguous-config-authority-is-refused-before-writes.
+func TestConfigurationMutationRefusesLegacyAuthorityBeforeWrites(t *testing.T) {
+	repo := detachedTestRepo(t, "https://github.com/acme/legacy-config-writer.git")
+	writeRepositoryConfig(t, repo, "legacy-config-writer")
+	attached, err := AttachDetached(AttachOptions{Repo: repo})
+	if err != nil || attached.VerificationStatus != "VERIFIED" {
+		t.Fatalf("attach: %+v %v", attached, err)
+	}
+	stateRoot, _ := detachedStateRoot()
+	binding, err := loadBinding(stateRoot, attached.RepoID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding.SchemaVersion = detachedSchemaVersionWithConfigDigest
+	binding.ConfigAuthority = ""
+	raw, _ := MarshalJSON(binding)
+	if err := atomicWrite(bindingPath(stateRoot, attached.RepoID), raw); err != nil {
+		t.Fatal(err)
+	}
+	invalidateWorkspaceCache()
+	beforeRepo := filesystemSnapshot(t, repo)
+	beforeController := filesystemSnapshot(t, WorkspaceFor(repo).controlRoot)
+	if added, err := IgnoreDelivery(repo, "old-legacy"); err == nil || added || !strings.Contains(err.Error(), "CONFIG_REBIND_REQUIRED") {
+		t.Fatalf("legacy authority was not refused: added=%v err=%v", added, err)
+	}
+	if filesystemSnapshot(t, repo) != beforeRepo || filesystemSnapshot(t, WorkspaceFor(repo).controlRoot) != beforeController {
+		t.Fatal("legacy refusal changed configuration bytes")
 	}
 }
 

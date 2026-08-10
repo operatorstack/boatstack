@@ -206,11 +206,8 @@ type RegisteredCapability struct {
 	Source     string `json:"source"` // source-and-export | generated-only
 }
 
-// RegisterCapabilityCommand records a repository-owned command for a capability.
-// When a canonical .boatstack-project.json source exists it mutates the source
-// and regenerates the full export so the source and every generated file stay in
-// sync; otherwise it round-trips the generated project.json alone, matching the
-// IgnoreDelivery idiom.
+// RegisterCapabilityCommand records a repository-owned command for a capability
+// through the shared authority-aware configuration mutation boundary.
 func RegisterCapabilityCommand(repo, name, surface, command string) (RegisteredCapability, error) {
 	resolved, err := ResolveRepository(repo)
 	if err != nil {
@@ -234,108 +231,18 @@ func RegisterCapabilityCommand(repo, name, surface, command string) (RegisteredC
 		alias = capability.Name + ":" + surface
 	}
 
-	topology, err := RequireManagedConfiguration(resolved)
+	mutation, err := mutateManagedConfiguration(resolved, func(config *ProjectConfig) (bool, error) {
+		if config.Project.Commands == nil {
+			config.Project.Commands = map[string]string{}
+		}
+		if config.Project.Commands[alias] == command {
+			return false, nil
+		}
+		config.Project.Commands[alias] = command
+		return true, nil
+	})
 	if err != nil {
 		return RegisteredCapability{}, err
 	}
-	if topology.Mode == string(SupervisionDetached) && topology.Authority == ConfigAuthorityLegacyUnknown {
-		return RegisteredCapability{}, fmt.Errorf("CONFIG_REBIND_REQUIRED: capability registration needs an explicit configuration authority; run boatstack-helper config-rebind --repo %q --source repository --json or choose controller", resolved)
-	}
-	sourcePath := topology.RepositorySourcePath
-	targetRoot := topology.RepositoryBundleRoot
-	if topology.Authority == ConfigAuthorityExternalSnapshot || topology.Authority == ConfigAuthoritySynthesized {
-		sourcePath = topology.ControllerSourcePath
-		targetRoot = topology.ControllerBundleRoot
-	}
-	if fileExists(sourcePath) {
-		config, _, err := LoadConfig(sourcePath)
-		if err != nil {
-			return RegisteredCapability{}, err
-		}
-		setCapabilityCommand(&config, alias, command)
-		if err := ValidateConfig(config); err != nil {
-			return RegisteredCapability{}, err
-		}
-		rawConfig, err := MarshalJSON(config)
-		if err != nil {
-			return RegisteredCapability{}, err
-		}
-		bundleRaw := rawConfig
-		if targetRoot == topology.RepositoryBundleRoot {
-			bundleRaw = embeddedConfigBytes(rawConfig)
-		}
-		bundle, err := BuildExportBundle(sourcePath, config, bundleRaw, "boatstack")
-		if err != nil {
-			return RegisteredCapability{}, err
-		}
-		writePrimaryBundle := !(topology.Mode == string(SupervisionDetached) && topology.Authority == ConfigAuthorityRepository && !topology.RepositoryPackagePresent)
-		if writePrimaryBundle {
-			if err := WriteExport(targetRoot, bundle.Files); err != nil {
-				return RegisteredCapability{}, err
-			}
-		}
-		if err := atomicWriteMode(sourcePath, rawConfig, 0o644); err != nil {
-			return RegisteredCapability{}, err
-		}
-		if topology.Mode == string(SupervisionDetached) && topology.Authority == ConfigAuthorityRepository {
-			controllerBundle, buildErr := BuildExportBundle(topology.ControllerSourcePath, config, rawConfig, "boatstack")
-			if buildErr != nil {
-				return RegisteredCapability{}, buildErr
-			}
-			if err := WriteExport(topology.ControllerBundleRoot, controllerBundle.Files); err != nil {
-				return RegisteredCapability{}, err
-			}
-			if err := atomicWriteMode(topology.ControllerSourcePath, rawConfig, 0o644); err != nil {
-				return RegisteredCapability{}, err
-			}
-		}
-		if topology.Mode == string(SupervisionDetached) {
-			stateRoot, stateErr := detachedStateRoot()
-			if stateErr != nil {
-				return RegisteredCapability{}, stateErr
-			}
-			binding, bindingErr := loadBinding(stateRoot, topology.RepoID)
-			if bindingErr != nil {
-				return RegisteredCapability{}, bindingErr
-			}
-			binding.SchemaVersion = detachedSchemaVersion
-			binding.ConfigSHA256 = SHA256Bytes(rawConfig)
-			binding.ConfigAuthority = topology.Authority
-			binding.CreatedByVersion = Version
-			bindingRaw, marshalErr := MarshalJSON(binding)
-			if marshalErr != nil {
-				return RegisteredCapability{}, marshalErr
-			}
-			if err := atomicWrite(bindingPath(stateRoot, topology.RepoID), bindingRaw); err != nil {
-				return RegisteredCapability{}, err
-			}
-			invalidateWorkspaceCache()
-		}
-		return RegisteredCapability{Capability: capability.Name, Alias: alias, Command: command, Source: "source-and-export"}, nil
-	}
-
-	configPath := filepath.Join(targetRoot, productLoopDirName, "project.json")
-	config, _, err := LoadConfig(configPath)
-	if err != nil {
-		return RegisteredCapability{}, err
-	}
-	setCapabilityCommand(&config, alias, command)
-	if err := ValidateConfig(config); err != nil {
-		return RegisteredCapability{}, err
-	}
-	value, err := GeneratedJSON(config)
-	if err != nil {
-		return RegisteredCapability{}, err
-	}
-	if err := atomicWriteMode(configPath, value, 0o644); err != nil {
-		return RegisteredCapability{}, err
-	}
-	return RegisteredCapability{Capability: capability.Name, Alias: alias, Command: command, Source: "generated-only"}, nil
-}
-
-func setCapabilityCommand(config *ProjectConfig, alias, command string) {
-	if config.Project.Commands == nil {
-		config.Project.Commands = map[string]string{}
-	}
-	config.Project.Commands[alias] = command
+	return RegisteredCapability{Capability: capability.Name, Alias: alias, Command: command, Source: mutation.Source}, nil
 }
