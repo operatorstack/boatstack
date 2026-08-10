@@ -21,6 +21,7 @@ import (
 // control-law: planning-document-body-is-literal-data
 
 const powerShellPlanningEncodingLine = `$OutputEncoding = [System.Text.UTF8Encoding]::new($false)`
+const powerShellPlanningExitLine = `if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }`
 
 var posixPlanningHeader = regexp.MustCompile(`^(.*\S)[ \t]+<<'([A-Za-z_][A-Za-z0-9_]{0,63})'[ \t]*$`)
 var powerShellPlanningClose = regexp.MustCompile(`^'@[ \t]+\|[ \t]+&[ \t]+(.+)$`)
@@ -386,7 +387,11 @@ func inspectPowerShellPlanningTransport(command string) planningTransportInspect
 			if !hasNewline {
 				return planningTransportInspection{Matched: true, Header: header, Feature: invocation.Feature, Repository: invocation.Repository, Executable: invocation.Executable, InvalidReason: "powershell-scope-not-closed"}
 			}
-			closing, afterClosing, _ := nextLine(command, next)
+			exitLine, afterExit, hasExitNewline := nextLine(command, next)
+			if !hasExitNewline || strings.TrimSpace(structuralLine(exitLine)) != powerShellPlanningExitLine {
+				return planningTransportInspection{Matched: true, Header: header, Feature: invocation.Feature, Repository: invocation.Repository, Executable: invocation.Executable, InvalidReason: "powershell-exit-status-required"}
+			}
+			closing, afterClosing, _ := nextLine(command, afterExit)
 			if strings.TrimSpace(structuralLine(closing)) != "}" || afterClosing != len(command) {
 				return planningTransportInspection{Matched: true, Header: header, Feature: invocation.Feature, Repository: invocation.Repository, Executable: invocation.Executable, InvalidReason: "delimiter-collision-or-trailing-command"}
 			}

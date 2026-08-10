@@ -44,7 +44,7 @@ func powerShellPlanningEnvelope(t *testing.T, helper, repo, feature, artifact, b
 	if !strings.HasSuffix(body, "\n") {
 		body += "\n"
 	}
-	return "& {\n" + powerShellPlanningEncodingLine + "\n@'\n" + body + "'@ | & " + planningHeader(t, helper, repo, feature, artifact) + "\n}\n"
+	return "& {\n" + powerShellPlanningEncodingLine + "\n@'\n" + body + "'@ | & " + planningHeader(t, helper, repo, feature, artifact) + "\n" + powerShellPlanningExitLine + "\n}\n"
 }
 
 func planningHookInput(t *testing.T, host, command string) []byte {
@@ -293,6 +293,7 @@ func TestPlanningTransportFailureClassesFailClosedWithoutExecuting(t *testing.T)
 		"NUL content":                    header + " <<'BOATSTACK_PLAN_EOF'\nplan\x00body\nBOATSTACK_PLAN_EOF\n",
 		"PowerShell no UTF-8 scope":      "@'\n# Plan\n'@ | & " + header,
 		"PowerShell truncated":           "& {\n" + powerShellPlanningEncodingLine + "\n@'\n# Plan\n",
+		"PowerShell no exit propagation": strings.Replace(powerShellValid, powerShellPlanningExitLine+"\n", "", 1),
 		"PowerShell delimiter collision": powerShellPlanningEnvelope(t, `.product-loop\boatstack.ps1`, repo, "transport-failures", "plan.md", "# Plan\n'@\ntouch sentinel\n"),
 		"PowerShell trailing command":    strings.TrimSuffix(powerShellValid, "\n") + "; touch sentinel\n",
 	}

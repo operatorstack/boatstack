@@ -98,7 +98,8 @@ func TestBootstrapOracleRunsInputHookRendererOutputHookShellHelper(t *testing.T)
 		t.Fatalf("execute bootstrap renderer: %v: %s", err, rendered)
 	}
 	planningEnvelope := string(rendered)
-	if !strings.Contains(planningEnvelope, "--source-plan-sha256") || !strings.Contains(planningEnvelope, workspace.LauncherPath(shell == BootstrapShellPowerShell)) {
+	transport := inspectPlanningWriteTransport(planningEnvelope)
+	if !transport.Matched || transport.InvalidReason != "" || !strings.Contains(transport.Header, "--source-plan-sha256") || planningTransportBinding(repo, transport) != "" || string(transport.Content) != string(body) {
 		t.Fatalf("bootstrap output lost source evidence or workspace launcher: %s", planningEnvelope)
 	}
 	for _, host := range []string{"cursor", "claude", "codex", "gemini"} {
@@ -372,8 +373,9 @@ func TestBootstrapEnvelopeExecutesInRequiredRealShells(t *testing.T) {
 			if output, err := executePlanningEnvelopeWith(repo, test.executable, test.shell, prescription.PlanningEnvelope); err != nil {
 				t.Fatalf("%s execution failed: %v: %s", test.name, err, output)
 			}
-			if _, err := os.Stat(filepath.Join(WorkspaceFor(repo).FeatureDir(feature), "source-plan.md")); err != nil {
-				t.Fatalf("%s did not create the artifact: %v", test.name, err)
+			artifact, err := os.ReadFile(filepath.Join(WorkspaceFor(repo).FeatureDir(feature), "source-plan.md"))
+			if err != nil || string(artifact) != "# Real shell\n" {
+				t.Fatalf("%s did not preserve exact artifact bytes: %v %q", test.name, err, artifact)
 			}
 		})
 	}

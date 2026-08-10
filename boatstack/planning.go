@@ -238,7 +238,7 @@ func WritePlanningArtifact(options PlanningWriteOptions) (string, error) {
 	// here-string is piped to a native command even when $OutputEncoding uses a
 	// no-BOM encoder. Treat that transport signature as encoding metadata, not
 	// Markdown content, so every supported shell produces the same artifact.
-	content := bytes.TrimPrefix(options.Content, []byte{0xef, 0xbb, 0xbf})
+	content := normalizePlanningTransportBytes(options.Content)
 	if !utf8.Valid(content) {
 		return "", fmt.Errorf("planning artifact must be valid UTF-8 Markdown")
 	}
@@ -302,6 +302,10 @@ func WritePlanningArtifact(options PlanningWriteOptions) (string, error) {
 		return "", err
 	}
 	return filepath.ToSlash(relative), nil
+}
+
+func normalizePlanningTransportBytes(content []byte) []byte {
+	return bytes.TrimPrefix(content, []byte{0xef, 0xbb, 0xbf})
 }
 
 func RecordApproval(options ApprovalRecordOptions) error {

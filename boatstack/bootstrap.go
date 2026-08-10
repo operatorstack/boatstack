@@ -51,6 +51,7 @@ type BootstrapPrescription struct {
 }
 
 func normalizedPlanningDocument(document []byte) ([]byte, error) {
+	document = normalizePlanningTransportBytes(document)
 	if reason := validPlanningBody(string(document)); reason != "" {
 		return nil, fmt.Errorf("planning document is invalid: %s", reason)
 	}
@@ -149,7 +150,7 @@ func powerShellPlanningEnvelopeFor(argv []string, document []byte) (string, erro
 		}
 		words[index] = powerShellPlanningWord(word)
 	}
-	return "& {\n" + powerShellPlanningEncodingLine + "\n@'\n" + string(document) + "'@ | & " + strings.Join(words, " ") + "\n}\n", nil
+	return "& {\n" + powerShellPlanningEncodingLine + "\n@'\n" + string(document) + "'@ | & " + strings.Join(words, " ") + "\n" + powerShellPlanningExitLine + "\n}\n", nil
 }
 
 // ResolvePlanningBootstrap is pure with respect to repository and controller
