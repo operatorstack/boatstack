@@ -328,6 +328,50 @@ func checkUpdateDiffScope(repo string, currentFiles map[string][]byte, previous 
 	return changed, nil
 }
 
+func runDetachedOnlyUpdate(options InitOptions, topology ConfigurationTopology) error {
+	if !options.Update {
+		return fmt.Errorf("detached-only installation is created with attach, not init")
+	}
+	config, rawConfig, err := LoadConfig(topology.ControllerSourcePath)
+	if err != nil {
+		return err
+	}
+	bundle, err := BuildExportBundle(topology.ControllerSourcePath, config, rawConfig, "boatstack")
+	if err != nil {
+		return err
+	}
+	helperSource := options.BinaryPath
+	if helperSource == "" {
+		helperSource, err = os.Executable()
+		if err != nil {
+			return err
+		}
+	}
+	before := updateChangedPaths(topology.RepoRoot)
+	if err := writeExport(topology.ControllerBundleRoot, bundle.Files, nil); err != nil {
+		return fmt.Errorf("refresh detached controller bundle: %w", err)
+	}
+	states, err := readInstalledIntegrations(topology.ControllerBundleRoot, config)
+	if err != nil {
+		states = config.Integrations
+	}
+	if _, err := installDetachedRuntime(topology.RepoRoot, helperSource); err != nil {
+		return fmt.Errorf("refresh detached shared runtime: %w", err)
+	}
+	if _, _, err := installControllerLocalRuntime(topology.ControllerBundleRoot, helperSource, states); err != nil {
+		return fmt.Errorf("refresh detached controller helper: %w", err)
+	}
+	if err := CheckExport(topology.ControllerBundleRoot, bundle.Files); err != nil {
+		return err
+	}
+	after := updateChangedPaths(topology.RepoRoot)
+	if strings.Join(before, "\n") != strings.Join(after, "\n") {
+		return fmt.Errorf("detached-only update changed repository paths")
+	}
+	fmt.Fprintf(options.Output, "PASS: detached-only Boatstack controller updated to %s; repository files were unchanged.\n", Version)
+	return nil
+}
+
 func RunInit(options InitOptions) (returnErr error) {
 	if options.Input == nil {
 		options.Input = os.Stdin
@@ -339,8 +383,15 @@ func RunInit(options InitOptions) (returnErr error) {
 	if err != nil {
 		return err
 	}
+	topology, err := RequireManagedConfiguration(repo)
+	if err != nil {
+		return err
+	}
+	if topology.Shape == ConfigShapeDetachedOnly {
+		return runDetachedOnlyUpdate(options, topology)
+	}
 	reader := bufio.NewReader(options.Input)
-	configPath := WorkspaceFor(repo).SourceConfigPath()
+	configPath := topology.RepositorySourcePath
 	configExists := fileExists(configPath)
 	installed := fileExists(filepath.Join(repo, ".product-loop", "generated.lock.json")) || fileExists(filepath.Join(repo, ".product-loop", "bin", helperName()))
 	if installed && !options.Update {
@@ -474,6 +525,23 @@ func RunInit(options InitOptions) (returnErr error) {
 	bundle, err := BuildExportBundle(configPath, config, embeddedConfigBytes(rawConfig), "boatstack")
 	if err != nil {
 		return err
+	}
+	var controllerBundle map[string][]byte
+	var controllerRawConfig []byte
+	if topology.Shape == ConfigShapeHybrid {
+		controllerConfig := config
+		controllerRawConfig = rawConfig
+		if topology.Authority != ConfigAuthorityRepository {
+			controllerConfig, controllerRawConfig, err = LoadConfig(topology.ControllerSourcePath)
+			if err != nil {
+				return fmt.Errorf("load independent detached configuration: %w", err)
+			}
+		}
+		controller, buildErr := BuildExportBundle(topology.ControllerSourcePath, controllerConfig, controllerRawConfig, "boatstack")
+		if buildErr != nil {
+			return buildErr
+		}
+		controllerBundle = controller.Files
 	}
 	if err := ValidateJSON("validate project configuration before initialization", configPath, rawConfig); err != nil {
 		return err
@@ -610,16 +678,36 @@ func RunInit(options InitOptions) (returnErr error) {
 	if writeErr != nil {
 		return writeErr
 	}
-	// An attached repository still receives the reviewed embedded update package,
-	// but its active controller reads the detached projection. Refresh that same
-	// bundle under the resolved export root before any smoke check; feature state
-	// is outside the bundle key set and remains untouched.
-	if ctx := WorkspaceFor(repo); ctx.Mode == SupervisionDetached {
-		if err := writeExport(ctx.ExportRoot(), bundle.Files, nil); err != nil {
+	// Hybrid installations have two projections. Generate each from its declared
+	// source; never copy the repository bundle across the authority boundary.
+	if topology.Shape == ConfigShapeHybrid {
+		if err := writeExport(topology.ControllerBundleRoot, controllerBundle, nil); err != nil {
 			return fmt.Errorf("refresh detached controller bundle: %w", err)
 		}
-		if err := atomicWriteMode(ctx.SourceConfigPath(), rawConfig, 0o644); err != nil {
-			return fmt.Errorf("refresh detached source configuration: %w", err)
+		if topology.Authority == ConfigAuthorityRepository {
+			if err := atomicWriteMode(topology.ControllerSourcePath, controllerRawConfig, 0o644); err != nil {
+				return fmt.Errorf("refresh repository-authoritative detached source: %w", err)
+			}
+			stateRoot, stateErr := detachedStateRoot()
+			if stateErr != nil {
+				return stateErr
+			}
+			binding, bindingErr := loadBinding(stateRoot, topology.RepoID)
+			if bindingErr != nil {
+				return bindingErr
+			}
+			binding.SchemaVersion = detachedSchemaVersion
+			binding.ConfigAuthority = ConfigAuthorityRepository
+			binding.ConfigSHA256 = SHA256Bytes(controllerRawConfig)
+			binding.CreatedByVersion = Version
+			bindingRaw, marshalErr := MarshalJSON(binding)
+			if marshalErr != nil {
+				return marshalErr
+			}
+			if err := atomicWrite(bindingPath(stateRoot, topology.RepoID), bindingRaw); err != nil {
+				return fmt.Errorf("commit detached configuration binding: %w", err)
+			}
+			invalidateWorkspaceCache()
 		}
 	}
 	if err := initCheckpoint("export-written"); err != nil {
@@ -650,8 +738,8 @@ func RunInit(options InitOptions) (returnErr error) {
 	if err := writeInstallLock(repo, binaryPath, binaryHash, states); err != nil {
 		return err
 	}
-	if ctx := WorkspaceFor(repo); ctx.Mode == SupervisionDetached {
-		if _, _, err := installControllerLocalRuntime(ctx.ExportRoot(), helperSource, states); err != nil {
+	if topology.Shape == ConfigShapeHybrid {
+		if _, _, err := installControllerLocalRuntime(topology.ControllerBundleRoot, helperSource, states); err != nil {
 			return fmt.Errorf("refresh detached controller helper: %w", err)
 		}
 	}
@@ -755,6 +843,7 @@ Boatstack workflow control begins only when the user explicitly invokes Boatstac
 1. On explicit Boatstack invocation, save the proposed plan as a durable file inside the repository and pass its path to auto-plan with ` + "`--plan <path>`" + ` (Boatstack does not scan directories for plans; an out-of-repo path is rejected so the plan stays hash-current through build).
 2. Carry the selected feature slug through every status and planning call. After workspace-cut, continue only from its returned destination repository.
 3. Async task completion, conversation state, or an execution-mode transition never creates implementation authority. Only a current plan lock bound to this worktree and branch does.
+4. After explicit Boatstack invocation in a detached repository, use the workspace-resolved helper to query ` + "`detached-status --repo .`" + `. Configuration divergence never controls ordinary tools. If status returns ` + "`CONFIG_REBIND_REQUIRED`" + `, run its exact workspace-bound ` + "`config-rebind`" + ` preview and apply only the returned fingerprinted command.
 `
 
 const interceptorHeader = "<!-- BEGIN BOATSTACK EXECUTION INTERCEPTOR -->\n"
@@ -806,6 +895,10 @@ func RunUpdate(options InitOptions) error {
 	if options.Output == nil {
 		options.Output = os.Stdout
 	}
+	topology, err := RequireManagedConfiguration(repo)
+	if err != nil {
+		return err
+	}
 	// Cross-version provenance guard. Each helper embeds its own generated bundle
 	// and version constants, so a running helper cannot correctly install a
 	// different version in-process — stamping the running version onto foreign
@@ -821,7 +914,11 @@ func RunUpdate(options InitOptions) error {
 			return reexecUpdate(options.BinaryPath, options)
 		}
 	}
-	configPath := WorkspaceFor(repo).SourceConfigPath()
+	if topology.Shape == ConfigShapeDetachedOnly {
+		options.Update = true
+		return RunInit(options)
+	}
+	configPath := topology.RepositorySourcePath
 	config, rawConfig, configErr := LoadConfig(configPath)
 	if configErr != nil {
 		return configErr

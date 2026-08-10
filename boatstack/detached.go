@@ -19,8 +19,11 @@ const (
 	// directory through it so they never read or write a real home directory.
 	stateRootEnv = "BOATSTACK_STATE_ROOT"
 	// detachedSchemaVersion versions the public detached status and binding
-	// records. Version 2 binds the exact detached project configuration bytes.
-	detachedSchemaVersion = 2
+	// records. Version 2 binds exact configuration bytes. Version 3 also records
+	// which source owns future configuration changes; version 2 remains readable
+	// as LEGACY_UNKNOWN so an update never forces a migration.
+	detachedSchemaVersion                 = 3
+	detachedSchemaVersionWithConfigDigest = 2
 	// The registry remains a path-to-repository index. Configuration provenance
 	// belongs to the authoritative per-repository binding, not this index.
 	detachedRegistrySchemaVersion = 1
@@ -155,6 +158,7 @@ type DetachedBinding struct {
 	InitialCommit     string `json:"initial_commit"`
 	NormalizedOrigin  string `json:"normalized_origin"`
 	ConfigSHA256      string `json:"config_sha256"`
+	ConfigAuthority   string `json:"config_authority,omitempty"`
 	CreatedByVersion  string `json:"created_by_version"`
 	CreatedAt         string `json:"created_at"`
 }
@@ -325,7 +329,7 @@ type detachedGeneratedLock struct {
 // the exact bytes accepted at attachment.
 // control-law: detached-config-digest-gates-resume
 func verifyDetachedConfiguration(ctx WorkspaceContext, binding DetachedBinding) error {
-	if binding.SchemaVersion != detachedSchemaVersion {
+	if binding.SchemaVersion < detachedSchemaVersionWithConfigDigest || binding.SchemaVersion > detachedSchemaVersion {
 		return fmt.Errorf("detached binding schema_version %d is unsupported; reattach with `boatstack-helper attach --repo %s --mode detached --force --config <path>`", binding.SchemaVersion, ctx.RepoRoot)
 	}
 	if strings.TrimSpace(binding.ConfigSHA256) == "" {
@@ -362,6 +366,30 @@ func verifyDetachedConfiguration(ctx WorkspaceContext, binding DetachedBinding) 
 		return fmt.Errorf("detached generated project configuration drifted from its snapshot")
 	}
 	return nil
+}
+
+const (
+	ConfigAuthorityRepository       = "REPOSITORY"
+	ConfigAuthorityExternalSnapshot = "EXTERNAL_SNAPSHOT"
+	ConfigAuthoritySynthesized      = "SYNTHESIZED"
+	ConfigAuthorityLegacyUnknown    = "LEGACY_UNKNOWN"
+
+	ConfigRelationMatch            = "MATCH"
+	ConfigRelationDiverged         = "DIVERGED"
+	ConfigRelationIndependent      = "INDEPENDENT"
+	ConfigRelationRepositoryAbsent = "REPOSITORY_ABSENT"
+)
+
+func normalizedConfigAuthority(binding DetachedBinding) string {
+	if binding.SchemaVersion < detachedSchemaVersion || strings.TrimSpace(binding.ConfigAuthority) == "" {
+		return ConfigAuthorityLegacyUnknown
+	}
+	switch binding.ConfigAuthority {
+	case ConfigAuthorityRepository, ConfigAuthorityExternalSnapshot, ConfigAuthoritySynthesized:
+		return binding.ConfigAuthority
+	default:
+		return ConfigAuthorityLegacyUnknown
+	}
 }
 
 // detachedContextFor returns the detached WorkspaceContext for repo when the

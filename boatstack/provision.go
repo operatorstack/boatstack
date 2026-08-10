@@ -234,7 +234,19 @@ func RegisterCapabilityCommand(repo, name, surface, command string) (RegisteredC
 		alias = capability.Name + ":" + surface
 	}
 
-	sourcePath := WorkspaceFor(resolved).SourceConfigPath()
+	topology, err := RequireManagedConfiguration(resolved)
+	if err != nil {
+		return RegisteredCapability{}, err
+	}
+	if topology.Mode == string(SupervisionDetached) && topology.Authority == ConfigAuthorityLegacyUnknown {
+		return RegisteredCapability{}, fmt.Errorf("CONFIG_REBIND_REQUIRED: capability registration needs an explicit configuration authority; run boatstack-helper config-rebind --repo %q --source repository --json or choose controller", resolved)
+	}
+	sourcePath := topology.RepositorySourcePath
+	targetRoot := topology.RepositoryBundleRoot
+	if topology.Authority == ConfigAuthorityExternalSnapshot || topology.Authority == ConfigAuthoritySynthesized {
+		sourcePath = topology.ControllerSourcePath
+		targetRoot = topology.ControllerBundleRoot
+	}
 	if fileExists(sourcePath) {
 		config, _, err := LoadConfig(sourcePath)
 		if err != nil {
@@ -248,20 +260,61 @@ func RegisterCapabilityCommand(repo, name, surface, command string) (RegisteredC
 		if err != nil {
 			return RegisteredCapability{}, err
 		}
-		bundle, err := BuildExportBundle(sourcePath, config, rawConfig, "boatstack")
+		bundleRaw := rawConfig
+		if targetRoot == topology.RepositoryBundleRoot {
+			bundleRaw = embeddedConfigBytes(rawConfig)
+		}
+		bundle, err := BuildExportBundle(sourcePath, config, bundleRaw, "boatstack")
 		if err != nil {
 			return RegisteredCapability{}, err
 		}
-		if err := WriteExport(resolved, bundle.Files); err != nil {
-			return RegisteredCapability{}, err
+		writePrimaryBundle := !(topology.Mode == string(SupervisionDetached) && topology.Authority == ConfigAuthorityRepository && !topology.RepositoryPackagePresent)
+		if writePrimaryBundle {
+			if err := WriteExport(targetRoot, bundle.Files); err != nil {
+				return RegisteredCapability{}, err
+			}
 		}
 		if err := atomicWriteMode(sourcePath, rawConfig, 0o644); err != nil {
 			return RegisteredCapability{}, err
 		}
+		if topology.Mode == string(SupervisionDetached) && topology.Authority == ConfigAuthorityRepository {
+			controllerBundle, buildErr := BuildExportBundle(topology.ControllerSourcePath, config, rawConfig, "boatstack")
+			if buildErr != nil {
+				return RegisteredCapability{}, buildErr
+			}
+			if err := WriteExport(topology.ControllerBundleRoot, controllerBundle.Files); err != nil {
+				return RegisteredCapability{}, err
+			}
+			if err := atomicWriteMode(topology.ControllerSourcePath, rawConfig, 0o644); err != nil {
+				return RegisteredCapability{}, err
+			}
+		}
+		if topology.Mode == string(SupervisionDetached) {
+			stateRoot, stateErr := detachedStateRoot()
+			if stateErr != nil {
+				return RegisteredCapability{}, stateErr
+			}
+			binding, bindingErr := loadBinding(stateRoot, topology.RepoID)
+			if bindingErr != nil {
+				return RegisteredCapability{}, bindingErr
+			}
+			binding.SchemaVersion = detachedSchemaVersion
+			binding.ConfigSHA256 = SHA256Bytes(rawConfig)
+			binding.ConfigAuthority = topology.Authority
+			binding.CreatedByVersion = Version
+			bindingRaw, marshalErr := MarshalJSON(binding)
+			if marshalErr != nil {
+				return RegisteredCapability{}, marshalErr
+			}
+			if err := atomicWrite(bindingPath(stateRoot, topology.RepoID), bindingRaw); err != nil {
+				return RegisteredCapability{}, err
+			}
+			invalidateWorkspaceCache()
+		}
 		return RegisteredCapability{Capability: capability.Name, Alias: alias, Command: command, Source: "source-and-export"}, nil
 	}
 
-	configPath := WorkspaceFor(resolved).ProjectConfigPath()
+	configPath := filepath.Join(targetRoot, productLoopDirName, "project.json")
 	config, _, err := LoadConfig(configPath)
 	if err != nil {
 		return RegisteredCapability{}, err

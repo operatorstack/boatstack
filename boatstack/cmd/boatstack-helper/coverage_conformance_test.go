@@ -75,6 +75,7 @@ var nonDeliveryVerbs = map[string]bool{
 	"attach":          true,
 	"detach":          true,
 	"detached-status": true,
+	"config-rebind":   true,
 	"context":         true,
 	"activate":        true,
 	"deactivate":      true,

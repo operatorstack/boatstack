@@ -18,7 +18,7 @@ type commandTracePolicy struct {
 // to the enforcement path; every other dispatch is recorded once by run().
 var commandTracePolicies = map[string]commandTracePolicy{
 	"attach": {Category: "supervision"}, "detach": {Category: "supervision"},
-	"detached-status": {Category: "supervision"}, "context": {Category: "supervision"},
+	"detached-status": {Category: "supervision"}, "config-rebind": {Category: "supervision"}, "context": {Category: "supervision"},
 	"activate": {Category: "supervision"}, "deactivate": {Category: "supervision"},
 	"init": {Category: "installation"}, "update": {Category: "installation"},
 	"check-update": {Category: "installation"}, "repair-status": {Category: "installation"},
