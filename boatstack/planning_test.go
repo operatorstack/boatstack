@@ -25,6 +25,26 @@ func planningRepo(t *testing.T) string {
 	return repo
 }
 
+func withPlanningSourceEvidence(t *testing.T, options PlanningWriteOptions) PlanningWriteOptions {
+	t.Helper()
+	if options.SourcePlan != "" || options.SourcePlanSHA256 != "" {
+		return options
+	}
+	path := filepath.Join(options.Repo, "bootstrap-source.md")
+	if !fileExists(path) {
+		if err := os.WriteFile(path, []byte("# Bootstrap source\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hash, err := SHA256File(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options.SourcePlan = "bootstrap-source.md"
+	options.SourcePlanSHA256 = hash
+	return options
+}
+
 func TestPlanningWriteBlocksBeforeArtifactWhenInstallationIsUnhealthy(t *testing.T) {
 	repo := planningRepo(t)
 	planningInstallationHealth = func(string) error { return fmt.Errorf("generated state drift") }
@@ -39,10 +59,10 @@ func TestPlanningWriteBlocksBeforeArtifactWhenInstallationIsUnhealthy(t *testing
 
 func TestPlanningWriteIsBoundedMarkdownOnly(t *testing.T) {
 	repo := planningRepo(t)
-	path, err := WritePlanningArtifact(PlanningWriteOptions{
+	path, err := WritePlanningArtifact(withPlanningSourceEvidence(t, PlanningWriteOptions{
 		Repo: repo, Feature: "account-recovery", Artifact: "questions.md",
 		Content: []byte("# Questions\n\nQ-1 remains open.\n"),
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,10 +90,10 @@ func TestPlanningWriteIsBoundedMarkdownOnly(t *testing.T) {
 
 func TestPlanningWriteNormalizesPowerShellUTF8BOM(t *testing.T) {
 	repo := planningRepo(t)
-	path, err := WritePlanningArtifact(PlanningWriteOptions{
+	path, err := WritePlanningArtifact(withPlanningSourceEvidence(t, PlanningWriteOptions{
 		Repo: repo, Feature: "powershell-transport", Artifact: "plan.md",
 		Content: append([]byte{0xef, 0xbb, 0xbf}, []byte("# Plan\r\n")...),
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,9 +141,9 @@ func TestPlanningWriteRejectsSymlinksAndPreservesExistingContentOnFailure(t *tes
 	if err := os.Symlink(outside, productLoop); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := WritePlanningArtifact(PlanningWriteOptions{
+	if _, err := WritePlanningArtifact(withPlanningSourceEvidence(t, PlanningWriteOptions{
 		Repo: repo, Feature: "feature", Artifact: "plan.md", Content: []byte("# plan\n"),
-	}); err == nil || !strings.Contains(err.Error(), "symlink") {
+	})); err == nil || !strings.Contains(err.Error(), "symlink") {
 		t.Fatalf("expected symlink rejection, got %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(outside, "features", "feature", "plan.md")); !os.IsNotExist(err) {
@@ -133,9 +153,9 @@ func TestPlanningWriteRejectsSymlinksAndPreservesExistingContentOnFailure(t *tes
 	if err := os.Remove(productLoop); err != nil {
 		t.Fatal(err)
 	}
-	destination, err := WritePlanningArtifact(PlanningWriteOptions{
+	destination, err := WritePlanningArtifact(withPlanningSourceEvidence(t, PlanningWriteOptions{
 		Repo: repo, Feature: "feature", Artifact: "plan.md", Content: []byte("# known good\n"),
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}

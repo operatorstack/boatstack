@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -15,10 +16,12 @@ import (
 // gate, authority, or exit code.
 func flowCommand(arguments []string) int {
 	if len(arguments) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper flow <check|next|tasks|frontier|watch|report>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper flow <bootstrap|check|next|tasks|frontier|watch|report>")
 		return 2
 	}
 	switch arguments[0] {
+	case "bootstrap":
+		return flowBootstrapCommand(arguments[1:])
 	case "check":
 		return flowCheckCommand(arguments[1:])
 	case "next":
@@ -35,6 +38,46 @@ func flowCommand(arguments []string) int {
 		fmt.Fprintln(os.Stderr, "unknown flow subcommand:", arguments[0])
 		return 2
 	}
+}
+
+// flowBootstrapCommand renders the exact literal planning envelope for one
+// workspace. It reads the proposed Markdown from stdin and changes no state.
+// control-law: bootstrap-command-authority-is-workspace-bound
+func flowBootstrapCommand(arguments []string) int {
+	flags := flag.NewFlagSet("flow bootstrap", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository whose planning workspace should be resolved")
+	feature := flags.String("feature", "", "new or saved planning feature slug")
+	sourcePlan := flags.String("source-plan", "", "required in-repo source plan")
+	artifact := flags.String("artifact", "", "planning artifact to write")
+	shell := flags.String("shell", "", "target shell: posix or powershell")
+	jsonOutput := flags.Bool("json", false, "print the structured bootstrap prescription")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if *feature == "" || *sourcePlan == "" || *artifact == "" || *shell == "" {
+		return fail(fmt.Errorf("flow bootstrap requires --feature, --source-plan, --artifact, and --shell posix|powershell; Markdown is read from stdin"))
+	}
+	document, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return fail(err)
+	}
+	prescription, err := boatstack.ResolvePlanningBootstrap(boatstack.BootstrapOptions{
+		Repo: *repo, Feature: *feature, SourcePlan: *sourcePlan, Artifact: *artifact,
+		Shell: boatstack.BootstrapShell(*shell), Document: document,
+	})
+	if err != nil {
+		return fail(err)
+	}
+	if *jsonOutput {
+		value, marshalErr := boatstack.MarshalJSON(prescription)
+		if marshalErr != nil {
+			return fail(marshalErr)
+		}
+		fmt.Print(string(value))
+	} else {
+		fmt.Print(prescription.PlanningEnvelope)
+	}
+	return 0
 }
 
 // flowCheckCommand runs the static conformance + liveness gate over the delivery

@@ -39,10 +39,12 @@ func planningArtifactNames() []string {
 }
 
 type PlanningWriteOptions struct {
-	Repo     string
-	Feature  string
-	Artifact string
-	Content  []byte
+	Repo             string
+	Feature          string
+	Artifact         string
+	Content          []byte
+	SourcePlan       string
+	SourcePlanSHA256 string
 }
 
 type ApprovalRecordOptions struct {
@@ -257,6 +259,36 @@ func WritePlanningArtifact(options PlanningWriteOptions) (string, error) {
 	ctx, err := ResolveWorkspaceContext(repo)
 	if err != nil {
 		return "", err
+	}
+	featureDirectory := ctx.FeatureDir(options.Feature)
+	_, featureErr := os.Lstat(featureDirectory)
+	firstWrite := os.IsNotExist(featureErr)
+	if featureErr != nil && !firstWrite {
+		return "", featureErr
+	}
+	hasSourceEvidence := strings.TrimSpace(options.SourcePlan) != "" || strings.TrimSpace(options.SourcePlanSHA256) != ""
+	if firstWrite && !hasSourceEvidence {
+		return "", fmt.Errorf("a new feature requires a flow bootstrap prescription with current source-plan evidence")
+	}
+	if hasSourceEvidence {
+		if strings.TrimSpace(options.SourcePlan) == "" || strings.TrimSpace(options.SourcePlanSHA256) == "" {
+			return "", fmt.Errorf("source-plan path and SHA-256 must be supplied together")
+		}
+		sourcePlan, discoverErr := DiscoverSourcePlan(repo, options.SourcePlan)
+		if discoverErr != nil {
+			return "", discoverErr
+		}
+		sourceAbsolute := filepath.Join(repo, filepath.FromSlash(sourcePlan))
+		if rejectErr := rejectSymlinkComponents(repo, sourceAbsolute); rejectErr != nil {
+			return "", fmt.Errorf("source plan must be a regular in-repository file without symlink indirection: %w", rejectErr)
+		}
+		currentSHA, hashErr := SHA256File(sourceAbsolute)
+		if hashErr != nil {
+			return "", hashErr
+		}
+		if currentSHA != strings.TrimSpace(options.SourcePlanSHA256) {
+			return "", fmt.Errorf("source plan changed after bootstrap; resolve a fresh flow bootstrap prescription")
+		}
 	}
 	destination := filepath.Join(ctx.FeatureDir(options.Feature), options.Artifact)
 	if err := rejectSymlinkComponents(ctx.ExportRoot(), destination); err != nil {

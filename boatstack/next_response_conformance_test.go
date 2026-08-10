@@ -47,7 +47,7 @@ func TestResponseContractPerStage(t *testing.T) {
 		repo := nextTestRepo(t)
 		status, output := renderedResponse(t, repo)
 		assertResponseShape(t, status, output)
-		if !strings.Contains(output, "Run: .product-loop/boatstack check-source-plan") {
+		if !strings.Contains(output, "Run: .product-loop/boatstack flow bootstrap") {
 			t.Fatalf("NOT_STARTED must carry the prescribed command: %q", output)
 		}
 	})

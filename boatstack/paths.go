@@ -248,10 +248,6 @@ func projectLocalLauncherCommand() string {
 	return filepath.ToSlash(filepath.Join(productLoopDirName, "boatstack"))
 }
 
-func generatedWorkflowReference() string {
-	return filepath.ToSlash(filepath.Join(productLoopDirName, "workflow.md"))
-}
-
 // ExportRoot is the base beneath which generated bundle paths are materialized.
 // Bundle keys include .product-loop and host-adapter directories, so callers
 // must pass this root — never RepoRoot — to export write/check operations.

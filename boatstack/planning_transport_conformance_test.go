@@ -23,7 +23,12 @@ func quotedLiteral(t *testing.T, value string) string {
 
 func planningHeader(t *testing.T, helper, repo, feature, artifact string) string {
 	t.Helper()
-	return quotedLiteral(t, helper) + " planning-write --repo " + quotedLiteral(t, repo) + " --feature " + feature + " --artifact " + artifact
+	sourcePlan := "README.md"
+	sourceSHA, err := SHA256File(filepath.Join(repo, sourcePlan))
+	if err != nil {
+		return quotedLiteral(t, helper) + " planning-write --repo " + quotedLiteral(t, repo) + " --feature " + feature + " --artifact " + artifact
+	}
+	return quotedLiteral(t, helper) + " planning-write --repo " + quotedLiteral(t, repo) + " --feature " + feature + " --artifact " + artifact + " --source-plan " + sourcePlan + " --source-plan-sha256 " + sourceSHA
 }
 
 func posixPlanningEnvelope(t *testing.T, helper, repo, feature, artifact, body string) string {
@@ -379,20 +384,23 @@ func TestPlanningPrescriptionQuotesRepositoryPath(t *testing.T) {
 	runGit(t, repo, "add", ".")
 	runGit(t, repo, "commit", "-m", "base")
 
-	command, ok := prescribePlanningVerb(repo, NextStatus{ObservedStage: "NOT_STARTED", Feature: "quoted-path"}, "planning-write")
-	if !ok || command == nil {
-		t.Fatal("planning-write prescription is missing")
+	installPlanningTransportFixture(t, repo)
+	prescription, err := ResolvePlanningBootstrap(BootstrapOptions{
+		Repo: repo, Feature: "quoted-path", SourcePlan: "README.md",
+		Artifact: "plan.md", Shell: BootstrapShellPOSIX, Document: []byte("test-value\n"),
+	})
+	if err != nil {
+		t.Fatalf("resolve quoted repository bootstrap: %v", err)
 	}
-	line := substituteOwedFlags(command.CommandLine())
+	line := prescription.PlanningEnvelope
 	inspection := inspectPlanningWriteTransport(line)
-	if !inspection.Matched || inspection.InvalidReason != "" || inspection.Repository != repo {
+	if !inspection.Matched || inspection.InvalidReason != "" || inspection.Repository != prescription.Repository {
 		t.Fatalf("quoted repository path did not round trip: %q %#v", line, inspection)
 	}
 	if findings := ClassifyCommand(repo, line); len(findings) != 0 {
 		t.Fatalf("guard denied the quoted repository prescription: %#v", findings)
 	}
 	if runtime.GOOS != "windows" {
-		installPlanningTransportFixture(t, repo)
 		executePlanningEnvelope(t, repo, line)
 		written, err := os.ReadFile(filepath.Join(repo, productLoopDirName, "features", "quoted-path", "plan.md"))
 		if err != nil || string(written) != "test-value\n" {

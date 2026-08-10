@@ -28,9 +28,13 @@ func TestFirstPlanningWriteOwnedChannelStaysOpen(t *testing.T) {
 	previousHealth := planningInstallationHealth
 	planningInstallationHealth = func(string) error { return nil }
 	t.Cleanup(func() { planningInstallationHealth = previousHealth })
+	sourceSHA, err := SHA256File(filepath.Join(repo, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, command := range []string{
-		".product-loop/boatstack planning-write --repo . --feature checkout --artifact plan.md <<'BOATSTACK_PLAN_EOF'\n# Plan\nBOATSTACK_PLAN_EOF\n",
+		".product-loop/boatstack planning-write --repo . --feature checkout --artifact plan.md --source-plan README.md --source-plan-sha256 " + sourceSHA + " <<'BOATSTACK_PLAN_EOF'\n# Plan\nBOATSTACK_PLAN_EOF\n",
 		"boatstack-helper check-source-plan --repo . --plan docs/plan.md",
 	} {
 		if findings := ClassifyCommand(repo, command); len(findings) > 0 {
@@ -38,10 +42,10 @@ func TestFirstPlanningWriteOwnedChannelStaysOpen(t *testing.T) {
 		}
 	}
 
-	written, err := WritePlanningArtifact(PlanningWriteOptions{
+	written, err := WritePlanningArtifact(withPlanningSourceEvidence(t, PlanningWriteOptions{
 		Repo: repo, Feature: "checkout", Artifact: "source-plan.md",
 		Content: []byte("# Source plan\n"),
-	})
+	}))
 	if err != nil {
 		t.Fatalf("planning-write must author the first artifact: %v", err)
 	}
@@ -113,7 +117,7 @@ func TestFirstWriteLatchCoversToolAndCommandPaths(t *testing.T) {
 	}
 
 	rendered := denialFor("claude", toolFindings[0]).Render(RenderPlain)
-	if !strings.Contains(rendered, "planning-write --repo . --feature checkout --artifact <name>") {
+	if !strings.Contains(rendered, "flow bootstrap --feature checkout") {
 		t.Fatalf("denial must name the owned channel: %q", rendered)
 	}
 	if !strings.Contains(rendered, "NOT_STARTED") {

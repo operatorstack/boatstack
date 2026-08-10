@@ -88,16 +88,16 @@ func CurrentFlowState(repo, feature string) (deliverycontrol.StateID, bool) {
 // self-describing in JSON and telemetry.
 // control-law: prescriptive-closure-every-stage-names-a-runnable-command
 const (
-	MarkerPlanningInit        = deliverycontrol.TransitionID("planning.init")
-	MarkerPlanningCheckSource = deliverycontrol.TransitionID("planning.check_source_plan")
-	MarkerPlanningCheckPlan   = deliverycontrol.TransitionID("planning.check_plan")
-	MarkerPlanningActivate    = deliverycontrol.TransitionID("planning.activate")
-	MarkerPlanningWorkspace   = deliverycontrol.TransitionID("planning.workspace_cut")
-	MarkerPlanningWrite       = deliverycontrol.TransitionID("planning.planning_write")
-	MarkerPlanningApproval    = deliverycontrol.TransitionID("planning.record_approval")
-	MarkerRecoveryDoctor      = deliverycontrol.TransitionID("recovery.doctor")
-	MarkerRecoveryDiscard     = deliverycontrol.TransitionID("recovery.discard_delivery")
-	MarkerRecoveryRepair      = deliverycontrol.TransitionID("recovery.repair_state")
+	MarkerPlanningInit      = deliverycontrol.TransitionID("planning.init")
+	MarkerPlanningBootstrap = deliverycontrol.TransitionID("planning.bootstrap")
+	MarkerPlanningCheckPlan = deliverycontrol.TransitionID("planning.check_plan")
+	MarkerPlanningActivate  = deliverycontrol.TransitionID("planning.activate")
+	MarkerPlanningWorkspace = deliverycontrol.TransitionID("planning.workspace_cut")
+	MarkerPlanningWrite     = deliverycontrol.TransitionID("planning.planning_write")
+	MarkerPlanningApproval  = deliverycontrol.TransitionID("planning.record_approval")
+	MarkerRecoveryDoctor    = deliverycontrol.TransitionID("recovery.doctor")
+	MarkerRecoveryDiscard   = deliverycontrol.TransitionID("recovery.discard_delivery")
+	MarkerRecoveryRepair    = deliverycontrol.TransitionID("recovery.repair_state")
 	// Post-publish markers (merged terminal only). The delivery machine
 	// deliberately models nothing past PUBLISHED — merging is not a Boatstack
 	// verb and FEATURE_COMPLETE is entered by observation — so the post-publish
@@ -464,12 +464,14 @@ func prescribePlanning(repo string, status NextStatus) (*PrescribedCommand, stri
 			Verb: "init", Args: repoArgs, Transition: MarkerPlanningInit,
 		}, "")
 	case "NOT_STARTED":
-		// The host plan path is knowable only to the host conversation; owe it.
+		// The feature, source plan, artifact, target shell, and Markdown are supplied
+		// by the explicit host invocation. The workspace-bound bootstrap oracle turns
+		// them into the only executable planning envelope.
 		return finish(&PrescribedCommand{
-			Verb: "check-source-plan", Args: repoArgs,
-			RequiresHumanInput: []string{"--plan"},
-			Transition:         MarkerPlanningCheckSource,
-		}, fmt.Sprintf("Then run auto-plan with the validated SOURCE_PLAN path; author every feature artifact through one complete literal `%s planning-write` envelope from `%s`.", projectLocalLauncherCommand(), generatedWorkflowReference()))
+			Verb: "flow", Args: append([]string{"bootstrap"}, repoArgs...),
+			RequiresHumanInput: []string{"--feature", "--source-plan", "--artifact", "--shell", planningMarkdownInput},
+			Transition:         MarkerPlanningBootstrap,
+		}, "Execute only the returned planning_envelope, then resolve flow bootstrap again for each artifact. After workspace-cut, discard every earlier prescription and resolve from destination_repository.")
 	case "DRAFT_PLAN":
 		if status.NextOperation == "workspace-cut" {
 			return finish(buildWorkspaceCut(repoArgs, status.Feature),
@@ -517,7 +519,7 @@ func prescribePlanning(repo string, status NextStatus) (*PrescribedCommand, stri
 			} else {
 				slug = "<feature>"
 			}
-			return finish(cmd, fmt.Sprintf("After repair, re-author the planning Markdown through the owned channel: one complete literal `%s planning-write --repo . --feature %s --artifact <name>` envelope from `%s`.", projectLocalLauncherCommand(), slug, generatedWorkflowReference()))
+			return finish(cmd, fmt.Sprintf("After repair, resolve `flow bootstrap --feature %s` with the current source plan, artifact, shell, and complete Markdown; execute only its returned planning_envelope.", slug))
 		}
 		return nil, ""
 	default:
