@@ -98,7 +98,7 @@ func TestActivatePlanBlockedFromMainWorktreeAfterCut(t *testing.T) {
 	}
 
 	lock := filepath.Join(root, "plan.lock.json")
-	options := ActivationOptions{PlanPath: planPath, OutDir: filepath.Join(root, "compiled"), OutputPath: lock, SourceCommit: "test"}
+	options := ActivationOptions{Repo: root, PlanPath: planPath, OutDir: filepath.Join(root, "compiled"), OutputPath: lock, SourceCommit: "test"}
 	err = ActivatePlan(options)
 	if err == nil || !strings.Contains(err.Error(), "cut worktree") {
 		t.Fatalf("expected activation blocked from the main worktree, got %v", err)

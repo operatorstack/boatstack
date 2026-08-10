@@ -287,7 +287,7 @@ func DiscoverSourcePlan(repo, explicit string) (string, error) {
 	return filepath.ToSlash(relative), nil
 }
 
-func SourcePlanForStructuredPlan(planPath string) (string, error) {
+func sourcePlanForStructuredPlan(planPath, repo string) (string, error) {
 	plan, err := LoadPlan(planPath)
 	if err != nil {
 		return "", err
@@ -301,7 +301,10 @@ func SourcePlanForStructuredPlan(planPath string) (string, error) {
 		if fileExists(planRelative) {
 			return planRelative, nil
 		}
-		if repo, repoErr := ResolveControllerRepository(filepath.Dir(planPath)); repoErr == nil {
+		if repo == "" {
+			repo, _ = ResolveControllerRepository(filepath.Dir(planPath))
+		}
+		if repo != "" {
 			repoRelative := filepath.Clean(filepath.Join(repo, sourcePlan))
 			if fileExists(repoRelative) {
 				return repoRelative, nil
@@ -318,6 +321,10 @@ func SourcePlanForStructuredPlan(planPath string) (string, error) {
 		sourcePlan = planRelative
 	}
 	return filepath.Clean(sourcePlan), nil
+}
+
+func SourcePlanForStructuredPlan(planPath string) (string, error) {
+	return sourcePlanForStructuredPlan(planPath, "")
 }
 
 func SpecForStructuredPlan(planPath string) (string, error) {
@@ -361,12 +368,11 @@ type PlanCheck struct {
 	Fingerprint    string
 }
 
-func CheckPlan(planPath string) (PlanCheck, error) {
+func checkPlanForRepository(repoRoot, planPath string) (PlanCheck, error) {
 	plan, err := LoadPlan(planPath)
 	if err != nil {
 		return PlanCheck{}, err
 	}
-	repoRoot, _ := ResolveControllerRepository(filepath.Dir(planPath))
 	opts := &ValidatePlanOptions{
 		PlanPath: planPath,
 		RepoRoot: repoRoot,
@@ -374,7 +380,7 @@ func CheckPlan(planPath string) (PlanCheck, error) {
 	if err := ValidatePlan(plan, opts); err != nil {
 		return PlanCheck{}, err
 	}
-	sourcePlan, err := SourcePlanForStructuredPlan(planPath)
+	sourcePlan, err := sourcePlanForStructuredPlan(planPath, repoRoot)
 	if err != nil {
 		return PlanCheck{}, err
 	}
@@ -419,8 +425,37 @@ func CheckPlan(planPath string) (PlanCheck, error) {
 	}, nil
 }
 
+func CheckPlan(planPath string) (PlanCheck, error) {
+	repoRoot, err := ResolveControllerRepository(filepath.Dir(planPath))
+	if err != nil && strings.Contains(err.Error(), "multiple verified repository aliases") {
+		return PlanCheck{}, err
+	}
+	// Standalone Markdown validation remains path-only. Repository-dependent
+	// callers use CheckPlanForRepository; only the non-injective detached inverse
+	// is an error at this compatibility projection.
+	return checkPlanForRepository(repoRoot, planPath)
+}
+
+// CheckPlanForRepository validates a plan while preserving the caller's
+// explicit worktree identity across a shared detached controller root.
+func CheckPlanForRepository(repoPath, planPath string) (PlanCheck, error) {
+	repoRoot, err := ResolveControllerRepositoryFor(repoPath, filepath.Dir(planPath))
+	if err != nil {
+		return PlanCheck{}, err
+	}
+	return checkPlanForRepository(repoRoot, planPath)
+}
+
 func checkApprovalSourcePlan(options ApprovalOptions) error {
-	expected, err := SourcePlanForStructuredPlan(options.PlanPath)
+	repo := ""
+	var err error
+	if strings.TrimSpace(options.Repo) != "" {
+		repo, err = ResolveControllerRepositoryFor(options.Repo, filepath.Dir(options.PlanPath))
+		if err != nil {
+			return err
+		}
+	}
+	expected, err := sourcePlanForStructuredPlan(options.PlanPath, repo)
 	if err != nil {
 		return err
 	}
@@ -861,7 +896,7 @@ func compileArtifacts(repoRoot, planPath, outDir, structuredPlanStatus string) (
 	if err != nil {
 		return compiledArtifacts{}, err
 	}
-	sourcePlan, err := SourcePlanForStructuredPlan(planPath)
+	sourcePlan, err := sourcePlanForStructuredPlan(planPath, repoRoot)
 	if err != nil {
 		return compiledArtifacts{}, err
 	}
@@ -920,7 +955,7 @@ func compileArtifacts(repoRoot, planPath, outDir, structuredPlanStatus string) (
 		return compiledArtifacts{}, err
 	}
 	authority := ""
-	if check, checkErr := CheckPlan(planPath); checkErr == nil {
+	if check, checkErr := CheckPlanForRepository(repoRoot, planPath); checkErr == nil {
 		authority = check.Fingerprint
 	}
 	scope := []string{relTasks, relMatrix, relEvidence, relJourney}
@@ -963,6 +998,7 @@ func compileArtifacts(repoRoot, planPath, outDir, structuredPlanStatus string) (
 }
 
 type ApprovalOptions struct {
+	Repo                 string
 	SourcePlanPath       string
 	SpecPath             string
 	PlanPath             string
@@ -1064,7 +1100,7 @@ func intValue(value any) int {
 	return int(number)
 }
 
-func CheckApprovalReceipt(path string, planCheck PlanCheck) (ApprovalReceipt, error) {
+func checkApprovalReceipt(path string, planCheck PlanCheck, repo string) (ApprovalReceipt, error) {
 	receipt, err := LoadApprovalReceipt(path)
 	if err != nil {
 		return ApprovalReceipt{}, err
@@ -1075,19 +1111,21 @@ func CheckApprovalReceipt(path string, planCheck PlanCheck) (ApprovalReceipt, er
 	if version, _ := planCheck.Plan["schema_version"].(float64); version >= 3 && receipt.SchemaVersion < 3 {
 		return ApprovalReceipt{}, fmt.Errorf("legacy approval receipt has no readiness evidence; refresh approval against the current schema-v3 plan")
 	}
+	if repo == "" {
+		repo, err = ResolveControllerRepository(filepath.Dir(planCheck.PlanPath))
+		if err != nil {
+			return ApprovalReceipt{}, err
+		}
+	}
 	if receipt.SchemaVersion == 3 {
 		receipt.Readiness.PlanFingerprint = receipt.Fingerprint
-		current, readinessErr := CheckPlanReadiness(planCheck.PlanPath)
+		current, readinessErr := checkPlanReadiness(repo, planCheck.PlanPath)
 		if readinessErr != nil {
 			return ApprovalReceipt{}, readinessErr
 		}
 		if current.Fingerprint != receipt.Readiness.Fingerprint {
 			return ApprovalReceipt{}, fmt.Errorf("stale approval receipt: readiness fingerprint changed after approval")
 		}
-	}
-	repo, err := ResolveControllerRepository(filepath.Dir(planCheck.PlanPath))
-	if err != nil {
-		return ApprovalReceipt{}, err
 	}
 	baseline, err := productBaseline(repo, planCheck.PlanPath, planCheck.SourcePlanPath, planCheck.SpecPath, path)
 	if err != nil {
@@ -1103,7 +1141,12 @@ func CheckApprovalReceipt(path string, planCheck PlanCheck) (ApprovalReceipt, er
 	return receipt, nil
 }
 
+func CheckApprovalReceipt(path string, planCheck PlanCheck) (ApprovalReceipt, error) {
+	return checkApprovalReceipt(path, planCheck, "")
+}
+
 type ActivationOptions struct {
+	Repo         string
 	PlanPath     string
 	ApprovalPath string
 	OutDir       string
@@ -1113,7 +1156,10 @@ type ActivationOptions struct {
 }
 
 func ActivatePlan(options ActivationOptions) error {
-	repo, err := ResolveControllerRepository(filepath.Dir(options.PlanPath))
+	if strings.TrimSpace(options.Repo) == "" {
+		return fmt.Errorf("plan activation requires the invoking repository context")
+	}
+	repo, err := ResolveControllerRepositoryFor(options.Repo, filepath.Dir(options.PlanPath))
 	if err != nil {
 		return err
 	}
@@ -1121,7 +1167,15 @@ func ActivatePlan(options ActivationOptions) error {
 	if err != nil {
 		return err
 	}
-	check, err := CheckPlan(options.PlanPath)
+	for _, owned := range []struct{ label, path string }{
+		{"plan", options.PlanPath}, {"compiled output", options.OutDir}, {"plan lock", options.OutputPath},
+		{"approval", options.ApprovalPath}, {"autonomy receipt", options.AutonomyPath},
+	} {
+		if strings.TrimSpace(owned.path) != "" && !pathWithin(ctx.ExportRoot(), owned.path) {
+			return fmt.Errorf("%s path is outside the invoking repository's verified controller boundary: %s", owned.label, owned.path)
+		}
+	}
+	check, err := CheckPlanForRepository(repo, options.PlanPath)
 	if err != nil {
 		return err
 	}
@@ -1172,7 +1226,7 @@ func ActivatePlan(options ActivationOptions) error {
 		if strings.TrimSpace(options.ApprovalPath) == "" {
 			return fmt.Errorf("human_plan_approval requires --approval")
 		}
-		receipt, err = CheckApprovalReceipt(options.ApprovalPath, check)
+		receipt, err = checkApprovalReceipt(options.ApprovalPath, check, repo)
 		if err != nil {
 			return err
 		}
@@ -1192,6 +1246,7 @@ func ActivatePlan(options ActivationOptions) error {
 	}
 	tasksPath := filepath.Join(options.OutDir, "tasks.json")
 	approval := ApprovalOptions{
+		Repo:                 repo,
 		SourcePlanPath:       check.SourcePlanPath,
 		SpecPath:             check.SpecPath,
 		PlanPath:             options.PlanPath,
@@ -1209,7 +1264,7 @@ func ActivatePlan(options ActivationOptions) error {
 		RunTarget:            autonomy.Target,
 	}
 	if version, _ := check.Plan["schema_version"].(float64); version >= 3 && authorizationMode == "policy" {
-		approval.Readiness, err = CheckPlanReadiness(options.PlanPath)
+		approval.Readiness, err = checkPlanReadiness(repo, options.PlanPath)
 		if err != nil {
 			return err
 		}
@@ -1264,7 +1319,7 @@ func ActivatePlan(options ActivationOptions) error {
 		return fmt.Errorf("pre-activation product baseline drifted before the plan lock could be created; expected paths %s, observed paths %s", strings.Join(baseline.ChangedPaths, ", "), strings.Join(currentBaseline.ChangedPaths, ", "))
 	}
 	if approval.Readiness.Fingerprint != "" {
-		currentReadiness, readinessErr := CheckPlanReadiness(options.PlanPath)
+		currentReadiness, readinessErr := checkPlanReadiness(repo, options.PlanPath)
 		if readinessErr != nil {
 			return readinessErr
 		}
@@ -1513,7 +1568,13 @@ func CheckApprovalLock(options ApprovalOptions) error {
 		if fingerprint, fingerprintErr := readinessFingerprint(storedReadiness); fingerprintErr != nil || fingerprint != storedReadiness.Fingerprint {
 			mismatches = append(mismatches, "readiness_fingerprint")
 		}
-		repo, repoErr := ResolveControllerRepository(filepath.Dir(options.PlanPath))
+		repo := ""
+		var repoErr error
+		if strings.TrimSpace(options.Repo) != "" {
+			repo, repoErr = ResolveControllerRepositoryFor(options.Repo, filepath.Dir(options.PlanPath))
+		} else {
+			repo, repoErr = ResolveControllerRepository(filepath.Dir(options.PlanPath))
+		}
 		plan, planErr := LoadPlan(options.PlanPath)
 		if repoErr != nil || planErr != nil {
 			mismatches = append(mismatches, "journey_manifest")

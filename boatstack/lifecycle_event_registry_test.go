@@ -136,7 +136,7 @@ func TestLifecycleEventRegistryIsComplete(t *testing.T) {
 	}
 	sort.Strings(entries)
 	digest := SHA256Bytes([]byte(strings.Join(entries, "\n")))
-	const expected = "2b6d3a0ba8b53513e744b478949da352e932aa2998b796f8077efaf286a14c0f"
+	const expected = "167ba36844018e8eefe5120416c1354714dbc888588a96369cc2c83457ce433b"
 	if digest != expected {
 		t.Fatalf("lifecycle event registry changed: got %s; classify the new or removed site and update the reviewed digest\n%s", digest, strings.Join(entries, "\n"))
 	}

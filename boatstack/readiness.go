@@ -34,12 +34,8 @@ func readinessFingerprint(receipt ReadinessReceipt) (string, error) {
 	return SHA256Bytes(canonical), nil
 }
 
-func CheckPlanReadiness(planPath string) (ReadinessReceipt, error) {
-	check, err := CheckPlan(planPath)
-	if err != nil {
-		return ReadinessReceipt{}, err
-	}
-	repo, err := ResolveControllerRepository(filepath.Dir(planPath))
+func checkPlanReadiness(repo, planPath string) (ReadinessReceipt, error) {
+	check, err := CheckPlanForRepository(repo, planPath)
 	if err != nil {
 		return ReadinessReceipt{}, err
 	}
@@ -89,6 +85,22 @@ func CheckPlanReadiness(planPath string) (ReadinessReceipt, error) {
 	}
 	receipt.Fingerprint = fingerprint
 	return receipt, nil
+}
+
+func CheckPlanReadiness(planPath string) (ReadinessReceipt, error) {
+	repo, err := ResolveControllerRepository(filepath.Dir(planPath))
+	if err != nil {
+		return ReadinessReceipt{}, err
+	}
+	return checkPlanReadiness(repo, planPath)
+}
+
+func CheckPlanReadinessForRepository(repoPath, planPath string) (ReadinessReceipt, error) {
+	repo, err := ResolveControllerRepositoryFor(repoPath, filepath.Dir(planPath))
+	if err != nil {
+		return ReadinessReceipt{}, err
+	}
+	return checkPlanReadiness(repo, planPath)
 }
 
 func checkJourneyCapabilities(repo string, plan map[string]any) error {

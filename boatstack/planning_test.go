@@ -184,6 +184,7 @@ func TestRecordApprovalChecksFingerprintAndWritesOnlyReceipt(t *testing.T) {
 	}
 	approval := filepath.Join(root, "approval.md")
 	if err := RecordApproval(ApprovalRecordOptions{
+		Repo:     root,
 		PlanPath: planPath, OutputPath: approval, ApprovedBy: "Test Human",
 		ApprovedAt: "2026-07-16T12:00:00Z", Fingerprint: "wrong",
 	}); err == nil {
@@ -193,6 +194,7 @@ func TestRecordApprovalChecksFingerprintAndWritesOnlyReceipt(t *testing.T) {
 		t.Fatal("failed approval created a receipt")
 	}
 	if err := RecordApproval(ApprovalRecordOptions{
+		Repo:     root,
 		PlanPath: planPath, ApprovedBy: "Test Human",
 		ApprovedAt: "2026-07-16T12:00:00Z", Fingerprint: check.Fingerprint,
 	}); err != nil {
@@ -236,6 +238,7 @@ func TestApprovalBindsAndPreservesExistingProductBaseline(t *testing.T) {
 	}
 	approval := filepath.Join(root, "approval.md")
 	if err := RecordApproval(ApprovalRecordOptions{
+		Repo:     root,
 		PlanPath: planPath, ApprovedBy: "Test Human", ApprovedAt: "2026-07-16T12:00:00Z",
 		Fingerprint: check.Fingerprint, BaselineDiffSHA256: baseline.DiffSHA256,
 	}); err != nil {
@@ -247,7 +250,7 @@ func TestApprovalBindsAndPreservesExistingProductBaseline(t *testing.T) {
 	writeActivationConfig(t, root, true)
 	compiled := filepath.Join(root, ".product-loop", "features", "feature-one", "compiled")
 	lockPath := filepath.Join(root, ".product-loop", "features", "feature-one", "plan.lock.json")
-	if err := ActivatePlan(ActivationOptions{PlanPath: planPath, ApprovalPath: approval, OutDir: compiled, OutputPath: lockPath, SourceCommit: "test"}); err != nil {
+	if err := ActivatePlan(ActivationOptions{Repo: root, PlanPath: planPath, ApprovalPath: approval, OutDir: compiled, OutputPath: lockPath, SourceCommit: "test"}); err != nil {
 		t.Fatalf("unchanged pre-existing product diff blocked activation: %v", err)
 	}
 	content, err := os.ReadFile(filepath.Join(root, "app.ts"))

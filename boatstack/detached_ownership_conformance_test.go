@@ -155,6 +155,7 @@ func TestDetachedActivationUsesCanonicalFeatureDirectory(t *testing.T) {
 		t.Fatalf("resolved owner lost detached context: resolved=%s ctx=%+v err=%v", resolved, ctx, ctxErr)
 	}
 	err := ActivatePlan(ActivationOptions{
+		Repo:     repo,
 		PlanPath: filepath.Join(directory, "plan.md"), OutDir: filepath.Join(directory, "compiled"),
 		OutputPath: filepath.Join(directory, "plan.lock.json"), SourceCommit: "test",
 	})

@@ -180,6 +180,7 @@ func TestWorkspaceTransitionPrecedesSchema3ApprovalAndActivation(t *testing.T) {
 	}
 	approvalPath := filepath.Join(filepath.Dir(destinationPlan), "approval.md")
 	if err := RecordApproval(ApprovalRecordOptions{
+		Repo:     result.DestinationRepo,
 		PlanPath: destinationPlan, OutputPath: approvalPath, ApprovedBy: "Test Human",
 		ApprovedAt: "2026-08-09T12:00:00Z", Fingerprint: check.Fingerprint,
 	}); err != nil {
@@ -190,6 +191,7 @@ func TestWorkspaceTransitionPrecedesSchema3ApprovalAndActivation(t *testing.T) {
 		t.Fatalf("approval did not bind destination readiness: %+v (%v)", receipt, err)
 	}
 	if err := ActivatePlan(ActivationOptions{
+		Repo:     result.DestinationRepo,
 		PlanPath: destinationPlan, ApprovalPath: approvalPath,
 		OutDir:     filepath.Join(filepath.Dir(destinationPlan), "compiled"),
 		OutputPath: filepath.Join(filepath.Dir(destinationPlan), "plan.lock.json"),

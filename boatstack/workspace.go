@@ -221,12 +221,12 @@ func rollbackWorkspaceTransition(repo, branch, worktreePath string, transition w
 	}
 }
 
-func featurePackageFingerprint(directory string) (string, error) {
+func featurePackageFingerprint(repo, directory string) (string, error) {
 	planPath := filepath.Join(directory, "plan.md")
 	if !fileExists(planPath) {
 		return "", nil
 	}
-	check, err := CheckPlan(planPath)
+	check, err := CheckPlanForRepository(repo, planPath)
 	if err != nil {
 		return "", err
 	}
@@ -353,9 +353,9 @@ func transferFeaturePackage(sourceRepo, destinationRepo, feature string, control
 		if destination == "" || !dirExists(destination) {
 			return "", nil
 		}
-		return featurePackageFingerprint(destination)
+		return featurePackageFingerprint(destinationRepo, destination)
 	}
-	sourceFingerprint, err := featurePackageFingerprint(source)
+	sourceFingerprint, err := featurePackageFingerprint(sourceRepo, source)
 	if err != nil {
 		return "", fmt.Errorf("source planning package is invalid: %w", err)
 	}
@@ -371,7 +371,7 @@ func transferFeaturePackage(sourceRepo, destinationRepo, feature string, control
 		return sourceFingerprint, nil
 	}
 	if dirExists(destination) {
-		destinationFingerprint, fingerprintErr := featurePackageFingerprint(destination)
+		destinationFingerprint, fingerprintErr := featurePackageFingerprint(destinationRepo, destination)
 		destinationDigest, digestErr := featurePackageDigest(destination)
 		if fingerprintErr != nil || digestErr != nil || destinationFingerprint != sourceFingerprint || destinationDigest != sourceDigest {
 			return "", fmt.Errorf("destination workspace contains a conflicting planning package")
@@ -386,7 +386,7 @@ func transferFeaturePackage(sourceRepo, destinationRepo, feature string, control
 	if err := workspacePackageCopy(source, destination); err != nil {
 		return "", fmt.Errorf("copy planning package: %w", err)
 	}
-	destinationFingerprint, err := featurePackageFingerprint(destination)
+	destinationFingerprint, err := featurePackageFingerprint(destinationRepo, destination)
 	destinationDigest, digestErr := featurePackageDigest(destination)
 	if err != nil || digestErr != nil || destinationFingerprint != sourceFingerprint || destinationDigest != sourceDigest {
 		_ = os.RemoveAll(destination)
@@ -584,19 +584,175 @@ func CutFeatureWorkspace(options WorkspaceCutOptions) (WorkspaceCut, error) {
 	return result, nil
 }
 
-// workspaceMergeStatus reports whether the branch's work has landed. It prefers
-// the GitHub CLI's authoritative PR state and falls back to local ancestry when
-// gh is unavailable, always reporting which source answered.
-func workspaceMergeStatus(repo, branch, base string) (bool, string) {
-	if out, err := workspaceGh(repo, "pr", "view", branch, "--json", "state", "-q", ".state"); err == nil {
-		return strings.EqualFold(strings.TrimSpace(out), "MERGED"), "gh"
+type workspaceLifecyclePhase string
+
+const (
+	workspaceActive            workspaceLifecyclePhase = "ACTIVE"
+	workspacePublished         workspaceLifecyclePhase = "PUBLISHED"
+	workspaceLanded            workspaceLifecyclePhase = "LANDED"
+	workspaceAbandoned         workspaceLifecyclePhase = "ABANDONED"
+	workspaceAttentionRequired workspaceLifecyclePhase = "ATTENTION_REQUIRED"
+)
+
+// workspaceLifecycleAssessment is the single authority boundary for workspace
+// completion. Published and Landed are deliberately separate: Git ancestry may
+// confirm landing only after a PR or completed managed delivery proves that the
+// branch entered the publication lifecycle.
+type workspaceLifecycleAssessment struct {
+	Phase     workspaceLifecyclePhase
+	Source    string
+	Published bool
+	Landed    bool
+	Reason    string
+}
+
+func workspaceFeatureForBranch(branch string) string {
+	feature := strings.TrimPrefix(strings.TrimSpace(branch), "feat/")
+	if feature == branch || !featureSlugPattern.MatchString(feature) {
+		return ""
+	}
+	return feature
+}
+
+func workspaceBranchLanded(repo, branch, base string) bool {
+	if strings.TrimSpace(branch) == "" {
+		return false
 	}
 	for _, target := range []string{"refs/remotes/origin/" + base, "refs/heads/" + base, base} {
 		if _, err := workspaceGit(repo, "merge-base", "--is-ancestor", "refs/heads/"+branch, target); err == nil {
-			return true, "git"
+			return true
 		}
 	}
-	return false, "git"
+	return false
+}
+
+func managedWorkspaceLifecycle(repo, branch, base string) (workspaceLifecycleAssessment, bool) {
+	feature := workspaceFeatureForBranch(branch)
+	if feature == "" {
+		return workspaceLifecycleAssessment{}, false
+	}
+	owner := repo
+	if worktree := worktreePathForBranch(repo, branch); worktree != "" {
+		owner = worktree
+	}
+	statePath, err := deliveryStatePath(owner, feature)
+	if err != nil || !fileExists(statePath) {
+		return workspaceLifecycleAssessment{}, false
+	}
+	state, err := CurrentDeliveryState(owner, feature)
+	if err != nil || !stateMatchesBranch(state, branch) {
+		return workspaceLifecycleAssessment{
+			Phase: workspaceAttentionRequired, Source: "delivery",
+			Reason: "Managed delivery evidence is present but cannot be verified for this branch.",
+		}, true
+	}
+	if len(state.Slices) == 0 || state.ActiveIndex < len(state.Slices) {
+		return workspaceLifecycleAssessment{
+			Phase: workspaceActive, Source: "delivery",
+			Reason: "Managed delivery work is still active.",
+		}, true
+	}
+	for _, slice := range state.Slices {
+		if slice.Status != StatusPublished || strings.TrimSpace(slice.PRURL) == "" {
+			return workspaceLifecycleAssessment{
+				Phase: workspaceAttentionRequired, Source: "delivery",
+				Reason: "Completed delivery state lacks durable publication evidence.",
+			}, true
+		}
+		if strings.EqualFold(strings.TrimSpace(slice.PRState), "CLOSED") {
+			return workspaceLifecycleAssessment{
+				Phase: workspaceAttentionRequired, Source: "delivery", Published: true,
+				Reason: "A published pull request closed without a verified merge.",
+			}, true
+		}
+	}
+	allLanded := true
+	for _, slice := range state.Slices {
+		if strings.EqualFold(strings.TrimSpace(slice.PRState), "MERGED") {
+			continue
+		}
+		head := strings.TrimSpace(slice.HeadBranch)
+		if head == "" {
+			head = branch
+		}
+		if !workspaceBranchLanded(repo, head, base) {
+			allLanded = false
+			break
+		}
+	}
+	if allLanded {
+		return workspaceLifecycleAssessment{
+			Phase: workspaceLanded, Source: "git-after-publication", Published: true, Landed: true,
+			Reason: "Every published delivery branch is contained in the base branch.",
+		}, true
+	}
+	if resolveDeliveryTerminal(owner, feature) == TerminalMerged {
+		return workspaceLifecycleAssessment{
+			Phase: workspaceActive, Source: "delivery", Published: true,
+			Reason: "Every delivery slice is published, but the configured merged terminal is unfinished.",
+		}, true
+	}
+	return workspaceLifecycleAssessment{
+		Phase: workspacePublished, Source: "delivery", Published: true,
+		Reason: "Every delivery slice is published, but landing is not verified.",
+	}, true
+}
+
+func assessWorkspaceLifecycle(repo, branch, base string, abandoned bool) workspaceLifecycleAssessment {
+	if abandoned {
+		return workspaceLifecycleAssessment{
+			Phase: workspaceAbandoned, Source: "operator", Reason: "The operator explicitly abandoned this delivery.",
+		}
+	}
+	if managed, ok := managedWorkspaceLifecycle(repo, branch, base); ok {
+		return managed
+	}
+	if out, err := workspaceGh(repo, "pr", "view", branch, "--json", "state", "-q", ".state"); err == nil {
+		switch strings.ToUpper(strings.TrimSpace(out)) {
+		case "MERGED":
+			return workspaceLifecycleAssessment{
+				Phase: workspaceLanded, Source: "gh", Published: true, Landed: true,
+				Reason: "GitHub reports the pull request merged.",
+			}
+		case "OPEN":
+			return workspaceLifecycleAssessment{
+				Phase: workspacePublished, Source: "gh", Published: true,
+				Reason: "GitHub reports an open pull request.",
+			}
+		case "CLOSED":
+			return workspaceLifecycleAssessment{
+				Phase: workspaceAttentionRequired, Source: "gh", Published: true,
+				Reason: "GitHub reports the pull request closed without a merge.",
+			}
+		default:
+			return workspaceLifecycleAssessment{
+				Phase: workspaceAttentionRequired, Source: "gh",
+				Reason: "GitHub returned an unsupported pull request state.",
+			}
+		}
+	}
+	return workspaceLifecycleAssessment{
+		Phase: workspaceActive, Source: "unpublished",
+		Reason: "No durable publication evidence exists; preserving the active workspace.",
+	}
+}
+
+func (assessment workspaceLifecycleAssessment) cleanupEligible(cleanupAfter string) bool {
+	if assessment.Phase == workspaceAbandoned {
+		return true
+	}
+	if cleanupAfter == "ship" {
+		return assessment.Phase == workspacePublished || assessment.Phase == workspaceLanded
+	}
+	return assessment.Phase == workspaceLanded
+}
+
+// workspaceMergeStatus is retained as the narrow merge projection used by
+// existing callers and tests. It can no longer promote bare ancestry into merge
+// authority: the full lifecycle assessment owns that decision.
+func workspaceMergeStatus(repo, branch, base string) (bool, string) {
+	assessment := assessWorkspaceLifecycle(repo, branch, base, false)
+	return assessment.Landed, assessment.Source
 }
 
 // worktreePathForBranch returns the linked worktree path checked out on branch,
@@ -664,7 +820,8 @@ type workspaceRemovalPlan struct {
 // unmerged-commit gates that govern removing a single feature workspace. It never
 // consults cleanup/reap mode or human confirmation and never mutates the
 // repository; callers own policy and confirmation. cleanupAfter="ship" permits
-// removing an unmerged branch (used for merged-optional and abandoned workspaces).
+// removing an unmerged branch after the lifecycle boundary has already proved
+// publication (used for published and explicitly abandoned workspaces).
 func planWorkspaceRemoval(repo, base, branch, worktreePath, cleanupAfter string, merged, force bool) workspaceRemovalPlan {
 	if branch == base {
 		return workspaceRemovalPlan{Status: "BLOCKED", Reason: fmt.Sprintf("Refusing to clean up the base branch %q.", base)}
@@ -682,16 +839,8 @@ func planWorkspaceRemoval(repo, base, branch, worktreePath, cleanupAfter string,
 				return workspaceRemovalPlan{Status: "BLOCKED", Reason: fmt.Sprintf("Workspace %q has uncommitted changes; commit or discard them, or force cleanup.", branch)}
 			}
 		}
-		if !merged {
-			for _, target := range []string{"refs/remotes/origin/" + base, "refs/heads/" + base, base} {
-				if _, err := workspaceGit(repo, "merge-base", "--is-ancestor", "refs/heads/"+branch, target); err == nil {
-					merged = true
-					break
-				}
-			}
-			if !merged && cleanupAfter != "ship" {
-				return workspaceRemovalPlan{Status: "BLOCKED", Reason: fmt.Sprintf("Branch %q has commits not merged into %s; force cleanup to discard them.", branch, base)}
-			}
+		if !merged && cleanupAfter != "ship" {
+			return workspaceRemovalPlan{Status: "BLOCKED", Reason: fmt.Sprintf("Branch %q has commits not merged into %s; force cleanup to discard them.", branch, base)}
 		}
 	}
 	return workspaceRemovalPlan{Removable: true, Status: "VERIFIED", Merged: merged}
@@ -743,10 +892,11 @@ func CleanupFeatureWorkspace(options WorkspaceCleanupOptions) (WorkspaceCleanup,
 	if !fileExists(WorkspaceFor(repo).ProjectConfigPath()) {
 		return blockedCleanup(branch, "This repository has no Boatstack project installation."), nil
 	}
-	policy, err := loadWorkspacePolicy(repo)
+	config, _, err := LoadConfig(WorkspaceFor(repo).ProjectConfigPath())
 	if err != nil {
 		return blockedCleanup(branch, "Boatstack could not read the workspace policy: "+err.Error()), nil
 	}
+	policy := resolveWorkspace(config.Workspace)
 	if policy.Cleanup == "off" && !options.Force {
 		return blockedCleanup(branch, "Workspace cleanup is disabled (workspace.cleanup=off)."), nil
 	}
@@ -760,13 +910,29 @@ func CleanupFeatureWorkspace(options WorkspaceCleanupOptions) (WorkspaceCleanup,
 	}
 
 	base := defaultPRBase(repo)
-	merged, source := workspaceMergeStatus(repo, branch, base)
+	abandoned := false
+	for _, feature := range config.Workflow.IgnoredDeliveries {
+		if branchForFeature(feature) == branch {
+			abandoned = true
+			break
+		}
+	}
+	lifecycle := assessWorkspaceLifecycle(repo, branch, base, abandoned)
 	result := WorkspaceCleanup{
 		SchemaVersion: workspaceSchemaVersion, Branch: branch, Mode: policy.Mode,
-		Merged: merged, MergeSource: source,
+		Merged: lifecycle.Landed, MergeSource: lifecycle.Source,
+	}
+	if !options.Force && !lifecycle.cleanupEligible(policy.CleanupAfter) {
+		result.VerificationStatus = "BLOCKED"
+		result.Reason = lifecycle.Reason
+		return result, nil
 	}
 
-	plan := planWorkspaceRemoval(repo, base, branch, worktreePath, policy.CleanupAfter, merged, options.Force)
+	cleanupAfter := policy.CleanupAfter
+	if lifecycle.Phase == workspaceAbandoned {
+		cleanupAfter = "ship"
+	}
+	plan := planWorkspaceRemoval(repo, base, branch, worktreePath, cleanupAfter, lifecycle.Landed, options.Force)
 	if !plan.Removable {
 		result.VerificationStatus = plan.Status
 		result.Reason = plan.Reason
@@ -881,7 +1047,7 @@ func samePath(a, b string) bool {
 // skipped or reclaimable without mutating the repository. It returns the skipped
 // candidates (for reporting) and the reclaimable subset (merged or abandoned,
 // excluding the base branch, the current worktree, and non-Boatstack worktrees).
-func reclaimableScan(repo, base string, ignored []string) (skipped, reapable []WorkspaceReapItem) {
+func reclaimableScan(repo, base, cleanupAfter string, ignored []string) (skipped, reapable []WorkspaceReapItem) {
 	abandonedBranches := map[string]bool{}
 	for _, slug := range ignored {
 		if branch := branchForFeature(slug); branch != "" {
@@ -904,14 +1070,14 @@ func reclaimableScan(repo, base string, ignored []string) (skipped, reapable []W
 			skipped = append(skipped, item)
 			continue
 		}
-		merged, source := workspaceMergeStatus(repo, branch, base)
 		abandoned := abandonedBranches[branch]
-		item.Merged = merged
-		item.MergeSource = source
+		lifecycle := assessWorkspaceLifecycle(repo, branch, base, abandoned)
+		item.Merged = lifecycle.Landed
+		item.MergeSource = lifecycle.Source
 		item.Abandoned = abandoned
-		if !merged && !abandoned {
+		if !lifecycle.cleanupEligible(cleanupAfter) {
 			item.Action = "skipped"
-			item.Reason = "Not merged and not abandoned; keeping the workspace."
+			item.Reason = lifecycle.Reason
 			skipped = append(skipped, item)
 			continue
 		}
@@ -933,7 +1099,8 @@ func CountReclaimableWorkspaces(repoPath string) int {
 	if cfgErr != nil || !resolveWorkspace(config.Workspace).Enabled {
 		return 0
 	}
-	_, reapable := reclaimableScan(repo, defaultPRBase(repo), config.Workflow.IgnoredDeliveries)
+	policy := resolveWorkspace(config.Workspace)
+	_, reapable := reclaimableScan(repo, defaultPRBase(repo), policy.CleanupAfter, config.Workflow.IgnoredDeliveries)
 	return len(reapable)
 }
 
@@ -971,7 +1138,7 @@ func ReapWorkspaces(options WorkspaceReapOptions) (WorkspaceReap, error) {
 	}
 
 	base := defaultPRBase(repo)
-	skipped, reapable := reclaimableScan(repo, base, config.Workflow.IgnoredDeliveries)
+	skipped, reapable := reclaimableScan(repo, base, policy.CleanupAfter, config.Workflow.IgnoredDeliveries)
 	result.Candidates = append(result.Candidates, skipped...)
 	result.ReclaimableCount = len(reapable)
 
@@ -1066,18 +1233,24 @@ func FeatureWorkspaceStatus(repoPath, branch string) (WorkspaceStatus, error) {
 		status.Reason = fmt.Sprintf("No workspace exists for branch %q.", branch)
 		return status, nil
 	}
-	base := defaultPRBase(repo)
-	status.Merged, status.MergeSource = workspaceMergeStatus(repo, branch, base)
-	policy, policyErr := loadWorkspacePolicy(repo)
-	requireMerged := true
-	if policyErr == nil {
-		requireMerged = policy.CleanupAfter != "ship"
+	config, _, configErr := LoadConfig(WorkspaceFor(repo).ProjectConfigPath())
+	abandoned := false
+	if configErr == nil {
+		for _, feature := range config.Workflow.IgnoredDeliveries {
+			if branchForFeature(feature) == branch {
+				abandoned = true
+				break
+			}
+		}
 	}
-	status.CleanupDue = status.Merged || !requireMerged
+	base := defaultPRBase(repo)
+	lifecycle := assessWorkspaceLifecycle(repo, branch, base, abandoned)
+	status.Merged, status.MergeSource = lifecycle.Landed, lifecycle.Source
+	status.CleanupDue = configErr == nil && lifecycle.cleanupEligible(resolveWorkspace(config.Workspace).CleanupAfter)
 	if status.CleanupDue {
 		status.Reason = fmt.Sprintf("Workspace for %q is ready to clean up.", branch)
 	} else {
-		status.Reason = fmt.Sprintf("Workspace for %q is still open (PR not merged).", branch)
+		status.Reason = lifecycle.Reason
 	}
 	return status, nil
 }

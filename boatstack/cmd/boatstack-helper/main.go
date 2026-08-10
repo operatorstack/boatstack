@@ -497,18 +497,18 @@ func checkPlanCommand(arguments []string) int {
 	if *plan == "" {
 		return fail(fmt.Errorf("check-plan requires --plan"))
 	}
-	check, err := boatstack.CheckPlan(*plan)
+	check, err := boatstack.CheckPlanForRepository(".", *plan)
 	if err != nil {
 		return fail(fmt.Errorf("invalid Markdown plan: %w", err))
 	}
-	baseline, err := boatstack.PlanningBaselineForPlan(*plan)
+	baseline, err := boatstack.PlanningBaselineForRepository(".", *plan)
 	if err != nil {
 		return fail(fmt.Errorf("cannot fingerprint the pre-activation product baseline: %w", err))
 	}
 	readinessFingerprint := ""
 	if version, _ := check.Plan["schema_version"].(float64); version >= 3 {
-		readiness, readinessErr := boatstack.CheckPlanReadiness(*plan)
-		repo, _ := boatstack.ResolveControllerRepository(filepath.Dir(*plan))
+		readiness, readinessErr := boatstack.CheckPlanReadinessForRepository(".", *plan)
+		repo, _ := boatstack.ResolveRepository(".")
 		if readinessErr != nil {
 			boatstack.RecordFlowAttribution(repo, "readiness", deliverycontrol.CostQuery, true, readinessErr.Error())
 			return fail(readinessErr)
@@ -538,7 +538,7 @@ func checkSourcePlanCommand(arguments []string) int {
 
 func activatePlanCommand(arguments []string) int {
 	flags := flag.NewFlagSet("activate-plan", flag.ContinueOnError)
-	options := boatstack.ActivationOptions{}
+	options := boatstack.ActivationOptions{Repo: "."}
 	flags.StringVar(&options.PlanPath, "plan", "", "approved Markdown plan")
 	flags.StringVar(&options.ApprovalPath, "approval", "", "Markdown approval receipt")
 	flags.StringVar(&options.OutDir, "out-dir", "", "compiled artifact directory")
@@ -635,6 +635,7 @@ func recordApprovalCommand(arguments []string) int {
 		return fail(fmt.Errorf("record-approval requires --plan, --approved-by, --approved-at, and --fingerprint"))
 	}
 	if err := boatstack.RecordApproval(boatstack.ApprovalRecordOptions{
+		Repo:     ".",
 		PlanPath: *plan, OutputPath: *output, ApprovedBy: *approvedBy,
 		ApprovedAt: *approvedAt, Fingerprint: *fingerprint, BaselineDiffSHA256: *baselineDiffSHA256,
 		ExpectedLifecycleSHA256: *expectedLifecycleSHA256, ExpectedPlanLockSHA256: *expectedPlanLockSHA256,

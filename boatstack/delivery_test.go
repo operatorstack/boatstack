@@ -134,6 +134,7 @@ func activateTwoSliceDeliveryConfigured(t *testing.T, maintainChangelog bool, co
 	approvalPath := filepath.Join(directory, "approval.md")
 	writeApprovalReceipt(t, approvalPath, check.Fingerprint)
 	if err := ActivatePlan(ActivationOptions{
+		Repo:     repo,
 		PlanPath: planPath, ApprovalPath: approvalPath, OutDir: filepath.Join(directory, "compiled"),
 		OutputPath: filepath.Join(directory, "plan.lock.json"), SourceCommit: runGit(t, repo, "rev-parse", "HEAD"),
 	}); err != nil {
@@ -265,6 +266,7 @@ func TestDeliveryGateReceiptsBindTheActiveSliceAndAdvanceOnce(t *testing.T) {
 	}
 	directory := filepath.Join(repo, ".product-loop", "features", feature)
 	if err := ActivatePlan(ActivationOptions{
+		Repo:     repo,
 		PlanPath: filepath.Join(directory, "plan.md"), ApprovalPath: filepath.Join(directory, "approval.md"),
 		OutDir: filepath.Join(directory, "compiled"), OutputPath: filepath.Join(directory, "plan.lock.json"),
 		SourceCommit: runGit(t, repo, "rev-parse", "HEAD"),

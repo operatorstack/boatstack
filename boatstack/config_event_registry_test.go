@@ -86,7 +86,7 @@ func TestConfigurationEventRegistryIsComplete(t *testing.T) {
 	}
 	sort.Strings(entries)
 	digest := SHA256Bytes([]byte(strings.Join(entries, "\n")))
-	const expected = "ed524f110b7ade6e3a5795c5f26ee20db87153a0c91865c8e7cd63a9ee133f0f"
+	const expected = "72481d05df0ef6d80a42b62f0e917ac173c436c970ed3f1aaaa8430aa41911a2"
 	if digest != expected {
 		_ = os.WriteFile(filepath.Join(t.TempDir(), "config-events.txt"), []byte(strings.Join(entries, "\n")+"\n"), 0o644)
 		t.Fatalf("configuration event registry changed: got %s; classify the new or removed site and update the reviewed digest", digest)

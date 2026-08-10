@@ -24,12 +24,18 @@ func filesystemSnapshot(t *testing.T, root string) string {
 	t.Helper()
 	entries := []string{}
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		relative, relativeErr := filepath.Rel(root, path)
+		if relativeErr != nil {
+			return relativeErr
+		}
+		// git maintenance creates and removes this advisory lock independently of
+		// the operation under test. It is not repository content and may disappear
+		// between WalkDir reading the directory and lstatting the entry on macOS.
+		if filepath.ToSlash(relative) == ".git/objects/maintenance.lock" {
+			return nil
+		}
 		if walkErr != nil {
 			return walkErr
-		}
-		relative, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
 		}
 		info, err := entry.Info()
 		if err != nil {
@@ -274,6 +280,7 @@ func TestDetachedConfigDriftBlocksMutationAndPublicationBypasses(t *testing.T) {
 	}{
 		{name: "activation", run: func() error {
 			return ActivatePlan(ActivationOptions{
+				Repo:     repo,
 				PlanPath: planPath, OutDir: filepath.Join(ctx.FeatureDir("feature-one"), "compiled"),
 				OutputPath: filepath.Join(ctx.FeatureDir("feature-one"), "plan.lock.json"), SourceCommit: "test",
 			})

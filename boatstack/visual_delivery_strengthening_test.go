@@ -57,7 +57,9 @@ func TestHostedURLVerificationRejectsInvalidResponse(t *testing.T) {
 
 func TestHostedURLVerificationRejectsUnexpectedDomain(t *testing.T) {
 	err := verifyHostedVisualURL(externalHostSpec{endpoint: "https://litterbox.catbox.moe/upload", label: "litter.catbox.moe"}, "https://example.com/image.png")
-	if err == nil || !strings.Contains(err.Error(), "unexpected domain") { t.Fatalf("unexpected host URL was accepted: %v", err) }
+	if err == nil || !strings.Contains(err.Error(), "unexpected domain") {
+		t.Fatalf("unexpected host URL was accepted: %v", err)
+	}
 }
 
 func TestExternalCommentIncludesJourneyContext(t *testing.T) {

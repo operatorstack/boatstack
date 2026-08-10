@@ -36,7 +36,7 @@ func TestAutonomyReceiptOverridesHumanPlanGateOnlyForExactPlan(t *testing.T) {
 	}
 	compiled := filepath.Join(root, "compiled")
 	lockPath := filepath.Join(root, "plan.lock.json")
-	if err := ActivatePlan(ActivationOptions{PlanPath: planPath, AutonomyPath: autonomyPath, OutDir: compiled, OutputPath: lockPath, SourceCommit: "test"}); err != nil {
+	if err := ActivatePlan(ActivationOptions{Repo: root, PlanPath: planPath, AutonomyPath: autonomyPath, OutDir: compiled, OutputPath: lockPath, SourceCommit: "test"}); err != nil {
 		t.Fatal(err)
 	}
 	value, err := os.ReadFile(lockPath)

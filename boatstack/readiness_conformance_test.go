@@ -57,6 +57,7 @@ func TestApprovalAndActivationBindSameReadinessFingerprint(t *testing.T) {
 	approvalPath := filepath.Join(dir, "approval.md")
 	runGit(t, repo, "remote", "rename", "origin", "temporarily-unavailable")
 	if err := RecordApproval(ApprovalRecordOptions{
+		Repo:     repo,
 		PlanPath: planPath, OutputPath: approvalPath, ApprovedBy: "Test Human",
 		ApprovedAt: "2026-07-29T12:00:00Z", Fingerprint: check.Fingerprint,
 	}); err == nil {
@@ -71,6 +72,7 @@ func TestApprovalAndActivationBindSameReadinessFingerprint(t *testing.T) {
 		t.Fatal("unactivated legacy approval must not authorize a schema-v3 plan")
 	}
 	if err := RecordApproval(ApprovalRecordOptions{
+		Repo:     repo,
 		PlanPath: planPath, OutputPath: approvalPath, ApprovedBy: "Test Human",
 		ApprovedAt: "2026-07-29T12:00:00Z", Fingerprint: check.Fingerprint,
 	}); err != nil {
@@ -85,6 +87,7 @@ func TestApprovalAndActivationBindSameReadinessFingerprint(t *testing.T) {
 	}
 	lockPath := filepath.Join(dir, "plan.lock.json")
 	if err := ActivatePlan(ActivationOptions{
+		Repo:     repo,
 		PlanPath: planPath, ApprovalPath: approvalPath,
 		OutDir: filepath.Join(dir, "compiled"), OutputPath: lockPath,
 	}); err != nil {
@@ -116,6 +119,7 @@ func TestApprovalAndActivationBindSameReadinessFingerprint(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := CheckApprovalLock(ApprovalOptions{
+		Repo:           repo,
 		SourcePlanPath: filepath.Join(dir, "source-plan.md"), SpecPath: filepath.Join(dir, "feature-spec.md"),
 		PlanPath: planPath, TasksPath: filepath.Join(dir, "compiled", "tasks.json"),
 		AuthorizationMode: "human", OutputPath: lockPath,

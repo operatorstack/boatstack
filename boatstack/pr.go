@@ -677,6 +677,7 @@ func managedPRSources(repo, feature string) ([]PRSource, map[string]string, erro
 	}
 	tasksPath := featureArtifactPath(directory, filepath.Join("compiled", "tasks.json"), "tasks.json")
 	if err := CheckApprovalLock(ApprovalOptions{
+		Repo:                repo,
 		SourcePlanPath:      check.SourcePlanPath,
 		SpecPath:            check.SpecPath,
 		PlanPath:            planPath,

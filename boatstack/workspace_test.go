@@ -186,10 +186,16 @@ func TestWorkspaceMergeStatusPrefersGh(t *testing.T) {
 func TestWorkspaceMergeStatusFallsBackToGit(t *testing.T) {
 	repo := workspaceRepo(t, defaultWorkspace())
 	withWorkspaceGh(t, ghUnavailable())
-	// Merged: branch is an ancestor of main.
+	// Bare ancestry is not publication evidence: a freshly cut branch at main
+	// remains active and cannot become cleanup-ready.
 	workspaceGitDo(t, repo, "branch", "feat/landed")
-	if merged, source := workspaceMergeStatus(repo, "feat/landed", "main"); !merged || source != "git" {
-		t.Fatalf("git ancestry merged not detected: merged=%v source=%s", merged, source)
+	if merged, source := workspaceMergeStatus(repo, "feat/landed", "main"); merged || source != "unpublished" {
+		t.Fatalf("bare ancestry created false completion: merged=%v source=%s", merged, source)
+	}
+	// Once durable delivery publication exists, ancestry may confirm landing.
+	writeCompletedDelivery(t, repo, "landed", "feat/landed")
+	if merged, source := workspaceMergeStatus(repo, "feat/landed", "main"); !merged || source != "git-after-publication" {
+		t.Fatalf("published ancestry did not confirm landing: merged=%v source=%s", merged, source)
 	}
 	// Not merged: branch has a commit main does not contain.
 	workspaceGitDo(t, repo, "switch", "-c", "feat/ahead")
@@ -211,7 +217,7 @@ func TestCleanupBlocksWhenNotMerged(t *testing.T) {
 	}
 	withWorkspaceGh(t, ghState("OPEN"))
 	result, _ := CleanupFeatureWorkspace(WorkspaceCleanupOptions{Repo: repo, Branch: "feat/open-feature", Confirm: true})
-	if result.VerificationStatus != "BLOCKED" || result.Merged || !strings.Contains(result.Reason, "not merged") {
+	if result.VerificationStatus != "BLOCKED" || result.Merged || !strings.Contains(result.Reason, "open pull request") {
 		t.Fatalf("expected not-merged block: %+v", result)
 	}
 	if !branchExists(repo, "feat/open-feature") {
@@ -406,7 +412,7 @@ func writeCompletedDelivery(t *testing.T, repo, feature, headBranch string) {
 	if err := saveDeliveryState(repo, DeliveryState{
 		SchemaVersion: deliveryStateSchemaVersion, Feature: feature, PlanLockHash: hash,
 		ActiveIndex: 1,
-		Slices:      []DeliverySlice{{ID: "delivery", Title: "Delivery", Status: "PUBLISHED", HeadBranch: headBranch}},
+		Slices:      []DeliverySlice{{ID: "delivery", Title: "Delivery", Status: "PUBLISHED", HeadBranch: headBranch, PRURL: "https://example.invalid/pr/1"}},
 	}); err != nil {
 		t.Fatal(err)
 	}

@@ -3,6 +3,7 @@ package boatstack
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -180,19 +181,47 @@ func ResolveControllerRepository(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	var matches []string
 	for repo := range registry.Repositories {
 		ctx, ok, _ := detachedContextFor(repo)
 		if !ok {
 			continue
 		}
 		if pathWithin(ctx.ExportRoot(), path) {
-			return repo, nil
+			matches = append(matches, repo)
 		}
+	}
+	sort.Strings(matches)
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+	if len(matches) > 1 {
+		return "", fmt.Errorf("controller path has multiple verified repository aliases; supply the invoking repository explicitly: %s (%s)", path, strings.Join(matches, ", "))
 	}
 	if repo, err := ResolveRepository(path); err == nil {
 		return repo, nil
 	}
 	return "", fmt.Errorf("path is not owned by a repository or verified detached controller: %s", path)
+}
+
+// ResolveControllerRepositoryFor validates a controller path against an
+// explicit invoking repository. Detached controller roots are intentionally
+// shared by aliases of one Git repository, so effectful operations must carry
+// the caller's worktree identity forward instead of reconstructing it from the
+// non-injective controller path.
+func ResolveControllerRepositoryFor(repoPath, path string) (string, error) {
+	repo, err := ResolveRepository(repoPath)
+	if err != nil {
+		return "", err
+	}
+	ctx, err := ResolveWorkspaceContext(repo)
+	if err != nil {
+		return "", err
+	}
+	if !pathWithin(ctx.ExportRoot(), path) {
+		return "", fmt.Errorf("controller path is not owned by the invoking repository %s: %s", repo, path)
+	}
+	return repo, nil
 }
 
 var (
