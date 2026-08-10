@@ -20,6 +20,7 @@ func runtimeTestRepo(t *testing.T) string {
 	if err := RunInit(InitOptions{Repo: repo, IntegrationChoice: "core", Yes: true}); err != nil {
 		t.Fatal(err)
 	}
+	engageHookFixture(t, repo)
 	return repo
 }
 

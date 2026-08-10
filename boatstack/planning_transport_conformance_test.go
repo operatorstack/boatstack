@@ -295,6 +295,10 @@ func TestPlanningTransportFailureClassesFailClosedWithoutExecuting(t *testing.T)
 		"PowerShell delimiter collision": powerShellPlanningEnvelope(t, `.product-loop\boatstack.ps1`, repo, "transport-failures", "plan.md", "# Plan\n'@\ntouch sentinel\n"),
 		"PowerShell trailing command":    strings.TrimSuffix(powerShellValid, "\n") + "; touch sentinel\n",
 	}
+	// Dormant host probes are intentionally inert. The explicit bootstrap/helper
+	// boundary validates these envelopes before mutation; host-level denial is an
+	// additional active-delivery control and is tested under a real lease here.
+	engageHookFixture(t, repo)
 	for name, command := range cases {
 		t.Run(name, func(t *testing.T) {
 			findings := ClassifyCommand(repo, command)

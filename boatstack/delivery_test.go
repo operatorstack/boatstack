@@ -487,8 +487,19 @@ func TestDeliveryGateRejectsStateFromAnotherPlanLock(t *testing.T) {
 func TestManagedDeliveryHookDeniesDirectPublicationRoutes(t *testing.T) {
 	repo := t.TempDir()
 	runGit(t, repo, "init", "-b", "main")
+	lockPath := filepath.Join(WorkspaceFor(repo).FeatureDir("phased-feature"), "plan.lock.json")
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lockPath, []byte("publication fixture lock\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lockHash, err := SHA256File(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := saveDeliveryState(repo, DeliveryState{
-		SchemaVersion: deliveryStateSchemaVersion, Feature: "phased-feature", PlanLockHash: strings.Repeat("a", 64),
+		SchemaVersion: deliveryStateSchemaVersion, Feature: "phased-feature", PlanLockHash: lockHash,
 		ActiveIndex: 0, Slices: []DeliverySlice{{ID: "phase-one", Title: "First", Status: "BUILD", HeadBranch: "main"}},
 	}); err != nil {
 		t.Fatal(err)
@@ -512,6 +523,9 @@ func TestManagedDeliveryHookDeniesDirectPublicationRoutes(t *testing.T) {
 	state.Slices[0].HeadBranch = "main"
 	state.ParentDelivery = "published-parent"
 	if err := saveDeliveryState(repo, state); err != nil {
+		t.Fatal(err)
+	}
+	if err := syncEngagementLease(repo, state); err != nil {
 		t.Fatal(err)
 	}
 	related := ClassifyCommand(repo, "git push origin main")

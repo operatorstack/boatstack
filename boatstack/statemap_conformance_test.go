@@ -156,7 +156,7 @@ func TestGuardClassifiersMatchDeclaredOwnership(t *testing.T) {
 // pressure should flow toward WorkspaceContext/statemap, not new literals.
 func TestProductLoopLiteralsStayInDeclaredFiles(t *testing.T) {
 	allowed := map[string]string{
-		"activation.go": "controller-syntax", "delivery.go": "controller-syntax", "export.go": "controller-bundle",
+		"delivery.go": "controller-syntax", "export.go": "controller-bundle",
 		"hooks.go":    "embedded-installation",
 		"launcher.go": "embedded-installation",
 		"init.go":     "embedded-installation", "installation_repair.go": "embedded-installation", "mutation_undo.go": "controller-syntax",

@@ -29,6 +29,7 @@ func tamperEvent(path string) []byte {
 // repeat notice and the fresh-probe prescription; the first two do not.
 func TestThirdIdenticalDenialEscalates(t *testing.T) {
 	repo := safetyTestRepo(t)
+	engageHookFixture(t, repo)
 	event := tamperEvent(".git/boatstack/deliveries/demo/state.json")
 	for attempt := 1; attempt <= denialEscalationThreshold; attempt++ {
 		output, denied := HookDecision(SafetyHookOptions{Host: "claude", Repo: repo, Input: event})
@@ -57,6 +58,7 @@ func TestThirdIdenticalDenialEscalates(t *testing.T) {
 // clears the ledger — the next denial starts unescalated.
 func TestAllowedMutationResetsTheLedger(t *testing.T) {
 	repo := safetyTestRepo(t)
+	engageHookFixture(t, repo)
 	event := tamperEvent(".git/boatstack/deliveries/demo/state.json")
 	for i := 0; i < denialEscalationThreshold-1; i++ {
 		if _, denied := HookDecision(SafetyHookOptions{Host: "claude", Repo: repo, Input: event}); !denied {
@@ -82,6 +84,7 @@ func TestAllowedMutationResetsTheLedger(t *testing.T) {
 // allowed call does NOT reset the ledger (only mutation progress does).
 func TestDenialKeysAreIsolated(t *testing.T) {
 	repo := safetyTestRepo(t)
+	engageHookFixture(t, repo)
 	tamper := SafetyFinding{Category: "workflow-state-tamper", Source: "delivery-state"}
 	phase := SafetyFinding{Category: "workflow-phase-bypass", WorkflowStage: "DRAFT_PLAN", Source: "planning-state"}
 	if got := recordDenial(repo, tamper); got != 1 {

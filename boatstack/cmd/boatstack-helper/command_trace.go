@@ -18,7 +18,7 @@ type commandTracePolicy struct {
 // to the enforcement path; every other dispatch is recorded once by run().
 var commandTracePolicies = map[string]commandTracePolicy{
 	"attach": {Category: "supervision"}, "detach": {Category: "supervision"},
-	"detached-status": {Category: "supervision"}, "config-rebind": {Category: "supervision"}, "context": {Category: "supervision"},
+	"detached-status": {Category: "supervision"}, "engagement-status": {Category: "supervision"}, "config-rebind": {Category: "supervision"}, "context": {Category: "supervision"},
 	"activate": {Category: "supervision"}, "deactivate": {Category: "supervision"},
 	"init": {Category: "installation"}, "update": {Category: "installation"},
 	"check-update": {Category: "installation"}, "repair-status": {Category: "installation"},
@@ -48,7 +48,7 @@ var commandTracePolicies = map[string]commandTracePolicy{
 	"flow": {Category: "flow"}, "retro": {Category: "analysis"},
 	"insight": {Category: "insight"}, "version": {Category: "diagnostic"},
 	"safety-hook":           {Category: "safety", ExcludedReason: "latency-sensitive enforcement path"},
-	"ambient-safety-hook":   {Category: "safety", ExcludedReason: "latency-sensitive enforcement path"},
+	"engagement-probe":      {Category: "safety", ExcludedReason: "latency-sensitive engagement path"},
 	"bootstrap-safety-hook": {Category: "safety", ExcludedReason: "latency-sensitive enforcement path"},
 }
 
