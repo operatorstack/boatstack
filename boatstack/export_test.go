@@ -375,7 +375,7 @@ func TestExportAndDriftCheck(t *testing.T) {
 		t.Fatal("PR brief must remain natural-language behavior, not a public command")
 	}
 	run := string(bundle.Files[".cursor/commands/boatstack-run.md"])
-	for _, expected := range []string{"run-preflight --repo . --json", "fetch", "next-status --repo . --json", "three complete automated repair-and-gate cycles", "automatically continue the run", "never merge or deploy"} {
+	for _, expected := range []string{"run-preflight --repo . --json", "fetch", "next-status --repo . --feature <feature> --json", "three complete automated repair-and-gate cycles", "automatically continue the run", "never merge or deploy"} {
 		if !strings.Contains(run, expected) {
 			t.Fatalf("boatstack-run adapter is missing %q", expected)
 		}

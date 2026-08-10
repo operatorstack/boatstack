@@ -130,7 +130,7 @@ func TestApprovedPublishPRStaysAllowedDuringActiveDelivery(t *testing.T) {
 	runGit(t, repo, "init", "-b", "main")
 	if err := saveDeliveryState(repo, DeliveryState{
 		SchemaVersion: deliveryStateSchemaVersion, Feature: "phased-feature", PlanLockHash: strings.Repeat("a", 64),
-		ActiveIndex: 0, Slices: []DeliverySlice{{ID: "phase-one", Title: "First", Status: "REVIEW"}},
+		ActiveIndex: 0, Slices: []DeliverySlice{{ID: "phase-one", Title: "First", Status: "REVIEW", HeadBranch: "main"}},
 	}); err != nil {
 		t.Fatal(err)
 	}

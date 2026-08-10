@@ -123,29 +123,20 @@ func TestActiveManagedDeliveriesStaysFailClosedOnInvalid(t *testing.T) {
 	}
 }
 
-// Same-Relation-Same-Law + Coreachability at the MUTATION boundary: invalid
-// delivery state fails closed even when ignored (no laundering corrupt state), but
-// the block is actionable — it prescribes discard-delivery (a reachable verb that
-// clears it), not the opaque error or a verb that refuses. Ignoring quiets status;
-// discarding unblocks mutation. This is the mutation-path twin of the read-only
-// ResolveNext discard-remedy conformance above.
-func TestPreActivationBlockOnInvalidDeliveryPrescribesDiscard(t *testing.T) {
+// Negative conformance for
+// control-law: ambient-plans-never-activate-workflow-control. Invalid delivery
+// observations remain actionable through ResolveNext, but they do not acquire
+// ambient authority over unrelated product tools.
+func TestInvalidUnselectedDeliveryDoesNotBlockOrdinaryMutation(t *testing.T) {
 	repo := nextTestRepo(t)
 	writeInvalidDelivery(t, repo, "stale-one")
 	if _, err := IgnoreDelivery(repo, "stale-one"); err != nil {
 		t.Fatal(err)
 	}
-	finding, blocked := preActivationFinding(repo, "product.go")
-	if !blocked {
-		t.Fatal("invalid delivery state did not block mutation")
+	if finding, blocked := preActivationFinding(repo, "product.go"); blocked {
+		t.Fatalf("invalid unselected delivery controlled an ordinary product path: %+v", finding)
 	}
-	if finding.NextOperation != "discard-delivery" {
-		t.Fatalf("block prescribed %q, want the reachable discard-delivery", finding.NextOperation)
-	}
-	if !controlledPhaseTransition("boatstack-helper discard-delivery --repo . --feature stale-one", finding.WorkflowStage) {
-		t.Fatal("prescribed discard-delivery is not admitted for the block it was prescribed for")
-	}
-	// The prescribed verb clears the state, and mutation is then unblocked.
+	// The bounded recovery remains available when Boatstack is explicitly used.
 	if _, err := DiscardDelivery(repo, "stale-one", true); err != nil {
 		t.Fatalf("discard-delivery refused the invalid delivery it was prescribed for: %v", err)
 	}

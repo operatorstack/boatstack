@@ -11,13 +11,21 @@ import "testing"
 // delivery (agentic-l3-full: APPROVED lock, never published) therefore poisons
 // publication authority for every other delivery.
 //
-// This mirrors the `next` test: two active deliveries, one ignored, neither on
-// the current branch. With the ignore list honored, only one active delivery
-// remains and the finding must not be ambiguous.
+// This mirrors the `next` test: two active deliveries, one ignored, with the
+// remaining delivery bound to the current branch. The finding must not be
+// ambiguous.
 func TestPublicationBypassHonorsIgnoredDeliveries(t *testing.T) {
 	repo := nextTestRepo(t)
 	writeNextDelivery(t, repo, "agentic-l3-full", "BUILD", 0) // stale, ignored blocker
 	writeNextDelivery(t, repo, "roles-access-policies", "BUILD", 0)
+	state, err := LoadDeliveryState(repo, "roles-access-policies")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Slices[0].HeadBranch = "main"
+	if err := saveDeliveryState(repo, state); err != nil {
+		t.Fatal(err)
+	}
 	setIgnoredDeliveries(t, repo, "agentic-l3-full")
 
 	finding, blocked := publicationBypassFinding(repo, "denied push", "tool-input")
