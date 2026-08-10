@@ -24,6 +24,10 @@ import (
 // as shell metacharacters). The closure property is defined over substituted
 // lines: what the user runs after filling the owed input.
 func substituteOwedFlags(line string) string {
+	line = strings.ReplaceAll(line, "'--feature' '<REQUIRED>'", "'--feature' 'demo'")
+	line = strings.ReplaceAll(line, "'--artifact' '<REQUIRED>'", "'--artifact' 'plan.md'")
+	line = strings.ReplaceAll(line, "'--source-plan' '<REQUIRED>'", "'--source-plan' 'README.md'")
+	line = strings.ReplaceAll(line, "'--shell' '<REQUIRED>'", "'--shell' 'posix'")
 	line = strings.ReplaceAll(line, "--feature '<REQUIRED>'", "--feature demo")
 	line = strings.ReplaceAll(line, "--artifact '<REQUIRED>'", "--artifact plan.md")
 	line = strings.ReplaceAll(line, "--source-plan '<REQUIRED>'", "--source-plan README.md")

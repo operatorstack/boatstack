@@ -317,7 +317,7 @@ func posixPlanningWord(value string) string {
 // runnable string. Human-required inputs use explicit <REQUIRED> placeholders;
 // planning Markdown is placed inside the same literal envelope the hook admits.
 // The rendering is never fabricated or runnable as-is while input is still owed.
-func (p PrescribedCommand) CommandLine() string {
+func (p PrescribedCommand) commandLineForOS(goos string) string {
 	literalPlanningInput := false
 	for _, input := range p.RequiresHumanInput {
 		if input == planningMarkdownInput {
@@ -341,19 +341,40 @@ func (p PrescribedCommand) CommandLine() string {
 		}
 		parts = append(parts, flag, "<REQUIRED>")
 	}
+	if goos == "windows" {
+		if literalPlanningInput {
+			envelope, err := powerShellPlanningEnvelopeFor(parts, []byte("<REQUIRED>\n"))
+			if err == nil {
+				return strings.TrimSuffix(envelope, "\n")
+			}
+			// A single quote in an argv word cannot cross the deliberately small
+			// PowerShell grammar. Preserve a valid Git Bash prescription instead
+			// of manufacturing a hybrid command that neither shell owns.
+			return strings.TrimSuffix(posixPlanningEnvelopeFor(parts, []byte("<REQUIRED>\n")), "\n")
+		}
+		for index := range parts {
+			parts[index] = powerShellPlanningWord(parts[index])
+		}
+		line := strings.Join(parts, " ")
+		if filepath.IsAbs(program) {
+			return "& " + line
+		}
+		return line
+	}
 	for index := range parts {
 		if parts[index] != "<REQUIRED>" {
 			parts[index] = posixPlanningWord(parts[index])
 		}
 	}
 	line := strings.Join(parts, " ")
-	if filepath.IsAbs(program) && runtime.GOOS == "windows" {
-		line = "& " + line
-	}
 	if literalPlanningInput {
 		return line + " <<'BOATSTACK_PLAN_EOF'\n<REQUIRED>\nBOATSTACK_PLAN_EOF"
 	}
 	return line
+}
+
+func (p PrescribedCommand) CommandLine() string {
+	return p.commandLineForOS(runtime.GOOS)
 }
 
 // prescribeCommand assembles the runnable command for a forward delivery
