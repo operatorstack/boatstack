@@ -3,6 +3,7 @@ package boatstack
 import (
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/deliverycontrol"
@@ -332,12 +333,16 @@ func (p PrescribedCommand) CommandLine() string {
 		}
 		parts = append(parts, flag, "<REQUIRED>")
 	}
-	line := strings.Join(parts, " ")
-	if literalPlanningInput {
-		for index := range parts {
+	for index := range parts {
+		if parts[index] != "<REQUIRED>" {
 			parts[index] = posixPlanningWord(parts[index])
 		}
-		line = strings.Join(parts, " ")
+	}
+	line := strings.Join(parts, " ")
+	if filepath.IsAbs(program) && runtime.GOOS == "windows" {
+		line = "& " + line
+	}
+	if literalPlanningInput {
 		return line + " <<'BOATSTACK_PLAN_EOF'\n<REQUIRED>\nBOATSTACK_PLAN_EOF"
 	}
 	return line
