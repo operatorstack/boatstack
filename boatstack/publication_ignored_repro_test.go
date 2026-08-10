@@ -22,7 +22,7 @@ func TestPublicationBypassHonorsIgnoredDeliveries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	state.Slices[0].HeadBranch = "main"
+	state.Slices[0].HeadBranch = gitOutput(repo, "branch", "--show-current")
 	if err := saveDeliveryState(repo, state); err != nil {
 		t.Fatal(err)
 	}
