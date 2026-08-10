@@ -712,9 +712,9 @@ func planningMarkdownPath(path string) bool {
 // and product baseline before it creates managed delivery state.
 //
 // The first raw write into the feature tree remains denied. Every planning
-// artifact crosses the owned planning-write boundary, so an ambient hook cannot
+// artifact crosses the owned planning-write boundary, so an engaged hook cannot
 // be bypassed by creating or editing controller state with a host writer.
-// control-law: ambient-plans-never-activate-workflow-control
+// control-law: draft-plans-never-activate-workflow-control
 // control-law: first-planning-write-uses-the-owned-channel
 func preActivationFinding(repo, attemptedPath string) (SafetyFinding, bool) {
 	if !featureScopedPath(attemptedPath) {
@@ -1218,20 +1218,11 @@ func supervisedToolIdentity(name string, input any) (string, string) {
 }
 
 func activeManagedOperationScope(repo string) (OperationScope, string, bool) {
-	active, err := ActiveManagedDeliveries(repo)
-	if err != nil || len(active) == 0 {
+	engagement := ResolveEngagement(repo, EngagementRequest{})
+	if engagement.Mode != EngagementActive {
 		return OperationScope{}, "", false
 	}
-	branch := strings.TrimSpace(gitOutput(repo, "branch", "--show-current"))
-	for _, feature := range active {
-		state, loadErr := LoadDeliveryState(repo, feature)
-		if loadErr != nil || !stateMatchesBranch(state, branch) || state.ActiveIndex >= len(state.Slices) {
-			continue
-		}
-		slice := state.Slices[state.ActiveIndex]
-		return OperationScope{Feature: feature, Slice: slice.ID, Worktree: filepath.Base(repo), HeadBranch: branch}, state.PlanLockHash, true
-	}
-	return OperationScope{}, "", false
+	return OperationScope{Feature: engagement.Feature, Slice: engagement.Slice, Worktree: filepath.Base(repo), HeadBranch: engagement.Branch}, engagement.PlanLockHash, true
 }
 
 func operationRetryClassForTool(name string) string {
@@ -1633,35 +1624,26 @@ func denialMessage(repo, host string, finding SafetyFinding) string {
 	return denialWithOptions(repo, host, finding).Render(RenderPlain)
 }
 
-// AmbientHookDecision is the entry point for a developer-level (user-scoped) guard
-// that runs for every repository the coding agent opens. It enforces Boatstack only
-// on managed repositories — those with a detached attachment or an embedded install
-// — and returns a plain allow (no Boatstack decision) everywhere else, so a
-// user-level hook never controls an unattached repository. On a managed repository
-// it delegates to the full HookDecision.
-func AmbientHookDecision(options SafetyHookOptions) ([]byte, bool) {
-	host := strings.ToLower(strings.TrimSpace(options.Host))
-	contract, supported := hookHostContracts[host]
-	repo, err := ResolveRepository(options.Repo)
-	if err != nil || !RepositoryIsManaged(repo) {
-		if supported {
-			value, _ := contract.allow()
-			return value, false
-		}
-		return nil, false
-	}
+// EngagementProbeDecision is the developer-level entry point. Repository
+// presence carries no authority; HookDecision applies policy only when the
+// canonical resolver proves a current active delivery.
+func EngagementProbeDecision(options SafetyHookOptions) ([]byte, bool) {
 	return HookDecision(options)
 }
 
 func HookDecision(options SafetyHookOptions) ([]byte, bool) {
 	host := strings.ToLower(strings.TrimSpace(options.Host))
 	contract, supported := hookHostContracts[host]
+	engagement := ResolveEngagement(options.Repo, EngagementRequest{})
+	if engagement.Mode != EngagementActive {
+		return nil, false
+	}
 	if !supported {
 		finding := SafetyFinding{Category: "unsupported-host", Reason: "unknown host is denied by the fail-closed guard", Source: "hook"}
 		value, _ := structuredHookDeny("", "codex", finding)
 		return value, true
 	}
-	repo, err := ResolveRepository(options.Repo)
+	repo, err := ResolveRepository(engagement.RepoRoot)
 	if err != nil {
 		finding := SafetyFinding{Category: "unresolved-repository", Reason: "repository identity could not be established", Source: "hook"}
 		value, _ := contract.deny("", finding)

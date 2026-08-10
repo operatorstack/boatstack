@@ -410,7 +410,7 @@ func initializeDeliveryState(repo, feature, planPath, lockPath string) error {
 	if existing, loadErr := LoadDeliveryState(repo, feature); loadErr == nil {
 		// Re-activating the exact same lock is a no-op: never disturb progress.
 		if existing.PlanLockHash == lockHash {
-			return nil
+			return syncEngagementLease(repo, existing)
 		}
 		// A plan amendment mid-delivery must preserve every already-published
 		// slice. deliveryDefinitions freshly recomputes ALL slices from the new
@@ -421,15 +421,29 @@ func initializeDeliveryState(repo, feature, planPath, lockPath string) error {
 		if err := validateAmendmentPreservesProgress(existing, slices); err != nil {
 			return err
 		}
-		return saveDeliveryState(repo, reconcileAmendedDeliveryState(existing, slices, lockHash))
+		next := reconcileAmendedDeliveryState(existing, slices, lockHash)
+		if err := saveDeliveryState(repo, next); err != nil {
+			return err
+		}
+		return syncEngagementLease(repo, next)
 	}
-	return saveDeliveryState(repo, DeliveryState{
+	next := DeliveryState{
 		SchemaVersion: deliveryStateSchemaVersion, Feature: feature, PlanLockHash: lockHash,
 		ActiveIndex: 0, Slices: slices, Mode: "NORMAL",
 		RepairCounters: map[string]int{"implementation_repair": 0, "verification_repair": 0, "review_repair": 0},
 		ParentDelivery: strings.TrimSpace(stringValue(plan["parent_delivery"])),
 		Goal:           deliveryGoalSnapshot(repo),
-	})
+	}
+	// Write the lease first. Until delivery state agrees, ResolveEngagement still
+	// returns DORMANT; if the state write fails, remove the unaccepted lease.
+	if err := syncEngagementLease(repo, next); err != nil {
+		return err
+	}
+	if err := saveDeliveryState(repo, next); err != nil {
+		_ = clearEngagementLease(repo)
+		return err
+	}
+	return nil
 }
 
 // guardReactivationPreservesProgress lets ActivatePlan reject a
@@ -1252,6 +1266,9 @@ func MarkDeliveryPublished(repo, feature, sliceID, url string) error {
 		if err := saveDeliveryState(repo, state); err != nil {
 			return err
 		}
+		if err := syncEngagementLease(repo, state); err != nil {
+			return err
+		}
 		reconcileInsightsForFeature(repo, feature)
 		return nil
 	}
@@ -1275,6 +1292,9 @@ func MarkDeliveryPublished(repo, feature, sliceID, url string) error {
 		}
 	}
 	if err := saveDeliveryState(repo, state); err != nil {
+		return err
+	}
+	if err := syncEngagementLease(repo, state); err != nil {
 		return err
 	}
 	reconcileInsightsForFeature(repo, feature)
@@ -1557,8 +1577,14 @@ func DiscardDelivery(repoPath, feature string, force bool) (DiscardDeliveryResul
 	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
 		return DiscardDeliveryResult{}, err
 	}
+	engagement := ResolveEngagement(repo, EngagementRequest{})
 	if err := os.Rename(featureDir, destination); err != nil {
 		return DiscardDeliveryResult{}, err
+	}
+	if engagement.Mode == EngagementActive && engagement.Feature == feature {
+		if err := clearEngagementLease(repo); err != nil {
+			return DiscardDeliveryResult{}, err
+		}
 	}
 	return DiscardDeliveryResult{
 		Feature: feature, Action: "discarded",

@@ -203,7 +203,8 @@ func TestDenialDemoRendersAllSamples(t *testing.T) {
 func TestGuardScriptPlainMessagesUnchanged(t *testing.T) {
 	script := string(guardShellScript())
 	for _, want := range []string{
-		"could not resolve the repository; denying tool execution.",
+		"boatstack/engagement.json",
+		"exit 0",
 		"shared runtime checksum is invalid; rerun the verified tagged installer.",
 		"bs_deny ", "bs_color",
 	} {

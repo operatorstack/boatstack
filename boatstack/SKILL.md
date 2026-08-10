@@ -1,13 +1,13 @@
 ---
 name: boatstack
-description: Use when the user explicitly asks for Boatstack, asks what is next in Boatstack, or works on an active or current-branch published Boatstack delivery. Do not activate from installation, attachment, saved or approved drafts, or repository presence alone.
+description: Use only when the user explicitly asks for Boatstack, asks what is next in Boatstack, or works on a verified active pre-publication Boatstack delivery in the current worktree and branch. Do not activate from installation, attachment, saved or approved drafts, published work, repository presence, or repository administration.
 ---
 
 # Boatstack
 
 Build the smallest complete product slice that can be independently verified. Implementation methods remain open: project facts, approval, and gate evidence are canonical; host-specific prompts are adapters. You are free in how you build. Only claims of completion require evidence.
 
-Boatstack starts only from an explicit user request or a managed delivery bound to the current worktree and branch. A saved, approved, policy-ready, ambiguous, stale, or invalid draft is repository evidence, not ambient workflow authority. Before explicit use, only the irreversible-operation safety floor and Boatstack-owned state boundaries apply.
+Boatstack starts only from an explicit user request or a verified active pre-publication delivery bound to the current worktree and branch. A saved, approved, policy-ready, ambiguous, stale, invalid, or published delivery is repository evidence, not ambient workflow authority. Outside engagement, Boatstack applies no workflow, state, publication, or irreversible-operation policy.
 
 ## Start by selecting the operation
 
@@ -44,17 +44,17 @@ After preflight, repeatedly run `next-status --repo . --feature <slug> --json`, 
 
 When `delivery.terminal` is `merged`, follow the post-publish prescriptions exactly. After publication, run `flow next` (or `next-status`). When it prescribes `flow watch`, run the watch and re-resolve when it exits. When checks fail, it prescribes `record-change --source-stage ci`; derive the exact message, classification, evidence, and changed repair mechanism from the failing check logs, never from memory, then repair, re-gate, and republish with `publish-pr --action update`. When the PR is observed merge-eligible, it prescribes the exact `gh pr merge` command; run it only as rendered, under the host's own permissions — Boatstack never merges, and you never merge without the prescription. A required review approval, a changes-requested verdict, a closed PR, or an unverifiable PR position always ends your turn at the operator frontier.
 
-## Enforce the irreversible-operation boundary
+## Enforce the irreversible-operation boundary during engagement
 
-Read [irreversible-operation-boundary.md](references/irreversible-operation-boundary.md). Project hooks hard-deny high-confidence destructive shell and MCP operations on every supported agent call. Never request or invent an in-session bypass. After an external-write failure, preserve state, use read-only diagnosis, retain the immutable target boundary, and choose only proven transactional retry or fix-forward recovery. Source edits may be reviewed, but an executable destructive capability blocks activation and every later gate.
+Read [irreversible-operation-boundary.md](references/irreversible-operation-boundary.md). During an explicit Boatstack command or verified active delivery, project hooks hard-deny high-confidence destructive shell and MCP operations. Outside engagement, Boatstack is inert; the host, operator, and external platform own safety. Never request or invent an in-session bypass while engaged. After an engaged external-write failure, preserve state, use read-only diagnosis, retain the immutable target boundary, and choose only proven transactional retry or fix-forward recovery.
 
 This enforcement is defense in depth, not a complete sandbox. Keep least-privilege service credentials and service-side destructive approval in place. Read `authority_status` from `run-preflight`: `HOOK_GUARDED` never proves ambient cloud authority absent, while `CREDENTIAL_ENFORCED` means a trusted external attestor supplied a current repository-only receipt. Never strengthen the former into the latter in prose.
 
 ## Keep repository administration outside delivery
 
-Branch synchronization, status, switching, worktree maintenance, and requests to discard local changes are repository administration, not product intent. Never route them to `auto-plan` or `repair` unless the exact target branch belongs to an active managed delivery. For an explicit branch and remote ref, use the project-local `workspace-sync` helper. It fetches the exact source, checkpoints branch and dirty-worktree state, aligns the branch in its owning worktree, and returns verified recovery refs.
+Branch synchronization, status, switching, worktree maintenance, and requests to discard local changes are repository administration, not Boatstack intent. Never activate Boatstack or route them to `auto-plan`, `repair`, or `workspace-sync`. If the user explicitly asks Boatstack to manage repository alignment during an active delivery, the named command remains available.
 
-For requests such as “ensure main is same as origin/main remove any current changes,” inspect only the named refs and worktree, then invoke `.product-loop/boatstack workspace-sync --repo . --branch main --source origin/main`. If the guard denies a raw hard reset or clean, report the denial and this single recovery action immediately. Do not inspect feature plans, scan the repository, search for the helper, or retry destructive Git.
+For requests such as “ensure main is same as origin/main remove any current changes,” use ordinary repository administration. Do not inspect feature plans, invoke Boatstack, or render a Boatstack response unless the user explicitly asks Boatstack to perform that operation.
 
 ## Bound the outcome
 

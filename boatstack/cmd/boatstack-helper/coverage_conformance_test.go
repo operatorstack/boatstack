@@ -70,16 +70,17 @@ var nonDeliveryVerbs = map[string]bool{
 	// PR construction / verification helpers reached around the ship gate.
 	"check-pr": true,
 	// Detached Supervision lifecycle (control-plane ownership, not delivery moves).
-	"attach":          true,
-	"detach":          true,
-	"detached-status": true,
-	"config-rebind":   true,
-	"context":         true,
-	"activate":        true,
-	"deactivate":      true,
+	"attach":            true,
+	"detach":            true,
+	"detached-status":   true,
+	"engagement-status": true,
+	"config-rebind":     true,
+	"context":           true,
+	"activate":          true,
+	"deactivate":        true,
 	// Safety hooks and workspace management (guard/scaffold, not delivery moves).
 	"safety-hook":           true,
-	"ambient-safety-hook":   true,
+	"engagement-probe":      true,
 	"bootstrap-safety-hook": true,
 	"workspace-cut":         true,
 	"workspace-cleanup":     true,
@@ -154,7 +155,7 @@ func TestCommandTraceInventoryCoversDispatchSurfaceExactly(t *testing.T) {
 			t.Errorf("command trace policy names stale verb %q", verb)
 		}
 	}
-	allowedExcluded := map[string]bool{"safety-hook": true, "ambient-safety-hook": true, "bootstrap-safety-hook": true}
+	allowedExcluded := map[string]bool{"safety-hook": true, "engagement-probe": true, "bootstrap-safety-hook": true}
 	for verb, policy := range commandTracePolicies {
 		if policy.ExcludedReason != "" && !allowedExcluded[verb] {
 			t.Errorf("only latency-sensitive safety hooks may be excluded; found %q", verb)

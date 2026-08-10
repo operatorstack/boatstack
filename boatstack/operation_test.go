@@ -40,10 +40,14 @@ func activeOperationTestRepo(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := saveDeliveryState(repo, DeliveryState{
+	state := DeliveryState{
 		SchemaVersion: deliveryStateSchemaVersion, Feature: feature, PlanLockHash: lockHash,
 		ActiveIndex: 0, Slices: []DeliverySlice{{ID: "delivery", Title: "Delivery", Status: "BUILD", BaseBranch: "main", HeadBranch: "main"}},
-	}); err != nil {
+	}
+	if err := saveDeliveryState(repo, state); err != nil {
+		t.Fatal(err)
+	}
+	if err := syncEngagementLease(repo, state); err != nil {
 		t.Fatal(err)
 	}
 	return repo

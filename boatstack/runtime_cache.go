@@ -203,7 +203,7 @@ func installCommandRuntime(source, repo string, integrations map[string]Integrat
 }
 
 // installDetachedRuntime populates a detached repository's external shared-runtime
-// slot from the running helper, so the developer-level ambient guard has a stable
+// slot from the running helper, so the developer-level engagement probe has a stable
 // helper to invoke. Unlike installSharedRuntime it scopes the symlink check to the
 // external control root and does not consult any in-repo generated lock. It
 // requires WorkspaceFor(repo) to already resolve detached (attach writes the

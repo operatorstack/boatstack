@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -300,32 +301,37 @@ func TestContextProjectionReportsMode(t *testing.T) {
 }
 
 // control-law: unattached-repositories-are-not-controlled
-// A developer-level guard allows an unmanaged repository (no Boatstack control) but
-// enforces the full policy on a managed one.
-func TestAmbientHookNoOpsUnmanagedButEnforcesManaged(t *testing.T) {
+// Attachment and repository presence remain inert. Only a verified active
+// delivery engages the developer-level probe.
+func TestEngagementProbeRequiresActiveDelivery(t *testing.T) {
 	repo := detachedTestRepo(t, "https://github.com/acme/app.git")
 	event := []byte(`{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git reset --hard HEAD~1"}}`)
 
-	// Unmanaged: the ambient guard must not control this repository.
-	output, denied := AmbientHookDecision(SafetyHookOptions{Host: "claude", Repo: repo, Input: event})
+	// Unmanaged: the engagement probe must not control this repository.
+	output, denied := EngagementProbeDecision(SafetyHookOptions{Host: "claude", Repo: repo, Input: event})
 	if denied {
-		t.Fatalf("ambient guard controlled an unattached repository: %s", output)
+		t.Fatalf("engagement probe controlled an unattached repository: %s", output)
 	}
 
-	// Attached (detached): the same destructive command is now denied.
+	// Attachment alone still carries no policy authority.
 	if _, err := AttachDetached(AttachOptions{Repo: repo}); err != nil {
 		t.Fatal(err)
 	}
 	invalidateWorkspaceCache()
-	output, denied = AmbientHookDecision(SafetyHookOptions{Host: "claude", Repo: repo, Input: event})
+	output, denied = EngagementProbeDecision(SafetyHookOptions{Host: "claude", Repo: repo, Input: event})
+	if denied {
+		t.Fatalf("engagement probe controlled an attached dormant repository: %s", output)
+	}
+	engageHookFixture(t, repo)
+	output, denied = EngagementProbeDecision(SafetyHookOptions{Host: "claude", Repo: repo, Input: event})
 	if !denied || !strings.Contains(string(output), `"permissionDecision":"deny"`) {
-		t.Fatalf("ambient guard did not enforce policy on a managed repository: %s", output)
+		t.Fatalf("engagement probe did not enforce policy on an active delivery: %s", output)
 	}
 }
 
 // control-law: unattached-repositories-are-not-controlled
 // Activation instructions are host-neutral (every agent), point at developer-level
-// config outside the repo, and install the ambient guard that no-ops unattached
+// config outside the repo, and install the engagement probe that no-ops unattached
 // repositories. An unattached repository has nothing to activate.
 func TestActivationPlanIsHostNeutralAndExternal(t *testing.T) {
 	repo := detachedTestRepo(t, "https://github.com/acme/app.git")
@@ -357,8 +363,11 @@ func TestActivationPlanIsHostNeutralAndExternal(t *testing.T) {
 		if strings.HasPrefix(host.ConfigPath, repo+string(filepath.Separator)) {
 			t.Fatalf("%s activation must not point inside the repo: %s", host.Host, host.ConfigPath)
 		}
-		if !strings.Contains(host.Snippet, "ambient-safety-hook") || !strings.Contains(host.Snippet, "--host "+host.Host) {
-			t.Fatalf("%s snippet missing ambient guard command: %s", host.Host, host.Snippet)
+		if !strings.Contains(host.Snippet, "engagement-probe") || !strings.Contains(host.Snippet, "--host "+host.Host) {
+			t.Fatalf("%s snippet missing engagement probe command: %s", host.Host, host.Snippet)
+		}
+		if !strings.Contains(host.Snippet, "engagement.json") || !strings.Contains(host.Snippet, `"commandWindows"`) {
+			t.Fatalf("%s snippet can load the helper before its cross-shell lease probe: %s", host.Host, host.Snippet)
 		}
 		var decoded any
 		if err := json.Unmarshal([]byte(host.Snippet), &decoded); err != nil {
@@ -367,8 +376,37 @@ func TestActivationPlanIsHostNeutralAndExternal(t *testing.T) {
 	}
 }
 
+func TestDetachedShellProbeDoesNotLoadHelperUntilEngaged(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash unavailable")
+	}
+	repo := safetyTestRepo(t)
+	marker := filepath.Join(t.TempDir(), "helper-ran")
+	helper := filepath.Join(t.TempDir(), "boatstack-helper")
+	body := []byte("#!/usr/bin/env bash\ntouch " + strconv.Quote(marker) + "\n")
+	if err := os.WriteFile(helper, body, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run := func() {
+		command := exec.Command("bash", "-c", engagementProbeCommand("codex", helper))
+		command.Dir = repo
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("engagement probe failed: %v: %s", err, output)
+		}
+	}
+	run()
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("dormant detached probe loaded its helper: %v", err)
+	}
+	engageHookFixture(t, repo)
+	run()
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("active detached probe did not load its helper: %v", err)
+	}
+}
+
 // control-law: detached-control-state-never-enters-the-plant
-// Attaching populates the external shared-runtime slot so the ambient guard has a
+// Attaching populates the external shared-runtime slot so the engagement probe has a
 // helper to invoke, without writing into the repository.
 func TestAttachPopulatesExternalRuntimeSlot(t *testing.T) {
 	repo := detachedTestRepo(t, "https://github.com/acme/app.git")
@@ -397,9 +435,9 @@ func TestAttachPopulatesExternalRuntimeSlot(t *testing.T) {
 }
 
 // control-law: activation-preserves-existing-host-config
-// Installing the ambient guard adds only a Boatstack-owned entry, preserves the
+// Installing the engagement probe adds only a Boatstack-owned entry, preserves the
 // developer's existing hooks, and is idempotent.
-func TestActivateInstallsAmbientGuardPreservingUserHooks(t *testing.T) {
+func TestActivateInstallsEngagementProbePreservingUserHooks(t *testing.T) {
 	repo := detachedTestRepo(t, "https://github.com/acme/app.git")
 	userRoot := t.TempDir()
 	t.Setenv("BOATSTACK_USER_CONFIG_ROOT", userRoot)
@@ -417,7 +455,7 @@ func TestActivateInstallsAmbientGuardPreservingUserHooks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := InstallAmbientHooks(repo, []string{"claude"})
+	result, err := InstallEngagementProbes(repo, []string{"claude"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,15 +470,15 @@ func TestActivateInstallsAmbientGuardPreservingUserHooks(t *testing.T) {
 	if !strings.Contains(text, "my-own-check.sh") {
 		t.Fatalf("install clobbered the developer's own hook: %s", text)
 	}
-	if !strings.Contains(text, "ambient-safety-hook") {
-		t.Fatalf("install did not add the ambient guard: %s", text)
+	if !strings.Contains(text, "engagement-probe") {
+		t.Fatalf("install did not add the engagement probe: %s", text)
 	}
 	if !strings.Contains(text, `"theme"`) {
 		t.Fatalf("install dropped unrelated user settings: %s", text)
 	}
 
 	// Idempotent: a second install changes nothing.
-	again, err := InstallAmbientHooks(repo, []string{"claude"})
+	again, err := InstallEngagementProbes(repo, []string{"claude"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -448,20 +486,20 @@ func TestActivateInstallsAmbientGuardPreservingUserHooks(t *testing.T) {
 		t.Fatalf("second install was not idempotent: %+v", again)
 	}
 
-	// Deactivate removes only the ambient guard, preserving the developer's hook.
-	removed, err := RemoveAmbientHooks(repo, []string{"claude"})
+	// Deactivate removes only the engagement probe, preserving the developer's hook.
+	removed, err := RemoveEngagementProbes(repo, []string{"claude"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if removed.Hosts[0].Action != "removed" {
-		t.Fatalf("deactivate did not remove the ambient guard: %+v", removed)
+		t.Fatalf("deactivate did not remove the engagement probe: %+v", removed)
 	}
 	after, err := os.ReadFile(claudeCfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(after), "ambient-safety-hook") {
-		t.Fatalf("deactivate left the ambient guard behind: %s", after)
+	if strings.Contains(string(after), "engagement-probe") {
+		t.Fatalf("deactivate left the engagement probe behind: %s", after)
 	}
 	if !strings.Contains(string(after), "my-own-check.sh") {
 		t.Fatalf("deactivate removed the developer's own hook: %s", after)
@@ -469,11 +507,11 @@ func TestActivateInstallsAmbientGuardPreservingUserHooks(t *testing.T) {
 }
 
 // control-law: unattached-repositories-are-not-controlled
-// Installing the ambient guard requires an attachment; an unattached repo is refused.
+// Installing the engagement probe requires an attachment; an unattached repo is refused.
 func TestActivateRefusesUnattachedRepository(t *testing.T) {
 	repo := detachedTestRepo(t, "https://github.com/acme/app.git")
 	t.Setenv("BOATSTACK_USER_CONFIG_ROOT", t.TempDir())
-	result, err := InstallAmbientHooks(repo, []string{"claude"})
+	result, err := InstallEngagementProbes(repo, []string{"claude"})
 	if err != nil {
 		t.Fatal(err)
 	}

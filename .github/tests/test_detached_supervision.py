@@ -190,7 +190,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         }
         for host, event in events.items():
             admitted = self.run_helper(
-                "ambient-safety-hook", "--host", host, "--repo", ".", stdin=json.dumps(event)
+                "engagement-probe", "--host", host, "--repo", ".", stdin=json.dumps(event)
             )
             self.assertNotIn("deny", admitted.stdout.lower(), host)
 
@@ -229,28 +229,30 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
 
         text = claude_config.read_text()
         self.assertIn("my-own.sh", text)
-        self.assertIn("ambient-safety-hook", text)
+        self.assertIn("engagement-probe", text)
+        self.assertIn("engagement.json", text)
+        self.assertIn("commandWindows", text)
         self.assertIn("theme", text)
 
         # Idempotent: re-activating changes nothing.
         again = self.helper_json("activate", "--repo", ".", "--host", "claude")
         self.assertTrue(all(host["action"] == "unchanged" for host in again["hosts"]))
 
-        # Deactivate removes only the ambient guard.
+        # Deactivate removes only the engagement probe.
         self.run_helper("deactivate", "--repo", ".", "--host", "claude")
         after = claude_config.read_text()
-        self.assertNotIn("ambient-safety-hook", after)
+        self.assertNotIn("engagement-probe", after)
         self.assertIn("my-own.sh", after)
 
-    def test_ambient_guard_enforces_managed_and_noops_unmanaged(self) -> None:
-        # Unattached: the developer-level guard must not control this repository.
-        unmanaged = self.run_helper("ambient-safety-hook", "--host", "claude", "--repo", ".", stdin=DESTRUCTIVE_EVENT)
-        self.assertNotIn('"permissionDecision":"deny"', unmanaged.stdout)
+    def test_engagement_probe_is_inert_before_and_after_attachment(self) -> None:
+        # Unattached: the developer-level probe must not control this repository.
+        unmanaged = self.run_helper("engagement-probe", "--host", "claude", "--repo", ".", stdin=DESTRUCTIVE_EVENT)
+        self.assertEqual(unmanaged.stdout, "")
 
-        # Attached: the same destructive command is denied by the same engine.
+        # Attachment is configuration, not workflow authority.
         self.run_helper("attach", "--repo", ".", "--mode", "detached")
-        managed = self.run_helper("ambient-safety-hook", "--host", "claude", "--repo", ".", stdin=DESTRUCTIVE_EVENT)
-        self.assertIn('"permissionDecision":"deny"', managed.stdout)
+        attached = self.run_helper("engagement-probe", "--host", "claude", "--repo", ".", stdin=DESTRUCTIVE_EVENT)
+        self.assertEqual(attached.stdout, "")
 
     def test_detached_work_keeps_repo_product_only(self) -> None:
         self.run_helper("attach", "--repo", ".", "--mode", "detached")

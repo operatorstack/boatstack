@@ -148,8 +148,22 @@ bs_deny() {
 HOST="${1:-}"
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 if [[ -z "$ROOT" ]]; then
-  bs_deny "Boatstack safety guard could not resolve the repository; denying tool execution."
-  exit 2
+	exit 0
+fi
+
+# Repository presence is not engagement. This worktree-local lease probe runs
+# before platform detection, runtime discovery, checksum work, or hydration.
+# Missing, unsafe, stale-branch, and malformed evidence is inert here; the
+# trusted helper validates the complete lease and delivery state when active.
+GIT_DIR="$(git rev-parse --path-format=absolute --git-dir 2>/dev/null || true)"
+LEASE="$GIT_DIR/boatstack/engagement.json"
+if [[ -z "$GIT_DIR" || ! -f "$LEASE" || -L "$LEASE" ]]; then
+	exit 0
+fi
+LEASE_BRANCH="$(sed -n 's/.*"branch"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LEASE" | head -n 1)"
+CURRENT_BRANCH="$(git branch --show-current 2>/dev/null || true)"
+if [[ -z "$LEASE_BRANCH" || "$LEASE_BRANCH" != "$CURRENT_BRANCH" ]]; then
+	exit 0
 fi
 
 COMMON="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
@@ -172,6 +186,7 @@ esac
 
 HELPER="$COMMON/boatstack/runtimes/%s/%s/${OS_NAME}-${ARCH}/boatstack-helper${EXTENSION}"
 MANIFEST="$COMMON/boatstack/runtimes/%s/%s/${OS_NAME}-${ARCH}/runtime.lock.json"
+HYDRATE_LOCK="$COMMON/boatstack/hydrate-%s.lock"
 # Auto-hydrate a missing or incomplete shared-runtime slot. A teammate who pulls
 # a version bump or clones fresh inherits the committed pointers (this guard's
 # baked version path) but an empty, gitignored slot, so without this the very next
@@ -185,7 +200,6 @@ MANIFEST="$COMMON/boatstack/runtimes/%s/%s/${OS_NAME}-${ARCH}/runtime.lock.json"
 # window must join the lock and wait, not skip the block and deny a half-slot.
 if { [[ ! -x "$HELPER" || -L "$HELPER" || ! -f "$MANIFEST" || -L "$MANIFEST" ]]; } && [[ "${BOATSTACK_AUTO_HYDRATE:-1}" != "0" ]]; then
   mkdir -p "$COMMON/boatstack" 2>/dev/null || true
-  HYDRATE_LOCK="$COMMON/boatstack/hydrate-%s.lock"
   if mkdir "$HYDRATE_LOCK" 2>/dev/null; then
     # Double-checked locking. A slow guard can reach this mkdir only after the
     # winner already hydrated and released the lock, so its mkdir succeeds too.
@@ -223,6 +237,16 @@ if { [[ ! -x "$HELPER" || -L "$HELPER" || ! -f "$MANIFEST" || -L "$MANIFEST" ]];
       sleep 1
     done
   fi
+fi
+# Both paths can become visible while the writer still owns the lock. Treat
+# lock release, not path existence, as the shared-runtime publication point.
+for _ in $(seq 1 12); do
+  [[ -d "$HYDRATE_LOCK" ]] || break
+  sleep 1
+done
+if [[ -d "$HYDRATE_LOCK" ]]; then
+  bs_deny "Boatstack shared runtime hydration did not complete; denying tool execution."
+  exit 2
 fi
 if [[ ! -x "$HELPER" ]]; then
   bs_deny "Boatstack shared runtime is missing; run the verified installer once from any checkout in this Git clone:"
@@ -293,9 +317,17 @@ function Bs-Deny($msg) {
 }
 $root = (& git rev-parse --show-toplevel 2>$null)
 if (-not $root) {
-  Bs-Deny "Boatstack safety guard could not resolve the repository; denying tool execution."
-  exit 2
+	exit 0
 }
+$gitDir = (& git rev-parse --path-format=absolute --git-dir 2>$null)
+if (-not $gitDir) { exit 0 }
+$leasePath = Join-Path $gitDir "boatstack/engagement.json"
+if (-not (Test-Path -LiteralPath $leasePath -PathType Leaf)) { exit 0 }
+$leaseInfo = Get-Item -LiteralPath $leasePath
+if ($leaseInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) { exit 0 }
+try { $lease = Get-Content -LiteralPath $leasePath -Raw | ConvertFrom-Json } catch { exit 0 }
+$currentBranch = (& git branch --show-current 2>$null)
+if (-not $lease.branch -or $lease.branch -ne $currentBranch) { exit 0 }
 $common = (& git rev-parse --path-format=absolute --git-common-dir 2>$null)
 if (-not $common) {
   Bs-Deny "Boatstack safety guard could not resolve the Git common directory; denying tool execution."
@@ -312,6 +344,8 @@ $arch = switch ($architecture) {
 }
 $helper = Join-Path $common "boatstack/runtimes/%s/%s/windows-$arch/boatstack-helper.exe"
 $manifestPath = Join-Path $common "boatstack/runtimes/%s/%s/windows-$arch/runtime.lock.json"
+$bsCommon = Join-Path $common "boatstack"
+$hydrateLock = Join-Path $bsCommon "hydrate-%s.lock"
 # Auto-hydrate a missing shared-runtime slot (see the bash guard for rationale):
 # a teammate who pulls a version bump or clones fresh inherits the committed
 # pointers but an empty, gitignored slot. On an absent slot we run the tag-pinned,
@@ -319,9 +353,7 @@ $manifestPath = Join-Path $common "boatstack/runtimes/%s/%s/windows-$arch/runtim
 # with an atomic directory lock. Purely additive: the gates below stay
 # authoritative and fail-closed if hydration is disabled, fails, or is skipped.
 if (((-not (Test-Path -LiteralPath $helper -PathType Leaf)) -or (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf))) -and $env:BOATSTACK_AUTO_HYDRATE -ne "0") {
-  $bsCommon = Join-Path $common "boatstack"
   New-Item -ItemType Directory -Path $bsCommon -Force -ErrorAction SilentlyContinue | Out-Null
-  $hydrateLock = Join-Path $bsCommon "hydrate-%s.lock"
   $acquired = $false
   try { New-Item -ItemType Directory -Path $hydrateLock -ErrorAction Stop | Out-Null; $acquired = $true } catch { $acquired = $false }
   if ($acquired) {
@@ -348,6 +380,12 @@ if (((-not (Test-Path -LiteralPath $helper -PathType Leaf)) -or (-not (Test-Path
       Start-Sleep -Seconds 1
     }
   }
+}
+# A ready-looking slot is not published until its writer releases the lock.
+for ($i = 0; $i -lt 12 -and (Test-Path -LiteralPath $hydrateLock); $i++) { Start-Sleep -Seconds 1 }
+if (Test-Path -LiteralPath $hydrateLock) {
+  Bs-Deny "Boatstack shared runtime hydration did not complete; denying tool execution."
+  exit 2
 }
 if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) {
   Bs-Deny "Boatstack shared runtime is missing; run the verified installer once from any checkout in this Git clone:"
@@ -407,7 +445,7 @@ func desiredHostHookForEvent(host, event string) map[string]any {
 			"matcher": "Bash|Shell|Write|Edit|ApplyPatch|Create|Delete|Move|Rename|mcp__.*",
 			"hooks": []any{map[string]any{
 				"type": "command", "command": hookCommand(host),
-				"shell": "bash", "timeout": 10, "statusMessage": "Checking Boatstack execution policy",
+				"shell": "bash", "timeout": 10,
 			}},
 		}
 	case "codex":
@@ -415,15 +453,15 @@ func desiredHostHookForEvent(host, event string) map[string]any {
 			"matcher": "Bash|Shell|Write|Edit|ApplyPatch|Create|Delete|Move|Rename|mcp__.*",
 			"hooks": []any{map[string]any{
 				"type": "command", "command": hookCommand(host), "commandWindows": hookCommandWindows(host),
-				"timeout": 10, "statusMessage": "Checking Boatstack execution policy",
+				"timeout": 10,
 			}},
 		}
 	case "gemini":
 		return map[string]any{
 			"matcher": ".*", "sequential": true,
 			"hooks": []any{map[string]any{
-				"name": "boatstack-safety-guard", "type": "command", "command": hookCommand(host),
-				"timeout": 10000, "description": "Checking Boatstack execution policy",
+				"name": "boatstack-engagement-probe", "type": "command", "command": hookCommand(host),
+				"timeout": 10000,
 			}},
 		}
 	default:
@@ -676,7 +714,7 @@ func mergeHostHookWithOwnership(config map[string]any, host string, installed ma
 			return fmt.Errorf("ambiguous Boatstack hook collision in %s", event)
 		}
 		if found > 0 && !verified && !repair {
-			return fmt.Errorf("drifted %s Boatstack safety hook for %s; rerun the update with --repair only after reviewing the owned-state preview", host, event)
+			return fmt.Errorf("drifted %s Boatstack engagement probe for %s; rerun the update with --repair only after reviewing the owned-state preview", host, event)
 		}
 		kept = append(kept, desiredHostHookForEvent(host, event))
 		hooks[event] = kept

@@ -58,7 +58,7 @@ func TestBoatstackRoutersHaveUnindentedTopLevelKeys(t *testing.T) {
 		".gemini/skills/boatstack/SKILL.md",
 	} {
 		frontmatter := skillFrontmatterForTest(t, bundle.Files[path])
-		if !strings.Contains(frontmatter, "\ndescription: Use when") {
+		if !strings.Contains(frontmatter, "\ndescription:") {
 			t.Errorf("%s description is not at column 1:\n%s", path, frontmatter)
 		}
 		for _, line := range strings.Split(frontmatter, "\n") {

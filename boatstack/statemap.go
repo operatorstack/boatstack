@@ -216,7 +216,7 @@ func StateRegistry() []StateEntry {
 			// Written only by the hook's own deny path; per-worktree so one
 			// worktree's denial history never escalates a sibling's denials.
 			Name: "guard-denial-ledger", Class: ClassRuntimeWorktree, Partition: "per-worktree", Gitignored: true, GuardProtected: true,
-			OwnerVerbs: []string{"safety-hook", "ambient-safety-hook"},
+			OwnerVerbs: []string{"safety-hook", "engagement-probe"},
 			Sample: func(w WorkspaceContext) (string, error) {
 				base, err := w.GuardDir()
 				if err != nil {
