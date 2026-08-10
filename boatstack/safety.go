@@ -50,6 +50,18 @@ type SafetyHookOptions struct {
 	Input []byte
 }
 
+// ownedCommandAdmission is the typed exception to lexical managed-path
+// protection. It never makes a command safe by basename or path text alone: an
+// admitted command must use the exact helper from the repository's verified
+// WorkspaceContext, stay inside that same controller root, and be legal at the
+// resolved workflow position.
+// control-law: guard-never-denies-an-owned-transition
+type ownedCommandAdmission struct {
+	Allowed  bool
+	ReadOnly bool
+	Finding  *SafetyFinding
+}
+
 type hookDecodeError struct {
 	code string
 }
@@ -257,6 +269,260 @@ func controlledPhaseTransition(command, stage string) bool {
 		}
 	}
 	return false
+}
+
+func commandFlagValue(words []string, name string) (string, bool) {
+	value := ""
+	seen := false
+	for index := 2; index < len(words); index++ {
+		candidate := ""
+		if words[index] == name {
+			if index+1 >= len(words) {
+				return "", false
+			}
+			candidate = words[index+1]
+			if strings.HasPrefix(candidate, "-") {
+				return "", false
+			}
+			index++
+		} else if strings.HasPrefix(words[index], name+"=") {
+			candidate = strings.TrimPrefix(words[index], name+"=")
+		} else {
+			continue
+		}
+		if strings.TrimSpace(candidate) == "" || (seen && candidate != value) {
+			return "", false
+		}
+		value = candidate
+		seen = true
+	}
+	return value, true
+}
+
+func mergeCommandFeature(current, candidate string) (string, bool) {
+	if candidate == "" {
+		return current, true
+	}
+	if !featureSlugPattern.MatchString(candidate) || (current != "" && current != candidate) {
+		return "", false
+	}
+	return candidate, true
+}
+
+func ownedCommandFeature(workspace WorkspaceContext, words []string) (string, bool) {
+	explicit, flagsOK := commandFlagValue(words, "--feature")
+	if !flagsOK {
+		return "", false
+	}
+	feature, ok := mergeCommandFeature("", explicit)
+	if !ok {
+		return "", false
+	}
+	featureRoot := workspace.FeatureRoot()
+	for _, word := range words[2:] {
+		if !filepath.IsAbs(word) || !pathWithin(featureRoot, word) {
+			continue
+		}
+		relative, err := filepath.Rel(featureRoot, word)
+		if err != nil {
+			return "", false
+		}
+		parts := strings.Split(filepath.ToSlash(relative), "/")
+		if len(parts) == 0 {
+			return "", false
+		}
+		feature, ok = mergeCommandFeature(feature, parts[0])
+		if !ok {
+			return "", false
+		}
+	}
+	return feature, true
+}
+
+func ownedReadOnlyHelperCommand(words []string) bool {
+	if len(words) < 2 {
+		return false
+	}
+	if readOnlyHelperVerbs[words[1]] {
+		return true
+	}
+	if len(words) < 3 {
+		return false
+	}
+	switch words[1] {
+	case "insight":
+		return map[string]bool{"check": true, "list": true, "show": true, "frontier": true, "evaluate": true}[words[2]]
+	case "flow":
+		if !map[string]bool{"check": true, "next": true, "tasks": true, "frontier": true, "watch": true, "report": true}[words[2]] {
+			return false
+		}
+		for _, word := range words[3:] {
+			if word == "--execute" || strings.HasPrefix(word, "--execute=") {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+func knownOwnedMutationVerb(verb string) bool {
+	if stageIndependentRecoveryVerbs[verb] {
+		return true
+	}
+	for _, verbs := range stageMutationVerbs {
+		for _, candidate := range verbs {
+			if candidate == verb {
+				return true
+			}
+		}
+	}
+	for _, candidate := range []string{"record-delivery-gate", "record-change", "publish-pr", "attach-evidence", "flow"} {
+		if candidate == verb {
+			return true
+		}
+	}
+	return false
+}
+
+func commandMatchesSolutionVerb(next FlowNext, verb string) bool {
+	options := append([]PrescribedCommand{}, next.Alternatives...)
+	if next.Prescribed != nil {
+		options = append(options, *next.Prescribed)
+	}
+	for _, option := range options {
+		if option.Program == "gh" {
+			continue
+		}
+		if option.Verb == verb {
+			return true
+		}
+	}
+	return false
+}
+
+func ownedFlowExecuteCoordinator(words []string, feature string) bool {
+	if len(words) < 4 || words[1] != "flow" || words[2] != "next" || feature == "" {
+		return false
+	}
+	execute := false
+	for index := 3; index < len(words); index++ {
+		word := words[index]
+		switch {
+		case word == "--repo" || word == "--feature":
+			if index+1 >= len(words) || strings.TrimSpace(words[index+1]) == "" {
+				return false
+			}
+			index++
+		case strings.HasPrefix(word, "--repo=") || strings.HasPrefix(word, "--feature="):
+			if strings.TrimSpace(strings.SplitN(word, "=", 2)[1]) == "" {
+				return false
+			}
+		case word == "--json" || word == "--json=true" || word == "--json=false":
+		case word == "--execute" || word == "--execute=true":
+			if execute {
+				return false
+			}
+			execute = true
+		default:
+			return false
+		}
+	}
+	return execute
+}
+
+func ownedBoatstackCommand(repo, command string) ownedCommandAdmission {
+	if !deliveryStatePathPattern.MatchString(command) {
+		return ownedCommandAdmission{}
+	}
+	trimmed := strings.TrimSpace(command)
+	if strings.HasPrefix(trimmed, "& ") {
+		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "& "))
+	}
+	words, complete := literalCommandWords(trimmed)
+	if !complete || len(words) < 2 {
+		return ownedCommandAdmission{}
+	}
+	workspace, err := ResolveWorkspaceContext(repo)
+	if err != nil || workspace.Mode != SupervisionDetached || !filepath.IsAbs(words[0]) {
+		return ownedCommandAdmission{}
+	}
+	executable, err := filepath.Abs(words[0])
+	if err != nil || canonicalizeExistingAncestor(executable) != canonicalizeExistingAncestor(workspace.HelperPath()) {
+		return ownedCommandAdmission{}
+	}
+	info, err := os.Lstat(executable)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return ownedCommandAdmission{}
+	}
+	repoArg, repoFlagOK := commandFlagValue(words, "--repo")
+	if !repoFlagOK {
+		return ownedCommandAdmission{}
+	}
+	if repoArg != "" {
+		candidate := repoArg
+		if !filepath.IsAbs(candidate) {
+			candidate = filepath.Join(repo, filepath.FromSlash(candidate))
+		}
+		absolute, absErr := filepath.Abs(candidate)
+		if absErr != nil || canonicalizeExistingAncestor(absolute) != canonicalizeExistingAncestor(workspace.RepoRoot) {
+			return ownedCommandAdmission{}
+		}
+	}
+	for _, word := range words[2:] {
+		if !deliveryStatePathPattern.MatchString(word) {
+			continue
+		}
+		if !filepath.IsAbs(word) || !pathWithin(workspace.controlRoot, word) {
+			return ownedCommandAdmission{}
+		}
+	}
+	if ownedReadOnlyHelperCommand(words) {
+		return ownedCommandAdmission{Allowed: true, ReadOnly: true}
+	}
+	if stageIndependentRecoveryVerbs[words[1]] {
+		return ownedCommandAdmission{Allowed: true}
+	}
+	feature, featureOK := ownedCommandFeature(workspace, words)
+	if featureOK && feature != "" {
+		status, resolveErr := ResolveNext(repo, feature)
+		if resolveErr == nil {
+			// flow next --execute is an exact, feature-scoped coordinator. Its
+			// driver re-resolves this same oracle and executes only a prescribed,
+			// AutoDerivable, explicitly allowlisted helper transition. The outer
+			// coordinator therefore belongs to the owned boundary even though its
+			// verb is not itself the current transition.
+			// control-law: guard-never-denies-an-owned-transition
+			if ownedFlowExecuteCoordinator(words, feature) {
+				return ownedCommandAdmission{Allowed: true}
+			}
+			if controlledPhaseTransition(trimmed, status.ObservedStage) {
+				return ownedCommandAdmission{Allowed: true}
+			}
+			if next, nextErr := nextControlFromStatus(repo, status); nextErr == nil && commandMatchesSolutionVerb(next, words[1]) {
+				return ownedCommandAdmission{Allowed: true}
+			}
+			if knownOwnedMutationVerb(words[1]) {
+				finding := SafetyFinding{
+					Category: "workflow-phase-bypass", Reason: "the Boatstack transition is not owned by the current workflow stage", Source: "workflow-stage",
+					BlockingFeature: feature, WorkflowStage: status.ObservedStage, NextOperation: status.NextOperation,
+				}
+				return ownedCommandAdmission{Finding: &finding}
+			}
+		}
+	}
+	return ownedCommandAdmission{}
+}
+
+func isPureReadOnlyCommandForRepo(repo, command string) bool {
+	if isPureReadOnlyCommand(command) {
+		return true
+	}
+	if !deliveryStatePathPattern.MatchString(command) {
+		return false
+	}
+	admission := ownedBoatstackCommand(repo, command)
+	return admission.Allowed && admission.ReadOnly
 }
 
 func controlledWorkspaceSync(repo, command string) bool {
@@ -798,13 +1064,21 @@ func ClassifyCommand(repo, command string) []SafetyFinding {
 		validatedPlanningTransport = true
 		command = transport.Header
 	}
-	if deliveryStatePathPattern.MatchString(command) && !validatedPlanningTransport && !isPureReadOnlyCommand(command) && !approvedUpdatePublisherPattern.MatchString(command) {
+	owned := ownedCommandAdmission{}
+	if deliveryStatePathPattern.MatchString(command) {
+		owned = ownedBoatstackCommand(repo, command)
+	}
+	if owned.Finding != nil {
+		return []SafetyFinding{*owned.Finding}
+	}
+	readOnly := isPureReadOnlyCommand(command) || (owned.Allowed && owned.ReadOnly)
+	if deliveryStatePathPattern.MatchString(command) && !validatedPlanningTransport && !owned.Allowed && !readOnly && !approvedUpdatePublisherPattern.MatchString(command) {
 		// AttemptedPath carries the matched managed-path fragment (bounded and
 		// secret-free, like the phase-bypass finding) so the denial can name the
 		// path's declared owner verbs from the state-ownership map.
 		return []SafetyFinding{{Category: "workflow-state-tamper", Reason: "managed delivery state may be changed only by Boatstack transitions", Source: "delivery-state", AttemptedPath: deliveryStatePathPattern.FindString(command)}}
 	}
-	if insightArtifactPathPattern.MatchString(command) && (!isPureReadOnlyCommand(command) || insightInPlaceMutationPattern.MatchString(command)) && !insightGitStagingPattern.MatchString(command) {
+	if insightArtifactPathPattern.MatchString(command) && (!readOnly || insightInPlaceMutationPattern.MatchString(command)) && !insightGitStagingPattern.MatchString(command) {
 		return []SafetyFinding{{Category: "workflow-state-tamper", Reason: "tracked insight artifacts may be changed only by Boatstack insight transitions", Source: "insight-state", AttemptedPath: insightArtifactPathPattern.FindString(command)}}
 	}
 	if directPublicationPattern.MatchString(command) && !approvedPublisherPattern.MatchString(command) {
@@ -812,24 +1086,24 @@ func ClassifyCommand(repo, command string) []SafetyFinding {
 			return []SafetyFinding{finding}
 		}
 	}
-	if strings.Contains(command, "workspace-sync") && !isPureReadOnlyCommand(command) && !controlledWorkspaceSync(repo, command) {
+	if strings.Contains(command, "workspace-sync") && !readOnly && !owned.Allowed && !controlledWorkspaceSync(repo, command) {
 		return []SafetyFinding{{Category: "workspace-sync-bypass", Reason: "recoverable branch alignment must use the exact project-local Boatstack helper", Source: "command"}}
 	}
 	findings := classifySafetyText(command, "command", commandExecutesLiveSQL(command))
 	if len(findings) > 0 {
 		return dedupeFindings(findings)
 	}
-	if !isPureReadOnlyCommand(command) {
+	if !readOnly {
 		// Feed any named .product-loop/features/ operand so the first-write latch
 		// sees raw shell writes (cp/tee/redirect) the same way it sees a Write tool.
-		if finding, blocked := preActivationFinding(repo, featuresPathInCommand(command)); blocked && !approvedPublisherPattern.MatchString(command) && !controlledPhaseTransition(command, finding.WorkflowStage) && !controlledWorkspaceSync(repo, command) {
+		if finding, blocked := preActivationFinding(repo, featuresPathInCommand(command)); blocked && !owned.Allowed && !approvedPublisherPattern.MatchString(command) && !controlledPhaseTransition(command, finding.WorkflowStage) && !controlledWorkspaceSync(repo, command) {
 			return []SafetyFinding{finding}
 		}
 	}
 	if regexp.MustCompile(`(?i)\b(?:rm\s+-[^\n;]*(?:r[^\n;]*f|f[^\n;]*r)|remove-item\s+[^\n;]*-recurse[^\n;]*-force)\b`).MatchString(command) && strings.Contains(command, repo) {
 		findings = append(findings, SafetyFinding{Category: "filesystem-destruction", Reason: "recursive deletion of the repository is denied", Source: "command"})
 	}
-	if len(findings) > 0 || isPureReadOnlyCommand(command) {
+	if len(findings) > 0 || readOnly {
 		return dedupeFindings(findings)
 	}
 	// Only inspect files the command actually EXECUTES (interpreter / SQL-client
@@ -914,10 +1188,20 @@ func ClassifyTool(repo, name string, input any) []SafetyFinding {
 	return dedupeFindings(findings)
 }
 
-func mutationCapableTool(name string, input any) bool {
+func mutationCapableTool(repo, name string, input any) bool {
 	if strings.EqualFold(name, "Bash") || strings.EqualFold(name, "Shell") || strings.EqualFold(name, "beforeShellExecution") || strings.EqualFold(name, "run_shell_command") {
 		object, ok := input.(map[string]any)
-		return !ok || !isPureReadOnlyCommand(stringValue(object["command"]))
+		if !ok {
+			return true
+		}
+		command := stringValue(object["command"])
+		if deliveryStatePathPattern.MatchString(command) && ownedBoatstackCommand(repo, command).Allowed {
+			// Boatstack transitions have their own deterministic receipts and
+			// reconciliation. Wrapping them in generic host-operation supervision
+			// creates a competing controller and can deadlock the owned transition.
+			return false
+		}
+		return !isPureReadOnlyCommandForRepo(repo, command)
 	}
 	lower := strings.ToLower(name)
 	return mutationToolPattern.MatchString(lower) || (strings.HasPrefix(lower, "mcp__") && !externalReadOnlyToolPattern.MatchString(lower))
@@ -970,7 +1254,7 @@ func hookAttemptKey(host, fingerprint string, eventValue []byte) string {
 }
 
 func superviseToolAttempt(repo, host, name string, input any, eventValue []byte) *SafetyFinding {
-	if !mutationCapableTool(name, input) {
+	if !mutationCapableTool(repo, name, input) {
 		return nil
 	}
 	scope, authority, managed := activeManagedOperationScope(repo)
@@ -1084,7 +1368,7 @@ func completeSupervisedToolEvent(repo, host string, value []byte) (bool, bool) {
 	if malformed {
 		return true, true
 	}
-	if name == "" || input == nil || !mutationCapableTool(name, input) {
+	if name == "" || input == nil || !mutationCapableTool(repo, name, input) {
 		return true, false
 	}
 	kind, fingerprint := supervisedToolIdentity(name, input)
@@ -1409,7 +1693,7 @@ func HookDecision(options SafetyHookOptions) ([]byte, bool) {
 		// An allowed mutation-capable call is forward progress: stale denial
 		// history must not escalate the next unrelated denial.
 		// control-law: repeated-denials-escalate-to-solutions
-		if mutationCapableTool(name, input) {
+		if mutationCapableTool(repo, name, input) {
 			resetDenialLedger(repo)
 		}
 		value, _ := contract.allow()
