@@ -155,6 +155,42 @@ func detachedStatusCommand(arguments []string) int {
 	return emitJSON(result)
 }
 
+func configRebindCommand(arguments []string) int {
+	flags := flag.NewFlagSet("config-rebind", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "attached repository whose configuration authority should be rebound")
+	source := flags.String("source", "", "authoritative source: repository, controller, or file")
+	configPath := flags.String("config", "", "external configuration path used with --source file")
+	apply := flags.Bool("apply", false, "apply the fingerprinted preview")
+	expectedFingerprint := flags.String("expected-fingerprint", "", "exact preview fingerprint required by --apply")
+	jsonOutput := flags.Bool("json", false, "render the result as JSON")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	result, err := boatstack.ConfigRebind(boatstack.ConfigRebindOptions{
+		Repo: *repo, Source: *source, ConfigPath: *configPath,
+		Apply: *apply, ExpectedFingerprint: *expectedFingerprint,
+	})
+	if err != nil {
+		return fail(err)
+	}
+	value, err := json.Marshal(result)
+	if err != nil {
+		return fail(err)
+	}
+	if *jsonOutput {
+		fmt.Println(string(value))
+	} else {
+		fmt.Println(result.Reason)
+		if result.NextOperation != "" {
+			fmt.Println("NEXT=" + result.NextOperation)
+		}
+	}
+	if result.VerificationStatus != "VERIFIED" {
+		return 1
+	}
+	return 0
+}
+
 func activateCommand(arguments []string) int {
 	flags := flag.NewFlagSet("activate", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "attached repository to activate")
@@ -391,6 +427,9 @@ func exportCommand(arguments []string) int {
 	}
 	if *repo == "" || *configPath == "" || (*write && *check) {
 		return fail(fmt.Errorf("export requires --repo and --config; --write and --check are mutually exclusive"))
+	}
+	if err := boatstack.ValidateConfigurationExport(*repo, *configPath, *write); err != nil {
+		return fail(err)
 	}
 	config, raw, err := boatstack.LoadConfig(*configPath)
 	if err != nil {
@@ -1337,64 +1376,26 @@ func checkSafetyCommand(arguments []string) int {
 	return 0
 }
 
-type MigrateConfigReport struct {
-	Status      string `json:"status"`
-	Message     string `json:"message,omitempty"`
-	FromVersion int    `json:"from_version"`
-	ToVersion   int    `json:"to_version"`
-	Changed     bool   `json:"changed"`
-}
-
 func migrateConfigCommand(arguments []string) int {
 	flags := flag.NewFlagSet("migrate-config", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "repository whose configuration should be migrated")
+	target := flags.String("target", "", "configuration projection: repository or controller; required for hybrid installations")
 	check := flags.Bool("check", false, "dry-run check mode")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}
-	configPath := boatstack.WorkspaceFor(*repo).SourceConfigPath()
-	raw, err := os.ReadFile(configPath)
+	report, err := boatstack.MigrateManagedConfiguration(*repo, *target, *check)
 	if err != nil {
-		report := MigrateConfigReport{
-			Status:  "FAIL",
-			Message: fmt.Sprintf("failed to read config: %v", err),
-		}
-		value, _ := json.Marshal(report)
-		fmt.Print(string(value))
-		return 1
-	}
-	upgraded, fromVer, toVer, changed, err := boatstack.MigrateConfigBytes(raw)
-	if err != nil {
-		report := MigrateConfigReport{
-			Status:  "FAIL",
-			Message: fmt.Sprintf("migration failed: %v", err),
-		}
-		value, _ := json.Marshal(report)
-		fmt.Print(string(value))
-		return 1
-	}
-	if changed && !*check {
-		if err := os.WriteFile(configPath, upgraded, 0o644); err != nil {
-			report := MigrateConfigReport{
-				Status:  "FAIL",
-				Message: fmt.Sprintf("failed to write migrated config: %v", err),
-			}
-			value, _ := json.Marshal(report)
-			fmt.Print(string(value))
-			return 1
-		}
-	}
-	report := MigrateConfigReport{
-		Status:      "PASS",
-		FromVersion: fromVer,
-		ToVersion:   toVer,
-		Changed:     changed,
+		return fail(err)
 	}
 	value, err := json.Marshal(report)
 	if err != nil {
 		return fail(err)
 	}
 	fmt.Print(string(value))
+	if report.Status != "PASS" {
+		return 1
+	}
 	return 0
 }
 
@@ -1613,7 +1614,7 @@ func workspaceSyncCommand(arguments []string) int {
 
 func run() (result int) {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <attach|detach|detached-status|context|activate|deactivate|init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|record-autonomy|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|authority-context|record-change|record-journey-results|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|review-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|attach-evidence|check-safety|migrate-config|safety-hook|ambient-safety-hook|bootstrap-safety-hook|hydrate-runtime|activate-worktree-runtime|diagnose-hook|render-denial|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-reap|workspace-status|workspace-sync|flow|retro|insight|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <attach|detach|detached-status|config-rebind|context|activate|deactivate|init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|record-autonomy|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|authority-context|record-change|record-journey-results|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|review-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|attach-evidence|check-safety|migrate-config|safety-hook|ambient-safety-hook|bootstrap-safety-hook|hydrate-runtime|activate-worktree-runtime|diagnose-hook|render-denial|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-reap|workspace-status|workspace-sync|flow|retro|insight|doctor|version>")
 		return 2
 	}
 	if complete := commandTraceCompletion(os.Args[1], os.Args[2:]); complete != nil {
@@ -1626,6 +1627,8 @@ func run() (result int) {
 		return detachCommand(os.Args[2:])
 	case "detached-status":
 		return detachedStatusCommand(os.Args[2:])
+	case "config-rebind":
+		return configRebindCommand(os.Args[2:])
 	case "context":
 		return contextCommand(os.Args[2:])
 	case "activate":

@@ -411,6 +411,23 @@ func CheckInstallationHealth(repoPath string) error {
 	if err != nil {
 		return err
 	}
+	topology, err := RequireManagedConfiguration(repo)
+	if err != nil {
+		return err
+	}
+	if topology.Shape == ConfigShapeHybrid {
+		repositoryConfig, repositoryRaw, loadErr := LoadConfig(topology.RepositorySourcePath)
+		if loadErr != nil {
+			return fmt.Errorf("invalid repository Boatstack configuration: %w", loadErr)
+		}
+		repositoryBundle, buildErr := BuildExportBundle(topology.RepositorySourcePath, repositoryConfig, embeddedConfigBytes(repositoryRaw), "boatstack")
+		if buildErr != nil {
+			return buildErr
+		}
+		if checkErr := CheckExport(topology.RepositoryBundleRoot, repositoryBundle.Files); checkErr != nil {
+			return fmt.Errorf("repository Boatstack package is stale: %w", checkErr)
+		}
+	}
 	ctx, err := ResolveWorkspaceContext(repo)
 	if err != nil {
 		return err

@@ -35,6 +35,7 @@ type AttachResult struct {
 	ControlRoot        string                     `json:"control_root,omitempty"`
 	WorktreeID         string                     `json:"worktree_id,omitempty"`
 	ConfigSHA256       string                     `json:"config_sha256,omitempty"`
+	ConfigAuthority    string                     `json:"config_authority,omitempty"`
 	Reason             string                     `json:"reason"`
 	FeatureMigrations  []DetachedFeatureMigration `json:"feature_migrations,omitempty"`
 }
@@ -114,6 +115,13 @@ func AttachDetached(opts AttachOptions) (AttachResult, error) {
 		return blockedAttach("Boatstack could not load the detached project configuration: " + err.Error()), nil
 	}
 	configSHA256 := SHA256Bytes(rawConfig)
+	configAuthority := ConfigAuthorityExternalSnapshot
+	if strings.TrimSpace(opts.ConfigPath) == "" {
+		configAuthority = ConfigAuthoritySynthesized
+		if fileExists(filepath.Join(root, sourceConfigName)) {
+			configAuthority = ConfigAuthorityRepository
+		}
+	}
 	imports, migrationResults, migrationErr := planDetachedFeatureImports(root, ctx)
 	if migrationErr != nil {
 		result := blockedAttach("Boatstack refused detached feature migration: " + migrationErr.Error())
@@ -156,6 +164,7 @@ func AttachDetached(opts AttachOptions) (AttachResult, error) {
 		InitialCommit:     identity.InitialCommit,
 		NormalizedOrigin:  identity.NormalizedOrigin,
 		ConfigSHA256:      configSHA256,
+		ConfigAuthority:   configAuthority,
 		CreatedByVersion:  Version,
 		CreatedAt:         nowRFC3339(),
 	}
@@ -201,6 +210,7 @@ func AttachDetached(opts AttachOptions) (AttachResult, error) {
 		ControlRoot:        ctx.controlRoot,
 		WorktreeID:         identity.WorktreeID,
 		ConfigSHA256:       configSHA256,
+		ConfigAuthority:    configAuthority,
 		FeatureMigrations:  migrationResults,
 		Reason:             "Attached Boatstack in detached mode. The repository was not modified; all controller state lives under the external control root.",
 	}, nil
@@ -269,16 +279,22 @@ func DetachDetached(opts DetachOptions) (DetachResult, error) {
 // DetachedStatusResult reports whether a repository is attached in detached mode
 // and whether its binding verifies.
 type DetachedStatusResult struct {
-	SchemaVersion int    `json:"schema_version"`
-	Attached      bool   `json:"attached"`
-	Verified      bool   `json:"verified"`
-	Mode          string `json:"mode"`
-	RepoID        string `json:"repo_id,omitempty"`
-	RepoRoot      string `json:"repo_root,omitempty"`
-	ControlRoot   string `json:"control_root,omitempty"`
-	WorktreeID    string `json:"worktree_id,omitempty"`
-	ConfigSHA256  string `json:"config_sha256,omitempty"`
-	Reason        string `json:"reason"`
+	SchemaVersion          int      `json:"schema_version"`
+	Attached               bool     `json:"attached"`
+	Verified               bool     `json:"verified"`
+	Mode                   string   `json:"mode"`
+	RepoID                 string   `json:"repo_id,omitempty"`
+	RepoRoot               string   `json:"repo_root,omitempty"`
+	ControlRoot            string   `json:"control_root,omitempty"`
+	WorktreeID             string   `json:"worktree_id,omitempty"`
+	ConfigSHA256           string   `json:"config_sha256,omitempty"`
+	ConfigAuthority        string   `json:"config_authority,omitempty"`
+	ConfigRelation         string   `json:"config_relation,omitempty"`
+	RepositoryConfigSHA256 string   `json:"repository_config_sha256,omitempty"`
+	ControllerConfigSHA256 string   `json:"controller_config_sha256,omitempty"`
+	AffectedWorktrees      []string `json:"affected_worktrees,omitempty"`
+	NextOperation          string   `json:"next_operation,omitempty"`
+	Reason                 string   `json:"reason"`
 }
 
 // DetachedStatus reports the detached attachment state for a repository. It is
@@ -309,14 +325,21 @@ func DetachedStatus(repoPath string) (DetachedStatusResult, error) {
 		return DetachedStatusResult{
 			SchemaVersion: detachedSchemaVersion, Attached: true, Verified: false, Mode: string(SupervisionDetached),
 			RepoID: ctx.RepoID, RepoRoot: root, ControlRoot: ctx.controlRoot, WorktreeID: ctx.WorktreeID,
-			ConfigSHA256: configSHA256, Reason: verifyErr.Error(),
+			ConfigSHA256: configSHA256, ControllerConfigSHA256: configSHA256, Reason: verifyErr.Error(),
 		}, nil
+	}
+	topology, topologyErr := ResolveConfigurationTopology(root)
+	if topologyErr != nil {
+		return DetachedStatusResult{SchemaVersion: detachedSchemaVersion, Attached: true, Verified: false, Mode: string(SupervisionDetached), RepoID: ctx.RepoID, RepoRoot: root, ControlRoot: ctx.controlRoot, WorktreeID: ctx.WorktreeID, Reason: topologyErr.Error()}, nil
 	}
 	return DetachedStatusResult{
 		SchemaVersion: detachedSchemaVersion, Attached: true, Verified: true, Mode: string(SupervisionDetached),
 		RepoID: ctx.RepoID, RepoRoot: ctx.RepoRoot, ControlRoot: ctx.controlRoot, WorktreeID: ctx.WorktreeID,
-		ConfigSHA256: bindingConfigSHA256(ctx),
-		Reason:       "This repository is attached in detached mode and its binding verifies.",
+		ConfigSHA256: topology.ControllerConfigSHA256, ConfigAuthority: topology.Authority,
+		ConfigRelation: topology.Relation, RepositoryConfigSHA256: topology.RepositoryConfigSHA256,
+		ControllerConfigSHA256: topology.ControllerConfigSHA256, AffectedWorktrees: topology.AffectedWorktrees,
+		NextOperation: topology.NextOperation,
+		Reason:        "This repository is attached in detached mode and its binding verifies.",
 	}, nil
 }
 
