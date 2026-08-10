@@ -153,6 +153,59 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         status = self.helper_json("detached-status", "--repo", ".")
         self.assertTrue(status["attached"] and status["verified"])
 
+    def test_bootstrap_oracle_is_credential_free_and_executes_exact_output(self) -> None:
+        attached = self.helper_json("attach", "--repo", ".", "--mode", "detached")
+        source_plan = self.repo / "request.md"
+        source_plan.write_text("# Source plan\n")
+        document = "# Synthetic artifact\n\n`rm -rf /` is inert documentation.\n"
+
+        prescription = json.loads(
+            self.run_helper(
+                "flow",
+                "bootstrap",
+                "--repo",
+                ".",
+                "--feature",
+                "detached-bootstrap",
+                "--source-plan",
+                "request.md",
+                "--artifact",
+                "source-plan.md",
+                "--shell",
+                "posix",
+                "--json",
+                stdin=document,
+            ).stdout
+        )
+        self.assertEqual(prescription["verification_status"], "VERIFIED")
+        self.assertEqual(prescription["supervision_mode"], "detached")
+        self.assertTrue(Path(prescription["helper_path"]).is_absolute())
+        self.assertNotIn(".product-loop/boatstack planning-write", prescription["planning_envelope"])
+
+        events = {
+            "cursor": {"hook_event_name": "beforeShellExecution", "command": prescription["planning_envelope"]},
+            "claude": {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": prescription["planning_envelope"]}},
+            "codex": {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": prescription["planning_envelope"]}},
+            "gemini": {"hook_event_name": "BeforeTool", "tool_name": "run_shell_command", "tool_input": {"command": prescription["planning_envelope"]}},
+        }
+        for host, event in events.items():
+            admitted = self.run_helper(
+                "ambient-safety-hook", "--host", host, "--repo", ".", stdin=json.dumps(event)
+            )
+            self.assertNotIn("deny", admitted.stdout.lower(), host)
+
+        executed = subprocess.run(
+            ["bash", "-c", prescription["planning_envelope"]],
+            cwd=self.repo,
+            env=self._env(),
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(executed.returncode, 0, executed.stdout + executed.stderr)
+        artifact = Path(attached["control_root"]) / ".product-loop" / "features" / "detached-bootstrap" / "source-plan.md"
+        self.assertEqual(artifact.read_text(), document)
+        self.assert_repo_uncontaminated()
+
     def test_activate_installs_guard_preserving_user_hooks(self) -> None:
         self.run_helper("attach", "--repo", ".", "--mode", "detached")
 

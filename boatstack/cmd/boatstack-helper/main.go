@@ -540,6 +540,8 @@ func planningWriteCommand(arguments []string) int {
 	repo := flags.String("repo", ".", "repository containing the feature package")
 	feature := flags.String("feature", "", "lowercase kebab-case feature slug")
 	artifact := flags.String("artifact", "", "known Markdown planning artifact name")
+	sourcePlan := flags.String("source-plan", "", "in-repo source plan bound by flow bootstrap")
+	sourcePlanSHA256 := flags.String("source-plan-sha256", "", "source-plan digest bound by flow bootstrap")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}
@@ -552,6 +554,7 @@ func planningWriteCommand(arguments []string) int {
 	}
 	path, err := boatstack.WritePlanningArtifact(boatstack.PlanningWriteOptions{
 		Repo: *repo, Feature: *feature, Artifact: *artifact, Content: content,
+		SourcePlan: *sourcePlan, SourcePlanSHA256: *sourcePlanSHA256,
 	})
 	if err != nil {
 		return fail(err)

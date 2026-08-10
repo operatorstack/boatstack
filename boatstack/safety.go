@@ -79,7 +79,7 @@ func malformedHookInput(code string) error {
 // idioms — recovery-status | jq, git diff | wc -l, … | sort | uniq -c — compose
 // freely. Effect-CHANGING syntax (redirection > <, command substitution $()) is
 // still banned in isPureReadOnlyCommand, so no filter can be turned into a writer.
-var readOnlyStage = regexp.MustCompile(`(?i)^\s*(?:env\s+[^ ]+\s+)*(?:rg|grep|git\s+(?:grep|diff|status|show|log)|cat|sed|head|tail|less|wc|awk|sort|uniq|cut|tr|jq|column|nl|comm|rev|fold|find\s+[^\n]*-(?:print|ls)|(?:[^\s]*/)?boatstack(?:\.ps1)?\s+(?:recovery-status|mutation-status|operation-status|delivery-status|next-status|workspace-status|repair-status|check-plan|check-source-plan|check-safety|diagnose-hook|authority-context|doctor|version)\b|(?:[^\s]*/)?boatstack(?:\.ps1)?\s+insight\s+(?:check|list|show|frontier|evaluate)\b)`)
+var readOnlyStage = regexp.MustCompile(`(?i)^\s*(?:env\s+[^ ]+\s+)*(?:rg|grep|git\s+(?:grep|diff|status|show|log)|cat|sed|head|tail|less|wc|awk|sort|uniq|cut|tr|jq|column|nl|comm|rev|fold|find\s+[^\n]*-(?:print|ls)|(?:[^\s]*/)?boatstack(?:\.ps1)?\s+(?:recovery-status|mutation-status|operation-status|delivery-status|next-status|workspace-status|repair-status|check-plan|check-source-plan|check-safety|diagnose-hook|authority-context|doctor|version)\b|(?:[^\s]*/)?boatstack(?:\.ps1)?\s+insight\s+(?:check|list|show|frontier|evaluate)\b|(?:[^\s]*/)?boatstack(?:\.ps1)?\s+flow\s+(?:bootstrap|check|next|tasks|frontier|watch|report)\b)`)
 
 // Constitutional/Optimization split. These destruction rules are CONSTITUTIONAL:
 // they define the real boundary (destroying a live resource) and are never traded
@@ -257,7 +257,7 @@ func controlledPhaseTransition(command, stage string) bool {
 	if executable != "boatstack" && executable != "boatstack-helper" {
 		return false
 	}
-	if readOnlyHelperVerbs[fields[1]] {
+	if ownedReadOnlyHelperCommand(fields) {
 		return true
 	}
 	if stageIndependentRecoveryVerbs[fields[1]] {
@@ -353,7 +353,7 @@ func ownedReadOnlyHelperCommand(words []string) bool {
 	case "insight":
 		return map[string]bool{"check": true, "list": true, "show": true, "frontier": true, "evaluate": true}[words[2]]
 	case "flow":
-		if !map[string]bool{"check": true, "next": true, "tasks": true, "frontier": true, "watch": true, "report": true}[words[2]] {
+		if !map[string]bool{"bootstrap": true, "check": true, "next": true, "tasks": true, "frontier": true, "watch": true, "report": true}[words[2]] {
 			return false
 		}
 		for _, word := range words[3:] {

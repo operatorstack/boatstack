@@ -23,7 +23,12 @@ func quotedLiteral(t *testing.T, value string) string {
 
 func planningHeader(t *testing.T, helper, repo, feature, artifact string) string {
 	t.Helper()
-	return quotedLiteral(t, helper) + " planning-write --repo " + quotedLiteral(t, repo) + " --feature " + feature + " --artifact " + artifact
+	sourcePlan := "README.md"
+	sourceSHA, err := SHA256File(filepath.Join(repo, sourcePlan))
+	if err != nil {
+		return quotedLiteral(t, helper) + " planning-write --repo " + quotedLiteral(t, repo) + " --feature " + feature + " --artifact " + artifact
+	}
+	return quotedLiteral(t, helper) + " planning-write --repo " + quotedLiteral(t, repo) + " --feature " + feature + " --artifact " + artifact + " --source-plan " + sourcePlan + " --source-plan-sha256 " + sourceSHA
 }
 
 func posixPlanningEnvelope(t *testing.T, helper, repo, feature, artifact, body string) string {
@@ -39,7 +44,7 @@ func powerShellPlanningEnvelope(t *testing.T, helper, repo, feature, artifact, b
 	if !strings.HasSuffix(body, "\n") {
 		body += "\n"
 	}
-	return "& {\n" + powerShellPlanningEncodingLine + "\n@'\n" + body + "'@ | & " + planningHeader(t, helper, repo, feature, artifact) + "\n}\n"
+	return "& {\n" + powerShellPlanningEncodingLine + "\n@'\n" + body + "'@ | & " + planningHeader(t, helper, repo, feature, artifact) + "\n" + powerShellPlanningExitLine + "\n}\n"
 }
 
 func planningHookInput(t *testing.T, host, command string) []byte {
@@ -159,9 +164,7 @@ func TestPlanningTransportRunsHookShellHelperAndSavedArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Windows PowerShell may serialize the terminating newline as CRLF. The
-	// document text and every non-ASCII code point must otherwise be identical.
-	if strings.ReplaceAll(string(written), "\r\n", "\n") != body {
+	if string(written) != body {
 		t.Fatalf("saved Markdown differs from transported body:\nwant %q\n got %q", body, written)
 	}
 }
@@ -241,7 +244,7 @@ func TestPlanningTransportTreatsDocumentTextAsInertAcrossHosts(t *testing.T) {
 	}{
 		{posix, body, true},
 		{powerShellPlanningEnvelope(t, `.product-loop\boatstack.ps1`, repo, "threat-model", "questions.md", body), body, runtime.GOOS == "windows"},
-		{strings.ReplaceAll(posix, "\n", "\r\n"), strings.ReplaceAll(body, "\n", "\r\n"), true},
+		{strings.ReplaceAll(posix, "\n", "\r\n"), body, true},
 	}
 	for _, test := range commands {
 		inspection := inspectPlanningWriteTransport(test.command)
@@ -288,6 +291,7 @@ func TestPlanningTransportFailureClassesFailClosedWithoutExecuting(t *testing.T)
 		"NUL content":                    header + " <<'BOATSTACK_PLAN_EOF'\nplan\x00body\nBOATSTACK_PLAN_EOF\n",
 		"PowerShell no UTF-8 scope":      "@'\n# Plan\n'@ | & " + header,
 		"PowerShell truncated":           "& {\n" + powerShellPlanningEncodingLine + "\n@'\n# Plan\n",
+		"PowerShell no exit propagation": strings.Replace(powerShellValid, powerShellPlanningExitLine+"\n", "", 1),
 		"PowerShell delimiter collision": powerShellPlanningEnvelope(t, `.product-loop\boatstack.ps1`, repo, "transport-failures", "plan.md", "# Plan\n'@\ntouch sentinel\n"),
 		"PowerShell trailing command":    strings.TrimSuffix(powerShellValid, "\n") + "; touch sentinel\n",
 	}
@@ -379,20 +383,23 @@ func TestPlanningPrescriptionQuotesRepositoryPath(t *testing.T) {
 	runGit(t, repo, "add", ".")
 	runGit(t, repo, "commit", "-m", "base")
 
-	command, ok := prescribePlanningVerb(repo, NextStatus{ObservedStage: "NOT_STARTED", Feature: "quoted-path"}, "planning-write")
-	if !ok || command == nil {
-		t.Fatal("planning-write prescription is missing")
+	installPlanningTransportFixture(t, repo)
+	prescription, err := ResolvePlanningBootstrap(BootstrapOptions{
+		Repo: repo, Feature: "quoted-path", SourcePlan: "README.md",
+		Artifact: "plan.md", Shell: BootstrapShellPOSIX, Document: []byte("test-value\n"),
+	})
+	if err != nil {
+		t.Fatalf("resolve quoted repository bootstrap: %v", err)
 	}
-	line := substituteOwedFlags(command.CommandLine())
+	line := prescription.PlanningEnvelope
 	inspection := inspectPlanningWriteTransport(line)
-	if !inspection.Matched || inspection.InvalidReason != "" || inspection.Repository != repo {
+	if !inspection.Matched || inspection.InvalidReason != "" || inspection.Repository != prescription.Repository {
 		t.Fatalf("quoted repository path did not round trip: %q %#v", line, inspection)
 	}
 	if findings := ClassifyCommand(repo, line); len(findings) != 0 {
 		t.Fatalf("guard denied the quoted repository prescription: %#v", findings)
 	}
 	if runtime.GOOS != "windows" {
-		installPlanningTransportFixture(t, repo)
 		executePlanningEnvelope(t, repo, line)
 		written, err := os.ReadFile(filepath.Join(repo, productLoopDirName, "features", "quoted-path", "plan.md"))
 		if err != nil || string(written) != "test-value\n" {

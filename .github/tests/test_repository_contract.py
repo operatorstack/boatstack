@@ -127,14 +127,55 @@ class RepositoryContract(unittest.TestCase):
             self.assertIn("<desc", value, name)
 
     def test_public_examples_exclude_private_context(self) -> None:
-        paths = [
-            REPO / "docs" / "account-recovery-walkthrough.md",
-            RUNTIME / "testdata" / "reviewer-pr-body.md",
-        ]
-        for path in paths:
-            value = path.read_text()
-            for private in ("Tax" + "Weave", "/Users/", "bigboateng", "cursor_password_reset_button_addition"):
+        private_values = (
+            "Tax" + "Weave",
+            "/" + "Users/apple/Documents/GitHub/" + "tax" + "weave",
+            "big" + "boateng",
+            "cursor_password_" + "reset_button_addition",
+        )
+        text_suffixes = {".go", ".json", ".md", ".ps1", ".py", ".sh", ".yaml", ".yml"}
+        for path in REPO.rglob("*"):
+            if not path.is_file() or ".git" in path.parts or path.suffix not in text_suffixes:
+                continue
+            value = path.read_text(errors="replace")
+            for private in private_values:
                 self.assertNotIn(private, value, path)
+
+    def test_executable_documentation_examples_use_registered_cli(self) -> None:
+        documents = [
+            REPO / "README.md",
+            REPO / "boatstack" / "SKILL.md",
+            *sorted((REPO / "docs").glob("*.md")),
+            *sorted((REPO / "boatstack" / "references").glob("*.md")),
+        ]
+        command_pattern = re.compile(
+            r"(?:\.product-loop/boatstack(?:\.ps1)?|boatstack-helper)\s+"
+            r"(?P<verb>[a-z][a-z0-9-]*)(?:\s+(?P<subcommand>[a-z][a-z0-9-]*))?"
+        )
+        nested = {"flow", "insight", "retro"}
+        checked: dict[tuple[str, ...], str] = {}
+        for document in documents:
+            value = document.read_text().replace("\\\n", " ")
+            for match in command_pattern.finditer(value):
+                verb = match.group("verb")
+                subcommand = match.group("subcommand") if verb in nested else None
+                command = (verb, subcommand) if subcommand else (verb,)
+                line_end = value.find("\n", match.end())
+                if line_end < 0:
+                    line_end = len(value)
+                segment = value[match.start():line_end]
+                flags = set(re.findall(r"--([a-z][a-z0-9-]*)", segment))
+                if command not in checked:
+                    help_result = self.run_helper(*command, "--help", expected=2)
+                    checked[command] = help_result.stdout + help_result.stderr
+                help_text = checked[command]
+                self.assertIn(f"Usage of {' '.join(command)}:", help_text, document)
+                for flag in flags:
+                    self.assertRegex(help_text, rf"(?m)^  -{re.escape(flag)}(?:\s|$)", document)
+
+        public_guidance = "\n".join(document.read_text() for document in documents)
+        self.assertNotIn(".product-loop/boatstack planning-write", public_guidance)
+        self.assertNotIn(".product-loop\\boatstack.ps1' planning-write", public_guidance)
 
     def test_export_and_drift_contract(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

@@ -79,28 +79,9 @@ Finish the host's Plan-mode exploration and save it as a durable file, then reru
 
 ## Plan mode cannot write an artifact
 
-Planning is Markdown-only. Send the complete command and document in one shell-tool call. For Bash, zsh, or Git Bash:
+Planning is Markdown-only. Send the selected feature, durable in-repository source plan, artifact name, target shell, and complete Markdown to `flow bootstrap --repo <path> --feature <slug> --source-plan <path> --artifact <name> --shell posix|powershell` through the current Boatstack operation entrypoint. Execute only the returned `planning_envelope`, unchanged. The oracle selects the valid embedded or detached helper and renders the shell transport; documentation is never command authority.
 
-```bash
-.product-loop/boatstack planning-write --repo . --feature <feature> --artifact <name> <<'BOATSTACK_PLAN_EOF'
-<complete Markdown document>
-BOATSTACK_PLAN_EOF
-```
-
-In Git Bash on Windows, use `.product-loop/boatstack` in the same envelope.
-
-For Windows PowerShell:
-
-```powershell
-& {
-$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
-@'
-<complete Markdown document>
-'@ | & '.product-loop\boatstack.ps1' planning-write --repo . --feature <feature> --artifact <name>
-}
-```
-
-The adapter must not run a bare helper, split the envelope across calls, prepend or append another command, use an expansion-capable delimiter, paste the Markdown at a shell prompt, or edit product code. `PLANNING_TRANSPORT_INVALID` means Boatstack stopped the command before execution; correct the complete envelope. If a PowerShell document contains a line beginning with `'@`, use Git Bash and choose a heredoc token that does not occur as its own line in the document.
+The adapter must not run a bare helper, construct a `planning-write` command, split either envelope across calls, prepend or append another command, use an expansion-capable delimiter, paste Markdown at a shell prompt, or edit product code. After `workspace-cut`, discard the earlier prescription and resolve again from `destination_repository`. `PLANNING_TRANSPORT_INVALID` means Boatstack stopped the command before execution; obtain a fresh prescription. If PowerShell cannot represent a document or path safely, use Git Bash and request `--shell posix`.
 
 ## `/build` says it is ready but cannot start
 

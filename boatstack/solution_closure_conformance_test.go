@@ -26,8 +26,12 @@ import (
 func substituteOwedFlags(line string) string {
 	line = strings.ReplaceAll(line, "--feature '<REQUIRED>'", "--feature demo")
 	line = strings.ReplaceAll(line, "--artifact '<REQUIRED>'", "--artifact plan.md")
+	line = strings.ReplaceAll(line, "--source-plan '<REQUIRED>'", "--source-plan README.md")
+	line = strings.ReplaceAll(line, "--shell '<REQUIRED>'", "--shell posix")
 	line = strings.ReplaceAll(line, "--feature <REQUIRED>", "--feature demo")
 	line = strings.ReplaceAll(line, "--artifact <REQUIRED>", "--artifact plan.md")
+	line = strings.ReplaceAll(line, "--source-plan <REQUIRED>", "--source-plan README.md")
+	line = strings.ReplaceAll(line, "--shell <REQUIRED>", "--shell posix")
 	return strings.ReplaceAll(line, "<REQUIRED>", "test-value")
 }
 

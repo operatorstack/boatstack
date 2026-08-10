@@ -39,10 +39,12 @@ func planningArtifactNames() []string {
 }
 
 type PlanningWriteOptions struct {
-	Repo     string
-	Feature  string
-	Artifact string
-	Content  []byte
+	Repo             string
+	Feature          string
+	Artifact         string
+	Content          []byte
+	SourcePlan       string
+	SourcePlanSHA256 string
 }
 
 type ApprovalRecordOptions struct {
@@ -232,11 +234,12 @@ func WritePlanningArtifact(options PlanningWriteOptions) (string, error) {
 	if !planningArtifacts[options.Artifact] {
 		return "", fmt.Errorf("unsupported planning artifact %q; use one of: %s (note the .md suffix)", options.Artifact, strings.Join(planningArtifactNames(), ", "))
 	}
-	// Windows PowerShell 5.1 may prepend the UTF-8 byte-order mark when a
-	// here-string is piped to a native command even when $OutputEncoding uses a
-	// no-BOM encoder. Treat that transport signature as encoding metadata, not
-	// Markdown content, so every supported shell produces the same artifact.
-	content := bytes.TrimPrefix(options.Content, []byte{0xef, 0xbb, 0xbf})
+	// Windows PowerShell 5.1 may prepend the UTF-8 byte-order mark and serialize
+	// line endings as CRLF when a here-string is piped to a native command even
+	// when $OutputEncoding uses a no-BOM encoder. Treat those transport signatures
+	// as encoding metadata, not Markdown content, so every supported shell
+	// produces the same artifact.
+	content := normalizePlanningTransportBytes(options.Content)
 	if !utf8.Valid(content) {
 		return "", fmt.Errorf("planning artifact must be valid UTF-8 Markdown")
 	}
@@ -258,6 +261,36 @@ func WritePlanningArtifact(options PlanningWriteOptions) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	featureDirectory := ctx.FeatureDir(options.Feature)
+	_, featureErr := os.Lstat(featureDirectory)
+	firstWrite := os.IsNotExist(featureErr)
+	if featureErr != nil && !firstWrite {
+		return "", featureErr
+	}
+	hasSourceEvidence := strings.TrimSpace(options.SourcePlan) != "" || strings.TrimSpace(options.SourcePlanSHA256) != ""
+	if firstWrite && !hasSourceEvidence {
+		return "", fmt.Errorf("a new feature requires a flow bootstrap prescription with current source-plan evidence")
+	}
+	if hasSourceEvidence {
+		if strings.TrimSpace(options.SourcePlan) == "" || strings.TrimSpace(options.SourcePlanSHA256) == "" {
+			return "", fmt.Errorf("source-plan path and SHA-256 must be supplied together")
+		}
+		sourcePlan, discoverErr := DiscoverSourcePlan(repo, options.SourcePlan)
+		if discoverErr != nil {
+			return "", discoverErr
+		}
+		sourceAbsolute := filepath.Join(repo, filepath.FromSlash(sourcePlan))
+		if rejectErr := rejectSymlinkComponents(repo, sourceAbsolute); rejectErr != nil {
+			return "", fmt.Errorf("source plan must be a regular in-repository file without symlink indirection: %w", rejectErr)
+		}
+		currentSHA, hashErr := SHA256File(sourceAbsolute)
+		if hashErr != nil {
+			return "", hashErr
+		}
+		if currentSHA != strings.TrimSpace(options.SourcePlanSHA256) {
+			return "", fmt.Errorf("source plan changed after bootstrap; resolve a fresh flow bootstrap prescription")
+		}
+	}
 	destination := filepath.Join(ctx.FeatureDir(options.Feature), options.Artifact)
 	if err := rejectSymlinkComponents(ctx.ExportRoot(), destination); err != nil {
 		return "", err
@@ -270,6 +303,11 @@ func WritePlanningArtifact(options PlanningWriteOptions) (string, error) {
 		return "", err
 	}
 	return filepath.ToSlash(relative), nil
+}
+
+func normalizePlanningTransportBytes(content []byte) []byte {
+	content = bytes.TrimPrefix(content, []byte{0xef, 0xbb, 0xbf})
+	return bytes.ReplaceAll(content, []byte("\r\n"), []byte("\n"))
 }
 
 func RecordApproval(options ApprovalRecordOptions) error {

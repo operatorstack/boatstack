@@ -28,6 +28,19 @@ var planningExceptions = map[string]string{
 	"AMBIGUOUS": "choosing between candidate features/deliveries is a human act; candidates surface via Reason/BlockingAmbiguity",
 }
 
+func containsAllStrings(values, required []string) bool {
+	set := map[string]bool{}
+	for _, value := range values {
+		set[value] = true
+	}
+	for _, value := range required {
+		if !set[value] {
+			return false
+		}
+	}
+	return true
+}
+
 // planningStages is one representative synthetic NextStatus per pre-activation
 // stage (INVALID_STATE once per NextOperation route ResolveNext or the safety
 // finding can carry).
@@ -72,13 +85,13 @@ func TestNextControlPrescribesPreActivationStages(t *testing.T) {
 			t.Fatal(err)
 		}
 		p := next.Prescribed
-		if p == nil || p.Verb != "check-source-plan" {
-			t.Fatalf("NOT_STARTED must prescribe check-source-plan: %+v", p)
+		if p == nil || p.Verb != "flow" || len(p.Args) == 0 || p.Args[0] != "bootstrap" {
+			t.Fatalf("NOT_STARTED must prescribe flow bootstrap: %+v", p)
 		}
-		if p.AutoDerivable || len(p.RequiresHumanInput) != 1 || p.RequiresHumanInput[0] != "--plan" {
-			t.Fatalf("the host plan path is unknowable and must be owed, never fabricated: %+v", p)
+		if p.AutoDerivable || !containsAllStrings(p.RequiresHumanInput, []string{"--feature", "--source-plan", "--artifact", "--shell", planningMarkdownInput}) {
+			t.Fatalf("bootstrap creation evidence must be owed, never fabricated: %+v", p)
 		}
-		if !strings.Contains(next.FollowUp, "planning-write") {
+		if !strings.Contains(next.FollowUp, "planning_envelope") {
 			t.Fatalf("the planning follow-up must name the owned authoring channel: %q", next.FollowUp)
 		}
 	})
@@ -283,8 +296,8 @@ func TestPlanningPrescriptionFailureStates(t *testing.T) {
 		if cmd == nil || cmd.Verb != "repair-state" {
 			t.Fatalf("repair-state route must be prescribed: %+v", cmd)
 		}
-		if !strings.Contains(followUp, "planning-write --repo . --feature demo") {
-			t.Fatalf("repair follow-up must name planning-write for the feature: %q", followUp)
+		if !strings.Contains(followUp, "flow bootstrap --feature demo") {
+			t.Fatalf("repair follow-up must name flow bootstrap for the feature: %q", followUp)
 		}
 	})
 

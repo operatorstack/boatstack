@@ -21,10 +21,12 @@ import (
 // control-law: planning-document-body-is-literal-data
 
 const powerShellPlanningEncodingLine = `$OutputEncoding = [System.Text.UTF8Encoding]::new($false)`
+const powerShellPlanningExitLine = `if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }`
 
 var posixPlanningHeader = regexp.MustCompile(`^(.*\S)[ \t]+<<'([A-Za-z_][A-Za-z0-9_]{0,63})'[ \t]*$`)
 var powerShellPlanningClose = regexp.MustCompile(`^'@[ \t]+\|[ \t]+&[ \t]+(.+)$`)
 var planningWriteMention = regexp.MustCompile(`(?i)\bboatstack(?:\.ps1)?['"]?[ \t]+planning-write(?:[ \t]|$)`)
+var planningSHA256 = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 type planningTransportInspection struct {
 	Matched       bool
@@ -143,6 +145,15 @@ func planningWriteAttempt(value string) bool {
 	return len(words) >= 2 && planningExecutable(words[0]) && words[1] == "planning-write"
 }
 
+func planningBootstrapAttempt(value string) bool {
+	words, _ := literalCommandWords(value)
+	return len(words) >= 3 && planningExecutable(words[0]) && words[1] == "flow" && words[2] == "bootstrap"
+}
+
+func planningEnvelopeAttempt(value string) bool {
+	return planningWriteAttempt(value) || planningBootstrapAttempt(value)
+}
+
 func planningVerbInvocationAttempt(value string) bool {
 	words, _ := literalCommandWords(value)
 	return len(words) >= 2 && words[1] == "planning-write"
@@ -151,7 +162,7 @@ func planningVerbInvocationAttempt(value string) bool {
 func powerShellPlanningAttempt(command string) bool {
 	for position := 0; position <= len(command); {
 		line, next, hasNewline := nextLine(command, position)
-		if match := powerShellPlanningClose.FindStringSubmatch(structuralLine(line)); match != nil && planningWriteAttempt(strings.TrimSpace(match[1])) {
+		if match := powerShellPlanningClose.FindStringSubmatch(structuralLine(line)); match != nil && planningEnvelopeAttempt(strings.TrimSpace(match[1])) {
 			return true
 		}
 		if !hasNewline {
@@ -164,13 +175,31 @@ func powerShellPlanningAttempt(command string) bool {
 
 func planningWriteHeader(value string) (planningWriteInvocation, bool) {
 	words, complete := literalCommandWords(value)
-	if !complete || len(words) < 2 || !planningExecutable(words[0]) || words[1] != "planning-write" {
+	if !complete || len(words) < 2 || !planningExecutable(words[0]) {
+		return planningWriteInvocation{}, false
+	}
+	start := 2
+	bootstrap := false
+	if words[1] == "flow" {
+		if len(words) < 3 || words[2] != "bootstrap" {
+			return planningWriteInvocation{}, false
+		}
+		start = 3
+		bootstrap = true
+	} else if words[1] != "planning-write" {
 		return planningWriteInvocation{}, false
 	}
 	values := map[string]string{}
-	for index := 2; index < len(words); index++ {
+	for index := start; index < len(words); index++ {
 		flag := words[index]
 		value := ""
+		if bootstrap && flag == "--json" {
+			if values[flag] != "" {
+				return planningWriteInvocation{}, false
+			}
+			values[flag] = "true"
+			continue
+		}
 		if split := strings.IndexByte(flag, '='); split >= 0 {
 			value = flag[split+1:]
 			flag = flag[:split]
@@ -181,7 +210,13 @@ func planningWriteHeader(value string) (planningWriteInvocation, bool) {
 			index++
 			value = words[index]
 		}
-		if flag != "--repo" && flag != "--feature" && flag != "--artifact" {
+		allowed := flag == "--repo" || flag == "--feature" || flag == "--artifact" || flag == "--source-plan"
+		if bootstrap {
+			allowed = allowed || flag == "--shell" || flag == "--json"
+		} else {
+			allowed = allowed || flag == "--source-plan-sha256"
+		}
+		if !allowed {
 			return planningWriteInvocation{}, false
 		}
 		if value == "" || values[flag] != "" {
@@ -191,6 +226,17 @@ func planningWriteHeader(value string) (planningWriteInvocation, bool) {
 	}
 	if !featureSlugPattern.MatchString(values["--feature"]) || !planningArtifacts[values["--artifact"]] {
 		return planningWriteInvocation{}, false
+	}
+	if bootstrap {
+		if values["--source-plan"] == "" || (values["--shell"] != string(BootstrapShellPOSIX) && values["--shell"] != string(BootstrapShellPowerShell)) {
+			return planningWriteInvocation{}, false
+		}
+	} else {
+		sourcePlan := values["--source-plan"]
+		sourceSHA := values["--source-plan-sha256"]
+		if (sourcePlan == "") != (sourceSHA == "") || (sourceSHA != "" && !planningSHA256.MatchString(sourceSHA)) {
+			return planningWriteInvocation{}, false
+		}
 	}
 	repository := values["--repo"]
 	if repository == "" {
@@ -271,7 +317,7 @@ func validPlanningBody(value string) string {
 func inspectPosixPlanningTransport(command string, first string, bodyStart int) planningTransportInspection {
 	match := posixPlanningHeader.FindStringSubmatch(first)
 	if match == nil {
-		if planningWriteAttempt(first) {
+		if planningEnvelopeAttempt(first) {
 			return planningTransportInspection{Matched: true, InvalidReason: "single-quoted-delimiter-required"}
 		}
 		return planningTransportInspection{}
@@ -279,7 +325,7 @@ func inspectPosixPlanningTransport(command string, first string, bodyStart int) 
 	header := strings.TrimSpace(match[1])
 	invocation, validHeader := planningWriteHeader(header)
 	if !validHeader {
-		if planningWriteAttempt(header) || planningVerbInvocationAttempt(header) {
+		if planningEnvelopeAttempt(header) || planningVerbInvocationAttempt(header) {
 			return planningTransportInspection{Matched: true, Header: header, InvalidReason: "invalid-command-shape"}
 		}
 		return planningTransportInspection{}
@@ -291,11 +337,11 @@ func inspectPosixPlanningTransport(command string, first string, bodyStart int) 
 			if next != len(command) {
 				return planningTransportInspection{Matched: true, Header: header, Feature: invocation.Feature, Repository: invocation.Repository, Executable: invocation.Executable, InvalidReason: "delimiter-collision-or-trailing-command"}
 			}
-			content := command[bodyStart:position]
-			if reason := validPlanningBody(content); reason != "" {
+			content := normalizePlanningTransportBytes([]byte(command[bodyStart:position]))
+			if reason := validPlanningBody(string(content)); reason != "" {
 				return planningTransportInspection{Matched: true, Header: header, Feature: invocation.Feature, Repository: invocation.Repository, Executable: invocation.Executable, InvalidReason: reason}
 			}
-			return planningTransportInspection{Matched: true, Header: header, Content: []byte(content), Feature: invocation.Feature, Repository: invocation.Repository, Executable: invocation.Executable}
+			return planningTransportInspection{Matched: true, Header: header, Content: content, Feature: invocation.Feature, Repository: invocation.Repository, Executable: invocation.Executable}
 		}
 		if !hasNewline {
 			break
@@ -341,15 +387,19 @@ func inspectPowerShellPlanningTransport(command string) planningTransportInspect
 			if !hasNewline {
 				return planningTransportInspection{Matched: true, Header: header, Feature: invocation.Feature, Repository: invocation.Repository, Executable: invocation.Executable, InvalidReason: "powershell-scope-not-closed"}
 			}
-			closing, afterClosing, _ := nextLine(command, next)
+			exitLine, afterExit, hasExitNewline := nextLine(command, next)
+			if !hasExitNewline || strings.TrimSpace(structuralLine(exitLine)) != powerShellPlanningExitLine {
+				return planningTransportInspection{Matched: true, Header: header, Feature: invocation.Feature, Repository: invocation.Repository, Executable: invocation.Executable, InvalidReason: "powershell-exit-status-required"}
+			}
+			closing, afterClosing, _ := nextLine(command, afterExit)
 			if strings.TrimSpace(structuralLine(closing)) != "}" || afterClosing != len(command) {
 				return planningTransportInspection{Matched: true, Header: header, Feature: invocation.Feature, Repository: invocation.Repository, Executable: invocation.Executable, InvalidReason: "delimiter-collision-or-trailing-command"}
 			}
-			content := command[bodyStart:position]
-			if reason := validPlanningBody(content); reason != "" {
+			content := normalizePlanningTransportBytes([]byte(command[bodyStart:position]))
+			if reason := validPlanningBody(string(content)); reason != "" {
 				return planningTransportInspection{Matched: true, Header: header, Feature: invocation.Feature, Repository: invocation.Repository, Executable: invocation.Executable, InvalidReason: reason}
 			}
-			return planningTransportInspection{Matched: true, Header: header, Content: []byte(content), Feature: invocation.Feature, Repository: invocation.Repository, Executable: invocation.Executable}
+			return planningTransportInspection{Matched: true, Header: header, Content: content, Feature: invocation.Feature, Repository: invocation.Repository, Executable: invocation.Executable}
 		}
 		if !hasNewline {
 			break

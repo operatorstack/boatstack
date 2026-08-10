@@ -269,28 +269,11 @@ If gstack is installed, its review skills can execute these lenses. If Spec Kit 
 
 ### Literal planning transport
 
-Feature artifacts are authored through the owned channel `.product-loop/boatstack planning-write --repo . --feature <feature> --artifact <name>`. The complete Markdown document and command must cross the host hook in one literal envelope. The hook binds the command to the current repository's project-local helper, validates the command and closing delimiter, treats the body as data, and denies truncation or trailing commands before the shell runs.
+Feature artifacts are authored only from the read-only, mode-aware `flow bootstrap` oracle. Supply the selected feature, durable in-repo source-plan path, artifact name, target shell, and complete Markdown through the current Boatstack operation entrypoint. The oracle verifies the worktree and source-plan digest and returns a `planning_envelope` bound to the exact embedded launcher or detached helper. Execute that envelope unchanged.
 
-In Bash, zsh, and Git Bash, use a single-quoted heredoc. The closing token must not occur as a line in the Markdown; choose another simple token when it does. In Git Bash on Windows, append `.exe` to the project-local helper path.
+The oracle emits a non-colliding single-quoted heredoc for Bash, zsh, and Git Bash. For Windows PowerShell it emits a UTF-8-scoped single-quoted here-string. A document containing a PowerShell closing marker must use `--shell posix` with Git Bash. Do not select, append, or rewrite an executable path yourself.
 
-```bash
-.product-loop/boatstack planning-write --repo . --feature <feature> --artifact <name> <<'BOATSTACK_PLAN_EOF'
-<complete Markdown document>
-BOATSTACK_PLAN_EOF
-```
-
-In Windows PowerShell, keep UTF-8 local to a child scope and use a single-quoted here-string. If the document contains a line beginning with the PowerShell closing mark `'@`, use the Git Bash form with a non-colliding token.
-
-```powershell
-& {
-$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
-@'
-<complete Markdown document>
-'@ | & '.product-loop\boatstack.ps1' planning-write --repo . --feature <feature> --artifact <name>
-}
-```
-
-Send the complete envelope in one shell-tool call. Do not run a bare `planning-write`, split the command and body across calls, prepend or append another command, use an unquoted or double-quoted delimiter, or paste the Markdown at an interactive shell prompt. `PLANNING_TRANSPORT_INVALID` means nothing ran; correct the envelope instead of manually replaying its body. The host's own Markdown writer is permitted only where the host allows it; arbitrary redirection to a feature path never is.
+Send the complete Markdown to `flow bootstrap` in one literal stdin envelope, then send its returned `planning_envelope` in one shell-tool call. Do not run a bare `planning-write`, construct a helper path from this document, split either envelope across calls, prepend or append another command, or paste Markdown at an interactive prompt. After `workspace-cut`, discard every earlier prescription and resolve again from `destination_repository`. `PLANNING_TRANSPORT_INVALID` means nothing ran; obtain a fresh prescription instead of replaying the body manually. The host's own Markdown writer is permitted only where the host allows it; arbitrary redirection to a feature path never is.
 
 Validation must be derived before implementation. Each check records:
 
