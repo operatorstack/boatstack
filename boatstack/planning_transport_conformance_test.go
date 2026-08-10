@@ -164,9 +164,7 @@ func TestPlanningTransportRunsHookShellHelperAndSavedArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Windows PowerShell may serialize the terminating newline as CRLF. The
-	// document text and every non-ASCII code point must otherwise be identical.
-	if strings.ReplaceAll(string(written), "\r\n", "\n") != body {
+	if string(written) != body {
 		t.Fatalf("saved Markdown differs from transported body:\nwant %q\n got %q", body, written)
 	}
 }
@@ -246,7 +244,7 @@ func TestPlanningTransportTreatsDocumentTextAsInertAcrossHosts(t *testing.T) {
 	}{
 		{posix, body, true},
 		{powerShellPlanningEnvelope(t, `.product-loop\boatstack.ps1`, repo, "threat-model", "questions.md", body), body, runtime.GOOS == "windows"},
-		{strings.ReplaceAll(posix, "\n", "\r\n"), strings.ReplaceAll(body, "\n", "\r\n"), true},
+		{strings.ReplaceAll(posix, "\n", "\r\n"), body, true},
 	}
 	for _, test := range commands {
 		inspection := inspectPlanningWriteTransport(test.command)

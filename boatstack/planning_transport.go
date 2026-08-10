@@ -337,11 +337,11 @@ func inspectPosixPlanningTransport(command string, first string, bodyStart int) 
 			if next != len(command) {
 				return planningTransportInspection{Matched: true, Header: header, Feature: invocation.Feature, Repository: invocation.Repository, Executable: invocation.Executable, InvalidReason: "delimiter-collision-or-trailing-command"}
 			}
-			content := command[bodyStart:position]
-			if reason := validPlanningBody(content); reason != "" {
+			content := normalizePlanningTransportBytes([]byte(command[bodyStart:position]))
+			if reason := validPlanningBody(string(content)); reason != "" {
 				return planningTransportInspection{Matched: true, Header: header, Feature: invocation.Feature, Repository: invocation.Repository, Executable: invocation.Executable, InvalidReason: reason}
 			}
-			return planningTransportInspection{Matched: true, Header: header, Content: []byte(content), Feature: invocation.Feature, Repository: invocation.Repository, Executable: invocation.Executable}
+			return planningTransportInspection{Matched: true, Header: header, Content: content, Feature: invocation.Feature, Repository: invocation.Repository, Executable: invocation.Executable}
 		}
 		if !hasNewline {
 			break
@@ -395,11 +395,11 @@ func inspectPowerShellPlanningTransport(command string) planningTransportInspect
 			if strings.TrimSpace(structuralLine(closing)) != "}" || afterClosing != len(command) {
 				return planningTransportInspection{Matched: true, Header: header, Feature: invocation.Feature, Repository: invocation.Repository, Executable: invocation.Executable, InvalidReason: "delimiter-collision-or-trailing-command"}
 			}
-			content := command[bodyStart:position]
-			if reason := validPlanningBody(content); reason != "" {
+			content := normalizePlanningTransportBytes([]byte(command[bodyStart:position]))
+			if reason := validPlanningBody(string(content)); reason != "" {
 				return planningTransportInspection{Matched: true, Header: header, Feature: invocation.Feature, Repository: invocation.Repository, Executable: invocation.Executable, InvalidReason: reason}
 			}
-			return planningTransportInspection{Matched: true, Header: header, Content: []byte(content), Feature: invocation.Feature, Repository: invocation.Repository, Executable: invocation.Executable}
+			return planningTransportInspection{Matched: true, Header: header, Content: content, Feature: invocation.Feature, Repository: invocation.Repository, Executable: invocation.Executable}
 		}
 		if !hasNewline {
 			break

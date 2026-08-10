@@ -88,7 +88,7 @@ func TestPlanningWriteIsBoundedMarkdownOnly(t *testing.T) {
 	}
 }
 
-func TestPlanningWriteNormalizesPowerShellUTF8BOM(t *testing.T) {
+func TestPlanningWriteNormalizesPowerShellTransportEncoding(t *testing.T) {
 	repo := planningRepo(t)
 	path, err := WritePlanningArtifact(withPlanningSourceEvidence(t, PlanningWriteOptions{
 		Repo: repo, Feature: "powershell-transport", Artifact: "plan.md",
@@ -101,8 +101,8 @@ func TestPlanningWriteNormalizesPowerShellUTF8BOM(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(written) != "# Plan\r\n" {
-		t.Fatalf("PowerShell transport BOM reached the Markdown artifact: %q", written)
+	if string(written) != "# Plan\n" {
+		t.Fatalf("PowerShell transport encoding reached the Markdown artifact: %q", written)
 	}
 	if _, err := WritePlanningArtifact(PlanningWriteOptions{
 		Repo: repo, Feature: "powershell-transport", Artifact: "questions.md",

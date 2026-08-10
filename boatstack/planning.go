@@ -234,10 +234,11 @@ func WritePlanningArtifact(options PlanningWriteOptions) (string, error) {
 	if !planningArtifacts[options.Artifact] {
 		return "", fmt.Errorf("unsupported planning artifact %q; use one of: %s (note the .md suffix)", options.Artifact, strings.Join(planningArtifactNames(), ", "))
 	}
-	// Windows PowerShell 5.1 may prepend the UTF-8 byte-order mark when a
-	// here-string is piped to a native command even when $OutputEncoding uses a
-	// no-BOM encoder. Treat that transport signature as encoding metadata, not
-	// Markdown content, so every supported shell produces the same artifact.
+	// Windows PowerShell 5.1 may prepend the UTF-8 byte-order mark and serialize
+	// line endings as CRLF when a here-string is piped to a native command even
+	// when $OutputEncoding uses a no-BOM encoder. Treat those transport signatures
+	// as encoding metadata, not Markdown content, so every supported shell
+	// produces the same artifact.
 	content := normalizePlanningTransportBytes(options.Content)
 	if !utf8.Valid(content) {
 		return "", fmt.Errorf("planning artifact must be valid UTF-8 Markdown")
@@ -305,7 +306,8 @@ func WritePlanningArtifact(options PlanningWriteOptions) (string, error) {
 }
 
 func normalizePlanningTransportBytes(content []byte) []byte {
-	return bytes.TrimPrefix(content, []byte{0xef, 0xbb, 0xbf})
+	content = bytes.TrimPrefix(content, []byte{0xef, 0xbb, 0xbf})
+	return bytes.ReplaceAll(content, []byte("\r\n"), []byte("\n"))
 }
 
 func RecordApproval(options ApprovalRecordOptions) error {

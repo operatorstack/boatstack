@@ -116,6 +116,28 @@ func TestBootstrapOracleRunsInputHookRendererOutputHookShellHelper(t *testing.T)
 	}
 }
 
+func TestBootstrapNormalizesPowerShellTransportEncoding(t *testing.T) {
+	document := append([]byte{0xef, 0xbb, 0xbf}, []byte("# Plan\r\n\r\nExact bytes.\r\n")...)
+	normalized, err := normalizedPlanningDocument(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(normalized) != "# Plan\n\nExact bytes.\n" {
+		t.Fatalf("PowerShell transport encoding reached the prescription: %q", normalized)
+	}
+
+	envelope, err := powerShellPlanningEnvelopeFor([]string{
+		`.product-loop\boatstack.ps1`, "planning-write", "--repo", ".", "--feature", "transport-encoding", "--artifact", "plan.md",
+	}, []byte("# Plan\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inspection := inspectPlanningWriteTransport(envelope)
+	if !inspection.Matched || inspection.InvalidReason != "" || string(inspection.Content) != "# Plan\n" {
+		t.Fatalf("PowerShell transport parser did not return canonical Markdown: %+v", inspection)
+	}
+}
+
 // Positive and relation conformance for control-law:
 // bootstrap-command-authority-is-workspace-bound. Detached mode must render the
 // external bound helper and keep every controller byte outside the product repo.
