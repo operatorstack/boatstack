@@ -516,7 +516,7 @@ func CheckInstallationHealth(repoPath string) error {
 		return err
 	}
 	// Embedded installations own merged host settings in the repository and can
-	// verify them here. Detached controller state owns generated hook fragments;
+	// verify them here. Detached controller state owns generated engagement probes;
 	// developer-level host activation is a separate, operator-visible boundary.
 	// CheckExport above verifies those fragments without misreading them as merged
 	// .cursor/.claude/.codex/.gemini configurations.
@@ -528,7 +528,7 @@ func CheckInstallationHealth(repoPath string) error {
 	hostAdapters := normalizedAdapters(config.Adapters)
 	if contains(hostAdapters, "claude") {
 		if _, err := lookPath("bash"); err != nil {
-			return fmt.Errorf("Claude Code safety hooks require Bash; install Git Bash or Bash, then rerun doctor")
+			return fmt.Errorf("Claude Code engagement probes require Bash; install Git Bash or Bash, then rerun doctor")
 		}
 	}
 	if err := verifyGeneratedRuntime(ctx.ExportRoot()); err != nil {
@@ -552,11 +552,13 @@ func CheckInstallationHealth(repoPath string) error {
 		}
 		for _, input := range inputs {
 			if _, denied := HookDecision(SafetyHookOptions{Host: host, Repo: repo, Input: input}); denied {
-				return fmt.Errorf("%s safety hook denied its read-only smoke event", host)
+				return fmt.Errorf("%s engagement probe denied its read-only smoke event", host)
 			}
 		}
-		if _, denied := HookDecision(SafetyHookOptions{Host: host, Repo: repo, Input: []byte(`{"malformed":true}`)}); !denied {
-			return fmt.Errorf("%s safety hook did not fail closed on malformed input", host)
+		_, denied := HookDecision(SafetyHookOptions{Host: host, Repo: repo, Input: []byte(`{"malformed":true}`)})
+		engaged := ResolveEngagement(repo, EngagementRequest{}).Mode == EngagementActive
+		if engaged != denied {
+			return fmt.Errorf("%s engagement probe contract drifted: active=%t denied=%t", host, engaged, denied)
 		}
 	}
 	return verifyLocalRuntime(ctx.ExportRoot())

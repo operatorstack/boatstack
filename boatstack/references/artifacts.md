@@ -149,7 +149,7 @@ clone, `external` outside the repository (Detached Supervision).
 | delivery-state | runtime-worktree | per-worktree | delivery transitions |
 | operation-ledger | runtime-worktree | per-worktree | run-preflight, publishers |
 | flow-logs | runtime-worktree | per-worktree | flow |
-| guard-denial-ledger | runtime-worktree | per-worktree | safety-hook, ambient-safety-hook |
+| guard-denial-ledger | runtime-worktree | per-worktree | safety-hook, engagement-probe |
 | runtime-slots | runtime-shared | git-common | init, update, hydrate-runtime |
 | runtime-bootstrap-slots | runtime-shared | git-common | init, update, hydrate-runtime |
 | mutation-receipts | runtime-shared | git-common | activate-plan, undo |

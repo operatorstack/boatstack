@@ -331,3 +331,70 @@ func TestGuardAutoHydrationWaitsWhenSlotHalfWritten(t *testing.T) {
 		t.Fatalf("guard skipped hydration on a half-written slot instead of waiting: err=%v output=%s", err, output)
 	}
 }
+
+func TestGuardWaitsForHydrationPublicationBeforeManifestValidation(t *testing.T) {
+	requireBash(t)
+	repo := runtimeTestRepo(t)
+	binaryPath, manifestPath, err := sharedRuntimePaths(repo, Version, SourceCommit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	helperBytes := []byte("#!/usr/bin/env bash\nexit 0\n")
+	manifestBytes := []byte(fmt.Sprintf(`{"binary_sha256":"%s"}`, SHA256Bytes(helperBytes)))
+	if err := os.RemoveAll(filepath.Dir(binaryPath)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(binaryPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(binaryPath, helperBytes, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := hydrateLockPath(t, binaryPath)
+	if err := os.MkdirAll(lockPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(lockPath)
+
+	type guardResult struct {
+		output string
+		err    error
+	}
+	result := make(chan guardResult, 1)
+	go func() {
+		output, runErr := runGuard(t, repo, "claude")
+		result <- guardResult{output: output, err: runErr}
+	}()
+	select {
+	case early := <-result:
+		t.Fatalf("guard validated before hydration publication: err=%v output=%s", early.err, early.output)
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(lockPath); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case completed := <-result:
+		if completed.err != nil {
+			t.Fatalf("guard did not accept the published runtime: err=%v output=%s", completed.err, completed.output)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("guard did not resume after hydration publication")
+	}
+}
+
+func TestPowerShellGuardWaitsForPublicationBeforeManifestValidation(t *testing.T) {
+	script := string(guardPowerShellScript())
+	barrier := strings.Index(script, "for ($i = 0; $i -lt 12 -and (Test-Path -LiteralPath $hydrateLock); $i++)")
+	validation := strings.Index(script, "Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json")
+	if barrier < 0 || validation < 0 || barrier >= validation {
+		t.Fatalf("PowerShell guard lacks a pre-validation publication barrier: barrier=%d validation=%d", barrier, validation)
+	}
+}

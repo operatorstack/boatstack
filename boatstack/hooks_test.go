@@ -128,7 +128,7 @@ func TestInstalledHookValidationAllowsTemplateMigrationButRejectsUserDrift(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	fragment = []byte(strings.ReplaceAll(string(fragment), "Checking Boatstack execution policy", "Checking irreversible-operation policy"))
+	fragment = []byte(strings.ReplaceAll(string(fragment), `"timeout": 10`, `"timeout": 11`))
 	fragmentPath := filepath.Join(repo, ".product-loop", "hooks", "claude.fragment.json")
 	if err := os.MkdirAll(filepath.Dir(fragmentPath), 0o755); err != nil {
 		t.Fatal(err)
@@ -142,7 +142,7 @@ func TestInstalledHookValidationAllowsTemplateMigrationButRejectsUserDrift(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	hookValue = []byte(strings.ReplaceAll(string(hookValue), "Checking Boatstack execution policy", "Checking irreversible-operation policy"))
+	hookValue = []byte(strings.ReplaceAll(string(hookValue), `"timeout": 10`, `"timeout": 11`))
 	if err := os.WriteFile(hookPath, hookValue, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestInstalledHookValidationAllowsTemplateMigrationButRejectsUserDrift(t *te
 		t.Fatalf("healthy installed hook blocked template migration: %v", err)
 	}
 
-	hookValue = []byte(strings.ReplaceAll(string(hookValue), `"timeout": 10`, `"timeout": 99`))
+	hookValue = []byte(strings.ReplaceAll(string(hookValue), `"timeout": 11`, `"timeout": 99`))
 	if err := os.WriteFile(hookPath, hookValue, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestInstalledHookValidationAllowsTemplateMigrationButRejectsUserDrift(t *te
 	}
 }
 
-func TestMissingHelperLauncherFailsClosed(t *testing.T) {
+func TestMissingHelperLauncherIsSilentWhenDormantAndFailsClosedWhenActive(t *testing.T) {
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash unavailable")
 	}
@@ -182,8 +182,17 @@ func TestMissingHelperLauncherFailsClosed(t *testing.T) {
 	// reaching for the network; auto-hydration has its own dedicated subtests.
 	command.Env = append(os.Environ(), "BOATSTACK_AUTO_HYDRATE=0")
 	output, err := command.CombinedOutput()
+	if err != nil || len(output) != 0 {
+		t.Fatalf("dormant probe loaded the missing runtime: err=%v output=%s", err, output)
+	}
+
+	engageHookFixture(t, repo)
+	command = exec.Command("bash", path, "cursor")
+	command.Dir = repo
+	command.Env = append(os.Environ(), "BOATSTACK_AUTO_HYDRATE=0")
+	output, err = command.CombinedOutput()
 	if err == nil || !strings.Contains(string(output), "shared runtime is missing") {
-		t.Fatalf("missing helper did not fail closed: err=%v output=%s", err, output)
+		t.Fatalf("active probe did not fail closed: err=%v output=%s", err, output)
 	}
 	// The deny is a one-line self-heal: it must embed the exact pinned installer.
 	if !strings.Contains(string(output), "BOATSTACK_MODE=hydrate BOATSTACK_VERSION="+Version) {

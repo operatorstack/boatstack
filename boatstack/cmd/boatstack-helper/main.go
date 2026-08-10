@@ -155,6 +155,15 @@ func detachedStatusCommand(arguments []string) int {
 	return emitJSON(result)
 }
 
+func engagementStatusCommand(arguments []string) int {
+	flags := flag.NewFlagSet("engagement-status", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "repository whose current engagement should be resolved")
+	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	return emitJSON(boatstack.ResolveEngagement(*repo, boatstack.EngagementRequest{}))
+}
+
 func configRebindCommand(arguments []string) int {
 	flags := flag.NewFlagSet("config-rebind", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "attached repository whose configuration authority should be rebound")
@@ -212,7 +221,7 @@ func activateCommand(arguments []string) int {
 		}
 		return emitJSON(result)
 	}
-	result, err := boatstack.InstallAmbientHooks(*repo, hosts)
+	result, err := boatstack.InstallEngagementProbes(*repo, hosts)
 	if err != nil {
 		return fail(err)
 	}
@@ -236,7 +245,7 @@ func deactivateCommand(arguments []string) int {
 	if strings.TrimSpace(*host) != "" {
 		hosts = []string{*host}
 	}
-	result, err := boatstack.RemoveAmbientHooks(*repo, hosts)
+	result, err := boatstack.RemoveEngagementProbes(*repo, hosts)
 	if err != nil {
 		return fail(err)
 	}
@@ -474,7 +483,7 @@ func exportCommand(arguments []string) int {
 		fmt.Println("  " + path)
 	}
 	for _, path := range boatstack.HostHookPaths(bundle.Config.Adapters) {
-		fmt.Println("  " + path + " (merge safety hook)")
+		fmt.Println("  " + path + " (merge inert engagement probe)")
 	}
 	return 0
 }
@@ -1290,12 +1299,10 @@ func safetyHookCommand(arguments []string) int {
 	return 0
 }
 
-// ambientSafetyHookCommand is the guard entry for a developer-level (user-scoped)
-// hook that runs for every repository. It enforces Boatstack only on managed
-// repositories and no-ops everywhere else, so detached activation can install one
-// user-level hook without controlling unattached repositories.
-func ambientSafetyHookCommand(arguments []string) int {
-	flags := flag.NewFlagSet("ambient-safety-hook", flag.ContinueOnError)
+// engagementProbeCLI is the inert developer-level entry point. It emits no
+// policy effect unless a verified active-delivery lease exists in this worktree.
+func engagementProbeCLI(arguments []string) int {
+	flags := flag.NewFlagSet("engagement-probe", flag.ContinueOnError)
 	host := flags.String("host", "", "cursor, claude, codex, or gemini")
 	repo := flags.String("repo", ".", "repository the coding agent is operating in")
 	if err := flags.Parse(arguments); err != nil {
@@ -1305,7 +1312,7 @@ func ambientSafetyHookCommand(arguments []string) int {
 	if err != nil {
 		input = nil
 	}
-	value, _ := boatstack.AmbientHookDecision(boatstack.SafetyHookOptions{Host: *host, Repo: *repo, Input: input})
+	value, _ := boatstack.EngagementProbeDecision(boatstack.SafetyHookOptions{Host: *host, Repo: *repo, Input: input})
 	if err := emitHookOutput(os.Stdout, *host, value); err != nil {
 		return failSafetyHook(fmt.Errorf("cannot emit hook decision: %w", err))
 	}
@@ -1623,14 +1630,30 @@ func workspaceSyncCommand(arguments []string) int {
 	return 0
 }
 
+// resolveCommandScope projects every named Boatstack request through the same
+// engagement resolver used by hooks. Hook processes resolve ambient ACTIVE
+// authority from their payload path; ordinary named commands receive ephemeral
+// COMMAND authority and never persist it.
+func resolveCommandScope(verb string, arguments []string) boatstack.EngagementStatus {
+	if verb == "safety-hook" || verb == "engagement-probe" || verb == "bootstrap-safety-hook" {
+		return boatstack.ResolveEngagement(traceFlag(arguments, "--repo"), boatstack.EngagementRequest{})
+	}
+	repo := traceFlag(arguments, "--repo")
+	if repo == "" {
+		repo = "."
+	}
+	return boatstack.ResolveEngagement(repo, boatstack.EngagementRequest{ExplicitCommand: true})
+}
+
 func run() (result int) {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <attach|detach|detached-status|config-rebind|context|activate|deactivate|init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|record-autonomy|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|authority-context|record-change|record-journey-results|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|review-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|attach-evidence|check-safety|migrate-config|safety-hook|ambient-safety-hook|bootstrap-safety-hook|hydrate-runtime|activate-worktree-runtime|diagnose-hook|render-denial|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-reap|workspace-status|workspace-sync|flow|retro|insight|doctor|version>")
+		fmt.Fprintln(os.Stderr, "usage: boatstack-helper <attach|detach|detached-status|engagement-status|config-rebind|context|activate|deactivate|init|update|check-update|repair-status|operation-status|prepare-update-pr|publish-update-pr|release-classify|next-patch|export|check-source-plan|planning-write|check-plan|record-approval|record-autonomy|activate-plan|delivery-status|next-status|recovery-status|repair-state|mutation-status|undo|run-preflight|authority-context|record-change|record-journey-results|ignore-delivery|record-delivery-gate|record-pr-visual-evidence|review-pr-visual-evidence|capture-evidence|provision-capability|capability-register|record-pr-visual-publication|attach-evidence|check-safety|migrate-config|safety-hook|engagement-probe|bootstrap-safety-hook|hydrate-runtime|activate-worktree-runtime|diagnose-hook|render-denial|pr-context|check-pr|publish-pr|workspace-cut|workspace-cleanup|workspace-reap|workspace-status|workspace-sync|flow|retro|insight|doctor|version>")
 		return 2
 	}
 	if complete := commandTraceCompletion(os.Args[1], os.Args[2:]); complete != nil {
 		defer func() { complete(result) }()
 	}
+	_ = resolveCommandScope(os.Args[1], os.Args[2:])
 	switch os.Args[1] {
 	case "attach":
 		return attachCommand(os.Args[2:])
@@ -1638,6 +1661,8 @@ func run() (result int) {
 		return detachCommand(os.Args[2:])
 	case "detached-status":
 		return detachedStatusCommand(os.Args[2:])
+	case "engagement-status":
+		return engagementStatusCommand(os.Args[2:])
 	case "config-rebind":
 		return configRebindCommand(os.Args[2:])
 	case "context":
@@ -1732,8 +1757,8 @@ func run() (result int) {
 		return renderDenialCommand(os.Args[2:])
 	case "safety-hook":
 		return safetyHookCommand(os.Args[2:])
-	case "ambient-safety-hook":
-		return ambientSafetyHookCommand(os.Args[2:])
+	case "engagement-probe":
+		return engagementProbeCLI(os.Args[2:])
 	case "bootstrap-safety-hook":
 		return bootstrapSafetyHookCommand(os.Args[2:])
 	case "hydrate-runtime":

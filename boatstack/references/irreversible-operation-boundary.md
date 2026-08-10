@@ -2,9 +2,9 @@
 
 Boatstack removes high-confidence irreversible external side effects from the coding agent's reachable action space. It does not restrict ordinary implementation choices.
 
-## Immutable policy
+## Immutable engaged policy
 
-The guard always denies:
+While Boatstack is explicitly engaged, the guard always denies:
 
 - database or schema drops, truncation, resets, flushes, destructive downgrades, clean restores, and unbounded deletes or updates;
 - recursive removal of repository, home, root, parent, or wildcard targets;
@@ -16,7 +16,7 @@ The guard always denies:
 
 There is no break-glass token or in-session override. Intentional destructive recovery belongs to a separately controlled operator surface outside Boatstack. Agents may edit source that describes a dangerous operation for review, but may not execute it; an operational diff containing that capability blocks build activation and subsequent gates until it is removed or transferred to the operator boundary.
 
-Recoverable repository alignment is not an exception to this policy. Raw `git reset --hard`, `git clean`, and forced history replacement remain denied. The project-local `workspace-sync` helper may align one exact local branch to one freshly fetched remote branch only after it creates and verifies Git recovery refs for the original branch and any staged, unstaged, or untracked work. It blocks active managed-delivery branches and reports the retained recovery refs.
+This policy applies only during an explicit Boatstack command or verified active delivery. Outside engagement, Boatstack is inert and repository administration remains under the host and operator's authority. During engagement, the project-local `workspace-sync` helper remains the bounded alignment actuator.
 
 ## Failure response
 

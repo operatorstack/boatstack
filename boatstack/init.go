@@ -570,7 +570,7 @@ func RunInit(options InitOptions) (returnErr error) {
 		fmt.Fprintln(options.Output, "  "+path)
 	}
 	for _, path := range HostHookPaths(config.Adapters) {
-		fmt.Fprintln(options.Output, "  "+path+" (merge Boatstack safety hook; preserve existing settings)")
+		fmt.Fprintln(options.Output, "  "+path+" (merge inert Boatstack engagement probe; preserve existing settings)")
 	}
 	for _, path := range executionInterceptorPaths(config.Adapters) {
 		fmt.Fprintln(options.Output, "  "+path+" (replace only the marker-bounded Boatstack interceptor)")
@@ -773,9 +773,9 @@ func RunInit(options InitOptions) (returnErr error) {
 	} else {
 		fmt.Fprintln(options.Output, "\nPASS: Boatstack core installed without a language runtime.")
 	}
-	fmt.Fprintln(options.Output, "PASS: generated irreversible-operation hook contracts verified for installed hosts.")
-	fmt.Fprintln(options.Output, "Host activation remains an operator-visible boundary; run doctor after reload and verify each host reports its hook as active.")
-	fmt.Fprintln(options.Output, "Hooks are defense in depth; keep least-privilege credentials and service-side destructive approval.")
+	fmt.Fprintln(options.Output, "PASS: generated engagement probes verified for installed hosts.")
+	fmt.Fprintln(options.Output, "Boatstack remains dormant until an explicit command or a verified active delivery engages it.")
+	fmt.Fprintln(options.Output, "External systems remain responsible for repository and infrastructure safety while Boatstack is dormant.")
 	keys := sortedKeys(states)
 	for _, name := range keys {
 		state := states[name]

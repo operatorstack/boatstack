@@ -185,7 +185,7 @@ func AttachDetached(opts AttachOptions) (AttachResult, error) {
 	invalidateWorkspaceCache()
 
 	// Populate the external shared-runtime slot from the running helper so the
-	// developer-level ambient guard has a stable helper to invoke. The binding is
+	// developer-level engagement probe has a stable helper to invoke. The binding is
 	// written above, so WorkspaceFor now resolves detached and the slot is external.
 	source := strings.TrimSpace(opts.BinaryPath)
 	if source == "" {

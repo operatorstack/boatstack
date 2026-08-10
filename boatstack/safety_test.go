@@ -24,6 +24,47 @@ func safetyTestRepo(t *testing.T) string {
 	return repo
 }
 
+func engageHookFixture(t *testing.T, repo string) {
+	t.Helper()
+	branch := strings.TrimSpace(gitOutput(repo, "branch", "--show-current"))
+	if branch == "" {
+		t.Fatal("hook fixture repository has no current branch")
+	}
+	lockPath := filepath.Join(WorkspaceFor(repo).FeatureDir("hook-fixture"), "plan.lock.json")
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lockPath, []byte("hook fixture lock\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lockHash, err := SHA256File(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := DeliveryState{
+		SchemaVersion: deliveryStateSchemaVersion, Feature: "hook-fixture", PlanLockHash: lockHash,
+		ActiveIndex: 0, Slices: []DeliverySlice{{ID: "delivery", Status: StatusBuild, BaseBranch: branch, HeadBranch: branch}},
+		Mode: "NORMAL", RepairCounters: map[string]int{},
+	}
+	if err := saveDeliveryState(repo, state); err != nil {
+		t.Fatal(err)
+	}
+	if err := syncEngagementLease(repo, state); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEngageHookFixtureBindsCurrentNonMainBranch(t *testing.T) {
+	repo := safetyTestRepo(t)
+	runGit(t, repo, "switch", "-c", "fixture-topic")
+	engageHookFixture(t, repo)
+
+	status := ResolveEngagement(repo, EngagementRequest{})
+	if status.Mode != EngagementActive || status.Branch != "fixture-topic" {
+		t.Fatalf("non-main hook fixture engagement = %+v, want ACTIVE on fixture-topic", status)
+	}
+}
+
 func writeValidSavedFeaturePlan(t *testing.T, repo, feature string) string {
 	t.Helper()
 	directory := filepath.Join(repo, ".product-loop", "features", feature)
@@ -163,6 +204,7 @@ func TestExternalControlPlaneMCPMutationsAreDenied(t *testing.T) {
 // control-law: external-control-plane-effects-stay-operator-only
 func TestIncidentCommandsAreDeniedThroughCodexHook(t *testing.T) {
 	repo := safetyTestRepo(t)
+	engageHookFixture(t, repo)
 	script := filepath.Join(repo, "scripts", "dev_environment.py")
 	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
 		t.Fatal(err)
@@ -529,6 +571,7 @@ func TestInvokedRepositoryScriptIsInspected(t *testing.T) {
 
 func TestMCPAndMalformedEventsFailClosedWithoutEchoingSecrets(t *testing.T) {
 	repo := safetyTestRepo(t)
+	engageHookFixture(t, repo)
 	event := []byte(`{"hook_event_name":"beforeMCPExecution","tool_name":"mcp__cloud__delete_database","tool_input":{"database":"primary","token":"secret-value"}}`)
 	cursorOutput, cursorDenied := HookDecision(SafetyHookOptions{Host: "cursor", Repo: repo, Input: event})
 	if !cursorDenied || !strings.Contains(string(cursorOutput), `"permission":"deny"`) {
@@ -552,6 +595,7 @@ func TestMCPAndMalformedEventsFailClosedWithoutEchoingSecrets(t *testing.T) {
 
 func TestHostContractsNormalizeCanonicalInputs(t *testing.T) {
 	repo := safetyTestRepo(t)
+	engageHookFixture(t, repo)
 	cases := []struct {
 		name, host string
 		input      string
@@ -591,6 +635,7 @@ func TestHostContractsNormalizeCanonicalInputs(t *testing.T) {
 
 func TestMalformedHostPayloadsDenyWithoutLeakingInput(t *testing.T) {
 	repo := safetyTestRepo(t)
+	engageHookFixture(t, repo)
 	for _, test := range []struct{ host, input, reason string }{
 		{"cursor", ``, "empty-input"},
 		{"cursor", `{`, "invalid-json"},
@@ -624,6 +669,7 @@ func TestMalformedHostPayloadsDenyWithoutLeakingInput(t *testing.T) {
 
 func TestCursorMalformedPayloadGuidesOneRetryThenExternalDiagnosis(t *testing.T) {
 	repo := safetyTestRepo(t)
+	engageHookFixture(t, repo)
 	output, denied := HookDecision(SafetyHookOptions{Host: "cursor", Repo: repo, Input: []byte(`{"hook_event_name":"beforeShellExecution"}`)})
 	if !denied {
 		t.Fatal("missing Cursor command was allowed")
@@ -638,6 +684,7 @@ func TestCursorMalformedPayloadGuidesOneRetryThenExternalDiagnosis(t *testing.T)
 
 func TestEveryHostUsesStableEmptyCommandReason(t *testing.T) {
 	repo := safetyTestRepo(t)
+	engageHookFixture(t, repo)
 	inputs := map[string]string{
 		"cursor": `{"hook_event_name":"beforeShellExecution","command":""}`,
 		"claude": `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":""}}`,
@@ -653,6 +700,7 @@ func TestEveryHostUsesStableEmptyCommandReason(t *testing.T) {
 
 func TestBlockedHookNeverCreatesSentinelSideEffect(t *testing.T) {
 	repo := safetyTestRepo(t)
+	engageHookFixture(t, repo)
 	sentinel := filepath.Join(repo, "sentinel")
 	command := "rm -rf . && touch " + sentinel
 	event, _ := json.Marshal(map[string]any{"command": command})
@@ -866,20 +914,20 @@ func TestUnactivatedApprovalAndPolicyStateRemainObservations(t *testing.T) {
 	}
 }
 
-func TestCursorPreToolUseAllowsNativeEditWithAmbientDraft(t *testing.T) {
+func TestCursorPreToolUseIsSilentWithDormantDraft(t *testing.T) {
 	repo := nextTestRepo(t)
 	writeValidSavedFeaturePlan(t, repo, "cursor-feature")
 	input := []byte(`{"hook_event_name":"preToolUse","tool_name":"Write","tool_input":{"file_path":"src/app.ts","content":"changed"}}`)
 	for attempt := 0; attempt < 2; attempt++ {
 		output, denied := HookDecision(SafetyHookOptions{Host: "cursor", Repo: repo, Input: input})
-		if denied || !strings.Contains(string(output), `"permission":"allow"`) {
-			t.Fatalf("Cursor native edit was controlled by an ambient draft: %s", output)
+		if denied || len(output) != 0 {
+			t.Fatalf("Cursor dormant probe produced a policy effect: %s", output)
 		}
 	}
 }
 
-// Relation conformance: every supported host reaches the same ambient boundary.
-func TestAmbientDraftDoesNotControlNativeEditAcrossHostContracts(t *testing.T) {
+// Relation conformance: every supported host reaches the same dormant boundary.
+func TestDormantDraftDoesNotControlNativeEditAcrossHostContracts(t *testing.T) {
 	repo := nextTestRepo(t)
 	writeValidSavedFeaturePlan(t, repo, "host-conformance")
 	tests := map[string][]byte{
@@ -891,8 +939,8 @@ func TestAmbientDraftDoesNotControlNativeEditAcrossHostContracts(t *testing.T) {
 	for host, input := range tests {
 		t.Run(host, func(t *testing.T) {
 			output, denied := HookDecision(SafetyHookOptions{Host: host, Repo: repo, Input: input})
-			if denied {
-				t.Fatalf("%s native tool was controlled by an ambient draft: %s", host, output)
+			if denied || len(output) != 0 {
+				t.Fatalf("%s dormant probe produced a policy effect: %s", host, output)
 			}
 		})
 	}

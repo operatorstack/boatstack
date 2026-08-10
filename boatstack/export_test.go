@@ -432,8 +432,8 @@ func TestExportAndDriftCheck(t *testing.T) {
 	}
 	for _, path := range []string{".claude/skills/boatstack/SKILL.md", ".gemini/skills/boatstack/SKILL.md", ".agents/skills/boatstack/SKILL.md"} {
 		router := string(bundle.Files[path])
-		if !strings.Contains(router, "automatically use repair") || !strings.Contains(router, "current-branch published managed delivery") || !strings.Contains(router, "Never instruct the user to manually repeat") {
-			t.Fatalf("%s does not auto-route free-form delivery changes", path)
+		if !strings.Contains(router, "verified active pre-publication") || !strings.Contains(router, "published work") || !strings.Contains(router, "requires another explicit Boatstack request") {
+			t.Fatalf("%s does not enforce explicit engagement", path)
 		}
 	}
 	codexRouter := string(bundle.Files[".agents/skills/boatstack/SKILL.md"])
@@ -598,12 +598,10 @@ func TestPortableHostAdaptersShareWorkflowAndArtifactContract(t *testing.T) {
 		for _, expected := range []string{
 			".product-loop/project.json",
 			".product-loop/workflow.md",
-			"Repository administration is outside managed product delivery",
+			"Repository administration is outside Boatstack engagement",
 			"Branch synchronization, status, switching, worktree maintenance",
-			"must never route to auto-plan or repair",
-			"ensure main is same is origin/main remove any current changes",
-			".product-loop/boatstack workspace-sync --repo . --branch main --source origin/main",
-			"do not inspect plans, scan the repository, search for the helper",
+			"must never activate Boatstack",
+			"Use ordinary repository tools",
 		} {
 			if !strings.Contains(surface, expected) {
 				t.Fatalf("%s adapter does not reference shared repository contract %q", host, expected)
