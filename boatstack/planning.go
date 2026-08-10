@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/operatorstack/boatstack/boatstack/internal/deliverycontrol"
 )
 
 var featureSlugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
@@ -39,21 +41,27 @@ func planningArtifactNames() []string {
 }
 
 type PlanningWriteOptions struct {
-	Repo             string
-	Feature          string
-	Artifact         string
-	Content          []byte
-	SourcePlan       string
-	SourcePlanSHA256 string
+	Repo                    string
+	Feature                 string
+	Artifact                string
+	Content                 []byte
+	SourcePlan              string
+	SourcePlanSHA256        string
+	ExpectedLifecycleSHA256 string
+	ExpectedPlanLockSHA256  string
+	ExpectedObservation     string
 }
 
 type ApprovalRecordOptions struct {
-	PlanPath           string
-	OutputPath         string
-	ApprovedBy         string
-	ApprovedAt         string
-	Fingerprint        string
-	BaselineDiffSHA256 string
+	PlanPath                string
+	OutputPath              string
+	ApprovedBy              string
+	ApprovedAt              string
+	Fingerprint             string
+	BaselineDiffSHA256      string
+	ExpectedLifecycleSHA256 string
+	ExpectedPlanLockSHA256  string
+	ExpectedObservation     string
 }
 
 type PlanningBaseline struct {
@@ -261,6 +269,33 @@ func WritePlanningArtifact(options PlanningWriteOptions) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	statePath, err := deliveryStatePath(repo, options.Feature)
+	if err != nil {
+		return "", err
+	}
+	hasManagedDelivery := fileExists(statePath)
+	hasLifecycleEvidence := strings.TrimSpace(options.ExpectedLifecycleSHA256) != "" ||
+		strings.TrimSpace(options.ExpectedPlanLockSHA256) != "" ||
+		strings.TrimSpace(options.ExpectedObservation) != ""
+	if hasManagedDelivery {
+		if strings.TrimSpace(options.ExpectedLifecycleSHA256) == "" || strings.TrimSpace(options.ExpectedPlanLockSHA256) == "" {
+			return "", fmt.Errorf("an active delivery planning write requires a lifecycle-bound flow bootstrap prescription")
+		}
+		snapshot, snapshotErr := ResolveLifecycleSnapshot(repo, options.Feature)
+		if snapshotErr != nil {
+			return "", snapshotErr
+		}
+		if !amendmentLifecycleState(snapshot.State) {
+			return "", fmt.Errorf("active delivery %s is not in an amendment planning state", options.Feature)
+		}
+		if snapshot.Fingerprint != strings.TrimSpace(options.ExpectedLifecycleSHA256) ||
+			snapshot.PlanLockSHA256 != strings.TrimSpace(options.ExpectedPlanLockSHA256) ||
+			snapshot.ObservationID != strings.TrimSpace(options.ExpectedObservation) {
+			return "", fmt.Errorf("active delivery lifecycle changed after bootstrap; resolve a fresh flow bootstrap prescription")
+		}
+	} else if hasLifecycleEvidence {
+		return "", fmt.Errorf("lifecycle-bound planning evidence does not match an active managed delivery")
+	}
 	featureDirectory := ctx.FeatureDir(options.Feature)
 	_, featureErr := os.Lstat(featureDirectory)
 	firstWrite := os.IsNotExist(featureErr)
@@ -329,6 +364,33 @@ func RecordApproval(options ApprovalRecordOptions) error {
 	if err != nil {
 		return err
 	}
+	feature := strings.TrimSpace(stringValue(check.Plan["feature_id"]))
+	statePath, statePathErr := deliveryStatePath(repo, feature)
+	if statePathErr != nil {
+		return statePathErr
+	}
+	hasLifecycleEvidence := strings.TrimSpace(options.ExpectedLifecycleSHA256) != "" ||
+		strings.TrimSpace(options.ExpectedPlanLockSHA256) != "" ||
+		strings.TrimSpace(options.ExpectedObservation) != ""
+	if fileExists(statePath) {
+		snapshot, snapshotErr := ResolveLifecycleSnapshot(repo, feature)
+		if snapshotErr != nil {
+			return snapshotErr
+		}
+		if snapshot.State != deliverycontrol.StateAmendmentDrafted {
+			return fmt.Errorf("active delivery approval requires a drafted amendment, got %s", snapshot.State)
+		}
+		if strings.TrimSpace(options.ExpectedLifecycleSHA256) == "" || strings.TrimSpace(options.ExpectedPlanLockSHA256) == "" {
+			return fmt.Errorf("active delivery approval requires current lifecycle and plan-lock fingerprints")
+		}
+		if snapshot.Fingerprint != strings.TrimSpace(options.ExpectedLifecycleSHA256) ||
+			snapshot.PlanLockSHA256 != strings.TrimSpace(options.ExpectedPlanLockSHA256) ||
+			snapshot.ObservationID != strings.TrimSpace(options.ExpectedObservation) {
+			return fmt.Errorf("active delivery lifecycle changed before approval; resolve flow next again")
+		}
+	} else if hasLifecycleEvidence {
+		return fmt.Errorf("lifecycle-bound approval evidence does not match an active managed delivery")
+	}
 	expectedOutput := filepath.Join(filepath.Dir(options.PlanPath), "approval.md")
 	output := options.OutputPath
 	if output == "" {
@@ -371,6 +433,11 @@ func RecordApproval(options ApprovalRecordOptions) error {
 		"approval_fingerprint":   check.Fingerprint,
 		"baseline_diff_sha256":   baseline.DiffSHA256,
 		"baseline_changed_paths": baseline.ChangedPaths,
+	}
+	if hasLifecycleEvidence {
+		payloadValue["lifecycle_sha256"] = strings.TrimSpace(options.ExpectedLifecycleSHA256)
+		payloadValue["plan_lock_sha256"] = strings.TrimSpace(options.ExpectedPlanLockSHA256)
+		payloadValue["observation_id"] = strings.TrimSpace(options.ExpectedObservation)
 	}
 	if version, _ := check.Plan["schema_version"].(float64); version >= 3 {
 		readiness, readinessErr := CheckPlanReadiness(options.PlanPath)

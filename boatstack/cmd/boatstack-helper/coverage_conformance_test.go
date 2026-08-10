@@ -47,8 +47,6 @@ var nonDeliveryVerbs = map[string]bool{
 	// Planning phase, before a plan is activated into a delivery.
 	"check-source-plan": true,
 	"check-plan":        true,
-	"planning-write":    true,
-	"record-approval":   true,
 	"record-autonomy":   true,
 	// Read-only status / diagnostics (observe helpers, not modeled transitions).
 	"repair-status":     true,

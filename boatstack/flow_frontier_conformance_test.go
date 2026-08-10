@@ -104,14 +104,7 @@ func TestFrontierShowsEarlierPublishedOpenSlices(t *testing.T) {
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	lockPath := filepath.Join(directory, "plan.lock.json")
-	if err := os.WriteFile(lockPath, []byte("lock\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	hash, err := SHA256File(lockPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	hash := writeNextPlanLock(t, directory)
 	if err := saveDeliveryState(repo, DeliveryState{
 		SchemaVersion: deliveryStateSchemaVersion, Feature: "layered", PlanLockHash: hash,
 		ActiveIndex: 1, Slices: []DeliverySlice{

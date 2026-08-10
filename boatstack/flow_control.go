@@ -54,6 +54,14 @@ func flowStateFromStage(stage string) (deliverycontrol.StateID, bool) {
 	switch stage {
 	case "BUILD":
 		return deliverycontrol.StateBuild, true
+	case "AMENDMENT_REQUIRED":
+		return deliverycontrol.StateAmendmentRequired, true
+	case "AMENDMENT_DRAFTED":
+		return deliverycontrol.StateAmendmentDrafted, true
+	case "AMENDMENT_APPROVED":
+		return deliverycontrol.StateAmendmentApproved, true
+	case "PLAN_INVALID":
+		return deliverycontrol.StatePlanInvalid, true
 	case "TEST_PASSED":
 		return deliverycontrol.StateTestPassed, true
 	case "REVIEW_PASSED", "PR_PREVIEW":
@@ -386,6 +394,24 @@ func prescribeCommand(repo, feature string, status NextStatus, transition delive
 		repoArgs = []string{"--repo", repo}
 	}
 	switch transition {
+	case deliverycontrol.TransitionID("delivery.amend_write"), deliverycontrol.TransitionID("delivery.invalid_plan_rewrite"):
+		cmd.Verb = "flow"
+		cmd.Args = append([]string{"bootstrap"}, repoArgs...)
+		cmd.Args = append(cmd.Args, "--feature", feature)
+		cmd.RequiresHumanInput = []string{"--source-plan", "--artifact", "--shell", planningMarkdownInput}
+	case deliverycontrol.TransitionID("delivery.amend_approve"):
+		featureDir := planningFeatureDir(repo, feature)
+		cmd.Args = []string{
+			"--plan", filepath.Join(featureDir, "plan.md"),
+			"--expected-lifecycle-sha256", status.LifecycleSHA256,
+			"--expected-plan-lock-sha256", status.PlanLockSHA256,
+			"--expected-observation", status.ObservationID,
+		}
+		cmd.RequiresHumanInput = []string{"--approved-by", "--approved-at", "--fingerprint"}
+	case deliverycontrol.TransitionID("delivery.amend_activate"):
+		featureDir := planningFeatureDir(repo, feature)
+		cmd = buildActivatePlan(featureDir, "AMENDMENT_APPROVED")
+		cmd.Transition = transition
 	case deliverycontrol.TransitionID("delivery.record_gate_test"):
 		cmd.Args = append(repoArgs, "--feature", feature, "--slice", status.ActiveSlice, "--gate", "test")
 		cmd.RequiresHumanInput = []string{"--status", "--evidence"}
@@ -655,7 +681,7 @@ func buildActivatePlan(featureDir, stage string) *PrescribedCommand {
 		"--out-dir", filepath.Join(featureDir, "compiled"),
 		"--output", filepath.Join(featureDir, "plan.lock.json"),
 	}
-	if stage == "APPROVED" {
+	if stage == "APPROVED" || (stage == "AMENDMENT_APPROVED" && fileExists(filepath.Join(featureDir, "approval.md"))) {
 		args = append(args, "--approval", filepath.Join(featureDir, "approval.md"))
 	}
 	return &PrescribedCommand{Verb: "activate-plan", Args: args, Transition: MarkerPlanningActivate}

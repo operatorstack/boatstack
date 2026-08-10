@@ -35,20 +35,38 @@ func writeNextDelivery(t *testing.T, repo, feature, status string, activeIndex i
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	lockPath := filepath.Join(directory, "plan.lock.json")
-	if err := os.WriteFile(lockPath, []byte("lock\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	hash, err := SHA256File(lockPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	hash := writeNextPlanLock(t, directory)
 	if err := saveDeliveryState(repo, DeliveryState{
 		SchemaVersion: deliveryStateSchemaVersion, Feature: feature, PlanLockHash: hash,
 		ActiveIndex: activeIndex, Slices: []DeliverySlice{{ID: "delivery", Title: "Delivery", Status: status}},
 	}); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func writeNextPlanLock(t *testing.T, directory string) string {
+	t.Helper()
+	planPath := filepath.Join(directory, "plan.md")
+	if err := os.WriteFile(planPath, []byte("# Synthetic managed plan\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	planSHA, err := SHA256File(planPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := MarshalJSON(map[string]any{"plan_sha256": planSHA})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(directory, "plan.lock.json")
+	if err := os.WriteFile(lockPath, value, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := SHA256File(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return hash
 }
 
 func writeSavedFeaturePlan(t *testing.T, repo, feature string) {

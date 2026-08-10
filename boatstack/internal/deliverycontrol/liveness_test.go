@@ -14,7 +14,10 @@ func TestRegistryGraphIsLive(t *testing.T) {
 		t.Fatalf("delivery graph is not live: deadlocks=%v goal-unreachable=%v", result.Deadlocks, result.GoalUnreachable)
 	}
 	// The core lifecycle states must all be reachable from the entries.
-	want := []StateID{StateUninitialized, StateBuild, StateTestPassed, StateReviewPassed, StatePublished}
+	want := []StateID{
+		StateUninitialized, StateBuild, StateTestPassed, StateReviewPassed, StatePublished,
+		StateAmendmentRequired, StateAmendmentDrafted, StateAmendmentApproved,
+	}
 	reachable := map[StateID]bool{}
 	for _, s := range result.Reachable {
 		reachable[s] = true

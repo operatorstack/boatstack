@@ -581,6 +581,9 @@ func planningWriteCommand(arguments []string) int {
 	artifact := flags.String("artifact", "", "known Markdown planning artifact name")
 	sourcePlan := flags.String("source-plan", "", "in-repo source plan bound by flow bootstrap")
 	sourcePlanSHA256 := flags.String("source-plan-sha256", "", "source-plan digest bound by flow bootstrap")
+	expectedLifecycleSHA256 := flags.String("expected-lifecycle-sha256", "", "active-delivery lifecycle fingerprint bound by flow bootstrap")
+	expectedPlanLockSHA256 := flags.String("expected-plan-lock-sha256", "", "active plan-lock digest bound by flow bootstrap")
+	expectedObservation := flags.String("expected-observation", "", "active amendment observation bound by flow bootstrap")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}
@@ -594,6 +597,9 @@ func planningWriteCommand(arguments []string) int {
 	path, err := boatstack.WritePlanningArtifact(boatstack.PlanningWriteOptions{
 		Repo: *repo, Feature: *feature, Artifact: *artifact, Content: content,
 		SourcePlan: *sourcePlan, SourcePlanSHA256: *sourcePlanSHA256,
+		ExpectedLifecycleSHA256: *expectedLifecycleSHA256,
+		ExpectedPlanLockSHA256:  *expectedPlanLockSHA256,
+		ExpectedObservation:     *expectedObservation,
 	})
 	if err != nil {
 		return fail(err)
@@ -610,6 +616,9 @@ func recordApprovalCommand(arguments []string) int {
 	approvedAt := flags.String("approved-at", "", "RFC3339 approval timestamp")
 	fingerprint := flags.String("fingerprint", "", "exact fingerprint displayed before approval")
 	baselineDiffSHA256 := flags.String("baseline-diff-sha256", "", "exact product baseline fingerprint displayed before approval; omit only when clean")
+	expectedLifecycleSHA256 := flags.String("expected-lifecycle-sha256", "", "exact active lifecycle fingerprint displayed before amendment approval")
+	expectedPlanLockSHA256 := flags.String("expected-plan-lock-sha256", "", "exact prior plan-lock fingerprint displayed before amendment approval")
+	expectedObservation := flags.String("expected-observation", "", "exact active amendment observation displayed before approval")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}
@@ -619,6 +628,8 @@ func recordApprovalCommand(arguments []string) int {
 	if err := boatstack.RecordApproval(boatstack.ApprovalRecordOptions{
 		PlanPath: *plan, OutputPath: *output, ApprovedBy: *approvedBy,
 		ApprovedAt: *approvedAt, Fingerprint: *fingerprint, BaselineDiffSHA256: *baselineDiffSHA256,
+		ExpectedLifecycleSHA256: *expectedLifecycleSHA256, ExpectedPlanLockSHA256: *expectedPlanLockSHA256,
+		ExpectedObservation: *expectedObservation,
 	}); err != nil {
 		return fail(err)
 	}

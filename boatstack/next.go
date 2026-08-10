@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/operatorstack/boatstack/boatstack/internal/deliverycontrol"
 )
 
 const nextStatusSchemaVersion = 2
@@ -25,6 +27,10 @@ type NextStatus struct {
 	TotalSlices        int              `json:"total_slices,omitempty"`
 	ObservedStage      string           `json:"observed_stage"`
 	NextOperation      string           `json:"next_operation"`
+	LifecycleState     string           `json:"lifecycle_state,omitempty"`
+	LifecycleSHA256    string           `json:"lifecycle_sha256,omitempty"`
+	ObservationID      string           `json:"observation_id,omitempty"`
+	PlanLockSHA256     string           `json:"plan_lock_sha256,omitempty"`
 	Operator           DecisionOperator `json:"operator,omitempty"`
 	Reason             string           `json:"reason"`
 	BlockingAmbiguity  []string         `json:"blocking_ambiguity,omitempty"`
@@ -135,20 +141,27 @@ func orphanedFeatureArtifacts(repo string) ([]string, error) {
 }
 
 func nextForDelivery(repo, feature string) (NextStatus, error) {
-	state, err := CurrentDeliveryState(repo, feature)
-	if err != nil {
-		return NextStatus{}, err
-	}
-	slice, err := activeDeliverySlice(state)
+	snapshot, err := ResolveLifecycleSnapshot(repo, feature)
 	if err != nil {
 		return NextStatus{}, err
 	}
 	status := NextStatus{
 		SchemaVersion: nextStatusSchemaVersion, VerificationStatus: "VERIFIED",
-		Feature: feature, ActiveSlice: slice.ID, ObservedStage: slice.Status,
-		SliceIndex: state.ActiveIndex + 1, TotalSlices: len(state.Slices),
+		Feature: feature, ActiveSlice: snapshot.ActiveSlice, ObservedStage: string(snapshot.State),
+		SliceIndex: snapshot.ActiveIndex + 1, TotalSlices: snapshot.TotalSlices,
+		LifecycleState: string(snapshot.State), LifecycleSHA256: snapshot.Fingerprint,
+		ObservationID: snapshot.ObservationID, PlanLockSHA256: snapshot.PlanLockSHA256,
 	}
-	switch slice.Status {
+	switch snapshot.State {
+	case deliverycontrol.StateAmendmentRequired, deliverycontrol.StatePlanInvalid:
+		status.NextOperation = "amend-plan"
+		status.Reason = "The active delivery requires a lifecycle-bound plan amendment before its gates may continue."
+	case deliverycontrol.StateAmendmentDrafted:
+		status.NextOperation = "plan-gate"
+		status.Reason = "The amended plan differs from the active lock and must pass validation and exact approval before reactivation."
+	case deliverycontrol.StateAmendmentApproved:
+		status.NextOperation = "build"
+		status.Reason = "The amended plan is current and authorized; reactivate it to install the replacement lock and resume delivery."
 	case StatusBuild:
 		status.NextOperation = "build"
 		status.Reason = "The approved delivery slice is active and has no current test-gate receipt."
@@ -157,7 +170,7 @@ func nextForDelivery(repo, feature string) (NextStatus, error) {
 		status.Reason = "The active delivery slice has current test evidence and still requires review."
 	case StatusReviewPassed:
 		previewPath := filepath.Join(WorkspaceFor(repo).FeatureDir(feature), "pr.md")
-		if preview, previewErr := ParsePRPreview(previewPath); previewErr == nil && preview.Feature == feature && preview.SliceID == slice.ID {
+		if preview, previewErr := ParsePRPreview(previewPath); previewErr == nil && preview.Feature == feature && preview.SliceID == snapshot.ActiveSlice {
 			status.ObservedStage = "PR_PREVIEW"
 			status.Reason = "A reviewer-ready PR preview exists for the reviewed active slice and must be reconfirmed through the ship gate."
 		} else {
@@ -165,7 +178,7 @@ func nextForDelivery(repo, feature string) (NextStatus, error) {
 		}
 		status.NextOperation = "ship-gate"
 	default:
-		return NextStatus{}, fmt.Errorf("managed delivery slice %s has unsupported status %q", slice.ID, slice.Status)
+		return NextStatus{}, fmt.Errorf("managed delivery slice %s has unsupported lifecycle state %q", snapshot.ActiveSlice, snapshot.State)
 	}
 	return decorateAutonomyStatus(repo, status), nil
 }

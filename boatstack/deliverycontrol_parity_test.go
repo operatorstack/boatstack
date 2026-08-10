@@ -31,6 +31,8 @@ var realDeliveryHandlers = map[string]any{
 	"CheckDeliveryReadyForShip": CheckDeliveryReadyForShip,
 	"ResolveNext":               ResolveNext,
 	"ResolveRecovery":           ResolveRecovery,
+	"WritePlanningArtifact":     WritePlanningArtifact,
+	"RecordApproval":            RecordApproval,
 }
 
 func TestRegistryHandlerRefsAreRealFunctions(t *testing.T) {

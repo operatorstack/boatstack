@@ -35,6 +35,36 @@ var registry = []TransitionDescriptor{
 		Note: "Rework resets the addressable slice to BUILD (bounded by the typed failure-class counter and a changed mechanism); amendment/plan-invalid set Mode without consuming repair authority; a fully-published delivery emits a corrective child with no state mutation.",
 	},
 	{
+		ID: "delivery.requirement_amendment", From: []StateID{StateBuild, StateTestPassed, StateReviewPassed}, To: StateAmendmentRequired,
+		Kind: KindCommittedMutation, CostClass: CostMutation, Reversible: true,
+		HandlerRef: "RecordChangeObservation", CLIVerb: "record-change",
+		Note: "A requirement_amendment observation pauses ordinary gates and enters the owned amendment planning path while preserving the active plan lock.",
+	},
+	{
+		ID: "delivery.amend_write", From: []StateID{StateAmendmentRequired, StateAmendmentDrafted, StateAmendmentApproved}, To: StateAmendmentDrafted,
+		Kind: KindCommittedMutation, CostClass: CostMutation, Reversible: true,
+		HandlerRef: "WritePlanningArtifact", CLIVerb: "planning-write",
+		Note: "Writes one lifecycle-fingerprinted amendment artifact through a fresh flow-bootstrap prescription; stale observation, lock, worktree, branch, source-plan, or prior plan bytes refuse before mutation.",
+	},
+	{
+		ID: "delivery.amend_approve", From: []StateID{StateAmendmentDrafted}, To: StateAmendmentApproved,
+		Kind: KindCommittedMutation, CostClass: CostMutation, Reversible: true,
+		HandlerRef: "RecordApproval", CLIVerb: "record-approval",
+		Note: "Records approval for the exact amended plan and current product baseline. Policy-authorized repositories derive the same state without a receipt.",
+	},
+	{
+		ID: "delivery.amend_activate", From: []StateID{StateAmendmentApproved}, To: StateBuild,
+		Kind: KindCommittedMutation, CostClass: CostMutation, Reversible: true,
+		HandlerRef: "ActivatePlan", CLIVerb: "activate-plan",
+		Note: "Revalidates the amended plan and authority, preserves the published prefix, compiles the tail, commits the new plan lock, and clears amendment mode only after successful activation.",
+	},
+	{
+		ID: "delivery.invalid_plan_rewrite", From: []StateID{StatePlanInvalid}, To: StateAmendmentDrafted,
+		Kind: KindRecovery, CostClass: CostRecovery, Reversible: true,
+		HandlerRef: "WritePlanningArtifact", CLIVerb: "planning-write",
+		Note: "Re-authors an invalid active plan only through lifecycle-bound planning transport; raw managed-path writes remain denied.",
+	},
+	{
 		ID: "delivery.record_journey_results", From: []StateID{StateBuild, StateTestPassed}, To: StateBuild,
 		Kind: KindCommittedMutation, CostClass: CostMutation, Reversible: true,
 		HandlerRef: "RecordJourneyResults", CLIVerb: "record-journey-results",
