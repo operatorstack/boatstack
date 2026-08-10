@@ -238,6 +238,7 @@ func activateManagedFeatureLayout(t *testing.T, repo, feature string, compiled b
 		outDir = filepath.Join(directory, "compiled")
 	}
 	if err := ActivatePlan(ActivationOptions{
+		Repo:     repo,
 		PlanPath: filepath.Join(directory, "plan.md"), ApprovalPath: approvalPath,
 		OutDir: outDir, OutputPath: filepath.Join(directory, "plan.lock.json"),
 		SourceCommit: runGit(t, repo, "rev-parse", "HEAD"),

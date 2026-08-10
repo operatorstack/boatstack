@@ -112,6 +112,7 @@ func TestLifecycleAuthorityMakesRequirementAmendmentReachable(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := RecordApproval(ApprovalRecordOptions{
+		Repo:     repo,
 		PlanPath: planPath, ApprovedBy: "Test Human", ApprovedAt: "2026-08-10T12:00:00Z",
 		Fingerprint: check.Fingerprint, BaselineDiffSHA256: baseline.DiffSHA256,
 		ExpectedLifecycleSHA256: drafted.Fingerprint, ExpectedPlanLockSHA256: drafted.PlanLockSHA256,
@@ -137,6 +138,7 @@ func TestLifecycleAuthorityMakesRequirementAmendmentReachable(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := ActivatePlan(ActivationOptions{
+		Repo:     repo,
 		PlanPath: planPath, ApprovalPath: filepath.Join(directory, "approval.md"),
 		OutDir: filepath.Join(directory, "compiled"), OutputPath: filepath.Join(directory, "plan.lock.json"),
 		SourceCommit: runGit(t, repo, "rev-parse", "HEAD"),
@@ -148,6 +150,7 @@ func TestLifecycleAuthorityMakesRequirementAmendmentReachable(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := ActivatePlan(ActivationOptions{
+		Repo:     repo,
 		PlanPath: planPath, ApprovalPath: filepath.Join(directory, "approval.md"),
 		OutDir: filepath.Join(directory, "compiled"), OutputPath: filepath.Join(directory, "plan.lock.json"),
 		SourceCommit: runGit(t, repo, "rev-parse", "HEAD"),

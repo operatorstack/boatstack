@@ -118,7 +118,7 @@ func TestMarkdownPlanActivationAndStaleness(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeApprovalReceipt(t, approval, check.Fingerprint)
-	options := ActivationOptions{PlanPath: planPath, ApprovalPath: approval, OutDir: compiled, OutputPath: lock, SourceCommit: "test"}
+	options := ActivationOptions{Repo: root, PlanPath: planPath, ApprovalPath: approval, OutDir: compiled, OutputPath: lock, SourceCommit: "test"}
 	if err := ActivatePlan(options); err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestPolicyActivationCreatesTypedLockWithoutApproval(t *testing.T) {
 	runGit(t, root, "commit", "-m", "record policy-activated planning inputs")
 	compiled := filepath.Join(root, "compiled")
 	lockPath := filepath.Join(root, "plan.lock.json")
-	options := ActivationOptions{PlanPath: planPath, OutDir: compiled, OutputPath: lockPath, SourceCommit: "test"}
+	options := ActivationOptions{Repo: root, PlanPath: planPath, OutDir: compiled, OutputPath: lockPath, SourceCommit: "test"}
 	if err := ActivatePlan(options); err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func activatePolicyPlan(t *testing.T) (root, planPath, compiled, lock, feature s
 	featureDir := filepath.Join(root, ".product-loop", "features", feature)
 	compiled = filepath.Join(featureDir, "compiled")
 	lock = filepath.Join(featureDir, "plan.lock.json")
-	options := ActivationOptions{PlanPath: planPath, OutDir: compiled, OutputPath: lock, SourceCommit: "test"}
+	options := ActivationOptions{Repo: root, PlanPath: planPath, OutDir: compiled, OutputPath: lock, SourceCommit: "test"}
 	if err := ActivatePlan(options); err != nil {
 		t.Fatal(err)
 	}
@@ -377,7 +377,7 @@ func TestReadOnlyCheckAndFailedActivationWriteNothing(t *testing.T) {
 	approval := filepath.Join(root, "approval.md")
 	compiled := filepath.Join(root, "compiled")
 	lock := filepath.Join(root, "plan.lock.json")
-	activation := ActivationOptions{PlanPath: planPath, ApprovalPath: approval, OutDir: compiled, OutputPath: lock}
+	activation := ActivationOptions{Repo: root, PlanPath: planPath, ApprovalPath: approval, OutDir: compiled, OutputPath: lock}
 	err = ActivatePlan(activation)
 	if err == nil {
 		t.Fatal("expected missing approval receipt to block")

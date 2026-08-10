@@ -274,6 +274,7 @@ func TestDetachedConfigDriftBlocksMutationAndPublicationBypasses(t *testing.T) {
 	}{
 		{name: "activation", run: func() error {
 			return ActivatePlan(ActivationOptions{
+				Repo:     repo,
 				PlanPath: planPath, OutDir: filepath.Join(ctx.FeatureDir("feature-one"), "compiled"),
 				OutputPath: filepath.Join(ctx.FeatureDir("feature-one"), "plan.lock.json"), SourceCommit: "test",
 			})

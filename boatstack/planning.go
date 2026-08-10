@@ -53,6 +53,7 @@ type PlanningWriteOptions struct {
 }
 
 type ApprovalRecordOptions struct {
+	Repo                    string
 	PlanPath                string
 	OutputPath              string
 	ApprovedBy              string
@@ -173,11 +174,19 @@ func productBaseline(repo string, artifactPaths ...string) (PlanningBaseline, er
 }
 
 func PlanningBaselineForPlan(planPath string) (PlanningBaseline, error) {
-	check, err := CheckPlan(planPath)
+	repo, err := ResolveControllerRepository(filepath.Dir(planPath))
 	if err != nil {
 		return PlanningBaseline{}, err
 	}
-	repo, err := ResolveControllerRepository(filepath.Dir(planPath))
+	return PlanningBaselineForRepository(repo, planPath)
+}
+
+func PlanningBaselineForRepository(repoPath, planPath string) (PlanningBaseline, error) {
+	repo, err := ResolveControllerRepositoryFor(repoPath, filepath.Dir(planPath))
+	if err != nil {
+		return PlanningBaseline{}, err
+	}
+	check, err := CheckPlanForRepository(repo, planPath)
 	if err != nil {
 		return PlanningBaseline{}, err
 	}
@@ -353,16 +362,19 @@ func RecordApproval(options ApprovalRecordOptions) error {
 	if err != nil {
 		return fmt.Errorf("approval timestamp must be RFC3339")
 	}
-	check, err := CheckPlan(options.PlanPath)
+	if strings.TrimSpace(options.Repo) == "" {
+		return fmt.Errorf("approval requires the invoking repository context")
+	}
+	repo, err := ResolveControllerRepositoryFor(options.Repo, filepath.Dir(options.PlanPath))
+	if err != nil {
+		return err
+	}
+	check, err := CheckPlanForRepository(repo, options.PlanPath)
 	if err != nil {
 		return err
 	}
 	if options.Fingerprint != check.Fingerprint {
 		return fmt.Errorf("approval fingerprint does not match the current plan; the plan now fingerprints as %s — re-approve against that value (run check-plan to confirm)", check.Fingerprint)
-	}
-	repo, err := ResolveControllerRepository(filepath.Dir(options.PlanPath))
-	if err != nil {
-		return err
 	}
 	feature := strings.TrimSpace(stringValue(check.Plan["feature_id"]))
 	statePath, statePathErr := deliveryStatePath(repo, feature)
@@ -440,7 +452,7 @@ func RecordApproval(options ApprovalRecordOptions) error {
 		payloadValue["observation_id"] = strings.TrimSpace(options.ExpectedObservation)
 	}
 	if version, _ := check.Plan["schema_version"].(float64); version >= 3 {
-		readiness, readinessErr := CheckPlanReadiness(options.PlanPath)
+		readiness, readinessErr := checkPlanReadiness(repo, options.PlanPath)
 		if readinessErr != nil {
 			return readinessErr
 		}

@@ -94,9 +94,9 @@ func TestValidateAmendmentPreservesProgressBoundaries(t *testing.T) {
 func TestReconcileAmendedDeliveryStatePreservesPrefixAndPointer(t *testing.T) {
 	existing := publishedThenBuilding("MERGED")
 	newSlices := []DeliverySlice{
-		{ID: "a", TaskIDs: []string{"T-1"}, AffectedPaths: []string{"a.go"}},                     // published prefix, unchanged def
-		{ID: "b", TaskIDs: []string{"T-2"}, AffectedPaths: []string{"b.go", "b-extra.go"}},        // widened building slice
-		{ID: "c", TaskIDs: []string{"T-3"}, AffectedPaths: []string{"c.go"}},                      // freshly added tail slice
+		{ID: "a", TaskIDs: []string{"T-1"}, AffectedPaths: []string{"a.go"}},               // published prefix, unchanged def
+		{ID: "b", TaskIDs: []string{"T-2"}, AffectedPaths: []string{"b.go", "b-extra.go"}}, // widened building slice
+		{ID: "c", TaskIDs: []string{"T-3"}, AffectedPaths: []string{"c.go"}},               // freshly added tail slice
 	}
 
 	result := reconcileAmendedDeliveryState(existing, newSlices, "new-lock")
@@ -169,6 +169,7 @@ func reactivateWithAmendedPlan(t *testing.T, repo, feature string, mutate func(p
 	approvalPath := filepath.Join(dir, "approval.md")
 	writeApprovalReceipt(t, approvalPath, check.Fingerprint)
 	return ActivatePlan(ActivationOptions{
+		Repo:         repo,
 		PlanPath:     planPath,
 		ApprovalPath: approvalPath,
 		OutDir:       filepath.Join(dir, "compiled"),
