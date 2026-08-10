@@ -89,6 +89,28 @@ func TestHostHooksCreateAndCompleteOneDurableAttempt(t *testing.T) {
 	}
 }
 
+// Bypass conformance for control-law: active-delivery-effects-are-supervised.
+// Generic query tools and live SQL clients are not proven read-only by their
+// names, so both enter durable operation supervision while a delivery is active.
+func TestAmbiguousQueryAndLiveSQLAreSupervisedDuringActiveDelivery(t *testing.T) {
+	tests := map[string][]byte{
+		"generic MCP query": []byte(`{"hook_event_name":"PreToolUse","tool_name":"mcp__database__query","tool_input":{"query":"SELECT account_id FROM accounts WHERE account_id = 1"}}`),
+		"live SQL client":   []byte(`{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"psql -c 'SELECT account_id FROM accounts WHERE account_id = 1'"}}`),
+	}
+	for name, input := range tests {
+		t.Run(name, func(t *testing.T) {
+			repo := activeOperationTestRepo(t)
+			if output, denied := HookDecision(SafetyHookOptions{Host: "codex", Repo: repo, Input: input}); denied {
+				t.Fatalf("first supervised operation was denied: %s", output)
+			}
+			status, err := ResolveOperationStatus(repo, "")
+			if err != nil || status.Operation == nil || status.Operation.State != OperationExecuting {
+				t.Fatalf("ambiguous effect bypassed active-delivery supervision: %+v %v", status, err)
+			}
+		})
+	}
+}
+
 func TestAsyncCompletionCannotInitiateAnOperation(t *testing.T) {
 	repo := activeOperationTestRepo(t)
 	post := []byte(`{"hook_event_name":"PostToolUse","tool_name":"Write","tool_input":{"file_path":"never-started.go","content":"x"},"tool_response":"ok"}`)

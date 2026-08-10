@@ -367,6 +367,7 @@ func ResolveNext(repoPath, explicitFeature string) (result NextStatus, resultErr
 		return blockedNextStatus("INVALID_STATE", "discard-delivery", "Boatstack found managed delivery state it cannot verify. Restore its evidence, add it to workflow.ignored_deliveries, or run discard-delivery to clear it before continuing.", invalidDeliveries...), nil
 	}
 
+	selectedCandidate := ""
 	if explicitFeature != "" {
 		found := false
 		for _, f := range active {
@@ -380,9 +381,26 @@ func ResolveNext(repoPath, explicitFeature string) (result NextStatus, resultErr
 		} else if completedState, completedErr := CurrentDeliveryState(repo, explicitFeature); completedErr == nil && completedState.ActiveIndex >= len(completedState.Slices) {
 			return nextForPublished(repo, completedState), nil
 		} else {
-			// Unverifiable named delivery: discard-delivery accepts and archives it
-			// (repair-state refuses registered/tracked dirs). Coreachability.
-			return blockedNextStatus("INVALID_STATE", "discard-delivery", fmt.Sprintf("Feature %s is not a verifiable active or published managed delivery; clear it with discard-delivery.", explicitFeature), explicitFeature), nil
+			// An explicit Boatstack invocation may select one saved, unactivated
+			// candidate even when other drafts exist. Selection is routing context,
+			// not activation authority: the candidate still passes the normal plan,
+			// workspace, approval, and activation checks below.
+			// control-law: explicit-selection-scopes-draft-resolution
+			candidates, candidatesErr := featurePlanCandidates(repo)
+			if candidatesErr != nil {
+				return NextStatus{}, candidatesErr
+			}
+			for _, candidate := range candidates {
+				if candidate == explicitFeature {
+					selectedCandidate = candidate
+					break
+				}
+			}
+			if selectedCandidate == "" {
+				// Unverifiable named delivery: discard-delivery accepts and archives it
+				// (repair-state refuses registered/tracked dirs). Coreachability.
+				return blockedNextStatus("INVALID_STATE", "discard-delivery", fmt.Sprintf("Feature %s is not a verifiable active, published, or saved managed feature; clear it with discard-delivery.", explicitFeature), explicitFeature), nil
+			}
 		}
 	}
 
@@ -419,6 +437,9 @@ func ResolveNext(repoPath, explicitFeature string) (result NextStatus, resultErr
 	candidates, err := featurePlanCandidates(repo)
 	if err != nil {
 		return NextStatus{}, err
+	}
+	if selectedCandidate != "" {
+		candidates = []string{selectedCandidate}
 	}
 	if len(candidates) > 1 {
 		base.VerificationStatus = "BLOCKED"

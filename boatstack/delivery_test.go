@@ -489,7 +489,7 @@ func TestManagedDeliveryHookDeniesDirectPublicationRoutes(t *testing.T) {
 	runGit(t, repo, "init", "-b", "main")
 	if err := saveDeliveryState(repo, DeliveryState{
 		SchemaVersion: deliveryStateSchemaVersion, Feature: "phased-feature", PlanLockHash: strings.Repeat("a", 64),
-		ActiveIndex: 0, Slices: []DeliverySlice{{ID: "phase-one", Title: "First", Status: "BUILD"}},
+		ActiveIndex: 0, Slices: []DeliverySlice{{ID: "phase-one", Title: "First", Status: "BUILD", HeadBranch: "main"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -558,6 +558,22 @@ func TestManagedDeliveryHookDeniesDirectPublicationRoutes(t *testing.T) {
 	findings = ClassifyCommand(repo, "git push origin feature")
 	if len(findings) == 0 || findings[0].Category != "workflow-state-invalid" {
 		t.Fatalf("corrupt delivery state failed open: %#v", findings)
+	}
+}
+
+// Relation conformance for
+// control-law: managed-publication-scope-follows-current-branch.
+func TestManagedDeliveryPublicationGuardIgnoresUnrelatedBranch(t *testing.T) {
+	repo := t.TempDir()
+	runGit(t, repo, "init", "-b", "main")
+	if err := saveDeliveryState(repo, DeliveryState{
+		SchemaVersion: deliveryStateSchemaVersion, Feature: "phased-feature", PlanLockHash: strings.Repeat("a", 64),
+		ActiveIndex: 0, Slices: []DeliverySlice{{ID: "phase-one", Title: "First", Status: "BUILD", HeadBranch: "feature/phased-feature"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if findings := ClassifyCommand(repo, "git push origin main"); len(findings) != 0 {
+		t.Fatalf("delivery on another branch controlled publication here: %#v", findings)
 	}
 }
 

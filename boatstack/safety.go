@@ -67,7 +67,7 @@ func malformedHookInput(code string) error {
 // idioms — recovery-status | jq, git diff | wc -l, … | sort | uniq -c — compose
 // freely. Effect-CHANGING syntax (redirection > <, command substitution $()) is
 // still banned in isPureReadOnlyCommand, so no filter can be turned into a writer.
-var readOnlyStage = regexp.MustCompile(`(?i)^\s*(?:env\s+[^ ]+\s+)*(?:rg|grep|git\s+(?:grep|diff|status|show|log)|cat|sed|head|tail|less|wc|awk|sort|uniq|cut|tr|jq|column|nl|comm|rev|fold|find\s+[^\n]*-(?:print|ls)|psql\s+[^\n]*\s-c\s+["']?\s*select\b|(?:[^\s]*/)?boatstack(?:\.ps1)?\s+(?:recovery-status|mutation-status|operation-status|delivery-status|next-status|workspace-status|repair-status|check-plan|check-source-plan|check-safety|diagnose-hook|authority-context|doctor|version)\b|(?:[^\s]*/)?boatstack(?:\.ps1)?\s+insight\s+(?:check|list|show|frontier|evaluate)\b)`)
+var readOnlyStage = regexp.MustCompile(`(?i)^\s*(?:env\s+[^ ]+\s+)*(?:rg|grep|git\s+(?:grep|diff|status|show|log)|cat|sed|head|tail|less|wc|awk|sort|uniq|cut|tr|jq|column|nl|comm|rev|fold|find\s+[^\n]*-(?:print|ls)|(?:[^\s]*/)?boatstack(?:\.ps1)?\s+(?:recovery-status|mutation-status|operation-status|delivery-status|next-status|workspace-status|repair-status|check-plan|check-source-plan|check-safety|diagnose-hook|authority-context|doctor|version)\b|(?:[^\s]*/)?boatstack(?:\.ps1)?\s+insight\s+(?:check|list|show|frontier|evaluate)\b)`)
 
 // Constitutional/Optimization split. These destruction rules are CONSTITUTIONAL:
 // they define the real boundary (destroying a live resource) and are never traded
@@ -153,7 +153,7 @@ var insightGitStagingPattern = regexp.MustCompile(`(?i)^\s*git\s+(?:add|diff|sta
 var insightInPlaceMutationPattern = regexp.MustCompile(`(?i)\bsed\s+-[^\s]*i(?:\.[^\s]+)?\b`)
 var mutationToolPattern = regexp.MustCompile(`(?i)(?:write|edit|apply[_-]?patch|create|delete|remove|move|rename|update|insert|upload|install)`)
 var planningMutationToolPattern = regexp.MustCompile(`(?i)(?:write|edit|apply[_-]?patch|create)`)
-var externalReadOnlyToolPattern = regexp.MustCompile(`(?i)(?:^|[_-])(?:get|list|read|search|find|status|inspect|query|fetch|open)(?:[_-]|$)`)
+var externalReadOnlyToolPattern = regexp.MustCompile(`(?i)(?:^|[_-])(?:get|list|read|search|find|status|inspect|fetch|open)(?:[_-]|$)`)
 
 // featuresCommandPathPattern extracts a .product-loop/features/… operand from a
 // shell command so the first-write latch can see raw shell writes (cp, tee, >)
@@ -406,9 +406,9 @@ func fileWriterTool(nameLower, attemptedPath string) bool {
 }
 
 // featureScopedPath reports whether a repo-relative path lands anywhere under
-// the managed planning tree. Broader than planningMarkdownPath on purpose: the
-// first-write latch covers every depth and name, while planningMarkdownPath
-// stays the exact allowlist for the bounded DRAFT_PLAN carve-out.
+// the managed planning tree. It is broader than planningMarkdownPath on
+// purpose: raw host mutation is denied at every depth, while the owned
+// planning-write command validates the exact artifact allowlist itself.
 func featureScopedPath(path string) bool {
 	return strings.HasPrefix(filepath.ToSlash(path), ".product-loop/features/")
 }
@@ -434,93 +434,35 @@ func planningMarkdownPath(path string) bool {
 	return len(parts) == 4 && featureSlugPattern.MatchString(parts[2]) && planningArtifacts[parts[3]]
 }
 
-// preActivationFinding decides whether a product mutation is denied before a plan
-// reaches its activation boundary, and — per the Coreachability invariant — names
-// a recovery verb that actually CLEARS the cause it reports. A "cannot verify /
-// cannot resolve" error is observation loss (a channel fault), not a plant defect:
-// no mutation verb repairs it, so it is classified distinctly and routed to the
-// read-only doctor to diagnose the channel — never to repair-state, which acts on a
-// malformed draft and would refuse. A genuinely malformed draft routes to
-// repair-state; every other stage carries ResolveNext's own (already Coreachable)
-// next operation.
+// preActivationFinding protects only Boatstack-owned planning state before plan
+// activation. Repository attachment, saved plans, approvals, and ambiguous or
+// invalid candidates are observations, not authority over ordinary repository
+// tools. Product mutation is therefore outside this pre-activation boundary;
+// activation rechecks the plan, approval or autonomy receipt, branch, worktree,
+// and product baseline before it creates managed delivery state.
+//
+// The first raw write into the feature tree remains denied. Every planning
+// artifact crosses the owned planning-write boundary, so an ambient hook cannot
+// be bypassed by creating or editing controller state with a host writer.
+// control-law: ambient-plans-never-activate-workflow-control
+// control-law: first-planning-write-uses-the-owned-channel
 func preActivationFinding(repo, attemptedPath string) (SafetyFinding, bool) {
-	active, err := ActiveManagedDeliveries(repo)
-	if err != nil {
-		// Same-Relation-Same-Law: the mutation boundary FAILS CLOSED on invalid
-		// delivery state — ignoring a delivery quiets status but never launders corrupt
-		// state into a mutation (TestActiveManagedDeliveriesStaysFailClosedOnInvalid).
-		// But the block must be Coreachable: distinguish a corrupt-delivery *plant*
-		// fault (a verb clears it — discard-delivery, named) from an *observation*
-		// (channel) fault (doctor to diagnose). Naming discard-delivery is what tells
-		// the operator how to actually unblock mutation, since ignoring will not.
-		if _, invalid, scanErr := scanManagedDeliveries(repo); scanErr == nil && len(invalid) > 0 {
-			return SafetyFinding{
-				Category: "workflow-state-invalid", Source: "delivery-state",
-				Reason:        "invalid managed delivery state blocks all mutation; ignoring it only quiets status — clear it with discard-delivery to continue",
-				NextOperation: "discard-delivery", BlockingFeature: invalid[0], AttemptedPath: attemptedPath,
-			}, true
-		}
-		return SafetyFinding{Category: "workflow-observation-fault", Reason: "managed delivery state cannot be verified; diagnose the channel with doctor", Source: "delivery-state", NextOperation: "doctor"}, true
-	}
-	if len(active) > 0 {
+	if !featureScopedPath(attemptedPath) {
 		return SafetyFinding{}, false
 	}
-	candidates, err := featurePlanCandidates(repo)
-	if err != nil {
-		return SafetyFinding{Category: "workflow-observation-fault", Reason: "saved feature plans cannot be verified; diagnose the channel with doctor", Source: "planning-state", NextOperation: "doctor"}, true
+	finding := SafetyFinding{
+		Category: "workflow-phase-bypass", Reason: "Boatstack planning state may be changed only through the owned planning-write channel", Source: "planning-state",
+		WorkflowStage: "NOT_STARTED", AttemptedPath: attemptedPath, NextOperation: "planning-write",
 	}
-	if len(candidates) == 0 {
-		// First-write latch: even before any plan candidate exists, the managed
-		// planning tree is authored only through the owned channel. Without this,
-		// the very first raw host write of plan.md registers a malformed draft and
-		// the agent discovers planning-write only by failing into INVALID_STATE.
-		// The deny is path-scoped — ordinary product writes stay unlatched at zero
-		// candidates. Stage NOT_STARTED is what ResolveNext reports here, and
-		// controlledPhaseTransition admits planning-write at that stage, so the
-		// denial names a verb the guard accepts (Coreachability).
-		// control-law: first-planning-write-uses-the-owned-channel
-		if featureScopedPath(attemptedPath) {
-			finding := SafetyFinding{
-				Category: "workflow-phase-bypass", Reason: "planning Markdown is created through the owned channel; a raw first write into .product-loop/features/ is denied", Source: "planning-state",
-				WorkflowStage: "NOT_STARTED", AttemptedPath: attemptedPath, NextOperation: "planning-write",
-			}
-			if parts := strings.Split(filepath.ToSlash(attemptedPath), "/"); len(parts) > 2 && featureSlugPattern.MatchString(parts[2]) {
-				finding.BlockingFeature = parts[2]
-			}
-			return finding, true
-		}
-		return SafetyFinding{}, false
-	}
-	status, err := ResolveNext(repo, "")
-	if err != nil {
-		return SafetyFinding{Category: "workflow-observation-fault", Reason: "workflow state cannot be resolved; diagnose the channel with doctor", Source: "planning-state", NextOperation: "doctor"}, true
-	}
-	if status.ObservedStage != "DRAFT_PLAN" && status.ObservedStage != "APPROVED" && status.ObservedStage != "POLICY_READY" && status.ObservedStage != "AMBIGUOUS" && status.ObservedStage != "INVALID_STATE" {
-		return SafetyFinding{}, false
-	}
-	if len(candidates) == 1 && status.ObservedStage != "AMBIGUOUS" {
-		planPath := filepath.Join(WorkspaceFor(repo).FeatureDir(candidates[0]), "plan.md")
-		check, checkErr := CheckPlan(planPath)
-		if checkErr != nil {
-			return SafetyFinding{
-				Category: "workflow-phase-bypass", Reason: "saved plan state is invalid", Source: "planning-state",
-				BlockingFeature: candidates[0], WorkflowStage: "INVALID_STATE", AttemptedPath: attemptedPath, NextOperation: "repair-state",
-			}, true
-		}
-		if status.ObservedStage == "APPROVED" {
-			approvalPath := filepath.Join(filepath.Dir(planPath), "approval.md")
-			if _, approvalErr := CheckApprovalReceipt(approvalPath, check); approvalErr != nil {
-				return SafetyFinding{
-					Category: "workflow-phase-bypass", Reason: "approval or product baseline is stale", Source: "planning-state",
-					BlockingFeature: candidates[0], WorkflowStage: "INVALID_STATE", AttemptedPath: attemptedPath, NextOperation: "plan-gate",
-				}, true
+	if parts := strings.Split(filepath.ToSlash(attemptedPath), "/"); len(parts) > 2 && featureSlugPattern.MatchString(parts[2]) {
+		finding.BlockingFeature = parts[2]
+		if fileExists(filepath.Join(WorkspaceFor(repo).FeatureDir(parts[2]), "plan.md")) {
+			if status, err := ResolveNext(repo, parts[2]); err == nil {
+				finding.WorkflowStage = status.ObservedStage
 			}
 		}
 	}
-	return SafetyFinding{
-		Category: "workflow-phase-bypass", Reason: "product mutation is denied until the saved plan reaches its controlled activation boundary", Source: "planning-state",
-		BlockingFeature: status.Feature, WorkflowStage: status.ObservedStage, AttemptedPath: attemptedPath, NextOperation: status.NextOperation,
-	}, true
+	return finding, true
 }
 
 func publicationBypassFinding(repo, reason, source string) (SafetyFinding, bool) {
@@ -541,27 +483,25 @@ func publicationBypassFinding(repo, reason, source string) (SafetyFinding, bool)
 		return SafetyFinding{}, false
 	}
 	branch, _ := gitCommand(repo, "branch", "--show-current")
-	selected := ""
-	relation := "unrelated"
+	matching := []string{}
 	for _, feature := range active {
 		state, loadErr := LoadDeliveryState(repo, feature)
 		if loadErr == nil && stateMatchesBranch(state, strings.TrimSpace(branch)) {
-			if selected != "" {
-				selected = strings.Join(active, ",")
-				relation = "ambiguous"
-				break
-			}
-			selected = feature
-			relation = "current_branch"
+			matching = append(matching, feature)
 		}
 	}
-	if selected == "" {
-		if len(active) == 1 {
-			selected = active[0]
-		} else {
-			selected = strings.Join(active, ",")
-			relation = "ambiguous"
-		}
+	// A delivery in another branch or worktree supplies no publication authority
+	// here. Direct publication remains guarded when the current branch actually
+	// owns one or more managed delivery slices.
+	// control-law: managed-publication-scope-follows-current-branch
+	if len(matching) == 0 {
+		return SafetyFinding{}, false
+	}
+	selected := matching[0]
+	relation := "current_branch"
+	if len(matching) > 1 {
+		selected = strings.Join(matching, ",")
+		relation = "ambiguous"
 	}
 	finding := SafetyFinding{
 		Category: "workflow-publication-bypass", Reason: reason, Source: source,
@@ -882,7 +822,7 @@ func ClassifyCommand(repo, command string) []SafetyFinding {
 	if !isPureReadOnlyCommand(command) {
 		// Feed any named .product-loop/features/ operand so the first-write latch
 		// sees raw shell writes (cp/tee/redirect) the same way it sees a Write tool.
-		if finding, blocked := preActivationFinding(repo, featuresPathInCommand(command)); blocked && !controlledPhaseTransition(command, finding.WorkflowStage) && !controlledWorkspaceSync(repo, command) {
+		if finding, blocked := preActivationFinding(repo, featuresPathInCommand(command)); blocked && !approvedPublisherPattern.MatchString(command) && !controlledPhaseTransition(command, finding.WorkflowStage) && !controlledWorkspaceSync(repo, command) {
 			return []SafetyFinding{finding}
 		}
 	}
@@ -946,9 +886,7 @@ func ClassifyTool(repo, name string, input any) []SafetyFinding {
 	mutationCapable := mutationToolPattern.MatchString(nameLower) || (strings.HasPrefix(nameLower, "mcp__") && !externalReadOnlyToolPattern.MatchString(nameLower))
 	if mutationCapable {
 		if finding, blocked := preActivationFinding(repo, attemptedPath); blocked {
-			if finding.WorkflowStage != "DRAFT_PLAN" || attemptedPath == "" || !planningMarkdownPath(attemptedPath) || !planningMutationToolPattern.MatchString(nameLower) {
-				findings = append(findings, finding)
-			}
+			findings = append(findings, finding)
 		}
 	}
 	publicationText := strings.ToLower(combined)

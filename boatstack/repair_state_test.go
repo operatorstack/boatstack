@@ -9,8 +9,8 @@ import (
 
 // writeMalformedDraft models a legacy failure: an agent hand-authored a
 // feature directory with a prose plan.md but never let the helper register it, so
-// there is no plan.lock.json and no delivery state. CheckPlan fails on it, which
-// the guard escalates to INVALID_STATE and denies every product mutation.
+// there is no plan.lock.json and no delivery state. CheckPlan fails on it, but
+// the draft remains observational until that feature is explicitly selected.
 func writeMalformedDraft(t *testing.T, repo, feature string) string {
 	t.Helper()
 	directory := filepath.Join(repo, ".product-loop", "features", feature)
@@ -47,17 +47,24 @@ func TestControlledPhaseTransitionAllowsRepairStateAcrossStages(t *testing.T) {
 	}
 }
 
-// TestRepairStateClosesTheInvalidStateLoop is the end-to-end contract: with a
-// malformed unregistered draft on disk, a product mutation is denied and names
-// repair-state, and repair-state itself is then allowed — the recovery the guard
-// prescribes is genuinely reachable.
-func TestRepairStateClosesTheInvalidStateLoop(t *testing.T) {
+// TestRepairStateRemainsExplicitWithoutAmbientLockout is the end-to-end contract: with a
+// malformed unregistered draft on disk, ordinary product work remains outside
+// managed scope while explicit feature resolution reaches plan validation and
+// the bounded repair command remains available.
+func TestRepairStateRemainsExplicitWithoutAmbientLockout(t *testing.T) {
 	repo := nextTestRepo(t)
 	writeMalformedDraft(t, repo, "stuck-feature")
 
 	findings := ClassifyCommand(repo, "python scripts/migrate.py")
-	if len(findings) == 0 || findings[0].WorkflowStage != "INVALID_STATE" || findings[0].NextOperation != "repair-state" {
-		t.Fatalf("product mutation was not denied with a repair-state prescription: %#v", findings)
+	if len(findings) != 0 {
+		t.Fatalf("unselected malformed draft controlled ordinary mutation: %#v", findings)
+	}
+	status, err := ResolveNext(repo, "stuck-feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.ObservedStage != "DRAFT_PLAN" || status.NextOperation != "plan-gate" {
+		t.Fatalf("selected draft did not route through plan validation: %#v", status)
 	}
 	if denied := ClassifyCommand(repo, ".product-loop/boatstack repair-state --repo . --feature stuck-feature"); len(denied) != 0 {
 		t.Fatalf("the prescribed recovery was itself denied: %#v", denied)

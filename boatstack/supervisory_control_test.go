@@ -253,9 +253,9 @@ func TestSupervisoryControlNeverDeadlocks(t *testing.T) {
 		}
 	})
 
-	// A malformed, unregistered, untracked draft is prescribed repair-state; that
-	// verb must accept and quarantine it.
-	t.Run("malformed draft is prescribed repair-state which clears it", func(t *testing.T) {
+	// A malformed draft remains visible to explicit Boatstack resolution without
+	// controlling unrelated repository work.
+	t.Run("malformed draft is explicitly repairable without ambient control", func(t *testing.T) {
 		repo := nextTestRepo(t)
 		dir := filepath.Join(repo, ".product-loop", "features", "broken")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -264,12 +264,15 @@ func TestSupervisoryControlNeverDeadlocks(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "plan.md"), []byte("not a valid plan\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		finding, blocked := preActivationFinding(repo, filepath.Join(dir, "x.go"))
-		if !blocked || finding.NextOperation != "repair-state" {
-			t.Fatalf("malformed draft prescribed %q (blocked=%v), want repair-state", finding.NextOperation, blocked)
+		if finding, blocked := preActivationFinding(repo, "src/x.go"); blocked {
+			t.Fatalf("malformed ambient draft controlled product work: %+v", finding)
 		}
-		if !controlledPhaseTransition("boatstack-helper repair-state --repo .", finding.WorkflowStage) {
-			t.Fatal("prescribed repair-state is not admitted for the malformed draft")
+		status, err := ResolveNext(repo, "broken")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status.NextOperation != "plan-gate" {
+			t.Fatalf("selected draft prescribed %q, want plan-gate validation", status.NextOperation)
 		}
 		result, err := RepairState(repo, "broken")
 		if err != nil {

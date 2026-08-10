@@ -421,6 +421,31 @@ func TestResolveNextPrefersNewDraftOverCompletedHistory(t *testing.T) {
 	}
 }
 
+// Positive and negative conformance for
+// control-law: explicit-selection-scopes-draft-resolution. Explicit selection
+// resolves the named draft; the unscoped surface remains honestly ambiguous.
+func TestResolveNextExplicitlySelectsOneOfMultipleDrafts(t *testing.T) {
+	repo := nextTestRepo(t)
+	writeValidSavedFeaturePlan(t, repo, "first-draft")
+	writeValidSavedFeaturePlan(t, repo, "second-draft")
+
+	unscoped, err := ResolveNext(repo, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unscoped.ObservedStage != "AMBIGUOUS" || !reflect.DeepEqual(unscoped.BlockingAmbiguity, []string{"first-draft", "second-draft"}) {
+		t.Fatalf("unscoped status hid draft ambiguity: %+v", unscoped)
+	}
+
+	selected, err := ResolveNext(repo, "second-draft")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected.VerificationStatus != "VERIFIED" || selected.Feature != "second-draft" || selected.ObservedStage != "DRAFT_PLAN" || selected.NextOperation != "plan-gate" {
+		t.Fatalf("explicit draft selection did not resolve deterministically: %+v", selected)
+	}
+}
+
 func TestResolveNextBlocksMultipleActiveFeaturesWithoutMutation(t *testing.T) {
 	repo := nextTestRepo(t)
 	writeNextDelivery(t, repo, "first", "BUILD", 0)

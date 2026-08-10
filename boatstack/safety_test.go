@@ -771,7 +771,12 @@ func TestPlanningMarkdownPathRejectsIntakeStaging(t *testing.T) {
 	}
 }
 
-func TestPreActivationMutationInterlockLatchesAfterAutoPlan(t *testing.T) {
+// Positive and relation conformance for
+// control-law: ambient-plans-never-activate-workflow-control.
+// A saved draft is visible to Boatstack, but it supplies no authority over
+// ordinary repository tools. The hook retains its always-on destructive floor
+// and the separate owned planning-state boundary.
+func TestSavedPlanDoesNotActivateWorkflowControl(t *testing.T) {
 	repo := nextTestRepo(t)
 	writeValidSavedFeaturePlan(t, repo, "guarded-feature")
 	statusBefore, err := gitCommand(repo, "status", "--short")
@@ -779,18 +784,20 @@ func TestPreActivationMutationInterlockLatchesAfterAutoPlan(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertBlocked := func(label string, findings []SafetyFinding) {
+	assertAllowed := func(label string, findings []SafetyFinding) {
 		t.Helper()
-		if len(findings) == 0 || findings[0].Category != "workflow-phase-bypass" || findings[0].WorkflowStage != "DRAFT_PLAN" || findings[0].NextOperation != "plan-gate" {
-			t.Fatalf("%s escaped the draft plan interlock: %#v", label, findings)
+		if len(findings) != 0 {
+			t.Fatalf("%s was controlled by an ambient draft: %#v", label, findings)
 		}
 	}
-	assertBlocked("native edit", ClassifyTool(repo, "Write", map[string]any{"file_path": "src/app.ts", "content": "changed"}))
-	assertBlocked("patch", ClassifyTool(repo, "ApplyPatch", map[string]any{"path": "src/app.ts", "patch": "diff"}))
-	assertBlocked("shell redirection", ClassifyCommand(repo, "printf changed > src/app.ts"))
-	assertBlocked("package installation", ClassifyCommand(repo, "npm install example"))
-	assertBlocked("MCP mutation", ClassifyTool(repo, "mcp__files__update", map[string]any{"path": "src/app.ts"}))
-	assertBlocked("unknown MCP capability", ClassifyTool(repo, "mcp__files__act", map[string]any{"path": "src/app.ts"}))
+	assertAllowed("native edit", ClassifyTool(repo, "Write", map[string]any{"file_path": "src/app.ts", "content": "changed"}))
+	assertAllowed("patch", ClassifyTool(repo, "ApplyPatch", map[string]any{"path": "src/app.ts", "patch": "diff"}))
+	assertAllowed("shell redirection", ClassifyCommand(repo, "printf changed > src/app.ts"))
+	assertAllowed("package installation", ClassifyCommand(repo, "npm install example"))
+	assertAllowed("analysis CLI", ClassifyCommand(repo, "analysis-tool inspect --model system.json"))
+	assertAllowed("test runner", ClassifyCommand(repo, "go test ./..."))
+	assertAllowed("MCP mutation", ClassifyTool(repo, "mcp__files__update", map[string]any{"path": "src/app.ts"}))
+	assertAllowed("unknown MCP capability", ClassifyTool(repo, "mcp__files__act", map[string]any{"path": "src/app.ts"}))
 
 	if findings := ClassifyCommand(repo, "git status --short"); len(findings) != 0 {
 		t.Fatalf("read-only inspection was denied: %#v", findings)
@@ -801,8 +808,8 @@ func TestPreActivationMutationInterlockLatchesAfterAutoPlan(t *testing.T) {
 	if findings := ClassifyCommand(repo, ".product-loop/boatstack check-plan --plan .product-loop/features/guarded-feature/plan.md"); len(findings) != 0 {
 		t.Fatalf("bounded plan inspection was denied: %#v", findings)
 	}
-	if findings := ClassifyTool(repo, "Write", map[string]any{"file_path": ".product-loop/features/guarded-feature/plan.md", "content": "# revised plan"}); len(findings) != 0 {
-		t.Fatalf("bounded planning Markdown was denied: %#v", findings)
+	if findings := ClassifyTool(repo, "Write", map[string]any{"file_path": ".product-loop/features/guarded-feature/plan.md", "content": "# revised plan"}); len(findings) == 0 || findings[0].NextOperation != "planning-write" {
+		t.Fatalf("raw managed planning write escaped the owned channel: %#v", findings)
 	}
 	if findings := ClassifyCommand(repo, ".product-loop/boatstack record-approval --plan .product-loop/features/guarded-feature/plan.md"); len(findings) != 0 {
 		t.Fatalf("exact approval transition was denied: %#v", findings)
@@ -816,7 +823,7 @@ func TestPreActivationMutationInterlockLatchesAfterAutoPlan(t *testing.T) {
 	}
 }
 
-func TestPreActivationInterlockPreservesUnmanagedAndActivatedBehavior(t *testing.T) {
+func TestUnactivatedApprovalAndPolicyStateRemainObservations(t *testing.T) {
 	unmanaged := nextTestRepo(t)
 	if findings := ClassifyTool(unmanaged, "Write", map[string]any{"file_path": "src/app.ts"}); len(findings) != 0 {
 		t.Fatalf("unmanaged product editing changed: %#v", findings)
@@ -838,8 +845,8 @@ func TestPreActivationInterlockPreservesUnmanagedAndActivatedBehavior(t *testing
 		t.Fatal(err)
 	}
 	findings := ClassifyTool(approved, "Edit", map[string]any{"path": "src/app.ts"})
-	if len(findings) == 0 || findings[0].WorkflowStage != "APPROVED" || findings[0].NextOperation != "build" {
-		t.Fatalf("approved-but-not-activated product edit escaped: %#v", findings)
+	if len(findings) != 0 {
+		t.Fatalf("approved-but-not-activated plan controlled product tools: %#v", findings)
 	}
 
 	policy := nextTestRepo(t)
@@ -854,24 +861,25 @@ func TestPreActivationInterlockPreservesUnmanagedAndActivatedBehavior(t *testing
 	}
 	writeValidSavedFeaturePlan(t, policy, "policy-feature")
 	findings = ClassifyTool(policy, "Write", map[string]any{"path": "src/app.ts"})
-	if len(findings) == 0 || findings[0].WorkflowStage != "POLICY_READY" || findings[0].NextOperation != "build" {
-		t.Fatalf("policy-ready product edit escaped: %#v", findings)
+	if len(findings) != 0 {
+		t.Fatalf("policy-ready but unactivated plan controlled product tools: %#v", findings)
 	}
 }
 
-func TestCursorPreToolUseDeniesNativeEditAfterAutoPlan(t *testing.T) {
+func TestCursorPreToolUseAllowsNativeEditWithAmbientDraft(t *testing.T) {
 	repo := nextTestRepo(t)
 	writeValidSavedFeaturePlan(t, repo, "cursor-feature")
 	input := []byte(`{"hook_event_name":"preToolUse","tool_name":"Write","tool_input":{"file_path":"src/app.ts","content":"changed"}}`)
-	for attempt := 0; attempt < 2; attempt++ { // a conversation notification cannot change authority
+	for attempt := 0; attempt < 2; attempt++ {
 		output, denied := HookDecision(SafetyHookOptions{Host: "cursor", Repo: repo, Input: input})
-		if !denied || !strings.Contains(string(output), `"permission":"deny"`) || !strings.Contains(string(output), "plan-gate") {
-			t.Fatalf("Cursor native edit was not deterministically denied: %s", output)
+		if denied || !strings.Contains(string(output), `"permission":"allow"`) {
+			t.Fatalf("Cursor native edit was controlled by an ambient draft: %s", output)
 		}
 	}
 }
 
-func TestPreActivationNativeEditIsDeniedAcrossHostContracts(t *testing.T) {
+// Relation conformance: every supported host reaches the same ambient boundary.
+func TestAmbientDraftDoesNotControlNativeEditAcrossHostContracts(t *testing.T) {
 	repo := nextTestRepo(t)
 	writeValidSavedFeaturePlan(t, repo, "host-conformance")
 	tests := map[string][]byte{
@@ -883,8 +891,8 @@ func TestPreActivationNativeEditIsDeniedAcrossHostContracts(t *testing.T) {
 	for host, input := range tests {
 		t.Run(host, func(t *testing.T) {
 			output, denied := HookDecision(SafetyHookOptions{Host: host, Repo: repo, Input: input})
-			if !denied || !strings.Contains(string(output), "plan-gate") {
-				t.Fatalf("%s native mutation escaped: %s", host, output)
+			if denied {
+				t.Fatalf("%s native tool was controlled by an ambient draft: %s", host, output)
 			}
 		})
 	}
