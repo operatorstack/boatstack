@@ -54,6 +54,14 @@ func flowStateFromStage(stage string) (deliverycontrol.StateID, bool) {
 	switch stage {
 	case "BUILD":
 		return deliverycontrol.StateBuild, true
+	case "AMENDMENT_REQUIRED":
+		return deliverycontrol.StateAmendmentRequired, true
+	case "AMENDMENT_DRAFTED":
+		return deliverycontrol.StateAmendmentDrafted, true
+	case "AMENDMENT_APPROVED":
+		return deliverycontrol.StateAmendmentApproved, true
+	case "PLAN_INVALID":
+		return deliverycontrol.StatePlanInvalid, true
 	case "TEST_PASSED":
 		return deliverycontrol.StateTestPassed, true
 	case "REVIEW_PASSED", "PR_PREVIEW":
@@ -305,11 +313,21 @@ func posixPlanningWord(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
+func powerShellCommandWord(value string) string {
+	if value == "<REQUIRED>" {
+		return value
+	}
+	if posixPlanningWord(value) == value {
+		return value
+	}
+	return powerShellPlanningWord(value)
+}
+
 // CommandLine renders the auto-derivable part of the prescribed command as a
 // runnable string. Human-required inputs use explicit <REQUIRED> placeholders;
 // planning Markdown is placed inside the same literal envelope the hook admits.
 // The rendering is never fabricated or runnable as-is while input is still owed.
-func (p PrescribedCommand) CommandLine() string {
+func (p PrescribedCommand) commandLineForOS(goos string) string {
 	literalPlanningInput := false
 	for _, input := range p.RequiresHumanInput {
 		if input == planningMarkdownInput {
@@ -333,19 +351,40 @@ func (p PrescribedCommand) CommandLine() string {
 		}
 		parts = append(parts, flag, "<REQUIRED>")
 	}
+	if goos == "windows" {
+		if literalPlanningInput {
+			envelope, err := powerShellPlanningEnvelopeFor(parts, []byte("<REQUIRED>\n"))
+			if err == nil {
+				return strings.TrimSuffix(envelope, "\n")
+			}
+			// A single quote in an argv word cannot cross the deliberately small
+			// PowerShell grammar. Preserve a valid Git Bash prescription instead
+			// of manufacturing a hybrid command that neither shell owns.
+			return strings.TrimSuffix(posixPlanningEnvelopeFor(parts, []byte("<REQUIRED>\n")), "\n")
+		}
+		for index := range parts {
+			parts[index] = powerShellCommandWord(parts[index])
+		}
+		line := strings.Join(parts, " ")
+		if filepath.IsAbs(program) {
+			return "& " + line
+		}
+		return line
+	}
 	for index := range parts {
 		if parts[index] != "<REQUIRED>" {
 			parts[index] = posixPlanningWord(parts[index])
 		}
 	}
 	line := strings.Join(parts, " ")
-	if filepath.IsAbs(program) && runtime.GOOS == "windows" {
-		line = "& " + line
-	}
 	if literalPlanningInput {
 		return line + " <<'BOATSTACK_PLAN_EOF'\n<REQUIRED>\nBOATSTACK_PLAN_EOF"
 	}
 	return line
+}
+
+func (p PrescribedCommand) CommandLine() string {
+	return p.commandLineForOS(runtime.GOOS)
 }
 
 // prescribeCommand assembles the runnable command for a forward delivery
@@ -386,6 +425,24 @@ func prescribeCommand(repo, feature string, status NextStatus, transition delive
 		repoArgs = []string{"--repo", repo}
 	}
 	switch transition {
+	case deliverycontrol.TransitionID("delivery.amend_write"), deliverycontrol.TransitionID("delivery.invalid_plan_rewrite"):
+		cmd.Verb = "flow"
+		cmd.Args = append([]string{"bootstrap"}, repoArgs...)
+		cmd.Args = append(cmd.Args, "--feature", feature)
+		cmd.RequiresHumanInput = []string{"--source-plan", "--artifact", "--shell", planningMarkdownInput}
+	case deliverycontrol.TransitionID("delivery.amend_approve"):
+		featureDir := planningFeatureDir(repo, feature)
+		cmd.Args = []string{
+			"--plan", filepath.Join(featureDir, "plan.md"),
+			"--expected-lifecycle-sha256", status.LifecycleSHA256,
+			"--expected-plan-lock-sha256", status.PlanLockSHA256,
+			"--expected-observation", status.ObservationID,
+		}
+		cmd.RequiresHumanInput = []string{"--approved-by", "--approved-at", "--fingerprint"}
+	case deliverycontrol.TransitionID("delivery.amend_activate"):
+		featureDir := planningFeatureDir(repo, feature)
+		cmd = buildActivatePlan(featureDir, "AMENDMENT_APPROVED")
+		cmd.Transition = transition
 	case deliverycontrol.TransitionID("delivery.record_gate_test"):
 		cmd.Args = append(repoArgs, "--feature", feature, "--slice", status.ActiveSlice, "--gate", "test")
 		cmd.RequiresHumanInput = []string{"--status", "--evidence"}
@@ -655,7 +712,7 @@ func buildActivatePlan(featureDir, stage string) *PrescribedCommand {
 		"--out-dir", filepath.Join(featureDir, "compiled"),
 		"--output", filepath.Join(featureDir, "plan.lock.json"),
 	}
-	if stage == "APPROVED" {
+	if stage == "APPROVED" || (stage == "AMENDMENT_APPROVED" && fileExists(filepath.Join(featureDir, "approval.md"))) {
 		args = append(args, "--approval", filepath.Join(featureDir, "approval.md"))
 	}
 	return &PrescribedCommand{Verb: "activate-plan", Args: args, Transition: MarkerPlanningActivate}

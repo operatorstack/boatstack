@@ -214,7 +214,8 @@ func planningWriteHeader(value string) (planningWriteInvocation, bool) {
 		if bootstrap {
 			allowed = allowed || flag == "--shell" || flag == "--json"
 		} else {
-			allowed = allowed || flag == "--source-plan-sha256"
+			allowed = allowed || flag == "--source-plan-sha256" || flag == "--expected-lifecycle-sha256" ||
+				flag == "--expected-plan-lock-sha256" || flag == "--expected-observation"
 		}
 		if !allowed {
 			return planningWriteInvocation{}, false
@@ -235,6 +236,13 @@ func planningWriteHeader(value string) (planningWriteInvocation, bool) {
 		sourcePlan := values["--source-plan"]
 		sourceSHA := values["--source-plan-sha256"]
 		if (sourcePlan == "") != (sourceSHA == "") || (sourceSHA != "" && !planningSHA256.MatchString(sourceSHA)) {
+			return planningWriteInvocation{}, false
+		}
+		lifecycleSHA := values["--expected-lifecycle-sha256"]
+		planLockSHA := values["--expected-plan-lock-sha256"]
+		observation := values["--expected-observation"]
+		hasLifecycle := lifecycleSHA != "" || planLockSHA != "" || observation != ""
+		if hasLifecycle && (!planningSHA256.MatchString(lifecycleSHA) || !planningSHA256.MatchString(planLockSHA) || observation == "") {
 			return planningWriteInvocation{}, false
 		}
 	}

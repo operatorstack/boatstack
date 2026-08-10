@@ -232,12 +232,16 @@ var stageMutationVerbs = map[string][]string{
 	// nothing to protect before init), but the prescription layer names init
 	// there — declaring the row keeps the admission tables total over every
 	// stage the solution set can emit (guard-never-prescribes-what-it-would-deny).
-	"NOT_INITIALIZED": {"init"},
-	"DRAFT_PLAN":      {"planning-write", "record-approval", "record-autonomy", "workspace-cut"},
-	"INVALID_STATE":   {"planning-write", "record-approval", "record-autonomy"},
-	"APPROVED":        {"activate-plan", "workspace-cut"},
-	"POLICY_READY":    {"activate-plan", "workspace-cut"},
-	"NOT_STARTED":     {"planning-write"},
+	"NOT_INITIALIZED":    {"init"},
+	"DRAFT_PLAN":         {"planning-write", "record-approval", "record-autonomy", "workspace-cut"},
+	"INVALID_STATE":      {"planning-write", "record-approval", "record-autonomy"},
+	"APPROVED":           {"activate-plan", "workspace-cut"},
+	"POLICY_READY":       {"activate-plan", "workspace-cut"},
+	"NOT_STARTED":        {"planning-write"},
+	"AMENDMENT_REQUIRED": {"planning-write"},
+	"AMENDMENT_DRAFTED":  {"planning-write", "record-approval"},
+	"AMENDMENT_APPROVED": {"planning-write", "record-approval", "activate-plan"},
+	"PLAN_INVALID":       {"planning-write"},
 }
 
 func controlledPhaseTransition(command, stage string) bool {

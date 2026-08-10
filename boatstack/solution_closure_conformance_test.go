@@ -24,6 +24,10 @@ import (
 // as shell metacharacters). The closure property is defined over substituted
 // lines: what the user runs after filling the owed input.
 func substituteOwedFlags(line string) string {
+	line = strings.ReplaceAll(line, "'--feature' '<REQUIRED>'", "'--feature' 'demo'")
+	line = strings.ReplaceAll(line, "'--artifact' '<REQUIRED>'", "'--artifact' 'plan.md'")
+	line = strings.ReplaceAll(line, "'--source-plan' '<REQUIRED>'", "'--source-plan' 'README.md'")
+	line = strings.ReplaceAll(line, "'--shell' '<REQUIRED>'", "'--shell' 'posix'")
 	line = strings.ReplaceAll(line, "--feature '<REQUIRED>'", "--feature demo")
 	line = strings.ReplaceAll(line, "--artifact '<REQUIRED>'", "--artifact plan.md")
 	line = strings.ReplaceAll(line, "--source-plan '<REQUIRED>'", "--source-plan README.md")
@@ -52,6 +56,10 @@ var deliveryStages = []NextStatus{
 	{VerificationStatus: "VERIFIED", ObservedStage: "TEST_PASSED", NextOperation: "review-gate", Feature: "demo", ActiveSlice: "s1"},
 	{VerificationStatus: "VERIFIED", ObservedStage: "REVIEW_PASSED", NextOperation: "ship-gate", Feature: "demo", ActiveSlice: "s1"},
 	{VerificationStatus: "VERIFIED", ObservedStage: "PUBLISHED", NextOperation: "none", Feature: "demo", ActiveSlice: "s1"},
+	{VerificationStatus: "VERIFIED", ObservedStage: "AMENDMENT_REQUIRED", NextOperation: "amend-plan", Feature: "demo", ActiveSlice: "s1"},
+	{VerificationStatus: "VERIFIED", ObservedStage: "AMENDMENT_DRAFTED", NextOperation: "plan-gate", Feature: "demo", ActiveSlice: "s1"},
+	{VerificationStatus: "VERIFIED", ObservedStage: "AMENDMENT_APPROVED", NextOperation: "build", Feature: "demo", ActiveSlice: "s1"},
+	{VerificationStatus: "VERIFIED", ObservedStage: "PLAN_INVALID", NextOperation: "amend-plan", Feature: "demo", ActiveSlice: "s1"},
 }
 
 // Positive/Relation: every pre-activation option is admitted by

@@ -9,6 +9,10 @@ import (
 
 const bootstrapPrescriptionSchemaVersion = 1
 
+// Tests may replace this seam. Nil selects the production installation health
+// check immediately before a bootstrap prescription is rendered.
+var bootstrapInstallationHealth func(string) error
+
 type BootstrapShell string
 
 const (
@@ -45,6 +49,10 @@ type BootstrapPrescription struct {
 	Artifact           string          `json:"artifact"`
 	ArtifactPath       string          `json:"artifact_path"`
 	DocumentSHA256     string          `json:"document_sha256"`
+	LifecycleState     string          `json:"lifecycle_state,omitempty"`
+	LifecycleSHA256    string          `json:"lifecycle_sha256,omitempty"`
+	ObservationID      string          `json:"observation_id,omitempty"`
+	PreviousPlanLock   string          `json:"previous_plan_lock_sha256,omitempty"`
 	Shell              BootstrapShell  `json:"shell"`
 	Argv               []string        `json:"argv"`
 	PlanningEnvelope   string          `json:"planning_envelope"`
@@ -62,22 +70,23 @@ func normalizedPlanningDocument(document []byte) ([]byte, error) {
 	return value, nil
 }
 
-func bootstrapFeatureDisposition(repo string, workspace WorkspaceContext, feature string) (string, error) {
+func bootstrapFeatureDisposition(repo string, workspace WorkspaceContext, feature string) (string, *LifecycleSnapshot, error) {
 	directory := workspace.FeatureDir(feature)
 	info, err := os.Lstat(directory)
 	if os.IsNotExist(err) {
-		return "CREATE_CANDIDATE", nil
+		return "CREATE_CANDIDATE", nil, nil
 	}
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return "", fmt.Errorf("feature %s has conflicting planning state; run recovery-status before bootstrapping", feature)
+		return "", nil, fmt.Errorf("feature %s has conflicting planning state; run recovery-status before bootstrapping", feature)
 	}
 	statePath, stateErr := deliveryStatePath(repo, feature)
 	if stateErr != nil {
-		return "", stateErr
+		return "", nil, stateErr
 	}
+	managed := false
 	for _, path := range []string{
 		statePath,
 		filepath.Join(directory, "plan.lock.json"),
@@ -86,24 +95,35 @@ func bootstrapFeatureDisposition(repo string, workspace WorkspaceContext, featur
 		filepath.Join(directory, "autonomy.md"),
 	} {
 		if fileExists(path) {
-			return "", fmt.Errorf("feature %s already carries managed authority; use flow next --feature %s", feature, feature)
+			managed = true
+			break
 		}
+	}
+	if managed {
+		snapshot, snapshotErr := ResolveLifecycleSnapshot(repo, feature)
+		if snapshotErr != nil {
+			return "", nil, fmt.Errorf("feature %s carries managed authority that cannot be verified: %w", feature, snapshotErr)
+		}
+		if !amendmentLifecycleState(snapshot.State) {
+			return "", nil, fmt.Errorf("feature %s already carries managed authority; use flow next --feature %s", feature, feature)
+		}
+		return "AMEND_ACTIVE", &snapshot, nil
 	}
 	entries, err := os.ReadDir(directory)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	for _, entry := range entries {
 		if entry.IsDir() || !planningArtifacts[entry.Name()] {
-			return "", fmt.Errorf("feature %s has conflicting planning state; run recovery-status before bootstrapping", feature)
+			return "", nil, fmt.Errorf("feature %s has conflicting planning state; run recovery-status before bootstrapping", feature)
 		}
 	}
 	if fileExists(filepath.Join(directory, "plan.md")) {
 		if _, err := CheckPlan(filepath.Join(directory, "plan.md")); err != nil {
-			return "", fmt.Errorf("feature %s has an invalid saved plan; run recovery-status before bootstrapping: %w", feature, err)
+			return "", nil, fmt.Errorf("feature %s has an invalid saved plan; run recovery-status before bootstrapping: %w", feature, err)
 		}
 	}
-	return "RESUME_CANDIDATE", nil
+	return "RESUME_CANDIDATE", nil, nil
 }
 
 func bootstrapProgram(workspace WorkspaceContext, shell BootstrapShell) string {
@@ -113,8 +133,8 @@ func bootstrapProgram(workspace WorkspaceContext, shell BootstrapShell) string {
 	return workspace.LauncherPath(shell == BootstrapShellPowerShell)
 }
 
-func planningArgv(program, repo, feature, artifact, sourcePlan, sourceSHA string) []string {
-	return []string{
+func planningArgv(program, repo, feature, artifact, sourcePlan, sourceSHA string, lifecycle *LifecycleSnapshot) []string {
+	argv := []string{
 		program, "planning-write",
 		"--repo", repo,
 		"--feature", feature,
@@ -122,6 +142,14 @@ func planningArgv(program, repo, feature, artifact, sourcePlan, sourceSHA string
 		"--source-plan", sourcePlan,
 		"--source-plan-sha256", sourceSHA,
 	}
+	if lifecycle != nil {
+		argv = append(argv,
+			"--expected-lifecycle-sha256", lifecycle.Fingerprint,
+			"--expected-plan-lock-sha256", lifecycle.PlanLockSHA256,
+			"--expected-observation", lifecycle.ObservationID,
+		)
+	}
+	return argv
 }
 
 func posixPlanningEnvelopeFor(argv []string, document []byte) string {
@@ -176,7 +204,11 @@ func ResolvePlanningBootstrap(options BootstrapOptions) (BootstrapPrescription, 
 	if err != nil {
 		return BootstrapPrescription{}, err
 	}
-	if err := CheckInstallationHealth(repo); err != nil {
+	healthCheck := CheckInstallationHealth
+	if bootstrapInstallationHealth != nil {
+		healthCheck = bootstrapInstallationHealth
+	}
+	if err := healthCheck(repo); err != nil {
 		return BootstrapPrescription{}, fmt.Errorf("bootstrap requires a healthy Boatstack installation: %w", DoctorRepairHint(err))
 	}
 	workspace, err := ResolveWorkspaceContext(repo)
@@ -198,12 +230,12 @@ func ResolvePlanningBootstrap(options BootstrapOptions) (BootstrapPrescription, 
 	if err != nil {
 		return BootstrapPrescription{}, err
 	}
-	disposition, err := bootstrapFeatureDisposition(repo, workspace, options.Feature)
+	disposition, lifecycle, err := bootstrapFeatureDisposition(repo, workspace, options.Feature)
 	if err != nil {
 		return BootstrapPrescription{}, err
 	}
 	program := bootstrapProgram(workspace, options.Shell)
-	argv := planningArgv(program, repo, options.Feature, options.Artifact, sourcePlan, sourceSHA)
+	argv := planningArgv(program, repo, options.Feature, options.Artifact, sourcePlan, sourceSHA, lifecycle)
 	if options.Shell == BootstrapShellPOSIX {
 		// Git Bash accepts Windows drive paths in slash form. Keep the typed argv
 		// identical to the bytes rendered for that shell.
@@ -219,7 +251,7 @@ func ResolvePlanningBootstrap(options BootstrapOptions) (BootstrapPrescription, 
 	if err != nil {
 		return BootstrapPrescription{}, err
 	}
-	return BootstrapPrescription{
+	prescription := BootstrapPrescription{
 		SchemaVersion: bootstrapPrescriptionSchemaVersion, VerificationStatus: "VERIFIED",
 		Disposition: disposition, SupervisionMode: workspace.Mode,
 		Repository: repo, RepositoryID: workspace.RepoID, WorktreeID: workspace.WorktreeID,
@@ -228,5 +260,12 @@ func ResolvePlanningBootstrap(options BootstrapOptions) (BootstrapPrescription, 
 		Artifact: options.Artifact, ArtifactPath: filepath.Join(workspace.FeatureDir(options.Feature), options.Artifact),
 		DocumentSHA256: SHA256Bytes(document), Shell: options.Shell, Argv: argv,
 		PlanningEnvelope: envelope,
-	}, nil
+	}
+	if lifecycle != nil {
+		prescription.LifecycleState = string(lifecycle.State)
+		prescription.LifecycleSHA256 = lifecycle.Fingerprint
+		prescription.ObservationID = lifecycle.ObservationID
+		prescription.PreviousPlanLock = lifecycle.PlanLockSHA256
+	}
+	return prescription, nil
 }

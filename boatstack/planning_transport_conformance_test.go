@@ -369,6 +369,56 @@ func TestPlanningPrescriptionRendersACompleteGuardAdmittedEnvelope(t *testing.T)
 	}
 }
 
+func TestPlanningPrescriptionUsesOneCompleteShellGrammar(t *testing.T) {
+	repo, workspace, _ := detachedPolicyReadyFixture(t)
+	command := PrescribedCommand{
+		Program: workspace.HelperPath(),
+		Verb:    "planning-write",
+		Args:    []string{"--repo", repo, "--feature", "feature-one"},
+		RequiresHumanInput: []string{
+			"--artifact",
+			planningMarkdownInput,
+		},
+	}
+
+	for _, test := range []struct {
+		name string
+		goos string
+	}{
+		{name: "POSIX", goos: "linux"},
+		{name: "PowerShell", goos: "windows"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			line := substituteOwedFlags(command.commandLineForOS(test.goos))
+			inspection := inspectPlanningWriteTransport(line)
+			if !inspection.Matched || inspection.InvalidReason != "" || string(inspection.Content) != "test-value\n" {
+				t.Fatalf("%s prescription is not one complete planning envelope: %q %#v", test.name, line, inspection)
+			}
+			if reason := planningTransportBinding(repo, inspection); reason != "" {
+				t.Fatalf("%s transport lost its detached workspace binding: %s", test.name, reason)
+			}
+		})
+	}
+
+	hybrid := "& " + substituteOwedFlags(command.commandLineForOS("linux"))
+	if inspection := inspectPlanningWriteTransport(hybrid); inspection.Matched && inspection.InvalidReason == "" {
+		t.Fatalf("hybrid PowerShell/POSIX command crossed the planning transport boundary: %#v", inspection)
+	}
+	findings := ClassifyCommand(repo, hybrid)
+	if len(findings) == 0 || findings[0].Category != "workflow-state-tamper" {
+		t.Fatalf("hybrid command did not fail closed at managed-state admission: %#v", findings)
+	}
+
+	ordinary := PrescribedCommand{
+		Program: "gh",
+		Verb:    "pr",
+		Args:    []string{"merge", "https://example.invalid/pr/9", "--squash"},
+	}.commandLineForOS("windows")
+	if ordinary != "gh pr merge https://example.invalid/pr/9 --squash" {
+		t.Fatalf("safe ordinary argv lost its stable cross-platform rendering: %q", ordinary)
+	}
+}
+
 func TestPlanningPrescriptionQuotesRepositoryPath(t *testing.T) {
 	repo := filepath.Join(t.TempDir(), "repo with 'quoted' space")
 	if err := os.MkdirAll(repo, 0o755); err != nil {

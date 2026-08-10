@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/operatorstack/boatstack/boatstack/internal/deliverycontrol"
 )
 
 const (
@@ -987,6 +989,9 @@ type ApprovalReceipt struct {
 	BaselineDiffSHA256   string
 	BaselineChangedPaths []string
 	Readiness            ReadinessReceipt
+	LifecycleSHA256      string
+	PlanLockSHA256       string
+	ObservationID        string
 }
 
 func LoadApprovalReceipt(path string) (ApprovalReceipt, error) {
@@ -1005,6 +1010,9 @@ func LoadApprovalReceipt(path string) (ApprovalReceipt, error) {
 		Fingerprint:          stringValue(value["approval_fingerprint"]),
 		BaselineDiffSHA256:   stringValue(value["baseline_diff_sha256"]),
 		BaselineChangedPaths: []string{},
+		LifecycleSHA256:      stringValue(value["lifecycle_sha256"]),
+		PlanLockSHA256:       stringValue(value["plan_lock_sha256"]),
+		ObservationID:        stringValue(value["observation_id"]),
 		Readiness: ReadinessReceipt{
 			Fingerprint: stringValue(value["readiness_fingerprint"]),
 			BaseBranch:  stringValue(value["base_branch"]), HeadBranch: stringValue(value["head_branch"]),
@@ -1120,6 +1128,22 @@ func ActivatePlan(options ActivationOptions) error {
 	config, _, err := LoadConfig(ctx.ProjectConfigPath())
 	if err != nil {
 		return fmt.Errorf("plan activation requires a valid Boatstack project configuration: %w", err)
+	}
+	feature := strings.TrimSpace(stringValue(check.Plan["feature_id"]))
+	if statePath, statePathErr := deliveryStatePath(repo, feature); statePathErr == nil && fileExists(statePath) {
+		state, loadErr := LoadDeliveryState(repo, feature)
+		if loadErr != nil {
+			return loadErr
+		}
+		if state.Mode == "AMENDMENT_REQUIRED" || state.Mode == "PLAN_INVALID" {
+			snapshot, snapshotErr := ResolveLifecycleSnapshot(repo, feature)
+			if snapshotErr != nil {
+				return snapshotErr
+			}
+			if snapshot.State != deliverycontrol.StateAmendmentApproved {
+				return fmt.Errorf("active delivery amendment is not currently approved for activation: %s", snapshot.State)
+			}
+		}
 	}
 	// Once a feature's workspace worktree is cut, activation must happen inside it,
 	// never from the main worktree on the base branch — otherwise the compiled
