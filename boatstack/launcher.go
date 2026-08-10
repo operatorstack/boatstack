@@ -44,6 +44,7 @@ PLATFORM="${OS_NAME}-${ARCH}"
 SLOT="$COMMON/boatstack/runtimes/$VERSION/$SOURCE_COMMIT/$PLATFORM"
 HELPER="$SLOT/boatstack-helper$EXTENSION"
 MANIFEST="$SLOT/runtime.lock.json"
+HYDRATE_LOCK="$COMMON/boatstack/hydrate-$VERSION.lock"
 
 bs_slot_ready() {
   [[ -x "$HELPER" && ! -L "$HELPER" && -f "$MANIFEST" && ! -L "$MANIFEST" ]]
@@ -51,7 +52,6 @@ bs_slot_ready() {
 
 if ! bs_slot_ready && [[ "${BOATSTACK_AUTO_HYDRATE:-1}" != "0" ]]; then
   mkdir -p "$COMMON/boatstack" 2>/dev/null || true
-  HYDRATE_LOCK="$COMMON/boatstack/hydrate-$VERSION.lock"
   if mkdir "$HYDRATE_LOCK" 2>/dev/null; then
     if ! bs_slot_ready; then
       (
@@ -74,6 +74,15 @@ if ! bs_slot_ready && [[ "${BOATSTACK_AUTO_HYDRATE:-1}" != "0" ]]; then
     done
   fi
 fi
+
+# Path visibility is not publication. A concurrent hydrator copies the helper
+# and manifest before releasing this lock, so even a ready-looking slot must
+# wait for that release before its manifest is parsed.
+for _ in $(seq 1 12); do
+  [[ -d "$HYDRATE_LOCK" ]] || break
+  sleep 1
+done
+[[ ! -d "$HYDRATE_LOCK" ]] || bs_fail "shared runtime hydration did not complete"
 
 bs_slot_ready || bs_fail "the exact pinned shared runtime is missing or unsafe"
 manifest_value() {
@@ -127,6 +136,8 @@ $platform = "windows-$arch"
 $slot = Join-Path $common "boatstack/runtimes/$version/$sourceCommit/$platform"
 $helper = Join-Path $slot "boatstack-helper.exe"
 $manifestPath = Join-Path $slot "runtime.lock.json"
+$boatstackRoot = Join-Path $common "boatstack"
+$lockPath = Join-Path $boatstackRoot "hydrate-$version.lock"
 function Slot-Ready {
   (Test-Path -LiteralPath $helper -PathType Leaf) -and
   (Test-Path -LiteralPath $manifestPath -PathType Leaf) -and
@@ -135,9 +146,7 @@ function Slot-Ready {
 }
 
 if ((-not (Slot-Ready)) -and ($env:BOATSTACK_AUTO_HYDRATE -ne "0")) {
-  $boatstackRoot = Join-Path $common "boatstack"
   New-Item -ItemType Directory -Force -Path $boatstackRoot | Out-Null
-  $lockPath = Join-Path $boatstackRoot "hydrate-$version.lock"
   $ownsLock = $false
   try { New-Item -ItemType Directory -ErrorAction Stop -Path $lockPath | Out-Null; $ownsLock = $true } catch {}
   if ($ownsLock) {
@@ -155,6 +164,12 @@ if ((-not (Slot-Ready)) -and ($env:BOATSTACK_AUTO_HYDRATE -ne "0")) {
     for ($i = 0; $i -lt 12 -and (Test-Path -LiteralPath $lockPath); $i++) { Start-Sleep -Seconds 1 }
   }
 }
+
+# File existence can become visible before the writer has finished publishing
+# the manifest. Never parse shared runtime state until the writer releases the
+# version-scoped hydration lock.
+for ($i = 0; $i -lt 12 -and (Test-Path -LiteralPath $lockPath); $i++) { Start-Sleep -Seconds 1 }
+if (Test-Path -LiteralPath $lockPath) { Fail-Activation "shared runtime hydration did not complete" }
 
 if (-not (Slot-Ready)) { Fail-Activation "the exact pinned shared runtime is missing or unsafe" }
 try { $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json } catch { Fail-Activation "shared runtime manifest is malformed" }

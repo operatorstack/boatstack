@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func buildLauncherTestHelper(t *testing.T) string {
@@ -145,6 +146,71 @@ func TestTrackedLauncherActivatesFreshLinkedWorktreeWithoutHookTrust(t *testing.
 	close(errors)
 	for failure := range errors {
 		t.Fatalf("concurrent pinned hydration failed: %s", failure)
+	}
+}
+
+func TestTrackedLauncherWaitsForHydrationPublicationBeforeManifestValidation(t *testing.T) {
+	_, linked := launcherTestRepository(t)
+	binary, manifest, err := sharedRuntimePaths(linked, Version, SourceCommit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	helperBytes, err := os.ReadFile(binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestBytes, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Dir(binary)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(binary), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(binary, helperBytes, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A parseable but incomplete manifest makes premature validation
+	// deterministic: an unlocked reader reports a version mismatch immediately.
+	if err := os.WriteFile(manifest, []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := hydrateLockPath(t, binary)
+	if err := os.MkdirAll(lockPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(lockPath)
+
+	type launcherResult struct {
+		output string
+		err    error
+	}
+	result := make(chan launcherResult, 1)
+	go func() {
+		output, runErr := runLauncher(t, linked, "version")
+		result <- launcherResult{output: output, err: runErr}
+	}()
+	select {
+	case early := <-result:
+		t.Fatalf("launcher validated before hydration publication: err=%v output=%s", early.err, early.output)
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	if err := os.WriteFile(manifest, manifestBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(lockPath); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case completed := <-result:
+		if completed.err != nil || !strings.Contains(completed.output, Version) {
+			t.Fatalf("launcher did not accept the published runtime: err=%v output=%s", completed.err, completed.output)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("launcher did not resume after hydration publication")
 	}
 }
 

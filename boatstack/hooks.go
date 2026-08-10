@@ -186,6 +186,7 @@ esac
 
 HELPER="$COMMON/boatstack/runtimes/%s/%s/${OS_NAME}-${ARCH}/boatstack-helper${EXTENSION}"
 MANIFEST="$COMMON/boatstack/runtimes/%s/%s/${OS_NAME}-${ARCH}/runtime.lock.json"
+HYDRATE_LOCK="$COMMON/boatstack/hydrate-%s.lock"
 # Auto-hydrate a missing or incomplete shared-runtime slot. A teammate who pulls
 # a version bump or clones fresh inherits the committed pointers (this guard's
 # baked version path) but an empty, gitignored slot, so without this the very next
@@ -199,7 +200,6 @@ MANIFEST="$COMMON/boatstack/runtimes/%s/%s/${OS_NAME}-${ARCH}/runtime.lock.json"
 # window must join the lock and wait, not skip the block and deny a half-slot.
 if { [[ ! -x "$HELPER" || -L "$HELPER" || ! -f "$MANIFEST" || -L "$MANIFEST" ]]; } && [[ "${BOATSTACK_AUTO_HYDRATE:-1}" != "0" ]]; then
   mkdir -p "$COMMON/boatstack" 2>/dev/null || true
-  HYDRATE_LOCK="$COMMON/boatstack/hydrate-%s.lock"
   if mkdir "$HYDRATE_LOCK" 2>/dev/null; then
     # Double-checked locking. A slow guard can reach this mkdir only after the
     # winner already hydrated and released the lock, so its mkdir succeeds too.
@@ -237,6 +237,16 @@ if { [[ ! -x "$HELPER" || -L "$HELPER" || ! -f "$MANIFEST" || -L "$MANIFEST" ]];
       sleep 1
     done
   fi
+fi
+# Both paths can become visible while the writer still owns the lock. Treat
+# lock release, not path existence, as the shared-runtime publication point.
+for _ in $(seq 1 12); do
+  [[ -d "$HYDRATE_LOCK" ]] || break
+  sleep 1
+done
+if [[ -d "$HYDRATE_LOCK" ]]; then
+  bs_deny "Boatstack shared runtime hydration did not complete; denying tool execution."
+  exit 2
 fi
 if [[ ! -x "$HELPER" ]]; then
   bs_deny "Boatstack shared runtime is missing; run the verified installer once from any checkout in this Git clone:"
@@ -334,6 +344,8 @@ $arch = switch ($architecture) {
 }
 $helper = Join-Path $common "boatstack/runtimes/%s/%s/windows-$arch/boatstack-helper.exe"
 $manifestPath = Join-Path $common "boatstack/runtimes/%s/%s/windows-$arch/runtime.lock.json"
+$bsCommon = Join-Path $common "boatstack"
+$hydrateLock = Join-Path $bsCommon "hydrate-%s.lock"
 # Auto-hydrate a missing shared-runtime slot (see the bash guard for rationale):
 # a teammate who pulls a version bump or clones fresh inherits the committed
 # pointers but an empty, gitignored slot. On an absent slot we run the tag-pinned,
@@ -341,9 +353,7 @@ $manifestPath = Join-Path $common "boatstack/runtimes/%s/%s/windows-$arch/runtim
 # with an atomic directory lock. Purely additive: the gates below stay
 # authoritative and fail-closed if hydration is disabled, fails, or is skipped.
 if (((-not (Test-Path -LiteralPath $helper -PathType Leaf)) -or (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf))) -and $env:BOATSTACK_AUTO_HYDRATE -ne "0") {
-  $bsCommon = Join-Path $common "boatstack"
   New-Item -ItemType Directory -Path $bsCommon -Force -ErrorAction SilentlyContinue | Out-Null
-  $hydrateLock = Join-Path $bsCommon "hydrate-%s.lock"
   $acquired = $false
   try { New-Item -ItemType Directory -Path $hydrateLock -ErrorAction Stop | Out-Null; $acquired = $true } catch { $acquired = $false }
   if ($acquired) {
@@ -370,6 +380,12 @@ if (((-not (Test-Path -LiteralPath $helper -PathType Leaf)) -or (-not (Test-Path
       Start-Sleep -Seconds 1
     }
   }
+}
+# A ready-looking slot is not published until its writer releases the lock.
+for ($i = 0; $i -lt 12 -and (Test-Path -LiteralPath $hydrateLock); $i++) { Start-Sleep -Seconds 1 }
+if (Test-Path -LiteralPath $hydrateLock) {
+  Bs-Deny "Boatstack shared runtime hydration did not complete; denying tool execution."
+  exit 2
 }
 if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) {
   Bs-Deny "Boatstack shared runtime is missing; run the verified installer once from any checkout in this Git clone:"
