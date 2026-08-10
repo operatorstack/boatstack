@@ -4,6 +4,20 @@ Boatstack is developed directly in this repository. Propose runtime, workflow, d
 
 Every pull request must pass the cross-platform runtime checks and the repository contract. Review tests, adapter changes, public claims, and context-size changes with the product diff.
 
+## Local verification
+
+Run the complete Go suite from the repository root:
+
+```sh
+python3 .github/scripts/run_go_tests.py
+```
+
+The runner verifies the full test partition, then uses a CPU-aware number of
+isolated serial Go processes. This keeps the suite complete without racing the
+mutable test seams inside one process. Use a focused `go test -run` command while
+iterating, then use the complete runner before review. CI keeps a serial Unix
+run as the independent correctness reference.
+
 Repository-specific examples and outcome reports can be proposed here as new evidence. A failure becomes a durable move only after its mechanism and non-regression gate are documented.
 
 ## Public-facing changes

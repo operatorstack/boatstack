@@ -49,9 +49,14 @@ python3 .github/scripts/release_notes.py \
 ## Other checks that are not in `go test`
 
 - **repository-contract** and the runtime jobs (Windows/macOS/Ubuntu) run in CI.
-  Locally, run `go build ./...`, `go vet ./...`, and `go test ./...` from
-  `boatstack/`, plus `python3 -m unittest discover -s .github/tests -p 'test_*.py'`
-  from the repository root.
+  Locally, run `go build ./...` and `go vet ./...` from `boatstack/`. Run the
+  complete Go suite from the repository root with
+  `python3 .github/scripts/run_go_tests.py`; it uses a CPU-aware local worker
+  count and fails unless every enumerated test belongs to exactly one passing
+  shard. Use `go test -run '<focused-pattern>' ./...` only while
+  iterating. Also run
+  `python3 -m unittest discover -s .github/tests -p 'test_*.py'` from the
+  repository root.
 
 ## PR body honesty
 

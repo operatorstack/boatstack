@@ -55,6 +55,20 @@ estimated cost, place each on the currently-lightest shard.
   duplicated test). This invariant is unit-tested in `test_ci_shard.py`, which
   the `ci-policy` workflow runs — a broken partition can't merge.
 
+## Local full-suite runner
+
+From the repository root, run:
+
+```bash
+python3 .github/scripts/run_go_tests.py
+```
+
+The local runner uses the same partition controller and a CPU-aware local
+worker count. It enumerates the complete top-level test set, verifies that every
+test belongs to exactly one shard, and returns success only when every shard
+passes. Each shard remains serial inside its process. Unix CI keeps the
+unsharded `go test ./...` run as an independent correctness reference.
+
 ## Canonical location
 
 This repository owns `ci_shard.py` and the sharded runtime workflow. There is no
