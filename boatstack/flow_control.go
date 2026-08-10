@@ -314,6 +314,9 @@ func posixPlanningWord(value string) string {
 }
 
 func powerShellCommandWord(value string) string {
+	if value == "<REQUIRED>" {
+		return value
+	}
 	if posixPlanningWord(value) == value {
 		return value
 	}
