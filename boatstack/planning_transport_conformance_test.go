@@ -408,6 +408,15 @@ func TestPlanningPrescriptionUsesOneCompleteShellGrammar(t *testing.T) {
 	if len(findings) == 0 || findings[0].Category != "workflow-state-tamper" {
 		t.Fatalf("hybrid command did not fail closed at managed-state admission: %#v", findings)
 	}
+
+	ordinary := PrescribedCommand{
+		Program: "gh",
+		Verb:    "pr",
+		Args:    []string{"merge", "https://example.invalid/pr/9", "--squash"},
+	}.commandLineForOS("windows")
+	if ordinary != "gh pr merge https://example.invalid/pr/9 --squash" {
+		t.Fatalf("safe ordinary argv lost its stable cross-platform rendering: %q", ordinary)
+	}
 }
 
 func TestPlanningPrescriptionQuotesRepositoryPath(t *testing.T) {

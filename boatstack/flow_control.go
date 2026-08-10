@@ -313,6 +313,13 @@ func posixPlanningWord(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
+func powerShellCommandWord(value string) string {
+	if posixPlanningWord(value) == value {
+		return value
+	}
+	return powerShellPlanningWord(value)
+}
+
 // CommandLine renders the auto-derivable part of the prescribed command as a
 // runnable string. Human-required inputs use explicit <REQUIRED> placeholders;
 // planning Markdown is placed inside the same literal envelope the hook admits.
@@ -353,7 +360,7 @@ func (p PrescribedCommand) commandLineForOS(goos string) string {
 			return strings.TrimSuffix(posixPlanningEnvelopeFor(parts, []byte("<REQUIRED>\n")), "\n")
 		}
 		for index := range parts {
-			parts[index] = powerShellPlanningWord(parts[index])
+			parts[index] = powerShellCommandWord(parts[index])
 		}
 		line := strings.Join(parts, " ")
 		if filepath.IsAbs(program) {
