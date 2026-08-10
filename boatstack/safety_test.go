@@ -26,6 +26,10 @@ func safetyTestRepo(t *testing.T) string {
 
 func engageHookFixture(t *testing.T, repo string) {
 	t.Helper()
+	branch := strings.TrimSpace(gitOutput(repo, "branch", "--show-current"))
+	if branch == "" {
+		t.Fatal("hook fixture repository has no current branch")
+	}
 	lockPath := filepath.Join(WorkspaceFor(repo).FeatureDir("hook-fixture"), "plan.lock.json")
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
 		t.Fatal(err)
@@ -39,7 +43,7 @@ func engageHookFixture(t *testing.T, repo string) {
 	}
 	state := DeliveryState{
 		SchemaVersion: deliveryStateSchemaVersion, Feature: "hook-fixture", PlanLockHash: lockHash,
-		ActiveIndex: 0, Slices: []DeliverySlice{{ID: "delivery", Status: StatusBuild, BaseBranch: "main", HeadBranch: "main"}},
+		ActiveIndex: 0, Slices: []DeliverySlice{{ID: "delivery", Status: StatusBuild, BaseBranch: branch, HeadBranch: branch}},
 		Mode: "NORMAL", RepairCounters: map[string]int{},
 	}
 	if err := saveDeliveryState(repo, state); err != nil {
@@ -47,6 +51,17 @@ func engageHookFixture(t *testing.T, repo string) {
 	}
 	if err := syncEngagementLease(repo, state); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestEngageHookFixtureBindsCurrentNonMainBranch(t *testing.T) {
+	repo := safetyTestRepo(t)
+	runGit(t, repo, "switch", "-c", "fixture-topic")
+	engageHookFixture(t, repo)
+
+	status := ResolveEngagement(repo, EngagementRequest{})
+	if status.Mode != EngagementActive || status.Branch != "fixture-topic" {
+		t.Fatalf("non-main hook fixture engagement = %+v, want ACTIVE on fixture-topic", status)
 	}
 }
 
