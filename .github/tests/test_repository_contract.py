@@ -104,6 +104,22 @@ class RepositoryContract(unittest.TestCase):
         self.assertIn("sha256sum", release)
         self.assertIn('workflows: ["Verify Boatstack distribution"]', automatic)
 
+    def test_manual_release_is_prerelease_only_and_exact_source_bound(self) -> None:
+        # control-law: branch-prerelease-publishes-only-an-exact-new-rc-source
+        release = (REPO / ".github" / "workflows" / "release.yml").read_text()
+        for contract in (
+            "prerelease_tag:",
+            "manual prereleases must be dispatched from a branch",
+            "manual release tags must use vMAJOR.MINOR.PATCH-rc.NUMBER",
+            "release tag $RELEASE_TAG already exists",
+            "selected branch no longer resolves to exact source $RELEASE_SOURCE",
+            '--target "$RELEASE_SOURCE"',
+            "--prerelease",
+        ):
+            self.assertIn(contract, release)
+        self.assertIn("VERSION: ${{ inputs.prerelease_tag || github.ref_name }}", release)
+        self.assertIn('RELEASE_SOURCE: ${{ github.sha }}', release)
+
     def test_document_links_claims_and_assets_are_valid(self) -> None:
         def anchors(document: Path) -> set[str]:
             result: set[str] = set()

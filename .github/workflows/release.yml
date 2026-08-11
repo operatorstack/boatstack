@@ -5,6 +5,11 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      prerelease_tag:
+        description: "New prerelease tag to publish from the selected branch (for example v2.0.0-rc.1)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -47,7 +52,7 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
           ASSET: ${{ matrix.asset }}
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ inputs.prerelease_tag || github.ref_name }}
         run: |
           source_commit="$(git rev-parse HEAD)"
           mkdir -p dist
@@ -63,7 +68,7 @@ jobs:
           path: dist/${{ matrix.asset }}*
 
   release:
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -77,26 +82,49 @@ jobs:
       - name: Publish release assets
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.prerelease_tag || github.ref_name }}
+          RELEASE_SOURCE: ${{ github.sha }}
+          MANUAL_PRERELEASE: ${{ github.event_name == 'workflow_dispatch' }}
         shell: bash
         run: |
-          previous_tag="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          if [[ "$MANUAL_PRERELEASE" == true ]]; then
+            [[ "$GITHUB_REF" == refs/heads/* ]] || {
+              echo "BLOCKED: manual prereleases must be dispatched from a branch" >&2
+              exit 2
+            }
+            [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]] || {
+              echo "BLOCKED: manual release tags must use vMAJOR.MINOR.PATCH-rc.NUMBER" >&2
+              exit 2
+            }
+            if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+              echo "BLOCKED: release tag $RELEASE_TAG already exists" >&2
+              exit 2
+            fi
+            remote_source="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+            [[ -n "$remote_source" && "$remote_source" == "$RELEASE_SOURCE" ]] || {
+              echo "BLOCKED: selected branch no longer resolves to exact source $RELEASE_SOURCE" >&2
+              exit 2
+            }
+          fi
+
+          previous_tag="$(git describe --tags --abbrev=0 "${RELEASE_SOURCE}^" 2>/dev/null || true)"
           if [[ -n "$previous_tag" ]]; then
             rewritten_notes=()
             while IFS= read -r note; do
               rewritten_notes+=("$note")
             done < <(git diff --name-only --diff-filter=MD --no-renames \
-              "$previous_tag" "$GITHUB_REF_NAME" -- 'release-notes/*.md')
+              "$previous_tag" "$RELEASE_SOURCE" -- 'release-notes/*.md')
             release_notes=()
             while IFS= read -r note; do
               release_notes+=("$note")
             done < <(git diff --name-only --diff-filter=A --no-renames \
-              "$previous_tag" "$GITHUB_REF_NAME" -- 'release-notes/*.md' | LC_ALL=C sort)
+              "$previous_tag" "$RELEASE_SOURCE" -- 'release-notes/*.md' | LC_ALL=C sort)
           else
             rewritten_notes=()
             release_notes=()
             while IFS= read -r note; do
               release_notes+=("$note")
-            done < <(git ls-tree -r --name-only "$GITHUB_REF_NAME" -- \
+            done < <(git ls-tree -r --name-only "$RELEASE_SOURCE" -- \
               'release-notes/*.md' | LC_ALL=C sort)
           fi
           if (( ${#rewritten_notes[@]} > 0 )); then
@@ -117,7 +145,16 @@ jobs:
               echo
             done
           } > "$release_body"
-          gh release create "${GITHUB_REF_NAME}" dist/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --notes-file "$release_body" \
-            --verify-tag
+          if [[ "$MANUAL_PRERELEASE" == true ]]; then
+            gh release create "$RELEASE_TAG" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$RELEASE_SOURCE" \
+              --title "$RELEASE_TAG" \
+              --notes-file "$release_body" \
+              --prerelease
+          else
+            gh release create "$RELEASE_TAG" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --notes-file "$release_body" \
+              --verify-tag
+          fi
