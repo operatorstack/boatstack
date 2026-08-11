@@ -183,7 +183,7 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		if actual := sha256Bytes(evidenceRaw); actual != fingerprint {
 			return nil, fmt.Errorf("gate evidence fingerprint mismatch: got %s", actual)
 		}
-		gate, _ := catalog.GateName(transition.ID)
+		gate, _ := standardGateName(transition.ID)
 		var input gateEvidenceInput
 		if decodeErr := decodeStrictArtifact(evidenceRaw, &input); decodeErr != nil || input.SchemaVersion != 1 ||
 			input.Gate != gate || input.SourceRevision != revision || input.Outcome != "passed" || input.Producer == "" || input.CompletedAt.IsZero() {

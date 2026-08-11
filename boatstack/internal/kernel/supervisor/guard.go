@@ -32,8 +32,8 @@ func (i CommandIntent) Validate() error {
 			return fmt.Errorf("%s intent cannot name a managed transition", i.Class)
 		}
 	case IntentManagedBypass:
-		if i.Transition == "" {
-			return fmt.Errorf("managed-bypass intent requires a transition")
+		if i.Transition != "" {
+			return fmt.Errorf("managed-bypass transition must be resolved from the compiled control program")
 		}
 	default:
 		return fmt.Errorf("invalid command intent class %q", i.Class)
@@ -66,7 +66,15 @@ func (s Supervisor) Guard(snapshot model.Snapshot, intent CommandIntent) GuardDe
 		decision.Reason = "ordinary repository operation is outside managed effect authority"
 		return decision
 	}
-	decision.RequiredTransition = intent.Transition
+	transition, managed := s.registry.ManagedTransition(intent.Operation)
+	if !managed {
+		decision.Intent.Class = IntentOrdinary
+		decision.Allowed = true
+		decision.Reason = "operation is not managed by the compiled control program"
+		return decision
+	}
+	decision.Intent.Transition = transition.ID
+	decision.RequiredTransition = transition.ID
 	if snapshot.Engagement.Status != model.FactKnown {
 		decision.Reason = "managed-effect engagement is unresolved"
 		return decision

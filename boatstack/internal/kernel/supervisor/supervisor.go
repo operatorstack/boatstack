@@ -27,9 +27,14 @@ type Decision struct {
 	Reason              string                 `json:"reason"`
 }
 
-type Supervisor struct{ registry catalog.Registry }
+type Supervisor struct {
+	registry  catalog.Registry
+	contracts catalog.GoalContracts
+}
 
-func New(registry catalog.Registry) Supervisor { return Supervisor{registry: registry} }
+func New(registry catalog.Registry, contracts catalog.GoalContracts) Supervisor {
+	return Supervisor{registry: registry, contracts: contracts}
+}
 
 func (s Supervisor) Resolve(snapshot model.Snapshot, goal model.Goal, authority catalog.AuthoritySet, requested catalog.TransitionID) Decision {
 	base := Decision{SnapshotFingerprint: snapshot.Fingerprint}
@@ -41,6 +46,17 @@ func (s Supervisor) Resolve(snapshot model.Snapshot, goal model.Goal, authority 
 		base.Kind, base.Reason = DecisionUnresolved, "terminal or phase evidence is not known"
 		return base
 	}
+	if snapshot.Program.Status != model.FactKnown {
+		base.Kind, base.Reason = DecisionUnresolved, "compiled control program evidence is not known"
+		return base
+	}
+	if snapshot.Program.Value == model.ProgramDrift {
+		transition, ok := s.registry.Lookup(requested)
+		if !ok || !transition.Policy.ReconcilesProgram {
+			base.Kind, base.Reason = DecisionUnresolved, "compiled control program drift requires explicit reconciliation"
+			return base
+		}
+	}
 	if requested != "" && snapshot.Goal.Status == model.FactKnown && snapshot.Goal.Value != goal && requested != "goal.configure" {
 		base.Kind, base.Reason = DecisionRefused, "requested goal differs from configured goal; goal.configure is required"
 		return base
@@ -49,7 +65,7 @@ func (s Supervisor) Resolve(snapshot model.Snapshot, goal model.Goal, authority 
 		base.Kind, base.Reason = DecisionRefused, fmt.Sprintf("host %q is not enabled by repository policy", snapshot.Invocation.Host)
 		return base
 	}
-	if requested == "" && snapshot.Terminal.Value == model.TerminalEstablished && terminalMatchesGoal(snapshot, goal) {
+	if requested == "" && s.contracts.Matches(snapshot, goal) {
 		base.Kind, base.Reason = DecisionTerminal, "configured terminal is established by current evidence"
 		return base
 	}
@@ -109,10 +125,11 @@ func (s Supervisor) Resolve(snapshot model.Snapshot, goal model.Goal, authority 
 		base.Kind, base.Reason = DecisionUnresolved, "no goal-progressing transition is safely selectable from current evidence"
 		return base
 	}
+	topClass := selectable[0].SelectionClass
 	topPriority := selectable[0].Priority
 	var top []catalog.Transition
 	for _, candidate := range selectable {
-		if candidate.Priority == topPriority {
+		if candidate.SelectionClass == topClass && candidate.Priority == topPriority {
 			top = append(top, candidate)
 		}
 	}
@@ -133,17 +150,15 @@ func (s Supervisor) Resolve(snapshot model.Snapshot, goal model.Goal, authority 
 }
 
 func targetAlreadySatisfied(snapshot model.Snapshot, goal model.Goal, transition catalog.Transition) bool {
-	if transition.ID == "goal.configure" {
+	if transition.Policy.BindsRequestedGoal {
 		return snapshot.Goal.Status == model.FactKnown && snapshot.Goal.Value == goal
 	}
-	if gate, ok := catalog.GateName(transition.ID); ok {
-		return currentEvidenceRecorded(snapshot, "gate-evidence:"+gate+":")
+	if transition.Policy.RequiredWhen == "visual-evidence-required" &&
+		(snapshot.ConfigurationPolicy.Status != model.FactKnown || snapshot.ConfigurationPolicy.Value.VisualEvidence != "required") {
+		return true
 	}
-	if transition.ID == "evidence.visual.attach" {
-		if snapshot.ConfigurationPolicy.Status != model.FactKnown || snapshot.ConfigurationPolicy.Value.VisualEvidence != "required" {
-			return true
-		}
-		return currentEvidenceRecorded(snapshot, "visual-evidence:")
+	if transition.Policy.CurrentEvidencePrefix != "" {
+		return currentEvidenceRecorded(snapshot, transition.Policy.CurrentEvidencePrefix)
 	}
 	return transition.TargetMatches(snapshot)
 }
@@ -173,7 +188,7 @@ func authoritySatisfies(snapshot model.Snapshot, transition catalog.Transition, 
 	if !authority.Satisfies(transition.Authority, transition.AuthorityAll) {
 		return false
 	}
-	if transition.ID == "plan.approve" || transition.ID == "plan.approve-amendment" {
+	if transition.Policy.AuthorityRule == "plan-approval" {
 		if snapshot.ConfigurationPolicy.Status != model.FactKnown {
 			return false
 		}
@@ -181,7 +196,7 @@ func authoritySatisfies(snapshot model.Snapshot, transition catalog.Transition, 
 			return false
 		}
 	}
-	if transition.ID == "gate.review.record" {
+	if transition.Policy.AuthorityRule == "independent-high-risk-review" {
 		if snapshot.ConfigurationPolicy.Status != model.FactKnown {
 			return false
 		}
@@ -206,44 +221,14 @@ func policyAllows(snapshot model.Snapshot, transition catalog.Transition) (bool,
 			return false, fmt.Sprintf("recovery transition %q is not permitted for transaction %q", transition.ID, snapshot.RecoveryInfo.Value.TransactionID)
 		}
 	}
-	if transition.ID != "evidence.visual.attach" {
+	if transition.Policy.AvailabilityRule == "" {
 		return true, ""
 	}
 	if snapshot.ConfigurationPolicy.Status != model.FactKnown {
 		return false, fmt.Sprintf("transition %q requires known configuration policy", transition.ID)
 	}
-	if snapshot.ConfigurationPolicy.Value.VisualEvidence == "off" {
+	if transition.Policy.AvailabilityRule == "visual-evidence-enabled" && snapshot.ConfigurationPolicy.Value.VisualEvidence == "off" {
 		return false, "visual evidence is disabled by repository policy"
 	}
 	return true, ""
-}
-
-func terminalMatchesGoal(snapshot model.Snapshot, goal model.Goal) bool {
-	if snapshot.Goal.Status != model.FactKnown || snapshot.Goal.Value != goal {
-		return false
-	}
-	switch goal.Kind {
-	case model.GoalApprovedPlan:
-		return snapshot.Plan.Status == model.FactKnown && snapshot.Plan.Value == model.PlanApproved
-	case model.GoalVerified:
-		return deliveryInputsCurrent(snapshot) &&
-			snapshot.Delivery.Status == model.FactKnown && snapshot.Delivery.Value == model.DeliveryTerminal
-	case model.GoalOpenPR:
-		return deliveryInputsCurrent(snapshot) && snapshot.Publication.Status == model.FactKnown && snapshot.Publication.Value == model.PublicationOpen
-	case model.GoalMerged:
-		return snapshot.Publication.Status == model.FactKnown && snapshot.Publication.Value == model.PublicationMerged &&
-			snapshot.Delivery.Status == model.FactKnown && snapshot.Delivery.Value == model.DeliveryTerminal &&
-			snapshot.Workspace.Status == model.FactKnown && (snapshot.Workspace.Value == model.WorkspaceLanded || snapshot.Workspace.Value == model.WorkspaceAbsent)
-	case model.GoalAbandoned:
-		return snapshot.Delivery.Status == model.FactKnown && snapshot.Delivery.Value == model.DeliveryDiscarded &&
-			snapshot.Workspace.Status == model.FactKnown && (snapshot.Workspace.Value == model.WorkspaceAbandoned || snapshot.Workspace.Value == model.WorkspaceAbsent)
-	default:
-		return false
-	}
-}
-
-func deliveryInputsCurrent(snapshot model.Snapshot) bool {
-	return snapshot.Verification.Status == model.FactKnown && snapshot.Verification.Value == model.VerificationCurrent &&
-		snapshot.Configuration.Status == model.FactKnown && snapshot.Configuration.Value == model.ConfigurationVerified &&
-		snapshot.Runtime.Status == model.FactKnown && snapshot.Runtime.Value == model.RuntimeVerified
 }

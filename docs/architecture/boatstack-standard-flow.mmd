@@ -1,0 +1,42 @@
+%% Generated from compiled PrimaryFlow declarations by surfaces.RenderStandardFlowMermaid. Do not edit.
+flowchart TB
+  subgraph authority["authority"]
+    t00["evidence.approval.revoke<br/>ACTIVE | FRONTIER → FRONTIER"]
+    t01["plan.abandon<br/>OBSERVED | ACTIVE | FRONTIER → ABANDONED"]
+    t02["plan.approve<br/>ACTIVE | FRONTIER → ACTIVE | TERMINAL"]
+    t03["plan.approve-amendment<br/>ACTIVE | FRONTIER → ACTIVE"]
+    t04["publication.abandon<br/>ACTIVE | FRONTIER → ABANDONED"]
+  end
+  subgraph owned_local["owned-local"]
+    t05["delivery.slice.advance<br/>ACTIVE → ACTIVE | TERMINAL"]
+    t06["evidence.visual.attach<br/>ACTIVE → ACTIVE | TERMINAL"]
+    t07["gate.build.record<br/>ACTIVE → ACTIVE"]
+    t08["gate.change.record<br/>ACTIVE → ACTIVE"]
+    t09["gate.journey.record<br/>ACTIVE → ACTIVE"]
+    t10["gate.review.record<br/>ACTIVE → ACTIVE | TERMINAL"]
+    t11["gate.test.record<br/>ACTIVE → ACTIVE | TERMINAL"]
+    t12["plan.activate<br/>OBSERVED | ACTIVE → ACTIVE"]
+    t13["plan.amend<br/>ACTIVE | FRONTIER → ACTIVE"]
+    t14["plan.create<br/>OBSERVED | ACTIVE → ACTIVE"]
+    t15["plan.invalidate<br/>ACTIVE | OBSERVED → FRONTIER"]
+    t16["plan.validate<br/>OBSERVED | ACTIVE → ACTIVE | FRONTIER"]
+    t17["publication.observe<br/>OBSERVED | ACTIVE | RECOVERY | UNRESOLVED → ACTIVE | TERMINAL | FRONTIER | UNRESOLVED"]
+    t18["publication.preview<br/>ACTIVE → ACTIVE"]
+    t19["workspace.abandon<br/>ACTIVE | FRONTIER → ABANDONED"]
+    t20["workspace.activate<br/>OBSERVED | ACTIVE → ACTIVE"]
+    t21["workspace.cleanup<br/>OBSERVED | ACTIVE | TERMINAL | ABANDONED → OBSERVED | TERMINAL | ABANDONED"]
+    t22["workspace.cut<br/>OBSERVED | ACTIVE → ACTIVE"]
+    t23["workspace.publish<br/>ACTIVE → ACTIVE"]
+    t24["workspace.reap<br/>OBSERVED | TERMINAL | ABANDONED → OBSERVED | TERMINAL | ABANDONED"]
+    t25["workspace.sync<br/>ACTIVE → ACTIVE | FRONTIER"]
+  end
+  subgraph owned_external["owned-external"]
+    t26["publication.correct<br/>OBSERVED | ACTIVE | TERMINAL → ACTIVE | RECOVERY"]
+    t27["publication.execute<br/>ACTIVE → ACTIVE | RECOVERY"]
+  end
+  subgraph recovery["recovery"]
+    t28["publication.reconcile<br/>RECOVERY | UNRESOLVED → ACTIVE | TERMINAL | FRONTIER | UNRESOLVED"]
+    t29["workspace.reconcile<br/>RECOVERY | UNRESOLVED → DORMANT | OBSERVED | ACTIVE | FRONTIER | TERMINAL | ABANDONED"]
+  end
+  subgraph observed_external["observed-external"]
+  end

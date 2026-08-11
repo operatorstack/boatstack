@@ -201,9 +201,10 @@ func TestRecoveryAttemptsExhaustToEscalationOnly(t *testing.T) {
 		"status":           "recovery-required",
 		"reason":           "simulated interruption",
 		"admission": map[string]any{
-			"id":           originalID,
-			"source_phase": "ACTIVE",
-			"invocation":   map[string]any{"correlation_id": "prior-process"},
+			"id":                  originalID,
+			"program_fingerprint": strings.Repeat("a", 64),
+			"source_phase":        "ACTIVE",
+			"invocation":          map[string]any{"correlation_id": "prior-process"},
 		},
 	}
 	writeJSON := func(name string, value any) {
@@ -237,6 +238,9 @@ func TestRecoveryAttemptsExhaustToEscalationOnly(t *testing.T) {
 		if observed.Recovery.BudgetRemaining != wantBudget {
 			t.Fatalf("attempt %d budget=%d, want %d", attempt, observed.Recovery.BudgetRemaining, wantBudget)
 		}
+		if observed.ProgramFingerprint != strings.Repeat("a", 64) {
+			t.Fatalf("pending program fingerprint=%q", observed.ProgramFingerprint)
+		}
 		if attempt == 3 {
 			if len(observed.Recovery.Permitted) != 1 || observed.Recovery.Permitted[0] != "recovery.escalate" {
 				t.Fatalf("exhausted recovery permitted=%v, want escalation only", observed.Recovery.Permitted)
@@ -261,12 +265,12 @@ func TestInterruptedRecoveryAttemptCollapsesToEscalatableTransactionGroup(t *tes
 	originalID := "adm-original"
 	write(originalID+".pending", map[string]any{
 		"schema_version": 2, "transition_id": "plan.create", "transition_class": "owned-local", "status": "recovery-required",
-		"admission": map[string]any{"id": originalID, "source_phase": "ACTIVE", "invocation": map[string]any{"correlation_id": "old-process"}},
+		"admission": map[string]any{"id": originalID, "program_fingerprint": strings.Repeat("a", 64), "source_phase": "ACTIVE", "invocation": map[string]any{"correlation_id": "old-process"}},
 	})
 	write("adm-nested.pending", map[string]any{
 		"schema_version": 2, "transition_id": "recovery.rollback", "transition_class": "recovery", "status": "verifying",
 		"admission": map[string]any{
-			"id": "adm-nested", "source_phase": "RECOVERY", "invocation": map[string]any{"correlation_id": "old-process"},
+			"id": "adm-nested", "program_fingerprint": strings.Repeat("a", 64), "source_phase": "RECOVERY", "invocation": map[string]any{"correlation_id": "old-process"},
 			"parameters": []map[string]string{{"name": "transaction_id", "value": originalID}},
 		},
 	})

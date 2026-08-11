@@ -1,4 +1,4 @@
-package catalog
+package standard_test
 
 import (
 	"go/ast"
@@ -12,7 +12,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
+	"github.com/operatorstack/boatstack/boatstack/internal/testprogram"
 )
 
 func sourceRoot(t *testing.T) string {
@@ -21,24 +23,24 @@ func sourceRoot(t *testing.T) string {
 	if !ok {
 		t.Fatal("cannot locate source inventory")
 	}
-	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", ".."))
+	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
 }
 
 func TestEveryControllingFacetAndEventIsClassifiedByTheRuntimeCatalog(t *testing.T) {
 	// control-law: runtime-catalog-is-the-complete-executable-model
-	registry := Default()
+	registry := testprogram.StandardRegistry()
 	classified := map[model.FacetName]bool{model.FacetPhase: true}
 	families := map[string]int{}
 	for _, transition := range registry.All() {
-		for _, condition := range append(append([]FacetCondition(nil), transition.SourceConditions...), transition.TargetConditions...) {
+		for _, condition := range append(append([]catalog.FacetCondition(nil), transition.SourceConditions...), transition.TargetConditions...) {
 			classified[condition.Facet] = true
 		}
 		family := familyFor(transition.ID)
 		families[family]++
-		if transition.Controllable() && transition.Effect != EffectID(transition.ID) {
+		if transition.Controllable() && transition.Effect != catalog.EffectID(transition.ID) {
 			t.Errorf("transition %s effect=%s; effect identity must be exact", transition.ID, transition.Effect)
 		}
-		if transition.Class == EventOwnedExternal && !containsAuthority(transition.AuthorityAll, AuthorityProvider) {
+		if transition.Class == catalog.EventOwnedExternal && !containsAuthority(transition.AuthorityAll, catalog.AuthorityProvider) {
 			t.Errorf("external transition %s does not require provider authority", transition.ID)
 		}
 	}
@@ -47,7 +49,7 @@ func TestEveryControllingFacetAndEventIsClassifiedByTheRuntimeCatalog(t *testing
 			t.Errorf("controlling facet %s is absent from executable predicates", facet)
 		}
 	}
-	want := map[string]int{"invocation-engagement": 6, "installation-runtime-configuration": 8, "goal-plan": 9, "workspace": 8, "gate-evidence-delivery": 8, "publication": 6, "recovery": 3, "external": 13}
+	want := map[string]int{"invocation-engagement": 6, "installation-runtime-configuration": 8, "catalog": 1, "goal-plan": 9, "workspace": 8, "gate-evidence-delivery": 8, "publication": 6, "recovery": 3, "external": 13}
 	for family, count := range want {
 		if families[family] != count {
 			t.Errorf("family %s=%d, want %d", family, families[family], count)
@@ -55,7 +57,7 @@ func TestEveryControllingFacetAndEventIsClassifiedByTheRuntimeCatalog(t *testing
 	}
 }
 
-func containsAuthority(values []AuthorityClass, wanted AuthorityClass) bool {
+func containsAuthority(values []catalog.AuthorityClass, wanted catalog.AuthorityClass) bool {
 	for _, value := range values {
 		if value == wanted {
 			return true
@@ -64,13 +66,15 @@ func containsAuthority(values []AuthorityClass, wanted AuthorityClass) bool {
 	return false
 }
 
-func familyFor(id TransitionID) string {
+func familyFor(id catalog.TransitionID) string {
 	value := string(id)
 	switch {
 	case strings.HasPrefix(value, "engagement."), strings.HasPrefix(value, "invocation."), strings.HasPrefix(value, "repository."):
 		return "invocation-engagement"
 	case strings.HasPrefix(value, "installation."), strings.HasPrefix(value, "runtime."), strings.HasPrefix(value, "configuration."):
 		return "installation-runtime-configuration"
+	case strings.HasPrefix(value, "catalog."):
+		return "catalog"
 	case strings.HasPrefix(value, "goal."), strings.HasPrefix(value, "plan."):
 		return "goal-plan"
 	case strings.HasPrefix(value, "workspace."):
@@ -142,12 +146,13 @@ func TestSourceInventoryHasNoWriterOrLifecycleAuthorityOutsideOwnedPackages(t *t
 				t.Errorf("managed writer os.%s escaped effects package in %s", selector.Sel.Name, relative)
 			}
 			if importPath == "os/exec" && (selector.Sel.Name == "Command" || selector.Sel.Name == "CommandContext") {
-				if relative != "internal/effects/command_boundary.go" && relative != "internal/plant/resolver.go" {
+				if relative != "internal/effects/command_boundary.go" && relative != "internal/plant/resolver.go" && relative != "extension/subprocess/subprocess.go" {
 					t.Errorf("unclassified command boundary in %s", relative)
 				}
 			}
 			if strings.HasSuffix(importPath, "/internal/kernel/model") && lifecycleSelector(selector.Sel.Name) &&
-				!strings.HasPrefix(relative, "internal/kernel/") && !strings.HasPrefix(relative, "internal/effects/") && !strings.HasPrefix(relative, "internal/plant/") {
+				!strings.HasPrefix(relative, "internal/kernel/") && !strings.HasPrefix(relative, "internal/effects/") && !strings.HasPrefix(relative, "internal/plant/") &&
+				!strings.HasPrefix(relative, "control/") && !strings.HasPrefix(relative, "flow/") && !strings.HasPrefix(relative, "extension/") {
 				t.Errorf("lifecycle selector model.%s escaped kernel/plant/effects in %s", selector.Sel.Name, relative)
 			}
 			return true
@@ -169,16 +174,16 @@ func TestSourceInventoryHasNoWriterOrLifecycleAuthorityOutsideOwnedPackages(t *t
 
 func TestEveryControllableRuntimeEventHasAnExecutableStateReducer(t *testing.T) {
 	// control-law: registry-entry-cannot-exist-without-runtime-effect-reduction
-	path := filepath.Join(sourceRoot(t), "internal", "kernel", "reducer", "reducer.go")
+	path := filepath.Join(sourceRoot(t), "internal", "effects", "state_reducer.go")
 	parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	covered := map[TransitionID]bool{}
-	registry := Default()
+	covered := map[catalog.TransitionID]bool{}
+	registry := testprogram.StandardRegistry()
 	for _, declaration := range parsed.Decls {
 		function, ok := declaration.(*ast.FuncDecl)
-		if !ok || function.Name.Name != "Apply" {
+		if !ok || function.Name.Name != "applyStateTransition" {
 			continue
 		}
 		ast.Inspect(function.Body, func(node ast.Node) bool {
@@ -195,7 +200,7 @@ func TestEveryControllableRuntimeEventHasAnExecutableStateReducer(t *testing.T) 
 				if unquoteErr != nil {
 					t.Fatal(unquoteErr)
 				}
-				id := TransitionID(value)
+				id := catalog.TransitionID(value)
 				if transition, exists := registry.Lookup(id); exists && transition.Controllable() {
 					covered[id] = true
 				}
@@ -210,11 +215,59 @@ func TestEveryControllableRuntimeEventHasAnExecutableStateReducer(t *testing.T) 
 	}
 }
 
+func TestPackageImportsPreserveControlProgramDependencyDirection(t *testing.T) {
+	// control-law: kernel-mechanism-cannot-depend-on-standard-flow-or-product-surfaces
+	root := sourceRoot(t)
+	forbiddenKernel := []string{"/flow/standard", "/distribution", "/sdk", "/cmd/boatstack-helper"}
+	forbiddenFlow := []string{"/distribution", "/sdk", "/cmd/boatstack-helper", "/internal/surfaces"}
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		relative = filepath.ToSlash(relative)
+		kernelOwned := relative == "kernel.go" || relative == "program_effects.go" || relative == "program_observer.go" || strings.HasPrefix(relative, "internal/kernel/")
+		flowOwned := strings.HasPrefix(relative, "flow/")
+		if !kernelOwned && !flowOwned {
+			return nil
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		for _, item := range parsed.Imports {
+			value, _ := strconv.Unquote(item.Path.Value)
+			for _, forbidden := range forbiddenKernel {
+				if kernelOwned && strings.Contains(value, forbidden) {
+					t.Errorf("kernel mechanism %s imports forbidden layer %s", relative, value)
+				}
+			}
+			for _, forbidden := range forbiddenFlow {
+				if flowOwned && strings.Contains(value, forbidden) {
+					t.Errorf("primary flow %s imports forbidden surface %s", relative, value)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func classifiedProductionFile(relative string) bool {
-	return relative == "v2_kernel.go" || strings.HasPrefix(relative, "cmd/boatstack-helper/") ||
+	return relative == "kernel.go" || relative == "program_effects.go" || relative == "program_observer.go" || strings.HasPrefix(relative, "cmd/boatstack-helper/") ||
+		strings.HasPrefix(relative, "control/") || strings.HasPrefix(relative, "core/") ||
+		strings.HasPrefix(relative, "flow/") || strings.HasPrefix(relative, "distribution/") || strings.HasPrefix(relative, "extension/") ||
 		strings.HasPrefix(relative, "internal/kernel/") || strings.HasPrefix(relative, "internal/plant/") ||
 		strings.HasPrefix(relative, "internal/effects/") || strings.HasPrefix(relative, "internal/surfaces/") ||
-		strings.HasPrefix(relative, "internal/retromine/") || strings.HasPrefix(relative, "sdk/") ||
+		strings.HasPrefix(relative, "internal/retromine/") || strings.HasPrefix(relative, "internal/testprogram/") || strings.HasPrefix(relative, "sdk/") ||
 		strings.HasPrefix(relative, "analysis/")
 }
 

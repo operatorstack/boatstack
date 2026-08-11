@@ -161,6 +161,13 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 	if pendingErr != nil {
 		return model.Observation{}, pendingErr
 	}
+	recordedProgramFingerprint := state.ProgramFingerprint
+	if pending.ProgramFingerprint != "" {
+		if recordedProgramFingerprint != "" && recordedProgramFingerprint != pending.ProgramFingerprint {
+			return model.Observation{}, fmt.Errorf("durable state and pending transaction bind different control programs")
+		}
+		recordedProgramFingerprint = pending.ProgramFingerprint
+	}
 	if pending.Conflicting {
 		evidence := append(append([]model.Evidence(nil), stateEvidence...), pending.Evidence...)
 		phase = model.PhaseUnresolved
@@ -191,7 +198,7 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 		goalFact = model.Fact[model.Goal]{Status: model.FactKnown, Value: state.Goal, Evidence: stateEvidence}
 	}
 	return model.Observation{
-		SchemaVersion: model.SnapshotSchemaVersion, Invocation: current,
+		SchemaVersion: model.SnapshotSchemaVersion, RecordedProgramFingerprint: recordedProgramFingerprint, Invocation: current,
 		Phase:               model.Fact[model.ProtocolPhase]{Status: model.FactKnown, Value: phase, Evidence: stateEvidence},
 		Engagement:          model.Fact[model.EngagementState]{Status: model.FactKnown, Value: state.Engagement, Evidence: stateEvidence},
 		Delivery:            model.Fact[model.DeliveryState]{Status: model.FactKnown, Value: delivery, Evidence: deliveryEvidence},
@@ -545,10 +552,11 @@ type pendingJournalHeader struct {
 	Status          string `json:"status"`
 	Reason          string `json:"reason"`
 	Admission       struct {
-		ID          string                  `json:"id"`
-		SourcePhase model.ProtocolPhase     `json:"source_phase"`
-		Invocation  model.InvocationContext `json:"invocation"`
-		Parameters  protocol.Parameters     `json:"parameters"`
+		ID                 string                  `json:"id"`
+		ProgramFingerprint string                  `json:"program_fingerprint"`
+		SourcePhase        model.ProtocolPhase     `json:"source_phase"`
+		Invocation         model.InvocationContext `json:"invocation"`
+		Parameters         protocol.Parameters     `json:"parameters"`
 	} `json:"admission"`
 	Mutations []struct {
 		Path   string `json:"path"`
@@ -558,12 +566,13 @@ type pendingJournalHeader struct {
 }
 
 type pendingJournalSet struct {
-	Found            bool
-	Conflicting      bool
-	Evidence         []model.Evidence
-	Recovery         model.RecoveryContext
-	Transaction      model.TransactionContext
-	TransactionState model.TransactionState
+	Found              bool
+	Conflicting        bool
+	Evidence           []model.Evidence
+	Recovery           model.RecoveryContext
+	Transaction        model.TransactionContext
+	TransactionState   model.TransactionState
+	ProgramFingerprint string
 }
 
 type pendingJournalRecord struct {
@@ -610,7 +619,7 @@ func pendingJournalEvidence(root, ignoreAdmissionID string, now time.Time) (pend
 				return pendingJournalSet{}, err
 			}
 			class := catalog.EventClass(header.TransitionClass)
-			if header.SchemaVersion != 2 || header.Admission.ID == "" || entry.Name() != header.Admission.ID+".pending" || header.TransitionID == "" || header.Status == "" || !class.Valid() || !class.Controllable() {
+			if header.SchemaVersion != 2 || header.Admission.ID == "" || len(header.Admission.ProgramFingerprint) != 64 || entry.Name() != header.Admission.ID+".pending" || header.TransitionID == "" || header.Status == "" || !class.Valid() || !class.Controllable() {
 				return pendingJournalSet{}, fmt.Errorf("invalid pending transaction journal %s", path)
 			}
 			if header.Admission.ID == ignoreAdmissionID {
@@ -644,8 +653,9 @@ func pendingJournalEvidence(root, ignoreAdmissionID string, now time.Time) (pend
 			}
 			set := pendingJournalSet{
 				Found: true, Evidence: []model.Evidence{evidence}, TransactionState: transactionState,
-				Recovery:    model.RecoveryContext{TransactionID: header.Admission.ID, Cause: cause, SourcePhase: header.Admission.SourcePhase, Permitted: permitted, BudgetRemaining: budget, Resumption: header.Admission.SourcePhase},
-				Transaction: model.TransactionContext{ID: header.Admission.ID, TransitionID: header.TransitionID, Status: header.Status, ResourceDigests: resourceDigests, ExternalPossible: external},
+				ProgramFingerprint: header.Admission.ProgramFingerprint,
+				Recovery:           model.RecoveryContext{TransactionID: header.Admission.ID, Cause: cause, SourcePhase: header.Admission.SourcePhase, Permitted: permitted, BudgetRemaining: budget, Resumption: header.Admission.SourcePhase},
+				Transaction:        model.TransactionContext{ID: header.Admission.ID, TransitionID: header.TransitionID, Status: header.Status, ResourceDigests: resourceDigests, ExternalPossible: external},
 			}
 			rootID := header.Admission.ID
 			if class == catalog.EventRecovery {
@@ -687,6 +697,9 @@ func pendingJournalEvidence(root, ignoreAdmissionID string, now time.Time) (pend
 			base.Evidence = nil
 			base.Transaction.ResourceDigests = nil
 			for _, record := range records {
+				if record.set.ProgramFingerprint != base.ProgramFingerprint {
+					return conflictingPending(records), nil
+				}
 				base.Evidence = append(base.Evidence, record.set.Evidence...)
 				base.Transaction.ResourceDigests = append(base.Transaction.ResourceDigests, record.set.Transaction.ResourceDigests...)
 			}

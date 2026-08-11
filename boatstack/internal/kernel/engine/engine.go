@@ -14,21 +14,26 @@ import (
 )
 
 type Engine struct {
-	registry catalog.Registry
-	control  supervisor.Supervisor
-	observer ports.Observer
-	clock    ports.Clock
-	locker   ports.Locker
-	journal  ports.Journal
-	effects  ports.EffectDriver
-	receipts ports.ReceiptStore
+	registry           catalog.Registry
+	control            supervisor.Supervisor
+	programFingerprint string
+	observer           ports.Observer
+	clock              ports.Clock
+	locker             ports.Locker
+	journal            ports.Journal
+	effects            ports.EffectDriver
+	receipts           ports.ReceiptStore
 }
 
-func New(registry catalog.Registry, observer ports.Observer, clock ports.Clock, locker ports.Locker, journal ports.Journal, effects ports.EffectDriver, receipts ports.ReceiptStore) (Engine, error) {
-	if registry.Len() == 0 || observer == nil || clock == nil || locker == nil || journal == nil || effects == nil || receipts == nil {
-		return Engine{}, fmt.Errorf("kernel engine requires registry, observer, clock, locker, journal, effects, and receipt store")
+func New(registry catalog.Registry, contracts catalog.GoalContracts, programFingerprint string, observer ports.Observer, clock ports.Clock, locker ports.Locker, journal ports.Journal, effects ports.EffectDriver, receipts ports.ReceiptStore) (Engine, error) {
+	if registry.Len() == 0 || len(contracts) == 0 || len(programFingerprint) != 64 || observer == nil || clock == nil || locker == nil || journal == nil || effects == nil || receipts == nil {
+		return Engine{}, fmt.Errorf("kernel engine requires registry, goal contracts, observer, clock, locker, journal, effects, and receipt store")
 	}
-	return Engine{registry: registry, control: supervisor.New(registry), observer: observer, clock: clock, locker: locker, journal: journal, effects: effects, receipts: receipts}, nil
+	return Engine{registry: registry, control: supervisor.New(registry, contracts), programFingerprint: programFingerprint, observer: observer, clock: clock, locker: locker, journal: journal, effects: effects, receipts: receipts}, nil
+}
+
+func (e Engine) canonicalize(observation model.Observation) (model.Snapshot, error) {
+	return model.CanonicalizeForProgram(observation, e.programFingerprint)
 }
 
 type ResolveRequest struct {
@@ -46,15 +51,15 @@ type Resolution struct {
 
 func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution, error) {
 	if err := request.Invocation.Validate(false); err != nil {
-		return Resolution{}, err
+		return unresolvedResolution(request.Goal, "invocation identity is invalid"), err
 	}
 	observation, err := e.observer.Observe(ctx, ports.ObservationRequest{Invocation: request.Invocation})
 	if err != nil {
-		return Resolution{}, fmt.Errorf("observe plant: %w", err)
+		return unresolvedResolution(request.Goal, "required observation failed"), fmt.Errorf("observe plant: %w", err)
 	}
-	snapshot, err := model.Canonicalize(observation)
+	snapshot, err := e.canonicalize(observation)
 	if err != nil {
-		return Resolution{}, fmt.Errorf("canonicalize observation: %w", err)
+		return unresolvedResolution(request.Goal, "canonical observation is invalid"), fmt.Errorf("canonicalize observation: %w", err)
 	}
 	if snapshot.Invocation != request.Invocation {
 		return Resolution{}, fmt.Errorf("observer returned a different invocation identity")
@@ -72,6 +77,10 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 	}
 	decision := e.control.Resolve(snapshot, goal, request.Authority.Set(now), request.Requested)
 	return Resolution{Snapshot: snapshot, Goal: goal, Decision: decision}, nil
+}
+
+func unresolvedResolution(goal model.Goal, reason string) Resolution {
+	return Resolution{Goal: goal, Decision: supervisor.Decision{Kind: supervisor.DecisionUnresolved, Reason: reason}}
 }
 
 type ApplyRequest struct {
@@ -137,14 +146,14 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 			return result, fmt.Errorf("check supplied idempotency key: %w", err)
 		}
 		if ok {
-			if err := validateReplayRequest(prior, request); err != nil {
+			if err := validateReplayRequest(prior, request, e.programFingerprint); err != nil {
 				return result, err
 			}
 			observation, observeErr := e.observer.Observe(ctx, ports.ObservationRequest{Invocation: request.Invocation})
 			if observeErr != nil {
 				return result, observeErr
 			}
-			snapshot, canonicalErr := model.Canonicalize(observation)
+			snapshot, canonicalErr := e.canonicalize(observation)
 			if canonicalErr != nil {
 				return result, canonicalErr
 			}
@@ -162,10 +171,10 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 		request.AdmissionLifetime = 2 * time.Minute
 	}
 	resolution, err := e.Resolve(ctx, request.ResolveRequest)
+	result.Source, result.Goal, result.Decision = resolution.Snapshot, resolution.Goal, resolution.Decision
 	if err != nil {
 		return result, err
 	}
-	result.Source, result.Goal, result.Decision = resolution.Snapshot, resolution.Goal, resolution.Decision
 	request.Goal = resolution.Goal
 	if resolution.Decision.Kind != supervisor.DecisionPrescribed || resolution.Decision.Transition == nil {
 		return result, DecisionError{Decision: resolution.Decision}
@@ -187,14 +196,14 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 	if prior, ok, err := e.receipts.FindByIdempotency(ctx, request.Invocation, admission.IdempotencyKey); err != nil {
 		return result, fmt.Errorf("check idempotency: %w", err)
 	} else if ok {
-		if err := validateReplayRequest(prior, request); err != nil {
+		if err := validateReplayRequest(prior, request, e.programFingerprint); err != nil {
 			return result, err
 		}
 		observation, observeErr := e.observer.Observe(ctx, ports.ObservationRequest{Invocation: request.Invocation})
 		if observeErr != nil {
 			return result, observeErr
 		}
-		current, canonicalErr := model.Canonicalize(observation)
+		current, canonicalErr := e.canonicalize(observation)
 		if canonicalErr != nil {
 			return result, canonicalErr
 		}
@@ -219,14 +228,14 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 	if err != nil {
 		return result, err
 	}
-	lockedSnapshot, err := model.Canonicalize(lockedObservation)
+	lockedSnapshot, err := e.canonicalize(lockedObservation)
 	if err != nil {
 		return result, err
 	}
 	if prior, ok, findErr := e.receipts.FindByIdempotency(ctx, request.Invocation, admission.IdempotencyKey); findErr != nil {
 		return result, fmt.Errorf("check locked idempotency: %w", findErr)
 	} else if ok {
-		if err := validateReplayRequest(prior, request); err != nil {
+		if err := validateReplayRequest(prior, request, e.programFingerprint); err != nil {
 			return result, err
 		}
 		if !replayStateSettled(lockedSnapshot) {
@@ -281,11 +290,11 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 	if transferred, ok := prepared.VerificationInvocation(); ok {
 		verificationInvocation = transferred
 	}
-	targetObservation, err := e.observer.Observe(ctx, ports.ObservationRequest{Invocation: verificationInvocation, IgnoreAdmissionID: admission.ID})
+	targetObservation, err := e.observer.Observe(ctx, ports.ObservationRequest{Invocation: verificationInvocation, IgnoreAdmissionID: admission.ID, VerifyTransitionID: transition.ID})
 	if err != nil {
 		return result, requireRecovery("target observation failed after effect", err)
 	}
-	target, err := model.Canonicalize(targetObservation)
+	target, err := e.canonicalize(targetObservation)
 	if err != nil {
 		return result, requireRecovery("target canonicalization failed after effect", err)
 	}
@@ -324,7 +333,10 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 	return result, nil
 }
 
-func validateReplayRequest(prior protocol.TransitionReceipt, request ApplyRequest) error {
+func validateReplayRequest(prior protocol.TransitionReceipt, request ApplyRequest, programFingerprint string) error {
+	if prior.ProgramFingerprint != programFingerprint {
+		return fmt.Errorf("idempotency receipt belongs to a different control program")
+	}
 	if prior.FlowID != request.FlowID {
 		return fmt.Errorf("idempotency receipt belongs to flow %q, not %q", prior.FlowID, request.FlowID)
 	}

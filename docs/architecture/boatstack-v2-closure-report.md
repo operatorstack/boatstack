@@ -1,5 +1,9 @@
 # Boatstack V2 replacement closure
 
+> Historical replacement evidence for PR #186. The normative current
+> architecture and executable counts are defined by
+> [Boatstack programmable delivery control architecture](boatstack-v2-kernel.md).
+
 Base revision: `c5b5e10cdcf4d97b645d705cb164e762acf93ff1`
 Replacement mode: flag day; no V1 compatibility or state migration
 

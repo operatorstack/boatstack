@@ -4,13 +4,79 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
-	"strings"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 )
 
 type TransitionID string
 type EffectID string
+
+type OriginKind string
+
+const (
+	OriginCoreSystem  OriginKind = "core-system"
+	OriginPrimaryFlow OriginKind = "primary-flow"
+	OriginExtension   OriginKind = "extension"
+)
+
+func (k OriginKind) Valid() bool {
+	switch k {
+	case OriginCoreSystem, OriginPrimaryFlow, OriginExtension:
+		return true
+	default:
+		return false
+	}
+}
+
+type TransitionOrigin struct {
+	Kind                OriginKind `json:"kind"`
+	ID                  string     `json:"id"`
+	Version             string     `json:"version"`
+	ManifestFingerprint string     `json:"manifest_fingerprint"`
+}
+
+type SelectionClass string
+
+const (
+	SelectionSystemRecovery    SelectionClass = "SYSTEM_RECOVERY"
+	SelectionFlowRecovery      SelectionClass = "FLOW_RECOVERY"
+	SelectionExtensionRecovery SelectionClass = "EXTENSION_RECOVERY"
+	SelectionGoalRequired      SelectionClass = "GOAL_REQUIRED"
+	SelectionFlowProgress      SelectionClass = "FLOW_PROGRESS"
+	SelectionExplicitOnly      SelectionClass = "EXPLICIT_ONLY"
+	SelectionObservedExternal  SelectionClass = "OBSERVED_EXTERNAL"
+)
+
+func (c SelectionClass) Valid() bool {
+	switch c {
+	case SelectionSystemRecovery, SelectionFlowRecovery, SelectionExtensionRecovery, SelectionGoalRequired,
+		SelectionFlowProgress, SelectionExplicitOnly, SelectionObservedExternal:
+		return true
+	default:
+		return false
+	}
+}
+
+func (c SelectionClass) rank() int {
+	switch c {
+	case SelectionSystemRecovery:
+		return 1
+	case SelectionFlowRecovery:
+		return 2
+	case SelectionExtensionRecovery:
+		return 3
+	case SelectionGoalRequired:
+		return 4
+	case SelectionFlowProgress:
+		return 5
+	case SelectionExplicitOnly:
+		return 6
+	case SelectionObservedExternal:
+		return 7
+	default:
+		return 99
+	}
+}
 
 type EventClass string
 
@@ -23,15 +89,6 @@ const (
 )
 
 func (c EventClass) Controllable() bool { return c != EventObservedExternal }
-
-func GateName(id TransitionID) (string, bool) {
-	value := string(id)
-	if !strings.HasPrefix(value, "gate.") || !strings.HasSuffix(value, ".record") {
-		return "", false
-	}
-	name := strings.TrimSuffix(strings.TrimPrefix(value, "gate."), ".record")
-	return name, name != ""
-}
 
 func (c EventClass) Valid() bool {
 	switch c {
@@ -119,6 +176,16 @@ type InterruptionContract struct {
 	ResumptionPredicate  string       `json:"resumption_predicate"`
 }
 
+type PolicyContract struct {
+	RequiredWhen          string   `json:"required_when,omitempty"`
+	AuthorityRule         string   `json:"authority_rule,omitempty"`
+	AvailabilityRule      string   `json:"availability_rule,omitempty"`
+	CurrentEvidencePrefix string   `json:"current_evidence_prefix,omitempty"`
+	ManagedOperations     []string `json:"managed_operations,omitempty"`
+	BindsRequestedGoal    bool     `json:"binds_requested_goal,omitempty"`
+	ReconcilesProgram     bool     `json:"reconciles_program,omitempty"`
+}
+
 // FacetCondition is an executable, serializable predicate over one canonical
 // control facet. Values are ORed; conditions on a transition are ANDed.
 type FacetCondition struct {
@@ -156,38 +223,44 @@ func (c FacetCondition) Matches(snapshot model.Snapshot) bool {
 // Transition is both the executable runtime declaration and the source for the
 // generated finite-state model. No second graph is maintained.
 type Transition struct {
-	ID                      TransitionID          `json:"id"`
-	Version                 int                   `json:"version"`
-	Class                   EventClass            `json:"class"`
-	SourcePhases            []model.ProtocolPhase `json:"source_phases"`
-	TargetPhases            []model.ProtocolPhase `json:"target_phases"`
-	GoalKinds               []model.GoalKind      `json:"goal_kinds,omitempty"`
-	RequiredIdentity        []string              `json:"required_identity"`
-	Authority               []AuthorityClass      `json:"authority"`
-	AuthorityAll            []AuthorityClass      `json:"authority_all,omitempty"`
-	RequiredEvidence        []string              `json:"required_evidence"`
-	OwnedResources          []string              `json:"owned_resources,omitempty"`
-	Effect                  EffectID              `json:"effect,omitempty"`
-	LocalEffects            []EffectID            `json:"local_effects,omitempty"`
-	ExternalEffects         []EffectID            `json:"external_effects,omitempty"`
-	Idempotent              bool                  `json:"idempotent"`
-	Parameters              []ParameterSpec       `json:"parameters,omitempty"`
-	Prescription            Prescription          `json:"prescription"`
-	SourcePredicate         string                `json:"source_predicate"`
-	SourceConditions        []FacetCondition      `json:"source_conditions"`
-	AdmissionPredicate      string                `json:"admission_predicate"`
-	TargetPredicate         string                `json:"target_predicate"`
-	TargetConditions        []FacetCondition      `json:"target_conditions"`
-	Verifier                string                `json:"verifier"`
-	Interruption            InterruptionContract  `json:"interruption"`
-	Reversibility           Reversibility         `json:"reversibility"`
-	TerminalEffect          string                `json:"terminal_effect,omitempty"`
-	PrivacyClassification   string                `json:"privacy_classification"`
-	TelemetryClassification string                `json:"telemetry_classification"`
-	CostClass               string                `json:"cost_class"`
-	Priority                int                   `json:"priority"`
-	AllowsIdentityRebind    bool                  `json:"allows_identity_rebind,omitempty"`
-	AllowsWorktreeTransfer  bool                  `json:"allows_worktree_transfer,omitempty"`
+	ID                            TransitionID          `json:"id"`
+	Version                       int                   `json:"version"`
+	Origin                        TransitionOrigin      `json:"origin"`
+	Owner                         string                `json:"owner"`
+	SelectionClass                SelectionClass        `json:"selection_class"`
+	Class                         EventClass            `json:"class"`
+	SourcePhases                  []model.ProtocolPhase `json:"source_phases"`
+	TargetPhases                  []model.ProtocolPhase `json:"target_phases"`
+	GoalKinds                     []model.GoalKind      `json:"goal_kinds,omitempty"`
+	RequiredIdentity              []string              `json:"required_identity"`
+	Authority                     []AuthorityClass      `json:"authority"`
+	AuthorityAll                  []AuthorityClass      `json:"authority_all,omitempty"`
+	RequiredEvidence              []string              `json:"required_evidence"`
+	OwnedResources                []string              `json:"owned_resources,omitempty"`
+	Effect                        EffectID              `json:"effect,omitempty"`
+	LocalEffects                  []EffectID            `json:"local_effects,omitempty"`
+	ExternalEffects               []EffectID            `json:"external_effects,omitempty"`
+	Idempotent                    bool                  `json:"idempotent"`
+	Parameters                    []ParameterSpec       `json:"parameters,omitempty"`
+	Prescription                  Prescription          `json:"prescription"`
+	SourcePredicate               string                `json:"source_predicate"`
+	SourceConditions              []FacetCondition      `json:"source_conditions"`
+	AdmissionPredicate            string                `json:"admission_predicate"`
+	TargetPredicate               string                `json:"target_predicate"`
+	TargetConditions              []FacetCondition      `json:"target_conditions"`
+	Verifier                      string                `json:"verifier"`
+	Interruption                  InterruptionContract  `json:"interruption"`
+	Reversibility                 Reversibility         `json:"reversibility"`
+	TerminalEffect                string                `json:"terminal_effect,omitempty"`
+	PrivacyClassification         string                `json:"privacy_classification"`
+	TelemetryClassification       string                `json:"telemetry_classification"`
+	CostClass                     string                `json:"cost_class"`
+	Policy                        PolicyContract        `json:"policy,omitempty"`
+	Priority                      int                   `json:"priority"`
+	AllowsIdentityRebind          bool                  `json:"allows_identity_rebind,omitempty"`
+	AllowsWorktreeTransfer        bool                  `json:"allows_worktree_transfer,omitempty"`
+	BindsSourceRevision           bool                  `json:"binds_source_revision,omitempty"`
+	AuthorityFingerprintParameter string                `json:"authority_fingerprint_parameter,omitempty"`
 }
 
 func (t Transition) Controllable() bool { return t.Class.Controllable() }
@@ -198,18 +271,11 @@ func (t Transition) Controllable() bool { return t.Class.Controllable() }
 // transition, but cannot outrank the configured goal by merely being
 // admissible from the same snapshot.
 func (t Transition) ImplicitlySelectable() bool {
-	switch t.ID {
-	case "engagement.renew", "engagement.release",
-		"invocation.rebind", "repository.attach", "repository.detach",
-		"runtime.replace", "configuration.mutate", "installation.update",
-		"plan.amend", "plan.invalidate", "plan.abandon",
-		"workspace.sync", "workspace.publish", "workspace.cleanup", "workspace.reap", "workspace.abandon",
-		"gate.change.record", "gate.journey.record", "evidence.approval.revoke", "delivery.slice.advance",
-		"publication.correct", "publication.abandon":
-		return false
-	default:
-		return true
-	}
+	return t.SelectionClass == SelectionSystemRecovery ||
+		t.SelectionClass == SelectionFlowRecovery ||
+		t.SelectionClass == SelectionExtensionRecovery ||
+		t.SelectionClass == SelectionGoalRequired ||
+		t.SelectionClass == SelectionFlowProgress
 }
 
 func (t Transition) SupportsGoal(goal model.Goal) bool {
@@ -262,14 +328,18 @@ func (t Transition) DeclaresTargetPhase(phase model.ProtocolPhase) bool {
 }
 
 type Registry struct {
-	ordered []Transition
-	byID    map[TransitionID]Transition
+	ordered          []Transition
+	byID             map[TransitionID]Transition
+	managedOperation map[string]TransitionID
 }
 
 var semanticID = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$`)
 
 func New(transitions []Transition) (Registry, error) {
-	registry := Registry{ordered: append([]Transition(nil), transitions...), byID: make(map[TransitionID]Transition, len(transitions))}
+	registry := Registry{
+		ordered: cloneTransitions(transitions), byID: make(map[TransitionID]Transition, len(transitions)),
+		managedOperation: make(map[string]TransitionID),
+	}
 	for index, transition := range registry.ordered {
 		if err := validateTransition(transition); err != nil {
 			return Registry{}, fmt.Errorf("transition %d: %w", index, err)
@@ -277,7 +347,13 @@ func New(transitions []Transition) (Registry, error) {
 		if _, exists := registry.byID[transition.ID]; exists {
 			return Registry{}, fmt.Errorf("duplicate transition id %q", transition.ID)
 		}
-		registry.byID[transition.ID] = transition
+		registry.byID[transition.ID] = cloneTransition(transition)
+		for _, operation := range transition.Policy.ManagedOperations {
+			if prior, exists := registry.managedOperation[operation]; exists {
+				return Registry{}, fmt.Errorf("managed operation %q is owned by both %q and %q", operation, prior, transition.ID)
+			}
+			registry.managedOperation[operation] = transition.ID
+		}
 	}
 	for _, transition := range registry.ordered {
 		if recovery := transition.Interruption.Recovery; recovery != "" {
@@ -288,6 +364,9 @@ func New(transitions []Transition) (Registry, error) {
 		}
 	}
 	sort.SliceStable(registry.ordered, func(i, j int) bool {
+		if registry.ordered[i].SelectionClass.rank() != registry.ordered[j].SelectionClass.rank() {
+			return registry.ordered[i].SelectionClass.rank() < registry.ordered[j].SelectionClass.rank()
+		}
 		if registry.ordered[i].Priority != registry.ordered[j].Priority {
 			return registry.ordered[i].Priority < registry.ordered[j].Priority
 		}
@@ -303,6 +382,21 @@ func validateTransition(t Transition) error {
 	if !t.Class.Valid() {
 		return fmt.Errorf("%s: invalid event class %q", t.ID, t.Class)
 	}
+	if !t.Origin.Kind.Valid() || t.Origin.ID == "" || t.Origin.Version == "" || t.Origin.ManifestFingerprint == "" || t.Owner == "" {
+		return fmt.Errorf("%s: transition origin, owner, version, and manifest fingerprint are required", t.ID)
+	}
+	if !t.SelectionClass.Valid() {
+		return fmt.Errorf("%s: invalid selection class %q", t.ID, t.SelectionClass)
+	}
+	if t.Class == EventObservedExternal && t.SelectionClass != SelectionObservedExternal {
+		return fmt.Errorf("%s: observed external transition must use OBSERVED_EXTERNAL selection", t.ID)
+	}
+	if t.Class != EventObservedExternal && t.SelectionClass == SelectionObservedExternal {
+		return fmt.Errorf("%s: controllable transition cannot use OBSERVED_EXTERNAL selection", t.ID)
+	}
+	if err := validateSelectionOwnership(t); err != nil {
+		return err
+	}
 	if t.Version < 1 || len(t.SourcePhases) == 0 || len(t.TargetPhases) == 0 {
 		return fmt.Errorf("%s: version, source phases, and target phases are required", t.ID)
 	}
@@ -310,6 +404,13 @@ func validateTransition(t Transition) error {
 		if !phase.Valid() {
 			return fmt.Errorf("%s: invalid phase %q", t.ID, phase)
 		}
+	}
+	goalKinds := map[model.GoalKind]bool{}
+	for _, goal := range t.GoalKinds {
+		if !goal.Valid() || goalKinds[goal] {
+			return fmt.Errorf("%s: goal kinds must be valid and unique", t.ID)
+		}
+		goalKinds[goal] = true
 	}
 	if len(t.Authority) == 0 || len(t.RequiredEvidence) == 0 {
 		return fmt.Errorf("%s: authority and evidence declarations are required", t.ID)
@@ -376,6 +477,23 @@ func validateTransition(t Transition) error {
 		}
 		parameterNames[parameter.Name] = true
 	}
+	managedOperations := map[string]bool{}
+	for _, operation := range t.Policy.ManagedOperations {
+		if !semanticID.MatchString(operation) || managedOperations[operation] {
+			return fmt.Errorf("%s: managed operations must be semantic and unique", t.ID)
+		}
+		managedOperations[operation] = true
+	}
+	if t.Policy.BindsRequestedGoal && (t.Origin.Kind != OriginCoreSystem || !conditionNamesFacet(t.TargetConditions, model.FacetGoal)) {
+		return fmt.Errorf("%s: requested-goal binding requires a CoreSystem goal target", t.ID)
+	}
+	if t.Policy.ReconcilesProgram && (t.Origin.Kind != OriginCoreSystem || !conditionNamesFacet(t.TargetConditions, model.FacetProgram)) {
+		return fmt.Errorf("%s: program reconciliation requires a CoreSystem program target", t.ID)
+	}
+	providerDeclared := containsAuthorityClass(t.Authority, AuthorityProvider) || containsAuthorityClass(t.AuthorityAll, AuthorityProvider)
+	if t.AuthorityFingerprintParameter != "" && (!parameterNames[t.AuthorityFingerprintParameter] || !providerDeclared) {
+		return fmt.Errorf("%s: provider authority binding requires a declared parameter and mandatory provider authority", t.ID)
+	}
 	if t.Reversibility == "" || t.PrivacyClassification == "" || t.TelemetryClassification == "" || t.CostClass == "" {
 		return fmt.Errorf("%s: recovery/telemetry metadata are incomplete", t.ID)
 	}
@@ -385,21 +503,110 @@ func validateTransition(t Transition) error {
 	return nil
 }
 
+func conditionNamesFacet(conditions []FacetCondition, facet model.FacetName) bool {
+	for _, condition := range conditions {
+		if condition.Facet == facet {
+			return true
+		}
+	}
+	return false
+}
+
+func validateSelectionOwnership(t Transition) error {
+	switch t.SelectionClass {
+	case SelectionSystemRecovery:
+		if t.Origin.Kind != OriginCoreSystem || t.Class != EventRecovery {
+			return fmt.Errorf("%s: SYSTEM_RECOVERY is reserved for CoreSystem recovery events", t.ID)
+		}
+	case SelectionFlowRecovery:
+		if t.Origin.Kind != OriginPrimaryFlow || t.Class != EventRecovery {
+			return fmt.Errorf("%s: FLOW_RECOVERY is reserved for PrimaryFlow recovery events", t.ID)
+		}
+	case SelectionExtensionRecovery:
+		if t.Origin.Kind != OriginExtension || t.Class != EventRecovery {
+			return fmt.Errorf("%s: EXTENSION_RECOVERY is reserved for extension recovery events", t.ID)
+		}
+	default:
+		if t.Class == EventRecovery {
+			return fmt.Errorf("%s: recovery event requires its origin-specific recovery selection class", t.ID)
+		}
+	}
+	return nil
+}
+
+func containsAuthorityClass(values []AuthorityClass, wanted AuthorityClass) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
+}
+
 func (r Registry) Len() int { return len(r.ordered) }
 
-func (r Registry) All() []Transition { return append([]Transition(nil), r.ordered...) }
+func (r Registry) All() []Transition { return cloneTransitions(r.ordered) }
 
 func (r Registry) Lookup(id TransitionID) (Transition, bool) {
 	transition, ok := r.byID[id]
-	return transition, ok
+	return cloneTransition(transition), ok
+}
+
+// ManagedTransition resolves a host-classified operation through the compiled
+// program. Command classifiers never select flow transition IDs themselves.
+func (r Registry) ManagedTransition(operation string) (Transition, bool) {
+	id, ok := r.managedOperation[operation]
+	if !ok {
+		return Transition{}, false
+	}
+	return r.Lookup(id)
 }
 
 func (r Registry) Admissible(snapshot model.Snapshot, goal model.Goal) []Transition {
 	var result []Transition
 	for _, transition := range r.ordered {
 		if transition.Controllable() && transition.SourceMatches(snapshot) && transition.SupportsGoal(goal) {
-			result = append(result, transition)
+			result = append(result, cloneTransition(transition))
 		}
+	}
+	return result
+}
+
+func cloneTransitions(values []Transition) []Transition {
+	result := make([]Transition, len(values))
+	for index, value := range values {
+		result[index] = cloneTransition(value)
+	}
+	return result
+}
+
+func cloneTransition(value Transition) Transition {
+	value.SourcePhases = append([]model.ProtocolPhase(nil), value.SourcePhases...)
+	value.TargetPhases = append([]model.ProtocolPhase(nil), value.TargetPhases...)
+	value.GoalKinds = append([]model.GoalKind(nil), value.GoalKinds...)
+	value.RequiredIdentity = append([]string(nil), value.RequiredIdentity...)
+	value.Authority = append([]AuthorityClass(nil), value.Authority...)
+	value.AuthorityAll = append([]AuthorityClass(nil), value.AuthorityAll...)
+	value.RequiredEvidence = append([]string(nil), value.RequiredEvidence...)
+	value.OwnedResources = append([]string(nil), value.OwnedResources...)
+	value.LocalEffects = append([]EffectID(nil), value.LocalEffects...)
+	value.ExternalEffects = append([]EffectID(nil), value.ExternalEffects...)
+	value.Parameters = append([]ParameterSpec(nil), value.Parameters...)
+	value.Prescription.Arguments = append([]string(nil), value.Prescription.Arguments...)
+	value.SourceConditions = cloneConditions(value.SourceConditions)
+	value.TargetConditions = cloneConditions(value.TargetConditions)
+	value.Interruption.Points = append([]string(nil), value.Interruption.Points...)
+	value.Interruption.PartialState = append([]string(nil), value.Interruption.PartialState...)
+	value.Policy.ManagedOperations = append([]string(nil), value.Policy.ManagedOperations...)
+	return value
+}
+
+func cloneConditions(values []FacetCondition) []FacetCondition {
+	result := make([]FacetCondition, len(values))
+	for index, value := range values {
+		value.Statuses = append([]model.FactStatus(nil), value.Statuses...)
+		value.Values = append([]string(nil), value.Values...)
+		result[index] = value
 	}
 	return result
 }

@@ -6,13 +6,13 @@ import (
 	"testing"
 
 	boatstack "github.com/operatorstack/boatstack/boatstack"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/surfaces"
+	"github.com/operatorstack/boatstack/boatstack/internal/testprogram"
 )
 
 func TestEveryFriendlyMutationAliasMapsToOneRegistryTransition(t *testing.T) {
 	// control-law: cli-verbs-are-adapters-not-transition-authority
-	registry := catalog.Default()
+	registry := testprogram.StandardRegistry()
 	commands := []string{"init", "update", "attach", "detach", "hydrate-runtime", "configure", "goal-configure", "plan-create", "plan-validate", "plan-approve", "plan-activate", "plan-amend", "workspace-cut", "workspace-sync", "workspace-cleanup", "workspace-reap", "record-build", "record-test", "record-review", "record-change", "record-journey", "publication-preview", "publish-pr", "observe-pr", "correct-pr", "abandon"}
 	for _, command := range commands {
 		operation, transitionID, _, err := classifyCommand(command)

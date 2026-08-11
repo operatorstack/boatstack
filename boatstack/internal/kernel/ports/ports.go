@@ -14,8 +14,9 @@ type Observer interface {
 }
 
 type ObservationRequest struct {
-	Invocation        model.InvocationContext
-	IgnoreAdmissionID string
+	Invocation         model.InvocationContext
+	IgnoreAdmissionID  string
+	VerifyTransitionID catalog.TransitionID
 }
 
 type ControllerLayout struct {
@@ -72,6 +73,8 @@ type EffectResult struct {
 }
 
 type ResourceMutation struct {
+	Resource    string `json:"resource"`
+	Owner       string `json:"owner"`
 	Path        string `json:"path"`
 	Prior       []byte `json:"prior,omitempty"`
 	Target      []byte `json:"target,omitempty"`

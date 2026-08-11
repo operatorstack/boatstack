@@ -18,6 +18,7 @@ import (
 
 	boatstack "github.com/operatorstack/boatstack/boatstack"
 	"github.com/operatorstack/boatstack/boatstack/analysis"
+	"github.com/operatorstack/boatstack/boatstack/distribution"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
@@ -84,7 +85,7 @@ func run(arguments []string) error {
 	if err != nil {
 		return err
 	}
-	kernel, err := boatstack.NewV2Kernel("")
+	kernel, err := standardKernel(context.Background(), request)
 	if err != nil {
 		return err
 	}
@@ -116,7 +117,7 @@ func runRPC() error {
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return fmt.Errorf("V2 RPC request contains trailing JSON")
 	}
-	kernel, err := boatstack.NewV2Kernel("")
+	kernel, err := standardKernel(context.Background(), request)
 	if err != nil {
 		return err
 	}
@@ -220,7 +221,7 @@ func parseOptions(command string, arguments []string, transition catalog.Transit
 	flags.Var(&options.parameters, "param", "transition parameter name=value (repeatable)")
 	flags.Var(&options.authorityReceipts, "authority-receipt", "authority receipt JSON path (repeatable)")
 	flags.BoolVar(&options.follow, "follow", false, "follow passive process events (events with jsonl only)")
-	flags.StringVar(&options.host, "host", options.host, "cli, cursor, codex, claude, gemini, or mcp")
+	flags.StringVar(&options.host, "host", options.host, "cli, sdk, cursor, codex, claude, gemini, or mcp")
 	flags.StringVar(&options.command, "command", "", "raw command to classify at the guard boundary")
 	if err := flags.Parse(arguments); err != nil {
 		return commandOptions{}, err
@@ -245,7 +246,22 @@ func parseOptions(command string, arguments []string, transition catalog.Transit
 	return options, nil
 }
 
-func followEvents(kernel boatstack.V2Kernel, request surfaces.Request) error {
+func standardKernel(ctx context.Context, request surfaces.Request) (boatstack.Kernel, error) {
+	programRequest := distribution.RepositoryProgramRequest{
+		Repository: request.Repository, Host: request.Host, CorrelationID: request.CorrelationID,
+	}
+	if request.TransitionID == "installation.initialize" || request.TransitionID == "configuration.initialize" {
+		programRequest.ConfigurationPath, _ = request.Parameters.Get("config_path")
+		programRequest.ConfigurationFingerprint, _ = request.Parameters.Get("config_sha256")
+	}
+	program, err := distribution.StandardProgramForRepository(ctx, programRequest)
+	if err != nil {
+		return boatstack.Kernel{}, err
+	}
+	return boatstack.NewKernel("", program)
+}
+
+func followEvents(kernel boatstack.Kernel, request surfaces.Request) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	encoder := json.NewEncoder(os.Stdout)
@@ -480,6 +496,9 @@ func renderResponse(response surfaces.Response, format string) error {
 		case "mermaid":
 			fmt.Print(surfaces.RenderCatalogMermaid(response.Catalog))
 			return nil
+		case "standard-flow-mermaid":
+			fmt.Print(surfaces.RenderStandardFlowMermaid(response.Catalog))
+			return nil
 		case "locus-safety":
 			value, err := surfaces.RenderCatalogLocusSafety(response.Catalog)
 			if err != nil {
@@ -518,7 +537,11 @@ func renderResponse(response surfaces.Response, format string) error {
 			return nil
 		}
 		if response.Doctor != nil {
-			fmt.Printf("healthy=%t transitions=%d snapshot=%s\n%s\n", response.Doctor.Healthy, response.Doctor.TransitionCount, response.Doctor.Snapshot, response.Doctor.Detail)
+			fmt.Printf("healthy=%t kernel=%s core=%s@%s flow=%s@%s core_transitions=%d flow_transitions=%d extension_transitions=%d transitions=%d program=%s drift=%t snapshot=%s\n%s\n",
+				response.Doctor.Healthy, response.Doctor.KernelVersion, response.Doctor.CoreSystemID, response.Doctor.CoreSystemVersion,
+				response.Doctor.PrimaryFlowID, response.Doctor.PrimaryFlowVersion, response.Doctor.CoreTransitionCount,
+				response.Doctor.FlowTransitionCount, response.Doctor.ExtensionTransitionCount, response.Doctor.TransitionCount,
+				response.Doctor.ProgramFingerprint, response.Doctor.UnresolvedProgramDrift, response.Doctor.Snapshot, response.Doctor.Detail)
 			return nil
 		}
 		if response.Decision != nil {

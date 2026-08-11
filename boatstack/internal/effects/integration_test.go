@@ -14,17 +14,47 @@ import (
 	"time"
 
 	boatstack "github.com/operatorstack/boatstack/boatstack"
+	"github.com/operatorstack/boatstack/boatstack/control"
+	"github.com/operatorstack/boatstack/boatstack/core"
+	"github.com/operatorstack/boatstack/boatstack/extension/releasenote"
+	"github.com/operatorstack/boatstack/boatstack/flow/standard"
 	"github.com/operatorstack/boatstack/boatstack/internal/effects"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/engine"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/supervisor"
 	"github.com/operatorstack/boatstack/boatstack/internal/plant"
 	"github.com/operatorstack/boatstack/boatstack/internal/surfaces"
+	"github.com/operatorstack/boatstack/boatstack/internal/testprogram"
 )
 
 type fixedClock struct{ value time.Time }
+
+const testProgramFingerprint = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+func testGoalContracts() catalog.GoalContracts {
+	manifest, err := standard.Definition().FlowManifest(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	contracts, err := catalog.NewGoalContracts(manifest.GoalContracts, nil)
+	if err != nil {
+		panic(err)
+	}
+	return contracts
+}
+
+func testProgram() control.ControlProgram {
+	program, err := control.Compile(context.Background(), control.CompileRequest{
+		KernelVersion: boatstack.Version, Core: core.System(), Flow: standard.Definition(),
+	})
+	if err != nil {
+		panic(err)
+	}
+	return program
+}
 
 func (c fixedClock) Now() time.Time { return c.value }
 
@@ -84,7 +114,7 @@ func TestConcreteBoundaryAppliesAndReceiptsOneTransition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	kernel, err := engine.New(catalog.Default(), observer, clock, locker, journal, driver, receipts)
+	kernel, err := engine.New(testprogram.StandardRegistry(), testGoalContracts(), testProgramFingerprint, observer, clock, locker, journal, driver, receipts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +149,7 @@ func TestExternalConfigurationAuthorityTransfersAcrossAttachAndDetach(t *testing
 	ctx := context.Background()
 	repository := testRepository(t)
 	externalRoot := t.TempDir()
-	kernel, err := boatstack.NewV2Kernel(externalRoot)
+	kernel, err := boatstack.NewKernel(externalRoot, testProgram())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,6 +229,236 @@ func TestExternalConfigurationAuthorityTransfersAcrossAttachAndDetach(t *testing
 	}
 }
 
+func TestProgramDriftRequiresExplicitCatalogReconciliation(t *testing.T) {
+	// control-law: frozen-program-cannot-change-without-exact-human-reconciliation
+	ctx := context.Background()
+	repository := testRepository(t)
+	externalRoot := t.TempDir()
+	oldProgram, err := control.Compile(ctx, control.CompileRequest{
+		KernelVersion: boatstack.Version, Core: core.System(), Flow: standard.Definition(), Extensions: []control.Extension{releasenote.Definition()},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldKernel, err := boatstack.NewKernel(externalRoot, oldProgram)
+	if err != nil {
+		t.Fatal(err)
+	}
+	goal := model.Goal{ID: "program-drift", Kind: model.GoalApprovedPlan, DeliveryID: "program-drift"}
+	now := time.Now().UTC()
+	human := protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{
+		ID: "program-drift-human", Class: catalog.AuthorityHuman, Subject: "operator", Fingerprint: "explicit-program-reconciliation",
+		IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
+	}}}
+	executable, _ := os.Executable()
+	executable, _ = filepath.Abs(executable)
+	executable, _ = filepath.EvalSymlinks(executable)
+	runtimeRaw, _ := os.ReadFile(executable)
+	configPath := filepath.Join(t.TempDir(), "project.json")
+	configRaw := []byte("{\"schema_version\":2,\"project\":{\"name\":\"drift\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
+	if err := os.WriteFile(configPath, configRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	initialized, err := oldKernel.Handle(ctx, surfaces.Request{
+		SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationApply, Repository: repository, Host: "cli", CorrelationID: "program-old",
+		FlowID: "flow-program-drift", Goal: goal, TransitionID: "installation.initialize", Authority: human,
+		Parameters: protocol.Parameters{
+			{Name: "source_revision", Value: "program-old"}, {Name: "runtime_path", Value: executable}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
+			{Name: "config_path", Value: configPath}, {Name: "config_sha256", Value: configFingerprint(t, configRaw)},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if initialized.Receipt == nil || initialized.Receipt.ProgramFingerprint != oldProgram.Fingerprint() {
+		t.Fatalf("initial receipt did not freeze old program: %#v", initialized.Receipt)
+	}
+
+	newProgram := testProgram()
+	newKernel, err := boatstack.NewKernel(externalRoot, newProgram)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := newKernel.Handle(ctx, surfaces.Request{
+		SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationResolve, Repository: repository, Host: "cli", CorrelationID: "program-drift-resolve", Goal: goal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Decision == nil || resolved.Decision.Kind != supervisor.DecisionUnresolved {
+		t.Fatalf("program drift decision = %#v", resolved.Decision)
+	}
+
+	resolver, err := plant.NewResolver(externalRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, err := resolver.ResolveInvocation(ctx, repository, "cli", "program-drift-inspect")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, _, err := resolver.ResolveLayout(ctx, invocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(layout.StatePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := surfaces.Request{
+		SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationApply, Repository: repository, Host: "cli", CorrelationID: "program-drift-reconcile",
+		FlowID: "flow-program-drift", Goal: goal, TransitionID: "catalog.reconcile",
+		Parameters: protocol.Parameters{{Name: "prior_program_fingerprint", Value: oldProgram.Fingerprint()}, {Name: "accept_obligation_change", Value: "true"}},
+	}
+	frontier, err := newKernel.Handle(ctx, request)
+	if err == nil || frontier.Decision == nil || frontier.Decision.Kind != supervisor.DecisionFrontier {
+		t.Fatalf("authority-free reconciliation = response %#v error %v", frontier, err)
+	}
+	afterRejected, _ := os.ReadFile(layout.StatePath)
+	if !bytes.Equal(before, afterRejected) {
+		t.Fatal("authority-free reconciliation mutated durable state")
+	}
+	request.Authority = human
+	request.Parameters[1].Value = "false"
+	if _, err := newKernel.Handle(ctx, request); err == nil {
+		t.Fatal("reconciliation without explicit obligation acceptance succeeded")
+	}
+	afterInvalid, _ := os.ReadFile(layout.StatePath)
+	if !bytes.Equal(before, afterInvalid) {
+		t.Fatal("invalid reconciliation mutated durable state")
+	}
+	request.Parameters[1].Value = "true"
+	reconciled, err := newKernel.Handle(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reconciled.Receipt == nil || reconciled.Receipt.ProgramFingerprint != newProgram.Fingerprint() || reconciled.Snapshot == nil || reconciled.Snapshot.Program.Value != model.ProgramCurrent {
+		t.Fatalf("reconciliation did not establish exact program identity: %#v", reconciled)
+	}
+}
+
+func TestReferenceExtensionUsesKernelAdmissionVerificationAndReceiptPath(t *testing.T) {
+	// control-law: extension-obligation-cannot-be-terminal-before-verified-kernel-receipt
+	ctx := context.Background()
+	repository := testRepository(t)
+	if err := os.MkdirAll(filepath.Join(repository, "release-notes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, "release-notes", "extension.md"), []byte("### Extension\n\nVerifiable user impact.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	program, err := control.Compile(ctx, control.CompileRequest{
+		KernelVersion: boatstack.Version, Core: core.System(), Flow: standard.Definition(), Extensions: []control.Extension{releasenote.Definition()},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kernel, err := boatstack.NewKernel(t.TempDir(), program)
+	if err != nil {
+		t.Fatal(err)
+	}
+	goal := model.Goal{ID: "extension-receipt", Kind: model.GoalOpenPR, DeliveryID: "extension-receipt"}
+	now := time.Now().UTC()
+	authority := func(class catalog.AuthorityClass) protocol.AuthorityBundle {
+		fingerprint, subject := "explicit-human", "integration"
+		if class == catalog.AuthorityRepository {
+			subject = filepath.Join(repository, ".boatstack", "project.json")
+			raw, readErr := os.ReadFile(subject)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			fingerprint = configFingerprint(t, raw)
+		}
+		return protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{
+			ID: "extension-" + string(class), Class: class, Subject: subject, Fingerprint: fingerprint,
+			IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
+		}}}
+	}
+	apply := func(id catalog.TransitionID, authorization protocol.AuthorityBundle, parameters protocol.Parameters) surfaces.Response {
+		t.Helper()
+		response, applyErr := kernel.Handle(ctx, surfaces.Request{
+			SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationApply, Repository: repository, Host: "cli",
+			CorrelationID: "extension-" + string(id), FlowID: "flow-extension-receipt", Goal: goal, TransitionID: id,
+			Authority: authorization, Parameters: parameters,
+		})
+		if applyErr != nil {
+			t.Fatalf("apply %s: %v", id, applyErr)
+		}
+		return response
+	}
+	executable, _ := os.Executable()
+	executable, _ = filepath.Abs(executable)
+	executable, _ = filepath.EvalSymlinks(executable)
+	runtimeRaw, _ := os.ReadFile(executable)
+	configPath := filepath.Join(t.TempDir(), "project.json")
+	configRaw := []byte("{\"schema_version\":2,\"project\":{\"name\":\"extension\",\"default_branch\":\"main\",\"commands\":{\"build\":\"go version\",\"test\":\"go version\"}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
+	if err := os.WriteFile(configPath, configRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	apply("installation.initialize", authority(catalog.AuthorityHuman), protocol.Parameters{
+		{Name: "source_revision", Value: "extension-fixture"}, {Name: "runtime_path", Value: executable}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
+		{Name: "config_path", Value: configPath}, {Name: "config_sha256", Value: configFingerprint(t, configRaw)},
+	})
+	apply("engagement.begin", authority(catalog.AuthorityRepository), nil)
+	planPath := filepath.Join(t.TempDir(), "plan.md")
+	planRaw := []byte("# Extension plan\n")
+	if err := os.WriteFile(planPath, planRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	apply("plan.create", authority(catalog.AuthorityHuman), protocol.Parameters{{Name: "source_path", Value: planPath}, {Name: "delivery_id", Value: goal.DeliveryID}})
+	apply("plan.validate", authority(catalog.AuthorityRepository), nil)
+	apply("plan.approve", authority(catalog.AuthorityHuman), protocol.Parameters{{Name: "plan_fingerprint", Value: digestBytes(planRaw)}, {Name: "actor", Value: "integration"}})
+	apply("plan.activate", authority(catalog.AuthorityHuman), nil)
+	head := strings.TrimSpace(commandOutput(t, repository, "git", "rev-parse", "HEAD"))
+	gate := func(name string) protocol.Parameters {
+		raw, marshalErr := json.Marshal(map[string]any{"schema_version": 1, "gate": name, "source_revision": head, "outcome": "passed", "producer": "integration", "completed_at": now})
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		path := filepath.Join(t.TempDir(), name+".json")
+		if err := os.WriteFile(path, raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return protocol.Parameters{{Name: "source_revision", Value: head}, {Name: "evidence_path", Value: path}, {Name: "evidence_fingerprint", Value: digestBytes(raw)}}
+	}
+	apply("gate.build.record", authority(catalog.AuthorityRepository), gate("build"))
+	apply("gate.test.record", authority(catalog.AuthorityRepository), gate("test"))
+	beforeExtension := apply("gate.review.record", authority(catalog.AuthorityRepository), gate("review"))
+	if beforeExtension.Snapshot == nil || beforeExtension.Snapshot.ExtensionFacts[releasenote.FactID].Value != "missing" {
+		t.Fatalf("extension obligation disappeared before receipt: %#v", beforeExtension.Snapshot)
+	}
+	next, err := kernel.Handle(ctx, surfaces.Request{
+		SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationResolve, Repository: repository, Host: "cli",
+		CorrelationID: "extension-next", Goal: goal, Authority: authority(catalog.AuthorityRepository),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Decision == nil || next.Decision.Kind != supervisor.DecisionPrescribed || next.Decision.Transition == nil || next.Decision.Transition.ID != releasenote.Transition {
+		t.Fatalf("unmet extension obligation decision = %#v", next.Decision)
+	}
+	completed := apply(releasenote.Transition, authority(catalog.AuthorityRepository), nil)
+	if completed.Receipt == nil || completed.Receipt.TransitionID != releasenote.Transition || completed.Receipt.ProgramFingerprint != program.Fingerprint() ||
+		completed.Snapshot == nil || completed.Snapshot.ExtensionFacts[releasenote.FactID].Value != "verified" {
+		t.Fatalf("extension did not traverse verified receipt path: %#v", completed)
+	}
+	after, err := kernel.Handle(ctx, surfaces.Request{
+		SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationResolve, Repository: repository, Host: "cli",
+		CorrelationID: "extension-after", Goal: goal, Authority: authority(catalog.AuthorityRepository),
+	})
+	if err != nil || after.Decision == nil {
+		t.Fatalf("verified extension did not return control to PrimaryFlow: %#v error=%v", after.Decision, err)
+	}
+	if after.Decision.Transition != nil && after.Decision.Transition.Origin.Kind == catalog.OriginExtension {
+		t.Fatalf("verified extension remained selectable: %#v", after.Decision)
+	}
+	for _, candidate := range after.Decision.Candidates {
+		if candidate == releasenote.Transition {
+			t.Fatalf("verified extension remained a frontier candidate: %#v", after.Decision)
+		}
+	}
+}
+
 func TestConcreteWorkflowPreservesConfigurationProofAndGoalTerminals(t *testing.T) {
 	// control-law: successful-writes-remain-independently-verifiable-and-goal-specific
 	ctx := context.Background()
@@ -217,7 +477,7 @@ func TestConcreteWorkflowPreservesConfigurationProofAndGoalTerminals(t *testing.
 	journal, _ := effects.NewJournal(resolver, clock)
 	receipts, _ := effects.NewReceiptStore(resolver, clock)
 	driver, _ := effects.NewDriver(resolver, clock, effects.NewNativeBoundary())
-	kernel, err := engine.New(catalog.Default(), observer, clock, locker, journal, driver, receipts)
+	kernel, err := engine.New(testprogram.StandardRegistry(), testGoalContracts(), testProgramFingerprint, observer, clock, locker, journal, driver, receipts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -360,7 +620,7 @@ func TestWorkspaceCutTransfersAuthorityToExactDestinationWorktree(t *testing.T) 
 	journal, _ := effects.NewJournal(resolver, clock)
 	receipts, _ := effects.NewReceiptStore(resolver, clock)
 	driver, _ := effects.NewDriver(resolver, clock, effects.NewNativeBoundary())
-	kernel, err := engine.New(catalog.Default(), observer, clock, locker, journal, driver, receipts)
+	kernel, err := engine.New(testprogram.StandardRegistry(), testGoalContracts(), testProgramFingerprint, observer, clock, locker, journal, driver, receipts)
 	if err != nil {
 		t.Fatal(err)
 	}

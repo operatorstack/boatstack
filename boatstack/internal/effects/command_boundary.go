@@ -133,7 +133,7 @@ func (b NativeBoundary) Execute(ctx context.Context, admission protocol.Admissio
 		if err != nil {
 			return settled, err
 		}
-		gate, _ := catalog.GateName(transition.ID)
+		gate, _ := standardGateName(transition.ID)
 		command := strings.TrimSpace(config.Project.Commands[gate])
 		if command == "" {
 			return settled, fmt.Errorf("repository configuration has no %s command", gate)

@@ -14,6 +14,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  component:
+    name: component-${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: kernel-mechanism
+            packages: ./internal/kernel/model ./internal/kernel/catalog ./internal/kernel/supervisor ./internal/kernel/engine
+          - name: control-program-compiler
+            packages: ./control ./core
+          - name: standard-flow
+            packages: ./flow/standard ./internal/kernel/protocol
+          - name: extension-conformance
+            packages: ./extension/... ./distribution
+          - name: surface-parity
+            packages: ./internal/surfaces ./sdk ./cmd/boatstack-helper
+          - name: plant-integration
+            packages: ./internal/plant ./internal/effects
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: boatstack/go.mod
+          cache-dependency-path: boatstack/go.sum
+      - name: Test ${{ matrix.name }}
+        working-directory: boatstack
+        run: go test ${{ matrix.packages }}
+
   # Unix runs the full suite serially (~1-2 min) and is the unsharded correctness
   # reference. Windows is sharded in `test-windows` (see below).
   test:

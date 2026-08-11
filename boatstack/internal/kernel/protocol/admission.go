@@ -16,6 +16,7 @@ type Admission struct {
 	ID                  string                  `json:"id"`
 	TransitionID        catalog.TransitionID    `json:"transition_id"`
 	TransitionVersion   int                     `json:"transition_version"`
+	ProgramFingerprint  string                  `json:"program_fingerprint"`
 	SnapshotFingerprint string                  `json:"snapshot_fingerprint"`
 	SourceRevision      string                  `json:"source_revision,omitempty"`
 	WorktreeFingerprint string                  `json:"worktree_fingerprint,omitempty"`
@@ -40,7 +41,7 @@ func NewAdmission(snapshot model.Snapshot, goal model.Goal, transition catalog.T
 	if err := goal.Validate(); err != nil {
 		return Admission{}, err
 	}
-	if snapshot.Fingerprint == "" || !transition.SourceMatches(snapshot) || !transition.SupportsGoal(goal) {
+	if snapshot.Fingerprint == "" || len(snapshot.ProgramFingerprint) != 64 || !transition.SourceMatches(snapshot) || !transition.SupportsGoal(goal) {
 		return Admission{}, fmt.Errorf("transition %q is not admissible from snapshot %q", transition.ID, snapshot.Fingerprint)
 	}
 	if lifetime <= 0 {
@@ -59,7 +60,7 @@ func NewAdmission(snapshot model.Snapshot, goal model.Goal, transition catalog.T
 		return Admission{}, err
 	}
 	sourceRevision, worktreeFingerprint := gitBinding(snapshot)
-	if transitionBindsSourceRevision(transition.ID) {
+	if transition.BindsSourceRevision {
 		declared, _ := parameters.Get("source_revision")
 		if sourceRevision == "" || worktreeFingerprint == "" || declared != sourceRevision {
 			return Admission{}, fmt.Errorf("transition %q must bind the current Git revision and worktree fingerprint", transition.ID)
@@ -76,7 +77,7 @@ func NewAdmission(snapshot model.Snapshot, goal model.Goal, transition catalog.T
 	}
 	a := Admission{
 		SchemaVersion: AdmissionSchemaVersion, TransitionID: transition.ID, TransitionVersion: transition.Version,
-		SnapshotFingerprint: snapshot.Fingerprint, SourceRevision: sourceRevision, WorktreeFingerprint: worktreeFingerprint,
+		ProgramFingerprint: snapshot.ProgramFingerprint, SnapshotFingerprint: snapshot.Fingerprint, SourceRevision: sourceRevision, WorktreeFingerprint: worktreeFingerprint,
 		SourcePhase: snapshot.Phase.Value, Invocation: snapshot.Invocation, Goal: goal, Authority: authority.canonical(),
 		Evidence: append([]string(nil), transition.RequiredEvidence...), Parameters: parameters.Canonical(), IssuedAt: now.UTC(), ExpiresAt: now.Add(lifetime).UTC(),
 	}
@@ -113,6 +114,9 @@ func (a Admission) ValidateCurrent(snapshot model.Snapshot, goal model.Goal, tra
 	if a.SnapshotFingerprint != snapshot.Fingerprint {
 		return fmt.Errorf("admission %q is stale: snapshot changed", a.ID)
 	}
+	if a.ProgramFingerprint != snapshot.ProgramFingerprint {
+		return fmt.Errorf("admission %q is bound to a different control program", a.ID)
+	}
 	if snapshot.Phase.Status != model.FactKnown || a.SourcePhase != snapshot.Phase.Value {
 		return fmt.Errorf("admission %q is bound to a different source phase", a.ID)
 	}
@@ -141,7 +145,7 @@ func (a Admission) ValidateCurrent(snapshot model.Snapshot, goal model.Goal, tra
 	if a.SourceRevision != sourceRevision || a.WorktreeFingerprint != worktreeFingerprint {
 		return fmt.Errorf("admission %q Git binding changed", a.ID)
 	}
-	if transitionBindsSourceRevision(transition.ID) {
+	if transition.BindsSourceRevision {
 		declared, _ := a.Parameters.Get("source_revision")
 		if declared != sourceRevision || sourceRevision == "" || worktreeFingerprint == "" {
 			return fmt.Errorf("admission %q is not bound to the current Git revision", a.ID)
@@ -167,11 +171,6 @@ func gitBinding(snapshot model.Snapshot) (string, string) {
 	return "", ""
 }
 
-func transitionBindsSourceRevision(id catalog.TransitionID) bool {
-	value := string(id)
-	return strings.HasPrefix(value, "gate.") || id == "evidence.visual.attach" || id == "delivery.slice.advance"
-}
-
 func validateRecoveryPermission(snapshot model.Snapshot, transition catalog.Transition) error {
 	if transition.Class != catalog.EventRecovery {
 		return nil
@@ -189,13 +188,8 @@ func validateRecoveryPermission(snapshot model.Snapshot, transition catalog.Tran
 
 func validateProviderAuthorityBinding(authority AuthorityBundle, transition catalog.Transition, parameters Parameters) error {
 	var expected string
-	switch transition.ID {
-	case "publication.execute":
-		expected, _ = parameters.Get("preview_fingerprint")
-	case "publication.correct":
-		expected, _ = parameters.Get("body_sha256")
-	case "publication.reconcile":
-		expected, _ = parameters.Get("publication_id")
+	if transition.AuthorityFingerprintParameter != "" {
+		expected, _ = parameters.Get(transition.AuthorityFingerprintParameter)
 	}
 	for _, receipt := range authority.Receipts {
 		if receipt.Class != catalog.AuthorityProvider {
@@ -224,8 +218,7 @@ func validatePolicyAuthority(snapshot model.Snapshot, transition catalog.Transit
 			return fmt.Errorf("transition %q is unavailable to disabled host %q", transition.ID, snapshot.Invocation.Host)
 		}
 	}
-	requiresPolicy := transition.ID == "plan.approve" || transition.ID == "plan.approve-amendment" ||
-		transition.ID == "gate.review.record" || transition.ID == "evidence.visual.attach"
+	requiresPolicy := transition.Policy.RequiredWhen != "" || transition.Policy.AuthorityRule != "" || transition.Policy.AvailabilityRule != ""
 	if !requiresPolicy {
 		return nil
 	}
@@ -233,13 +226,13 @@ func validatePolicyAuthority(snapshot model.Snapshot, transition catalog.Transit
 		return fmt.Errorf("transition %q requires known configuration policy", transition.ID)
 	}
 	policy := snapshot.ConfigurationPolicy.Value
-	if transition.ID == "evidence.visual.attach" && policy.VisualEvidence == "off" {
+	if transition.Policy.AvailabilityRule == "visual-evidence-enabled" && policy.VisualEvidence == "off" {
 		return fmt.Errorf("transition %q is disabled by repository policy", transition.ID)
 	}
-	if (transition.ID == "plan.approve" || transition.ID == "plan.approve-amendment") && policy.PlanApproval == "human" && !authority[catalog.AuthorityHuman] {
+	if transition.Policy.AuthorityRule == "plan-approval" && policy.PlanApproval == "human" && !authority[catalog.AuthorityHuman] {
 		return fmt.Errorf("transition %q requires human approval under repository policy", transition.ID)
 	}
-	if transition.ID == "gate.review.record" && policy.IndependentReviewForHighRisk && policy.HighRiskChange && !authority[catalog.AuthorityHuman] {
+	if transition.Policy.AuthorityRule == "independent-high-risk-review" && policy.IndependentReviewForHighRisk && policy.HighRiskChange && !authority[catalog.AuthorityHuman] {
 		return fmt.Errorf("transition %q requires independent human review for a high-risk change", transition.ID)
 	}
 	return nil
@@ -265,7 +258,7 @@ func validateAuthorityEvidence(snapshot model.Snapshot, authority AuthorityBundl
 }
 
 func (a Admission) ValidateIdentity() error {
-	if a.SchemaVersion != AdmissionSchemaVersion || a.ID == "" || a.TransitionID == "" || a.TransitionVersion < 1 || a.SnapshotFingerprint == "" || !a.SourcePhase.Valid() || a.IdempotencyKey == "" || a.IssuedAt.IsZero() || a.ExpiresAt.Before(a.IssuedAt) {
+	if a.SchemaVersion != AdmissionSchemaVersion || a.ID == "" || a.TransitionID == "" || a.TransitionVersion < 1 || len(a.ProgramFingerprint) != 64 || a.SnapshotFingerprint == "" || !a.SourcePhase.Valid() || a.IdempotencyKey == "" || a.IssuedAt.IsZero() || a.ExpiresAt.Before(a.IssuedAt) {
 		return fmt.Errorf("admission: invalid schema, identity, source, or lifetime")
 	}
 	if err := a.Invocation.Validate(true); err != nil {

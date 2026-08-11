@@ -25,6 +25,7 @@ type State struct {
 	RepositoryID          string                   `json:"repository_id"`
 	GitCommonID           string                   `json:"git_common_id"`
 	WorktreeID            string                   `json:"worktree_id"`
+	ProgramFingerprint    string                   `json:"program_fingerprint,omitempty"`
 	Revision              uint64                   `json:"revision"`
 	Phase                 model.ProtocolPhase      `json:"phase"`
 	Engagement            model.EngagementState    `json:"engagement"`
@@ -87,6 +88,9 @@ func (s State) Validate() error {
 	}
 	if s.RepositoryID == "" || s.GitCommonID == "" || s.WorktreeID == "" || s.Revision == 0 || s.UpdatedAt.IsZero() {
 		return fmt.Errorf("durable state identity, revision, and update time are required")
+	}
+	if s.ProgramFingerprint != "" && len(s.ProgramFingerprint) != 64 {
+		return fmt.Errorf("durable state has invalid program fingerprint")
 	}
 	if !s.Phase.Valid() || !s.Engagement.Valid() || !s.Delivery.Valid() || !s.Workspace.Valid() || !s.Plan.Valid() ||
 		!s.Configuration.Valid() || !s.Runtime.Valid() || !s.Publication.Valid() || !s.Verification.Valid() ||

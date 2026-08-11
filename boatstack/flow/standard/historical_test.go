@@ -1,6 +1,7 @@
-package catalog_test
+package standard_test
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -11,10 +12,24 @@ import (
 	"testing"
 	"time"
 
+	"github.com/operatorstack/boatstack/boatstack/flow/standard"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/supervisor"
+	"github.com/operatorstack/boatstack/boatstack/internal/testprogram"
 )
+
+func historicalGoalContracts() catalog.GoalContracts {
+	manifest, err := standard.Definition().FlowManifest(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	contracts, err := catalog.NewGoalContracts(manifest.GoalContracts, nil)
+	if err != nil {
+		panic(err)
+	}
+	return contracts
+}
 
 type historicalCorpus struct {
 	SchemaVersion int                 `json:"schema_version"`
@@ -39,7 +54,7 @@ type historicalFixture struct {
 
 func loadHistoricalCorpus(t *testing.T) historicalCorpus {
 	t.Helper()
-	raw, err := os.ReadFile("../../../testdata/v2-scenarios/historical.json")
+	raw, err := os.ReadFile("../../testdata/v2-scenarios/historical.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,8 +115,8 @@ func authoritySet(values []catalog.AuthorityClass) catalog.AuthoritySet {
 func TestHistoricalFailureCorpusUsesTheRuntimeControlLaw(t *testing.T) {
 	// control-law: historical failures bind to executable catalog predicates
 	corpus := loadHistoricalCorpus(t)
-	registry := catalog.Default()
-	control := supervisor.New(registry)
+	registry := testprogram.StandardRegistry()
+	control := supervisor.New(registry, historicalGoalContracts())
 	seenNames := map[string]bool{}
 	for _, fixture := range corpus.Fixtures {
 		fixture := fixture

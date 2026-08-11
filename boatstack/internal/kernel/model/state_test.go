@@ -106,6 +106,7 @@ func TestEveryControllingFacetChangesCanonicalIdentity(t *testing.T) {
 	evidence := testEvidence()
 	mutations := map[FacetName]func(*Observation){
 		FacetPhase:         func(o *Observation) { o.Phase = Known(PhaseActive, evidence) },
+		FacetProgram:       func(o *Observation) { o.Program = Known(ProgramCurrent, evidence) },
 		FacetTopology:      func(o *Observation) { o.Invocation.Topology = TopologyDetached },
 		FacetEngagement:    func(o *Observation) { o.Engagement = Known(EngagementCommand, evidence) },
 		FacetDelivery:      func(o *Observation) { o.Delivery = Known(DeliveryApproved, evidence) },

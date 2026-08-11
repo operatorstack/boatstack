@@ -1,13 +1,29 @@
-package supervisor
+package standard_test
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/operatorstack/boatstack/boatstack/flow/standard"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
+	. "github.com/operatorstack/boatstack/boatstack/internal/kernel/supervisor"
+	"github.com/operatorstack/boatstack/boatstack/internal/testprogram"
 )
+
+func testGoalContracts() catalog.GoalContracts {
+	manifest, err := standard.Definition().FlowManifest(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	contracts, err := catalog.NewGoalContracts(manifest.GoalContracts, nil)
+	if err != nil {
+		panic(err)
+	}
+	return contracts
+}
 
 func snapshotFor(t *testing.T, phase model.ProtocolPhase, terminal model.TerminalStatus) model.Snapshot {
 	t.Helper()
@@ -73,7 +89,7 @@ func openPRSnapshot(t *testing.T, recordedGates ...string) (model.Snapshot, mode
 
 func TestTerminalGoalOutranksLocalTransitions(t *testing.T) {
 	// control-law: configured-terminal-outranks-local-lifecycle
-	s := New(catalog.Default())
+	s := New(testprogram.StandardRegistry(), testGoalContracts())
 	decision := s.Resolve(snapshotFor(t, model.PhaseTerminal, model.TerminalEstablished), goalFor(), catalog.AuthoritySet{catalog.AuthorityRepository: true}, "")
 	if decision.Kind != DecisionTerminal || decision.Transition != nil {
 		t.Fatalf("decision = %#v, want terminal without transition", decision)
@@ -89,7 +105,7 @@ func TestExplicitPostTerminalCleanupRemainsAdmissible(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	decision := New(catalog.Default()).Resolve(canonical, goalFor(), catalog.AuthoritySet{catalog.AuthorityHuman: true}, "workspace.cleanup")
+	decision := New(testprogram.StandardRegistry(), testGoalContracts()).Resolve(canonical, goalFor(), catalog.AuthoritySet{catalog.AuthorityHuman: true}, "workspace.cleanup")
 	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "workspace.cleanup" {
 		t.Fatalf("decision = %#v, want explicit post-terminal cleanup", decision)
 	}
@@ -97,7 +113,7 @@ func TestExplicitPostTerminalCleanupRemainsAdmissible(t *testing.T) {
 
 func TestTerminalEvidenceForOldGoalDoesNotTerminateNewGoal(t *testing.T) {
 	// control-law: terminal-evidence-is-bound-to-exact-goal-not-local-phase
-	s := New(catalog.Default())
+	s := New(testprogram.StandardRegistry(), testGoalContracts())
 	newGoal := model.Goal{ID: "next-goal", Kind: model.GoalOpenPR, DeliveryID: "delivery"}
 	decision := s.Resolve(snapshotFor(t, model.PhaseTerminal, model.TerminalEstablished), newGoal, catalog.AuthoritySet{catalog.AuthorityHuman: true}, "goal.configure")
 	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "goal.configure" {
@@ -111,14 +127,14 @@ func TestUntargetedResolutionReconfiguresDifferentGoalAndSkipsSatisfiedGoal(t *t
 	authority := catalog.AuthoritySet{catalog.AuthorityHuman: true, catalog.AuthorityRepository: true}
 
 	newGoal := model.Goal{ID: "new-goal", Kind: model.GoalOpenPR, DeliveryID: "delivery"}
-	decision := New(catalog.Default()).Resolve(snapshot, newGoal, authority, "")
+	decision := New(testprogram.StandardRegistry(), testGoalContracts()).Resolve(snapshot, newGoal, authority, "")
 	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "goal.configure" {
 		t.Fatalf("different-goal decision = %#v, want goal.configure", decision)
 	}
 
 	snapshot.Plan = model.Known(model.PlanValid, snapshot.Plan.Evidence[0])
 	snapshot = recanonicalize(t, snapshot)
-	decision = New(catalog.Default()).Resolve(snapshot, goalFor(), authority, "")
+	decision = New(testprogram.StandardRegistry(), testGoalContracts()).Resolve(snapshot, goalFor(), authority, "")
 	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "plan.approve" {
 		t.Fatalf("exact-goal decision = %#v, want plan.approve without goal.configure stutter", decision)
 	}
@@ -132,17 +148,43 @@ func TestUntargetedResolutionExcludesExplicitControlTransitions(t *testing.T) {
 	snapshot = recanonicalize(t, snapshot)
 	authority := catalog.AuthoritySet{catalog.AuthorityHuman: true, catalog.AuthorityRepository: true}
 
-	decision := New(catalog.Default()).Resolve(snapshot, goalFor(), authority, "")
+	decision := New(testprogram.StandardRegistry(), testGoalContracts()).Resolve(snapshot, goalFor(), authority, "")
 	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "gate.build.record" {
 		t.Fatalf("untargeted decision = %#v, want gate.build.record", decision)
 	}
-	decision = New(catalog.Default()).Resolve(snapshot, goalFor(), authority, "plan.invalidate")
+	decision = New(testprogram.StandardRegistry(), testGoalContracts()).Resolve(snapshot, goalFor(), authority, "plan.invalidate")
 	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "plan.invalidate" {
 		t.Fatalf("explicit invalidation decision = %#v, want requested plan.invalidate", decision)
 	}
-	decision = New(catalog.Default()).Resolve(snapshot, goalFor(), authority, "delivery.slice.advance")
+	decision = New(testprogram.StandardRegistry(), testGoalContracts()).Resolve(snapshot, goalFor(), authority, "delivery.slice.advance")
 	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "delivery.slice.advance" {
 		t.Fatalf("explicit slice-marker decision = %#v, want requested delivery.slice.advance", decision)
+	}
+}
+
+func TestSelectionClassOutranksComponentLocalPriority(t *testing.T) {
+	// control-law: bounded-selection-class-prevents-lower-layer-priority-inversion
+	transitions := testprogram.StandardRegistry().All()
+	for index := range transitions {
+		switch transitions[index].ID {
+		case "gate.build.record":
+			transitions[index].SelectionClass = catalog.SelectionGoalRequired
+			transitions[index].Priority = 999
+		case "gate.test.record":
+			transitions[index].SelectionClass = catalog.SelectionFlowProgress
+			transitions[index].Priority = 1
+		}
+	}
+	registry, err := catalog.New(transitions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := snapshotFor(t, model.PhaseActive, model.TerminalNonterminal)
+	snapshot.Plan = model.Known(model.PlanLocked, snapshot.Plan.Evidence[0])
+	snapshot = recanonicalize(t, snapshot)
+	decision := New(registry, testGoalContracts()).Resolve(snapshot, goalFor(), catalog.AuthoritySet{catalog.AuthorityRepository: true}, "")
+	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "gate.build.record" {
+		t.Fatalf("decision = %#v, want higher selection class despite lower-layer numeric priority", decision)
 	}
 }
 
@@ -153,7 +195,7 @@ func TestUntargetedResolutionUsesCurrentGateEvidenceForProgress(t *testing.T) {
 	snapshot.Publication = model.Known(model.PublicationNone, snapshot.Publication.Evidence[0])
 	snapshot = recanonicalize(t, snapshot)
 
-	decision := New(catalog.Default()).Resolve(snapshot, goal, authority, "")
+	decision := New(testprogram.StandardRegistry(), testGoalContracts()).Resolve(snapshot, goal, authority, "")
 	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "gate.test.record" {
 		t.Fatalf("one-gate decision = %#v, want gate.test.record", decision)
 	}
@@ -161,7 +203,7 @@ func TestUntargetedResolutionUsesCurrentGateEvidenceForProgress(t *testing.T) {
 	snapshot, goal = openPRSnapshot(t, "build", "test", "review")
 	snapshot.Publication = model.Known(model.PublicationNone, snapshot.Publication.Evidence[0])
 	snapshot = recanonicalize(t, snapshot)
-	decision = New(catalog.Default()).Resolve(snapshot, goal, authority, "")
+	decision = New(testprogram.StandardRegistry(), testGoalContracts()).Resolve(snapshot, goal, authority, "")
 	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "publication.preview" {
 		t.Fatalf("complete-gates decision = %#v, want publication.preview", decision)
 	}
@@ -170,7 +212,7 @@ func TestUntargetedResolutionUsesCurrentGateEvidenceForProgress(t *testing.T) {
 func TestUntargetedResolutionStopsAtSelectedProviderBoundary(t *testing.T) {
 	// control-law: unavailable-authority-cannot-be-skipped-for-a-lower-priority-effect
 	snapshot, goal := openPRSnapshot(t, "build", "test", "review")
-	supervisor := New(catalog.Default())
+	supervisor := New(testprogram.StandardRegistry(), testGoalContracts())
 	authority := catalog.AuthoritySet{catalog.AuthorityHuman: true, catalog.AuthorityRepository: true}
 
 	decision := supervisor.Resolve(snapshot, goal, authority, "")
@@ -186,7 +228,7 @@ func TestUntargetedResolutionStopsAtSelectedProviderBoundary(t *testing.T) {
 
 func TestRequestedTransitionRequiresExactAuthority(t *testing.T) {
 	// control-law: useful-action-is-not-effect-authority
-	s := New(catalog.Default())
+	s := New(testprogram.StandardRegistry(), testGoalContracts())
 	decision := s.Resolve(snapshotFor(t, model.PhaseActive, model.TerminalNonterminal), goalFor(), catalog.AuthoritySet{catalog.AuthorityRepository: true}, "plan.approve")
 	if decision.Kind != DecisionFrontier {
 		t.Fatalf("decision = %s, want FRONTIER", decision.Kind)
@@ -196,7 +238,7 @@ func TestRequestedTransitionRequiresExactAuthority(t *testing.T) {
 func TestPlanApprovalPolicyDistinguishesHumanFromAutonomyAuthority(t *testing.T) {
 	snapshot := snapshotFor(t, model.PhaseActive, model.TerminalNonterminal)
 	autonomy := catalog.AuthoritySet{catalog.AuthorityAutonomy: true}
-	decision := New(catalog.Default()).Resolve(snapshot, goalFor(), autonomy, "plan.approve")
+	decision := New(testprogram.StandardRegistry(), testGoalContracts()).Resolve(snapshot, goalFor(), autonomy, "plan.approve")
 	if decision.Kind != DecisionFrontier {
 		t.Fatalf("human-only policy decision = %#v, want FRONTIER", decision)
 	}
@@ -205,7 +247,7 @@ func TestPlanApprovalPolicyDistinguishesHumanFromAutonomyAuthority(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	decision = New(catalog.Default()).Resolve(snapshot, goalFor(), autonomy, "plan.approve")
+	decision = New(testprogram.StandardRegistry(), testGoalContracts()).Resolve(snapshot, goalFor(), autonomy, "plan.approve")
 	if decision.Kind != DecisionPrescribed {
 		t.Fatalf("autonomy-enabled policy decision = %#v, want PRESCRIBED", decision)
 	}
@@ -218,7 +260,7 @@ func TestDisabledHostCannotRequestManagedTransition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	decision := New(catalog.Default()).Resolve(snapshot, goalFor(), catalog.AuthoritySet{catalog.AuthorityHuman: true}, "plan.approve")
+	decision := New(testprogram.StandardRegistry(), testGoalContracts()).Resolve(snapshot, goalFor(), catalog.AuthoritySet{catalog.AuthorityHuman: true}, "plan.approve")
 	if decision.Kind != DecisionRefused {
 		t.Fatalf("disabled host decision = %#v, want REFUSED", decision)
 	}
@@ -233,7 +275,7 @@ func TestHighRiskReviewPolicyRequiresHumanAuthority(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	supervisor := New(catalog.Default())
+	supervisor := New(testprogram.StandardRegistry(), testGoalContracts())
 	decision := supervisor.Resolve(snapshot, goalFor(), catalog.AuthoritySet{catalog.AuthorityRepository: true}, "gate.review.record")
 	if decision.Kind != DecisionFrontier {
 		t.Fatalf("repository-only high-risk review = %#v, want FRONTIER", decision)
@@ -251,7 +293,7 @@ func TestVisualEvidenceOffRefusesAttachment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	decision := New(catalog.Default()).Resolve(snapshot, goalFor(), catalog.AuthoritySet{catalog.AuthorityHuman: true}, "evidence.visual.attach")
+	decision := New(testprogram.StandardRegistry(), testGoalContracts()).Resolve(snapshot, goalFor(), catalog.AuthoritySet{catalog.AuthorityHuman: true}, "evidence.visual.attach")
 	if decision.Kind != DecisionRefused {
 		t.Fatalf("visual-off decision = %#v, want REFUSED", decision)
 	}
@@ -259,7 +301,7 @@ func TestVisualEvidenceOffRefusesAttachment(t *testing.T) {
 
 func TestRecoveryModeOnlyPrescribesRecoveryTransition(t *testing.T) {
 	// control-law: recovery-outranks-slice-position
-	s := New(catalog.Default())
+	s := New(testprogram.StandardRegistry(), testGoalContracts())
 	decision := s.Resolve(snapshotFor(t, model.PhaseRecovery, model.TerminalNonterminal), goalFor(), catalog.AuthoritySet{catalog.AuthorityRepository: true}, "recovery.resume")
 	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.Class != catalog.EventRecovery {
 		t.Fatalf("decision = %#v, want a recovery prescription", decision)
@@ -268,7 +310,7 @@ func TestRecoveryModeOnlyPrescribesRecoveryTransition(t *testing.T) {
 
 func TestRecoveryModeRejectsARecoveryEventOutsideExactJournalContract(t *testing.T) {
 	snapshot := snapshotFor(t, model.PhaseRecovery, model.TerminalNonterminal)
-	decision := New(catalog.Default()).Resolve(snapshot, goalFor(), catalog.AuthoritySet{catalog.AuthorityHuman: true}, "recovery.rollback")
+	decision := New(testprogram.StandardRegistry(), testGoalContracts()).Resolve(snapshot, goalFor(), catalog.AuthoritySet{catalog.AuthorityHuman: true}, "recovery.rollback")
 	if decision.Kind != DecisionRefused {
 		t.Fatalf("unpermitted recovery decision = %#v, want REFUSED", decision)
 	}
@@ -276,7 +318,7 @@ func TestRecoveryModeRejectsARecoveryEventOutsideExactJournalContract(t *testing
 
 func TestUncontrollableEventCannotBeRequested(t *testing.T) {
 	// control-law: surfaces-cannot-assert-external-facts
-	s := New(catalog.Default())
+	s := New(testprogram.StandardRegistry(), testGoalContracts())
 	decision := s.Resolve(snapshotFor(t, model.PhaseActive, model.TerminalNonterminal), goalFor(), catalog.AuthoritySet{catalog.AuthorityRepository: true}, "external.pr-merged")
 	if decision.Kind != DecisionRefused {
 		t.Fatalf("decision = %s, want REFUSED", decision.Kind)
@@ -284,13 +326,13 @@ func TestUncontrollableEventCannotBeRequested(t *testing.T) {
 }
 
 func TestGuardDeniesDestructionAndRoutesManagedBypassThroughAdmission(t *testing.T) {
-	s := New(catalog.Default())
+	s := New(testprogram.StandardRegistry(), testGoalContracts())
 	snapshot := snapshotFor(t, model.PhaseActive, model.TerminalNonterminal)
 	destructive := s.Guard(snapshot, CommandIntent{Class: IntentDestructive, Operation: "git.reset-hard", Fingerprint: "fingerprint"})
 	if destructive.Allowed {
 		t.Fatal("destructive command was allowed")
 	}
-	managed := s.Guard(snapshot, CommandIntent{Class: IntentManagedBypass, Operation: "publication.push", Fingerprint: "fingerprint", Transition: "publication.execute"})
+	managed := s.Guard(snapshot, CommandIntent{Class: IntentManagedBypass, Operation: "publication.push", Fingerprint: "fingerprint"})
 	if managed.Allowed || managed.RequiredTransition != "publication.execute" {
 		t.Fatalf("managed bypass decision = %#v", managed)
 	}

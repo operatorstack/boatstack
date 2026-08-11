@@ -23,7 +23,7 @@ hosts, trailing JSON, and missing required fields fail closed.
     "visual_evidence": "optional",
     "external_effect_authority": "human-or-autonomy-plus-provider"
   },
-  "hosts": ["cli", "cursor", "codex", "claude", "gemini", "mcp"]
+  "hosts": ["cli", "cursor", "codex", "claude", "gemini", "mcp", "sdk"]
 }
 ```
 
@@ -48,6 +48,37 @@ until a revision-bound `evidence.visual.attach` receipt exists, while `off`
 refuses attachment. A host omitted from `hosts` cannot request managed
 transitions. If the configured default branch cannot be inspected, the
 high-risk derivation fails closed whenever that policy is active.
+
+## Optional additive extensions
+
+Repository configuration may enable checksum-bound subprocess extensions, but
+it cannot select or replace the trusted primary flow:
+
+```json
+{
+  "extensions": [
+    {
+      "id": "example.security",
+      "version": "1.0.0",
+      "executable": "/absolute/symlink-free/path/security-extension",
+      "sha256": "<64 lowercase hexadecimal characters>",
+      "settings": {"profile": "strict"},
+      "deadline_millis": 5000,
+      "stdout_bytes": 1048576,
+      "stderr_bytes": 65536
+    }
+  ]
+}
+```
+
+The executable is invoked directly without a shell, receives only the bounded
+versioned JSON protocol and fixed locale variables, and is re-hashed before
+every invocation. Crossing either output bound cancels the subprocess
+immediately and fails the operation closed. It is a trusted executable
+boundary, not an OS sandbox.
+Changing its set, version, executable bytes, settings, or limits changes the
+ControlProgram fingerprint and therefore fails closed as program drift for an
+active flow.
 
 `project.commands` names the repository's canonical product checks. Build and
 test gate transitions execute those exact repository-owned commands inside the

@@ -26,6 +26,7 @@ type TransitionReceipt struct {
 	Sequence            uint64               `json:"sequence"`
 	TransitionID        catalog.TransitionID `json:"transition_id"`
 	TransitionVersion   int                  `json:"transition_version"`
+	ProgramFingerprint  string               `json:"program_fingerprint"`
 	AdmissionID         string               `json:"admission_id"`
 	GoalID              string               `json:"goal_id"`
 	GoalKind            model.GoalKind       `json:"goal_kind"`
@@ -61,7 +62,7 @@ func NewReceipt(flowID string, sequence uint64, admission Admission, transition 
 	}
 	receipt := TransitionReceipt{
 		SchemaVersion: ReceiptSchemaVersion, FlowID: flowID, Sequence: sequence, TransitionID: transition.ID,
-		TransitionVersion: transition.Version, AdmissionID: admission.ID, GoalID: admission.Goal.ID, GoalKind: admission.Goal.Kind, DeliveryID: admission.Goal.DeliveryID,
+		TransitionVersion: transition.Version, ProgramFingerprint: admission.ProgramFingerprint, AdmissionID: admission.ID, GoalID: admission.Goal.ID, GoalKind: admission.Goal.Kind, DeliveryID: admission.Goal.DeliveryID,
 		SourceFingerprint: admission.SnapshotFingerprint, TargetFingerprint: target.Fingerprint,
 		AuthorityClasses: classes, IdempotencyKey: admission.IdempotencyKey, Verifier: transition.Verifier,
 		Outcome: outcome, Recovery: transition.Interruption.Recovery, Terminal: terminal,
@@ -79,7 +80,7 @@ func NewReceipt(flowID string, sequence uint64, admission Admission, transition 
 }
 
 func (r TransitionReceipt) Validate() error {
-	if r.SchemaVersion != ReceiptSchemaVersion || r.ID == "" || r.FlowID == "" || r.Sequence == 0 || r.TransitionID == "" || r.TransitionVersion < 1 || r.AdmissionID == "" || r.GoalID == "" || !r.GoalKind.Valid() || r.DeliveryID == "" || r.SourceFingerprint == "" || r.TargetFingerprint == "" || r.IdempotencyKey == "" || r.Verifier == "" {
+	if r.SchemaVersion != ReceiptSchemaVersion || r.ID == "" || r.FlowID == "" || r.Sequence == 0 || r.TransitionID == "" || r.TransitionVersion < 1 || len(r.ProgramFingerprint) != 64 || r.AdmissionID == "" || r.GoalID == "" || !r.GoalKind.Valid() || r.DeliveryID == "" || r.SourceFingerprint == "" || r.TargetFingerprint == "" || r.IdempotencyKey == "" || r.Verifier == "" {
 		return fmt.Errorf("receipt has incomplete identity or evidence")
 	}
 	if r.StartedAt.IsZero() || r.CompletedAt.Before(r.StartedAt) || r.DurationNanoseconds != r.CompletedAt.Sub(r.StartedAt).Nanoseconds() {

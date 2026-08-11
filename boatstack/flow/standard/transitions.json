@@ -1,0 +1,6192 @@
+[
+  {
+    "id": "plan.create",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "FLOW_PROGRESS",
+    "class": "owned-local",
+    "source_phases": [
+      "OBSERVED",
+      "ACTIVE"
+    ],
+    "target_phases": [
+      "ACTIVE"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human",
+      "autonomy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:plan",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration",
+      "facet:runtime"
+    ],
+    "owned_resources": [
+      "plan"
+    ],
+    "effect": "plan.create",
+    "local_effects": [
+      "plan.create"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "source_path",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "delivery_id",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "plan.create",
+      "expected_postcondition": "predicate:target-phase:plan.create"
+    },
+    "source_predicate": "predicate:source-phase:plan.create",
+    "source_conditions": [
+      {
+        "facet": "plan",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "absent",
+          "invalid",
+          "stale"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal",
+          "stale"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:plan.create",
+    "target_predicate": "predicate:target-phase:plan.create",
+    "target_conditions": [
+      {
+        "facet": "plan",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "draft"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:plan.create",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:plan.create"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 35
+  },
+  {
+    "id": "plan.validate",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "FLOW_PROGRESS",
+    "class": "owned-local",
+    "source_phases": [
+      "OBSERVED",
+      "ACTIVE"
+    ],
+    "target_phases": [
+      "ACTIVE",
+      "FRONTIER"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "repository-policy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:plan",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration",
+      "facet:runtime"
+    ],
+    "owned_resources": [
+      "plan-evidence"
+    ],
+    "effect": "plan.validate",
+    "local_effects": [
+      "plan.validate"
+    ],
+    "idempotent": true,
+    "prescription": {
+      "operation": "plan.validate",
+      "expected_postcondition": "predicate:target-phase:plan.validate"
+    },
+    "source_predicate": "predicate:source-phase:plan.validate",
+    "source_conditions": [
+      {
+        "facet": "plan",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "draft"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal",
+          "stale"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:plan.validate",
+    "target_predicate": "predicate:target-phase:plan.validate",
+    "target_conditions": [
+      {
+        "facet": "plan",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "valid"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:plan.validate",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:plan.validate"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 40
+  },
+  {
+    "id": "plan.approve",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "FLOW_PROGRESS",
+    "class": "authority",
+    "source_phases": [
+      "ACTIVE",
+      "FRONTIER"
+    ],
+    "target_phases": [
+      "ACTIVE",
+      "TERMINAL"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human",
+      "autonomy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:plan",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration",
+      "facet:runtime",
+      "facet:configuration-policy"
+    ],
+    "owned_resources": [
+      "approval"
+    ],
+    "effect": "plan.approve",
+    "local_effects": [
+      "plan.approve"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "plan_fingerprint",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "actor",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "plan.approve",
+      "expected_postcondition": "predicate:target-phase:plan.approve"
+    },
+    "source_predicate": "predicate:source-phase:plan.approve",
+    "source_conditions": [
+      {
+        "facet": "plan",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "valid"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "configuration-policy",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:plan.approve",
+    "target_predicate": "predicate:target-phase:plan.approve",
+    "target_conditions": [
+      {
+        "facet": "plan",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "approved"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:plan.approve",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:plan.approve"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {
+      "authority_rule": "plan-approval"
+    },
+    "priority": 45
+  },
+  {
+    "id": "plan.activate",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "FLOW_PROGRESS",
+    "class": "owned-local",
+    "source_phases": [
+      "OBSERVED",
+      "ACTIVE"
+    ],
+    "target_phases": [
+      "ACTIVE"
+    ],
+    "goal_kinds": [
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human",
+      "autonomy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:plan",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration",
+      "facet:runtime"
+    ],
+    "owned_resources": [
+      "delivery-state"
+    ],
+    "effect": "plan.activate",
+    "local_effects": [
+      "plan.activate"
+    ],
+    "idempotent": true,
+    "prescription": {
+      "operation": "plan.activate",
+      "expected_postcondition": "predicate:target-phase:plan.activate"
+    },
+    "source_predicate": "predicate:source-phase:plan.activate",
+    "source_conditions": [
+      {
+        "facet": "plan",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "approved"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:plan.activate",
+    "target_predicate": "predicate:target-phase:plan.activate",
+    "target_conditions": [
+      {
+        "facet": "plan",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "locked"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:plan.activate",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:plan.activate"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 50
+  },
+  {
+    "id": "plan.amend",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "EXPLICIT_ONLY",
+    "class": "owned-local",
+    "source_phases": [
+      "ACTIVE",
+      "FRONTIER"
+    ],
+    "target_phases": [
+      "ACTIVE"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human",
+      "autonomy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:plan",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration",
+      "facet:runtime"
+    ],
+    "owned_resources": [
+      "plan"
+    ],
+    "effect": "plan.amend",
+    "local_effects": [
+      "plan.amend"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "source_path",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "delivery_id",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "plan.amend",
+      "expected_postcondition": "predicate:target-phase:plan.amend"
+    },
+    "source_predicate": "predicate:source-phase:plan.amend",
+    "source_conditions": [
+      {
+        "facet": "plan",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "approved",
+          "locked",
+          "stale",
+          "amendment-required"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal",
+          "stale"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:plan.amend",
+    "target_predicate": "predicate:target-phase:plan.amend",
+    "target_conditions": [
+      {
+        "facet": "plan",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "amendment-required"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:plan.amend",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:plan.amend"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 42
+  },
+  {
+    "id": "plan.approve-amendment",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "FLOW_PROGRESS",
+    "class": "authority",
+    "source_phases": [
+      "ACTIVE",
+      "FRONTIER"
+    ],
+    "target_phases": [
+      "ACTIVE"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human",
+      "autonomy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:plan",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration",
+      "facet:runtime",
+      "facet:configuration-policy"
+    ],
+    "owned_resources": [
+      "approval"
+    ],
+    "effect": "plan.approve-amendment",
+    "local_effects": [
+      "plan.approve-amendment"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "plan_fingerprint",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "actor",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "plan.approve-amendment",
+      "expected_postcondition": "predicate:target-phase:plan.approve-amendment"
+    },
+    "source_predicate": "predicate:source-phase:plan.approve-amendment",
+    "source_conditions": [
+      {
+        "facet": "plan",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "amendment-required"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "configuration-policy",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:plan.approve-amendment",
+    "target_predicate": "predicate:target-phase:plan.approve-amendment",
+    "target_conditions": [
+      {
+        "facet": "plan",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "approved"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:plan.approve-amendment",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:plan.approve-amendment"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {
+      "authority_rule": "plan-approval"
+    },
+    "priority": 46
+  },
+  {
+    "id": "plan.invalidate",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "EXPLICIT_ONLY",
+    "class": "owned-local",
+    "source_phases": [
+      "ACTIVE",
+      "OBSERVED"
+    ],
+    "target_phases": [
+      "FRONTIER"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "repository-policy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:plan",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal"
+    ],
+    "owned_resources": [
+      "plan-evidence"
+    ],
+    "effect": "plan.invalidate",
+    "local_effects": [
+      "plan.invalidate"
+    ],
+    "idempotent": true,
+    "prescription": {
+      "operation": "plan.invalidate",
+      "expected_postcondition": "predicate:target-phase:plan.invalidate"
+    },
+    "source_predicate": "predicate:source-phase:plan.invalidate",
+    "source_conditions": [
+      {
+        "facet": "plan",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "draft",
+          "valid",
+          "approved",
+          "locked",
+          "stale"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal",
+          "stale"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:plan.invalidate",
+    "target_predicate": "predicate:target-phase:plan.invalidate",
+    "target_conditions": [
+      {
+        "facet": "plan",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "invalid"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:plan.invalidate",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:plan.invalidate"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 41
+  },
+  {
+    "id": "plan.abandon",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "EXPLICIT_ONLY",
+    "class": "authority",
+    "source_phases": [
+      "OBSERVED",
+      "ACTIVE",
+      "FRONTIER"
+    ],
+    "target_phases": [
+      "ABANDONED"
+    ],
+    "goal_kinds": [
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:delivery",
+      "facet:program",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal"
+    ],
+    "owned_resources": [
+      "plan"
+    ],
+    "effect": "plan.abandon",
+    "local_effects": [
+      "plan.abandon"
+    ],
+    "idempotent": true,
+    "prescription": {
+      "operation": "plan.abandon",
+      "expected_postcondition": "predicate:target-phase:plan.abandon"
+    },
+    "source_predicate": "predicate:source-phase:plan.abandon",
+    "source_conditions": [
+      {
+        "facet": "delivery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "uninitialized",
+          "planning",
+          "approved",
+          "active",
+          "gates-passed",
+          "published",
+          "amendment",
+          "invalid",
+          "recovery"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:plan.abandon",
+    "target_predicate": "predicate:target-phase:plan.abandon",
+    "target_conditions": [
+      {
+        "facet": "delivery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "discarded"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:plan.abandon",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:plan.abandon"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "may-establish-safe-abandonment",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 90
+  },
+  {
+    "id": "workspace.cut",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "FLOW_PROGRESS",
+    "class": "owned-local",
+    "source_phases": [
+      "OBSERVED",
+      "ACTIVE"
+    ],
+    "target_phases": [
+      "ACTIVE"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human",
+      "autonomy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:workspace",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration",
+      "facet:runtime"
+    ],
+    "owned_resources": [
+      "workspace"
+    ],
+    "effect": "workspace.cut",
+    "local_effects": [
+      "workspace.cut"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "branch",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "base_ref",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "destination",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "workspace.cut",
+      "expected_postcondition": "predicate:target-phase:workspace.cut"
+    },
+    "source_predicate": "predicate:source-phase:workspace.cut",
+    "source_conditions": [
+      {
+        "facet": "workspace",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "absent"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:workspace.cut",
+    "target_predicate": "predicate:target-phase:workspace.cut",
+    "target_conditions": [
+      {
+        "facet": "workspace",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "cut"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:workspace.cut",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "workspace.reconcile",
+      "recovery_authority": "declared-by:workspace.reconcile",
+      "resumption_predicate": "recovery-contract-for:workspace.cut"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 52,
+    "allows_worktree_transfer": true
+  },
+  {
+    "id": "workspace.sync",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "EXPLICIT_ONLY",
+    "class": "owned-local",
+    "source_phases": [
+      "ACTIVE"
+    ],
+    "target_phases": [
+      "ACTIVE",
+      "FRONTIER"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human",
+      "autonomy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:workspace",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration",
+      "facet:runtime"
+    ],
+    "owned_resources": [
+      "workspace"
+    ],
+    "effect": "workspace.sync",
+    "local_effects": [
+      "workspace.sync"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "branch",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "workspace.sync",
+      "expected_postcondition": "predicate:target-phase:workspace.sync"
+    },
+    "source_predicate": "predicate:source-phase:workspace.sync",
+    "source_conditions": [
+      {
+        "facet": "workspace",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "cut",
+          "active"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:workspace.sync",
+    "target_predicate": "predicate:target-phase:workspace.sync",
+    "target_conditions": [
+      {
+        "facet": "workspace",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "active"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:workspace.sync",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:workspace.sync"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 58
+  },
+  {
+    "id": "workspace.activate",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "FLOW_PROGRESS",
+    "class": "owned-local",
+    "source_phases": [
+      "OBSERVED",
+      "ACTIVE"
+    ],
+    "target_phases": [
+      "ACTIVE"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "repository-policy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:workspace",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration",
+      "facet:runtime"
+    ],
+    "owned_resources": [
+      "workspace"
+    ],
+    "effect": "workspace.activate",
+    "local_effects": [
+      "workspace.activate"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "branch",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "workspace.activate",
+      "expected_postcondition": "predicate:target-phase:workspace.activate"
+    },
+    "source_predicate": "predicate:source-phase:workspace.activate",
+    "source_conditions": [
+      {
+        "facet": "workspace",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "cut",
+          "active"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:workspace.activate",
+    "target_predicate": "predicate:target-phase:workspace.activate",
+    "target_conditions": [
+      {
+        "facet": "workspace",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "active"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:workspace.activate",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:workspace.activate"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 53
+  },
+  {
+    "id": "workspace.publish",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "EXPLICIT_ONLY",
+    "class": "owned-local",
+    "source_phases": [
+      "ACTIVE"
+    ],
+    "target_phases": [
+      "ACTIVE"
+    ],
+    "goal_kinds": [
+      "open-or-updated-pr",
+      "merged-delivery"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "repository-policy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:workspace",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration",
+      "facet:runtime"
+    ],
+    "owned_resources": [
+      "workspace-state"
+    ],
+    "effect": "workspace.publish",
+    "local_effects": [
+      "workspace.publish"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "branch",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "workspace.publish",
+      "expected_postcondition": "predicate:target-phase:workspace.publish"
+    },
+    "source_predicate": "predicate:source-phase:workspace.publish",
+    "source_conditions": [
+      {
+        "facet": "workspace",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:workspace.publish",
+    "target_predicate": "predicate:target-phase:workspace.publish",
+    "target_conditions": [
+      {
+        "facet": "workspace",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "published"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:workspace.publish",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:workspace.publish"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 75
+  },
+  {
+    "id": "workspace.cleanup",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "EXPLICIT_ONLY",
+    "class": "owned-local",
+    "source_phases": [
+      "OBSERVED",
+      "ACTIVE",
+      "TERMINAL",
+      "ABANDONED"
+    ],
+    "target_phases": [
+      "OBSERVED",
+      "TERMINAL",
+      "ABANDONED"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human",
+      "autonomy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:workspace",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration",
+      "facet:runtime"
+    ],
+    "owned_resources": [
+      "workspace"
+    ],
+    "effect": "workspace.cleanup",
+    "local_effects": [
+      "workspace.cleanup"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "branch",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "workspace.cleanup",
+      "expected_postcondition": "predicate:target-phase:workspace.cleanup"
+    },
+    "source_predicate": "predicate:source-phase:workspace.cleanup",
+    "source_conditions": [
+      {
+        "facet": "workspace",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "landed",
+          "abandoned"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal",
+          "established"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:workspace.cleanup",
+    "target_predicate": "predicate:target-phase:workspace.cleanup",
+    "target_conditions": [
+      {
+        "facet": "workspace",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "absent"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:workspace.cleanup",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "forbidden-after-destructive-git-effect",
+      "rollback_contract": "not-guaranteed-after-worktree-removal",
+      "compensation_contract": "no-generic-compensation",
+      "recovery": "recovery.escalate",
+      "recovery_authority": "declared-by:recovery.escalate",
+      "resumption_predicate": "recovery-contract-for:workspace.cleanup"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {
+      "managed_operations": [
+        "workspace.remove"
+      ]
+    },
+    "priority": 92,
+    "allows_worktree_transfer": true
+  },
+  {
+    "id": "workspace.reap",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "EXPLICIT_ONLY",
+    "class": "owned-local",
+    "source_phases": [
+      "OBSERVED",
+      "TERMINAL",
+      "ABANDONED"
+    ],
+    "target_phases": [
+      "OBSERVED",
+      "TERMINAL",
+      "ABANDONED"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:workspace",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration",
+      "facet:runtime"
+    ],
+    "owned_resources": [
+      "workspace"
+    ],
+    "effect": "workspace.reap",
+    "local_effects": [
+      "workspace.reap"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "branch",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "workspace.reap",
+      "expected_postcondition": "predicate:target-phase:workspace.reap"
+    },
+    "source_predicate": "predicate:source-phase:workspace.reap",
+    "source_conditions": [
+      {
+        "facet": "workspace",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "landed",
+          "abandoned"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal",
+          "established"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:workspace.reap",
+    "target_predicate": "predicate:target-phase:workspace.reap",
+    "target_conditions": [
+      {
+        "facet": "workspace",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "absent"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:workspace.reap",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "forbidden-after-destructive-git-effect",
+      "rollback_contract": "not-guaranteed-after-worktree-removal",
+      "compensation_contract": "no-generic-compensation",
+      "recovery": "recovery.escalate",
+      "recovery_authority": "declared-by:recovery.escalate",
+      "resumption_predicate": "recovery-contract-for:workspace.reap"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 98,
+    "allows_worktree_transfer": true
+  },
+  {
+    "id": "workspace.abandon",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "EXPLICIT_ONLY",
+    "class": "owned-local",
+    "source_phases": [
+      "ACTIVE",
+      "FRONTIER"
+    ],
+    "target_phases": [
+      "ABANDONED"
+    ],
+    "goal_kinds": [
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:workspace",
+      "facet:program",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal"
+    ],
+    "owned_resources": [
+      "workspace"
+    ],
+    "effect": "workspace.abandon",
+    "local_effects": [
+      "workspace.abandon"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "branch",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "workspace.abandon",
+      "expected_postcondition": "predicate:target-phase:workspace.abandon"
+    },
+    "source_predicate": "predicate:source-phase:workspace.abandon",
+    "source_conditions": [
+      {
+        "facet": "workspace",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "cut",
+          "active",
+          "published",
+          "attention-required"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:workspace.abandon",
+    "target_predicate": "predicate:target-phase:workspace.abandon",
+    "target_conditions": [
+      {
+        "facet": "workspace",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "abandoned"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:workspace.abandon",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:workspace.abandon"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "may-establish-safe-abandonment",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 91
+  },
+  {
+    "id": "workspace.reconcile",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "FLOW_RECOVERY",
+    "class": "recovery",
+    "source_phases": [
+      "RECOVERY",
+      "UNRESOLVED"
+    ],
+    "target_phases": [
+      "DORMANT",
+      "OBSERVED",
+      "ACTIVE",
+      "FRONTIER",
+      "TERMINAL",
+      "ABANDONED"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human",
+      "repository-policy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:recovery-info",
+      "facet:program",
+      "facet:engagement",
+      "facet:goal"
+    ],
+    "owned_resources": [
+      "workspace"
+    ],
+    "effect": "workspace.reconcile",
+    "local_effects": [
+      "workspace.reconcile"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "transaction_id",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "workspace.reconcile",
+      "expected_postcondition": "predicate:target-phase:workspace.reconcile"
+    },
+    "source_predicate": "predicate:source-phase:workspace.reconcile",
+    "source_conditions": [
+      {
+        "facet": "recovery-info",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:workspace.reconcile",
+    "target_predicate": "predicate:target-phase:workspace.reconcile",
+    "target_conditions": [
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:workspace.reconcile",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "never-blindly-retry-interrupted-recovery",
+      "rollback_contract": "preserve-original-transaction-group",
+      "compensation_contract": "escalation-only-after-nested-interruption",
+      "recovery": "recovery.escalate",
+      "recovery_authority": "declared-by:recovery.escalate",
+      "resumption_predicate": "recovery-contract-for:workspace.reconcile"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 2,
+    "allows_worktree_transfer": true
+  },
+  {
+    "id": "gate.build.record",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "FLOW_PROGRESS",
+    "class": "owned-local",
+    "source_phases": [
+      "ACTIVE"
+    ],
+    "target_phases": [
+      "ACTIVE"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "repository-policy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:plan",
+      "facet:delivery",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration",
+      "facet:runtime"
+    ],
+    "owned_resources": [
+      "gate-evidence"
+    ],
+    "effect": "gate.build.record",
+    "local_effects": [
+      "gate.build.record"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "source_revision",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "evidence_path",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "evidence_fingerprint",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "gate.build.record",
+      "expected_postcondition": "predicate:target-phase:gate.build.record"
+    },
+    "source_predicate": "predicate:source-phase:gate.build.record",
+    "source_conditions": [
+      {
+        "facet": "plan",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "locked"
+        ]
+      },
+      {
+        "facet": "delivery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "active",
+          "gates-passed"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal",
+          "stale"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:gate.build.record",
+    "target_predicate": "predicate:target-phase:gate.build.record",
+    "target_conditions": [
+      {
+        "facet": "verification",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "current"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:gate.build.record",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:gate.build.record"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {
+      "current_evidence_prefix": "gate-evidence:build:"
+    },
+    "priority": 61,
+    "binds_source_revision": true
+  },
+  {
+    "id": "gate.test.record",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "FLOW_PROGRESS",
+    "class": "owned-local",
+    "source_phases": [
+      "ACTIVE"
+    ],
+    "target_phases": [
+      "ACTIVE",
+      "TERMINAL"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "repository-policy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:plan",
+      "facet:delivery",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration",
+      "facet:runtime"
+    ],
+    "owned_resources": [
+      "gate-evidence"
+    ],
+    "effect": "gate.test.record",
+    "local_effects": [
+      "gate.test.record"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "source_revision",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "evidence_path",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "evidence_fingerprint",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "gate.test.record",
+      "expected_postcondition": "predicate:target-phase:gate.test.record"
+    },
+    "source_predicate": "predicate:source-phase:gate.test.record",
+    "source_conditions": [
+      {
+        "facet": "plan",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "locked"
+        ]
+      },
+      {
+        "facet": "delivery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "active",
+          "gates-passed"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal",
+          "stale"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:gate.test.record",
+    "target_predicate": "predicate:target-phase:gate.test.record",
+    "target_conditions": [
+      {
+        "facet": "verification",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "current"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:gate.test.record",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:gate.test.record"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {
+      "current_evidence_prefix": "gate-evidence:test:"
+    },
+    "priority": 62,
+    "binds_source_revision": true
+  },
+  {
+    "id": "gate.review.record",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "FLOW_PROGRESS",
+    "class": "owned-local",
+    "source_phases": [
+      "ACTIVE"
+    ],
+    "target_phases": [
+      "ACTIVE",
+      "TERMINAL"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human",
+      "repository-policy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:plan",
+      "facet:delivery",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration",
+      "facet:runtime",
+      "facet:configuration-policy"
+    ],
+    "owned_resources": [
+      "gate-evidence"
+    ],
+    "effect": "gate.review.record",
+    "local_effects": [
+      "gate.review.record"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "source_revision",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "evidence_path",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "evidence_fingerprint",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "gate.review.record",
+      "expected_postcondition": "predicate:target-phase:gate.review.record"
+    },
+    "source_predicate": "predicate:source-phase:gate.review.record",
+    "source_conditions": [
+      {
+        "facet": "plan",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "locked"
+        ]
+      },
+      {
+        "facet": "delivery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "active",
+          "gates-passed"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal",
+          "stale"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "configuration-policy",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:gate.review.record",
+    "target_predicate": "predicate:target-phase:gate.review.record",
+    "target_conditions": [
+      {
+        "facet": "verification",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "current"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:gate.review.record",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:gate.review.record"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {
+      "authority_rule": "independent-high-risk-review",
+      "current_evidence_prefix": "gate-evidence:review:"
+    },
+    "priority": 63,
+    "binds_source_revision": true
+  },
+  {
+    "id": "gate.change.record",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "EXPLICIT_ONLY",
+    "class": "owned-local",
+    "source_phases": [
+      "ACTIVE"
+    ],
+    "target_phases": [
+      "ACTIVE"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "repository-policy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:plan",
+      "facet:delivery",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration",
+      "facet:runtime"
+    ],
+    "owned_resources": [
+      "gate-evidence"
+    ],
+    "effect": "gate.change.record",
+    "local_effects": [
+      "gate.change.record"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "source_revision",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "evidence_path",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "evidence_fingerprint",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "gate.change.record",
+      "expected_postcondition": "predicate:target-phase:gate.change.record"
+    },
+    "source_predicate": "predicate:source-phase:gate.change.record",
+    "source_conditions": [
+      {
+        "facet": "plan",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "locked"
+        ]
+      },
+      {
+        "facet": "delivery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "active",
+          "gates-passed"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal",
+          "stale"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:gate.change.record",
+    "target_predicate": "predicate:target-phase:gate.change.record",
+    "target_conditions": [
+      {
+        "facet": "verification",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "current"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:gate.change.record",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:gate.change.record"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {
+      "current_evidence_prefix": "gate-evidence:change:"
+    },
+    "priority": 64,
+    "binds_source_revision": true
+  },
+  {
+    "id": "gate.journey.record",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "EXPLICIT_ONLY",
+    "class": "owned-local",
+    "source_phases": [
+      "ACTIVE"
+    ],
+    "target_phases": [
+      "ACTIVE"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "repository-policy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:plan",
+      "facet:delivery",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration",
+      "facet:runtime"
+    ],
+    "owned_resources": [
+      "gate-evidence"
+    ],
+    "effect": "gate.journey.record",
+    "local_effects": [
+      "gate.journey.record"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "source_revision",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "evidence_path",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "evidence_fingerprint",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "gate.journey.record",
+      "expected_postcondition": "predicate:target-phase:gate.journey.record"
+    },
+    "source_predicate": "predicate:source-phase:gate.journey.record",
+    "source_conditions": [
+      {
+        "facet": "plan",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "locked"
+        ]
+      },
+      {
+        "facet": "delivery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "active",
+          "gates-passed"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal",
+          "stale"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:gate.journey.record",
+    "target_predicate": "predicate:target-phase:gate.journey.record",
+    "target_conditions": [
+      {
+        "facet": "verification",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "current"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:gate.journey.record",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:gate.journey.record"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {
+      "current_evidence_prefix": "gate-evidence:journey:"
+    },
+    "priority": 64,
+    "binds_source_revision": true
+  },
+  {
+    "id": "evidence.visual.attach",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "FLOW_PROGRESS",
+    "class": "owned-local",
+    "source_phases": [
+      "ACTIVE"
+    ],
+    "target_phases": [
+      "ACTIVE",
+      "TERMINAL"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human",
+      "repository-policy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:delivery",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration",
+      "facet:runtime",
+      "facet:configuration-policy"
+    ],
+    "owned_resources": [
+      "evidence"
+    ],
+    "effect": "evidence.visual.attach",
+    "local_effects": [
+      "evidence.visual.attach"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "manifest_path",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "privacy_receipt",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "source_revision",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "evidence.visual.attach",
+      "expected_postcondition": "predicate:target-phase:evidence.visual.attach"
+    },
+    "source_predicate": "predicate:source-phase:evidence.visual.attach",
+    "source_conditions": [
+      {
+        "facet": "delivery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "active",
+          "gates-passed",
+          "published"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal",
+          "stale"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "configuration-policy",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:evidence.visual.attach",
+    "target_predicate": "predicate:target-phase:evidence.visual.attach",
+    "target_conditions": [
+      {
+        "facet": "delivery",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:evidence.visual.attach",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:evidence.visual.attach"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {
+      "required_when": "visual-evidence-required",
+      "availability_rule": "visual-evidence-enabled",
+      "current_evidence_prefix": "visual-evidence:"
+    },
+    "priority": 66,
+    "binds_source_revision": true
+  },
+  {
+    "id": "evidence.approval.revoke",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "EXPLICIT_ONLY",
+    "class": "authority",
+    "source_phases": [
+      "ACTIVE",
+      "FRONTIER"
+    ],
+    "target_phases": [
+      "FRONTIER"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:plan",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal"
+    ],
+    "owned_resources": [
+      "approval"
+    ],
+    "effect": "evidence.approval.revoke",
+    "local_effects": [
+      "evidence.approval.revoke"
+    ],
+    "idempotent": true,
+    "prescription": {
+      "operation": "evidence.approval.revoke",
+      "expected_postcondition": "predicate:target-phase:evidence.approval.revoke"
+    },
+    "source_predicate": "predicate:source-phase:evidence.approval.revoke",
+    "source_conditions": [
+      {
+        "facet": "plan",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "approved",
+          "locked"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:evidence.approval.revoke",
+    "target_predicate": "predicate:target-phase:evidence.approval.revoke",
+    "target_conditions": [
+      {
+        "facet": "plan",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "valid"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:evidence.approval.revoke",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:evidence.approval.revoke"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 44
+  },
+  {
+    "id": "delivery.slice.advance",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "EXPLICIT_ONLY",
+    "class": "owned-local",
+    "source_phases": [
+      "ACTIVE"
+    ],
+    "target_phases": [
+      "ACTIVE",
+      "TERMINAL"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human",
+      "autonomy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:delivery",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration",
+      "facet:runtime"
+    ],
+    "owned_resources": [
+      "delivery-state"
+    ],
+    "effect": "delivery.slice.advance",
+    "local_effects": [
+      "delivery.slice.advance"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "slice_id",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "source_revision",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "delivery.slice.advance",
+      "expected_postcondition": "predicate:target-phase:delivery.slice.advance"
+    },
+    "source_predicate": "predicate:source-phase:delivery.slice.advance",
+    "source_conditions": [
+      {
+        "facet": "delivery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:delivery.slice.advance",
+    "target_predicate": "predicate:target-phase:delivery.slice.advance",
+    "target_conditions": [
+      {
+        "facet": "delivery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "active"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:delivery.slice.advance",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:delivery.slice.advance"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 68,
+    "binds_source_revision": true
+  },
+  {
+    "id": "publication.preview",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "FLOW_PROGRESS",
+    "class": "owned-local",
+    "source_phases": [
+      "ACTIVE"
+    ],
+    "target_phases": [
+      "ACTIVE"
+    ],
+    "goal_kinds": [
+      "open-or-updated-pr",
+      "merged-delivery"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "repository-policy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:plan",
+      "facet:verification",
+      "facet:workspace",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration",
+      "facet:runtime"
+    ],
+    "owned_resources": [
+      "publication-preview"
+    ],
+    "effect": "publication.preview",
+    "local_effects": [
+      "publication.preview"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "base_ref",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "head_ref",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "body_path",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "publication.preview",
+      "expected_postcondition": "predicate:target-phase:publication.preview"
+    },
+    "source_predicate": "predicate:source-phase:publication.preview",
+    "source_conditions": [
+      {
+        "facet": "plan",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "locked"
+        ]
+      },
+      {
+        "facet": "verification",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "current"
+        ]
+      },
+      {
+        "facet": "workspace",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "active",
+          "published"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:publication.preview",
+    "target_predicate": "predicate:target-phase:publication.preview",
+    "target_conditions": [
+      {
+        "facet": "publication",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "candidate"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:publication.preview",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:publication.preview"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 72
+  },
+  {
+    "id": "publication.execute",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "FLOW_PROGRESS",
+    "class": "owned-external",
+    "source_phases": [
+      "ACTIVE"
+    ],
+    "target_phases": [
+      "ACTIVE",
+      "RECOVERY"
+    ],
+    "goal_kinds": [
+      "open-or-updated-pr",
+      "merged-delivery"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human",
+      "autonomy"
+    ],
+    "authority_all": [
+      "external-provider"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:publication",
+      "facet:verification",
+      "facet:workspace",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration",
+      "facet:runtime"
+    ],
+    "owned_resources": [
+      "publication"
+    ],
+    "effect": "publication.execute",
+    "external_effects": [
+      "publication.execute"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "preview_fingerprint",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "publication.execute",
+      "expected_postcondition": "predicate:target-phase:publication.execute"
+    },
+    "source_predicate": "predicate:source-phase:publication.execute",
+    "source_conditions": [
+      {
+        "facet": "publication",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "candidate"
+        ]
+      },
+      {
+        "facet": "verification",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "current"
+        ]
+      },
+      {
+        "facet": "workspace",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "active",
+          "published"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:publication.execute",
+    "target_predicate": "predicate:target-phase:publication.execute",
+    "target_conditions": [
+      {
+        "facet": "publication",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "published-not-landed"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:publication.execute",
+    "interruption": {
+      "points": [
+        "before-request",
+        "after-request",
+        "before-settlement-observation",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "request-not-sent",
+        "request-possibly-accepted",
+        "provider-settlement-unobserved"
+      ],
+      "detection": "pending-journal-plus-fresh-provider-observation",
+      "resume_contract": "forbidden-without-provider-observation",
+      "rollback_contract": "not-provable-after-external-request",
+      "compensation_contract": "provider-reconciliation-only",
+      "recovery": "publication.reconcile",
+      "recovery_authority": "declared-by:publication.reconcile",
+      "resumption_predicate": "recovery-contract-for:publication.execute"
+    },
+    "reversibility": "compensatable",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {
+      "managed_operations": [
+        "publication.create",
+        "publication.push"
+      ]
+    },
+    "priority": 76,
+    "authority_fingerprint_parameter": "preview_fingerprint"
+  },
+  {
+    "id": "publication.observe",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "FLOW_PROGRESS",
+    "class": "owned-local",
+    "source_phases": [
+      "OBSERVED",
+      "ACTIVE",
+      "RECOVERY",
+      "UNRESOLVED"
+    ],
+    "target_phases": [
+      "ACTIVE",
+      "TERMINAL",
+      "FRONTIER",
+      "UNRESOLVED"
+    ],
+    "goal_kinds": [
+      "open-or-updated-pr",
+      "merged-delivery"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "repository-policy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:publication",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration",
+      "facet:runtime"
+    ],
+    "owned_resources": [
+      "publication-evidence"
+    ],
+    "effect": "publication.observe",
+    "local_effects": [
+      "publication.observe"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "publication_id",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "publication.observe",
+      "expected_postcondition": "predicate:target-phase:publication.observe"
+    },
+    "source_predicate": "predicate:source-phase:publication.observe",
+    "source_conditions": [
+      {
+        "facet": "publication",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "candidate",
+          "published-not-landed",
+          "open",
+          "closed-unmerged",
+          "unavailable",
+          "conflicting"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:publication.observe",
+    "target_predicate": "predicate:target-phase:publication.observe",
+    "target_conditions": [
+      {
+        "facet": "publication",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "open",
+          "merged",
+          "closed-unmerged",
+          "unavailable",
+          "conflicting"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:publication.observe",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:publication.observe"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 77
+  },
+  {
+    "id": "publication.reconcile",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "FLOW_RECOVERY",
+    "class": "recovery",
+    "source_phases": [
+      "RECOVERY",
+      "UNRESOLVED"
+    ],
+    "target_phases": [
+      "ACTIVE",
+      "TERMINAL",
+      "FRONTIER",
+      "UNRESOLVED"
+    ],
+    "goal_kinds": [
+      "open-or-updated-pr",
+      "merged-delivery"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human",
+      "external-provider"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:recovery-info",
+      "facet:publication",
+      "facet:program",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration",
+      "facet:runtime"
+    ],
+    "owned_resources": [
+      "publication"
+    ],
+    "effect": "publication.reconcile",
+    "local_effects": [
+      "publication.reconcile"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "publication_id",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "transaction_id",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "publication.reconcile",
+      "expected_postcondition": "predicate:target-phase:publication.reconcile"
+    },
+    "source_predicate": "predicate:source-phase:publication.reconcile",
+    "source_conditions": [
+      {
+        "facet": "recovery-info",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "publication",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:publication.reconcile",
+    "target_predicate": "predicate:target-phase:publication.reconcile",
+    "target_conditions": [
+      {
+        "facet": "publication",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "open",
+          "merged",
+          "closed-unmerged",
+          "unavailable",
+          "conflicting"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:publication.reconcile",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "never-blindly-retry-interrupted-recovery",
+      "rollback_contract": "preserve-original-transaction-group",
+      "compensation_contract": "escalation-only-after-nested-interruption",
+      "recovery": "recovery.escalate",
+      "recovery_authority": "declared-by:recovery.escalate",
+      "resumption_predicate": "recovery-contract-for:publication.reconcile"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 1,
+    "authority_fingerprint_parameter": "publication_id"
+  },
+  {
+    "id": "publication.correct",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "EXPLICIT_ONLY",
+    "class": "owned-external",
+    "source_phases": [
+      "OBSERVED",
+      "ACTIVE",
+      "TERMINAL"
+    ],
+    "target_phases": [
+      "ACTIVE",
+      "RECOVERY"
+    ],
+    "goal_kinds": [
+      "open-or-updated-pr",
+      "merged-delivery"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human",
+      "autonomy"
+    ],
+    "authority_all": [
+      "external-provider"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:publication",
+      "facet:verification",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration",
+      "facet:runtime"
+    ],
+    "owned_resources": [
+      "publication"
+    ],
+    "effect": "publication.correct",
+    "external_effects": [
+      "publication.correct"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "publication_id",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "body_path",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "body_sha256",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "publication.correct",
+      "expected_postcondition": "predicate:target-phase:publication.correct"
+    },
+    "source_predicate": "predicate:source-phase:publication.correct",
+    "source_conditions": [
+      {
+        "facet": "publication",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "open"
+        ]
+      },
+      {
+        "facet": "verification",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "current"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal",
+          "stale",
+          "established"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:publication.correct",
+    "target_predicate": "predicate:target-phase:publication.correct",
+    "target_conditions": [
+      {
+        "facet": "publication",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "published-not-landed"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:publication.correct",
+    "interruption": {
+      "points": [
+        "before-request",
+        "after-request",
+        "before-settlement-observation",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "request-not-sent",
+        "request-possibly-accepted",
+        "provider-settlement-unobserved"
+      ],
+      "detection": "pending-journal-plus-fresh-provider-observation",
+      "resume_contract": "forbidden-without-provider-observation",
+      "rollback_contract": "not-provable-after-external-request",
+      "compensation_contract": "provider-reconciliation-only",
+      "recovery": "publication.reconcile",
+      "recovery_authority": "declared-by:publication.reconcile",
+      "resumption_predicate": "recovery-contract-for:publication.correct"
+    },
+    "reversibility": "compensatable",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {
+      "managed_operations": [
+        "publication.edit",
+        "publication.ready",
+        "publication.api-write"
+      ]
+    },
+    "priority": 80,
+    "authority_fingerprint_parameter": "body_sha256"
+  },
+  {
+    "id": "publication.abandon",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "EXPLICIT_ONLY",
+    "class": "authority",
+    "source_phases": [
+      "ACTIVE",
+      "FRONTIER"
+    ],
+    "target_phases": [
+      "ABANDONED"
+    ],
+    "goal_kinds": [
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:delivery",
+      "facet:program",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal"
+    ],
+    "owned_resources": [
+      "publication"
+    ],
+    "effect": "publication.abandon",
+    "local_effects": [
+      "publication.abandon"
+    ],
+    "idempotent": true,
+    "prescription": {
+      "operation": "publication.abandon",
+      "expected_postcondition": "predicate:target-phase:publication.abandon"
+    },
+    "source_predicate": "predicate:source-phase:publication.abandon",
+    "source_conditions": [
+      {
+        "facet": "delivery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "uninitialized",
+          "planning",
+          "approved",
+          "active",
+          "gates-passed",
+          "published",
+          "amendment",
+          "invalid",
+          "recovery"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:publication.abandon",
+    "target_predicate": "predicate:target-phase:publication.abandon",
+    "target_conditions": [
+      {
+        "facet": "delivery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "discarded"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:publication.abandon",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:publication.abandon"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "may-establish-safe-abandonment",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 93
+  }
+]

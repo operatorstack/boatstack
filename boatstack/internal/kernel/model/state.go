@@ -368,28 +368,50 @@ func (s TerminalStatus) Valid() bool {
 	}
 }
 
+type ProgramState string
+
+const (
+	ProgramUnbound ProgramState = "unbound"
+	ProgramCurrent ProgramState = "current"
+	ProgramDrift   ProgramState = "drift"
+)
+
+func (s ProgramState) Valid() bool {
+	switch s {
+	case ProgramUnbound, ProgramCurrent, ProgramDrift:
+		return true
+	default:
+		return false
+	}
+}
+
 // Observation is the read-only plant result before canonical validation and
 // fingerprinting.
 type Observation struct {
-	SchemaVersion       int                       `json:"schema_version"`
-	Invocation          InvocationContext         `json:"invocation"`
-	Phase               Fact[ProtocolPhase]       `json:"phase"`
-	Engagement          Fact[EngagementState]     `json:"engagement"`
-	Delivery            Fact[DeliveryState]       `json:"delivery"`
-	Workspace           Fact[WorkspaceState]      `json:"workspace"`
-	Plan                Fact[PlanState]           `json:"plan"`
-	Configuration       Fact[ConfigurationState]  `json:"configuration"`
-	ConfigurationPolicy Fact[ConfigurationPolicy] `json:"configuration_policy"`
-	Runtime             Fact[RuntimeState]        `json:"runtime"`
-	Publication         Fact[PublicationState]    `json:"publication"`
-	Verification        Fact[VerificationState]   `json:"verification"`
-	Recovery            Fact[RecoveryState]       `json:"recovery"`
-	Transaction         Fact[TransactionState]    `json:"transaction"`
-	RecoveryInfo        Fact[RecoveryContext]     `json:"recovery_info"`
-	TransactionInfo     Fact[TransactionContext]  `json:"transaction_info"`
-	Terminal            Fact[TerminalStatus]      `json:"terminal"`
-	Goal                Fact[Goal]                `json:"goal"`
-	ObservedAt          time.Time                 `json:"observed_at"`
+	SchemaVersion              int                       `json:"schema_version"`
+	ProgramFingerprint         string                    `json:"program_fingerprint,omitempty"`
+	RecordedProgramFingerprint string                    `json:"recorded_program_fingerprint,omitempty"`
+	Invocation                 InvocationContext         `json:"invocation"`
+	Program                    Fact[ProgramState]        `json:"program"`
+	Phase                      Fact[ProtocolPhase]       `json:"phase"`
+	Engagement                 Fact[EngagementState]     `json:"engagement"`
+	Delivery                   Fact[DeliveryState]       `json:"delivery"`
+	Workspace                  Fact[WorkspaceState]      `json:"workspace"`
+	Plan                       Fact[PlanState]           `json:"plan"`
+	Configuration              Fact[ConfigurationState]  `json:"configuration"`
+	ConfigurationPolicy        Fact[ConfigurationPolicy] `json:"configuration_policy"`
+	Runtime                    Fact[RuntimeState]        `json:"runtime"`
+	Publication                Fact[PublicationState]    `json:"publication"`
+	Verification               Fact[VerificationState]   `json:"verification"`
+	Recovery                   Fact[RecoveryState]       `json:"recovery"`
+	Transaction                Fact[TransactionState]    `json:"transaction"`
+	RecoveryInfo               Fact[RecoveryContext]     `json:"recovery_info"`
+	TransactionInfo            Fact[TransactionContext]  `json:"transaction_info"`
+	Terminal                   Fact[TerminalStatus]      `json:"terminal"`
+	Goal                       Fact[Goal]                `json:"goal"`
+	FlowFacts                  map[string]Fact[string]   `json:"flow_facts,omitempty"`
+	ExtensionFacts             map[string]Fact[string]   `json:"extension_facts,omitempty"`
+	ObservedAt                 time.Time                 `json:"observed_at"`
 }
 
 type Snapshot struct {
@@ -397,9 +419,33 @@ type Snapshot struct {
 	Fingerprint string `json:"fingerprint"`
 }
 
+func CanonicalizeForProgram(observation Observation, programFingerprint string) (Snapshot, error) {
+	if len(programFingerprint) != 64 {
+		return Snapshot{}, fmt.Errorf("snapshot: invalid compiled program fingerprint")
+	}
+	observation.ProgramFingerprint = programFingerprint
+	state := ProgramUnbound
+	if observation.RecordedProgramFingerprint != "" {
+		state = ProgramDrift
+		if observation.RecordedProgramFingerprint == programFingerprint {
+			state = ProgramCurrent
+		}
+	}
+	observation.Program = Known(state, Evidence{
+		Source: "compiled-control-program", Fingerprint: programFingerprint, ObservedAt: observation.ObservedAt,
+	})
+	return Canonicalize(observation)
+}
+
 func Canonicalize(observation Observation) (Snapshot, error) {
 	if observation.SchemaVersion != SnapshotSchemaVersion {
 		return Snapshot{}, fmt.Errorf("snapshot: schema version %d, want %d", observation.SchemaVersion, SnapshotSchemaVersion)
+	}
+	if observation.Program.Status == "" && observation.ProgramFingerprint == "" {
+		observation.Program = Known(ProgramUnbound, Evidence{Source: "control-program:unbound", Fingerprint: "unbound", ObservedAt: observation.ObservedAt})
+	}
+	if observation.ProgramFingerprint != "" && len(observation.ProgramFingerprint) != 64 {
+		return Snapshot{}, fmt.Errorf("snapshot: invalid program fingerprint")
 	}
 	if err := observation.Invocation.Validate(false); err != nil {
 		return Snapshot{}, err
@@ -408,6 +454,7 @@ func Canonicalize(observation Observation) (Snapshot, error) {
 		name string
 		err  error
 	}{
+		{"program", observation.Program.Validate("program")},
 		{"phase", observation.Phase.Validate("phase")},
 		{"engagement", observation.Engagement.Validate("engagement")},
 		{"delivery", observation.Delivery.Validate("delivery")},
@@ -438,6 +485,7 @@ func Canonicalize(observation Observation) (Snapshot, error) {
 		known bool
 		valid bool
 	}{
+		{"program", observation.Program.Status == FactKnown, observation.Program.Value.Valid()},
 		{"engagement", observation.Engagement.Status == FactKnown, observation.Engagement.Value.Valid()},
 		{"delivery", observation.Delivery.Status == FactKnown, observation.Delivery.Value.Valid()},
 		{"workspace", observation.Workspace.Status == FactKnown, observation.Workspace.Value.Valid()},
@@ -498,6 +546,22 @@ func Canonicalize(observation Observation) (Snapshot, error) {
 			return Snapshot{}, fmt.Errorf("snapshot: invalid goal fact: %w", err)
 		}
 	}
+	for id, fact := range observation.FlowFacts {
+		if !FacetName(id).Valid() || controllingFacet(FacetName(id)) {
+			return Snapshot{}, fmt.Errorf("snapshot: invalid primary-flow fact id %q", id)
+		}
+		if err := fact.Validate("primary-flow fact " + id); err != nil {
+			return Snapshot{}, err
+		}
+	}
+	for id, fact := range observation.ExtensionFacts {
+		if !FacetName(id).Valid() || controllingFacet(FacetName(id)) {
+			return Snapshot{}, fmt.Errorf("snapshot: invalid extension fact id %q", id)
+		}
+		if err := fact.Validate("extension fact " + id); err != nil {
+			return Snapshot{}, err
+		}
+	}
 	if observation.ConfigurationPolicy.Status == FactKnown {
 		if err := observation.ConfigurationPolicy.Value.Validate(); err != nil {
 			return Snapshot{}, fmt.Errorf("snapshot: invalid configuration policy: %w", err)
@@ -517,6 +581,7 @@ func Canonicalize(observation Observation) (Snapshot, error) {
 	snapshot := Snapshot{Observation: observation}
 	projection := observation
 	projection.ObservedAt = time.Time{}
+	zeroEvidenceTimes(&projection.Program)
 	zeroEvidenceTimes(&projection.Phase)
 	zeroEvidenceTimes(&projection.Engagement)
 	zeroEvidenceTimes(&projection.Delivery)
@@ -533,6 +598,14 @@ func Canonicalize(observation Observation) (Snapshot, error) {
 	zeroEvidenceTimes(&projection.TransactionInfo)
 	zeroEvidenceTimes(&projection.Terminal)
 	zeroEvidenceTimes(&projection.Goal)
+	for id, fact := range projection.FlowFacts {
+		zeroEvidenceTimes(&fact)
+		projection.FlowFacts[id] = fact
+	}
+	for id, fact := range projection.ExtensionFacts {
+		zeroEvidenceTimes(&fact)
+		projection.ExtensionFacts[id] = fact
+	}
 	raw, err := json.Marshal(Snapshot{Observation: projection})
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("snapshot: canonical encoding: %w", err)

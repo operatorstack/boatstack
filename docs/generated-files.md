@@ -32,18 +32,21 @@ falls back to it.
 
 ## Generated architecture evidence
 
-The executable transition registry deterministically generates four checked
+The executable transition registry deterministically generates five checked
 architecture artifacts:
 
 | Artifact | Regeneration command |
 |---|---|
 | `docs/architecture/boatstack-v2-transition-catalog.md` | `boatstack-helper catalog --format markdown` |
 | `docs/architecture/boatstack-v2-transition-catalog.mmd` | `boatstack-helper catalog --format mermaid` |
+| `docs/architecture/boatstack-standard-flow.mmd` | `boatstack-helper catalog --format standard-flow-mermaid` |
 | `docs/architecture/boatstack-v2-locus-safety.json` | `boatstack-helper catalog --format locus-safety` |
 | `docs/architecture/boatstack-v2-locus-liveness.json` | `boatstack-helper catalog --format locus-liveness` |
 
 Repository and Go tests compare every checked byte with a fresh render and
-require both Locus alphabets to equal all 61 executable catalog transitions.
+require both Locus alphabets to equal all 62 executable catalog transitions.
+The StandardFlow graph contains exactly the 30 transitions whose compiled
+origin is the primary flow.
 The Locus phase graph is intentionally conservative: it expands each declared
 source phase against each declared target phase. Facet predicates and reducer
 branches remain executable-test obligations.
