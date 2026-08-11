@@ -11,7 +11,7 @@ import (
 
 func TestManifestOwnsOnlyStandardDeliverySemantics(t *testing.T) {
 	// control-law: standard-flow-declarations-live-outside-kernel-mechanism
-	manifest, err := standard.Definition().FlowManifest(context.Background())
+	manifest, err := standard.Definition().RuntimeManifest(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

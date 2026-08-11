@@ -23,7 +23,7 @@ slices. They are logical ownership boundaries, not rollout phases.
 
 | Slice | Domain | Structure | Goal | Operator | Immediate value |
 | --- | --- | --- | --- | --- | --- |
-| 1. Compiled control law | Repository-local delivery control | CoreSystem plus one PrimaryFlow and zero or more conservative Extensions compiled into one immutable ControlProgram | Every managed state has a safe path to progress, recovery, authority frontier, or terminal | Compile, observe, resolve, admit, execute, verify, record, recover | Delivery policy can evolve without changing the mechanism that protects authority and effects |
+| 1. Compiled control law | Repository-local delivery control | CoreSystem plus one ProgramRuntime and zero or more conservative Extensions compiled into one immutable ControlProgram | Every managed state has a safe path to progress, recovery, authority frontier, or terminal | Compile, observe, resolve, admit, execute, verify, record, recover | Delivery policy can evolve without changing the mechanism that protects authority and effects |
 | 2. Product surfaces | Shipped CLI, hooks, SDK/MCP, hosts, and renderers | One adapter protocol projected from Kernel decisions and prescriptions | Every consumer observes and requests the same compiled semantics | Assemble, decode, invoke, render | Hosts stop acting as independent controllers while useful workflows remain available |
 
 Canonical form for slice 1: one domain, the `ControlProgram` and `Snapshot`
@@ -61,7 +61,7 @@ with a first-party standard delivery flow. Its dependency direction is:
 kernel contracts
     ^
     |-- CoreSystem
-    |-- one PrimaryFlow
+    |-- one ProgramRuntime
     `-- zero or more Extensions
               ^
               |
@@ -74,7 +74,7 @@ kernel contracts
 The application assembles one immutable program before resolution:
 
 ```text
-CoreSystem + PrimaryFlow + Extensions + RepositoryPolicy
+CoreSystem + ProgramRuntime + Extensions + RepositoryPolicy
     -> Compile
     -> ControlProgram
     -> Kernel
@@ -87,16 +87,16 @@ CoreSystem + PrimaryFlow + Extensions + RepositoryPolicy
   compiled program and owns observation orchestration, canonicalization,
   resolution, admission, effect routing, postcondition verification,
   journaling, receipts, replay, recovery, and drift refusal. It imports no
-  primary flow, extension implementation, CLI, SDK wrapper, or host renderer.
+  program runtime, extension implementation, CLI, SDK wrapper, or host renderer.
 - **CoreSystem** declares Boatstack operational capabilities: invocation and
   repository identity, engagement, runtime, configuration, installation,
   generic goal identity, transactions, recovery, process events, and external
   observations.
-- **PrimaryFlow** is exactly one trusted in-process delivery law. It declares
+- **ProgramRuntime** is one trusted in-process execution binding. It declares
   goal contracts, facts, transitions, resources, effects, verifiers, recovery,
   policy projection, and telemetry. The application selects it; repository
   configuration cannot select an arbitrary executable flow.
-- **StandardFlow** is the first-party primary flow preserving the familiar
+- **StandardFlow** is the first-party complete Control Program preserving the familiar
   plan, approval, workspace, gate, evidence, publication, correction, and
   abandonment behavior.
 - **Extensions** are additive. In-process extensions are trusted compiled Go
@@ -110,7 +110,7 @@ CoreSystem + PrimaryFlow + Extensions + RepositoryPolicy
 
 ### ControlProgram
 
-`Compile` consumes an explicit CoreSystem definition, one PrimaryFlow manifest,
+`Compile` consumes an explicit CoreSystem definition, one ProgramRuntime manifest,
 zero or more extension manifests, and canonical program-affecting settings. It
 rejects missing or multiple flows, ID collisions, unnamespaced extension IDs,
 overlapping mutable-resource ownership, undeclared effects or verifiers,
@@ -125,8 +125,8 @@ flow, extension, terminal, or verification shadow graph.
 The stable Go authoring and construction boundaries are:
 
 ```go
-type FlowDefinition interface {
-    FlowManifest(context.Context) (PrimaryFlowManifest, error)
+type ProgramRuntimeDefinition interface {
+    RuntimeManifest(context.Context) (ProgramRuntimeManifest, error)
 }
 
 type Extension interface {
@@ -137,19 +137,19 @@ func Compile(context.Context, CompileRequest) (ControlProgram, error)
 func NewKernel(externalStateRoot string, program control.ControlProgram) (Kernel, error)
 ```
 
-Primary-flow runtime adapters are trusted in-process implementations of
-`FlowRuntime`; this release has no subprocess primary-flow loader. The bounded
+Program runtime adapters are trusted in-process implementations of
+`ProgramRuntime`; repository Control Programs use the strict public loader. The bounded
 request/response contract gives custom flows immutable projections rather than
 a mutable Kernel object. Every operation has an exact tagged response payload,
 and identity, version, correlation, error classification, and operation type
 are checked at the Kernel boundary.
 
 `sdk.New(...)` assembles CoreSystem plus StandardFlow and repository-scoped
-extensions. `sdk.NewKernel(..., sdk.WithFlow(flow), sdk.WithExtension(...))`
-requires exactly one explicit primary flow and never inserts StandardFlow.
+extensions. `sdk.NewKernel(..., sdk.WithProgramRuntime(runtime), sdk.WithExtension(...))`
+requires exactly one explicit program runtime and never inserts StandardFlow.
 
 The fingerprint covers the Kernel version; CoreSystem ID, version, manifest,
-and transitions; PrimaryFlow ID, version, manifest, goal contracts, and
+and transitions; ProgramRuntime ID, version, manifest, goal contracts, and
 transitions; extension manifests, versions, executable SHA-256 values,
 settings, goal constraints, and transitions; the compiled transition registry;
 resource ownership; verifier and recovery declarations; and canonical
@@ -180,17 +180,17 @@ verification facts without taking ownership of that boundary.
 ### Selection and terminal contracts
 
 Every transition records its origin, owner, manifest fingerprint, and bounded
-selection class: `SYSTEM_RECOVERY`, `FLOW_RECOVERY`, `EXTENSION_RECOVERY`,
-`GOAL_REQUIRED`, `FLOW_PROGRESS`, `EXPLICIT_ONLY`, or `OBSERVED_EXTERNAL`. Third-party
+selection class: `SYSTEM_RECOVERY`, `PROGRAM_RECOVERY`, `EXTENSION_RECOVERY`,
+`GOAL_REQUIRED`, `PROGRAM_PROGRESS`, `EXPLICIT_ONLY`, or `OBSERVED_EXTERNAL`. Third-party
 extensions cannot supply raw numeric priority. An extension becomes implicitly
 selectable only to discharge an active unmet extension obligation or its own
 recovery contract.
 
-CoreSystem and PrimaryFlow declarations own their selection semantics; the
+CoreSystem and ProgramRuntime declarations own their selection semantics; the
 compiler never infers ordering from a transition ID or family name. An omitted
 extension selection is bounded to `EXPLICIT_ONLY`, or to
 `EXTENSION_RECOVERY` for an explicitly declared extension recovery. A
-PrimaryFlow recovery manifest lists only recovery transitions owned by that
+ProgramRuntime recovery manifest lists only recovery transitions owned by that
 flow; cross-component interruption references are resolved only after the one
 compiled registry exists.
 
@@ -199,7 +199,7 @@ semantic managed operation, and the compiled registry maps that operation to a
 transition through `PolicyContract.ManagedOperations`. A custom program that
 does not claim an operation does not inherit StandardFlow transition IDs.
 
-The five software-delivery goal kinds remain closed. The PrimaryFlow supplies
+The five software-delivery goal kinds remain closed. The ProgramRuntime supplies
 the base terminal contract. Extension obligations are conjoined with that
 contract, so for the same base state:
 
@@ -213,13 +213,13 @@ cannot report terminal state directly.
 ### Observation and effects
 
 Observation is layered in deterministic owner and ID order: core observation,
-PrimaryFlow observation, then extension observations. Owners receive bounded
+ProgramRuntime observation, then extension observations. Owners receive bounded
 immutable projections. Required observer failure remains explicit unresolved,
 blocked, or recovery evidence; it never disappears or becomes false. Snapshot
 identity includes all controlling core, flow, and extension facts plus the
 program fingerprint.
 
-PrimaryFlow and extension responses are validated as exact operation-specific
+ProgramRuntime and extension responses are validated as exact operation-specific
 unions before their facts, writes, external settlement, or verifier result can
 be interpreted. Classified errors cannot carry success payloads. Subprocess
 extensions additionally use strict JSON with no unknown fields or trailing
@@ -235,7 +235,7 @@ admission, journal, verification, recovery, and Kernel-written receipt path.
 
 The default SDK and CLI explicitly assemble `CoreSystem + StandardFlow +
 configured extensions`; users acquire no new configuration burden. A low-level
-SDK constructor requires an explicit PrimaryFlow. A custom application can
+SDK constructor requires an explicit ProgramRuntime. A custom application can
 assemble `CoreSystem + another trusted flow + selected extensions` without
 forking Kernel and without parsing CLI output.
 
@@ -243,7 +243,7 @@ forking Kernel and without parsing CLI output.
 standardClient, err := sdk.New(stateRoot, sdk.WithExtension(extension))
 customClient, err := sdk.NewKernel(
     stateRoot,
-    sdk.WithFlow(primaryFlow),
+    sdk.WithProgramRuntime(programRuntime),
     sdk.WithExtension(extension),
 )
 ```
@@ -523,7 +523,7 @@ The checked [catalog table](boatstack-v2-transition-catalog.md) and
 [Mermaid graph](boatstack-v2-transition-catalog.mmd) are deterministic
 projections of this registry. Golden tests reject either artifact when it drifts.
 The checked [StandardFlow graph](boatstack-standard-flow.mmd) filters that same
-compiled registry by primary-flow origin and contains exactly 30 transitions;
+compiled registry by control-program origin and contains exactly 30 transitions;
 it is not an independently maintained graph.
 
 ## 8. Supervisory control law
@@ -693,7 +693,7 @@ Dependencies point downward in this table and are acyclic.
 | Package | Owns | Public boundary and verifier | Allowed dependencies | Forbidden dependencies |
 | --- | --- | --- | --- | --- |
 | `internal/kernel/model` | typed facts, identity, snapshot, goal, fingerprints | constructors/canonical encoding; schema and invariant tests | standard library | plant, effects, surfaces, facade |
-| `control` | stable CoreSystem, PrimaryFlow, Extension, and immutable ControlProgram compiler contracts | strict manifests, conservative extension compilation, fingerprints, ownership map | kernel contracts | concrete distribution or surfaces |
+| `control` | stable CoreSystem, ProgramRuntime, Extension, and immutable ControlProgram compiler contracts | strict manifests, conservative extension compilation, fingerprints, ownership map | kernel contracts | concrete distribution or surfaces |
 | `core` | 32 operational-capability transition declarations | embedded strict declaration bytes through `CoreManifest` | control contracts | StandardFlow, extensions, surfaces |
 | `flow/standard` | 30 first-party delivery transitions and five base goal contracts | `standard.Definition()` plus default-flow parity, historical, ownership, and completeness tests | control contracts and model vocabulary | Kernel mechanism, CLI, host rendering, SDK |
 | `extension/*` | additive in-process and checksum-bound subprocess capabilities | strict extension manifests and bounded runtime protocol | control contracts | Kernel state, admissions, receipts, foreign resources |

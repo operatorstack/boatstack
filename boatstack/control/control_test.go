@@ -14,9 +14,11 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/flow/standard"
 )
 
-type staticFlowDefinition struct{ manifest control.PrimaryFlowManifest }
+type staticProgramRuntimeDefinition struct {
+	manifest control.ProgramRuntimeManifest
+}
 
-func (f staticFlowDefinition) FlowManifest(context.Context) (control.PrimaryFlowManifest, error) {
+func (f staticProgramRuntimeDefinition) RuntimeManifest(context.Context) (control.ProgramRuntimeManifest, error) {
 	return f.manifest, nil
 }
 
@@ -34,7 +36,7 @@ func TestStandardProgramHasExplicitStableComposition(t *testing.T) {
 		t.Fatalf("identical compilation drifted: %s != %s", one.Fingerprint(), two.Fingerprint())
 	}
 	summary := one.Summary()
-	if summary.CoreTransitionCount != 33 || summary.FlowTransitionCount != 30 || summary.ExtensionTransitionCount != 0 || summary.TotalTransitionCount != 63 {
+	if summary.CoreTransitionCount != 33 || summary.RuntimeTransitionCount != 30 || summary.ExtensionTransitionCount != 0 || summary.TotalTransitionCount != 63 {
 		t.Fatalf("compiled counts = %+v", summary)
 	}
 	counts := map[string]int{}
@@ -44,7 +46,7 @@ func TestStandardProgramHasExplicitStableComposition(t *testing.T) {
 			t.Fatalf("transition lost compiled ownership: %+v", transition)
 		}
 	}
-	if counts["core-system"] != 33 || counts["primary-flow"] != 30 || counts["extension"] != 0 {
+	if counts["core-system"] != 33 || counts["control-program"] != 30 || counts["extension"] != 0 {
 		t.Fatalf("origin counts = %#v", counts)
 	}
 }
@@ -116,11 +118,11 @@ func TestProgramFingerprintBindsCompositionAndPolicyInputs(t *testing.T) {
 		})
 	}
 
-	policyOne, err := control.Compile(context.Background(), control.CompileRequest{KernelVersion: "kernel", Core: core.System(), Flow: standard.Definition(), Settings: map[string]any{"policy": "one"}})
+	policyOne, err := control.Compile(context.Background(), control.CompileRequest{KernelVersion: "kernel", Core: core.System(), Runtime: standard.Definition(), Settings: map[string]any{"policy": "one"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	policyTwo, err := control.Compile(context.Background(), control.CompileRequest{KernelVersion: "kernel", Core: core.System(), Flow: standard.Definition(), Settings: map[string]any{"policy": "two"}})
+	policyTwo, err := control.Compile(context.Background(), control.CompileRequest{KernelVersion: "kernel", Core: core.System(), Runtime: standard.Definition(), Settings: map[string]any{"policy": "two"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,43 +160,43 @@ func TestCompileEnforcesDeclaredComponentSchemas(t *testing.T) {
 			}
 		})
 	}
-	flow, err := standard.Definition().FlowManifest(context.Background())
+	flow, err := standard.Definition().RuntimeManifest(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	flow.ConfigurationSchema = json.RawMessage(`{"type":"object","required":["mode"],"additionalProperties":false}`)
 	flow.Settings = json.RawMessage(`{}`)
-	if _, err := control.Compile(context.Background(), control.CompileRequest{KernelVersion: "kernel", Core: core.System(), Flow: staticFlowDefinition{manifest: flow}}); err == nil {
-		t.Fatal("PrimaryFlow settings that violate ConfigurationSchema compiled")
+	if _, err := control.Compile(context.Background(), control.CompileRequest{KernelVersion: "kernel", Core: core.System(), Runtime: staticProgramRuntimeDefinition{manifest: flow}}); err == nil {
+		t.Fatal("ProgramRuntime settings that violate ConfigurationSchema compiled")
 	}
 }
 
 func TestComponentsMustDeclareTheirOwnSelectionSemantics(t *testing.T) {
 	// control-law: generic-compiler-never-infers-flow-order-from-transition-ids
-	flow, err := standard.Definition().FlowManifest(context.Background())
+	flow, err := standard.Definition().RuntimeManifest(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	flow.Transitions[0].SelectionClass = ""
 	if _, err := control.Compile(context.Background(), control.CompileRequest{
-		KernelVersion: "kernel", Core: core.System(), Flow: staticFlow{manifest: flow},
+		KernelVersion: "kernel", Core: core.System(), Runtime: staticFlow{manifest: flow},
 	}); err == nil || !strings.Contains(err.Error(), "selection class") {
 		t.Fatalf("flow without an explicit selection class was accepted: %v", err)
 	}
 
-	flow, err = standard.Definition().FlowManifest(context.Background())
+	flow, err = standard.Definition().RuntimeManifest(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	flow.Transitions[0].SelectionClass = control.SelectionSystemRecovery
 	if _, err := control.Compile(context.Background(), control.CompileRequest{
-		KernelVersion: "kernel", Core: core.System(), Flow: staticFlow{manifest: flow},
+		KernelVersion: "kernel", Core: core.System(), Runtime: staticFlow{manifest: flow},
 	}); err == nil || !strings.Contains(err.Error(), "SYSTEM_RECOVERY") {
 		t.Fatalf("flow claimed CoreSystem recovery precedence: %v", err)
 	}
 }
 
-func TestPrimaryFlowCannotClaimCoreSystemResources(t *testing.T) {
+func TestProgramRuntimeCannotClaimCoreSystemResources(t *testing.T) {
 	// control-law: every-resource-has-exactly-one-component-owner
 	coreManifest, err := core.System().CoreManifest(context.Background())
 	if err != nil {
@@ -210,16 +212,16 @@ func TestPrimaryFlowCannotClaimCoreSystemResources(t *testing.T) {
 	if coreResource == "" {
 		t.Fatal("CoreSystem fixture declares no owned resource")
 	}
-	flow, err := standard.Definition().FlowManifest(context.Background())
+	flow, err := standard.Definition().RuntimeManifest(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	flow.OwnedResources = append(flow.OwnedResources, coreResource)
 	flow.Transitions[0].OwnedResources = append(flow.Transitions[0].OwnedResources, coreResource)
 	if _, err := control.Compile(context.Background(), control.CompileRequest{
-		KernelVersion: "kernel", Core: core.System(), Flow: staticFlow{manifest: flow},
+		KernelVersion: "kernel", Core: core.System(), Runtime: staticFlow{manifest: flow},
 	}); err == nil || !strings.Contains(err.Error(), "overlapping owners") {
-		t.Fatalf("PrimaryFlow claimed CoreSystem resource %q: %v", coreResource, err)
+		t.Fatalf("ProgramRuntime claimed CoreSystem resource %q: %v", coreResource, err)
 	}
 }
 
@@ -298,17 +300,17 @@ func TestControlProgramAccessorsCannotMutateCompiledBytes(t *testing.T) {
 	extensions := program.Extensions()
 	extensions[0].Manifest.Facts[0] = "mutated.fact.id"
 	extensions[0].Manifest.Settings = json.RawMessage(`{"mutated":true}`)
-	flow := program.Flow()
+	flow := program.ProgramRuntime()
 	flow.Manifest.GoalContracts[0].Conditions[0].Values = []string{"mutated"}
 
 	if program.Fingerprint() != originalFingerprint || program.Transitions()[0].SourcePhases[0] == control.PhaseAbandoned ||
-		program.Extensions()[0].Manifest.Facts[0] == "mutated.fact.id" || program.Flow().Manifest.GoalContracts[0].Conditions[0].Values[0] == "mutated" {
+		program.Extensions()[0].Manifest.Facts[0] == "mutated.fact.id" || program.ProgramRuntime().Manifest.GoalContracts[0].Conditions[0].Values[0] == "mutated" {
 		t.Fatal("public accessor mutated the compiled ControlProgram")
 	}
 }
 
 func TestExtensionGoalConditionsAreConjunctive(t *testing.T) {
-	// control-law: extension-terminal-set-is-a-subset-of-primary-flow-terminal-set
+	// control-law: extension-terminal-set-is-a-subset-of-control-program-terminal-set
 	base, err := distribution.StandardProgram(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -369,9 +371,11 @@ type declarationOnlyExtension struct {
 	goalConditions []control.FacetCondition
 }
 
-type staticFlow struct{ manifest control.PrimaryFlowManifest }
+type staticFlow struct {
+	manifest control.ProgramRuntimeManifest
+}
 
-func (s staticFlow) FlowManifest(context.Context) (control.PrimaryFlowManifest, error) {
+func (s staticFlow) RuntimeManifest(context.Context) (control.ProgramRuntimeManifest, error) {
 	return s.manifest, nil
 }
 

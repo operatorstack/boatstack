@@ -23,28 +23,28 @@ func TestPublicProtocolCanBeConstructedWithoutInternalPackages(t *testing.T) {
 	}
 }
 
-func TestLowLevelSDKRequiresAndAcceptsExactlyOneNonStandardPrimaryFlow(t *testing.T) {
+func TestLowLevelSDKRequiresAndAcceptsExactlyOneNonStandardProgramRuntime(t *testing.T) {
 	// control-law: low-level-sdk-never-inserts-or-multiplies-standard-flow
 	if _, err := sdk.NewKernel(""); err == nil {
-		t.Fatal("low-level SDK accepted a missing PrimaryFlow")
+		t.Fatal("low-level SDK accepted a missing ProgramRuntime")
 	}
 	flow := syntheticFlow{}
-	if _, err := sdk.NewKernel("", sdk.WithFlow(flow)); err != nil {
-		t.Fatalf("synthetic PrimaryFlow was rejected: %v", err)
+	if _, err := sdk.NewKernel("", sdk.WithProgramRuntime(flow)); err != nil {
+		t.Fatalf("synthetic ProgramRuntime was rejected: %v", err)
 	}
-	if _, err := sdk.NewKernel("", sdk.WithFlow(flow), sdk.WithFlow(flow)); err == nil {
-		t.Fatal("low-level SDK accepted two PrimaryFlows")
+	if _, err := sdk.NewKernel("", sdk.WithProgramRuntime(flow), sdk.WithProgramRuntime(flow)); err == nil {
+		t.Fatal("low-level SDK accepted two ProgramRuntimes")
 	}
-	if _, err := sdk.New("", sdk.WithFlow(flow)); err == nil {
+	if _, err := sdk.New("", sdk.WithProgramRuntime(flow)); err == nil {
 		t.Fatal("standard SDK allowed StandardFlow replacement")
 	}
 }
 
 type syntheticFlow struct{}
 
-func (syntheticFlow) FlowRuntime() control.FlowRuntime { return syntheticRuntime{} }
+func (syntheticFlow) ProgramRuntime() control.ProgramRuntime { return syntheticRuntime{} }
 
-func (syntheticFlow) FlowManifest(context.Context) (control.PrimaryFlowManifest, error) {
+func (syntheticFlow) RuntimeManifest(context.Context) (control.ProgramRuntimeManifest, error) {
 	const (
 		id       = "synthetic.lifecycle"
 		fact     = "synthetic.lifecycle.stage"
@@ -54,7 +54,7 @@ func (syntheticFlow) FlowManifest(context.Context) (control.PrimaryFlowManifest,
 		effect := control.EffectID(string(id) + "-effect")
 		verifier := string(id) + "-verifier"
 		return control.Transition{
-			ID: id, Version: 1, SelectionClass: control.SelectionFlowProgress, Class: control.EventOwnedLocal,
+			ID: id, Version: 1, SelectionClass: control.SelectionProgramProgress, Class: control.EventOwnedLocal,
 			SourcePhases: []control.ProtocolPhase{control.PhaseObserved, control.PhaseActive}, TargetPhases: []control.ProtocolPhase{control.PhaseObserved, control.PhaseActive},
 			GoalKinds: []control.GoalKind{control.GoalVerified}, RequiredIdentity: []string{"repository-id", "git-common-id", "worktree-id"},
 			Authority: []control.AuthorityClass{control.AuthorityRepository}, RequiredEvidence: []string{"snapshot", "goal", "facet:" + fact},
@@ -74,8 +74,8 @@ func (syntheticFlow) FlowManifest(context.Context) (control.PrimaryFlowManifest,
 	}
 	verify := transition("synthetic.lifecycle.verify", "start", "verify", 1)
 	finish := transition("synthetic.lifecycle.finish", "verify", "terminal", 2)
-	return control.PrimaryFlowManifest{
-		ID: id, Version: "1.0.0", ProtocolVersion: control.FlowProtocolVersion, RuntimeMode: control.FlowRuntimeProtocol,
+	return control.ProgramRuntimeManifest{
+		ID: id, Version: "1.0.0", ProtocolVersion: control.ProgramRuntimeProtocolVersion, RuntimeMode: control.ProgramRuntimeProtocol,
 		SupportedGoals: []control.GoalKind{control.GoalVerified},
 		GoalContracts:  []control.GoalContract{{GoalKind: control.GoalVerified, Conditions: []control.FacetCondition{control.KnownCondition(control.FacetName(fact), "terminal")}}},
 		Transitions:    []control.Transition{verify, finish}, Facts: []string{fact}, OwnedResources: []string{resource},
@@ -87,9 +87,9 @@ func (syntheticFlow) FlowManifest(context.Context) (control.PrimaryFlowManifest,
 
 type syntheticRuntime struct{}
 
-func (syntheticRuntime) InvokeFlow(_ context.Context, request control.FlowRequest) (control.FlowResponse, error) {
-	return control.FlowResponse{
-		ProtocolVersion: control.FlowProtocolVersion, Operation: request.Operation,
-		FlowID: request.FlowID, FlowVersion: request.FlowVersion, CorrelationID: request.CorrelationID,
+func (syntheticRuntime) InvokeProgram(_ context.Context, request control.ProgramRuntimeRequest) (control.ProgramRuntimeResponse, error) {
+	return control.ProgramRuntimeResponse{
+		ProtocolVersion: control.ProgramRuntimeProtocolVersion, Operation: request.Operation,
+		ProgramID: request.ProgramID, ProgramVersion: request.ProgramVersion, CorrelationID: request.CorrelationID,
 	}, nil
 }

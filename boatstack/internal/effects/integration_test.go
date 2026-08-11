@@ -36,7 +36,7 @@ type fixedClock struct{ value time.Time }
 const testProgramFingerprint = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 func testGoalContracts() catalog.GoalContracts {
-	manifest, err := standard.Definition().FlowManifest(context.Background())
+	manifest, err := standard.Definition().RuntimeManifest(context.Background())
 	if err != nil {
 		panic(err)
 	}
@@ -49,7 +49,7 @@ func testGoalContracts() catalog.GoalContracts {
 
 func testProgram() control.ControlProgram {
 	program, err := control.Compile(context.Background(), control.CompileRequest{
-		KernelVersion: boatstack.Version, Core: core.System(), Flow: standard.Definition(),
+		KernelVersion: boatstack.Version, Core: core.System(), Runtime: standard.Definition(),
 	})
 	if err != nil {
 		panic(err)
@@ -249,7 +249,7 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 	repository := testRepository(t)
 	externalRoot := t.TempDir()
 	oldProgram, err := control.Compile(ctx, control.CompileRequest{
-		KernelVersion: boatstack.Version, Core: core.System(), Flow: standard.Definition(), Extensions: []control.Extension{releasenote.Definition()},
+		KernelVersion: boatstack.Version, Core: core.System(), Runtime: standard.Definition(), Extensions: []control.Extension{releasenote.Definition()},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -415,7 +415,7 @@ func TestReferenceExtensionUsesKernelAdmissionVerificationAndReceiptPath(t *test
 		t.Fatal(err)
 	}
 	program, err := control.Compile(ctx, control.CompileRequest{
-		KernelVersion: boatstack.Version, Core: core.System(), Flow: standard.Definition(), Extensions: []control.Extension{releasenote.Definition()},
+		KernelVersion: boatstack.Version, Core: core.System(), Runtime: standard.Definition(), Extensions: []control.Extension{releasenote.Definition()},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -516,7 +516,7 @@ func TestReferenceExtensionUsesKernelAdmissionVerificationAndReceiptPath(t *test
 		CorrelationID: "extension-after", Goal: goal, Authority: authority(catalog.AuthorityRepository),
 	})
 	if err != nil || after.Decision == nil {
-		t.Fatalf("verified extension did not return control to PrimaryFlow: %#v error=%v", after.Decision, err)
+		t.Fatalf("verified extension did not return control to ProgramRuntime: %#v error=%v", after.Decision, err)
 	}
 	if after.Decision.Transition != nil && after.Decision.Transition.Origin.Kind == catalog.OriginExtension {
 		t.Fatalf("verified extension remained selectable: %#v", after.Decision)

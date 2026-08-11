@@ -555,10 +555,10 @@ func renderResponse(response surfaces.Response, format string) error {
 			return nil
 		}
 		if response.Doctor != nil {
-			fmt.Printf("healthy=%t kernel=%s core=%s@%s flow=%s@%s core_transitions=%d flow_transitions=%d extension_transitions=%d transitions=%d program=%s drift=%t runtime_healthy=%t update_ready=%t recovery_required=%t snapshot=%s\n%s\n",
+			fmt.Printf("healthy=%t kernel=%s core=%s@%s program=%s@%s core_transitions=%d runtime_transitions=%d extension_transitions=%d transitions=%d fingerprint=%s drift=%t runtime_healthy=%t update_ready=%t recovery_required=%t snapshot=%s\n%s\n",
 				response.Doctor.Healthy, response.Doctor.KernelVersion, response.Doctor.CoreSystemID, response.Doctor.CoreSystemVersion,
-				response.Doctor.PrimaryFlowID, response.Doctor.PrimaryFlowVersion, response.Doctor.CoreTransitionCount,
-				response.Doctor.FlowTransitionCount, response.Doctor.ExtensionTransitionCount, response.Doctor.TransitionCount,
+				response.Doctor.ProgramID, response.Doctor.ProgramVersion, response.Doctor.CoreTransitionCount,
+				response.Doctor.RuntimeTransitionCount, response.Doctor.ExtensionTransitionCount, response.Doctor.TransitionCount,
 				response.Doctor.ProgramFingerprint, response.Doctor.UnresolvedProgramDrift, response.Doctor.RuntimeHealthy, response.Doctor.UpdateReady, response.Doctor.RecoveryRequired, response.Doctor.Snapshot, response.Doctor.Detail)
 			return nil
 		}

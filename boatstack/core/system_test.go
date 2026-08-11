@@ -9,7 +9,7 @@ import (
 )
 
 func TestManifestOwnsOnlyOperationalCapabilities(t *testing.T) {
-	// control-law: core-system-declarations-exclude-primary-flow-policy
+	// control-law: core-system-declarations-exclude-control-program-policy
 	manifest, err := core.System().CoreManifest(context.Background())
 	if err != nil {
 		t.Fatal(err)

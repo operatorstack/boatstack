@@ -6,45 +6,45 @@ import (
 	"testing"
 )
 
-func TestFlowOperationResponsesAreAnExactTaggedUnion(t *testing.T) {
+func TestProgramRuntimeOperationResponsesAreAnExactTaggedUnion(t *testing.T) {
 	verified := true
-	valid := map[FlowOperation]FlowResponse{
-		FlowObserveOperation:         {Facts: []ExtensionFact{{ID: "flow.ready"}}},
-		FlowPlanLocalEffectOperation: {Writes: []ResourceWrite{{Resource: "flow.plan"}}},
-		FlowExecuteExternalOperation: {ExternalResult: json.RawMessage(`{"ok":true}`)},
-		FlowVerifyOperation:          {Verified: &verified},
-		FlowRecoverOperation:         {Writes: []ResourceWrite{{Resource: "flow.recovery"}}},
+	valid := map[ProgramRuntimeOperation]ProgramRuntimeResponse{
+		ProgramObserveOperation:         {Facts: []ExtensionFact{{ID: "flow.ready"}}},
+		ProgramPlanLocalEffectOperation: {Writes: []ResourceWrite{{Resource: "flow.plan"}}},
+		ProgramExecuteExternalOperation: {ExternalResult: json.RawMessage(`{"ok":true}`)},
+		ProgramVerifyOperation:          {Verified: &verified},
+		ProgramRecoverOperation:         {Writes: []ResourceWrite{{Resource: "flow.recovery"}}},
 	}
 	for operation, response := range valid {
-		if err := ValidateFlowOperationResponse(operation, response); err != nil {
+		if err := ValidateProgramRuntimeOperationResponse(operation, response); err != nil {
 			t.Fatalf("valid %q response: %v", operation, err)
 		}
 	}
 
 	invalid := []struct {
 		name      string
-		operation FlowOperation
-		response  FlowResponse
+		operation ProgramRuntimeOperation
+		response  ProgramRuntimeResponse
 	}{
-		{"observe-write", FlowObserveOperation, FlowResponse{Writes: []ResourceWrite{{Resource: "wrong"}}}},
-		{"local-fact", FlowPlanLocalEffectOperation, FlowResponse{Facts: []ExtensionFact{{ID: "wrong"}}}},
-		{"external-empty", FlowExecuteExternalOperation, FlowResponse{}},
-		{"verify-missing", FlowVerifyOperation, FlowResponse{}},
-		{"recover-external", FlowRecoverOperation, FlowResponse{ExternalResult: json.RawMessage(`{}`)}},
-		{"partial-error", FlowObserveOperation, FlowResponse{ErrorClass: "temporary"}},
-		{"error-payload", FlowObserveOperation, FlowResponse{ErrorClass: "temporary", Error: "failed", Facts: []ExtensionFact{{ID: "wrong"}}}},
-		{"error-class-too-long", FlowObserveOperation, FlowResponse{ErrorClass: strings.Repeat("x", 129), Error: "failed"}},
-		{"error-message-too-long", FlowObserveOperation, FlowResponse{ErrorClass: "temporary", Error: strings.Repeat("x", 4097)}},
-		{"unknown-operation", FlowOperation("unknown"), FlowResponse{}},
+		{"observe-write", ProgramObserveOperation, ProgramRuntimeResponse{Writes: []ResourceWrite{{Resource: "wrong"}}}},
+		{"local-fact", ProgramPlanLocalEffectOperation, ProgramRuntimeResponse{Facts: []ExtensionFact{{ID: "wrong"}}}},
+		{"external-empty", ProgramExecuteExternalOperation, ProgramRuntimeResponse{}},
+		{"verify-missing", ProgramVerifyOperation, ProgramRuntimeResponse{}},
+		{"recover-external", ProgramRecoverOperation, ProgramRuntimeResponse{ExternalResult: json.RawMessage(`{}`)}},
+		{"partial-error", ProgramObserveOperation, ProgramRuntimeResponse{ErrorClass: "temporary"}},
+		{"error-payload", ProgramObserveOperation, ProgramRuntimeResponse{ErrorClass: "temporary", Error: "failed", Facts: []ExtensionFact{{ID: "wrong"}}}},
+		{"error-class-too-long", ProgramObserveOperation, ProgramRuntimeResponse{ErrorClass: strings.Repeat("x", 129), Error: "failed"}},
+		{"error-message-too-long", ProgramObserveOperation, ProgramRuntimeResponse{ErrorClass: "temporary", Error: strings.Repeat("x", 4097)}},
+		{"unknown-operation", ProgramRuntimeOperation("unknown"), ProgramRuntimeResponse{}},
 	}
 	for _, test := range invalid {
 		t.Run(test.name, func(t *testing.T) {
-			if err := ValidateFlowOperationResponse(test.operation, test.response); err == nil {
+			if err := ValidateProgramRuntimeOperationResponse(test.operation, test.response); err == nil {
 				t.Fatalf("invalid %q response was accepted", test.operation)
 			}
 		})
 	}
-	if err := ValidateFlowOperationResponse(FlowObserveOperation, FlowResponse{ErrorClass: "temporary", Error: "failed"}); err != nil {
+	if err := ValidateProgramRuntimeOperationResponse(ProgramObserveOperation, ProgramRuntimeResponse{ErrorClass: "temporary", Error: "failed"}); err != nil {
 		t.Fatalf("classified error response: %v", err)
 	}
 }

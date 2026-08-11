@@ -32,7 +32,7 @@ type PolicySettings struct {
 }
 
 // SubprocessExtensionSettings is a repository-selected, checksum-bound
-// additive capability. It cannot select or replace the primary flow.
+// additive capability. It cannot select or replace the program runtime.
 type SubprocessExtensionSettings struct {
 	ID             string          `json:"id"`
 	Version        string          `json:"version"`

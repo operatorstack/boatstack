@@ -105,7 +105,7 @@ func (s Snapshot) Facet(name FacetName) (FactStatus, string, bool) {
 		value := s.Goal.Value
 		return s.Goal.Status, strings.Join([]string{value.ID, string(value.Kind), value.DeliveryID, value.EvidenceFingerprint, fmt.Sprint(value.FrontierIsStop)}, "|"), true
 	default:
-		if fact, ok := s.FlowFacts[string(name)]; ok {
+		if fact, ok := s.ProgramFacts[string(name)]; ok {
 			return fact.Status, fact.Value, true
 		}
 		fact, ok := s.ExtensionFacts[string(name)]

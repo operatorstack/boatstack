@@ -409,7 +409,7 @@ type Observation struct {
 	TransactionInfo            Fact[TransactionContext]  `json:"transaction_info"`
 	Terminal                   Fact[TerminalStatus]      `json:"terminal"`
 	Goal                       Fact[Goal]                `json:"goal"`
-	FlowFacts                  map[string]Fact[string]   `json:"flow_facts,omitempty"`
+	ProgramFacts               map[string]Fact[string]   `json:"flow_facts,omitempty"`
 	ExtensionFacts             map[string]Fact[string]   `json:"extension_facts,omitempty"`
 	ObservedAt                 time.Time                 `json:"observed_at"`
 }
@@ -553,11 +553,11 @@ func Canonicalize(observation Observation) (Snapshot, error) {
 			return Snapshot{}, fmt.Errorf("snapshot: invalid goal fact: %w", err)
 		}
 	}
-	for id, fact := range observation.FlowFacts {
+	for id, fact := range observation.ProgramFacts {
 		if !FacetName(id).Valid() || controllingFacet(FacetName(id)) {
-			return Snapshot{}, fmt.Errorf("snapshot: invalid primary-flow fact id %q", id)
+			return Snapshot{}, fmt.Errorf("snapshot: invalid control-program fact id %q", id)
 		}
-		if err := fact.Validate("primary-flow fact " + id); err != nil {
+		if err := fact.Validate("control-program fact " + id); err != nil {
 			return Snapshot{}, err
 		}
 	}
@@ -605,9 +605,9 @@ func Canonicalize(observation Observation) (Snapshot, error) {
 	zeroEvidenceTimes(&projection.TransactionInfo)
 	zeroEvidenceTimes(&projection.Terminal)
 	zeroEvidenceTimes(&projection.Goal)
-	for id, fact := range projection.FlowFacts {
+	for id, fact := range projection.ProgramFacts {
 		zeroEvidenceTimes(&fact)
-		projection.FlowFacts[id] = fact
+		projection.ProgramFacts[id] = fact
 	}
 	for id, fact := range projection.ExtensionFacts {
 		zeroEvidenceTimes(&fact)

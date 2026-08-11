@@ -183,7 +183,7 @@ func TestDeclarativeManifestDoesNotStartExecutable(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := control.Compile(context.Background(), control.CompileRequest{
-		KernelVersion: "test-kernel", Core: core.System(), Flow: standard.Definition(), Extensions: []control.Extension{extension},
+		KernelVersion: "test-kernel", Core: core.System(), Runtime: standard.Definition(), Extensions: []control.Extension{extension},
 	}); err != nil {
 		t.Fatal(err)
 	}

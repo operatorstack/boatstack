@@ -91,11 +91,10 @@ type DoctorReport struct {
 	KernelVersion            string   `json:"kernel_version"`
 	CoreSystemID             string   `json:"core_system_id"`
 	CoreSystemVersion        string   `json:"core_system_version"`
-	PrimaryFlowID            string   `json:"primary_flow_id"`
-	PrimaryFlowVersion       string   `json:"primary_flow_version"`
-	PrimaryFlowFingerprint   string   `json:"primary_flow_fingerprint"`
+	ProgramID                string   `json:"program_id"`
+	ProgramVersion           string   `json:"program_version"`
 	CoreTransitionCount      int      `json:"core_transition_count"`
-	FlowTransitionCount      int      `json:"flow_transition_count"`
+	RuntimeTransitionCount   int      `json:"runtime_transition_count"`
 	ExtensionTransitionCount int      `json:"extension_transition_count"`
 	TransitionCount          int      `json:"transition_count"`
 	EnabledExtensions        []string `json:"enabled_extensions,omitempty"`

@@ -23,46 +23,46 @@ func (d programEffectDriver) Prepare(ctx context.Context, admission protocol.Adm
 	if transition.Origin.Kind == catalog.OriginCoreSystem {
 		return d.base.Prepare(ctx, admission, transition)
 	}
-	if transition.Origin.Kind == catalog.OriginPrimaryFlow {
-		flow := d.program.Flow()
-		if flow.Manifest.RuntimeMode == control.FlowRuntimeNative {
+	if transition.Origin.Kind == catalog.OriginControlProgram {
+		flow := d.program.ProgramRuntime()
+		if flow.Manifest.RuntimeMode == control.ProgramRuntimeNative {
 			return d.base.Prepare(ctx, admission, transition)
 		}
 		if flow.Runtime == nil {
-			return nil, fmt.Errorf("primary-flow runtime %q is unavailable", flow.Identity.ID)
+			return nil, fmt.Errorf("control-program runtime %q is unavailable", flow.Identity.ID)
 		}
 		parameters, err := json.Marshal(admission.Parameters)
 		if err != nil {
 			return nil, err
 		}
-		request := control.FlowRequest{
-			ProtocolVersion: control.FlowProtocolVersion, FlowID: flow.Identity.ID, FlowVersion: flow.Identity.Version,
+		request := control.ProgramRuntimeRequest{
+			ProtocolVersion: control.ProgramRuntimeProtocolVersion, ProgramID: flow.Identity.ID, ProgramVersion: flow.Identity.Version,
 			ProgramFingerprint: admission.ProgramFingerprint, CorrelationID: admission.Invocation.Correlation,
 			RepositoryRoot: admission.Invocation.InvokingPath, TransitionID: transition.ID, Parameters: parameters, Settings: flow.Manifest.Settings,
 		}
 		if transition.Class == catalog.EventOwnedExternal {
 			return effects.NewExtensionExternalPrepared(func(executionContext context.Context) (ports.EffectResult, error) {
-				request.Operation = control.FlowExecuteExternalOperation
-				response, invokeErr := flow.Runtime.InvokeFlow(executionContext, request)
+				request.Operation = control.ProgramExecuteExternalOperation
+				response, invokeErr := flow.Runtime.InvokeProgram(executionContext, request)
 				if invokeErr != nil {
 					return ports.EffectResult{}, invokeErr
 				}
-				if err := validateFlowResponse(flow, request.Operation, request.CorrelationID, response); err != nil {
+				if err := validateProgramRuntimeResponse(flow, request.Operation, request.CorrelationID, response); err != nil {
 					return ports.EffectResult{}, err
 				}
 				return decodeExtensionSettlement(flow.Identity.ID, response.ExternalResult)
 			})
 		}
-		operation := control.FlowPlanLocalEffectOperation
+		operation := control.ProgramPlanLocalEffectOperation
 		if transition.Class == catalog.EventRecovery {
-			operation = control.FlowRecoverOperation
+			operation = control.ProgramRecoverOperation
 		}
 		request.Operation = operation
-		response, invokeErr := flow.Runtime.InvokeFlow(ctx, request)
+		response, invokeErr := flow.Runtime.InvokeProgram(ctx, request)
 		if invokeErr != nil {
 			return nil, invokeErr
 		}
-		if err := validateFlowResponse(flow, operation, admission.Invocation.Correlation, response); err != nil {
+		if err := validateProgramRuntimeResponse(flow, operation, admission.Invocation.Correlation, response); err != nil {
 			return nil, err
 		}
 		if err := validateProgramWrites(d.program, transition, flow.Identity.ID, response.Writes); err != nil {

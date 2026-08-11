@@ -7,7 +7,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 )
 
-// GoalContract is the compiled terminal law supplied by the primary flow.
+// GoalContract is the compiled terminal law supplied by the program runtime.
 // Extension conditions are conjunctive and therefore can only narrow the
 // terminal set.
 type GoalContract struct {

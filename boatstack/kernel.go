@@ -156,8 +156,8 @@ func (k Kernel) Handle(ctx context.Context, request surfaces.Request) (surfaces.
 		}
 		report := surfaces.DoctorReport{
 			KernelVersion: summary.KernelVersion, CoreSystemID: summary.Core.ID, CoreSystemVersion: summary.Core.Version,
-			PrimaryFlowID: summary.Flow.ID, PrimaryFlowVersion: summary.Flow.Version, PrimaryFlowFingerprint: summary.Flow.Fingerprint,
-			CoreTransitionCount: summary.CoreTransitionCount, FlowTransitionCount: summary.FlowTransitionCount,
+			ProgramID: summary.ProgramID, ProgramVersion: summary.ProgramVersion,
+			CoreTransitionCount: summary.CoreTransitionCount, RuntimeTransitionCount: summary.RuntimeTransitionCount,
 			ExtensionTransitionCount: summary.ExtensionTransitionCount, TransitionCount: summary.TotalTransitionCount,
 			EnabledExtensions: extensionIDs, ProgramFingerprint: summary.ProgramFingerprint,
 		}

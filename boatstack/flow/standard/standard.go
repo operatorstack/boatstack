@@ -24,16 +24,16 @@ type definition struct{}
 //go:embed transitions.json
 var transitionDeclarations []byte
 
-func Definition() control.FlowDefinition { return definition{} }
+func Definition() control.ProgramRuntimeDefinition { return definition{} }
 
-func (definition) FlowManifest(context.Context) (control.PrimaryFlowManifest, error) {
+func (definition) RuntimeManifest(context.Context) (control.ProgramRuntimeManifest, error) {
 	transitions, err := decodeTransitions()
 	if err != nil {
-		return control.PrimaryFlowManifest{}, err
+		return control.ProgramRuntimeManifest{}, err
 	}
 	resources, effects, verifiers, recoveries := declarations(transitions)
-	return control.PrimaryFlowManifest{
-		ID: ID, Version: Version, ProtocolVersion: control.FlowProtocolVersion, RuntimeMode: control.FlowRuntimeNative,
+	return control.ProgramRuntimeManifest{
+		ID: ID, Version: Version, ProtocolVersion: control.ProgramRuntimeProtocolVersion, RuntimeMode: control.ProgramRuntimeNative,
 		SupportedGoals: []control.GoalKind{
 			model.GoalApprovedPlan, model.GoalVerified, model.GoalOpenPR,
 			model.GoalMerged, model.GoalAbandoned,
