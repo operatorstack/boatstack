@@ -200,11 +200,7 @@ func classifyCommand(command string) (surfaces.Operation, catalog.TransitionID, 
 		return surfaces.OperationGuard, "", nil, nil
 	}
 	if transition, ok := aliases[command]; ok {
-		defaults := map[string]string{}
-		if command == "init" {
-			defaults["goal-kind"], defaults["delivery"], defaults["goal-id"] = string(model.GoalApprovedPlan), "bootstrap", "bootstrap"
-		}
-		return surfaces.OperationApply, transition, defaults, nil
+		return surfaces.OperationApply, transition, nil, nil
 	}
 	return "", "", nil, fmt.Errorf("unknown command %q", command)
 }

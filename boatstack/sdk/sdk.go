@@ -48,9 +48,12 @@ const (
 
 type TransitionID = catalog.TransitionID
 type Transition = catalog.Transition
+type GoalScope = catalog.GoalScope
 type AuthorityClass = catalog.AuthorityClass
 
 const (
+	GoalScopeOptionalPreserve = catalog.GoalScopeOptionalPreserve
+
 	AuthorityRepository = catalog.AuthorityRepository
 	AuthorityHuman      = catalog.AuthorityHuman
 	AuthorityAutonomy   = catalog.AuthorityAutonomy

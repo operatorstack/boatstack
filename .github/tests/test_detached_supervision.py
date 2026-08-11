@@ -188,6 +188,11 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         )
 
         self.helper_json(
+            "apply", "--repo", self.repo, "--transition", "goal.configure",
+            *self.goal_flags(), "--human", "contract",
+            "--param", "goal_kind=approved-plan", "--param", "delivery_id=bootstrap",
+        )
+        self.helper_json(
             "apply", "--repo", self.repo, "--transition", "engagement.begin",
             *self.goal_flags(), "--repository-authority",
         )
@@ -232,6 +237,12 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         self.helper_json(
             "init", "--repo", self.repo, *goal, *flow, "--human", "contract",
             "--param", f"config_path={config}",
+        )
+        self.helper_json(
+            "apply", "--repo", self.repo, "--transition", "goal.configure",
+            *goal, *flow, "--human", "contract",
+            "--param", "goal_kind=open-or-updated-pr",
+            "--param", "delivery_id=codex-driver-authority-triggers",
         )
         self.helper_json(
             "apply", "--repo", self.repo, "--transition", "engagement.begin",
@@ -354,6 +365,14 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         self.assertEqual(initialized["snapshot"]["configuration"]["value"], "verified")
         for field in ('"admission"', '"receipt"', '"snapshot"', '"target_fingerprint"', '"recovery"'):
             self.assertIn(field, initialized_process.stdout)
+
+        configured = self.helper_json(
+            "apply", "--repo", self.repo, "--transition", "goal.configure",
+            *goal, *flow, *actor,
+            "--param", "goal_kind=open-or-updated-pr",
+            "--param", "delivery_id=preserve-repository-authority-context",
+        )
+        self.assertEqual(configured["receipt"]["transition_id"], "goal.configure")
 
         engagement = self.helper_json(
             "next", "--repo", self.repo, *goal, *flow, *actor,

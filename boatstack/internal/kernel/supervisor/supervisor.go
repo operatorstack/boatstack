@@ -40,7 +40,8 @@ func New(registry catalog.Registry, contracts catalog.GoalContracts) Supervisor 
 
 func (s Supervisor) Resolve(snapshot model.Snapshot, goal model.Goal, authority catalog.AuthoritySet, requested catalog.TransitionID) Decision {
 	base := Decision{SnapshotFingerprint: snapshot.Fingerprint}
-	if err := goal.Validate(); err != nil || snapshot.Fingerprint == "" {
+	goalAbsent := snapshot.Goal.Status == model.FactAbsent
+	if (goal.Validate() != nil && !goalAbsent) || snapshot.Fingerprint == "" {
 		base.Kind, base.Reason = DecisionUnresolved, "goal or canonical snapshot is invalid"
 		return base
 	}

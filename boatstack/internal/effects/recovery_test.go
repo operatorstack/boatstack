@@ -164,7 +164,8 @@ func TestRestartRecoveryRollsBackExactPriorBytesAndArchivesJournal(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Target.Phase.Value != model.PhaseDormant || result.Target.Recovery.Value != model.RecoveryNone || result.Receipt.ID == "" {
+	if result.Target.Phase.Value != model.PhaseDormant || result.Target.Recovery.Value != model.RecoveryNone || result.Target.Goal.Status != model.FactAbsent ||
+		result.Receipt.ID == "" || result.Receipt.GoalStatus != model.FactAbsent || result.Receipt.GoalID != "" {
 		t.Fatalf("rollback target=%#v receipt=%q", result.Target, result.Receipt.ID)
 	}
 	layout, _, _ := resolver.ResolveLayout(ctx, restartedInvocation)

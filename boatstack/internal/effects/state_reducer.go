@@ -11,11 +11,17 @@ import (
 
 func applyStateTransition(state *durable.State, admission protocol.Admission, transition catalog.Transition) error {
 	configured := state.Goal.Validate() == nil
-	switch transition.ID {
-	case "installation.initialize", "goal.configure":
+	if transition.Policy.GoalScope == catalog.GoalScopeOptionalPreserve {
+		if configured && state.Goal != admission.Goal {
+			return fmt.Errorf("transition %q must preserve the exact configured product goal", transition.ID)
+		}
+		if !configured && admission.Goal.Validate() == nil {
+			return fmt.Errorf("transition %q cannot create product intent from verified absence", transition.ID)
+		}
+	} else if transition.ID == "goal.configure" {
 		state.Goal = admission.Goal
 		configured = true
-	default:
+	} else {
 		if configured && state.Goal != admission.Goal {
 			return fmt.Errorf("transition %q cannot replace configured goal; use goal.configure", transition.ID)
 		}

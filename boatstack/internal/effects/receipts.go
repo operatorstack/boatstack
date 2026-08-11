@@ -136,6 +136,8 @@ type processEvent struct {
 	Sequence            uint64    `json:"sequence"`
 	Timestamp           time.Time `json:"timestamp"`
 	GoalID              string    `json:"goal_id"`
+	GoalScope           string    `json:"goal_scope,omitempty"`
+	GoalStatus          string    `json:"goal_status,omitempty"`
 	TransitionID        string    `json:"transition_id"`
 	ProgramFingerprint  string    `json:"program_fingerprint"`
 	SourceFingerprint   string    `json:"source_fingerprint"`
@@ -181,6 +183,7 @@ func (s *ReceiptStore) Append(ctx context.Context, receipt protocol.TransitionRe
 	}
 	event := processEvent{
 		SchemaVersion: 1, FlowID: receipt.FlowID, Sequence: receipt.Sequence, Timestamp: s.clock.Now().UTC(), GoalID: receipt.GoalID,
+		GoalScope: string(receipt.GoalScope), GoalStatus: string(receipt.GoalStatus),
 		TransitionID: string(receipt.TransitionID), ProgramFingerprint: receipt.ProgramFingerprint, SourceFingerprint: receipt.SourceFingerprint, TargetFingerprint: receipt.TargetFingerprint,
 		Outcome: string(receipt.Outcome), DurationNanoseconds: receipt.DurationNanoseconds,
 		AuthorityClasses: append([]string(nil), receipt.AuthorityClasses...), Recovery: string(receipt.Recovery), Terminal: string(receipt.Terminal), FailureClass: receipt.FailureClass,
