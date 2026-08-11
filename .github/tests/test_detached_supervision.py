@@ -182,6 +182,79 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         self.assertFalse(destructive["guard"]["allowed"])
         self.assertEqual(destructive["guard"]["intent"]["operation"], "filesystem.recursive-delete")
 
+    def test_authority_free_frontier_does_not_block_authorized_plan_creation(self) -> None:
+        # control-law: codex-mode-authority-survives-observation-and-effects
+        goal = (
+            "--goal-id", "codex-driver-authority-triggers",
+            "--goal-kind", "open-or-updated-pr",
+            "--delivery", "codex-driver-authority-triggers",
+        )
+        flow = ("--flow", "flow-codex-driver-authority-triggers")
+        self.helper_json(
+            "attach", "--repo", self.repo, *goal, *flow, "--human", "contract",
+            "--param", "topology=detached", "--param", "config_authority=repository",
+        )
+        config = Path(self.work.name) / "driver-project.json"
+        config.write_text(
+            json.dumps(
+                {
+                    "schema_version": 2,
+                    "project": {"name": "driver-fixture", "default_branch": "main", "commands": {}},
+                    "policy": {"plan_approval": "human", "visual_evidence": "optional"},
+                    "hosts": ["cli", "codex"],
+                }
+            )
+        )
+        self.helper_json(
+            "init", "--repo", self.repo, *goal, *flow, "--human", "contract",
+            "--param", f"config_path={config}",
+        )
+        self.helper_json(
+            "apply", "--repo", self.repo, "--transition", "engagement.begin",
+            *goal, *flow, "--repository-authority",
+        )
+
+        before = self.porcelain()
+        diagnostic = self.helper_json("status", "--repo", self.repo, *goal, *flow)
+        self.assertEqual(diagnostic["decision"]["kind"], "FRONTIER")
+        self.assertIn("plan.create", diagnostic["decision"]["candidates"])
+        self.assertEqual(self.porcelain(), before)
+
+        plan = Path(self.work.name) / "source-plan.md"
+        plan.write_text("# Driver fix\n\nPreserve authority across resolution and effects.\n")
+        parameters = (
+            "--param", f"source_path={plan}",
+            "--param", "delivery_id=codex-driver-authority-triggers",
+        )
+        prescribed = self.helper_json(
+            "next", "--repo", self.repo, "--transition", "plan.create",
+            *goal, *flow, "--human", "contract", *parameters,
+        )
+        self.assertEqual(prescribed["decision"]["kind"], "PRESCRIBED")
+        self.assertEqual(prescribed["decision"]["transition"]["id"], "plan.create")
+
+        applied_process = self.run_helper(
+            "plan-create", "--repo", self.repo, *goal, *flow,
+            "--human", "contract", *parameters,
+        )
+        applied = json.loads(applied_process.stdout)
+        self.assertEqual(applied_process.stderr, "")
+        self.assertEqual(applied["receipt"]["transition_id"], "plan.create")
+        self.assertEqual(applied["receipt"]["flow_id"], "flow-codex-driver-authority-triggers")
+        self.assertEqual(applied["receipt"]["outcome"], "succeeded")
+        self.assertTrue(applied["receipt"]["target_fingerprint"])
+        self.assertEqual(applied["receipt"]["recovery"], "recovery.resume")
+        self.assertEqual(applied["snapshot"]["plan"]["value"], "draft")
+        for field in ('"admission"', '"receipt"', '"snapshot"', '"target_fingerprint"', '"recovery"'):
+            self.assertIn(field, applied_process.stdout)
+
+        resolved = self.helper_json(
+            "next", "--repo", self.repo, "--transition", "plan.validate",
+            *goal, *flow, "--repository-authority",
+        )
+        self.assertEqual(resolved["decision"]["kind"], "PRESCRIBED")
+        self.assertEqual(resolved["decision"]["transition"]["id"], "plan.validate")
+
 
 if __name__ == "__main__":
     unittest.main()

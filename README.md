@@ -82,6 +82,19 @@ come directly from the runtime registry.
 The [replacement closure report](docs/architecture/boatstack-v2-closure-report.md)
 records the deleted V1 authority and its V2 evidence.
 
+## Codex modes
+
+Codex users can invoke `$boatstack Autoplan` to reach an approved plan,
+`$boatstack Run` to drive a delivery through a normal PR open or update, or
+`$boatstack Update` to run the checksum-verified Boatstack installation update
+path. Mode names are case-insensitive, and bare `$boatstack` presents the same
+three choices. Run never grants merge authority.
+
+The initial `status` read is observation only. After a mode is selected, the
+Codex driver keeps one command-scoped goal, flow, worktree, actor, and authority
+context through resolution and effects. An authority-free diagnostic frontier
+cannot end an otherwise authorized invocation.
+
 ## Safety
 
 Unknown, absent, stale, ambiguous, and conflicting evidence are different

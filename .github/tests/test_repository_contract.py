@@ -120,6 +120,36 @@ class RepositoryContract(unittest.TestCase):
         self.assertIn("VERSION: ${{ inputs.prerelease_tag || github.ref_name }}", release)
         self.assertIn('RELEASE_SOURCE: ${{ github.sha }}', release)
 
+    def test_codex_modes_keep_authority_attached_after_observation(self) -> None:
+        # control-law: codex-mode-authority-survives-observation-and-effects
+        skill = (REPO / "boatstack" / "SKILL.md").read_text()
+        prompt = (REPO / "boatstack" / "agents" / "openai.yaml").read_text()
+        readme = (REPO / "README.md").read_text()
+
+        for surface in (skill, prompt, readme):
+            for mode in ("$boatstack Autoplan", "$boatstack Run", "$boatstack Update"):
+                self.assertIn(mode, surface)
+        for mapping in (
+            "`approved-plan` terminal",
+            "`open-or-updated-pr` terminal",
+            "`installation.update`",
+        ):
+            self.assertIn(mapping, skill)
+        for contract in (
+            "status` is observation only",
+            "authority-free `FRONTIER`",
+            "command-scoped authority context",
+            "every `next`, `apply`,\n`recover`, and re-resolution",
+            "complete `apply` response and stderr",
+            "authority-bearing resolution",
+        ):
+            self.assertIn(contract, skill)
+        self.assertIn("present exactly three choices", skill)
+        self.assertIn("case-insensitively", skill)
+        self.assertIn("It never selects\n  merge authority", skill)
+        self.assertIn("bare $boatstack presents those three choices", prompt)
+        self.assertIn("Run never grants merge authority", readme)
+
     def test_document_links_claims_and_assets_are_valid(self) -> None:
         def anchors(document: Path) -> set[str]:
             result: set[str] = set()
