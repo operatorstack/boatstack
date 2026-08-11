@@ -105,9 +105,13 @@ type fakeEffects struct {
 	executions, rollbacks int
 	result                ports.EffectResult
 	err                   error
+	prepareErr            error
 }
 
 func (e *fakeEffects) Prepare(context.Context, protocol.Admission, catalog.Transition) (ports.PreparedEffect, error) {
+	if e.prepareErr != nil {
+		return nil, e.prepareErr
+	}
 	return e, nil
 }
 func (e *fakeEffects) Manifest() []ports.ResourceMutation { return nil }
@@ -309,6 +313,28 @@ func TestResolutionDoesNotPrescribeBeforeRequiredParametersAreBound(t *testing.T
 	}
 	if prescribed.Decision.Kind != supervisor.DecisionPrescribed || prescribed.Decision.Transition == nil || prescribed.Decision.Transition.ID != "test.advance" {
 		t.Fatalf("complete resolution = %+v, want PRESCRIBED", prescribed.Decision)
+	}
+}
+
+func TestResolutionDoesNotPrescribeAnEffectThatDeterministicPreflightRejects(t *testing.T) {
+	// control-law: effect preparation cannot introduce a deterministic apply-only refusal
+	now := time.Unix(30, 0).UTC()
+	effects := &fakeEffects{prepareErr: errors.New("malformed artifact")}
+	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source")}}
+	journal := &fakeJournal{}
+	kernel, err := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{&fakeLock{}}, journal, effects, &memoryReceipts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := kernel.Resolve(context.Background(), request(now).ResolveRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Decision.Kind != supervisor.DecisionUnresolved || resolved.Decision.Transition != nil || !strings.Contains(resolved.Decision.Reason, "malformed artifact") {
+		t.Fatalf("preflight decision = %+v, want typed UNRESOLVED without prescription", resolved.Decision)
+	}
+	if effects.executions != 0 || journal.begun != 0 {
+		t.Fatalf("preflight crossed mutation boundary: effects=%d journals=%d", effects.executions, journal.begun)
 	}
 }
 

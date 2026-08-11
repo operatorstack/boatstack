@@ -88,6 +88,17 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 				decision.Reason = applicabilityErr.Error()
 				decision.Transition = nil
 			}
+		} else {
+			admission, admissionErr := protocol.NewAdmission(snapshot, goal, *decision.Transition, request.Authority, request.Parameters, now, 2*time.Minute)
+			if admissionErr != nil {
+				decision.Kind = supervisor.DecisionUnresolved
+				decision.Reason = admissionErr.Error()
+				decision.Transition = nil
+			} else if _, preflightErr := e.effects.Prepare(ctx, admission, *decision.Transition); preflightErr != nil {
+				decision.Kind = supervisor.DecisionUnresolved
+				decision.Reason = fmt.Sprintf("transition %q failed deterministic effect preflight: %v", admission.TransitionID, preflightErr)
+				decision.Transition = nil
+			}
 		}
 	}
 	return Resolution{Snapshot: snapshot, Goal: goal, Decision: decision}, nil

@@ -548,6 +548,9 @@ repository presence is not engagement; a saved plan is not active authority.
 Resolution never fabricates progress. If several controllable events remain
 equally admissible after declared deterministic priority, the answer is
 `FRONTIER` or `UNRESOLVED`, never map-order selection or first-match behavior.
+Before `PRESCRIBED`, resolution also runs the effect driver's side-effect-free
+preflight over the exact admission context; deterministic artifact, durable-state,
+or recovery refusals therefore cannot first appear at apply.
 
 ## 9. Admission and authority model
 
