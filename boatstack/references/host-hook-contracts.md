@@ -29,3 +29,8 @@ Hosts may render commands differently. They may not change the transition ID,
 goal, source predicate, authority clauses, parameters, or expected
 postcondition. CLI, Cursor, Codex, Claude, Gemini, and MCP are capability labels,
 not controllers.
+
+A host that claims it can complete external publication must expose a provider
+receipt issuer before the delivery begins. If that capability is absent, the
+host must declare that it can progress only to the authority-bearing
+publication frontier. Authentication state is not a receipt issuer.

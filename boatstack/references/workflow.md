@@ -20,6 +20,10 @@ Event families:
 The supervisor returns one of `PRESCRIBED`, `TERMINAL`, `FRONTIER`,
 `BLOCKED`, `REFUSED`, or `UNRESOLVED`. Only `PRESCRIBED` can produce an
 admission. Only an independently verified postcondition can produce a receipt.
+Untargeted resolution excludes transitions whose target is already established
+and transitions that encode separate maintenance, repair, abandonment, or
+caller-defined marker intent. Requested resolution can still admit those
+transitions when the caller explicitly selected them.
 
 A normal verified-delivery path is:
 
@@ -35,6 +39,10 @@ TERMINAL(verified-implementation)
 PR delivery continues through `publication.preview`,
 `publication.execute`, and `publication.observe`. Merged delivery also needs
 the exact workspace to become `landed`.
+
+`delivery.slice.advance` records an explicit opaque marker only. It does not
+parse a plan, persist a slice cursor, define PR cardinality, or advance a
+publication sequence.
 
 Recovery outranks ordinary progress. Goal reconfiguration is explicit and may
 change an active delivery only with human or autonomy authority.

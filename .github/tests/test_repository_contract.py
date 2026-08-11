@@ -120,35 +120,55 @@ class RepositoryContract(unittest.TestCase):
         self.assertIn("VERSION: ${{ inputs.prerelease_tag || github.ref_name }}", release)
         self.assertIn('RELEASE_SOURCE: ${{ github.sha }}', release)
 
-    def test_codex_modes_keep_authority_attached_after_observation(self) -> None:
-        # control-law: codex-mode-authority-survives-observation-and-effects
-        skill = (REPO / "boatstack" / "SKILL.md").read_text()
-        prompt = (REPO / "boatstack" / "agents" / "openai.yaml").read_text()
+    def test_operation_skills_are_three_distinct_authority_preserving_surfaces(self) -> None:
+        # control-law: operation-skill-discovery-preserves-authority-and-exact-cardinality
+        skills = {
+            path.parent.name: path.read_text()
+            for path in sorted((REPO / ".agents" / "skills").glob("boatstack-*/SKILL.md"))
+        }
+        prompts = {
+            path.parents[1].name: path.read_text()
+            for path in sorted((REPO / ".agents" / "skills").glob("boatstack-*/agents/openai.yaml"))
+        }
         readme = (REPO / "README.md").read_text()
 
-        for surface in (skill, prompt, readme):
-            for mode in ("$boatstack Autoplan", "$boatstack Run", "$boatstack Update"):
-                self.assertIn(mode, surface)
-        for mapping in (
-            "`approved-plan` terminal",
-            "`open-or-updated-pr` terminal",
-            "`installation.update`",
-        ):
-            self.assertIn(mapping, skill)
+        self.assertEqual(set(skills), {"boatstack-autoplan", "boatstack-run", "boatstack-update"})
+        self.assertEqual(set(prompts), set(skills))
+        for host_root in (REPO / ".claude" / "skills", REPO / ".gemini" / "skills"):
+            projected = {
+                path.parent.name: path.read_text()
+                for path in sorted(host_root.glob("boatstack-*/SKILL.md"))
+            }
+            self.assertEqual(projected, skills)
+        cursor = {
+            path.stem: path.read_text()
+            for path in sorted((REPO / ".cursor" / "commands").glob("boatstack-*.md"))
+        }
+        self.assertEqual(cursor, skills)
+        self.assertFalse((REPO / "boatstack" / "SKILL.md").exists())
+        mappings = {
+            "boatstack-autoplan": "`approved-plan` terminal",
+            "boatstack-run": "`open-or-updated-pr` terminal",
+            "boatstack-update": "`installation.update` transition",
+        }
+        for name, mapping in mappings.items():
+            self.assertIn(f"name: {name}", skills[name])
+            self.assertIn(mapping, skills[name])
+            self.assertIn(f"${name}", prompts[name])
         for contract in (
-            "status` is observation only",
-            "authority-free `FRONTIER`",
-            "command-scoped authority context",
-            "every `next`, `apply`,\n`recover`, and re-resolution",
-            "complete `apply` response and stderr",
-            "authority-bearing resolution",
+            "authority-free\n`FRONTIER`",
+            "command-scoped context",
+            "every `next`, `apply`, `recover`, and re-resolution",
+            "untargeted authority-bearing `next`",
+            "immediately preceding prescription",
+            "complete apply response and stderr",
+            "authority-bearing `FRONTIER`",
         ):
-            self.assertIn(contract, skill)
-        self.assertIn("present exactly three choices", skill)
-        self.assertIn("case-insensitively", skill)
-        self.assertIn("It never selects\n  merge authority", skill)
-        self.assertIn("bare $boatstack presents those three choices", prompt)
-        self.assertIn("Run never grants merge authority", readme)
+            for name, skill in skills.items():
+                self.assertIn(contract, skill, name)
+        self.assertIn("never grants merge authority", skills["boatstack-run"])
+        self.assertIn("Untargeted resolution selects\nonly a transition that advances the configured goal", readme)
+        self.assertIn("exactly three operation skills", readme)
 
     def test_document_links_claims_and_assets_are_valid(self) -> None:
         def anchors(document: Path) -> set[str]:
@@ -218,10 +238,9 @@ class RepositoryContract(unittest.TestCase):
 
         current_guidance = [
             REPO / "README.md",
-            REPO / "boatstack" / "SKILL.md",
+            *sorted((REPO / ".agents" / "skills").glob("boatstack-*/SKILL.md")),
             *sorted((REPO / "docs").glob("*.md")),
             *sorted((REPO / "boatstack" / "references").glob("*.md")),
-            *sorted((REPO / "boatstack" / "agents").glob("*.yaml")),
         ]
         deprecated = (
             "plan-gate",
@@ -239,7 +258,7 @@ class RepositoryContract(unittest.TestCase):
     def test_documented_cli_verbs_are_registered_v2_surfaces(self) -> None:
         documents = [
             REPO / "README.md",
-            REPO / "boatstack" / "SKILL.md",
+            *sorted((REPO / ".agents" / "skills").glob("boatstack-*/SKILL.md")),
             *sorted((REPO / "docs").glob("*.md")),
             *sorted((REPO / "boatstack" / "references").glob("*.md")),
         ]

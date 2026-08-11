@@ -48,8 +48,9 @@ irm https://raw.githubusercontent.com/operatorstack/boatstack/main/install.ps1 |
 
 The installer verifies the release checksum, runs the registered
 `installation.initialize` transition, and then installs the launcher. Review
-and commit `.boatstack/project.json`; machine-local controller state stays
-outside the worktree.
+and commit `.boatstack/project.json`, `.boatstack/host-skills.json`, and the
+generated host skills; machine-local controller state stays outside the
+worktree.
 
 Run the independent health query:
 
@@ -61,6 +62,12 @@ See [Getting started](docs/getting-started.md) and
 [Configuration](docs/configuration.md) for the first delivery.
 
 ## Product surface
+
+```sh
+boatstack status --repo . --format json
+boatstack catalog --format json
+boatstack apply --repo . --transition <stable-id> --format json
+```
 
 - `status`, `next`, `doctor`, `catalog`, and `events` are read-only.
 - `apply` and `recover` request stable transition IDs from the 61-event
@@ -82,18 +89,30 @@ come directly from the runtime registry.
 The [replacement closure report](docs/architecture/boatstack-v2-closure-report.md)
 records the deleted V1 authority and its V2 evidence.
 
-## Codex modes
+## Coding-agent skills
 
-Codex users can invoke `$boatstack Autoplan` to reach an approved plan,
-`$boatstack Run` to drive a delivery through a normal PR open or update, or
-`$boatstack Update` to run the checksum-verified Boatstack installation update
-path. Mode names are case-insensitive, and bare `$boatstack` presents the same
-three choices. Run never grants merge authority.
+Boatstack exposes exactly three operation skills on every supported interactive
+coding host:
 
-The initial `status` read is observation only. After a mode is selected, the
-Codex driver keeps one command-scoped goal, flow, worktree, actor, and authority
+- `boatstack-autoplan` reaches an approved plan.
+- `boatstack-run` drives delivery through a normal PR open or update and never
+  grants merge authority.
+- `boatstack-update` runs the checksum-verified installation update path.
+
+Codex and compatible Agent Skills hosts show `$boatstack-autoplan`,
+`$boatstack-run`, and `$boatstack-update`. Claude Code and Gemini CLI receive
+the same three skill identities. Cursor receives the same three slash commands.
+The initializer and updater project them from one canonical driver, so a host
+cannot acquire a separate workflow state machine.
+
+The initial `status` read is observation only. After an operation is selected,
+the host driver keeps one command-scoped goal, flow, worktree, actor, and authority
 context through resolution and effects. An authority-free diagnostic frontier
-cannot end an otherwise authorized invocation.
+cannot end an otherwise authorized invocation. Untargeted resolution selects
+only a transition that advances the configured goal; maintenance, correction,
+abandonment, and caller-defined markers require separate explicit intent.
+The host never derives slice order from plan prose or provider authority from an
+authenticated GitHub session.
 
 ## Safety
 

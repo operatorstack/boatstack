@@ -1,0 +1,6 @@
+interface:
+  display_name: "Boatstack Run"
+  short_description: "Drive delivery to an open or updated pull request."
+  default_prompt: "Use $boatstack-run to follow the authority-preserving Boatstack V2 driver."
+policy:
+  allow_implicit_invocation: false

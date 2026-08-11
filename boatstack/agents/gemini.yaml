@@ -1,4 +1,0 @@
-interface:
-  display_name: "Boatstack (Gemini)"
-  short_description: "Use the shared Boatstack V2 delivery kernel from Gemini CLI."
-  default_prompt: "Use $boatstack V2. Read status once, follow the returned semantic transition, preserve exact goal and invocation identity, and send guarded commands to the shared kernel instead of reconstructing lifecycle or safety policy."
