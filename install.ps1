@@ -8,6 +8,7 @@ $Version = if ($env:BOATSTACK_VERSION) { $env:BOATSTACK_VERSION } else { "latest
 $Mode = if ($env:BOATSTACK_MODE) { $env:BOATSTACK_MODE } else { "install" }
 $Actor = if ($env:BOATSTACK_ACTOR) { $env:BOATSTACK_ACTOR } elseif ($env:USERNAME) { $env:USERNAME } else { "operator" }
 $InstallDir = if ($env:BOATSTACK_INSTALL_DIR) { $env:BOATSTACK_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA "Boatstack\bin" }
+$BoatstackHome = if ($env:BOATSTACK_HOME) { $env:BOATSTACK_HOME } else { Join-Path $env:LOCALAPPDATA "Boatstack" }
 
 if ($Mode -notin @("install", "update")) { throw "Boatstack V2 supports BOATSTACK_MODE=install or update" }
 $RepositoryOutput = & git -C $Repository rev-parse --show-toplevel
@@ -56,10 +57,34 @@ try {
   $Actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $Candidate).Hash.ToLowerInvariant()
   if ($Actual -ne $Expected) { throw "Boatstack runtime checksum mismatch" }
 
-  New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-  $SafeVersion = [regex]::Replace($Version, '[^A-Za-z0-9._-]', '-')
-  $Runtime = Join-Path $InstallDir ("boatstack-v2-$SafeVersion-" + $Actual.Substring(0, 16) + ".exe")
-  Copy-Item -LiteralPath $Candidate -Destination $Runtime -Force
+  $CandidateVersionOutput = & $Candidate version
+  if ($LASTEXITCODE -ne 0 -or -not $CandidateVersionOutput) { throw "Boatstack runtime did not report its version identity" }
+  $CandidateVersion = ($CandidateVersionOutput -join "`n").Trim()
+  $SafeVersion = [regex]::Replace($CandidateVersion, '[^A-Za-z0-9._-]', '-')
+  if (-not $SafeVersion -or $SafeVersion -ne $CandidateVersion) { throw "Boatstack runtime reported an invalid version identity" }
+  $RuntimeDirectory = Join-Path $BoatstackHome ("runtimes\$SafeVersion-$Actual")
+  New-Item -ItemType Directory -Force -Path $RuntimeDirectory | Out-Null
+  $Runtime = Join-Path $RuntimeDirectory "boatstack-runtime.exe"
+  if (Test-Path -LiteralPath $Runtime) {
+    $Installed = (Get-FileHash -Algorithm SHA256 -LiteralPath $Runtime).Hash.ToLowerInvariant()
+    if ($Installed -ne $Actual) { throw "Boatstack immutable runtime store collision" }
+  } else {
+    $StagedRuntime = Join-Path $RuntimeDirectory (".boatstack-runtime-" + [guid]::NewGuid().ToString("N"))
+    try {
+      Copy-Item -LiteralPath $Candidate -Destination $StagedRuntime
+      $StagedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $StagedRuntime).Hash.ToLowerInvariant()
+      if ($StagedHash -ne $Actual) { throw "Boatstack staged runtime checksum mismatch" }
+      try {
+        New-Item -ItemType HardLink -Path $Runtime -Target $StagedRuntime -ErrorAction Stop | Out-Null
+      } catch {
+        if (-not (Test-Path -LiteralPath $Runtime)) { throw }
+        $Installed = (Get-FileHash -Algorithm SHA256 -LiteralPath $Runtime).Hash.ToLowerInvariant()
+        if ($Installed -ne $Actual) { throw "Boatstack immutable runtime store collision" }
+      }
+    } finally {
+      Remove-Item -LiteralPath $StagedRuntime -Force -ErrorAction SilentlyContinue
+    }
+  }
   $Runtime = (Resolve-Path -LiteralPath $Runtime).Path
 
   if ($Mode -eq "install") {
@@ -82,12 +107,15 @@ try {
       $AcceptProgramChange = @("--accept-program-change")
     }
     & $Runtime update --repo $Repository --human $Actor `
-      --param "runtime_path=$Runtime" `
       --param "runtime_sha256=$Actual" @AcceptProgramChange --format json
   }
   if ($LASTEXITCODE -ne 0) { throw "Boatstack kernel rejected installation" }
 
-  $Launcher = Join-Path $InstallDir "boatstack.cmd"
+  New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+  $Launcher = Join-Path $InstallDir "boatstack.exe"
+  $StagedLauncher = Join-Path $InstallDir (".boatstack-" + [guid]::NewGuid().ToString("N") + ".exe")
+  Copy-Item -LiteralPath $Candidate -Destination $StagedLauncher
+  Move-Item -LiteralPath $StagedLauncher -Destination $Launcher -Force
   Write-Host "Boatstack V2 installed at $Runtime"
   Write-Host "Review and commit $Repository\.boatstack\project.json and the generated host skills"
   Write-Host "Run: $Launcher doctor --repo `"$Repository`" --format text"

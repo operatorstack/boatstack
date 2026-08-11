@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"path/filepath"
 	"sort"
 	"time"
 
@@ -13,7 +12,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 )
 
-const StateSchemaVersion = 1
+const StateSchemaVersion = 2
 
 type GateEvidence struct {
 	Gate        string `json:"gate"`
@@ -49,11 +48,9 @@ type State struct {
 	ExternalEffectPolicy  string                   `json:"external_effect_policy,omitempty"`
 	IndependentReview     bool                     `json:"independent_review_for_high_risk,omitempty"`
 	EnabledHosts          []string                 `json:"enabled_hosts,omitempty"`
+	RuntimeVersion        string                   `json:"runtime_version,omitempty"`
 	RuntimeFingerprint    string                   `json:"runtime_fingerprint,omitempty"`
-	RuntimePath           string                   `json:"runtime_path,omitempty"`
 	RuntimeSource         string                   `json:"runtime_source_revision,omitempty"`
-	LauncherPath          string                   `json:"launcher_path,omitempty"`
-	LauncherFingerprint   string                   `json:"launcher_fingerprint,omitempty"`
 	PlanFingerprint       string                   `json:"plan_fingerprint,omitempty"`
 	WorkspaceBranch       string                   `json:"workspace_branch,omitempty"`
 	WorkspacePath         string                   `json:"workspace_path,omitempty"`
@@ -109,14 +106,8 @@ func (s State) Validate() error {
 	if s.Transaction != model.TransactionNone && (s.TransactionID == "" || s.TransactionTransition == "") {
 		return fmt.Errorf("durable transaction state has incomplete transaction context")
 	}
-	if s.Runtime == model.RuntimeVerified && (s.RuntimeFingerprint == "" || s.RuntimePath == "" || s.RuntimeSource == "") {
-		return fmt.Errorf("verified runtime requires path, source revision, and fingerprint")
-	}
-	if (s.LauncherPath == "") != (s.LauncherFingerprint == "") {
-		return fmt.Errorf("managed launcher requires path and fingerprint together")
-	}
-	if s.LauncherPath != "" && !filepath.IsAbs(s.LauncherPath) {
-		return fmt.Errorf("managed launcher path must be absolute")
+	if s.Runtime == model.RuntimeVerified && (s.RuntimeVersion == "" || s.RuntimeFingerprint == "" || s.RuntimeSource == "") {
+		return fmt.Errorf("verified runtime requires version, source revision, and fingerprint")
 	}
 	if s.Configuration == model.ConfigurationVerified && s.ConfigFingerprint == "" {
 		return fmt.Errorf("verified configuration requires a fingerprint")

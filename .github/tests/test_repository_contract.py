@@ -32,8 +32,8 @@ class RepositoryContract(unittest.TestCase):
         ):
             ldflags = " ".join(
                 (
-                    f"-X github.com/operatorstack/boatstack/boatstack.Version={version}",
-                    f"-X github.com/operatorstack/boatstack/boatstack.SourceCommit={source}",
+                    f"-X github.com/operatorstack/boatstack/boatstack/internal/buildinfo.Version={version}",
+                    f"-X github.com/operatorstack/boatstack/boatstack/internal/buildinfo.SourceCommit={source}",
                 )
             )
             result = subprocess.run(
@@ -111,7 +111,7 @@ class RepositoryContract(unittest.TestCase):
             "boatstack-helper_windows_arm64.exe",
         ):
             self.assertIn(asset, release)
-        for symbol in ("boatstack.Version", "boatstack.SourceCommit", "boatstack.ChecksumsSHA256"):
+        for symbol in ("internal/buildinfo.Version", "internal/buildinfo.SourceCommit", "internal/buildinfo.ChecksumsSHA256"):
             self.assertIn(symbol, release)
         self.assertIn('source_commit="$(git rev-parse HEAD)"', release)
         self.assertIn("sha256sum", release)
@@ -200,7 +200,7 @@ class RepositoryContract(unittest.TestCase):
         )
         self.assertNotIn("repository-policy source remains requested", update)
         for contract in (
-            "preserve the healthy old\nlauncher",
+            "preserve the healthy admitted\nruntime",
             "program-delta fingerprint",
             "Do not accept the delta implicitly",
             "`--accept-program-change`",
@@ -422,12 +422,12 @@ class RepositoryContract(unittest.TestCase):
             install_dir = root / "bin"
             repository.mkdir()
             self.init_repository(repository)
-            digest = hashlib.sha256(self.helper.read_bytes()).hexdigest()
+            digest = hashlib.sha256(self.old_helper.read_bytes()).hexdigest()
             env = dict(os.environ)
             env.update(
                 {
                     "BOATSTACK_REPO": str(repository),
-                    "BOATSTACK_BINARY": str(self.helper),
+                    "BOATSTACK_BINARY": str(self.old_helper),
                     "BOATSTACK_BINARY_SHA256": digest,
                     "BOATSTACK_INSTALL_DIR": str(install_dir),
                     "BOATSTACK_CONFIG": str(CONFIG),
@@ -438,7 +438,8 @@ class RepositoryContract(unittest.TestCase):
             )
             self.run_command("bash", REPO / "install.sh", cwd=repository, env=env)
             launcher = install_dir / "boatstack"
-            self.assertTrue(launcher.is_symlink())
+            self.assertTrue(launcher.is_file())
+            self.assertFalse(launcher.is_symlink())
             self.assertTrue((repository / ".boatstack" / "project.json").is_file())
 
             doctor = json.loads(
@@ -487,21 +488,26 @@ class RepositoryContract(unittest.TestCase):
             self.assertFalse(destructive["guard"]["allowed"])
 
             env["BOATSTACK_MODE"] = "update"
-            env["BOATSTACK_VERSION"] = "contract-v2-next"
+            env["BOATSTACK_BINARY"] = str(self.helper)
+            env["BOATSTACK_BINARY_SHA256"] = hashlib.sha256(self.helper.read_bytes()).hexdigest()
+            env["BOATSTACK_ACCEPT_PROGRAM_CHANGE"] = "true"
             self.run_command("bash", REPO / "install.sh", cwd=repository, env=env)
             updated = json.loads(
                 self.run_command(launcher, "doctor", "--repo", repository, env=env).stdout
             )
             self.assertTrue(updated["doctor"]["healthy"])
-            self.assertIn("contract-v2-next", updated["snapshot"]["invocation"]["runtime_path"])
+            pin = json.loads((repository / ".boatstack" / "runtime.json").read_text())
+            self.assertEqual(pin["version"], "v0.7.contract-new")
+            self.assertEqual(pin["sha256"], hashlib.sha256(self.helper.read_bytes()).hexdigest())
+            self.assertNotIn("path", pin)
             events = self.run_command(
                 launcher, "events", "--repo", repository, "--format", "jsonl", env=env
             ).stdout.splitlines()
             transitions = {json.loads(line)["transition_id"] for line in events}
-            self.assertTrue({"installation.initialize", "engagement.begin", "installation.update"}.issubset(transitions))
+            self.assertTrue({"installation.initialize", "engagement.begin", "installation.reconcile-update"}.issubset(transitions))
 
     def test_program_changing_update_is_explicit_atomic_and_dormant_safe(self) -> None:
-        # control-law: accepted-program-delta-atomically-installs-runtime-launcher-and-program
+        # control-law: accepted-program-delta-atomically-pins-runtime-and-program
         if os.name == "nt":
             self.skipTest("the repository contract job exercises the POSIX installer")
         with tempfile.TemporaryDirectory() as temp:
@@ -526,7 +532,8 @@ class RepositoryContract(unittest.TestCase):
             )
             self.run_command("bash", REPO / "install.sh", cwd=repository, env=env)
             launcher = install_dir / "boatstack"
-            old_target = os.readlink(launcher)
+            old_launcher = launcher.read_bytes()
+            old_pin = (repository / ".boatstack" / "runtime.json").read_bytes()
             state_path = next((repository / ".git" / "boatstack").rglob("state.json"))
             state_before = state_path.read_bytes()
 
@@ -570,7 +577,8 @@ class RepositoryContract(unittest.TestCase):
                 "catalog reconciliation cannot activate a different runtime",
                 split_reconciliation.stdout + split_reconciliation.stderr,
             )
-            self.assertEqual(os.readlink(launcher), old_target)
+            self.assertEqual(launcher.read_bytes(), old_launcher)
+            self.assertEqual((repository / ".boatstack" / "runtime.json").read_bytes(), old_pin)
             self.assertEqual(state_path.read_bytes(), state_before)
             rejected = self.run_command(
                 "bash", REPO / "install.sh", cwd=repository, env=env, expected=1
@@ -589,12 +597,16 @@ class RepositoryContract(unittest.TestCase):
             self.assertRegex(change["program_delta_fingerprint"], r"^[0-9a-f]{64}$")
             self.assertEqual(change["required_transition"], "installation.reconcile-update")
             self.assertEqual(change["acceptance_flag"], "--accept-program-change")
-            self.assertEqual(os.readlink(launcher), old_target)
+            self.assertEqual(launcher.read_bytes(), old_launcher)
+            self.assertEqual((repository / ".boatstack" / "runtime.json").read_bytes(), old_pin)
             self.assertEqual(state_path.read_bytes(), state_before)
 
             env["BOATSTACK_ACCEPT_PROGRAM_CHANGE"] = "true"
             self.run_command("bash", REPO / "install.sh", cwd=repository, env=env)
-            self.assertIn("contract-new", os.readlink(launcher))
+            pin = json.loads((repository / ".boatstack" / "runtime.json").read_text())
+            self.assertEqual(pin["version"], "v0.7.contract-new")
+            self.assertEqual(pin["sha256"], hashlib.sha256(self.helper.read_bytes()).hexdigest())
+            self.assertNotIn("path", pin)
             doctor = json.loads(
                 self.run_command(launcher, "doctor", "--repo", repository, env=env).stdout
             )
@@ -615,9 +627,8 @@ class RepositoryContract(unittest.TestCase):
             self.assertRegex(update["prior_program_fingerprint"], r"^[0-9a-f]{64}$")
             self.assertRegex(update["program_fingerprint"], r"^[0-9a-f]{64}$")
             self.assertRegex(update["program_delta_fingerprint"], r"^[0-9a-f]{64}$")
-            candidate = install_dir / os.readlink(launcher)
             self.assertEqual(
-                update["runtime_fingerprint"], hashlib.sha256(candidate.read_bytes()).hexdigest()
+                update["runtime_fingerprint"], hashlib.sha256(self.helper.read_bytes()).hexdigest()
             )
             self.assertEqual(update["runtime_source_revision"], "b" * 40)
 

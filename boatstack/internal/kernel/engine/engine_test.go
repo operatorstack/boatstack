@@ -163,7 +163,7 @@ func observation(phase model.ProtocolPhase, fingerprint string) model.Observatio
 	}
 	return model.Observation{
 		SchemaVersion: model.SnapshotSchemaVersion,
-		Invocation:    model.InvocationContext{RepositoryID: "repo", GitCommonID: "git", WorktreeID: "wt", Ref: "refs/heads/f", ControllerID: "ctl", InvokingPath: fixtureAbsolutePath("test-fixture", "repo"), RuntimePath: fixtureAbsolutePath("test-fixture", "runtime"), RuntimeFingerprint: "runtime", Topology: model.TopologyEmbedded, Host: "cli", Correlation: "corr"},
+		Invocation:    model.InvocationContext{RepositoryID: "repo", GitCommonID: "git", WorktreeID: "wt", Ref: "refs/heads/f", ControllerID: "ctl", InvokingPath: fixtureAbsolutePath("test-fixture", "repo"), RuntimeVersion: "runtime-version", RuntimePath: fixtureAbsolutePath("test-fixture", "runtime"), RuntimeFingerprint: "runtime", Topology: model.TopologyEmbedded, Host: "cli", Correlation: "corr"},
 		Phase:         model.Known(phase, e), Engagement: model.Known(model.EngagementActive, e), Delivery: model.Known(model.DeliveryActive, e), Workspace: model.Known(model.WorkspaceActive, e),
 		Plan: model.Known(model.PlanApproved, e), Configuration: model.Known(model.ConfigurationVerified, configurationEvidence), Runtime: model.Known(model.RuntimeVerified, e),
 		ConfigurationPolicy: model.Known(model.ConfigurationPolicy{PlanApproval: "human", VisualEvidence: "optional", ExternalEffectAuthority: "human-or-autonomy-plus-provider", Hosts: []string{"cli"}}, configurationEvidence),

@@ -54,7 +54,7 @@ func (p Parameters) Validate(transition catalog.Transition) error {
 		}
 		seen[parameter.Name] = true
 		switch parameter.Name {
-		case "source_path", "runtime_path", "config_path", "destination", "evidence_path", "manifest_path", "body_path":
+		case "source_path", "config_path", "destination", "evidence_path", "manifest_path", "body_path":
 			if !filepath.IsAbs(parameter.Value) {
 				return fmt.Errorf("transition %q parameter %q must be an absolute path", transition.ID, parameter.Name)
 			}

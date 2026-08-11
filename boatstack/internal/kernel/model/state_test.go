@@ -24,7 +24,7 @@ func testObservation(phase ProtocolPhase) Observation {
 		SchemaVersion: SnapshotSchemaVersion,
 		Invocation: InvocationContext{
 			RepositoryID: "repo-1", GitCommonID: "git-1", WorktreeID: "worktree-1", Ref: "refs/heads/feature",
-			ControllerID: "controller-1", InvokingPath: testAbsolutePath("test-fixture", "repo"), RuntimePath: testAbsolutePath("test-fixture", "runtime", "boatstack"), RuntimeFingerprint: "runtime-fingerprint",
+			ControllerID: "controller-1", InvokingPath: testAbsolutePath("test-fixture", "repo"), RuntimeVersion: "runtime-version", RuntimePath: testAbsolutePath("test-fixture", "runtime", "boatstack"), RuntimeFingerprint: "runtime-fingerprint",
 			Topology: TopologyEmbedded, Host: "cli", Correlation: "corr-1",
 		},
 		Phase: Known(phase, evidence), Engagement: Known(EngagementActive, evidence), Delivery: Known(DeliveryActive, evidence),

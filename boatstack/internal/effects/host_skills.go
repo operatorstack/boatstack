@@ -69,15 +69,15 @@ const updateAuthorityContract = `For this operation, request only checksum-verif
 request or materialize repository, provider, publication, product-delivery, or
 merge authority. Installation receipts cannot be reused to broaden this scope.
 
-If the candidate reports exact compiled-program drift, preserve the healthy old
-launcher and present the prior program fingerprint, candidate program
+If the candidate reports exact compiled-program drift, preserve the healthy admitted
+runtime and present the prior program fingerprint, candidate program
 fingerprint, and program-delta fingerprint. Do not accept the delta implicitly.
 After explicit human acceptance, rerun the same checksum-bound update with
 ` + "`--accept-program-change`" + ` so the Kernel uses the single atomic
 ` + "`installation.reconcile-update`" + ` boundary. If the update has an interrupted local
 transaction and ` + "`recovery.rollback`" + ` is permitted, carry the same human authority
 through that rollback, preserve its complete receipt, and retry once from the
-restored healthy old state. Never acquire repository authority to escape an
+restored healthy prior runtime. Never acquire repository authority to escape an
 update recovery frontier.`
 
 func renderHostSkill(mode hostSkillMode) []byte {

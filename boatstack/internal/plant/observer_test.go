@@ -13,6 +13,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
+	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 )
 
 type observerClock struct{ now time.Time }
@@ -43,6 +44,14 @@ func TestObserverBindsVerifiedRuntimeToExecutingBinary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	home := t.TempDir()
+	t.Setenv(boatstackruntime.HomeEnvironment, home)
+	identity := boatstackruntime.Identity{Version: resolver.runtimeVersion, SHA256: resolver.runtimeFingerprint, SourceRevision: "fixture-revision"}
+	installed, err := boatstackruntime.InstallExecutable(resolver.runtimePath, home, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver.runtimePath = installed
 	invocation, err := resolver.ResolveInvocation(context.Background(), repository, "cli", "runtime-binding")
 	if err != nil {
 		t.Fatal(err)
@@ -53,9 +62,10 @@ func TestObserverBindsVerifiedRuntimeToExecutingBinary(t *testing.T) {
 	}
 	state := durable.Default(invocation, time.Unix(100, 0).UTC())
 	state.Runtime = model.RuntimeVerified
-	state.RuntimePath = invocation.RuntimePath
+	state.RuntimeVersion = invocation.RuntimeVersion
 	state.RuntimeFingerprint = invocation.RuntimeFingerprint
 	state.RuntimeSource = "fixture-revision"
+	state.ProgramFingerprint = strings.Repeat("a", 64)
 	raw, err := durable.EncodeState(state)
 	if err != nil {
 		t.Fatal(err)
@@ -64,6 +74,16 @@ func TestObserverBindsVerifiedRuntimeToExecutingBinary(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(layout.StatePath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pinRaw, err := boatstackruntime.EncodePin(boatstackruntime.NewPin(identity, state.ProgramFingerprint, durable.StateSchemaVersion))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(boatstackruntime.PinPath(repository)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(boatstackruntime.PinPath(repository), pinRaw, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -79,23 +99,13 @@ func TestObserverBindsVerifiedRuntimeToExecutingBinary(t *testing.T) {
 		t.Fatalf("matching executing runtime observed as %s", observed.Runtime.Value)
 	}
 
-	state.RuntimePath = filepath.Join(t.TempDir(), "stale-runtime")
-	if err := os.WriteFile(state.RuntimePath, mustRead(t, invocation.RuntimePath), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	raw, err = durable.EncodeState(state)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(layout.StatePath, raw, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	observer.resolver.runtimeFingerprint = strings.Repeat("b", 64)
 	observed, err = observer.Observe(context.Background(), ports.ObservationRequest{Invocation: invocation})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if observed.Runtime.Value != model.RuntimeWrongSource {
-		t.Fatalf("alternate runtime path observed as %s, want %s", observed.Runtime.Value, model.RuntimeWrongSource)
+		t.Fatalf("different runtime identity observed as %s, want %s", observed.Runtime.Value, model.RuntimeWrongSource)
 	}
 }
 

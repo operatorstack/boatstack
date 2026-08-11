@@ -48,11 +48,12 @@ On Windows PowerShell:
 irm https://raw.githubusercontent.com/operatorstack/boatstack/main/install.ps1 | iex
 ```
 
-The installer verifies the release checksum, runs the registered
-`installation.initialize` transition, and then installs the launcher. Review
-and commit `.boatstack/project.json`, `.boatstack/host-skills.json`, and the
-generated host skills; machine-local controller state stays outside the
-worktree.
+The installer verifies the release checksum, stores the runtime under its
+immutable version and digest, runs `installation.initialize`, and installs a
+stable dispatcher. Review and commit `.boatstack/project.json`,
+`.boatstack/runtime.json`, `.boatstack/host-skills.json`, and the generated host
+skills; machine-local controller state and runtime bytes stay outside the
+worktree. See [Runtime selection](docs/runtime-selection.md).
 
 Run the independent health query:
 
@@ -107,9 +108,10 @@ coding host:
 - `boatstack-run` drives delivery through a normal PR open or update and never
   grants merge authority.
 - `boatstack-update` runs the checksum-verified installation update path. A
-  control-program change preserves the old launcher until a human accepts the
-  exact prior-to-candidate program delta; Boatstack then activates the runtime,
-  launcher, managed skills, and program state through one recoverable transition.
+  control-program change preserves the admitted runtime until a human accepts
+  the exact prior-to-candidate program delta; Boatstack then commits the new
+  repository pin, managed skills, and program state through one recoverable
+  transition.
 
 Codex and compatible Agent Skills hosts show `$boatstack-autoplan`,
 `$boatstack-run`, and `$boatstack-update`. Claude Code and Gemini CLI receive

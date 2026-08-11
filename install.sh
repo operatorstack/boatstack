@@ -10,6 +10,7 @@ version="${BOATSTACK_VERSION:-latest}"
 mode="${BOATSTACK_MODE:-install}"
 actor="${BOATSTACK_ACTOR:-${USER:-operator}}"
 install_dir="${BOATSTACK_INSTALL_DIR:-${HOME}/.local/bin}"
+boatstack_home="${BOATSTACK_HOME:-${XDG_DATA_HOME:-${HOME}/.local/share}/boatstack}"
 config_source="${BOATSTACK_CONFIG:-}"
 
 case "$mode" in
@@ -70,10 +71,35 @@ fi
 [[ "$actual" == "$expected" ]] || { echo "Boatstack runtime checksum mismatch" >&2; exit 1; }
 chmod 0755 "$candidate"
 
-mkdir -p "$install_dir"
-safe_version="${version//[^a-zA-Z0-9._-]/-}"
-runtime="$install_dir/boatstack-v2-${safe_version}-${actual:0:16}"
-install -m 0755 "$candidate" "$runtime"
+candidate_version="$("$candidate" version)"
+safe_version="${candidate_version//[^a-zA-Z0-9._-]/-}"
+[[ -n "$safe_version" && "$safe_version" == "$candidate_version" ]] || { echo "Boatstack runtime reported an invalid version identity" >&2; exit 1; }
+runtime_dir="$boatstack_home/runtimes/${safe_version}-${actual}"
+runtime="$runtime_dir/boatstack-runtime"
+mkdir -p "$runtime_dir"
+if [[ -e "$runtime" ]]; then
+  if command -v sha256sum >/dev/null 2>&1; then
+    installed="$(sha256sum "$runtime" | awk '{print $1}')"
+  else
+    installed="$(shasum -a 256 "$runtime" | awk '{print $1}')"
+  fi
+  [[ "$installed" == "$actual" ]] || { echo "Boatstack immutable runtime store collision" >&2; exit 1; }
+else
+  staged="$runtime_dir/.boatstack-runtime.$$"
+  install -m 0755 "$candidate" "$staged"
+  if ! ln "$staged" "$runtime" 2>/dev/null; then
+    rm -f "$staged"
+    [[ -f "$runtime" ]] || { echo "Boatstack runtime installation raced without a durable artifact" >&2; exit 1; }
+    if command -v sha256sum >/dev/null 2>&1; then
+      installed="$(sha256sum "$runtime" | awk '{print $1}')"
+    else
+      installed="$(shasum -a 256 "$runtime" | awk '{print $1}')"
+    fi
+    [[ "$installed" == "$actual" ]] || { echo "Boatstack immutable runtime store collision" >&2; exit 1; }
+  else
+    rm -f "$staged"
+  fi
+fi
 runtime="$(cd -P -- "$(dirname "$runtime")" && pwd)/$(basename "$runtime")"
 
 if [[ "$mode" == install ]]; then
@@ -87,7 +113,6 @@ if [[ "$mode" == install ]]; then
 else
   update_arguments=(
     update --repo "$repository" --human "$actor"
-    --param "runtime_path=$runtime"
     --param "runtime_sha256=$actual"
     --format json
   )
@@ -96,6 +121,11 @@ else
   fi
   "$runtime" "${update_arguments[@]}"
 fi
+
+mkdir -p "$install_dir"
+launcher_staged="$install_dir/.boatstack.$$"
+install -m 0755 "$candidate" "$launcher_staged"
+mv -f "$launcher_staged" "$install_dir/boatstack"
 
 echo "Boatstack V2 installed at $runtime"
 echo "Review and commit $repository/.boatstack/project.json and the generated host skills"

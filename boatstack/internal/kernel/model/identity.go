@@ -28,6 +28,7 @@ type InvocationContext struct {
 	Ref                string   `json:"ref"`
 	ControllerID       string   `json:"controller_id"`
 	InvokingPath       string   `json:"invoking_path"`
+	RuntimeVersion     string   `json:"runtime_version"`
 	RuntimePath        string   `json:"runtime_path"`
 	RuntimeFingerprint string   `json:"runtime_fingerprint"`
 	Topology           Topology `json:"topology"`
@@ -60,8 +61,8 @@ func (c InvocationContext) Validate(effectful bool) error {
 	if c.Host == "" || c.Correlation == "" {
 		return fmt.Errorf("invocation: host and correlation identity are required")
 	}
-	if effectful && (c.WorktreeID == "" || c.Ref == "" || c.RuntimePath == "" || c.RuntimeFingerprint == "" || !filepath.IsAbs(c.RuntimePath)) {
-		return fmt.Errorf("invocation: effectful operation requires worktree, ref, and exact runtime identity")
+	if effectful && (c.WorktreeID == "" || c.Ref == "" || c.RuntimeVersion == "" || c.RuntimePath == "" || c.RuntimeFingerprint == "" || !filepath.IsAbs(c.RuntimePath)) {
+		return fmt.Errorf("invocation: effectful operation requires worktree, ref, and exact runtime version, location, and fingerprint")
 	}
 	return nil
 }

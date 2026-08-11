@@ -220,9 +220,8 @@ func validateRecoveryPath(layout ports.ControllerLayout, admission protocol.Admi
 			return nil
 		}
 	}
-	if runtimePath, ok := admission.Parameters.Get("runtime_path"); ok {
-		root := filepath.Dir(runtimePath)
-		relative, err := filepath.Rel(root, path)
+	if destination, ok := admission.Parameters.Get("destination"); ok {
+		relative, err := filepath.Rel(destination, path)
 		if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 			return nil
 		}

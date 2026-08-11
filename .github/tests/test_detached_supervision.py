@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -40,6 +41,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         self.addCleanup(self.work.cleanup)
         root = Path(self.work.name)
         self.state_root = root / "state"
+        self.boatstack_home = root / "boatstack-home"
         self.repo = root / "repo"
         self.repo.mkdir()
         self._git(self.repo, "init", "-b", "main")
@@ -48,6 +50,13 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         (self.repo / "README.md").write_text("# fixture\n")
         self._git(self.repo, "add", "README.md")
         self._git(self.repo, "commit", "-m", "fixture")
+        digest = hashlib.sha256(self.binary.read_bytes()).hexdigest()
+        version = self.run_helper("version").stdout.strip()
+        runtime_dir = self.boatstack_home / "runtimes" / f"{version}-{digest}"
+        runtime_dir.mkdir(parents=True)
+        runtime = runtime_dir / ("boatstack-runtime.exe" if os.name == "nt" else "boatstack-runtime")
+        shutil.copy2(self.binary, runtime)
+        runtime.chmod(0o755)
 
     def _git(self, repository: Path, *args: str) -> subprocess.CompletedProcess[str]:
         result = subprocess.run(
@@ -59,6 +68,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
     def _env(self) -> dict[str, str]:
         env = dict(os.environ)
         env["BOATSTACK_STATE_ROOT"] = str(self.state_root)
+        env["BOATSTACK_HOME"] = str(self.boatstack_home)
         return env
 
     def run_helper(
@@ -174,6 +184,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
                     "?? .agents/skills/boatstack-update/agents/openai.yaml",
                     "?? .boatstack/host-skills.json",
                     "?? .boatstack/project.json",
+                    "?? .boatstack/runtime.json",
                     "?? .claude/skills/boatstack-autoplan/SKILL.md",
                     "?? .claude/skills/boatstack-run/SKILL.md",
                     "?? .claude/skills/boatstack-update/SKILL.md",
@@ -345,7 +356,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
             "next", "--repo", self.repo,
             "--transition", "installation.initialize", *goal, *flow, *actor,
             "--param", f"source_revision={self._git(self.repo, 'rev-parse', 'HEAD').stdout.strip()}",
-            "--param", f"runtime_path={self.binary.resolve()}",
+            "--param", f"runtime_version={self.run_helper('version').stdout.strip()}",
             "--param", f"runtime_sha256={hashlib.sha256(self.binary.read_bytes()).hexdigest()}",
             "--param", f"config_path={config}",
             "--param", f"config_sha256={config_fingerprint}",

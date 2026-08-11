@@ -142,11 +142,11 @@ func TestSourceInventoryHasNoWriterOrLifecycleAuthorityOutsideOwnedPackages(t *t
 				return true
 			}
 			importPath := imports[owner.Name]
-			if importPath == "os" && writerCalls[selector.Sel.Name] && !strings.HasPrefix(relative, "internal/effects/") {
+			if importPath == "os" && writerCalls[selector.Sel.Name] && !strings.HasPrefix(relative, "internal/effects/") && !strings.HasPrefix(relative, "internal/runtime/") {
 				t.Errorf("managed writer os.%s escaped effects package in %s", selector.Sel.Name, relative)
 			}
 			if importPath == "os/exec" && (selector.Sel.Name == "Command" || selector.Sel.Name == "CommandContext") {
-				if relative != "internal/effects/command_boundary.go" && relative != "internal/plant/resolver.go" && relative != "extension/subprocess/subprocess.go" {
+				if relative != "internal/effects/command_boundary.go" && relative != "internal/plant/resolver.go" && relative != "extension/subprocess/subprocess.go" && relative != "internal/runtime/exec_windows.go" {
 					t.Errorf("unclassified command boundary in %s", relative)
 				}
 			}
@@ -267,6 +267,7 @@ func classifiedProductionFile(relative string) bool {
 		strings.HasPrefix(relative, "flow/") || strings.HasPrefix(relative, "distribution/") || strings.HasPrefix(relative, "extension/") ||
 		strings.HasPrefix(relative, "internal/kernel/") || strings.HasPrefix(relative, "internal/plant/") ||
 		strings.HasPrefix(relative, "internal/effects/") || strings.HasPrefix(relative, "internal/surfaces/") ||
+		strings.HasPrefix(relative, "internal/buildinfo/") || strings.HasPrefix(relative, "internal/runtime/") ||
 		strings.HasPrefix(relative, "internal/retromine/") || strings.HasPrefix(relative, "internal/testprogram/") || strings.HasPrefix(relative, "sdk/") ||
 		strings.HasPrefix(relative, "analysis/")
 }
