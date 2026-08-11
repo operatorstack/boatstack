@@ -40,6 +40,7 @@ type ResolveRequest struct {
 	Invocation model.InvocationContext
 	Goal       model.Goal
 	Authority  protocol.AuthorityBundle
+	Parameters protocol.Parameters
 	Requested  catalog.TransitionID
 }
 
@@ -76,6 +77,19 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 		return Resolution{}, err
 	}
 	decision := e.control.Resolve(snapshot, goal, request.Authority.Set(now), request.Requested)
+	if decision.Kind == supervisor.DecisionPrescribed && decision.Transition != nil {
+		if applicabilityErr := protocol.ValidateApplicability(snapshot, goal, *decision.Transition, request.Authority, request.Parameters, now); applicabilityErr != nil {
+			if protocol.IsMissingParameter(applicabilityErr) {
+				decision.Kind = supervisor.DecisionCandidate
+				decision.Reason = applicabilityErr.Error() + "; bind the declared parameters and re-resolve this transition"
+				decision.Candidates = []catalog.TransitionID{decision.Transition.ID}
+			} else {
+				decision.Kind = supervisor.DecisionRefused
+				decision.Reason = applicabilityErr.Error()
+				decision.Transition = nil
+			}
+		}
+	}
 	return Resolution{Snapshot: snapshot, Goal: goal, Decision: decision}, nil
 }
 
@@ -170,6 +184,7 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 	if request.AdmissionLifetime <= 0 {
 		request.AdmissionLifetime = 2 * time.Minute
 	}
+	request.ResolveRequest.Parameters = request.Parameters
 	resolution, err := e.Resolve(ctx, request.ResolveRequest)
 	result.Source, result.Goal, result.Decision = resolution.Snapshot, resolution.Goal, resolution.Decision
 	if err != nil {

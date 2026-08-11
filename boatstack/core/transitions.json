@@ -2672,6 +2672,7 @@
     "class": "authority",
     "source_phases": [
       "OBSERVED",
+      "DORMANT",
       "ACTIVE",
       "FRONTIER",
       "TERMINAL",

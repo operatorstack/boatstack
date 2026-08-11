@@ -646,7 +646,7 @@ func pendingJournalEvidence(root, ignoreAdmissionID string, now time.Time) (pend
 			if budget < 0 {
 				budget = 0
 			}
-			permitted := recoveryContract(header.TransitionID, external, budget)
+			permitted := recoveryContract(header.TransitionID, external, len(header.Mutations) > 0, budget)
 			cause := header.Reason
 			if cause == "" {
 				cause = "process ended before transition receipt"
@@ -739,7 +739,7 @@ func conflictingPending(records []pendingJournalRecord) pendingJournalSet {
 	return result
 }
 
-func recoveryContract(transitionID string, external bool, budget int) []string {
+func recoveryContract(transitionID string, external, staged bool, budget int) []string {
 	if budget == 0 {
 		return []string{"recovery.escalate"}
 	}
@@ -756,6 +756,9 @@ func recoveryContract(transitionID string, external bool, budget int) []string {
 	case "workspace.cleanup", "workspace.reap":
 		return []string{"recovery.escalate"}
 	default:
+		if !staged {
+			return []string{"recovery.rollback", "recovery.escalate"}
+		}
 		return []string{"recovery.resume", "recovery.rollback", "recovery.escalate"}
 	}
 }

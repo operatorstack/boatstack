@@ -249,6 +249,19 @@ func TestRecoveryAttemptsExhaustToEscalationOnly(t *testing.T) {
 	}
 }
 
+func TestRecoveryWithoutStagedManifestCannotPrescribeResume(t *testing.T) {
+	// control-law: recovery selection cannot promise a replay that prepare will reject
+	permitted := recoveryContract("plan.create", false, false, 3)
+	for _, transition := range permitted {
+		if transition == "recovery.resume" {
+			t.Fatalf("unstaged recovery permits resume: %v", permitted)
+		}
+	}
+	if len(permitted) != 2 || permitted[0] != "recovery.rollback" || permitted[1] != "recovery.escalate" {
+		t.Fatalf("unstaged recovery contract = %v", permitted)
+	}
+}
+
 func TestInterruptedRecoveryAttemptCollapsesToEscalatableTransactionGroup(t *testing.T) {
 	// control-law: recovery-of-recovery-does-not-create-an-unselectable-conflict
 	root := t.TempDir()

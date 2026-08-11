@@ -109,7 +109,7 @@ func (k Kernel) Handle(ctx context.Context, request surfaces.Request) (surfaces.
 	}
 	switch request.Operation {
 	case surfaces.OperationResolve:
-		resolution, resolveErr := k.engine.Resolve(ctx, engine.ResolveRequest{Invocation: invocation, Goal: request.Goal, Authority: request.Authority, Requested: request.TransitionID})
+		resolution, resolveErr := k.engine.Resolve(ctx, engine.ResolveRequest{Invocation: invocation, Goal: request.Goal, Authority: request.Authority, Parameters: request.Parameters, Requested: request.TransitionID})
 		response.Goal, response.Decision = resolution.Goal, &resolution.Decision
 		if resolution.Snapshot.Fingerprint != "" {
 			response.Snapshot = &resolution.Snapshot

@@ -5583,7 +5583,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "rechecks_external_state": true
+    },
     "priority": 77
   },
   {

@@ -184,6 +184,7 @@ type PolicyContract struct {
 	ManagedOperations     []string `json:"managed_operations,omitempty"`
 	BindsRequestedGoal    bool     `json:"binds_requested_goal,omitempty"`
 	ReconcilesProgram     bool     `json:"reconciles_program,omitempty"`
+	RechecksExternalState bool     `json:"rechecks_external_state,omitempty"`
 }
 
 // FacetCondition is an executable, serializable predicate over one canonical

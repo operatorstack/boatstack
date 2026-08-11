@@ -531,6 +531,7 @@ it is not an independently maintained graph.
 `supervisor.Resolve(snapshot, goal, authority, optionalObservedEvent)` is pure and
 deterministic. It evaluates the executable registry and returns exactly one:
 
+- `CANDIDATE`: one deterministic next transition still needs declared parameters;
 - `PRESCRIBED`: one exact next transition and prescription;
 - `TERMINAL`: goal predicate established by current terminal evidence;
 - `FRONTIER`: a genuine human/reasoning authority decision is required;

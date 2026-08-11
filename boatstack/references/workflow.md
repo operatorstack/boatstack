@@ -17,8 +17,9 @@ Event families:
 - recovery;
 - observed external plant changes.
 
-The supervisor returns one of `PRESCRIBED`, `TERMINAL`, `FRONTIER`,
-`BLOCKED`, `REFUSED`, or `UNRESOLVED`. Only `PRESCRIBED` can produce an
+The supervisor returns one of `CANDIDATE`, `PRESCRIBED`, `TERMINAL`, `FRONTIER`,
+`BLOCKED`, `REFUSED`, or `UNRESOLVED`. `CANDIDATE` identifies the deterministic
+next transition while required parameters remain unbound. Only `PRESCRIBED` can produce an
 admission. Only an independently verified postcondition can produce a receipt.
 Untargeted resolution excludes transitions whose target is already established
 and transitions that encode separate maintenance, repair, abandonment, or

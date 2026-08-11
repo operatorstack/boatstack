@@ -140,6 +140,60 @@ func TestUntargetedResolutionReconfiguresDifferentGoalAndSkipsSatisfiedGoal(t *t
 	}
 }
 
+func TestDormantBootstrapGoalReconfiguresBeforeEngagement(t *testing.T) {
+	// control-law: a retained bootstrap goal cannot be bypassed by engagement
+	snapshot := snapshotFor(t, model.PhaseDormant, model.TerminalNonterminal)
+	requested := model.Goal{ID: "basic-project", Kind: model.GoalApprovedPlan, DeliveryID: "basic-project"}
+	authority := catalog.AuthoritySet{catalog.AuthorityHuman: true, catalog.AuthorityRepository: true}
+
+	untargeted := New(testprogram.StandardRegistry(), testGoalContracts()).Resolve(snapshot, requested, authority, "")
+	if untargeted.Kind != DecisionPrescribed || untargeted.Transition == nil || untargeted.Transition.ID != "goal.configure" {
+		t.Fatalf("untargeted decision = %#v, want goal.configure", untargeted)
+	}
+	targeted := New(testprogram.StandardRegistry(), testGoalContracts()).Resolve(snapshot, requested, authority, untargeted.Transition.ID)
+	if targeted.Kind != DecisionPrescribed || targeted.Transition == nil || targeted.Transition.ID != untargeted.Transition.ID {
+		t.Fatalf("targeted decision = %#v, want parity with %#v", targeted, untargeted)
+	}
+	engagement := New(testprogram.StandardRegistry(), testGoalContracts()).Resolve(snapshot, requested, authority, "engagement.begin")
+	if engagement.Kind != DecisionRefused {
+		t.Fatalf("engagement decision = %#v, want refusal until goal.configure", engagement)
+	}
+}
+
+func TestDisabledHostIsRefusedBeforeUntargetedSelection(t *testing.T) {
+	// control-law: host policy applies before both targeted and untargeted selection
+	snapshot := snapshotFor(t, model.PhaseActive, model.TerminalNonterminal)
+	snapshot.Invocation.Host = "codex"
+	snapshot = recanonicalize(t, snapshot)
+	decision := New(testprogram.StandardRegistry(), testGoalContracts()).Resolve(snapshot, goalFor(), catalog.AuthoritySet{catalog.AuthorityRepository: true}, "")
+	if decision.Kind != DecisionRefused || decision.Transition != nil {
+		t.Fatalf("disabled-host decision = %#v, want REFUSED", decision)
+	}
+}
+
+func TestPublicationObservationRemainsSelectableForVolatileExternalState(t *testing.T) {
+	// control-law: a nonterminal provider observation is evidence, not permanent progress
+	snapshot, goal := openPRSnapshot(t, "build", "test", "review", "change", "journey")
+	goal.Kind = model.GoalMerged
+	snapshot.Goal = model.Known(goal, snapshot.Goal.Evidence[0])
+	snapshot.Publication = model.Known(model.PublicationOpen, snapshot.Publication.Evidence[0])
+	snapshot = recanonicalize(t, snapshot)
+	var transitions []catalog.Transition
+	for _, transition := range testprogram.StandardRegistry().All() {
+		if transition.ID == "publication.observe" || transition.Class == catalog.EventRecovery {
+			transitions = append(transitions, transition)
+		}
+	}
+	registry, err := catalog.New(transitions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision := New(registry, testGoalContracts()).Resolve(snapshot, goal, catalog.AuthoritySet{catalog.AuthorityRepository: true}, "")
+	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "publication.observe" {
+		t.Fatalf("volatile publication decision = %#v, want publication.observe", decision)
+	}
+}
+
 func TestUntargetedResolutionExcludesExplicitControlTransitions(t *testing.T) {
 	// control-law: untargeted-resolution-cannot-invent-repair-or-slice-intent
 	snapshot := snapshotFor(t, model.PhaseActive, model.TerminalNonterminal)
