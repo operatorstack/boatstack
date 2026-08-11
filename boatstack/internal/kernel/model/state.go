@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const SnapshotSchemaVersion = 2
+const SnapshotSchemaVersion = 3
 
 type ProtocolPhase string
 
@@ -389,6 +389,7 @@ func (s ProgramState) Valid() bool {
 // fingerprinting.
 type Observation struct {
 	SchemaVersion              int                       `json:"schema_version"`
+	StateRevision              uint64                    `json:"state_revision"`
 	ProgramFingerprint         string                    `json:"program_fingerprint,omitempty"`
 	RecordedProgramFingerprint string                    `json:"recorded_program_fingerprint,omitempty"`
 	Invocation                 InvocationContext         `json:"invocation"`
@@ -447,6 +448,9 @@ func CanonicalizeForProgram(observation Observation, programFingerprint string) 
 func Canonicalize(observation Observation) (Snapshot, error) {
 	if observation.SchemaVersion != SnapshotSchemaVersion {
 		return Snapshot{}, fmt.Errorf("snapshot: schema version %d, want %d", observation.SchemaVersion, SnapshotSchemaVersion)
+	}
+	if observation.StateRevision == 0 {
+		return Snapshot{}, fmt.Errorf("snapshot: durable state revision is required")
 	}
 	if observation.Program.Status == "" && observation.ProgramFingerprint == "" {
 		observation.Program = Known(ProgramUnbound, Evidence{Source: "control-program:unbound", Fingerprint: "unbound", ObservedAt: observation.ObservedAt})

@@ -76,7 +76,14 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 	if state.RepositoryID != admission.Invocation.RepositoryID || state.GitCommonID != admission.Invocation.GitCommonID || state.WorktreeID != admission.Invocation.WorktreeID {
 		return nil, fmt.Errorf("durable state belongs to a different invocation")
 	}
-	if state.ProgramFingerprint != "" && state.ProgramFingerprint != admission.ProgramFingerprint && !transition.Policy.ReconcilesProgram {
+	if state.Revision != admission.ExpectedStateRevision {
+		return nil, fmt.Errorf("durable state revision changed after admission")
+	}
+	resultingRevision, err := durable.NextRevision(state.Revision)
+	if err != nil {
+		return nil, err
+	}
+	if state.ProgramFingerprint != "" && state.ProgramFingerprint != admission.ExpectedProgramFingerprint && !transition.Policy.ReconcilesProgram {
 		return nil, fmt.Errorf("compiled control program drifted; explicit program reconciliation is required")
 	}
 	if transition.ID == "catalog.reconcile" && (state.RuntimeVersion != admission.Invocation.RuntimeVersion || state.RuntimeFingerprint != admission.Invocation.RuntimeFingerprint) {
@@ -90,7 +97,7 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 	}
 	next := state
 	if next.ProgramFingerprint == "" {
-		next.ProgramFingerprint = admission.ProgramFingerprint
+		next.ProgramFingerprint = admission.ExpectedProgramFingerprint
 	}
 	if err := d.boundary.PrepareObservation(ctx, admission, transition, layout, &next); err != nil {
 		return nil, err
@@ -98,7 +105,7 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 	if err := applyStateTransition(&next, admission, transition); err != nil {
 		return nil, err
 	}
-	next.Revision++
+	next.Revision = resultingRevision
 	next.UpdatedAt = d.clock.Now().UTC()
 	var verificationInvocation *model.InvocationContext
 	if transition.ID == "workspace.cut" {
@@ -188,7 +195,7 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 		mutations = append(mutations, bindingMutation)
 	}
 	if transition.ID == "workspace.cut" {
-		parked := parkedSourceState(state, transition.ID, d.clock.Now())
+		parked := parkedSourceState(state, next.Revision, transition.ID, d.clock.Now())
 		parkedRaw, encodeErr := durable.EncodeState(parked)
 		if encodeErr != nil {
 			return nil, encodeErr
@@ -324,8 +331,8 @@ func canonicalWorkspaceDestination(admission protocol.Admission) (string, error)
 	return canonical, nil
 }
 
-func parkedSourceState(state durable.State, transition catalog.TransitionID, now time.Time) durable.State {
-	state.Revision++
+func parkedSourceState(state durable.State, resultingRevision uint64, transition catalog.TransitionID, now time.Time) durable.State {
+	state.Revision = resultingRevision
 	state.Phase = model.PhaseDormant
 	state.Engagement = model.EngagementDormant
 	state.Delivery = model.DeliveryUninitialized

@@ -57,7 +57,7 @@ func applyStateTransition(state *durable.State, admission protocol.Admission, tr
 		if accepted != "true" || admission.PriorProgramFingerprint == "" || admission.ProgramDeltaFingerprint == "" || state.ProgramFingerprint != admission.PriorProgramFingerprint {
 			return fmt.Errorf("reconciled installation update must bind and explicitly accept the exact prior-to-candidate program delta")
 		}
-		state.ProgramFingerprint = admission.ProgramFingerprint
+		state.ProgramFingerprint = admission.ExpectedProgramFingerprint
 		state.Runtime = model.RuntimeVerified
 		state.RuntimeVersion, _ = admission.Parameters.Get("runtime_version")
 		state.RuntimeFingerprint, _ = admission.Parameters.Get("runtime_sha256")
@@ -83,7 +83,7 @@ func applyStateTransition(state *durable.State, admission protocol.Admission, tr
 		if prior == "" || prior != state.ProgramFingerprint || accepted != "true" {
 			return fmt.Errorf("catalog reconciliation must bind the prior program and explicitly accept obligation changes")
 		}
-		state.ProgramFingerprint = admission.ProgramFingerprint
+		state.ProgramFingerprint = admission.ExpectedProgramFingerprint
 	case "installation.initialize":
 		state.Runtime, state.Configuration = model.RuntimeVerified, model.ConfigurationVerified
 		state.RuntimeVersion, _ = admission.Parameters.Get("runtime_version")

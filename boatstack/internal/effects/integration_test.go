@@ -57,6 +57,38 @@ func testProgram() control.ControlProgram {
 	return program
 }
 
+func prescribeEngine(t *testing.T, ctx context.Context, kernel engine.Engine, request engine.ApplyRequest) engine.ApplyRequest {
+	t.Helper()
+	resolve := request.ResolveRequest
+	resolve.Parameters = request.Parameters
+	resolution, err := kernel.Resolve(ctx, resolve)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolution.Decision.Kind != supervisor.DecisionPrescribed || resolution.Prescription.ID == "" {
+		t.Fatalf("resolution did not produce an exact prescription: %#v", resolution.Decision)
+	}
+	request.Prescription = resolution.Prescription
+	return request
+}
+
+func prescribeSurface(t *testing.T, ctx context.Context, kernel boatstack.Kernel, request surfaces.Request) surfaces.Request {
+	t.Helper()
+	resolve := request
+	resolve.Operation = surfaces.OperationResolve
+	resolve.FlowID = ""
+	resolve.Prescription = protocol.Prescription{}
+	response, err := kernel.Handle(ctx, resolve)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Decision == nil || response.Decision.Kind != supervisor.DecisionPrescribed || response.Prescription == nil {
+		t.Fatalf("resolution did not produce an exact prescription: %#v", response.Decision)
+	}
+	request.Prescription = *response.Prescription
+	return request
+}
+
 func (c fixedClock) Now() time.Time { return c.value }
 
 func installTestRuntime(t *testing.T, executable string, raw []byte) string {
@@ -135,10 +167,11 @@ func TestConcreteBoundaryAppliesAndReceiptsOneTransition(t *testing.T) {
 		ID: "authority-1", Class: catalog.AuthorityHuman, Subject: invocation.RepositoryID, Fingerprint: "human-fingerprint",
 		IssuedAt: clock.Now().Add(-time.Minute), ExpiresAt: clock.Now().Add(time.Hour),
 	}}}
-	result, err := kernel.Apply(ctx, engine.ApplyRequest{
+	request := engine.ApplyRequest{
 		ResolveRequest: engine.ResolveRequest{Invocation: invocation, Goal: goal, Authority: authority, Requested: "repository.attach"},
 		FlowID:         "flow-1", Parameters: protocol.Parameters{{Name: "topology", Value: string(model.TopologyDetached)}, {Name: "config_authority", Value: "repository"}}, AdmissionLifetime: time.Minute,
-	})
+	}
+	result, err := kernel.Apply(ctx, prescribeEngine(t, ctx, kernel, request))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,11 +206,12 @@ func TestExternalConfigurationAuthorityTransfersAcrossAttachAndDetach(t *testing
 	}}}
 	apply := func(id catalog.TransitionID, authority protocol.AuthorityBundle, repositoryAuthority bool, parameters protocol.Parameters) surfaces.Response {
 		t.Helper()
-		response, handleErr := kernel.Handle(ctx, surfaces.Request{
+		request := surfaces.Request{
 			SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationApply, Repository: repository, Host: "cli",
 			CorrelationID: "external-config-" + string(id), FlowID: "flow-external-config", Goal: goal, TransitionID: id,
 			Authority: authority, RepositoryAuthority: repositoryAuthority, Parameters: parameters,
-		})
+		}
+		response, handleErr := kernel.Handle(ctx, prescribeSurface(t, ctx, kernel, request))
 		if handleErr != nil {
 			t.Fatalf("apply %s: %v", id, handleErr)
 		}
@@ -274,14 +308,15 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 	if err := os.WriteFile(configPath, configRaw, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	initialized, err := oldKernel.Handle(ctx, surfaces.Request{
+	initializeRequest := surfaces.Request{
 		SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationApply, Repository: repository, Host: "cli", CorrelationID: "program-old",
 		FlowID: "flow-program-drift", Goal: goal, TransitionID: "installation.initialize", Authority: human,
 		Parameters: protocol.Parameters{
 			{Name: "source_revision", Value: "program-old"}, {Name: "runtime_version", Value: runtimeVersion}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
 			{Name: "config_path", Value: configPath}, {Name: "config_sha256", Value: configFingerprint(t, configRaw)},
 		},
-	})
+	}
+	initialized, err := oldKernel.Handle(ctx, prescribeSurface(t, ctx, oldKernel, initializeRequest))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,8 +366,10 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 			{Name: "accept_obligation_change", Value: "true"},
 		},
 	}
-	frontier, err := newKernel.Handle(ctx, request)
-	if err == nil || frontier.Decision == nil || frontier.Decision.Kind != supervisor.DecisionFrontier {
+	frontierRequest := request
+	frontierRequest.Operation = surfaces.OperationResolve
+	frontier, err := newKernel.Handle(ctx, frontierRequest)
+	if err != nil || frontier.Decision == nil || frontier.Decision.Kind != supervisor.DecisionFrontier {
 		t.Fatalf("authority-free reconciliation = response %#v error %v", frontier, err)
 	}
 	afterRejected, _ := os.ReadFile(layout.StatePath)
@@ -349,7 +386,7 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 		t.Fatal("invalid reconciliation mutated durable state")
 	}
 	request.Parameters[3].Value = "true"
-	reconciled, err := newKernel.Handle(ctx, request)
+	reconciled, err := newKernel.Handle(ctx, prescribeSurface(t, ctx, newKernel, request))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -388,14 +425,15 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 	if !bytes.Equal(afterSuccess, afterReplay) {
 		t.Fatal("rejected repeated reconciliation mutated durable state")
 	}
-	updated, err := newKernel.Handle(ctx, surfaces.Request{
+	updateRequest := surfaces.Request{
 		SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationApply, Repository: repository, Host: "cli", CorrelationID: "program-current-update",
 		FlowID: "flow-program-drift", Goal: model.Goal{ID: "ignored-command-goal", Kind: model.GoalOpenPR, DeliveryID: "ignored"},
 		TransitionID: "installation.update", Authority: human,
 		Parameters: protocol.Parameters{
 			{Name: "source_revision", Value: "program-current"}, {Name: "runtime_version", Value: runtimeVersion}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
 		},
-	})
+	}
+	updated, err := newKernel.Handle(ctx, prescribeSurface(t, ctx, newKernel, updateRequest))
 	if err != nil {
 		t.Fatalf("current-program update after reconciliation: %v", err)
 	}
@@ -443,11 +481,12 @@ func TestReferenceExtensionUsesKernelAdmissionVerificationAndReceiptPath(t *test
 	}
 	apply := func(id catalog.TransitionID, authorization protocol.AuthorityBundle, parameters protocol.Parameters) surfaces.Response {
 		t.Helper()
-		response, applyErr := kernel.Handle(ctx, surfaces.Request{
+		request := surfaces.Request{
 			SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationApply, Repository: repository, Host: "cli",
 			CorrelationID: "extension-" + string(id), FlowID: "flow-extension-receipt", Goal: goal, TransitionID: id,
 			Authority: authorization, Parameters: parameters,
-		})
+		}
+		response, applyErr := kernel.Handle(ctx, prescribeSurface(t, ctx, kernel, request))
 		if applyErr != nil {
 			t.Fatalf("apply %s: %v", id, applyErr)
 		}
@@ -568,10 +607,11 @@ func TestConcreteWorkflowPreservesConfigurationProofAndGoalTerminals(t *testing.
 	}
 	apply := func(goal model.Goal, id catalog.TransitionID, auth protocol.AuthorityBundle, parameters protocol.Parameters) engine.ApplyResult {
 		t.Helper()
-		result, applyErr := kernel.Apply(ctx, engine.ApplyRequest{
+		request := engine.ApplyRequest{
 			ResolveRequest: engine.ResolveRequest{Invocation: invocation, Goal: goal, Authority: auth, Requested: id},
 			FlowID:         "flow-workflow", Parameters: parameters, AdmissionLifetime: time.Minute,
-		})
+		}
+		result, applyErr := kernel.Apply(ctx, prescribeEngine(t, ctx, kernel, request))
 		if applyErr != nil {
 			t.Fatalf("apply %s: %v", id, applyErr)
 		}
@@ -702,10 +742,11 @@ func TestWorkspaceCutTransfersAuthorityToExactDestinationWorktree(t *testing.T) 
 	}}}
 	apply := func(invocation model.InvocationContext, id catalog.TransitionID, authority protocol.AuthorityBundle, parameters protocol.Parameters) engine.ApplyResult {
 		t.Helper()
-		result, applyErr := kernel.Apply(ctx, engine.ApplyRequest{
+		request := engine.ApplyRequest{
 			ResolveRequest: engine.ResolveRequest{Invocation: invocation, Goal: goal, Authority: authority, Requested: id},
 			FlowID:         "flow-workspace", Parameters: parameters, AdmissionLifetime: time.Minute,
-		})
+		}
+		result, applyErr := kernel.Apply(ctx, prescribeEngine(t, ctx, kernel, request))
 		if applyErr != nil {
 			t.Fatalf("apply %s: %v", id, applyErr)
 		}

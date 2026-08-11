@@ -21,7 +21,14 @@ func TestShellRenderersConsumeOneCommandAST(t *testing.T) {
 	}
 	goal := model.Goal{ID: "goal", Kind: model.GoalVerified, DeliveryID: "delivery"}
 	parameters := protocol.Parameters{{Name: "source_path", Value: "/tmp/O'Brien plan.md"}, {Name: "delivery_id", Value: "delivery"}}
-	command := PrescriptionCommand(transition, "/repo with space", goal, "flow", parameters)
+	prescription := protocol.Prescription{ID: "prx-fixture", ExpectedStateRevision: 41, ExpectedProgramFingerprint: strings.Repeat("a", 64), ExpectedSnapshotFingerprint: strings.Repeat("b", 64)}
+	command := PrescriptionCommand(transition, prescription, "corr-1", "/repo with space", goal, "flow", parameters)
+	joined := strings.Join(command.Arguments, " ")
+	for _, binding := range []string{"--correlation corr-1", "--prescription-id prx-fixture", "--expected-state-revision 41", "--expected-program-fingerprint", "--expected-snapshot-fingerprint"} {
+		if !strings.Contains(joined, binding) {
+			t.Fatalf("prescription command omitted CAS binding %q: %s", binding, joined)
+		}
+	}
 	before := append([]string(nil), command.Arguments...)
 	posix, err := RenderCommand(command, ShellPOSIX)
 	if err != nil {
@@ -104,6 +111,7 @@ func TestLocusModelsAreGeneratedFromEveryRuntimeTransition(t *testing.T) {
 
 func TestEveryHostConsumesOneSemanticPrescription(t *testing.T) {
 	goal := model.Goal{ID: "goal", Kind: model.GoalVerified, DeliveryID: "delivery"}
+	prescription := protocol.Prescription{ID: "prx-fixture", ExpectedStateRevision: 41, ExpectedProgramFingerprint: strings.Repeat("a", 64), ExpectedSnapshotFingerprint: strings.Repeat("b", 64)}
 	for _, transition := range testprogram.StandardRegistry().All() {
 		if !transition.Controllable() {
 			continue
@@ -114,7 +122,7 @@ func TestEveryHostConsumesOneSemanticPrescription(t *testing.T) {
 		}
 		var canonical HostPrescription
 		for index, host := range CanonicalHostNames() {
-			projection, err := ProjectHostPrescription(host, transition, "/repo", goal, "flow", parameters)
+			projection, err := ProjectHostPrescription(host, transition, prescription, "corr-1", "/repo", goal, "flow", parameters)
 			if err != nil {
 				t.Fatal(err)
 			}

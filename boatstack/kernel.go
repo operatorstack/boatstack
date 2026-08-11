@@ -69,7 +69,7 @@ func NewKernel(externalStateRoot string, program control.ControlProgram) (Kernel
 	if err != nil {
 		return Kernel{}, err
 	}
-	driver := programEffectDriver{base: baseDriver, program: program}
+	driver := programEffectDriver{base: baseDriver, program: program, resolver: resolver, clock: clock}
 	registry := program.RuntimeRegistry()
 	runtimeEngine, err := engine.New(registry, program.RuntimeGoalContracts(), program.Fingerprint(), observer, clock, locker, journal, driver, receipts)
 	if err != nil {
@@ -112,6 +112,10 @@ func (k Kernel) Handle(ctx context.Context, request surfaces.Request) (surfaces.
 	case surfaces.OperationResolve:
 		resolution, resolveErr := k.engine.Resolve(ctx, engine.ResolveRequest{Invocation: invocation, Goal: request.Goal, Authority: request.Authority, Parameters: request.Parameters, Requested: request.TransitionID})
 		response.Goal, response.Decision = resolution.Goal, &resolution.Decision
+		if resolution.Prescription.ID != "" {
+			response.Prescription = &resolution.Prescription
+			response.Admission = &resolution.Admission
+		}
 		if resolution.Snapshot.Fingerprint != "" {
 			response.Snapshot = &resolution.Snapshot
 		}
@@ -124,8 +128,9 @@ func (k Kernel) Handle(ctx context.Context, request surfaces.Request) (surfaces.
 	case surfaces.OperationApply, surfaces.OperationRecover:
 		result, applyErr := k.engine.Apply(ctx, engine.ApplyRequest{
 			ResolveRequest: engine.ResolveRequest{Invocation: invocation, Goal: request.Goal, Authority: request.Authority, Requested: request.TransitionID},
-			FlowID:         request.FlowID, Parameters: request.Parameters, IdempotencyKey: request.IdempotencyKey, AdmissionLifetime: 2 * time.Minute,
+			FlowID:         request.FlowID, Prescription: request.Prescription, Parameters: request.Parameters, IdempotencyKey: request.IdempotencyKey, AdmissionLifetime: 2 * time.Minute,
 		})
+		response.Prescription = &request.Prescription
 		response.Goal = result.Goal
 		if result.Target.Fingerprint != "" {
 			response.Snapshot = &result.Target

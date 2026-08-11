@@ -9,33 +9,35 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 )
 
-const AdmissionSchemaVersion = 2
+const AdmissionSchemaVersion = 3
 
 type Admission struct {
-	SchemaVersion           int                     `json:"schema_version"`
-	ID                      string                  `json:"id"`
-	TransitionID            catalog.TransitionID    `json:"transition_id"`
-	TransitionVersion       int                     `json:"transition_version"`
-	ProgramFingerprint      string                  `json:"program_fingerprint"`
-	PriorProgramFingerprint string                  `json:"prior_program_fingerprint,omitempty"`
-	ProgramDeltaFingerprint string                  `json:"program_delta_fingerprint,omitempty"`
-	SnapshotFingerprint     string                  `json:"snapshot_fingerprint"`
-	SourceRevision          string                  `json:"source_revision,omitempty"`
-	WorktreeFingerprint     string                  `json:"worktree_fingerprint,omitempty"`
-	SourcePhase             model.ProtocolPhase     `json:"source_phase"`
-	Invocation              model.InvocationContext `json:"invocation"`
-	Goal                    model.Goal              `json:"goal"`
-	GoalScope               catalog.GoalScope       `json:"goal_scope,omitempty"`
-	GoalStatus              model.FactStatus        `json:"goal_status,omitempty"`
-	Authority               AuthorityBundle         `json:"authority"`
-	Parameters              Parameters              `json:"parameters,omitempty"`
-	Evidence                []string                `json:"evidence"`
-	IdempotencyKey          string                  `json:"idempotency_key"`
-	IssuedAt                time.Time               `json:"issued_at"`
-	ExpiresAt               time.Time               `json:"expires_at"`
+	SchemaVersion               int                     `json:"schema_version"`
+	ID                          string                  `json:"id"`
+	PrescriptionID              string                  `json:"prescription_id"`
+	TransitionID                catalog.TransitionID    `json:"transition_id"`
+	TransitionVersion           int                     `json:"transition_version"`
+	ExpectedStateRevision       uint64                  `json:"expected_state_revision"`
+	ExpectedProgramFingerprint  string                  `json:"expected_program_fingerprint"`
+	PriorProgramFingerprint     string                  `json:"prior_program_fingerprint,omitempty"`
+	ProgramDeltaFingerprint     string                  `json:"program_delta_fingerprint,omitempty"`
+	ExpectedSnapshotFingerprint string                  `json:"expected_snapshot_fingerprint"`
+	SourceRevision              string                  `json:"source_revision,omitempty"`
+	WorktreeFingerprint         string                  `json:"worktree_fingerprint,omitempty"`
+	SourcePhase                 model.ProtocolPhase     `json:"source_phase"`
+	Invocation                  model.InvocationContext `json:"invocation"`
+	Goal                        model.Goal              `json:"goal"`
+	GoalScope                   catalog.GoalScope       `json:"goal_scope,omitempty"`
+	GoalStatus                  model.FactStatus        `json:"goal_status,omitempty"`
+	Authority                   AuthorityBundle         `json:"authority"`
+	Parameters                  Parameters              `json:"parameters,omitempty"`
+	Evidence                    []string                `json:"evidence"`
+	IdempotencyKey              string                  `json:"idempotency_key"`
+	IssuedAt                    time.Time               `json:"issued_at"`
+	ExpiresAt                   time.Time               `json:"expires_at"`
 }
 
-func NewAdmission(snapshot model.Snapshot, goal model.Goal, transition catalog.Transition, authority AuthorityBundle, parameters Parameters, now time.Time, lifetime time.Duration) (Admission, error) {
+func NewAdmission(snapshot model.Snapshot, goal model.Goal, transition catalog.Transition, prescription Prescription, authority AuthorityBundle, parameters Parameters, now time.Time, lifetime time.Duration) (Admission, error) {
 	var err error
 	goal, err = GoalForTransition(snapshot, goal, transition)
 	if err != nil {
@@ -47,10 +49,14 @@ func NewAdmission(snapshot model.Snapshot, goal model.Goal, transition catalog.T
 	if lifetime <= 0 {
 		return Admission{}, fmt.Errorf("admission lifetime must be positive")
 	}
+	if err := prescription.ValidateCurrent(snapshot, transition); err != nil {
+		return Admission{}, err
+	}
 	sourceRevision, worktreeFingerprint := gitBinding(snapshot)
 	a := Admission{
-		SchemaVersion: AdmissionSchemaVersion, TransitionID: transition.ID, TransitionVersion: transition.Version,
-		ProgramFingerprint: snapshot.ProgramFingerprint, SnapshotFingerprint: snapshot.Fingerprint, SourceRevision: sourceRevision, WorktreeFingerprint: worktreeFingerprint,
+		SchemaVersion: AdmissionSchemaVersion, PrescriptionID: prescription.ID, TransitionID: transition.ID, TransitionVersion: transition.Version,
+		ExpectedStateRevision: prescription.ExpectedStateRevision, ExpectedProgramFingerprint: prescription.ExpectedProgramFingerprint,
+		ExpectedSnapshotFingerprint: prescription.ExpectedSnapshotFingerprint, SourceRevision: sourceRevision, WorktreeFingerprint: worktreeFingerprint,
 		SourcePhase: snapshot.Phase.Value, Invocation: snapshot.Invocation, Goal: goal, GoalScope: transition.Policy.GoalScope, Authority: authority.canonical(),
 		Evidence: append([]string(nil), transition.RequiredEvidence...), Parameters: parameters.Canonical(), IssuedAt: now.UTC(), ExpiresAt: now.Add(lifetime).UTC(),
 	}
@@ -59,7 +65,7 @@ func NewAdmission(snapshot model.Snapshot, goal model.Goal, transition catalog.T
 	}
 	if snapshot.RecordedProgramFingerprint != "" && snapshot.RecordedProgramFingerprint != snapshot.ProgramFingerprint {
 		a.PriorProgramFingerprint = snapshot.RecordedProgramFingerprint
-		delta, err := ProgramDeltaFingerprint(snapshot.RecordedProgramFingerprint, snapshot.ProgramFingerprint)
+		delta, err := ProgramDeltaFingerprint(snapshot.RecordedProgramFingerprint, prescription.ExpectedProgramFingerprint)
 		if err != nil {
 			return Admission{}, err
 		}
@@ -172,10 +178,13 @@ func (a Admission) ValidateCurrent(snapshot model.Snapshot, goal model.Goal, tra
 	if a.GoalScope != transition.Policy.GoalScope {
 		return fmt.Errorf("admission %q is bound to a different product-goal scope", a.ID)
 	}
-	if a.SnapshotFingerprint != snapshot.Fingerprint {
+	if a.ExpectedStateRevision != snapshot.StateRevision {
+		return fmt.Errorf("admission %q is stale: state revision changed", a.ID)
+	}
+	if a.ExpectedSnapshotFingerprint != snapshot.Fingerprint {
 		return fmt.Errorf("admission %q is stale: snapshot changed", a.ID)
 	}
-	if a.ProgramFingerprint != snapshot.ProgramFingerprint {
+	if a.ExpectedProgramFingerprint != snapshot.ProgramFingerprint {
 		return fmt.Errorf("admission %q is bound to a different control program", a.ID)
 	}
 	expectedPrior := ""
@@ -186,7 +195,7 @@ func (a Admission) ValidateCurrent(snapshot model.Snapshot, goal model.Goal, tra
 		return fmt.Errorf("admission %q is bound to a different prior control program", a.ID)
 	}
 	if a.PriorProgramFingerprint != "" {
-		delta, err := ProgramDeltaFingerprint(a.PriorProgramFingerprint, a.ProgramFingerprint)
+		delta, err := ProgramDeltaFingerprint(a.PriorProgramFingerprint, a.ExpectedProgramFingerprint)
 		if err != nil || delta != a.ProgramDeltaFingerprint {
 			return fmt.Errorf("admission %q has an invalid program delta binding", a.ID)
 		}
@@ -335,14 +344,14 @@ func validateAuthorityEvidence(snapshot model.Snapshot, authority AuthorityBundl
 }
 
 func (a Admission) ValidateIdentity() error {
-	if a.SchemaVersion != AdmissionSchemaVersion || a.ID == "" || a.TransitionID == "" || a.TransitionVersion < 1 || len(a.ProgramFingerprint) != 64 || a.SnapshotFingerprint == "" || !a.SourcePhase.Valid() || a.IdempotencyKey == "" || a.IssuedAt.IsZero() || a.ExpiresAt.Before(a.IssuedAt) {
+	if a.SchemaVersion != AdmissionSchemaVersion || a.ID == "" || a.PrescriptionID == "" || a.TransitionID == "" || a.TransitionVersion < 1 || a.ExpectedStateRevision == 0 || len(a.ExpectedProgramFingerprint) != 64 || len(a.ExpectedSnapshotFingerprint) != 64 || !a.SourcePhase.Valid() || a.IdempotencyKey == "" || a.IssuedAt.IsZero() || a.ExpiresAt.Before(a.IssuedAt) {
 		return fmt.Errorf("admission: invalid schema, identity, source, or lifetime")
 	}
 	if (a.PriorProgramFingerprint == "") != (a.ProgramDeltaFingerprint == "") {
 		return fmt.Errorf("admission has incomplete program delta identity")
 	}
 	if a.PriorProgramFingerprint != "" {
-		delta, err := ProgramDeltaFingerprint(a.PriorProgramFingerprint, a.ProgramFingerprint)
+		delta, err := ProgramDeltaFingerprint(a.PriorProgramFingerprint, a.ExpectedProgramFingerprint)
 		if err != nil || delta != a.ProgramDeltaFingerprint {
 			return fmt.Errorf("admission has invalid program delta identity")
 		}

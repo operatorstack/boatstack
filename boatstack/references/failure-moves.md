@@ -4,7 +4,7 @@ Use the failure class, not the latest symptom:
 
 | Failure class | V2 move |
 |---|---|
-| stale snapshot or prescription | re-observe; request a new admission |
+| stale snapshot or prescription | discard it; re-resolve; execute no effects |
 | ambiguous identity | preserve resources; supply exact invocation |
 | configuration drift | validate and request `configuration.mutate` |
 | runtime absent or wrong | install a verified candidate; request runtime update |

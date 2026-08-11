@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
@@ -55,6 +56,10 @@ func (d Driver) prepareRecoveryReplay(ctx context.Context, layout ports.Controll
 			return nil, mutationErr
 		}
 		mutations = append(mutations, mutation)
+	}
+	mutations, err = d.advanceRecoveredState(layout, admission, transition.ID, mutations)
+	if err != nil {
+		return nil, err
 	}
 	closure, err := prepareJournalClosureFromRecord(pendingPath, record, string(transition.ID), d.clock.Now())
 	if err != nil {
@@ -115,12 +120,79 @@ func (d Driver) prepareWorkspaceCutReconciliation(ctx context.Context, layout po
 		}
 		mutations = append(mutations, mutation)
 	}
+	mutations, err = d.advanceRecoveredState(layout, admission, "workspace.reconcile", mutations)
+	if err != nil {
+		return nil, err
+	}
 	closure, err := prepareJournalClosureFromRecord(pendingPath, record, string("workspace.reconcile"), d.clock.Now())
 	if err != nil {
 		return nil, err
 	}
 	mutations = append(mutations, closure...)
 	return &preparedEffect{mutations: mutations, verifyInvocation: verificationInvocation}, nil
+}
+
+func (d Driver) advanceRecoveredState(layout ports.ControllerLayout, admission protocol.Admission, transition catalog.TransitionID, mutations []ports.ResourceMutation) ([]ports.ResourceMutation, error) {
+	resultingRevision, err := durable.NextRevision(admission.ExpectedStateRevision)
+	if err != nil {
+		return nil, err
+	}
+	advanced := false
+	for index := range mutations {
+		mutation := &mutations[index]
+		if mutation.Delete && mutation.TargetLink == "" && filepath.Clean(mutation.Path) == filepath.Clean(layout.StatePath) {
+			state := durable.Default(admission.Invocation, d.clock.Now())
+			state.ProgramFingerprint = admission.ExpectedProgramFingerprint
+			state.Revision = resultingRevision
+			state.LastTransition = transition
+			state.UpdatedAt = d.clock.Now().UTC()
+			mutation.Target, err = durable.EncodeState(state)
+			if err != nil {
+				return nil, err
+			}
+			mutation.Delete = false
+			mutation.InstallLast = true
+			advanced = true
+			continue
+		}
+		if mutation.Delete || mutation.TargetLink != "" || filepath.Base(mutation.Path) != "state.json" || len(mutation.Target) == 0 {
+			continue
+		}
+		state, err := durable.DecodeState(mutation.Target)
+		if err != nil {
+			continue
+		}
+		state.Revision = resultingRevision
+		state.LastTransition = transition
+		state.UpdatedAt = d.clock.Now().UTC()
+		mutation.Target, err = durable.EncodeState(state)
+		if err != nil {
+			return nil, err
+		}
+		advanced = true
+	}
+	if advanced {
+		return mutations, nil
+	}
+	state, err := loadDurableState(layout.StatePath, admission.Invocation, d.clock.Now())
+	if err != nil {
+		return nil, err
+	}
+	if state.Revision != admission.ExpectedStateRevision {
+		return nil, fmt.Errorf("recovery state revision changed after admission")
+	}
+	state.Revision = resultingRevision
+	state.LastTransition = transition
+	state.UpdatedAt = d.clock.Now().UTC()
+	raw, err := durable.EncodeState(state)
+	if err != nil {
+		return nil, err
+	}
+	mutation, err := mutationFor(layout.StatePath, raw, 0o600, true, false)
+	if err != nil {
+		return nil, err
+	}
+	return append(mutations, mutation), nil
 }
 
 func loadInterruptedJournal(layout ports.ControllerLayout, transactionID string) (journalRecord, string, error) {

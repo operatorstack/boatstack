@@ -259,7 +259,7 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 		goalFact = model.Fact[model.Goal]{Status: model.FactKnown, Value: state.Goal, Evidence: stateEvidence}
 	}
 	return model.Observation{
-		SchemaVersion: model.SnapshotSchemaVersion, RecordedProgramFingerprint: recordedProgramFingerprint, Invocation: current,
+		SchemaVersion: model.SnapshotSchemaVersion, StateRevision: state.Revision, RecordedProgramFingerprint: recordedProgramFingerprint, Invocation: current,
 		Phase:               model.Fact[model.ProtocolPhase]{Status: model.FactKnown, Value: phase, Evidence: stateEvidence},
 		Engagement:          model.Fact[model.EngagementState]{Status: model.FactKnown, Value: state.Engagement, Evidence: stateEvidence},
 		Delivery:            model.Fact[model.DeliveryState]{Status: model.FactKnown, Value: delivery, Evidence: deliveryEvidence},
@@ -614,11 +614,11 @@ type pendingJournalHeader struct {
 	Status            string `json:"status"`
 	Reason            string `json:"reason"`
 	Admission         struct {
-		ID                 string                  `json:"id"`
-		ProgramFingerprint string                  `json:"program_fingerprint"`
-		SourcePhase        model.ProtocolPhase     `json:"source_phase"`
-		Invocation         model.InvocationContext `json:"invocation"`
-		Parameters         protocol.Parameters     `json:"parameters"`
+		ID                         string                  `json:"id"`
+		ExpectedProgramFingerprint string                  `json:"expected_program_fingerprint"`
+		SourcePhase                model.ProtocolPhase     `json:"source_phase"`
+		Invocation                 model.InvocationContext `json:"invocation"`
+		Parameters                 protocol.Parameters     `json:"parameters"`
 	} `json:"admission"`
 	Mutations []struct {
 		Path   string `json:"path"`
@@ -661,7 +661,7 @@ func pendingJournalEvidence(root, ignoreAdmissionID string, now time.Time) (pend
 			return pendingJournalSet{}, readErr
 		}
 		var header pendingJournalHeader
-		if json.Unmarshal(raw, &header) != nil || header.SchemaVersion != 2 || header.TransitionClass != string(catalog.EventRecovery) {
+		if json.Unmarshal(raw, &header) != nil || header.SchemaVersion != protocol.JournalSchemaVersion || header.TransitionClass != string(catalog.EventRecovery) {
 			continue
 		}
 		if transactionID, ok := header.Admission.Parameters.Get("transaction_id"); ok {
@@ -682,7 +682,7 @@ func pendingJournalEvidence(root, ignoreAdmissionID string, now time.Time) (pend
 				return pendingJournalSet{}, err
 			}
 			class := catalog.EventClass(header.TransitionClass)
-			if header.SchemaVersion != 2 || header.Admission.ID == "" || len(header.Admission.ProgramFingerprint) != 64 || entry.Name() != header.Admission.ID+".pending" || header.TransitionID == "" || header.Status == "" || !class.Valid() || !class.Controllable() {
+			if header.SchemaVersion != protocol.JournalSchemaVersion || header.Admission.ID == "" || len(header.Admission.ExpectedProgramFingerprint) != 64 || entry.Name() != header.Admission.ID+".pending" || header.TransitionID == "" || header.Status == "" || !class.Valid() || !class.Controllable() {
 				return pendingJournalSet{}, fmt.Errorf("invalid pending transaction journal %s", path)
 			}
 			if header.Admission.ID == ignoreAdmissionID {
@@ -716,7 +716,7 @@ func pendingJournalEvidence(root, ignoreAdmissionID string, now time.Time) (pend
 			}
 			set := pendingJournalSet{
 				Found: true, Evidence: []model.Evidence{evidence}, TransactionState: transactionState,
-				ProgramFingerprint: header.Admission.ProgramFingerprint,
+				ProgramFingerprint: header.Admission.ExpectedProgramFingerprint,
 				ReconcilesProgram:  header.ReconcilesProgram,
 				Recovery:           model.RecoveryContext{TransactionID: header.Admission.ID, Cause: cause, SourcePhase: header.Admission.SourcePhase, Permitted: permitted, BudgetRemaining: budget, Resumption: header.Admission.SourcePhase},
 				Transaction:        model.TransactionContext{ID: header.Admission.ID, TransitionID: header.TransitionID, Status: header.Status, ResourceDigests: resourceDigests, ExternalPossible: external},

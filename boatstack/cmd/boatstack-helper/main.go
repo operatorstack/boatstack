@@ -23,7 +23,6 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/supervisor"
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/surfaces"
 )
@@ -37,22 +36,27 @@ func (s *stringList) Set(value string) error {
 }
 
 type commandOptions struct {
-	repository          string
-	format              string
-	goalID              string
-	goalKind            string
-	deliveryID          string
-	flowID              string
-	transitionID        string
-	idempotencyKey      string
-	humanActor          string
-	repositoryPolicy    bool
-	acceptProgramChange bool
-	parameters          stringList
-	authorityReceipts   stringList
-	follow              bool
-	host                string
-	command             string
+	repository                  string
+	format                      string
+	goalID                      string
+	goalKind                    string
+	deliveryID                  string
+	flowID                      string
+	transitionID                string
+	correlationID               string
+	prescriptionID              string
+	expectedStateRevision       uint64
+	expectedProgramFingerprint  string
+	expectedSnapshotFingerprint string
+	idempotencyKey              string
+	humanActor                  string
+	repositoryPolicy            bool
+	acceptProgramChange         bool
+	parameters                  stringList
+	authorityReceipts           stringList
+	follow                      bool
+	host                        string
+	command                     string
 }
 
 func main() {
@@ -101,13 +105,27 @@ func run(arguments []string) error {
 	if err != nil {
 		return err
 	}
-	response, handleErr := kernel.Handle(context.Background(), request)
-	if command == "update" && options.acceptProgramChange && handleErr != nil && response.ProgramChange != nil && response.Decision != nil &&
-		response.Decision.Kind == supervisor.DecisionUnresolved && response.Decision.Reason == supervisor.ReasonProgramDrift {
-		request.TransitionID = "installation.reconcile-update"
-		request.Parameters = append(request.Parameters, protocol.Parameter{Name: "accept_obligation_change", Value: "true"}).Canonical()
-		response, handleErr = kernel.Handle(context.Background(), request)
+	if (operation == surfaces.OperationApply || operation == surfaces.OperationRecover) && request.Prescription.ID == "" && command != "apply" && command != "recover" {
+		resolveRequest := request
+		resolveRequest.Operation = surfaces.OperationResolve
+		resolveRequest.FlowID = ""
+		resolveRequest.Prescription = protocol.Prescription{}
+		resolved, resolveErr := kernel.Handle(context.Background(), resolveRequest)
+		if resolveErr != nil || resolved.Prescription == nil {
+			if renderErr := renderResponse(resolved, options.format); renderErr != nil {
+				return renderErr
+			}
+			if resolveErr == nil {
+				if resolved.Decision != nil && resolved.Decision.Reason != "" {
+					return errors.New(resolved.Decision.Reason)
+				}
+				return fmt.Errorf("transition %q was not prescribed", request.TransitionID)
+			}
+			return resolveErr
+		}
+		request.Prescription = *resolved.Prescription
 	}
+	response, handleErr := kernel.Handle(context.Background(), request)
 	if command == "events" && options.follow {
 		if options.format != "jsonl" {
 			return fmt.Errorf("events --follow requires --format jsonl")
@@ -229,6 +247,11 @@ func parseOptions(command string, arguments []string, transition catalog.Transit
 	flags.StringVar(&options.deliveryID, "delivery", options.deliveryID, "delivery identity")
 	flags.StringVar(&options.flowID, "flow", "", "flow identity")
 	flags.StringVar(&options.transitionID, "transition", options.transitionID, "stable semantic transition id")
+	flags.StringVar(&options.correlationID, "correlation", "", "command-scoped correlation identity from resolution")
+	flags.StringVar(&options.prescriptionID, "prescription-id", "", "exact prescription identity from resolution")
+	flags.Uint64Var(&options.expectedStateRevision, "expected-state-revision", 0, "exact durable state revision observed during resolution")
+	flags.StringVar(&options.expectedProgramFingerprint, "expected-program-fingerprint", "", "exact executable control-program fingerprint observed during resolution")
+	flags.StringVar(&options.expectedSnapshotFingerprint, "expected-snapshot-fingerprint", "", "exact admission-relevant snapshot fingerprint observed during resolution")
 	flags.StringVar(&options.idempotencyKey, "idempotency-key", "", "exact prior admission idempotency key for safe replay")
 	flags.StringVar(&options.humanActor, "human", "", "explicit command-scoped human authority actor")
 	flags.BoolVar(&options.repositoryPolicy, "repository-authority", false, "derive repository-policy authority from the V2 project configuration")
@@ -253,10 +276,11 @@ func parseOptions(command string, arguments []string, transition catalog.Transit
 		if err := populateRuntimeParameters(&options); err != nil {
 			return commandOptions{}, err
 		}
-		if command == "reconcile-update" {
+		if command == "reconcile-update" || (command == "update" && options.acceptProgramChange) {
 			if !options.acceptProgramChange {
 				return commandOptions{}, fmt.Errorf("reconcile-update requires explicit --accept-program-change")
 			}
+			options.transitionID = "installation.reconcile-update"
 			options.parameters = append(options.parameters, "accept_obligation_change=true")
 		}
 	case "correct-pr":
@@ -405,7 +429,10 @@ func buildRevision() string {
 
 func buildRequest(operation surfaces.Operation, options commandOptions) (surfaces.Request, error) {
 	now := time.Now().UTC()
-	correlation := fmt.Sprintf("cli-%d-%d", os.Getpid(), now.UnixNano())
+	correlation := options.correlationID
+	if correlation == "" {
+		correlation = fmt.Sprintf("cli-%d-%d", os.Getpid(), now.UnixNano())
+	}
 	goal := model.Goal{}
 	if options.goalKind != "" || options.goalID != "" || options.deliveryID != "" {
 		goal = model.Goal{ID: options.goalID, Kind: model.GoalKind(options.goalKind), DeliveryID: options.deliveryID}
@@ -431,6 +458,9 @@ func buildRequest(operation surfaces.Operation, options commandOptions) (surface
 	return surfaces.Request{
 		SchemaVersion: surfaces.SchemaVersion, Operation: operation, Repository: options.repository, Host: options.host, CorrelationID: correlation,
 		FlowID: flowID, Goal: goal, TransitionID: catalog.TransitionID(options.transitionID), Authority: authority, Parameters: parameters,
+		Prescription: protocol.Prescription{SchemaVersion: protocol.PrescriptionSchemaVersion, ID: options.prescriptionID,
+			TransitionID: catalog.TransitionID(options.transitionID), ExpectedStateRevision: options.expectedStateRevision,
+			ExpectedProgramFingerprint: options.expectedProgramFingerprint, ExpectedSnapshotFingerprint: options.expectedSnapshotFingerprint},
 		RepositoryAuthority: options.repositoryPolicy, IdempotencyKey: options.idempotencyKey, Command: options.command,
 	}, nil
 }
@@ -567,6 +597,15 @@ func renderResponse(response surfaces.Response, format string) error {
 			if response.Decision.Transition != nil {
 				fmt.Println("transition:", response.Decision.Transition.ID)
 			}
+		}
+		if response.Prescription != nil {
+			correlation := ""
+			if response.Snapshot != nil {
+				correlation = response.Snapshot.Invocation.Correlation
+			}
+			fmt.Printf("prescription=%s state_revision=%d program=%s snapshot=%s correlation=%s\n", response.Prescription.ID,
+				response.Prescription.ExpectedStateRevision, response.Prescription.ExpectedProgramFingerprint,
+				response.Prescription.ExpectedSnapshotFingerprint, correlation)
 		}
 		if response.Receipt != nil {
 			fmt.Println("receipt:", response.Receipt.ID)

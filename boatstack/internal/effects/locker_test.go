@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/plant"
 )
@@ -27,7 +28,9 @@ func TestKernelLockUsesProcessScopedHandleNotFilePresence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := locker.Acquire(context.Background(), invocation, []string{"state"}); err == nil {
+	blocked, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+	if _, err := locker.Acquire(blocked, invocation, []string{"state"}); err == nil {
 		t.Fatal("concurrent acquisition unexpectedly succeeded")
 	}
 	if err := first.Release(); err != nil {

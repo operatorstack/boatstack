@@ -156,15 +156,17 @@ func observation(phase model.ProtocolPhase, fingerprint string) model.Observatio
 	e := model.Evidence{Source: "fixture", Fingerprint: fingerprint, ObservedAt: time.Unix(20, 0).UTC()}
 	configurationEvidence := model.Evidence{Source: "configuration:/repo/.boatstack/project.json", Fingerprint: "config-fingerprint", ObservedAt: time.Unix(20, 0).UTC()}
 	stage := "start"
+	revision := uint64(1)
 	if phase == model.PhaseActive {
 		stage = "terminal"
+		revision = 2
 	} else if phase == model.PhaseRecovery {
 		stage = "verify"
 	}
 	return model.Observation{
-		SchemaVersion: model.SnapshotSchemaVersion,
-		Invocation:    model.InvocationContext{RepositoryID: "repo", GitCommonID: "git", WorktreeID: "wt", Ref: "refs/heads/f", ControllerID: "ctl", InvokingPath: fixtureAbsolutePath("test-fixture", "repo"), RuntimeVersion: "runtime-version", RuntimePath: fixtureAbsolutePath("test-fixture", "runtime"), RuntimeFingerprint: "runtime", Topology: model.TopologyEmbedded, Host: "cli", Correlation: "corr"},
-		Phase:         model.Known(phase, e), Engagement: model.Known(model.EngagementActive, e), Delivery: model.Known(model.DeliveryActive, e), Workspace: model.Known(model.WorkspaceActive, e),
+		SchemaVersion: model.SnapshotSchemaVersion, StateRevision: revision,
+		Invocation: model.InvocationContext{RepositoryID: "repo", GitCommonID: "git", WorktreeID: "wt", Ref: "refs/heads/f", ControllerID: "ctl", InvokingPath: fixtureAbsolutePath("test-fixture", "repo"), RuntimeVersion: "runtime-version", RuntimePath: fixtureAbsolutePath("test-fixture", "runtime"), RuntimeFingerprint: "runtime", Topology: model.TopologyEmbedded, Host: "cli", Correlation: "corr"},
+		Phase:      model.Known(phase, e), Engagement: model.Known(model.EngagementActive, e), Delivery: model.Known(model.DeliveryActive, e), Workspace: model.Known(model.WorkspaceActive, e),
 		Plan: model.Known(model.PlanApproved, e), Configuration: model.Known(model.ConfigurationVerified, configurationEvidence), Runtime: model.Known(model.RuntimeVerified, e),
 		ConfigurationPolicy: model.Known(model.ConfigurationPolicy{PlanApproval: "human", VisualEvidence: "optional", ExternalEffectAuthority: "human-or-autonomy-plus-provider", Hosts: []string{"cli"}}, configurationEvidence),
 		Publication:         model.Known(model.PublicationNone, e), Verification: model.Known(model.VerificationUnverified, e), Recovery: model.Known(model.RecoveryNone, e),
@@ -176,6 +178,7 @@ func observation(phase model.ProtocolPhase, fingerprint string) model.Observatio
 
 func recoveryObservation(fingerprint string) model.Observation {
 	value := observation(model.PhaseRecovery, fingerprint)
+	value.StateRevision = 2
 	evidence := value.Phase.Evidence[0]
 	value.Recovery = model.Known(model.RecoveryReconcile, evidence)
 	value.Transaction = model.Known(model.TransactionLocalApplied, evidence)
@@ -237,12 +240,22 @@ func testRegistryWithAdvanceClass(t *testing.T, class catalog.EventClass) catalo
 	return r
 }
 
-func request(now time.Time) ApplyRequest {
+func request(t *testing.T, now time.Time) ApplyRequest {
+	t.Helper()
 	invocation := observation(model.PhaseObserved, "source").Invocation
+	snapshot, err := model.CanonicalizeForProgram(observation(model.PhaseObserved, "source"), syntheticProgramFingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transition, _ := testRegistry(t).Lookup("test.advance")
+	prescription, err := protocol.NewPrescription(snapshot, transition)
+	if err != nil {
+		t.Fatal(err)
+	}
 	return ApplyRequest{ResolveRequest: ResolveRequest{
 		Invocation: invocation, Goal: model.Goal{ID: "goal", Kind: model.GoalVerified, DeliveryID: "delivery"}, Requested: "test.advance",
 		Authority: protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{ID: "auth", Class: catalog.AuthorityRepository, Subject: "repo", Fingerprint: "config-fingerprint", IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)}}},
-	}, FlowID: "flow", AdmissionLifetime: time.Minute}
+	}, FlowID: "flow", Prescription: prescription, AdmissionLifetime: time.Minute}
 }
 
 func TestRequiredObserverFailureReturnsTypedUnresolvedDecision(t *testing.T) {
@@ -258,7 +271,7 @@ func TestRequiredObserverFailureReturnsTypedUnresolvedDecision(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resolved, resolveErr := kernel.Resolve(context.Background(), request(now).ResolveRequest)
+	resolved, resolveErr := kernel.Resolve(context.Background(), request(t, now).ResolveRequest)
 	if resolveErr == nil || !strings.Contains(resolveErr.Error(), "observer unavailable") {
 		t.Fatalf("resolve error = %v, want observer failure", resolveErr)
 	}
@@ -266,7 +279,7 @@ func TestRequiredObserverFailureReturnsTypedUnresolvedDecision(t *testing.T) {
 		t.Fatalf("resolve decision = %+v, want typed UNRESOLVED", resolved.Decision)
 	}
 
-	applied, applyErr := kernel.Apply(context.Background(), request(now))
+	applied, applyErr := kernel.Apply(context.Background(), request(t, now))
 	if applyErr == nil || !strings.Contains(applyErr.Error(), "observer unavailable") {
 		t.Fatalf("apply error = %v, want observer failure", applyErr)
 	}
@@ -296,7 +309,7 @@ func TestResolutionDoesNotPrescribeBeforeRequiredParametersAreBound(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := request(now).ResolveRequest
+	req := request(t, now).ResolveRequest
 	req.Requested = ""
 	candidate, err := kernel.Resolve(context.Background(), req)
 	if err != nil {
@@ -326,7 +339,7 @@ func TestResolutionDoesNotPrescribeAnEffectThatDeterministicPreflightRejects(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := kernel.Resolve(context.Background(), request(now).ResolveRequest)
+	resolved, err := kernel.Resolve(context.Background(), request(t, now).ResolveRequest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -347,14 +360,14 @@ func TestApplyCrossesAdmissionEffectVerificationAndReceiptBoundary(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := kernel.Apply(context.Background(), request(now))
+	result, err := kernel.Apply(context.Background(), request(t, now))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if effects.executions != 1 || effects.rollbacks != 0 || journal.committed != 1 || journal.aborted != 0 || len(receipts.values) != 1 || result.Receipt.ID == "" || !lock.released {
 		t.Fatalf("unexpected boundary evidence: effects=%+v journal=%+v receipts=%d receipt=%q released=%v", effects, journal, len(receipts.values), result.Receipt.ID, lock.released)
 	}
-	retry := request(now)
+	retry := request(t, now)
 	retry.IdempotencyKey = result.Admission.IdempotencyKey
 	replayed, err := kernel.Apply(context.Background(), retry)
 	if err != nil {
@@ -449,11 +462,11 @@ func TestIdempotencyReceiptCannotHideUncommittedRecoveryJournal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	completed, err := kernel.Apply(context.Background(), request(now))
+	completed, err := kernel.Apply(context.Background(), request(t, now))
 	if err != nil {
 		t.Fatal(err)
 	}
-	retry := request(now)
+	retry := request(t, now)
 	retry.IdempotencyKey = completed.Admission.IdempotencyKey
 	_, err = kernel.Apply(context.Background(), retry)
 	var recovery ReplayRecoveryError
@@ -471,13 +484,31 @@ func TestApplyRejectsSnapshotDriftBeforeEffect(t *testing.T) {
 	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "drifted")}}
 	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{}, &memoryReceipts{}, &fakeLock{}
 	kernel, _ := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
-	_, err := kernel.Apply(context.Background(), request(now))
-	var stale StaleAdmissionError
+	_, err := kernel.Apply(context.Background(), request(t, now))
+	var stale StalePrescriptionError
 	if !errors.As(err, &stale) {
 		t.Fatalf("error = %v, want StaleAdmissionError", err)
 	}
 	if effects.executions != 0 || journal.aborted != 0 || journal.begun != 0 {
 		t.Fatalf("effect executions=%d aborted=%d", effects.executions, journal.aborted)
+	}
+}
+
+func TestApplyRejectsHumanRevisionAdvanceBeforeEffect(t *testing.T) {
+	// control-law: a later human commit invalidates an older agent prescription
+	now := time.Unix(30, 0).UTC()
+	advanced := observation(model.PhaseObserved, "source")
+	advanced.StateRevision = 2
+	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), advanced}}
+	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{}, &memoryReceipts{}, &fakeLock{}
+	kernel, _ := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
+	_, err := kernel.Apply(context.Background(), request(t, now))
+	var stale StalePrescriptionError
+	if !errors.As(err, &stale) || stale.ExpectedStateRevision != 1 || stale.ObservedStateRevision != 2 {
+		t.Fatalf("error = %v, want state-revision stale prescription", err)
+	}
+	if effects.executions != 0 || journal.begun != 0 || len(receipts.values) != 0 {
+		t.Fatalf("stale revision crossed effect boundary: effects=%d journals=%d receipts=%d", effects.executions, journal.begun, len(receipts.values))
 	}
 }
 
@@ -487,7 +518,7 @@ func TestApplyRollsBackFailedPostconditionAndDoesNotReceipt(t *testing.T) {
 	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "unchanged")}}
 	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{result: ports.EffectResult{Settlement: ports.EffectSettled}}, &memoryReceipts{}, &fakeLock{}
 	kernel, _ := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
-	_, err := kernel.Apply(context.Background(), request(now))
+	_, err := kernel.Apply(context.Background(), request(t, now))
 	var postcondition PostconditionError
 	if !errors.As(err, &postcondition) {
 		t.Fatalf("error = %v, want PostconditionError", err)
@@ -504,7 +535,7 @@ func TestApplyRequiresRecoveryWhenJournalFailsAfterEffect(t *testing.T) {
 	journal := &fakeJournal{failMark: "verifying"}
 	effects, receipts, lock := &fakeEffects{result: ports.EffectResult{Settlement: ports.EffectSettled}}, &memoryReceipts{}, &fakeLock{}
 	kernel, _ := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
-	_, err := kernel.Apply(context.Background(), request(now))
+	_, err := kernel.Apply(context.Background(), request(t, now))
 	if err == nil || !strings.Contains(err.Error(), "injected journal mark failure") {
 		t.Fatalf("error=%v, want injected post-effect journal failure", err)
 	}
@@ -519,7 +550,7 @@ func TestApplyPreservesUnknownExternalOutcomeForReconciliation(t *testing.T) {
 	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "unchanged")}}
 	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{result: ports.EffectResult{Settlement: ports.EffectUnknown}}, &memoryReceipts{}, &fakeLock{}
 	kernel, _ := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
-	_, err := kernel.Apply(context.Background(), request(now))
+	_, err := kernel.Apply(context.Background(), request(t, now))
 	var unknown ExternalOutcomeUnknownError
 	if !errors.As(err, &unknown) {
 		t.Fatalf("error=%v, want ExternalOutcomeUnknownError", err)
@@ -539,7 +570,7 @@ func TestOwnedExternalExecutionErrorRequiresRecoveryWithoutRollback(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	apply := request(now)
+	apply := request(t, now)
 	apply.Authority.Receipts[0].Class = catalog.AuthorityHuman
 	_, err = kernel.Apply(context.Background(), apply)
 	var unknown ExternalOutcomeUnknownError
