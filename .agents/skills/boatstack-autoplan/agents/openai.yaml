@@ -1,0 +1,6 @@
+interface:
+  display_name: "Boatstack Autoplan"
+  short_description: "Create and approve a verified delivery plan."
+  default_prompt: "Use $boatstack-autoplan to follow the authority-preserving Boatstack V2 driver."
+policy:
+  allow_implicit_invocation: false

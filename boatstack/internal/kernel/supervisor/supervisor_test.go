@@ -45,6 +45,32 @@ func goalFor() model.Goal {
 	return model.Goal{ID: "goal", Kind: model.GoalVerified, DeliveryID: "delivery"}
 }
 
+func recanonicalize(t *testing.T, snapshot model.Snapshot) model.Snapshot {
+	t.Helper()
+	result, err := model.Canonicalize(snapshot.Observation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+func openPRSnapshot(t *testing.T, recordedGates ...string) (model.Snapshot, model.Goal) {
+	t.Helper()
+	snapshot := snapshotFor(t, model.PhaseActive, model.TerminalNonterminal)
+	goal := model.Goal{ID: "goal", Kind: model.GoalOpenPR, DeliveryID: "delivery"}
+	evidence := snapshot.Verification.Evidence[0]
+	snapshot.Goal = model.Known(goal, evidence)
+	snapshot.Plan = model.Known(model.PlanLocked, evidence)
+	snapshot.Publication = model.Known(model.PublicationCandidate, evidence)
+	snapshot.Verification = model.Known(model.VerificationCurrent, evidence)
+	for _, gate := range recordedGates {
+		gateEvidence := evidence
+		gateEvidence.Source = "gate-evidence:" + gate + ":/fixture/" + gate + ".json"
+		snapshot.Verification.Evidence = append(snapshot.Verification.Evidence, gateEvidence)
+	}
+	return recanonicalize(t, snapshot), goal
+}
+
 func TestTerminalGoalOutranksLocalTransitions(t *testing.T) {
 	// control-law: configured-terminal-outranks-local-lifecycle
 	s := New(catalog.Default())
@@ -76,6 +102,85 @@ func TestTerminalEvidenceForOldGoalDoesNotTerminateNewGoal(t *testing.T) {
 	decision := s.Resolve(snapshotFor(t, model.PhaseTerminal, model.TerminalEstablished), newGoal, catalog.AuthoritySet{catalog.AuthorityHuman: true}, "goal.configure")
 	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "goal.configure" {
 		t.Fatalf("decision=%#v, want exact new-goal configuration", decision)
+	}
+}
+
+func TestUntargetedResolutionReconfiguresDifferentGoalAndSkipsSatisfiedGoal(t *testing.T) {
+	// control-law: untargeted-resolution-must-advance-the-exact-goal
+	snapshot := snapshotFor(t, model.PhaseActive, model.TerminalNonterminal)
+	authority := catalog.AuthoritySet{catalog.AuthorityHuman: true, catalog.AuthorityRepository: true}
+
+	newGoal := model.Goal{ID: "new-goal", Kind: model.GoalOpenPR, DeliveryID: "delivery"}
+	decision := New(catalog.Default()).Resolve(snapshot, newGoal, authority, "")
+	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "goal.configure" {
+		t.Fatalf("different-goal decision = %#v, want goal.configure", decision)
+	}
+
+	snapshot.Plan = model.Known(model.PlanValid, snapshot.Plan.Evidence[0])
+	snapshot = recanonicalize(t, snapshot)
+	decision = New(catalog.Default()).Resolve(snapshot, goalFor(), authority, "")
+	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "plan.approve" {
+		t.Fatalf("exact-goal decision = %#v, want plan.approve without goal.configure stutter", decision)
+	}
+}
+
+func TestUntargetedResolutionExcludesExplicitControlTransitions(t *testing.T) {
+	// control-law: untargeted-resolution-cannot-invent-repair-or-slice-intent
+	snapshot := snapshotFor(t, model.PhaseActive, model.TerminalNonterminal)
+	snapshot.Plan = model.Known(model.PlanLocked, snapshot.Plan.Evidence[0])
+	snapshot.Verification = model.Known(model.VerificationUnverified, snapshot.Verification.Evidence[0])
+	snapshot = recanonicalize(t, snapshot)
+	authority := catalog.AuthoritySet{catalog.AuthorityHuman: true, catalog.AuthorityRepository: true}
+
+	decision := New(catalog.Default()).Resolve(snapshot, goalFor(), authority, "")
+	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "gate.build.record" {
+		t.Fatalf("untargeted decision = %#v, want gate.build.record", decision)
+	}
+	decision = New(catalog.Default()).Resolve(snapshot, goalFor(), authority, "plan.invalidate")
+	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "plan.invalidate" {
+		t.Fatalf("explicit invalidation decision = %#v, want requested plan.invalidate", decision)
+	}
+	decision = New(catalog.Default()).Resolve(snapshot, goalFor(), authority, "delivery.slice.advance")
+	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "delivery.slice.advance" {
+		t.Fatalf("explicit slice-marker decision = %#v, want requested delivery.slice.advance", decision)
+	}
+}
+
+func TestUntargetedResolutionUsesCurrentGateEvidenceForProgress(t *testing.T) {
+	// control-law: verified-gate-progress-is-derived-from-canonical-evidence
+	authority := catalog.AuthoritySet{catalog.AuthorityHuman: true, catalog.AuthorityRepository: true}
+	snapshot, goal := openPRSnapshot(t, "build")
+	snapshot.Publication = model.Known(model.PublicationNone, snapshot.Publication.Evidence[0])
+	snapshot = recanonicalize(t, snapshot)
+
+	decision := New(catalog.Default()).Resolve(snapshot, goal, authority, "")
+	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "gate.test.record" {
+		t.Fatalf("one-gate decision = %#v, want gate.test.record", decision)
+	}
+
+	snapshot, goal = openPRSnapshot(t, "build", "test", "review")
+	snapshot.Publication = model.Known(model.PublicationNone, snapshot.Publication.Evidence[0])
+	snapshot = recanonicalize(t, snapshot)
+	decision = New(catalog.Default()).Resolve(snapshot, goal, authority, "")
+	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "publication.preview" {
+		t.Fatalf("complete-gates decision = %#v, want publication.preview", decision)
+	}
+}
+
+func TestUntargetedResolutionStopsAtSelectedProviderBoundary(t *testing.T) {
+	// control-law: unavailable-authority-cannot-be-skipped-for-a-lower-priority-effect
+	snapshot, goal := openPRSnapshot(t, "build", "test", "review")
+	supervisor := New(catalog.Default())
+	authority := catalog.AuthoritySet{catalog.AuthorityHuman: true, catalog.AuthorityRepository: true}
+
+	decision := supervisor.Resolve(snapshot, goal, authority, "")
+	if decision.Kind != DecisionFrontier || len(decision.Candidates) != 1 || decision.Candidates[0] != "publication.execute" {
+		t.Fatalf("provider-free decision = %#v, want publication.execute FRONTIER", decision)
+	}
+	authority[catalog.AuthorityProvider] = true
+	decision = supervisor.Resolve(snapshot, goal, authority, "")
+	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "publication.execute" {
+		t.Fatalf("provider-authorized decision = %#v, want publication.execute", decision)
 	}
 }
 

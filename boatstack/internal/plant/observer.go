@@ -493,7 +493,7 @@ func observeRepositoryArtifacts(layout ports.ControllerLayout, state durable.Sta
 		}
 		transitionID, known := gateNames[gate.Gate]
 		path := filepath.Join(layout.EvidenceRoot, deliveryID, gate.Gate+".json")
-		evidence, _, exists, err := fileEvidence(path, "gate-evidence", now)
+		evidence, _, exists, err := fileEvidence(path, "gate-evidence:"+gate.Gate, now)
 		if err != nil {
 			return plan, verification, terminal, nil, nil, err
 		}

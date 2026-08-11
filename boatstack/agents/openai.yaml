@@ -1,4 +1,0 @@
-interface:
-  display_name: "Boatstack"
-  short_description: "Use one V2 kernel for delivery state, authority, effects, and proof."
-  default_prompt: "Use $boatstack Autoplan, $boatstack Run, or $boatstack Update; bare $boatstack presents those three choices. Treat status as observation only, preserve one command-scoped authority context through next, apply, recover, and re-resolution, and never infer authority or completion from files, branches, authentication, or prior conversation."

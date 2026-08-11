@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
@@ -40,7 +41,7 @@ func (s Supervisor) Resolve(snapshot model.Snapshot, goal model.Goal, authority 
 		base.Kind, base.Reason = DecisionUnresolved, "terminal or phase evidence is not known"
 		return base
 	}
-	if snapshot.Goal.Status == model.FactKnown && snapshot.Goal.Value != goal && requested != "goal.configure" {
+	if requested != "" && snapshot.Goal.Status == model.FactKnown && snapshot.Goal.Value != goal && requested != "goal.configure" {
 		base.Kind, base.Reason = DecisionRefused, "requested goal differs from configured goal; goal.configure is required"
 		return base
 	}
@@ -91,30 +92,26 @@ func (s Supervisor) Resolve(snapshot model.Snapshot, goal model.Goal, authority 
 		base.Kind, base.Reason, base.Transition = DecisionPrescribed, "requested transition is admissible", &transition
 		return base
 	}
-	available := make([]catalog.Transition, 0, len(admissible))
+	selectable := make([]catalog.Transition, 0, len(admissible))
 	for _, candidate := range admissible {
-		if allowed, _ := policyAllows(snapshot, candidate); allowed && authoritySatisfies(snapshot, candidate, authority) {
-			available = append(available, candidate)
+		if !candidate.ImplicitlySelectable() || targetAlreadySatisfied(snapshot, goal, candidate) {
+			continue
+		}
+		if allowed, _ := policyAllows(snapshot, candidate); allowed {
+			selectable = append(selectable, candidate)
 		}
 	}
-	if len(available) == 0 {
-		if len(admissible) > 0 {
-			base.Kind, base.Reason = DecisionFrontier, "admissible transitions require unavailable authority"
-			for _, candidate := range admissible {
-				base.Candidates = append(base.Candidates, candidate.ID)
-			}
-			return base
-		}
+	if len(selectable) == 0 {
 		if snapshot.Phase.Value == model.PhaseRecovery || snapshot.Phase.Value == model.PhaseUnresolved {
 			base.Kind, base.Reason = DecisionBlocked, "no registered recovery transition is admissible"
 			return base
 		}
-		base.Kind, base.Reason = DecisionUnresolved, "no transition is safely selectable from current evidence"
+		base.Kind, base.Reason = DecisionUnresolved, "no goal-progressing transition is safely selectable from current evidence"
 		return base
 	}
-	topPriority := available[0].Priority
+	topPriority := selectable[0].Priority
 	var top []catalog.Transition
-	for _, candidate := range available {
+	for _, candidate := range selectable {
 		if candidate.Priority == topPriority {
 			top = append(top, candidate)
 		}
@@ -126,8 +123,41 @@ func (s Supervisor) Resolve(snapshot model.Snapshot, goal model.Goal, authority 
 		}
 		return base
 	}
+	if !authoritySatisfies(snapshot, top[0], authority) {
+		base.Kind, base.Reason = DecisionFrontier, "next goal-progressing transition requires unavailable authority"
+		base.Candidates = []catalog.TransitionID{top[0].ID}
+		return base
+	}
 	base.Kind, base.Reason, base.Transition = DecisionPrescribed, "deterministic highest-priority transition", &top[0]
 	return base
+}
+
+func targetAlreadySatisfied(snapshot model.Snapshot, goal model.Goal, transition catalog.Transition) bool {
+	if transition.ID == "goal.configure" {
+		return snapshot.Goal.Status == model.FactKnown && snapshot.Goal.Value == goal
+	}
+	if gate, ok := catalog.GateName(transition.ID); ok {
+		return currentEvidenceRecorded(snapshot, "gate-evidence:"+gate+":")
+	}
+	if transition.ID == "evidence.visual.attach" {
+		if snapshot.ConfigurationPolicy.Status != model.FactKnown || snapshot.ConfigurationPolicy.Value.VisualEvidence != "required" {
+			return true
+		}
+		return currentEvidenceRecorded(snapshot, "visual-evidence:")
+	}
+	return transition.TargetMatches(snapshot)
+}
+
+func currentEvidenceRecorded(snapshot model.Snapshot, sourcePrefix string) bool {
+	if snapshot.Verification.Status != model.FactKnown || snapshot.Verification.Value != model.VerificationCurrent {
+		return false
+	}
+	for _, evidence := range snapshot.Verification.Evidence {
+		if strings.HasPrefix(evidence.Source, sourcePrefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func hostEnabled(hosts []string, host string) bool {

@@ -151,7 +151,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
                     "schema_version": 2,
                     "project": {"name": "fixture", "default_branch": "main", "commands": {}},
                     "policy": {"plan_approval": "human", "visual_evidence": "optional"},
-                    "hosts": ["cli", "codex"],
+                    "hosts": ["cli", "cursor", "codex", "claude", "gemini", "mcp"],
                 }
             )
         )
@@ -161,7 +161,30 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         )
         self.assertEqual(initialized["snapshot"]["invocation"]["topology"], "detached")
         self.assertEqual(initialized["snapshot"]["runtime"]["value"], "verified")
-        self.assertEqual(self.porcelain(), "?? .boatstack/project.json")
+        self.assertEqual(
+            self.porcelain(),
+            "\n".join(
+                [
+                    "?? .agents/skills/boatstack-autoplan/SKILL.md",
+                    "?? .agents/skills/boatstack-autoplan/agents/openai.yaml",
+                    "?? .agents/skills/boatstack-run/SKILL.md",
+                    "?? .agents/skills/boatstack-run/agents/openai.yaml",
+                    "?? .agents/skills/boatstack-update/SKILL.md",
+                    "?? .agents/skills/boatstack-update/agents/openai.yaml",
+                    "?? .boatstack/host-skills.json",
+                    "?? .boatstack/project.json",
+                    "?? .claude/skills/boatstack-autoplan/SKILL.md",
+                    "?? .claude/skills/boatstack-run/SKILL.md",
+                    "?? .claude/skills/boatstack-update/SKILL.md",
+                    "?? .cursor/commands/boatstack-autoplan.md",
+                    "?? .cursor/commands/boatstack-run.md",
+                    "?? .cursor/commands/boatstack-update.md",
+                    "?? .gemini/skills/boatstack-autoplan/SKILL.md",
+                    "?? .gemini/skills/boatstack-run/SKILL.md",
+                    "?? .gemini/skills/boatstack-update/SKILL.md",
+                ]
+            ),
+        )
 
         self.helper_json(
             "apply", "--repo", self.repo, "--transition", "engagement.begin",
@@ -220,6 +243,13 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         self.assertIn("plan.create", diagnostic["decision"]["candidates"])
         self.assertEqual(self.porcelain(), before)
 
+        progressing = self.helper_json(
+            "next", "--repo", self.repo, *goal, *flow,
+            "--human", "contract", "--repository-authority",
+        )
+        self.assertEqual(progressing["decision"]["kind"], "PRESCRIBED")
+        self.assertEqual(progressing["decision"]["transition"]["id"], "plan.create")
+
         plan = Path(self.work.name) / "source-plan.md"
         plan.write_text("# Driver fix\n\nPreserve authority across resolution and effects.\n")
         parameters = (
@@ -249,8 +279,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
             self.assertIn(field, applied_process.stdout)
 
         resolved = self.helper_json(
-            "next", "--repo", self.repo, "--transition", "plan.validate",
-            *goal, *flow, "--repository-authority",
+            "next", "--repo", self.repo, *goal, *flow, "--repository-authority",
         )
         self.assertEqual(resolved["decision"]["kind"], "PRESCRIBED")
         self.assertEqual(resolved["decision"]["transition"]["id"], "plan.validate")

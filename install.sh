@@ -95,5 +95,5 @@ ln -s "$(basename "$runtime")" "$launcher_temp"
 mv -f "$launcher_temp" "$install_dir/boatstack"
 
 echo "Boatstack V2 installed at $runtime"
-echo "Review and commit $repository/.boatstack/project.json"
+echo "Review and commit $repository/.boatstack/project.json and the generated host skills"
 echo "Run: $install_dir/boatstack doctor --repo $repository --format text"

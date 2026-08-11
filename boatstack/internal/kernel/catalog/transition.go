@@ -192,6 +192,26 @@ type Transition struct {
 
 func (t Transition) Controllable() bool { return t.Class.Controllable() }
 
+// ImplicitlySelectable reports whether an untargeted resolution may choose the
+// transition as delivery progress. Maintenance, correction, abandonment, and
+// caller-defined markers remain available through an explicit requested
+// transition, but cannot outrank the configured goal by merely being
+// admissible from the same snapshot.
+func (t Transition) ImplicitlySelectable() bool {
+	switch t.ID {
+	case "engagement.renew", "engagement.release",
+		"invocation.rebind", "repository.attach", "repository.detach",
+		"runtime.replace", "configuration.mutate", "installation.update",
+		"plan.amend", "plan.invalidate", "plan.abandon",
+		"workspace.sync", "workspace.publish", "workspace.cleanup", "workspace.reap", "workspace.abandon",
+		"gate.change.record", "gate.journey.record", "evidence.approval.revoke", "delivery.slice.advance",
+		"publication.correct", "publication.abandon":
+		return false
+	default:
+		return true
+	}
+}
+
 func (t Transition) SupportsGoal(goal model.Goal) bool {
 	if len(t.GoalKinds) == 0 {
 		return true
