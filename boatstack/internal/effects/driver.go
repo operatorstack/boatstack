@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
+	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 )
 
 type CommandBoundary interface {
@@ -79,7 +79,7 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 	if state.ProgramFingerprint != "" && state.ProgramFingerprint != admission.ProgramFingerprint && !transition.Policy.ReconcilesProgram {
 		return nil, fmt.Errorf("compiled control program drifted; explicit program reconciliation is required")
 	}
-	if transition.ID == "catalog.reconcile" && (state.RuntimePath != admission.Invocation.RuntimePath || state.RuntimeFingerprint != admission.Invocation.RuntimeFingerprint) {
+	if transition.ID == "catalog.reconcile" && (state.RuntimeVersion != admission.Invocation.RuntimeVersion || state.RuntimeFingerprint != admission.Invocation.RuntimeFingerprint) {
 		return nil, fmt.Errorf("catalog reconciliation cannot activate a different runtime; use installation.reconcile-update")
 	}
 	if err := verifyWorkspaceBranchParameter(state, admission, transition.ID); err != nil {
@@ -97,15 +97,6 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 	}
 	if err := applyStateTransition(&next, admission, transition); err != nil {
 		return nil, err
-	}
-	var launcherMutation *ports.ResourceMutation
-	if transition.ID == "installation.initialize" || transition.ID == "installation.update" || transition.ID == "installation.reconcile-update" {
-		mutation, launcherPath, launcherFingerprint, launcherErr := prepareLauncherMutation(admission)
-		if launcherErr != nil {
-			return nil, launcherErr
-		}
-		next.LauncherPath, next.LauncherFingerprint = launcherPath, launcherFingerprint
-		launcherMutation = &mutation
 	}
 	next.Revision++
 	next.UpdatedAt = d.clock.Now().UTC()
@@ -154,8 +145,18 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 	if err != nil {
 		return nil, err
 	}
-	if launcherMutation != nil {
-		mutations = append(mutations, *launcherMutation)
+	if transitionSetsRuntimePin(transition.ID) || transition.ID == "catalog.reconcile" {
+		pinMutation, pinErr := prepareRuntimePinMutation(layout.RepositoryRoot, next)
+		if pinErr != nil {
+			return nil, pinErr
+		}
+		mutations = append(mutations, pinMutation)
+	} else if transition.ID == "workspace.cut" {
+		pinMutation, pinErr := prepareRuntimePinMutation(next.WorkspacePath, next)
+		if pinErr != nil {
+			return nil, pinErr
+		}
+		mutations = append(mutations, pinMutation)
 	}
 	statePath := layout.StatePath
 	stateInstallLast := true
@@ -388,68 +389,46 @@ func verifyRuntimeParameters(admission protocol.Admission, transition catalog.Tr
 	if transition.ID != "runtime.hydrate" && transition.ID != "runtime.replace" && transition.ID != "runtime.reconcile" && transition.ID != "installation.initialize" && transition.ID != "installation.update" && transition.ID != "installation.reconcile-update" {
 		return nil
 	}
-	runtimePath, _ := admission.Parameters.Get("runtime_path")
-	if !filepath.IsAbs(runtimePath) {
-		return fmt.Errorf("declared runtime path must be absolute")
-	}
-	resolved, err := filepath.EvalSymlinks(runtimePath)
-	if err != nil {
-		return fmt.Errorf("resolve declared runtime: %w", err)
-	}
-	if filepath.Clean(runtimePath) != resolved {
-		return fmt.Errorf("declared runtime path must be canonical: got %s, want %s", runtimePath, resolved)
-	}
+	version, _ := admission.Parameters.Get("runtime_version")
 	expected, _ := admission.Parameters.Get("runtime_sha256")
-	raw, err := os.ReadFile(runtimePath)
+	revision, _ := admission.Parameters.Get("source_revision")
+	identity := boatstackruntime.Identity{Version: version, SHA256: expected, SourceRevision: revision}
+	if err := identity.Validate(); err != nil {
+		return fmt.Errorf("declared runtime identity: %w", err)
+	}
+	home, err := boatstackruntime.Home("")
 	if err != nil {
-		return fmt.Errorf("read declared runtime: %w", err)
+		return err
 	}
-	if actual := sha256Bytes(raw); actual != expected {
-		return fmt.Errorf("declared runtime fingerprint mismatch: got %s", actual)
+	expectedPath, err := boatstackruntime.ExecutablePath(home, identity)
+	if err != nil {
+		return err
 	}
-	if strings.HasPrefix(string(transition.ID), "installation.") && (runtimePath != admission.Invocation.RuntimePath || expected != admission.Invocation.RuntimeFingerprint) {
-		return fmt.Errorf("installation runtime must be the exact candidate process that owns admission")
+	if err := boatstackruntime.VerifyExecutable(expectedPath, identity); err != nil {
+		return err
+	}
+	if version != admission.Invocation.RuntimeVersion || expected != admission.Invocation.RuntimeFingerprint {
+		return fmt.Errorf("runtime transition must be owned by the exact immutable candidate process")
 	}
 	return nil
 }
 
-func prepareLauncherMutation(admission protocol.Admission) (ports.ResourceMutation, string, string, error) {
-	runtimePath, _ := admission.Parameters.Get("runtime_path")
-	launcherPath := filepath.Join(filepath.Dir(runtimePath), "boatstack")
-	if runtime.GOOS == "windows" {
-		launcherPath += ".cmd"
-		body := []byte("@echo off\r\n\"" + runtimePath + "\" %*\r\n")
-		mutation, err := mutationFor(launcherPath, body, 0o700, false, false)
-		return mutation, launcherPath, sha256Bytes(body), err
+func transitionSetsRuntimePin(id catalog.TransitionID) bool {
+	switch id {
+	case "runtime.hydrate", "runtime.replace", "runtime.reconcile", "installation.initialize", "installation.update", "installation.reconcile-update":
+		return true
+	default:
+		return false
 	}
-	target := filepath.Base(runtimePath)
-	mutation, err := mutationForSymlink(launcherPath, target, false)
-	return mutation, launcherPath, sha256Bytes([]byte("symlink\x00" + target)), err
 }
 
-func mutationForSymlink(path, target string, installLast bool) (ports.ResourceMutation, error) {
-	if !filepath.IsAbs(path) || target == "" {
-		return ports.ResourceMutation{}, fmt.Errorf("managed symlink requires an absolute path and target")
-	}
-	mutation := ports.ResourceMutation{Path: path, TargetLink: target, Mode: 0o700, InstallLast: installLast}
-	info, err := os.Lstat(path)
-	if os.IsNotExist(err) {
-		return mutation, nil
-	}
+func prepareRuntimePinMutation(repository string, state durable.State) (ports.ResourceMutation, error) {
+	identity := boatstackruntime.Identity{Version: state.RuntimeVersion, SHA256: state.RuntimeFingerprint, SourceRevision: state.RuntimeSource}
+	pinRaw, err := boatstackruntime.EncodePin(boatstackruntime.NewPin(identity, state.ProgramFingerprint, durable.StateSchemaVersion))
 	if err != nil {
 		return ports.ResourceMutation{}, err
 	}
-	mutation.PriorExists = true
-	if info.Mode()&os.ModeSymlink != 0 {
-		mutation.PriorLink, err = os.Readlink(path)
-		return mutation, err
-	}
-	if !info.Mode().IsRegular() {
-		return ports.ResourceMutation{}, fmt.Errorf("managed launcher is neither a regular file nor symlink: %s", path)
-	}
-	mutation.Prior, err = os.ReadFile(path)
-	mutation.Mode = uint32(info.Mode().Perm())
-	return mutation, err
+	return mutationFor(boatstackruntime.PinPath(repository), pinRaw, 0o644, false, false)
 }
 
 func mutationForExactResource(path string, target []byte, targetLink string, mode os.FileMode, installLast, deleteResource bool) (ports.ResourceMutation, error) {

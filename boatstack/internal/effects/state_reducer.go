@@ -43,14 +43,14 @@ func applyStateTransition(state *durable.State, admission protocol.Admission, tr
 		state.Phase, state.Engagement = model.PhaseDormant, model.EngagementDormant
 	case "runtime.hydrate", "runtime.replace":
 		state.Runtime = model.RuntimeVerified
+		state.RuntimeVersion, _ = admission.Parameters.Get("runtime_version")
 		state.RuntimeFingerprint, _ = admission.Parameters.Get("runtime_sha256")
-		state.RuntimePath, _ = admission.Parameters.Get("runtime_path")
 		state.RuntimeSource, _ = admission.Parameters.Get("source_revision")
 		state.Phase = settledPhase(*state)
 	case "installation.update":
 		state.Runtime = model.RuntimeVerified
+		state.RuntimeVersion, _ = admission.Parameters.Get("runtime_version")
 		state.RuntimeFingerprint, _ = admission.Parameters.Get("runtime_sha256")
-		state.RuntimePath, _ = admission.Parameters.Get("runtime_path")
 		state.RuntimeSource, _ = admission.Parameters.Get("source_revision")
 	case "installation.reconcile-update":
 		accepted, _ := admission.Parameters.Get("accept_obligation_change")
@@ -59,13 +59,13 @@ func applyStateTransition(state *durable.State, admission protocol.Admission, tr
 		}
 		state.ProgramFingerprint = admission.ProgramFingerprint
 		state.Runtime = model.RuntimeVerified
+		state.RuntimeVersion, _ = admission.Parameters.Get("runtime_version")
 		state.RuntimeFingerprint, _ = admission.Parameters.Get("runtime_sha256")
-		state.RuntimePath, _ = admission.Parameters.Get("runtime_path")
 		state.RuntimeSource, _ = admission.Parameters.Get("source_revision")
 	case "runtime.reconcile":
 		state.Runtime, state.Recovery, state.Transaction = model.RuntimeVerified, model.RecoveryNone, model.TransactionNone
+		state.RuntimeVersion, _ = admission.Parameters.Get("runtime_version")
 		state.RuntimeFingerprint, _ = admission.Parameters.Get("runtime_sha256")
-		state.RuntimePath, _ = admission.Parameters.Get("runtime_path")
 		state.RuntimeSource, _ = admission.Parameters.Get("source_revision")
 		clearRecoveryContext(state)
 		state.Phase = settledPhase(*state)
@@ -86,8 +86,8 @@ func applyStateTransition(state *durable.State, admission protocol.Admission, tr
 		state.ProgramFingerprint = admission.ProgramFingerprint
 	case "installation.initialize":
 		state.Runtime, state.Configuration = model.RuntimeVerified, model.ConfigurationVerified
+		state.RuntimeVersion, _ = admission.Parameters.Get("runtime_version")
 		state.RuntimeFingerprint, _ = admission.Parameters.Get("runtime_sha256")
-		state.RuntimePath, _ = admission.Parameters.Get("runtime_path")
 		state.RuntimeSource, _ = admission.Parameters.Get("source_revision")
 		state.ConfigFingerprint, _ = admission.Parameters.Get("config_sha256")
 		state.Phase = model.PhaseObserved

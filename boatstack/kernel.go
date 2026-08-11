@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/control"
+	"github.com/operatorstack/boatstack/boatstack/internal/buildinfo"
 	"github.com/operatorstack/boatstack/boatstack/internal/effects"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/engine"
@@ -21,9 +22,9 @@ import (
 )
 
 var (
-	Version         = "v2.0.0-dev"
-	SourceCommit    = "unknown"
-	ChecksumsSHA256 = "development"
+	Version         = buildinfo.Version
+	SourceCommit    = buildinfo.SourceCommit
+	ChecksumsSHA256 = buildinfo.ChecksumsSHA256
 )
 
 // Kernel is the deterministic mechanism facade over one immutable compiled

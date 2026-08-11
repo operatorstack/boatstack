@@ -88,7 +88,7 @@ func TestHostSkillProjectionPreservesDeferredRepositoryAuthority(t *testing.T) {
 			for _, contract := range []string{
 				"request only checksum-verified installation authority",
 				"Do not\nrequest or materialize repository, provider, publication, product-delivery, or\nmerge authority",
-				"preserve the healthy old\nlauncher",
+				"preserve the healthy admitted\nruntime",
 				"program-delta fingerprint",
 				"Do not accept the delta implicitly",
 				"`--accept-program-change`",

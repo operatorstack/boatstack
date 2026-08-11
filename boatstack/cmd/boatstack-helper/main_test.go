@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	boatstack "github.com/operatorstack/boatstack/boatstack"
+	"github.com/operatorstack/boatstack/boatstack/internal/buildinfo"
 	"github.com/operatorstack/boatstack/boatstack/internal/surfaces"
 	"github.com/operatorstack/boatstack/boatstack/internal/testprogram"
 )
@@ -66,9 +66,9 @@ func TestCorrectPRBindsExactBodyBytes(t *testing.T) {
 }
 
 func TestBuildRevisionPrefersReleaseEmbeddedSourceCommit(t *testing.T) {
-	prior := boatstack.SourceCommit
-	boatstack.SourceCommit = "exact-release-source"
-	t.Cleanup(func() { boatstack.SourceCommit = prior })
+	prior := buildinfo.SourceCommit
+	buildinfo.SourceCommit = "exact-release-source"
+	t.Cleanup(func() { buildinfo.SourceCommit = prior })
 	if got := buildRevision(); got != "exact-release-source" {
 		t.Fatalf("build revision = %q", got)
 	}

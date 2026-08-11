@@ -9,12 +9,14 @@ import (
 	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/flow/standard"
+	"github.com/operatorstack/boatstack/boatstack/internal/buildinfo"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/engine"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/plant"
+	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/testprogram"
 )
 
@@ -95,6 +97,12 @@ func TestRestartRecoveryRollsBackExactPriorBytesAndArchivesJournal(t *testing.T)
 	executable, _ = filepath.Abs(executable)
 	executable, _ = filepath.EvalSymlinks(executable)
 	runtimeRaw, _ := os.ReadFile(executable)
+	home := t.TempDir()
+	t.Setenv(boatstackruntime.HomeEnvironment, home)
+	runtimeIdentity := boatstackruntime.Identity{Version: buildinfo.Version, SHA256: sha256Bytes(runtimeRaw), SourceRevision: "recovery-fixture"}
+	if _, err := boatstackruntime.InstallExecutable(executable, home, runtimeIdentity); err != nil {
+		t.Fatal(err)
+	}
 	configPath := filepath.Join(t.TempDir(), "project.json")
 	configRaw := []byte("{\"schema_version\":2,\"project\":{\"name\":\"recovery\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
 	if err := os.WriteFile(configPath, configRaw, 0o600); err != nil {
@@ -105,7 +113,7 @@ func TestRestartRecoveryRollsBackExactPriorBytesAndArchivesJournal(t *testing.T)
 		t.Fatal(err)
 	}
 	parameters := protocol.Parameters{
-		{Name: "source_revision", Value: "recovery-fixture"}, {Name: "runtime_path", Value: executable}, {Name: "runtime_sha256", Value: sha256Bytes(runtimeRaw)},
+		{Name: "source_revision", Value: "recovery-fixture"}, {Name: "runtime_version", Value: runtimeIdentity.Version}, {Name: "runtime_sha256", Value: sha256Bytes(runtimeRaw)},
 		{Name: "config_path", Value: configPath}, {Name: "config_sha256", Value: configFingerprint},
 	}
 	admission, err := protocol.NewAdmission(initial, goal, transition, authority, parameters, clock.Now(), time.Minute)
@@ -179,5 +187,8 @@ func TestRestartRecoveryRollsBackExactPriorBytesAndArchivesJournal(t *testing.T)
 	}
 	if _, err := os.Stat(layout.StatePath); !os.IsNotExist(err) {
 		t.Fatalf("rollback did not restore absent state file: %v", err)
+	}
+	if _, err := os.Stat(boatstackruntime.PinPath(repository)); !os.IsNotExist(err) {
+		t.Fatalf("rollback did not restore the absent repository runtime pin: %v", err)
 	}
 }

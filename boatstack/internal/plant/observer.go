@@ -21,6 +21,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
+	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 )
 
 type TimeSource interface{ Now() time.Time }
@@ -91,32 +92,52 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 	}
 	runtimeState := state.Runtime
 	runtimeEvidence := append([]model.Evidence(nil), stateEvidence...)
-	if state.RuntimePath == "" {
+	pinPath := boatstackruntime.PinPath(layout.RepositoryRoot)
+	pinEvidence, _, pinExists, pinEvidenceErr := fileEvidence(pinPath, "runtime-pin", now)
+	if pinEvidenceErr != nil {
+		return model.Observation{}, pinEvidenceErr
+	}
+	runtimeEvidence = append(runtimeEvidence, pinEvidence)
+	if state.RuntimeVersion == "" || state.RuntimeFingerprint == "" || state.RuntimeSource == "" {
 		if runtimeState == model.RuntimeVerified {
 			runtimeState = model.RuntimeInvalid
 		}
+		if pinExists {
+			runtimeState = model.RuntimeConflicting
+		}
+	} else if !pinExists {
+		runtimeState = model.RuntimeAbsent
 	} else {
-		evidence, fingerprint, exists, runtimeErr := fileEvidence(state.RuntimePath, "runtime", now)
-		if runtimeErr != nil {
-			return model.Observation{}, runtimeErr
+		pinRaw, readPinErr := os.ReadFile(pinPath)
+		if readPinErr != nil {
+			return model.Observation{}, readPinErr
 		}
-		runtimeEvidence = append(runtimeEvidence, evidence)
-		if !exists {
-			runtimeState = model.RuntimeAbsent
-		} else if state.RuntimeFingerprint == "" || state.RuntimeFingerprint != fingerprint {
-			runtimeState = model.RuntimeStale
-		} else if state.RuntimePath != current.RuntimePath || state.RuntimeFingerprint != current.RuntimeFingerprint {
-			runtimeState = model.RuntimeWrongSource
-		}
-	}
-	if state.LauncherPath != "" {
-		launcherEvidence, launcherFingerprint, launcherExists, launcherErr := observeLauncher(state.LauncherPath, now)
-		if launcherErr != nil {
-			return model.Observation{}, launcherErr
-		}
-		runtimeEvidence = append(runtimeEvidence, launcherEvidence)
-		if !launcherExists || launcherFingerprint != state.LauncherFingerprint {
-			runtimeState = model.RuntimePartiallyPublished
+		pin, decodePinErr := boatstackruntime.DecodePin(pinRaw)
+		identity := boatstackruntime.Identity{Version: state.RuntimeVersion, SHA256: state.RuntimeFingerprint, SourceRevision: state.RuntimeSource}
+		if decodePinErr != nil || pin.Identity() != identity || pin.ProgramFingerprint != state.ProgramFingerprint || pin.StateSchemaVersion != durable.StateSchemaVersion {
+			runtimeState = model.RuntimeConflicting
+		} else {
+			home, homeErr := boatstackruntime.Home("")
+			if homeErr != nil {
+				return model.Observation{}, homeErr
+			}
+			runtimePath, pathErr := boatstackruntime.ExecutablePath(home, identity)
+			if pathErr != nil {
+				runtimeState = model.RuntimeInvalid
+			} else {
+				evidence, fingerprint, exists, runtimeErr := fileEvidence(runtimePath, "runtime", now)
+				if runtimeErr != nil {
+					return model.Observation{}, runtimeErr
+				}
+				runtimeEvidence = append(runtimeEvidence, evidence)
+				if !exists {
+					runtimeState = model.RuntimeAbsent
+				} else if verifyErr := boatstackruntime.VerifyExecutable(runtimePath, identity); verifyErr != nil || fingerprint != state.RuntimeFingerprint {
+					runtimeState = model.RuntimeStale
+				} else if current.RuntimeVersion != state.RuntimeVersion || current.RuntimeFingerprint != state.RuntimeFingerprint {
+					runtimeState = model.RuntimeWrongSource
+				}
+			}
 		}
 	}
 	verification := state.Verification
@@ -227,36 +248,6 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 		Goal:                goalFact,
 		ObservedAt:          now,
 	}, nil
-}
-
-func observeLauncher(path string, now time.Time) (model.Evidence, string, bool, error) {
-	evidence := model.Evidence{Source: "launcher:" + path, ObservedAt: now}
-	info, err := os.Lstat(path)
-	if os.IsNotExist(err) {
-		evidence.Fingerprint = hashBytes([]byte("absent:" + path))
-		return evidence, "", false, nil
-	}
-	if err != nil {
-		return model.Evidence{}, "", false, err
-	}
-	var fingerprint string
-	if info.Mode()&os.ModeSymlink != 0 {
-		target, readErr := os.Readlink(path)
-		if readErr != nil {
-			return model.Evidence{}, "", false, readErr
-		}
-		fingerprint = hashBytes([]byte("symlink\x00" + target))
-	} else if info.Mode().IsRegular() {
-		raw, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return model.Evidence{}, "", false, readErr
-		}
-		fingerprint = hashBytes(raw)
-	} else {
-		return model.Evidence{}, "", false, fmt.Errorf("managed launcher is neither a regular file nor symlink: %s", path)
-	}
-	evidence.Fingerprint = fingerprint
-	return evidence, fingerprint, true, nil
 }
 
 func (o Observer) highRiskChange(ctx context.Context, repository, defaultBranch string, patterns []string) (bool, error) {

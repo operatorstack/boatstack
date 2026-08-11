@@ -16,6 +16,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/supervisor"
+	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 )
 
 type NativeCommandRunner interface {
@@ -198,7 +199,16 @@ func (b NativeBoundary) Execute(ctx context.Context, admission protocol.Admissio
 		}
 		neutralDirectory := filepath.Dir(state.WorkspacePath)
 		gitPrefix := []string{"--git-dir", layout.GitCommonRoot}
-		if output, err := b.runner.CombinedOutput(ctx, neutralDirectory, "git", append(gitPrefix, "worktree", "remove", state.WorkspacePath)...); err != nil {
+		removeArguments := append(gitPrefix, "worktree", "remove")
+		managedOnly, managedErr := b.workspaceHasOnlyManagedRuntimePin(ctx, state)
+		if managedErr != nil {
+			return settled, managedErr
+		}
+		if managedOnly {
+			removeArguments = append(removeArguments, "--force")
+		}
+		removeArguments = append(removeArguments, state.WorkspacePath)
+		if output, err := b.runner.CombinedOutput(ctx, neutralDirectory, "git", removeArguments...); err != nil {
 			return ports.EffectResult{Settlement: ports.EffectUnknown, Detail: strings.TrimSpace(string(output))}, nil
 		}
 		branchMode := "-d"
@@ -250,4 +260,35 @@ func (b NativeBoundary) Execute(ctx context.Context, admission protocol.Admissio
 		}
 	}
 	return settled, nil
+}
+
+func (b NativeBoundary) workspaceHasOnlyManagedRuntimePin(ctx context.Context, state durable.State) (bool, error) {
+	output, err := b.runner.CombinedOutput(ctx, state.WorkspacePath, "git", "status", "--porcelain", "--untracked-files=all")
+	if err != nil {
+		return false, fmt.Errorf("inspect workspace before cleanup: %s: %w", strings.TrimSpace(string(output)), err)
+	}
+	status := strings.TrimSpace(string(output))
+	if status == "" {
+		return false, nil
+	}
+	if status != "?? .boatstack/runtime.json" {
+		return false, fmt.Errorf("workspace cleanup refuses product or unmanaged changes: %s", status)
+	}
+	raw, err := os.ReadFile(boatstackruntime.PinPath(state.WorkspacePath))
+	if err != nil {
+		return false, err
+	}
+	pin, err := boatstackruntime.DecodePin(raw)
+	if err != nil {
+		return false, err
+	}
+	want := boatstackruntime.NewPin(
+		boatstackruntime.Identity{Version: state.RuntimeVersion, SHA256: state.RuntimeFingerprint, SourceRevision: state.RuntimeSource},
+		state.ProgramFingerprint,
+		durable.StateSchemaVersion,
+	)
+	if pin != want {
+		return false, fmt.Errorf("workspace runtime pin does not match governed state")
+	}
+	return true, nil
 }

@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/operatorstack/boatstack/boatstack/internal/buildinfo"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
@@ -31,6 +32,7 @@ func (execRunner) Output(ctx context.Context, name string, arguments ...string) 
 type Resolver struct {
 	externalRoot       string
 	runtimePath        string
+	runtimeVersion     string
 	runtimeFingerprint string
 	runner             CommandRunner
 }
@@ -55,7 +57,7 @@ func NewResolver(externalBase string) (Resolver, error) {
 	if err != nil {
 		return Resolver{}, fmt.Errorf("read executing runtime: %w", err)
 	}
-	return Resolver{externalRoot: root, runtimePath: runtimePath, runtimeFingerprint: digest(string(runtimeRaw), 0), runner: execRunner{}}, nil
+	return Resolver{externalRoot: root, runtimePath: runtimePath, runtimeVersion: buildinfo.Version, runtimeFingerprint: digest(string(runtimeRaw), 0), runner: execRunner{}}, nil
 }
 
 func NewResolverWithRunner(externalBase string, runner CommandRunner) (Resolver, error) {
@@ -214,7 +216,7 @@ func (r Resolver) ResolveInvocation(ctx context.Context, path, host, correlation
 	}
 	invocation := model.InvocationContext{
 		RepositoryID: repositoryID, GitCommonID: gitCommonID, WorktreeID: worktreeID, Ref: ref,
-		ControllerID: controllerID, InvokingPath: invokingPath, RuntimePath: r.runtimePath, RuntimeFingerprint: r.runtimeFingerprint,
+		ControllerID: controllerID, InvokingPath: invokingPath, RuntimeVersion: r.runtimeVersion, RuntimePath: r.runtimePath, RuntimeFingerprint: r.runtimeFingerprint,
 		Topology: topology, Host: host, Correlation: correlation,
 	}
 	if err := invocation.Validate(true); err != nil {

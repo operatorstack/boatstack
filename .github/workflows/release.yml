@@ -58,7 +58,7 @@ jobs:
           mkdir -p dist
           cd boatstack
           go build -trimpath \
-            -ldflags "-s -w -X github.com/operatorstack/boatstack/boatstack.Version=$VERSION -X github.com/operatorstack/boatstack/boatstack.SourceCommit=$source_commit -X github.com/operatorstack/boatstack/boatstack.ChecksumsSHA256=per-asset-sidecar" \
+            -ldflags "-s -w -X github.com/operatorstack/boatstack/boatstack/internal/buildinfo.Version=$VERSION -X github.com/operatorstack/boatstack/boatstack/internal/buildinfo.SourceCommit=$source_commit -X github.com/operatorstack/boatstack/boatstack/internal/buildinfo.ChecksumsSHA256=per-asset-sidecar" \
             -o "../dist/$ASSET" ./cmd/boatstack-helper
           cd ../dist
           sha256sum "$ASSET" > "$ASSET.sha256"

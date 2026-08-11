@@ -26,6 +26,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/supervisor"
 	"github.com/operatorstack/boatstack/boatstack/internal/plant"
+	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/surfaces"
 	"github.com/operatorstack/boatstack/boatstack/internal/testprogram"
 )
@@ -57,6 +58,17 @@ func testProgram() control.ControlProgram {
 }
 
 func (c fixedClock) Now() time.Time { return c.value }
+
+func installTestRuntime(t *testing.T, executable string, raw []byte) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv(boatstackruntime.HomeEnvironment, home)
+	identity := boatstackruntime.Identity{Version: boatstack.Version, SHA256: digestBytes(raw), SourceRevision: "fixture"}
+	if _, err := boatstackruntime.InstallExecutable(executable, home, identity); err != nil {
+		t.Fatal(err)
+	}
+	return identity.Version
+}
 
 func run(t *testing.T, directory, name string, arguments ...string) {
 	t.Helper()
@@ -175,13 +187,14 @@ func TestExternalConfigurationAuthorityTransfersAcrossAttachAndDetach(t *testing
 	executable, _ = filepath.Abs(executable)
 	executable, _ = filepath.EvalSymlinks(executable)
 	runtimeRaw, _ := os.ReadFile(executable)
+	runtimeVersion := installTestRuntime(t, executable, runtimeRaw)
 	initialConfig := []byte("{\"schema_version\":2,\"project\":{\"name\":\"external-initial\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
 	initialPath := filepath.Join(t.TempDir(), "initial.json")
 	if err := os.WriteFile(initialPath, initialConfig, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	apply("installation.initialize", human, false, protocol.Parameters{
-		{Name: "source_revision", Value: "external-config-fixture"}, {Name: "runtime_path", Value: executable}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
+		{Name: "source_revision", Value: "external-config-fixture"}, {Name: "runtime_version", Value: runtimeVersion}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
 		{Name: "config_path", Value: initialPath}, {Name: "config_sha256", Value: configFingerprint(t, initialConfig)},
 	})
 	apply("goal.configure", human, false, protocol.Parameters{{Name: "goal_kind", Value: string(goal.Kind)}, {Name: "delivery_id", Value: goal.DeliveryID}})
@@ -255,6 +268,7 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 	executable, _ = filepath.Abs(executable)
 	executable, _ = filepath.EvalSymlinks(executable)
 	runtimeRaw, _ := os.ReadFile(executable)
+	runtimeVersion := installTestRuntime(t, executable, runtimeRaw)
 	configPath := filepath.Join(t.TempDir(), "project.json")
 	configRaw := []byte("{\"schema_version\":2,\"project\":{\"name\":\"drift\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
 	if err := os.WriteFile(configPath, configRaw, 0o600); err != nil {
@@ -264,7 +278,7 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 		SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationApply, Repository: repository, Host: "cli", CorrelationID: "program-old",
 		FlowID: "flow-program-drift", Goal: goal, TransitionID: "installation.initialize", Authority: human,
 		Parameters: protocol.Parameters{
-			{Name: "source_revision", Value: "program-old"}, {Name: "runtime_path", Value: executable}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
+			{Name: "source_revision", Value: "program-old"}, {Name: "runtime_version", Value: runtimeVersion}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
 			{Name: "config_path", Value: configPath}, {Name: "config_sha256", Value: configFingerprint(t, configRaw)},
 		},
 	})
@@ -313,7 +327,7 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 		SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationApply, Repository: repository, Host: "cli", CorrelationID: "program-drift-reconcile",
 		FlowID: "flow-program-drift", Goal: goal, TransitionID: "installation.reconcile-update",
 		Parameters: protocol.Parameters{
-			{Name: "source_revision", Value: "program-new"}, {Name: "runtime_path", Value: executable}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
+			{Name: "source_revision", Value: "program-new"}, {Name: "runtime_version", Value: runtimeVersion}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
 			{Name: "accept_obligation_change", Value: "true"},
 		},
 	}
@@ -349,6 +363,17 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 	if reconciled.Snapshot.Goal.Status != model.FactAbsent || reconciled.Receipt.GoalStatus != model.FactAbsent || reconciled.Receipt.GoalID != "" {
 		t.Fatalf("reconcile-update invented product intent: %#v", reconciled)
 	}
+	pinRaw, err := os.ReadFile(boatstackruntime.PinPath(repository))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pin, err := boatstackruntime.DecodePin(pinRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pin.Version != runtimeVersion || pin.SHA256 != digestBytes(runtimeRaw) || pin.SourceRevision != "program-new" || pin.ProgramFingerprint != newProgram.Fingerprint() {
+		t.Fatalf("repository runtime pin did not atomically follow reconciliation: %#v", pin)
+	}
 	afterSuccess, err := os.ReadFile(layout.StatePath)
 	if err != nil {
 		t.Fatal(err)
@@ -368,7 +393,7 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 		FlowID: "flow-program-drift", Goal: model.Goal{ID: "ignored-command-goal", Kind: model.GoalOpenPR, DeliveryID: "ignored"},
 		TransitionID: "installation.update", Authority: human,
 		Parameters: protocol.Parameters{
-			{Name: "source_revision", Value: "program-current"}, {Name: "runtime_path", Value: executable}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
+			{Name: "source_revision", Value: "program-current"}, {Name: "runtime_version", Value: runtimeVersion}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
 		},
 	})
 	if err != nil {
@@ -432,13 +457,14 @@ func TestReferenceExtensionUsesKernelAdmissionVerificationAndReceiptPath(t *test
 	executable, _ = filepath.Abs(executable)
 	executable, _ = filepath.EvalSymlinks(executable)
 	runtimeRaw, _ := os.ReadFile(executable)
+	runtimeVersion := installTestRuntime(t, executable, runtimeRaw)
 	configPath := filepath.Join(t.TempDir(), "project.json")
 	configRaw := []byte("{\"schema_version\":2,\"project\":{\"name\":\"extension\",\"default_branch\":\"main\",\"commands\":{\"build\":\"go version\",\"test\":\"go version\"}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
 	if err := os.WriteFile(configPath, configRaw, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	apply("installation.initialize", authority(catalog.AuthorityHuman), protocol.Parameters{
-		{Name: "source_revision", Value: "extension-fixture"}, {Name: "runtime_path", Value: executable}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
+		{Name: "source_revision", Value: "extension-fixture"}, {Name: "runtime_version", Value: runtimeVersion}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
 		{Name: "config_path", Value: configPath}, {Name: "config_sha256", Value: configFingerprint(t, configRaw)},
 	})
 	apply("goal.configure", authority(catalog.AuthorityHuman), protocol.Parameters{{Name: "goal_kind", Value: string(goal.Kind)}, {Name: "delivery_id", Value: goal.DeliveryID}})
@@ -559,6 +585,7 @@ func TestConcreteWorkflowPreservesConfigurationProofAndGoalTerminals(t *testing.
 	executable, _ = filepath.Abs(executable)
 	executable, _ = filepath.EvalSymlinks(executable)
 	runtimeRaw, _ := os.ReadFile(executable)
+	runtimeVersion := installTestRuntime(t, executable, runtimeRaw)
 	configPath := filepath.Join(t.TempDir(), "project-v2.json")
 	configRaw := []byte("{\"schema_version\":2,\"project\":{\"name\":\"integration\",\"default_branch\":\"main\",\"commands\":{\"build\":\"go version\",\"test\":\"go version\"}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
 	if err := os.WriteFile(configPath, configRaw, 0o600); err != nil {
@@ -566,7 +593,7 @@ func TestConcreteWorkflowPreservesConfigurationProofAndGoalTerminals(t *testing.
 	}
 	approvedGoal := model.Goal{ID: "goal-approved", Kind: model.GoalApprovedPlan, DeliveryID: "delivery-workflow"}
 	apply(approvedGoal, "installation.initialize", authority(catalog.AuthorityHuman), protocol.Parameters{
-		{Name: "source_revision", Value: "integration-revision"}, {Name: "runtime_path", Value: executable}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
+		{Name: "source_revision", Value: "integration-revision"}, {Name: "runtime_version", Value: runtimeVersion}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
 		{Name: "config_path", Value: configPath}, {Name: "config_sha256", Value: configFingerprint(t, configRaw)},
 	})
 	apply(approvedGoal, "goal.configure", authority(catalog.AuthorityHuman), protocol.Parameters{{Name: "goal_kind", Value: string(approvedGoal.Kind)}, {Name: "delivery_id", Value: approvedGoal.DeliveryID}})
@@ -691,13 +718,14 @@ func TestWorkspaceCutTransfersAuthorityToExactDestinationWorktree(t *testing.T) 
 	executable, _ = filepath.Abs(executable)
 	executable, _ = filepath.EvalSymlinks(executable)
 	runtimeRaw, _ := os.ReadFile(executable)
+	runtimeVersion := installTestRuntime(t, executable, runtimeRaw)
 	configSource := filepath.Join(t.TempDir(), "project-v2.json")
 	configRaw := []byte("{\"schema_version\":2,\"project\":{\"name\":\"workspace\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
 	if err := os.WriteFile(configSource, configRaw, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	apply(sourceInvocation, "installation.initialize", human, protocol.Parameters{
-		{Name: "source_revision", Value: "integration-revision"}, {Name: "runtime_path", Value: executable}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
+		{Name: "source_revision", Value: "integration-revision"}, {Name: "runtime_version", Value: runtimeVersion}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
 		{Name: "config_path", Value: configSource}, {Name: "config_sha256", Value: configFingerprint(t, configRaw)},
 	})
 	apply(sourceInvocation, "goal.configure", human, protocol.Parameters{{Name: "goal_kind", Value: string(goal.Kind)}, {Name: "delivery_id", Value: goal.DeliveryID}})

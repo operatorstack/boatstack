@@ -8,7 +8,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 )
 
-const ReceiptSchemaVersion = 2
+const ReceiptSchemaVersion = 3
 
 type Outcome string
 
@@ -30,6 +30,7 @@ type TransitionReceipt struct {
 	PriorProgramFingerprint string               `json:"prior_program_fingerprint,omitempty"`
 	ProgramDeltaFingerprint string               `json:"program_delta_fingerprint,omitempty"`
 	ProgramChangeAccepted   bool                 `json:"program_change_accepted,omitempty"`
+	RuntimeVersion          string               `json:"runtime_version,omitempty"`
 	RuntimeFingerprint      string               `json:"runtime_fingerprint,omitempty"`
 	RuntimeSourceRevision   string               `json:"runtime_source_revision,omitempty"`
 	AdmissionID             string               `json:"admission_id"`
@@ -82,9 +83,12 @@ func NewReceipt(flowID string, sequence uint64, admission Admission, transition 
 	if accepted, ok := admission.Parameters.Get("accept_obligation_change"); ok && accepted == "true" {
 		receipt.ProgramChangeAccepted = true
 	}
-	receipt.RuntimeFingerprint, _ = admission.Parameters.Get("runtime_sha256")
-	receipt.RuntimeSourceRevision, _ = admission.Parameters.Get("source_revision")
+	if receipt.RuntimeVersion, _ = admission.Parameters.Get("runtime_version"); receipt.RuntimeVersion != "" {
+		receipt.RuntimeFingerprint, _ = admission.Parameters.Get("runtime_sha256")
+		receipt.RuntimeSourceRevision, _ = admission.Parameters.Get("source_revision")
+	}
 	if transition.Policy.ReconcilesProgram && receipt.RuntimeFingerprint == "" {
+		receipt.RuntimeVersion = admission.Invocation.RuntimeVersion
 		receipt.RuntimeFingerprint = admission.Invocation.RuntimeFingerprint
 	}
 	identity := receipt
@@ -131,16 +135,19 @@ func (r TransitionReceipt) Validate() error {
 	if (r.PriorProgramFingerprint == "") != (r.ProgramDeltaFingerprint == "") {
 		return fmt.Errorf("receipt has incomplete program delta identity")
 	}
+	if (r.RuntimeVersion == "") != (r.RuntimeFingerprint == "") || (r.RuntimeVersion == "") != (r.RuntimeSourceRevision == "") {
+		return fmt.Errorf("receipt has incomplete runtime version, digest, or source identity")
+	}
 	if r.PriorProgramFingerprint != "" {
 		delta, err := ProgramDeltaFingerprint(r.PriorProgramFingerprint, r.ProgramFingerprint)
 		if err != nil || delta != r.ProgramDeltaFingerprint {
 			return fmt.Errorf("receipt has invalid program delta identity")
 		}
 	}
-	if r.ProgramChangeAccepted && (r.PriorProgramFingerprint == "" || len(r.RuntimeFingerprint) != 64) {
+	if r.ProgramChangeAccepted && (r.PriorProgramFingerprint == "" || r.RuntimeVersion == "" || len(r.RuntimeFingerprint) != 64) {
 		return fmt.Errorf("receipt accepts a program change without exact delta and runtime identity")
 	}
-	if r.TransitionID == "installation.reconcile-update" && (!r.ProgramChangeAccepted || r.PriorProgramFingerprint == "" || len(r.RuntimeFingerprint) != 64 || r.RuntimeSourceRevision == "") {
+	if r.TransitionID == "installation.reconcile-update" && (!r.ProgramChangeAccepted || r.PriorProgramFingerprint == "" || r.RuntimeVersion == "" || len(r.RuntimeFingerprint) != 64 || r.RuntimeSourceRevision == "") {
 		return fmt.Errorf("reconciled installation receipt lacks exact program and runtime identity")
 	}
 	identity := r

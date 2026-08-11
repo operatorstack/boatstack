@@ -19,10 +19,12 @@ import (
 	boatstack "github.com/operatorstack/boatstack/boatstack"
 	"github.com/operatorstack/boatstack/boatstack/analysis"
 	"github.com/operatorstack/boatstack/boatstack/distribution"
+	"github.com/operatorstack/boatstack/boatstack/internal/buildinfo"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/supervisor"
+	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/surfaces"
 )
 
@@ -54,6 +56,14 @@ type commandOptions struct {
 }
 
 func main() {
+	if boatstackruntime.ShouldDispatch(os.Args[0]) {
+		code, err := boatstackruntime.Dispatch(os.Args[1:])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "boatstack:", err)
+			os.Exit(1)
+		}
+		os.Exit(code)
+	}
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "boatstack:", err)
 		os.Exit(1)
@@ -339,22 +349,14 @@ func populateRuntimeParameters(options *commandOptions) error {
 	if err != nil {
 		return err
 	}
-	runtimePath, hasRuntimePath := parameters.Get("runtime_path")
-	if !hasRuntimePath {
-		runtimePath, err = os.Executable()
-		if err != nil {
-			return err
-		}
-		runtimePath, err = filepath.Abs(runtimePath)
-		if err != nil {
-			return err
-		}
-		if resolved, resolveErr := filepath.EvalSymlinks(runtimePath); resolveErr == nil {
-			runtimePath = resolved
-		}
-		options.parameters = append(options.parameters, "runtime_path="+runtimePath)
+	if _, ok := parameters.Get("runtime_version"); !ok {
+		options.parameters = append(options.parameters, "runtime_version="+buildinfo.Version)
 	}
 	if _, ok := parameters.Get("runtime_sha256"); !ok {
+		runtimePath, executableErr := os.Executable()
+		if executableErr != nil {
+			return executableErr
+		}
 		runtimeRaw, readErr := os.ReadFile(runtimePath)
 		if readErr != nil {
 			return readErr
@@ -388,8 +390,8 @@ func populateFileFingerprint(options *commandOptions, pathName, fingerprintName 
 }
 
 func buildRevision() string {
-	if boatstack.SourceCommit != "" && boatstack.SourceCommit != "unknown" {
-		return boatstack.SourceCommit
+	if buildinfo.SourceCommit != "" && buildinfo.SourceCommit != "unknown" {
+		return buildinfo.SourceCommit
 	}
 	if info, ok := debug.ReadBuildInfo(); ok {
 		for _, setting := range info.Settings {
@@ -462,7 +464,7 @@ func parseParameters(values []string) (protocol.Parameters, error) {
 
 func isPathParameter(name string) bool {
 	switch name {
-	case "source_path", "runtime_path", "config_path", "destination", "evidence_path", "manifest_path", "body_path":
+	case "source_path", "config_path", "destination", "evidence_path", "manifest_path", "body_path":
 		return true
 	default:
 		return false

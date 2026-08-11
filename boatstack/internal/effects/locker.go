@@ -63,12 +63,9 @@ func (l Locker) Acquire(ctx context.Context, invocation model.InvocationContext,
 			unique = append(unique, name)
 		}
 	}
-	paths := make([]string, 0, len(unique)+1)
+	paths := make([]string, 0, len(unique))
 	for _, name := range unique {
 		paths = append(paths, filepath.Join(layout.LockRoot, name+".lock"))
-	}
-	if containsString(unique, "installation") {
-		paths = append(paths, filepath.Join(filepath.Dir(invocation.RuntimePath), ".boatstack-installation.lock"))
 	}
 	sort.Strings(paths)
 	held := &heldLocks{}
@@ -109,13 +106,4 @@ func (l Locker) Acquire(ctx context.Context, invocation model.InvocationContext,
 		held.values = append(held.values, heldLock{path: path, file: file})
 	}
 	return held, nil
-}
-
-func containsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }

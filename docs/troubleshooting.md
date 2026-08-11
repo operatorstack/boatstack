@@ -14,16 +14,18 @@ Malformed or unsupported configuration is not treated as verified.
 
 ## Runtime is absent, stale, or wrong
 
-Use the checksum-verifying installer in update mode. It installs a versioned
-runtime candidate, requests `installation.update`, and changes the launcher
-only after the kernel verifies the candidate.
+Use the checksum-verifying installer in update mode. It durably installs the
+exact version-and-digest runtime candidate, requests `installation.update`, and
+changes the repository runtime pin only after the kernel verifies the
+candidate.
 
 ```sh
 BOATSTACK_MODE=update BOATSTACK_VERSION=<tag> \
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/operatorstack/boatstack/main/install.sh)"
 ```
 
-Do not copy a helper from another worktree or select a “latest” cache slot.
+Do not copy a helper from another worktree or select a “latest” cache slot. A
+missing pinned runtime fails closed; reinstall that exact release and checksum.
 
 ## A transition is FRONTIER
 
