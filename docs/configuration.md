@@ -52,7 +52,7 @@ high-risk derivation fails closed whenever that policy is active.
 ## Optional additive extensions
 
 Repository configuration may enable checksum-bound subprocess extensions, but
-it cannot select or replace the trusted primary flow:
+it cannot select or replace the trusted program runtime:
 
 ```json
 {

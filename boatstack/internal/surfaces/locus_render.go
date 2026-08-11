@@ -87,7 +87,7 @@ func renderCatalogLocus(transitions []catalog.Transition, safety bool) (string, 
 		ID:            "boatstack-v2-executable-catalog-liveness-v1",
 		Subject:       "Finite stable-phase abstraction generated from the compiled Boatstack ControlProgram registry. It contains one event for every runtime entry and expands each declared source and target phase set. The 18-facet predicates, operating-system behavior, and external-provider truth remain executable evidence obligations rather than theorem assumptions.",
 		Evidence: []locusEvidence{
-			{Path: "boatstack/control/control.go", Note: "Compiler combines exact CoreSystem, PrimaryFlow, extension, contract, and ownership declarations into one immutable runtime registry."},
+			{Path: "boatstack/control/control.go", Note: "Compiler combines exact CoreSystem, ProgramRuntime, extension, contract, and ownership declarations into one immutable runtime registry."},
 			{Path: "docs/architecture/boatstack-v2-transition-catalog.md", Note: "Generated readable projection from the same runtime registry."},
 			{Path: "boatstack/internal/kernel/protocol/admission.go", Note: "Exact admission, authority, parameter, source-revision, provider-request, expiry, and stale-snapshot checks."},
 			{Path: "boatstack/internal/kernel/engine/engine.go", Note: "Single apply path across lock, journal, effect, fresh observation, target predicate, receipt, and recovery."},

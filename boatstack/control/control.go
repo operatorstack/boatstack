@@ -30,6 +30,7 @@ type EffectID = catalog.EffectID
 type Prescription = catalog.Prescription
 type ParameterSpec = catalog.ParameterSpec
 type InterruptionContract = catalog.InterruptionContract
+type PolicyContract = catalog.PolicyContract
 type Reversibility = catalog.Reversibility
 type GoalKind = model.GoalKind
 type ProtocolPhase = model.ProtocolPhase
@@ -50,10 +51,10 @@ const (
 	AuthorityProvider   = catalog.AuthorityProvider
 
 	SelectionSystemRecovery    = catalog.SelectionSystemRecovery
-	SelectionFlowRecovery      = catalog.SelectionFlowRecovery
+	SelectionProgramRecovery   = catalog.SelectionProgramRecovery
 	SelectionExtensionRecovery = catalog.SelectionExtensionRecovery
 	SelectionGoalRequired      = catalog.SelectionGoalRequired
-	SelectionFlowProgress      = catalog.SelectionFlowProgress
+	SelectionProgramProgress   = catalog.SelectionProgramProgress
 	SelectionExplicitOnly      = catalog.SelectionExplicitOnly
 	SelectionObservedExternal  = catalog.SelectionObservedExternal
 
@@ -121,9 +122,9 @@ type CoreSystemDefinition interface {
 	CoreManifest(context.Context) (CoreSystemManifest, error)
 }
 
-// FlowDefinition supplies exactly one trusted in-process primary delivery law.
-type FlowDefinition interface {
-	FlowManifest(context.Context) (PrimaryFlowManifest, error)
+// ProgramRuntimeDefinition supplies one trusted in-process execution binding.
+type ProgramRuntimeDefinition interface {
+	RuntimeManifest(context.Context) (ProgramRuntimeManifest, error)
 }
 
 // Extension supplies an additive manifest. Runtime behavior is optional for a
@@ -138,23 +139,23 @@ type CoreSystemManifest struct {
 	Transitions []Transition `json:"transitions"`
 }
 
-type PrimaryFlowManifest struct {
-	ID                      string          `json:"id"`
-	Version                 string          `json:"version"`
-	ProtocolVersion         int             `json:"protocol_version"`
-	RuntimeMode             FlowRuntimeMode `json:"runtime_mode"`
-	SupportedGoals          []GoalKind      `json:"supported_goals"`
-	GoalContracts           []GoalContract  `json:"goal_contracts"`
-	Transitions             []Transition    `json:"transitions"`
-	Facts                   []string        `json:"facts,omitempty"`
-	OwnedResources          []string        `json:"owned_resources"`
-	Effects                 []string        `json:"effects"`
-	Verifiers               []string        `json:"verifiers"`
-	RecoveryTransitions     []TransitionID  `json:"recovery_transitions"`
-	Settings                json.RawMessage `json:"settings,omitempty"`
-	ConfigurationSchema     json.RawMessage `json:"configuration_schema,omitempty"`
-	PrivacyClassification   string          `json:"privacy_classification"`
-	TelemetryClassification string          `json:"telemetry_classification"`
+type ProgramRuntimeManifest struct {
+	ID                      string             `json:"id"`
+	Version                 string             `json:"version"`
+	ProtocolVersion         int                `json:"protocol_version"`
+	RuntimeMode             ProgramRuntimeMode `json:"runtime_mode"`
+	SupportedGoals          []GoalKind         `json:"supported_goals"`
+	GoalContracts           []GoalContract     `json:"goal_contracts"`
+	Transitions             []Transition       `json:"transitions"`
+	Facts                   []string           `json:"facts,omitempty"`
+	OwnedResources          []string           `json:"owned_resources"`
+	Effects                 []string           `json:"effects"`
+	Verifiers               []string           `json:"verifiers"`
+	RecoveryTransitions     []TransitionID     `json:"recovery_transitions"`
+	Settings                json.RawMessage    `json:"settings,omitempty"`
+	ConfigurationSchema     json.RawMessage    `json:"configuration_schema,omitempty"`
+	PrivacyClassification   string             `json:"privacy_classification"`
+	TelemetryClassification string             `json:"telemetry_classification"`
 }
 
 type GoalConstraint struct {
@@ -190,11 +191,14 @@ type ComponentIdentity struct {
 type ProgramSummary struct {
 	SchemaVersion            int                 `json:"schema_version"`
 	KernelVersion            string              `json:"kernel_version"`
+	ProgramID                string              `json:"program_id"`
+	ProgramVersion           string              `json:"program_version"`
+	RequiresRuntime          string              `json:"requires_runtime,omitempty"`
 	Core                     ComponentIdentity   `json:"core"`
-	Flow                     ComponentIdentity   `json:"flow"`
+	Runtime                  ComponentIdentity   `json:"program_runtime"`
 	Extensions               []ComponentIdentity `json:"extensions,omitempty"`
 	CoreTransitionCount      int                 `json:"core_transition_count"`
-	FlowTransitionCount      int                 `json:"flow_transition_count"`
+	RuntimeTransitionCount   int                 `json:"runtime_transition_count"`
 	ExtensionTransitionCount int                 `json:"extension_transition_count"`
 	TotalTransitionCount     int                 `json:"total_transition_count"`
 	ProgramFingerprint       string              `json:"program_fingerprint"`
@@ -209,19 +213,19 @@ type ControlProgram struct {
 	resourceOwnership   map[string]string
 	settingsFingerprint string
 	extensions          []compiledExtension
-	flow                compiledFlow
+	programRuntime      compiledProgramRuntime
 }
 
-type compiledFlow struct {
-	manifest PrimaryFlowManifest
+type compiledProgramRuntime struct {
+	manifest ProgramRuntimeManifest
 	identity ComponentIdentity
-	runtime  FlowRuntime
+	runtime  ProgramRuntime
 }
 
-type CompiledFlow struct {
-	Manifest PrimaryFlowManifest
+type CompiledProgramRuntime struct {
+	Manifest ProgramRuntimeManifest
 	Identity ComponentIdentity
-	Runtime  FlowRuntime
+	Runtime  ProgramRuntime
 }
 
 type compiledExtension struct {
@@ -271,8 +275,8 @@ func (p ControlProgram) ExtensionByID(id string) (CompiledExtension, bool) {
 	return CompiledExtension{}, false
 }
 
-func (p ControlProgram) Flow() CompiledFlow {
-	return CompiledFlow{Manifest: cloneFlowManifest(p.flow.manifest), Identity: p.flow.identity, Runtime: p.flow.runtime}
+func (p ControlProgram) ProgramRuntime() CompiledProgramRuntime {
+	return CompiledProgramRuntime{Manifest: cloneRuntimeManifest(p.programRuntime.manifest), Identity: p.programRuntime.identity, Runtime: p.programRuntime.runtime}
 }
 
 // RuntimeRegistry and RuntimeGoalContracts are for the Boatstack mechanism.
@@ -283,7 +287,7 @@ func (p ControlProgram) RuntimeGoalContracts() catalog.GoalContracts { return p.
 type CompileRequest struct {
 	KernelVersion string
 	Core          CoreSystemDefinition
-	Flow          FlowDefinition
+	Runtime       ProgramRuntimeDefinition
 	Extensions    []Extension
 	Settings      any
 }
@@ -291,23 +295,23 @@ type CompileRequest struct {
 var componentID = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$`)
 
 func Compile(ctx context.Context, request CompileRequest) (ControlProgram, error) {
-	if request.KernelVersion == "" || request.Core == nil || request.Flow == nil {
-		return ControlProgram{}, fmt.Errorf("control program requires kernel version, CoreSystem, and exactly one PrimaryFlow")
+	if request.KernelVersion == "" || request.Core == nil || request.Runtime == nil {
+		return ControlProgram{}, fmt.Errorf("control program requires kernel version, CoreSystem, and exactly one ProgramRuntime")
 	}
 	core, err := request.Core.CoreManifest(ctx)
 	if err != nil {
 		return ControlProgram{}, fmt.Errorf("load CoreSystem manifest: %w", err)
 	}
 	core = cloneCoreManifest(core)
-	flow, err := request.Flow.FlowManifest(ctx)
+	flow, err := request.Runtime.RuntimeManifest(ctx)
 	if err != nil {
-		return ControlProgram{}, fmt.Errorf("load PrimaryFlow manifest: %w", err)
+		return ControlProgram{}, fmt.Errorf("load ProgramRuntime manifest: %w", err)
 	}
-	flow = cloneFlowManifest(flow)
+	flow = cloneRuntimeManifest(flow)
 	if err := validateCore(core); err != nil {
 		return ControlProgram{}, err
 	}
-	if err := validateFlow(flow); err != nil {
+	if err := validateProgramRuntime(flow); err != nil {
 		return ControlProgram{}, err
 	}
 	coreFingerprint, err := fingerprint(core)
@@ -322,12 +326,12 @@ func Compile(ctx context.Context, request CompileRequest) (ControlProgram, error
 	if err != nil {
 		return ControlProgram{}, fmt.Errorf("fingerprint program settings: %w", err)
 	}
-	var flowRuntime FlowRuntime
-	if runtimeDefinition, ok := request.Flow.(RuntimeFlowDefinition); ok {
-		flowRuntime = runtimeDefinition.FlowRuntime()
+	var flowRuntime ProgramRuntime
+	if runtimeDefinition, ok := request.Runtime.(RuntimeProgramDefinition); ok {
+		flowRuntime = runtimeDefinition.ProgramRuntime()
 	}
-	if flow.RuntimeMode == FlowRuntimeProtocol && flowRuntime == nil {
-		return ControlProgram{}, fmt.Errorf("PrimaryFlow %q selects protocol runtime without a FlowRuntime", flow.ID)
+	if flow.RuntimeMode == ProgramRuntimeProtocol && flowRuntime == nil {
+		return ControlProgram{}, fmt.Errorf("ProgramRuntime %q selects protocol runtime without a ProgramRuntime", flow.ID)
 	}
 
 	transitions := make([]Transition, 0, len(core.Transitions)+len(flow.Transitions))
@@ -353,7 +357,7 @@ func Compile(ctx context.Context, request CompileRequest) (ControlProgram, error
 	if err := appendComponent(core.Transitions, catalog.TransitionOrigin{Kind: catalog.OriginCoreSystem, ID: core.ID, Version: core.Version, ManifestFingerprint: coreFingerprint}); err != nil {
 		return ControlProgram{}, err
 	}
-	if err := appendComponent(flow.Transitions, catalog.TransitionOrigin{Kind: catalog.OriginPrimaryFlow, ID: flow.ID, Version: flow.Version, ManifestFingerprint: flowFingerprint}); err != nil {
+	if err := appendComponent(flow.Transitions, catalog.TransitionOrigin{Kind: catalog.OriginControlProgram, ID: flow.ID, Version: flow.Version, ManifestFingerprint: flowFingerprint}); err != nil {
 		return ControlProgram{}, err
 	}
 
@@ -485,7 +489,7 @@ func Compile(ctx context.Context, request CompileRequest) (ControlProgram, error
 		SchemaVersion       int
 		KernelVersion       string
 		Core                ComponentIdentity
-		Flow                ComponentIdentity
+		Runtime             ComponentIdentity
 		Extensions          []ComponentIdentity
 		SettingsFingerprint string
 		Transitions         []Transition
@@ -503,14 +507,15 @@ func Compile(ctx context.Context, request CompileRequest) (ControlProgram, error
 	}
 	summary := ProgramSummary{
 		SchemaVersion: ProgramSchemaVersion, KernelVersion: request.KernelVersion,
-		Core: programIdentity.Core, Flow: programIdentity.Flow, Extensions: extensionIdentities,
-		CoreTransitionCount: len(core.Transitions), FlowTransitionCount: len(flow.Transitions),
+		ProgramID: flow.ID, ProgramVersion: flow.Version,
+		Core: programIdentity.Core, Runtime: programIdentity.Runtime, Extensions: extensionIdentities,
+		CoreTransitionCount: len(core.Transitions), RuntimeTransitionCount: len(flow.Transitions),
 		ExtensionTransitionCount: extensionCount, TotalTransitionCount: registry.Len(), ProgramFingerprint: programFingerprint,
 	}
 	return ControlProgram{
 		summary: summary, registry: registry, goalContracts: contracts, resourceOwnership: resources,
 		settingsFingerprint: settingsFingerprint, extensions: compiledExtensions,
-		flow: compiledFlow{manifest: cloneFlowManifest(flow), identity: programIdentity.Flow, runtime: flowRuntime},
+		programRuntime: compiledProgramRuntime{manifest: cloneRuntimeManifest(flow), identity: programIdentity.Runtime, runtime: flowRuntime},
 	}, nil
 }
 
@@ -521,42 +526,42 @@ func validateCore(manifest CoreSystemManifest) error {
 	return nil
 }
 
-func validateFlow(manifest PrimaryFlowManifest) error {
-	if !componentID.MatchString(manifest.ID) || manifest.Version == "" || manifest.ProtocolVersion != FlowProtocolVersion ||
-		(manifest.RuntimeMode != FlowRuntimeNative && manifest.RuntimeMode != FlowRuntimeProtocol) ||
+func validateProgramRuntime(manifest ProgramRuntimeManifest) error {
+	if !componentID.MatchString(manifest.ID) || manifest.Version == "" || manifest.ProtocolVersion != ProgramRuntimeProtocolVersion ||
+		(manifest.RuntimeMode != ProgramRuntimeNative && manifest.RuntimeMode != ProgramRuntimeProtocol) ||
 		len(manifest.Transitions) == 0 || len(manifest.SupportedGoals) == 0 ||
 		!validJSONObject(manifest.ConfigurationSchema) ||
 		manifest.PrivacyClassification == "" || manifest.TelemetryClassification == "" {
-		return fmt.Errorf("PrimaryFlow requires semantic id, version, configuration schema, goals, and transitions")
+		return fmt.Errorf("ProgramRuntime requires semantic id, version, configuration schema, goals, and transitions")
 	}
-	if err := validateDeclaredSchema(manifest.ConfigurationSchema, manifest.Settings, "PrimaryFlow "+manifest.ID+" configuration"); err != nil {
+	if err := validateDeclaredSchema(manifest.ConfigurationSchema, manifest.Settings, "ProgramRuntime "+manifest.ID+" configuration"); err != nil {
 		return err
 	}
 	supported := map[GoalKind]bool{}
 	for _, goal := range manifest.SupportedGoals {
 		if !goal.Valid() || supported[goal] {
-			return fmt.Errorf("PrimaryFlow has invalid or duplicate goal %q", goal)
+			return fmt.Errorf("ProgramRuntime has invalid or duplicate goal %q", goal)
 		}
 		supported[goal] = true
 	}
 	for _, contract := range manifest.GoalContracts {
 		if !supported[contract.GoalKind] {
-			return fmt.Errorf("PrimaryFlow goal contract %q is not supported", contract.GoalKind)
+			return fmt.Errorf("ProgramRuntime goal contract %q is not supported", contract.GoalKind)
 		}
 		delete(supported, contract.GoalKind)
 	}
 	if len(supported) != 0 {
-		return fmt.Errorf("PrimaryFlow does not define every supported goal contract")
+		return fmt.Errorf("ProgramRuntime does not define every supported goal contract")
 	}
 	for _, values := range [][]string{manifest.Facts, manifest.OwnedResources, manifest.Effects, manifest.Verifiers} {
 		if duplicate := duplicateString(values); duplicate != "" {
-			return fmt.Errorf("PrimaryFlow %q duplicates declaration %q", manifest.ID, duplicate)
+			return fmt.Errorf("ProgramRuntime %q duplicates declaration %q", manifest.ID, duplicate)
 		}
 	}
-	if manifest.RuntimeMode == FlowRuntimeProtocol {
+	if manifest.RuntimeMode == ProgramRuntimeProtocol {
 		for _, value := range append(append(append([]string(nil), manifest.Facts...), manifest.OwnedResources...), append(manifest.Effects, manifest.Verifiers...)...) {
 			if !strings.HasPrefix(value, manifest.ID+".") {
-				return fmt.Errorf("protocol PrimaryFlow %q declaration %q is not namespaced", manifest.ID, value)
+				return fmt.Errorf("protocol ProgramRuntime %q declaration %q is not namespaced", manifest.ID, value)
 			}
 		}
 	}
@@ -566,33 +571,33 @@ func validateFlow(manifest PrimaryFlowManifest) error {
 	verifiers := stringSet(manifest.Verifiers)
 	recoveryDeclarations := transitionSet(manifest.RecoveryTransitions)
 	if len(recoveryDeclarations) != len(manifest.RecoveryTransitions) {
-		return fmt.Errorf("PrimaryFlow %q duplicates a recovery declaration", manifest.ID)
+		return fmt.Errorf("ProgramRuntime %q duplicates a recovery declaration", manifest.ID)
 	}
 	transitions := make(map[TransitionID]Transition, len(manifest.Transitions))
 	for _, transition := range manifest.Transitions {
 		transitions[transition.ID] = transition
-		if manifest.RuntimeMode == FlowRuntimeProtocol && !strings.HasPrefix(string(transition.ID), manifest.ID+".") {
-			return fmt.Errorf("protocol PrimaryFlow %q transition %q is not namespaced", manifest.ID, transition.ID)
+		if manifest.RuntimeMode == ProgramRuntimeProtocol && !strings.HasPrefix(string(transition.ID), manifest.ID+".") {
+			return fmt.Errorf("protocol ProgramRuntime %q transition %q is not namespaced", manifest.ID, transition.ID)
 		}
 		if transition.Controllable() {
 			if !effects[string(transition.Effect)] || !verifiers[transition.Verifier] {
-				return fmt.Errorf("PrimaryFlow transition %q uses an undeclared effect or verifier", transition.ID)
+				return fmt.Errorf("ProgramRuntime transition %q uses an undeclared effect or verifier", transition.ID)
 			}
 			for _, resource := range transition.OwnedResources {
 				if !resources[resource] {
-					return fmt.Errorf("PrimaryFlow transition %q writes undeclared resource %q", transition.ID, resource)
+					return fmt.Errorf("ProgramRuntime transition %q writes undeclared resource %q", transition.ID, resource)
 				}
-				if manifest.RuntimeMode == FlowRuntimeProtocol && !strings.HasPrefix(resource, manifest.ID+".") {
-					return fmt.Errorf("protocol PrimaryFlow %q resource %q is not namespaced", manifest.ID, resource)
+				if manifest.RuntimeMode == ProgramRuntimeProtocol && !strings.HasPrefix(resource, manifest.ID+".") {
+					return fmt.Errorf("protocol ProgramRuntime %q resource %q is not namespaced", manifest.ID, resource)
 				}
 			}
-			if manifest.RuntimeMode == FlowRuntimeProtocol {
+			if manifest.RuntimeMode == ProgramRuntimeProtocol {
 				for _, condition := range transition.TargetConditions {
 					if !strings.HasPrefix(string(condition.Facet), manifest.ID+".") {
-						return fmt.Errorf("protocol PrimaryFlow transition %q targets non-owned fact %q", transition.ID, condition.Facet)
+						return fmt.Errorf("protocol ProgramRuntime transition %q targets non-owned fact %q", transition.ID, condition.Facet)
 					}
 					if !facts[string(condition.Facet)] {
-						return fmt.Errorf("protocol PrimaryFlow transition %q targets undeclared fact %q", transition.ID, condition.Facet)
+						return fmt.Errorf("protocol ProgramRuntime transition %q targets undeclared fact %q", transition.ID, condition.Facet)
 					}
 				}
 			}
@@ -601,7 +606,7 @@ func validateFlow(manifest PrimaryFlowManifest) error {
 	for recovery := range recoveryDeclarations {
 		transition, ok := transitions[recovery]
 		if !ok || transition.Class != EventRecovery {
-			return fmt.Errorf("PrimaryFlow %q recovery %q is not a declared recovery transition", manifest.ID, recovery)
+			return fmt.Errorf("ProgramRuntime %q recovery %q is not a declared recovery transition", manifest.ID, recovery)
 		}
 	}
 	return nil
@@ -940,7 +945,7 @@ func cloneCoreManifest(value CoreSystemManifest) CoreSystemManifest {
 	return value
 }
 
-func cloneFlowManifest(value PrimaryFlowManifest) PrimaryFlowManifest {
+func cloneRuntimeManifest(value ProgramRuntimeManifest) ProgramRuntimeManifest {
 	value.SupportedGoals = append([]GoalKind(nil), value.SupportedGoals...)
 	value.GoalContracts = append([]GoalContract(nil), value.GoalContracts...)
 	for index := range value.GoalContracts {

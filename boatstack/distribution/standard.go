@@ -23,7 +23,7 @@ import (
 func StandardProgram(ctx context.Context, extensions ...control.Extension) (control.ControlProgram, error) {
 	return control.Compile(ctx, control.CompileRequest{
 		KernelVersion: boatstack.Version,
-		Core:          core.System(), Flow: standard.Definition(), Extensions: extensions,
+		Core:          core.System(), Runtime: standard.Definition(), Extensions: extensions,
 		Settings: programSettings{},
 	})
 }
@@ -60,7 +60,7 @@ func StandardProgramForRepository(ctx context.Context, request RepositoryProgram
 	extensions := append([]control.Extension(nil), request.Extensions...)
 	extensions = append(extensions, configured...)
 	return control.Compile(ctx, control.CompileRequest{
-		KernelVersion: boatstack.Version, Core: core.System(), Flow: standard.Definition(),
+		KernelVersion: boatstack.Version, Core: core.System(), Runtime: standard.Definition(),
 		Extensions: extensions, Settings: settings,
 	})
 }

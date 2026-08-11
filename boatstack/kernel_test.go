@@ -11,7 +11,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/surfaces"
 )
 
-func TestRecoverSurfaceConsumesCompiledRegistryInsteadOfFixedFlowIDs(t *testing.T) {
+func TestRecoverSurfaceConsumesCompiledRegistryInsteadOfFixedProgramIDs(t *testing.T) {
 	// control-law: recover-is-classified-by-the-compiled-program-not-a-surface-shadow-list
 	program, err := distribution.StandardProgram(context.Background())
 	if err != nil {

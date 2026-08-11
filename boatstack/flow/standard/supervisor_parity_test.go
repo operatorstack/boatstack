@@ -14,7 +14,7 @@ import (
 )
 
 func testGoalContracts() catalog.GoalContracts {
-	manifest, err := standard.Definition().FlowManifest(context.Background())
+	manifest, err := standard.Definition().RuntimeManifest(context.Background())
 	if err != nil {
 		panic(err)
 	}
@@ -225,7 +225,7 @@ func TestSelectionClassOutranksComponentLocalPriority(t *testing.T) {
 			transitions[index].SelectionClass = catalog.SelectionGoalRequired
 			transitions[index].Priority = 999
 		case "gate.test.record":
-			transitions[index].SelectionClass = catalog.SelectionFlowProgress
+			transitions[index].SelectionClass = catalog.SelectionProgramProgress
 			transitions[index].Priority = 1
 		}
 	}

@@ -9,7 +9,7 @@
       "manifest_fingerprint": ""
     },
     "owner": "",
-    "selection_class": "FLOW_PROGRESS",
+    "selection_class": "PROGRAM_PROGRESS",
     "class": "owned-local",
     "source_phases": [
       "OBSERVED",
@@ -220,7 +220,7 @@
       "manifest_fingerprint": ""
     },
     "owner": "",
-    "selection_class": "FLOW_PROGRESS",
+    "selection_class": "PROGRAM_PROGRESS",
     "class": "owned-local",
     "source_phases": [
       "OBSERVED",
@@ -417,7 +417,7 @@
       "manifest_fingerprint": ""
     },
     "owner": "",
-    "selection_class": "FLOW_PROGRESS",
+    "selection_class": "PROGRAM_PROGRESS",
     "class": "authority",
     "source_phases": [
       "ACTIVE",
@@ -635,7 +635,7 @@
       "manifest_fingerprint": ""
     },
     "owner": "",
-    "selection_class": "FLOW_PROGRESS",
+    "selection_class": "PROGRAM_PROGRESS",
     "class": "owned-local",
     "source_phases": [
       "OBSERVED",
@@ -1041,7 +1041,7 @@
       "manifest_fingerprint": ""
     },
     "owner": "",
-    "selection_class": "FLOW_PROGRESS",
+    "selection_class": "PROGRAM_PROGRESS",
     "class": "authority",
     "source_phases": [
       "ACTIVE",
@@ -1616,7 +1616,7 @@
       "manifest_fingerprint": ""
     },
     "owner": "",
-    "selection_class": "FLOW_PROGRESS",
+    "selection_class": "PROGRAM_PROGRESS",
     "class": "owned-local",
     "source_phases": [
       "OBSERVED",
@@ -2034,7 +2034,7 @@
       "manifest_fingerprint": ""
     },
     "owner": "",
-    "selection_class": "FLOW_PROGRESS",
+    "selection_class": "PROGRAM_PROGRESS",
     "class": "owned-local",
     "source_phases": [
       "OBSERVED",
@@ -3036,7 +3036,7 @@
       "manifest_fingerprint": ""
     },
     "owner": "",
-    "selection_class": "FLOW_RECOVERY",
+    "selection_class": "PROGRAM_RECOVERY",
     "class": "recovery",
     "source_phases": [
       "RECOVERY",
@@ -3201,7 +3201,7 @@
       "manifest_fingerprint": ""
     },
     "owner": "",
-    "selection_class": "FLOW_PROGRESS",
+    "selection_class": "PROGRAM_PROGRESS",
     "class": "owned-local",
     "source_phases": [
       "ACTIVE"
@@ -3427,7 +3427,7 @@
       "manifest_fingerprint": ""
     },
     "owner": "",
-    "selection_class": "FLOW_PROGRESS",
+    "selection_class": "PROGRAM_PROGRESS",
     "class": "owned-local",
     "source_phases": [
       "ACTIVE"
@@ -3654,7 +3654,7 @@
       "manifest_fingerprint": ""
     },
     "owner": "",
-    "selection_class": "FLOW_PROGRESS",
+    "selection_class": "PROGRAM_PROGRESS",
     "class": "owned-local",
     "source_phases": [
       "ACTIVE"
@@ -4342,7 +4342,7 @@
       "manifest_fingerprint": ""
     },
     "owner": "",
-    "selection_class": "FLOW_PROGRESS",
+    "selection_class": "PROGRAM_PROGRESS",
     "class": "owned-local",
     "source_phases": [
       "ACTIVE"
@@ -4952,7 +4952,7 @@
       "manifest_fingerprint": ""
     },
     "owner": "",
-    "selection_class": "FLOW_PROGRESS",
+    "selection_class": "PROGRAM_PROGRESS",
     "class": "owned-local",
     "source_phases": [
       "ACTIVE"
@@ -5181,7 +5181,7 @@
       "manifest_fingerprint": ""
     },
     "owner": "",
-    "selection_class": "FLOW_PROGRESS",
+    "selection_class": "PROGRAM_PROGRESS",
     "class": "owned-external",
     "source_phases": [
       "ACTIVE"
@@ -5410,7 +5410,7 @@
       "manifest_fingerprint": ""
     },
     "owner": "",
-    "selection_class": "FLOW_PROGRESS",
+    "selection_class": "PROGRAM_PROGRESS",
     "class": "owned-local",
     "source_phases": [
       "OBSERVED",
@@ -5625,7 +5625,7 @@
       "manifest_fingerprint": ""
     },
     "owner": "",
-    "selection_class": "FLOW_RECOVERY",
+    "selection_class": "PROGRAM_RECOVERY",
     "class": "recovery",
     "source_phases": [
       "RECOVERY",

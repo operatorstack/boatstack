@@ -19,11 +19,11 @@ func NewExtensionLocalPrepared(repositoryRoot, extensionID string, writes []cont
 	return newNamespacedLocalPrepared(repositoryRoot, filepath.Join("extensions", extensionID), extensionID, "extension", writes)
 }
 
-// NewFlowLocalPrepared constrains a protocol-backed primary flow to its own
+// NewFlowLocalPrepared constrains a protocol-backed program runtime to its own
 // repository-local namespace while retaining the normal reversible effect
 // contract.
 func NewFlowLocalPrepared(repositoryRoot, flowID string, writes []control.ResourceWrite) (ports.PreparedEffect, error) {
-	return newNamespacedLocalPrepared(repositoryRoot, filepath.Join("flows", flowID), flowID, "primary flow", writes)
+	return newNamespacedLocalPrepared(repositoryRoot, filepath.Join("flows", flowID), flowID, "program runtime", writes)
 }
 
 func newNamespacedLocalPrepared(repositoryRoot, namespace, owner, kind string, writes []control.ResourceWrite) (ports.PreparedEffect, error) {

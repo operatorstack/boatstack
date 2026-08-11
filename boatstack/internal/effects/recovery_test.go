@@ -25,7 +25,7 @@ type recoveryClock struct{ value time.Time }
 const testProgramFingerprint = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 func testGoalContracts() catalog.GoalContracts {
-	manifest, err := standard.Definition().FlowManifest(context.Background())
+	manifest, err := standard.Definition().RuntimeManifest(context.Background())
 	if err != nil {
 		panic(err)
 	}

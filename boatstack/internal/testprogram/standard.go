@@ -17,7 +17,7 @@ func StandardRegistry() catalog.Registry {
 	program, err := control.Compile(context.Background(), control.CompileRequest{
 		KernelVersion: "test-kernel",
 		Core:          core.System(),
-		Flow:          standard.Definition(),
+		Runtime:       standard.Definition(),
 	})
 	if err != nil {
 		panic(err)

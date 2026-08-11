@@ -2,7 +2,7 @@
 
 Boatstack is a programmable supervisory control runtime for software delivery,
 with a first-party standard delivery flow. It compiles one CoreSystem, one
-explicit primary flow, and optional conservative extensions into an immutable
+explicit program runtime, and optional conservative extensions into an immutable
 ControlProgram before it observes a repository, resolves one legal transition,
 binds exact authority, executes owned effects, verifies the result, and records
 a receipt.
@@ -33,6 +33,9 @@ explicit invocation
 The immediate value is simple: every host consumes one executable delivery law.
 The [technical specification](docs/architecture/boatstack-v2-kernel.md) records
 the complete contract and the historical failure synthesis.
+The [Control Program ABI](docs/architecture/control-program-abi.md) defines the
+strict repository source, canonical fingerprint, compatibility gate, and
+program-qualified transition identity used by complete user-facing Flows.
 
 ## Install
 
@@ -90,14 +93,14 @@ The generated [transition catalog](docs/architecture/boatstack-v2-transition-cat
 and [Mermaid inventory](docs/architecture/boatstack-v2-transition-catalog.mmd)
 come directly from the runtime registry. The generated
 [StandardFlow graph](docs/architecture/boatstack-standard-flow.mmd) filters the
-same compiled registry by primary-flow origin; it is not a second graph.
+same compiled registry by control-program origin; it is not a second graph.
 The [replacement closure report](docs/architecture/boatstack-v2-closure-report.md)
 records the deleted V1 authority and its V2 evidence.
 
 The Go SDK keeps the standard distribution ergonomic with `sdk.New(...)`.
-Custom applications use `sdk.NewKernel(..., sdk.WithFlow(flow),
+Custom applications use `sdk.NewKernel(..., sdk.WithProgramRuntime(runtime),
 sdk.WithExtension(extension))`; the lower-level constructor requires an
-explicit trusted in-process primary flow and never inserts StandardFlow.
+explicit trusted in-process program runtime and never inserts StandardFlow.
 
 ## Coding-agent skills
 

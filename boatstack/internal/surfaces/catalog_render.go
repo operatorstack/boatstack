@@ -67,17 +67,17 @@ func RenderCatalogMermaid(transitions []catalog.Transition) string {
 	return renderCatalogMermaid(transitions, "%% Generated from the compiled ControlProgram registry by surfaces.RenderCatalogMermaid. Do not edit.\n")
 }
 
-// RenderStandardFlowMermaid projects only the compiled primary-flow
+// RenderStandardFlowMermaid projects only the compiled control-program
 // declarations. The owner filter is metadata from the same executable registry,
 // not a second transition graph.
 func RenderStandardFlowMermaid(transitions []catalog.Transition) string {
 	flow := make([]catalog.Transition, 0, len(transitions))
 	for _, transition := range transitions {
-		if transition.Origin.Kind == catalog.OriginPrimaryFlow {
+		if transition.Origin.Kind == catalog.OriginControlProgram {
 			flow = append(flow, transition)
 		}
 	}
-	return renderCatalogMermaid(flow, "%% Generated from compiled PrimaryFlow declarations by surfaces.RenderStandardFlowMermaid. Do not edit.\n")
+	return renderCatalogMermaid(flow, "%% Generated from compiled ProgramRuntime declarations by surfaces.RenderStandardFlowMermaid. Do not edit.\n")
 }
 
 func renderCatalogMermaid(transitions []catalog.Transition, header string) string {

@@ -46,7 +46,7 @@ architecture artifacts:
 Repository and Go tests compare every checked byte with a fresh render and
 require both Locus alphabets to equal all 63 executable catalog transitions.
 The StandardFlow graph contains exactly the 30 transitions whose compiled
-origin is the primary flow.
+origin is the program runtime.
 The Locus phase graph is intentionally conservative: it expands each declared
 source phase against each declared target phase. Facet predicates and reducer
 branches remain executable-test obligations.

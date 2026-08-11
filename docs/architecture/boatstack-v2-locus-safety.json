@@ -5,7 +5,7 @@
   "evidence": [
     {
       "path": "boatstack/control/control.go",
-      "note": "Compiler combines exact CoreSystem, PrimaryFlow, extension, contract, and ownership declarations into one immutable runtime registry."
+      "note": "Compiler combines exact CoreSystem, ProgramRuntime, extension, contract, and ownership declarations into one immutable runtime registry."
     },
     {
       "path": "docs/architecture/boatstack-v2-transition-catalog.md",

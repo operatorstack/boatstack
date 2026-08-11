@@ -82,7 +82,7 @@ func TestExecutableExtensionObservationWaitsForVerifiedProgramBinding(t *testing
 	var sawFact bool
 	extension := isolatedObservationExtension{id: "example.external", sawFact: &sawFact, executable: true, calls: &calls}
 	program, err := control.Compile(context.Background(), control.CompileRequest{
-		KernelVersion: "test-kernel", Core: core.System(), Flow: standard.Definition(), Extensions: []control.Extension{extension},
+		KernelVersion: "test-kernel", Core: core.System(), Runtime: standard.Definition(), Extensions: []control.Extension{extension},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -117,7 +117,7 @@ func TestExtensionObserversConsumeOneOrderIndependentProjection(t *testing.T) {
 	alpha := isolatedObservationExtension{id: "example.alpha", forbid: "example.beta.fact", sawFact: &alphaSawBeta}
 	beta := isolatedObservationExtension{id: "example.beta", forbid: "example.alpha.fact", sawFact: &betaSawAlpha}
 	program, err := control.Compile(context.Background(), control.CompileRequest{
-		KernelVersion: "test-kernel", Core: core.System(), Flow: standard.Definition(),
+		KernelVersion: "test-kernel", Core: core.System(), Runtime: standard.Definition(),
 		Extensions: []control.Extension{beta, alpha},
 	})
 	if err != nil {

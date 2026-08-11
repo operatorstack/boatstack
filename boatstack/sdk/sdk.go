@@ -82,21 +82,21 @@ const (
 const HostIdentity = "sdk"
 
 type options struct {
-	flow       control.FlowDefinition
+	runtime    control.ProgramRuntimeDefinition
 	extensions []control.Extension
 }
 
 type Option func(*options) error
 
-func WithFlow(flow control.FlowDefinition) Option {
+func WithProgramRuntime(runtime control.ProgramRuntimeDefinition) Option {
 	return func(configuration *options) error {
-		if flow == nil {
-			return fmt.Errorf("SDK flow cannot be nil")
+		if runtime == nil {
+			return fmt.Errorf("SDK program runtime cannot be nil")
 		}
-		if configuration.flow != nil {
-			return fmt.Errorf("SDK accepts exactly one PrimaryFlow")
+		if configuration.runtime != nil {
+			return fmt.Errorf("SDK accepts exactly one ProgramRuntime")
 		}
-		configuration.flow = flow
+		configuration.runtime = runtime
 		return nil
 	}
 }
@@ -117,7 +117,7 @@ func WithExtension(extension control.Extension) Option {
 type Client struct {
 	externalStateRoot string
 	standard          bool
-	flow              control.FlowDefinition
+	runtime           control.ProgramRuntimeDefinition
 	extensions        []control.Extension
 }
 
@@ -128,7 +128,7 @@ func New(externalStateRoot string, supplied ...Option) (Client, error) {
 	if err != nil {
 		return Client{}, err
 	}
-	if configuration.flow != nil {
+	if configuration.runtime != nil {
 		return Client{}, fmt.Errorf("sdk.New always uses StandardFlow; use sdk.NewKernel for an explicit flow")
 	}
 	if _, err := distribution.StandardProgram(context.Background(), configuration.extensions...); err != nil {
@@ -138,22 +138,22 @@ func New(externalStateRoot string, supplied ...Option) (Client, error) {
 }
 
 // NewKernel is the low-level composition API. It never inserts StandardFlow;
-// callers must supply exactly one WithFlow option.
+// callers must supply exactly one WithProgramRuntime option.
 func NewKernel(externalStateRoot string, supplied ...Option) (Client, error) {
 	configuration, err := applyOptions(supplied)
 	if err != nil {
 		return Client{}, err
 	}
-	if configuration.flow == nil {
-		return Client{}, fmt.Errorf("sdk.NewKernel requires an explicit PrimaryFlow")
+	if configuration.runtime == nil {
+		return Client{}, fmt.Errorf("sdk.NewKernel requires an explicit ProgramRuntime")
 	}
 	if _, err := control.Compile(context.Background(), control.CompileRequest{
-		KernelVersion: boatstack.Version, Core: core.System(), Flow: configuration.flow,
+		KernelVersion: boatstack.Version, Core: core.System(), Runtime: configuration.runtime,
 		Extensions: configuration.extensions,
 	}); err != nil {
 		return Client{}, err
 	}
-	return Client{externalStateRoot: externalStateRoot, flow: configuration.flow, extensions: append([]control.Extension(nil), configuration.extensions...)}, nil
+	return Client{externalStateRoot: externalStateRoot, runtime: configuration.runtime, extensions: append([]control.Extension(nil), configuration.extensions...)}, nil
 }
 
 func applyOptions(supplied []Option) (options, error) {
@@ -193,7 +193,7 @@ func (c Client) Do(ctx context.Context, request Request) (Response, error) {
 			extensions := append([]control.Extension(nil), c.extensions...)
 			extensions = append(extensions, configured...)
 			program, err = control.Compile(ctx, control.CompileRequest{
-				KernelVersion: boatstack.Version, Core: core.System(), Flow: c.flow,
+				KernelVersion: boatstack.Version, Core: core.System(), Runtime: c.runtime,
 				Extensions: extensions, Settings: settings,
 			})
 		}

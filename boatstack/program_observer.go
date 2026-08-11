@@ -34,52 +34,52 @@ func (o programObserver) Observe(ctx context.Context, request ports.ObservationR
 	if err != nil {
 		return model.Observation{}, err
 	}
-	flow := o.program.Flow()
-	if flow.Manifest.RuntimeMode == control.FlowRuntimeProtocol {
+	flow := o.program.ProgramRuntime()
+	if flow.Manifest.RuntimeMode == control.ProgramRuntimeProtocol {
 		if flow.Runtime == nil {
-			return model.Observation{}, fmt.Errorf("primary flow %q observer is unavailable", flow.Identity.ID)
+			return model.Observation{}, fmt.Errorf("program runtime %q observer is unavailable", flow.Identity.ID)
 		}
 		projection := observation
 		projection.ProgramFingerprint = o.program.Fingerprint()
 		snapshot, encodeErr := json.Marshal(projection)
 		if encodeErr != nil {
-			return model.Observation{}, fmt.Errorf("encode bounded primary-flow observation: %w", encodeErr)
+			return model.Observation{}, fmt.Errorf("encode bounded control-program observation: %w", encodeErr)
 		}
-		response, invokeErr := flow.Runtime.InvokeFlow(ctx, control.FlowRequest{
-			ProtocolVersion: control.FlowProtocolVersion, Operation: control.FlowObserveOperation,
-			FlowID: flow.Identity.ID, FlowVersion: flow.Identity.Version,
+		response, invokeErr := flow.Runtime.InvokeProgram(ctx, control.ProgramRuntimeRequest{
+			ProtocolVersion: control.ProgramRuntimeProtocolVersion, Operation: control.ProgramObserveOperation,
+			ProgramID: flow.Identity.ID, ProgramVersion: flow.Identity.Version,
 			ProgramFingerprint: o.program.Fingerprint(), CorrelationID: request.Invocation.Correlation,
 			RepositoryRoot: request.Invocation.InvokingPath, Snapshot: snapshot, Settings: flow.Manifest.Settings,
 		})
 		if invokeErr != nil {
-			return model.Observation{}, fmt.Errorf("primary flow %q observation failed: %w", flow.Identity.ID, invokeErr)
+			return model.Observation{}, fmt.Errorf("program runtime %q observation failed: %w", flow.Identity.ID, invokeErr)
 		}
-		if err := validateFlowResponse(flow, control.FlowObserveOperation, request.Invocation.Correlation, response); err != nil {
+		if err := validateProgramRuntimeResponse(flow, control.ProgramObserveOperation, request.Invocation.Correlation, response); err != nil {
 			return model.Observation{}, err
 		}
 		declared := make(map[string]bool, len(flow.Manifest.Facts))
 		for _, id := range flow.Manifest.Facts {
 			declared[id] = true
 		}
-		observation.FlowFacts = make(map[string]model.Fact[string], len(declared))
+		observation.ProgramFacts = make(map[string]model.Fact[string], len(declared))
 		for _, fact := range response.Facts {
 			if !declared[fact.ID] {
-				return model.Observation{}, fmt.Errorf("primary flow %q returned undeclared fact %q", flow.Identity.ID, fact.ID)
+				return model.Observation{}, fmt.Errorf("program runtime %q returned undeclared fact %q", flow.Identity.ID, fact.ID)
 			}
-			if _, exists := observation.FlowFacts[fact.ID]; exists {
-				return model.Observation{}, fmt.Errorf("primary-flow fact %q was returned more than once", fact.ID)
+			if _, exists := observation.ProgramFacts[fact.ID]; exists {
+				return model.Observation{}, fmt.Errorf("control-program fact %q was returned more than once", fact.ID)
 			}
 			if !fact.Status.Valid() || fact.Fingerprint == "" {
-				return model.Observation{}, fmt.Errorf("primary flow %q returned invalid fact %q", flow.Identity.ID, fact.ID)
+				return model.Observation{}, fmt.Errorf("program runtime %q returned invalid fact %q", flow.Identity.ID, fact.ID)
 			}
-			observation.FlowFacts[fact.ID] = model.Fact[string]{
+			observation.ProgramFacts[fact.ID] = model.Fact[string]{
 				Status: fact.Status, Value: fact.Value, Detail: fact.Detail,
-				Evidence: []model.Evidence{{Source: "primary-flow:" + flow.Identity.ID, Fingerprint: fact.Fingerprint, ObservedAt: observation.ObservedAt}},
+				Evidence: []model.Evidence{{Source: "control-program:" + flow.Identity.ID, Fingerprint: fact.Fingerprint, ObservedAt: observation.ObservedAt}},
 			}
 			delete(declared, fact.ID)
 		}
 		if len(declared) != 0 {
-			return model.Observation{}, fmt.Errorf("primary flow %q omitted required observed facts", flow.Identity.ID)
+			return model.Observation{}, fmt.Errorf("program runtime %q omitted required observed facts", flow.Identity.ID)
 		}
 	}
 	// Extension observers receive the same core-plus-flow projection. Facts
@@ -147,25 +147,25 @@ func (o programObserver) Observe(ctx context.Context, request ports.ObservationR
 	}
 	if request.VerifyTransitionID != "" {
 		transition, ok := o.program.RuntimeRegistry().Lookup(request.VerifyTransitionID)
-		if ok && transition.Origin.Kind == catalog.OriginPrimaryFlow && flow.Manifest.RuntimeMode == control.FlowRuntimeProtocol {
+		if ok && transition.Origin.Kind == catalog.OriginControlProgram && flow.Manifest.RuntimeMode == control.ProgramRuntimeProtocol {
 			snapshot, encodeErr := json.Marshal(observation)
 			if encodeErr != nil {
 				return model.Observation{}, encodeErr
 			}
-			response, invokeErr := flow.Runtime.InvokeFlow(ctx, control.FlowRequest{
-				ProtocolVersion: control.FlowProtocolVersion, Operation: control.FlowVerifyOperation,
-				FlowID: flow.Identity.ID, FlowVersion: flow.Identity.Version,
+			response, invokeErr := flow.Runtime.InvokeProgram(ctx, control.ProgramRuntimeRequest{
+				ProtocolVersion: control.ProgramRuntimeProtocolVersion, Operation: control.ProgramVerifyOperation,
+				ProgramID: flow.Identity.ID, ProgramVersion: flow.Identity.Version,
 				ProgramFingerprint: o.program.Fingerprint(), CorrelationID: request.Invocation.Correlation,
 				RepositoryRoot: request.Invocation.InvokingPath, TransitionID: transition.ID, Snapshot: snapshot, Settings: flow.Manifest.Settings,
 			})
 			if invokeErr != nil {
 				return model.Observation{}, invokeErr
 			}
-			if err := validateFlowResponse(flow, control.FlowVerifyOperation, request.Invocation.Correlation, response); err != nil {
+			if err := validateProgramRuntimeResponse(flow, control.ProgramVerifyOperation, request.Invocation.Correlation, response); err != nil {
 				return model.Observation{}, err
 			}
 			if response.Verified == nil || !*response.Verified {
-				return model.Observation{}, fmt.Errorf("primary-flow verifier %q rejected the postcondition", transition.Verifier)
+				return model.Observation{}, fmt.Errorf("control-program verifier %q rejected the postcondition", transition.Verifier)
 			}
 		}
 		if ok && transition.Origin.Kind == catalog.OriginExtension {
@@ -197,16 +197,16 @@ func (o programObserver) Observe(ctx context.Context, request ports.ObservationR
 	return observation, nil
 }
 
-func validateFlowResponse(flow control.CompiledFlow, operation control.FlowOperation, correlation string, response control.FlowResponse) error {
-	if response.ProtocolVersion != control.FlowProtocolVersion || response.Operation != operation ||
-		response.FlowID != flow.Identity.ID || response.FlowVersion != flow.Identity.Version || response.CorrelationID != correlation {
-		return fmt.Errorf("primary flow %q returned a mismatched protocol response", flow.Identity.ID)
+func validateProgramRuntimeResponse(flow control.CompiledProgramRuntime, operation control.ProgramRuntimeOperation, correlation string, response control.ProgramRuntimeResponse) error {
+	if response.ProtocolVersion != control.ProgramRuntimeProtocolVersion || response.Operation != operation ||
+		response.ProgramID != flow.Identity.ID || response.ProgramVersion != flow.Identity.Version || response.CorrelationID != correlation {
+		return fmt.Errorf("program runtime %q returned a mismatched protocol response", flow.Identity.ID)
 	}
-	if err := control.ValidateFlowOperationResponse(operation, response); err != nil {
-		return fmt.Errorf("primary flow %q returned an invalid operation response: %w", flow.Identity.ID, err)
+	if err := control.ValidateProgramRuntimeOperationResponse(operation, response); err != nil {
+		return fmt.Errorf("program runtime %q returned an invalid operation response: %w", flow.Identity.ID, err)
 	}
 	if response.ErrorClass != "" || response.Error != "" {
-		return ComponentRuntimeError{Component: fmt.Sprintf("primary flow %q", flow.Identity.ID), Operation: string(operation), Class: response.ErrorClass, Message: response.Error}
+		return ComponentRuntimeError{Component: fmt.Sprintf("program runtime %q", flow.Identity.ID), Operation: string(operation), Class: response.ErrorClass, Message: response.Error}
 	}
 	return nil
 }

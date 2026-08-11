@@ -20,7 +20,7 @@ import (
 )
 
 func historicalGoalContracts() catalog.GoalContracts {
-	manifest, err := standard.Definition().FlowManifest(context.Background())
+	manifest, err := standard.Definition().RuntimeManifest(context.Background())
 	if err != nil {
 		panic(err)
 	}

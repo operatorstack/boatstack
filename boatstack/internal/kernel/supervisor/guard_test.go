@@ -10,7 +10,7 @@ import (
 func TestManagedCommandRoutingComesOnlyFromCompiledProgram(t *testing.T) {
 	registry, err := catalog.New([]catalog.Transition{
 		syntheticManagedTransition("synthetic.publish", catalog.EventOwnedLocal, catalog.SelectionExplicitOnly, "synthetic.recover"),
-		syntheticManagedTransition("synthetic.recover", catalog.EventRecovery, catalog.SelectionFlowRecovery, "synthetic.recover"),
+		syntheticManagedTransition("synthetic.recover", catalog.EventRecovery, catalog.SelectionProgramRecovery, "synthetic.recover"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -40,7 +40,7 @@ func syntheticManagedTransition(id catalog.TransitionID, class catalog.EventClas
 	}
 	return catalog.Transition{
 		ID: id, Version: 1,
-		Origin: catalog.TransitionOrigin{Kind: catalog.OriginPrimaryFlow, ID: "test.synthetic", Version: "1.0.0", ManifestFingerprint: "manifest"},
+		Origin: catalog.TransitionOrigin{Kind: catalog.OriginControlProgram, ID: "test.synthetic", Version: "1.0.0", ManifestFingerprint: "manifest"},
 		Owner:  "test.synthetic", SelectionClass: selection, Class: class,
 		SourcePhases: []model.ProtocolPhase{model.PhaseActive}, TargetPhases: []model.ProtocolPhase{model.PhaseActive},
 		GoalKinds: []model.GoalKind{model.GoalVerified}, RequiredIdentity: []string{"repository-id"},

@@ -14,14 +14,14 @@ type EffectID string
 type OriginKind string
 
 const (
-	OriginCoreSystem  OriginKind = "core-system"
-	OriginPrimaryFlow OriginKind = "primary-flow"
-	OriginExtension   OriginKind = "extension"
+	OriginCoreSystem     OriginKind = "core-system"
+	OriginControlProgram OriginKind = "control-program"
+	OriginExtension      OriginKind = "extension"
 )
 
 func (k OriginKind) Valid() bool {
 	switch k {
-	case OriginCoreSystem, OriginPrimaryFlow, OriginExtension:
+	case OriginCoreSystem, OriginControlProgram, OriginExtension:
 		return true
 	default:
 		return false
@@ -39,18 +39,18 @@ type SelectionClass string
 
 const (
 	SelectionSystemRecovery    SelectionClass = "SYSTEM_RECOVERY"
-	SelectionFlowRecovery      SelectionClass = "FLOW_RECOVERY"
+	SelectionProgramRecovery   SelectionClass = "PROGRAM_RECOVERY"
 	SelectionExtensionRecovery SelectionClass = "EXTENSION_RECOVERY"
 	SelectionGoalRequired      SelectionClass = "GOAL_REQUIRED"
-	SelectionFlowProgress      SelectionClass = "FLOW_PROGRESS"
+	SelectionProgramProgress   SelectionClass = "PROGRAM_PROGRESS"
 	SelectionExplicitOnly      SelectionClass = "EXPLICIT_ONLY"
 	SelectionObservedExternal  SelectionClass = "OBSERVED_EXTERNAL"
 )
 
 func (c SelectionClass) Valid() bool {
 	switch c {
-	case SelectionSystemRecovery, SelectionFlowRecovery, SelectionExtensionRecovery, SelectionGoalRequired,
-		SelectionFlowProgress, SelectionExplicitOnly, SelectionObservedExternal:
+	case SelectionSystemRecovery, SelectionProgramRecovery, SelectionExtensionRecovery, SelectionGoalRequired,
+		SelectionProgramProgress, SelectionExplicitOnly, SelectionObservedExternal:
 		return true
 	default:
 		return false
@@ -61,13 +61,13 @@ func (c SelectionClass) rank() int {
 	switch c {
 	case SelectionSystemRecovery:
 		return 1
-	case SelectionFlowRecovery:
+	case SelectionProgramRecovery:
 		return 2
 	case SelectionExtensionRecovery:
 		return 3
 	case SelectionGoalRequired:
 		return 4
-	case SelectionFlowProgress:
+	case SelectionProgramProgress:
 		return 5
 	case SelectionExplicitOnly:
 		return 6
@@ -280,10 +280,10 @@ func (t Transition) Controllable() bool { return t.Class.Controllable() }
 // admissible from the same snapshot.
 func (t Transition) ImplicitlySelectable() bool {
 	return t.SelectionClass == SelectionSystemRecovery ||
-		t.SelectionClass == SelectionFlowRecovery ||
+		t.SelectionClass == SelectionProgramRecovery ||
 		t.SelectionClass == SelectionExtensionRecovery ||
 		t.SelectionClass == SelectionGoalRequired ||
-		t.SelectionClass == SelectionFlowProgress
+		t.SelectionClass == SelectionProgramProgress
 }
 
 func (t Transition) SupportsGoal(goal model.Goal) bool {
@@ -347,7 +347,7 @@ type Registry struct {
 	managedOperation map[string]TransitionID
 }
 
-var semanticID = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$`)
+var semanticID = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*(?:/[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*)?$`)
 
 func New(transitions []Transition) (Registry, error) {
 	registry := Registry{
@@ -538,9 +538,9 @@ func validateSelectionOwnership(t Transition) error {
 		if t.Origin.Kind != OriginCoreSystem || t.Class != EventRecovery {
 			return fmt.Errorf("%s: SYSTEM_RECOVERY is reserved for CoreSystem recovery events", t.ID)
 		}
-	case SelectionFlowRecovery:
-		if t.Origin.Kind != OriginPrimaryFlow || t.Class != EventRecovery {
-			return fmt.Errorf("%s: FLOW_RECOVERY is reserved for PrimaryFlow recovery events", t.ID)
+	case SelectionProgramRecovery:
+		if t.Origin.Kind != OriginControlProgram || t.Class != EventRecovery {
+			return fmt.Errorf("%s: PROGRAM_RECOVERY is reserved for ProgramRuntime recovery events", t.ID)
 		}
 	case SelectionExtensionRecovery:
 		if t.Origin.Kind != OriginExtension || t.Class != EventRecovery {

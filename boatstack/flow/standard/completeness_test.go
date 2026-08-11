@@ -250,7 +250,7 @@ func TestPackageImportsPreserveControlProgramDependencyDirection(t *testing.T) {
 			}
 			for _, forbidden := range forbiddenFlow {
 				if flowOwned && strings.Contains(value, forbidden) {
-					t.Errorf("primary flow %s imports forbidden surface %s", relative, value)
+					t.Errorf("program runtime %s imports forbidden surface %s", relative, value)
 				}
 			}
 		}

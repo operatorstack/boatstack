@@ -170,7 +170,7 @@ func observation(phase model.ProtocolPhase, fingerprint string) model.Observatio
 		Publication:         model.Known(model.PublicationNone, e), Verification: model.Known(model.VerificationUnverified, e), Recovery: model.Known(model.RecoveryNone, e),
 		Transaction: model.Known(model.TransactionNone, e), RecoveryInfo: model.Absent[model.RecoveryContext]("none", e), TransactionInfo: model.Absent[model.TransactionContext]("none", e),
 		Terminal: model.Known(model.TerminalNonterminal, e), Goal: model.Known(model.Goal{ID: "goal", Kind: model.GoalVerified, DeliveryID: "delivery"}, e), ObservedAt: time.Unix(20, 0).UTC(),
-		FlowFacts: map[string]model.Fact[string]{"test.synthetic.stage": model.Known(stage, e)},
+		ProgramFacts: map[string]model.Fact[string]{"test.synthetic.stage": model.Known(stage, e)},
 	}
 }
 
@@ -212,7 +212,7 @@ func testRegistryWithAdvanceClass(t *testing.T, class catalog.EventClass) catalo
 	}
 	r, err := catalog.New([]catalog.Transition{{
 		ID: "test.advance", Version: 1, Class: class,
-		Origin: catalog.TransitionOrigin{Kind: catalog.OriginPrimaryFlow, ID: "test.synthetic", Version: "1.0.0", ManifestFingerprint: syntheticProgramFingerprint}, Owner: "test.synthetic", SelectionClass: catalog.SelectionFlowProgress,
+		Origin: catalog.TransitionOrigin{Kind: catalog.OriginControlProgram, ID: "test.synthetic", Version: "1.0.0", ManifestFingerprint: syntheticProgramFingerprint}, Owner: "test.synthetic", SelectionClass: catalog.SelectionProgramProgress,
 		SourcePhases: []model.ProtocolPhase{model.PhaseObserved}, TargetPhases: []model.ProtocolPhase{model.PhaseActive},
 		RequiredIdentity: identity, Authority: authority, RequiredEvidence: []string{"snapshot"}, OwnedResources: []string{"state"}, Effect: "test.advance", LocalEffects: localEffects, ExternalEffects: externalEffects, Idempotent: true,
 		Prescription: catalog.Prescription{Operation: "test.advance", ExpectedPostcondition: "active"}, SourcePredicate: "observed", AdmissionPredicate: "exact-admission", TargetPredicate: "active", Verifier: "fresh-active",
@@ -222,7 +222,7 @@ func testRegistryWithAdvanceClass(t *testing.T, class catalog.EventClass) catalo
 		PrivacyClassification: "metadata-only", TelemetryClassification: "transition-receipt", CostClass: "test", Priority: 1,
 	}, {
 		ID: "test.recover", Version: 1, Class: catalog.EventRecovery,
-		Origin: catalog.TransitionOrigin{Kind: catalog.OriginPrimaryFlow, ID: "test.synthetic", Version: "1.0.0", ManifestFingerprint: syntheticProgramFingerprint}, Owner: "test.synthetic", SelectionClass: catalog.SelectionFlowRecovery,
+		Origin: catalog.TransitionOrigin{Kind: catalog.OriginControlProgram, ID: "test.synthetic", Version: "1.0.0", ManifestFingerprint: syntheticProgramFingerprint}, Owner: "test.synthetic", SelectionClass: catalog.SelectionProgramRecovery,
 		SourcePhases: []model.ProtocolPhase{model.PhaseRecovery}, TargetPhases: []model.ProtocolPhase{model.PhaseFrontier},
 		RequiredIdentity: identity, Authority: []catalog.AuthorityClass{catalog.AuthorityRepository}, RequiredEvidence: []string{"snapshot"}, OwnedResources: []string{"state"}, Effect: "test.recover", LocalEffects: []catalog.EffectID{"test.recover"}, Idempotent: true,
 		Prescription: catalog.Prescription{Operation: "test.recover", ExpectedPostcondition: "frontier"}, SourcePredicate: "recovery", AdmissionPredicate: "exact-recovery-admission", TargetPredicate: "frontier", Verifier: "fresh-frontier",
@@ -366,7 +366,7 @@ func TestApplyCrossesAdmissionEffectVerificationAndReceiptBoundary(t *testing.T)
 }
 
 func TestSyntheticStartVerifyTerminalContractNeedsNoStandardFlowFacet(t *testing.T) {
-	// control-law: kernel-terminal-is-defined-only-by-the-compiled-primary-flow-contract
+	// control-law: kernel-terminal-is-defined-only-by-the-compiled-control-program-contract
 	goal := model.Goal{ID: "goal", Kind: model.GoalVerified, DeliveryID: "delivery"}
 	source, err := model.CanonicalizeForProgram(observation(model.PhaseObserved, "source"), syntheticProgramFingerprint)
 	if err != nil {
