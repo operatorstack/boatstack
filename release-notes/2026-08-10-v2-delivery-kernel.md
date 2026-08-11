@@ -7,3 +7,5 @@ The CLI, hooks, SDK, MCP, Cursor, Codex, Claude Code, and Gemini CLI now consume
 V2 does not read or migrate V1 machine state. Reinstall or reattach each repository with a schema-2 configuration.
 
 The executable registry also generates its readable catalog and Locus safety/liveness abstractions. Repository tests reject drift between those checked artifacts and all 61 runtime transitions; the formal claim remains advisory outside the finite stable-phase model.
+
+Cross-platform authority is canonical at the boundary: tests construct native absolute paths, checked generated artifacts are LF-pinned, and configuration authority hashes strict decoded schema-2 semantics rather than checkout-specific JSON bytes. Normal Git line-ending conversion cannot invalidate a transferred workspace, while actual policy changes still rotate authority.

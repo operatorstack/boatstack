@@ -10,7 +10,7 @@ func TestPublicProtocolCanBeConstructedWithoutInternalPackages(t *testing.T) {
 	request := sdk.Request{
 		SchemaVersion: sdk.SchemaVersion,
 		Operation:     sdk.OperationResolve,
-		Repository:    "/repo",
+		Repository:    t.TempDir(),
 		Host:          "mcp",
 		CorrelationID: "correlation",
 		Goal:          sdk.Goal{ID: "goal", Kind: sdk.GoalVerified, DeliveryID: "delivery"},

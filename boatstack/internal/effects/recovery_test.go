@@ -84,9 +84,13 @@ func TestRestartRecoveryRollsBackExactPriorBytesAndArchivesJournal(t *testing.T)
 	if err := os.WriteFile(configPath, configRaw, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	_, configFingerprint, err := protocol.ProjectConfigFingerprint(configRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
 	parameters := protocol.Parameters{
 		{Name: "source_revision", Value: "recovery-fixture"}, {Name: "runtime_path", Value: executable}, {Name: "runtime_sha256", Value: sha256Bytes(runtimeRaw)},
-		{Name: "config_path", Value: configPath}, {Name: "config_sha256", Value: sha256Bytes(configRaw)},
+		{Name: "config_path", Value: configPath}, {Name: "config_sha256", Value: configFingerprint},
 	}
 	admission, err := protocol.NewAdmission(initial, goal, transition, authority, parameters, clock.Now(), time.Minute)
 	if err != nil {

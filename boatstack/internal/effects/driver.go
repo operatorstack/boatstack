@@ -228,11 +228,12 @@ func prepareConfigurationAuthorityTransfer(layout ports.ControllerLayout, admiss
 		}
 		return nil, err
 	}
-	if state.Configuration != model.ConfigurationVerified || state.ConfigFingerprint == "" || sha256Bytes(raw) != state.ConfigFingerprint {
-		return nil, nil
-	}
-	if _, err := protocol.DecodeProjectConfig(raw); err != nil {
+	_, fingerprint, err := protocol.ProjectConfigFingerprint(raw)
+	if err != nil {
 		return nil, err
+	}
+	if state.Configuration != model.ConfigurationVerified || state.ConfigFingerprint == "" || fingerprint != state.ConfigFingerprint {
+		return nil, nil
 	}
 	mutation, err := mutationFor(target, raw, 0o600, false, false)
 	if err != nil {

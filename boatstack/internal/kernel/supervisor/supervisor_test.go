@@ -1,6 +1,7 @@
 package supervisor
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,7 +14,7 @@ func snapshotFor(t *testing.T, phase model.ProtocolPhase, terminal model.Termina
 	e := model.Evidence{Source: "fixture", Fingerprint: "fixture", ObservedAt: time.Unix(10, 0).UTC()}
 	o := model.Observation{
 		SchemaVersion: model.SnapshotSchemaVersion,
-		Invocation:    model.InvocationContext{RepositoryID: "repo", GitCommonID: "git", WorktreeID: "wt", Ref: "refs/heads/f", ControllerID: "ctl", InvokingPath: "/repo", RuntimePath: "/runtime", RuntimeFingerprint: "runtime", Topology: model.TopologyEmbedded, Host: "cli", Correlation: "c"},
+		Invocation:    model.InvocationContext{RepositoryID: "repo", GitCommonID: "git", WorktreeID: "wt", Ref: "refs/heads/f", ControllerID: "ctl", InvokingPath: filepath.Join(t.TempDir(), "repo"), RuntimePath: filepath.Join(t.TempDir(), "runtime"), RuntimeFingerprint: "runtime", Topology: model.TopologyEmbedded, Host: "cli", Correlation: "c"},
 		Phase:         model.Known(phase, e), Engagement: model.Known(model.EngagementActive, e), Delivery: model.Known(model.DeliveryActive, e),
 		Workspace: model.Known(model.WorkspaceActive, e), Plan: model.Known(model.PlanValid, e),
 		Configuration: model.Known(model.ConfigurationVerified, e), Runtime: model.Known(model.RuntimeVerified, e),

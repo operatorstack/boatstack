@@ -60,7 +60,7 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 	if err != nil {
 		return model.Observation{}, err
 	}
-	configEvidence, configFingerprint, configExists, err := fileEvidence(layout.ConfigPath, "configuration", now)
+	configEvidence, _, configExists, err := fileEvidence(layout.ConfigPath, "configuration", now)
 	if err != nil {
 		return model.Observation{}, err
 	}
@@ -70,10 +70,11 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 		configuration = model.ConfigurationUnsupported
 	} else if configRaw, readErr := os.ReadFile(layout.ConfigPath); readErr != nil {
 		return model.Observation{}, readErr
-	} else if config, decodeErr := protocol.DecodeProjectConfig(configRaw); decodeErr != nil {
+	} else if config, configFingerprint, decodeErr := protocol.ProjectConfigFingerprint(configRaw); decodeErr != nil {
 		configuration = model.ConfigurationConflicting
 		configurationPolicy = model.Unknown[model.ConfigurationPolicy](model.FactConflicting, decodeErr.Error(), configEvidence)
 	} else {
+		configEvidence.Fingerprint = configFingerprint
 		policy := config.ControlPolicy()
 		highRisk, highRiskErr := o.highRiskChange(ctx, layout.RepositoryRoot, config.Project.DefaultBranch, config.Project.HighRiskPaths)
 		if highRiskErr != nil && policy.IndependentReviewForHighRisk && len(config.Project.HighRiskPaths) > 0 {

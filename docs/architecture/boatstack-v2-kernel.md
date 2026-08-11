@@ -231,6 +231,12 @@ transaction/recovery journals. Provider observation is an explicit registered
 `publication.observe` or `publication.reconcile` effect; the resulting durable
 publication fact is then read through this observer.
 
+Configuration authority fingerprints the strict decoded schema-2 value in
+canonical JSON form, including canonical defaults and host-set ordering. JSON
+formatting, object-key order, and checkout line endings cannot change authority;
+an actual policy or command change does. Exact file bytes remain transaction and
+rollback material, but they are not semantic configuration identity.
+
 Observation never writes, repairs, hydrates, locks for mutation, or chooses a
 transition. Each provider returns typed known, absent, unknown, stale, and
 conflicting facts with evidence. External provider failure remains `unknown` and

@@ -3,6 +3,7 @@ package catalog_test
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -60,7 +61,7 @@ func snapshotFromFixture(t *testing.T, fixture historicalFixture) model.Snapshot
 	evidence := model.Evidence{Source: "historical:" + fixture.Name, Fingerprint: "fixture-" + fixture.Name, ObservedAt: time.Unix(100, 0).UTC()}
 	invocation := model.InvocationContext{
 		RepositoryID: "repo", GitCommonID: "git-common", WorktreeID: "worktree", Ref: facts["ref"], ControllerID: "controller",
-		InvokingPath: "/fixture/repository", Topology: model.Topology(facts["topology"]), Host: "corpus", Correlation: "correlation-" + fixture.Name,
+		InvokingPath: filepath.Join(t.TempDir(), "fixture", "repository"), Topology: model.Topology(facts["topology"]), Host: "corpus", Correlation: "correlation-" + fixture.Name,
 	}
 	observation := model.Observation{
 		SchemaVersion: model.SnapshotSchemaVersion, Invocation: invocation,
@@ -113,7 +114,7 @@ func TestHistoricalFailureCorpusUsesTheRuntimeControlLaw(t *testing.T) {
 			}
 			seenNames[fixture.Name] = true
 			if fixture.ExpectedDecision == "IDENTITY_REFUSED" {
-				invocation := snapshotIdentityForFixture(fixture)
+				invocation := snapshotIdentityForFixture(t, fixture)
 				if err := invocation.Validate(true); err == nil {
 					t.Fatal("ambiguous/conflicting effect identity was accepted")
 				}
@@ -141,10 +142,11 @@ func TestHistoricalFailureCorpusUsesTheRuntimeControlLaw(t *testing.T) {
 	}
 }
 
-func snapshotIdentityForFixture(fixture historicalFixture) model.InvocationContext {
+func snapshotIdentityForFixture(t *testing.T, fixture historicalFixture) model.InvocationContext {
+	t.Helper()
 	return model.InvocationContext{
 		RepositoryID: "repo", GitCommonID: "git", Ref: fixture.CanonicalObservation["ref"], ControllerID: "shared-alias",
-		InvokingPath: "/fixture/repository", Topology: model.Topology(fixture.CanonicalObservation["topology"]), Host: "corpus", Correlation: "identity-refusal",
+		InvokingPath: filepath.Join(t.TempDir(), "fixture", "repository"), Topology: model.Topology(fixture.CanonicalObservation["topology"]), Host: "corpus", Correlation: "identity-refusal",
 	}
 }
 

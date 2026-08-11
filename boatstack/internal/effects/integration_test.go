@@ -1,6 +1,7 @@
 package effects_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -151,7 +152,7 @@ func TestExternalConfigurationAuthorityTransfersAcrossAttachAndDetach(t *testing
 	}
 	apply("installation.initialize", human, false, protocol.Parameters{
 		{Name: "source_revision", Value: "external-config-fixture"}, {Name: "runtime_path", Value: executable}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
-		{Name: "config_path", Value: initialPath}, {Name: "config_sha256", Value: digestBytes(initialConfig)},
+		{Name: "config_path", Value: initialPath}, {Name: "config_sha256", Value: configFingerprint(t, initialConfig)},
 	})
 	apply("repository.attach", human, false, protocol.Parameters{{Name: "topology", Value: "detached"}, {Name: "config_authority", Value: "external"}})
 	resolver, err := plant.NewResolver(externalRoot)
@@ -175,7 +176,7 @@ func TestExternalConfigurationAuthorityTransfersAcrossAttachAndDetach(t *testing
 	if err := os.WriteFile(updatedPath, updatedConfig, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	apply("configuration.mutate", human, false, protocol.Parameters{{Name: "config_path", Value: updatedPath}, {Name: "config_sha256", Value: digestBytes(updatedConfig)}})
+	apply("configuration.mutate", human, false, protocol.Parameters{{Name: "config_path", Value: updatedPath}, {Name: "config_sha256", Value: configFingerprint(t, updatedConfig)}})
 	repositoryConfigPath := filepath.Join(repository, ".boatstack", "project.json")
 	if raw, err := os.ReadFile(repositoryConfigPath); err != nil || string(raw) != string(initialConfig) {
 		t.Fatalf("external mutation leaked into repository authority before detach: err=%v value=%q", err, raw)
@@ -229,7 +230,7 @@ func TestConcreteWorkflowPreservesConfigurationProofAndGoalTerminals(t *testing.
 			if readErr != nil {
 				t.Fatal(readErr)
 			}
-			fingerprint = digestBytes(raw)
+			fingerprint = configFingerprint(t, raw)
 		}
 		return protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{
 			ID: "authority-" + string(class), Class: class, Subject: subject, Fingerprint: fingerprint,
@@ -263,7 +264,7 @@ func TestConcreteWorkflowPreservesConfigurationProofAndGoalTerminals(t *testing.
 	approvedGoal := model.Goal{ID: "goal-approved", Kind: model.GoalApprovedPlan, DeliveryID: "delivery-workflow"}
 	apply(approvedGoal, "installation.initialize", authority(catalog.AuthorityHuman), protocol.Parameters{
 		{Name: "source_revision", Value: "integration-revision"}, {Name: "runtime_path", Value: executable}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
-		{Name: "config_path", Value: configPath}, {Name: "config_sha256", Value: digestBytes(configRaw)},
+		{Name: "config_path", Value: configPath}, {Name: "config_sha256", Value: configFingerprint(t, configRaw)},
 	})
 	apply(approvedGoal, "engagement.begin", authority(catalog.AuthorityRepository), nil)
 
@@ -273,7 +274,7 @@ func TestConcreteWorkflowPreservesConfigurationProofAndGoalTerminals(t *testing.
 		t.Fatal(err)
 	}
 	configResult := apply(approvedGoal, "configuration.mutate", authority(catalog.AuthorityHuman), protocol.Parameters{
-		{Name: "config_path", Value: updatedConfigPath}, {Name: "config_sha256", Value: digestBytes(updatedConfig)},
+		{Name: "config_path", Value: updatedConfigPath}, {Name: "config_sha256", Value: configFingerprint(t, updatedConfig)},
 	})
 	if configResult.Target.Configuration.Value != model.ConfigurationVerified {
 		t.Fatalf("configuration mutation invalidated itself: %s", configResult.Target.Configuration.Value)
@@ -393,7 +394,7 @@ func TestWorkspaceCutTransfersAuthorityToExactDestinationWorktree(t *testing.T) 
 	}
 	apply(sourceInvocation, "installation.initialize", human, protocol.Parameters{
 		{Name: "source_revision", Value: "integration-revision"}, {Name: "runtime_path", Value: executable}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
-		{Name: "config_path", Value: configSource}, {Name: "config_sha256", Value: digestBytes(configRaw)},
+		{Name: "config_path", Value: configSource}, {Name: "config_sha256", Value: configFingerprint(t, configRaw)},
 	})
 	run(t, repository, "git", "add", ".boatstack/project.json")
 	run(t, repository, "git", "commit", "-q", "-m", "install V2 configuration")
@@ -403,7 +404,7 @@ func TestWorkspaceCutTransfersAuthorityToExactDestinationWorktree(t *testing.T) 
 			t.Fatal(readErr)
 		}
 		return protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{
-			ID: "repository-workspace", Class: catalog.AuthorityRepository, Subject: filepath.Join(path, ".boatstack", "project.json"), Fingerprint: digestBytes(raw),
+			ID: "repository-workspace", Class: catalog.AuthorityRepository, Subject: filepath.Join(path, ".boatstack", "project.json"), Fingerprint: configFingerprint(t, raw),
 			IssuedAt: clock.Now().Add(-time.Minute), ExpiresAt: clock.Now().Add(time.Hour),
 		}}}
 	}
@@ -437,6 +438,16 @@ func TestWorkspaceCutTransfersAuthorityToExactDestinationWorktree(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	destinationConfigPath := filepath.Join(canonicalDestination, ".boatstack", "project.json")
+	destinationConfig, err := os.ReadFile(destinationConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lineEndingVariant := bytes.ReplaceAll(destinationConfig, []byte("\r\n"), []byte("\n"))
+	lineEndingVariant = bytes.ReplaceAll(lineEndingVariant, []byte("\n"), []byte("\r\n"))
+	if err := os.WriteFile(destinationConfigPath, lineEndingVariant, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	destinationObservation, err := observer.Observe(ctx, ports.ObservationRequest{Invocation: destinationInvocation})
 	if err != nil {
 		t.Fatal(err)
@@ -447,6 +458,9 @@ func TestWorkspaceCutTransfersAuthorityToExactDestinationWorktree(t *testing.T) 
 	activated := apply(destinationInvocation, "workspace.activate", repositoryAuthority(canonicalDestination), protocol.Parameters{{Name: "branch", Value: "feature/v2-workspace-transfer"}})
 	if activated.Target.Workspace.Value != model.WorkspaceActive || activated.Target.Invocation.WorktreeID != destinationInvocation.WorktreeID {
 		t.Fatalf("destination activation failed: %#v", activated.Target)
+	}
+	if err := os.WriteFile(destinationConfigPath, configRaw, 0o600); err != nil {
+		t.Fatal(err)
 	}
 	goal = model.Goal{ID: "goal-workspace-abandon", Kind: model.GoalAbandoned, DeliveryID: "delivery-workspace"}
 	apply(destinationInvocation, "goal.configure", human, protocol.Parameters{{Name: "goal_kind", Value: string(goal.Kind)}, {Name: "delivery_id", Value: goal.DeliveryID}})
@@ -481,6 +495,15 @@ func TestWorkspaceCutTransfersAuthorityToExactDestinationWorktree(t *testing.T) 
 func digestBytes(value []byte) string {
 	digest := sha256.Sum256(value)
 	return hex.EncodeToString(digest[:])
+}
+
+func configFingerprint(t *testing.T, value []byte) string {
+	t.Helper()
+	_, fingerprint, err := protocol.ProjectConfigFingerprint(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fingerprint
 }
 
 func commandOutput(t *testing.T, directory, name string, arguments ...string) string {

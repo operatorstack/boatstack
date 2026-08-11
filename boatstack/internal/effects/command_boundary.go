@@ -106,12 +106,12 @@ func (b NativeBoundary) PrepareObservation(ctx context.Context, admission protoc
 		if err != nil {
 			return err
 		}
-		config, err := protocol.DecodeProjectConfig(raw)
+		config, fingerprint, err := protocol.ProjectConfigFingerprint(raw)
 		if err != nil {
 			return err
 		}
 		policy := config.ControlPolicy()
-		state.ConfigFingerprint = sha256Bytes(raw)
+		state.ConfigFingerprint = fingerprint
 		state.PlanApprovalPolicy = policy.PlanApproval
 		state.VisualEvidencePolicy = policy.VisualEvidence
 		state.ExternalEffectPolicy = policy.ExternalEffectAuthority
@@ -171,7 +171,11 @@ func (b NativeBoundary) Execute(ctx context.Context, admission protocol.Admissio
 		if err != nil {
 			return settled, fmt.Errorf("workspace base does not contain the verified V2 configuration: %w", err)
 		}
-		if state.ConfigFingerprint == "" || sha256Bytes(baseConfig) != state.ConfigFingerprint {
+		_, baseFingerprint, fingerprintErr := protocol.ProjectConfigFingerprint(baseConfig)
+		if fingerprintErr != nil {
+			return settled, fmt.Errorf("workspace base configuration is invalid: %w", fingerprintErr)
+		}
+		if state.ConfigFingerprint == "" || baseFingerprint != state.ConfigFingerprint {
 			return settled, fmt.Errorf("workspace base configuration does not match current repository authority")
 		}
 		if output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "git", "check-ref-format", "--branch", branch); err != nil {

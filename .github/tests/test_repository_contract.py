@@ -220,6 +220,14 @@ class RepositoryContract(unittest.TestCase):
         self.assertTrue({"status", "apply", "catalog"}.issubset(seen))
 
     def test_catalog_and_generated_artifacts_match_the_executable_registry(self) -> None:
+        attributes = (REPO / ".gitattributes").read_text().splitlines()
+        for pattern in (
+            "docs/architecture/boatstack-v2-*.md text eol=lf",
+            "docs/architecture/boatstack-v2-*.mmd text eol=lf",
+            "docs/architecture/boatstack-v2-*.json text eol=lf",
+        ):
+            self.assertIn(pattern, attributes)
+
         response = json.loads(self.run_helper("catalog").stdout)
         transitions = response["catalog"]
         self.assertEqual(len(transitions), 61)

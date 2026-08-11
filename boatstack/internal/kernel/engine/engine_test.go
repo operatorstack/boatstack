@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +18,14 @@ import (
 type fixedClock struct{ now time.Time }
 
 func (c fixedClock) Now() time.Time { return c.now }
+
+func fixtureAbsolutePath(parts ...string) string {
+	path, err := filepath.Abs(filepath.Join(parts...))
+	if err != nil {
+		panic(err)
+	}
+	return path
+}
 
 type sequenceObserver struct {
 	mu    sync.Mutex
@@ -121,7 +130,7 @@ func observation(phase model.ProtocolPhase, fingerprint string) model.Observatio
 	configurationEvidence := model.Evidence{Source: "configuration:/repo/.boatstack/project.json", Fingerprint: "config-fingerprint", ObservedAt: time.Unix(20, 0).UTC()}
 	return model.Observation{
 		SchemaVersion: model.SnapshotSchemaVersion,
-		Invocation:    model.InvocationContext{RepositoryID: "repo", GitCommonID: "git", WorktreeID: "wt", Ref: "refs/heads/f", ControllerID: "ctl", InvokingPath: "/repo", RuntimePath: "/runtime", RuntimeFingerprint: "runtime", Topology: model.TopologyEmbedded, Host: "cli", Correlation: "corr"},
+		Invocation:    model.InvocationContext{RepositoryID: "repo", GitCommonID: "git", WorktreeID: "wt", Ref: "refs/heads/f", ControllerID: "ctl", InvokingPath: fixtureAbsolutePath("test-fixture", "repo"), RuntimePath: fixtureAbsolutePath("test-fixture", "runtime"), RuntimeFingerprint: "runtime", Topology: model.TopologyEmbedded, Host: "cli", Correlation: "corr"},
 		Phase:         model.Known(phase, e), Engagement: model.Known(model.EngagementActive, e), Delivery: model.Known(model.DeliveryActive, e), Workspace: model.Known(model.WorkspaceActive, e),
 		Plan: model.Known(model.PlanApproved, e), Configuration: model.Known(model.ConfigurationVerified, configurationEvidence), Runtime: model.Known(model.RuntimeVerified, e),
 		ConfigurationPolicy: model.Known(model.ConfigurationPolicy{PlanApproval: "human", VisualEvidence: "optional", ExternalEffectAuthority: "human-or-autonomy-plus-provider", Hosts: []string{"cli"}}, configurationEvidence),

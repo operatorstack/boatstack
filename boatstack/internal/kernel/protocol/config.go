@@ -2,9 +2,12 @@ package protocol
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 )
@@ -63,6 +66,29 @@ func DecodeProjectConfig(value []byte) (ProjectConfig, error) {
 		return ProjectConfig{}, err
 	}
 	return config, nil
+}
+
+// ProjectConfigFingerprint binds configuration authority to strict schema-2
+// semantics rather than checkout-specific JSON bytes. Formatting, object-key
+// order, line endings, the defaulted external-effect policy, and host ordering
+// therefore cannot make an otherwise identical configuration stale.
+func ProjectConfigFingerprint(value []byte) (ProjectConfig, string, error) {
+	config, err := DecodeProjectConfig(value)
+	if err != nil {
+		return ProjectConfig{}, "", err
+	}
+	canonical := config
+	canonical.Hosts = append([]string(nil), config.Hosts...)
+	sort.Strings(canonical.Hosts)
+	if canonical.Policy.ExternalEffectAuthority == "" {
+		canonical.Policy.ExternalEffectAuthority = "human-or-autonomy-plus-provider"
+	}
+	encoded, err := json.Marshal(canonical)
+	if err != nil {
+		return ProjectConfig{}, "", fmt.Errorf("encode canonical V2 project configuration: %w", err)
+	}
+	digest := sha256.Sum256(encoded)
+	return config, hex.EncodeToString(digest[:]), nil
 }
 
 func (c ProjectConfig) Validate() error {

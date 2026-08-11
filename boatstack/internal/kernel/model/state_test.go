@@ -1,9 +1,18 @@
 package model
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 )
+
+func testAbsolutePath(parts ...string) string {
+	path, err := filepath.Abs(filepath.Join(parts...))
+	if err != nil {
+		panic(err)
+	}
+	return path
+}
 
 func testEvidence() Evidence {
 	return Evidence{Source: "fixture", Fingerprint: "sha256:fixture", Revision: "deadbeef", ObservedAt: time.Unix(100, 0).UTC()}
@@ -15,7 +24,7 @@ func testObservation(phase ProtocolPhase) Observation {
 		SchemaVersion: SnapshotSchemaVersion,
 		Invocation: InvocationContext{
 			RepositoryID: "repo-1", GitCommonID: "git-1", WorktreeID: "worktree-1", Ref: "refs/heads/feature",
-			ControllerID: "controller-1", InvokingPath: "/repo", RuntimePath: "/runtime/boatstack", RuntimeFingerprint: "runtime-fingerprint",
+			ControllerID: "controller-1", InvokingPath: testAbsolutePath("test-fixture", "repo"), RuntimePath: testAbsolutePath("test-fixture", "runtime", "boatstack"), RuntimeFingerprint: "runtime-fingerprint",
 			Topology: TopologyEmbedded, Host: "cli", Correlation: "corr-1",
 		},
 		Phase: Known(phase, evidence), Engagement: Known(EngagementActive, evidence), Delivery: Known(DeliveryActive, evidence),

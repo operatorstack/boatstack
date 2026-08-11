@@ -56,10 +56,13 @@ is screened by the same constitutional guard first, and its output is never
 persisted. Gate authority also requires a strict revision-bound passed-evidence
 document; an arbitrary fingerprint string is insufficient.
 
-To change configuration, write a candidate file elsewhere, hash it, then request
-`configuration.mutate`. The kernel copies the exact bytes, installs state last,
-re-observes the tracked file, and accepts success only if its fingerprint remains
-current.
+To change configuration, write a candidate file elsewhere, then request
+`configuration.mutate`. The CLI derives `config_sha256` from the strict decoded
+schema-2 value in canonical JSON form. Formatting, object-key order, and LF/CRLF
+checkout conversion therefore retain the same authority, while any controlling
+value change produces a new fingerprint. The kernel still copies the exact
+candidate bytes, installs state last, re-observes the tracked file, and accepts
+success only if its semantic fingerprint remains current.
 
 ## Configuration authority and topology
 

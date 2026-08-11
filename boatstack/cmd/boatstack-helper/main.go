@@ -291,7 +291,11 @@ func populateInitParameters(options *commandOptions) error {
 		return err
 	}
 	if _, ok := parameters.Get("config_sha256"); !ok {
-		options.parameters = append(options.parameters, "config_sha256="+hash(configRaw))
+		_, fingerprint, fingerprintErr := protocol.ProjectConfigFingerprint(configRaw)
+		if fingerprintErr != nil {
+			return fingerprintErr
+		}
+		options.parameters = append(options.parameters, "config_sha256="+fingerprint)
 	}
 	if options.humanActor == "" {
 		return fmt.Errorf("init requires explicit --human <actor>")

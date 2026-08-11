@@ -102,12 +102,12 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		if readErr != nil {
 			return nil, fmt.Errorf("read configuration source: %w", readErr)
 		}
-		if actual := sha256Bytes(raw); actual != expected {
-			return nil, fmt.Errorf("configuration fingerprint mismatch: got %s", actual)
-		}
-		config, decodeErr := protocol.DecodeProjectConfig(raw)
+		config, actual, decodeErr := protocol.ProjectConfigFingerprint(raw)
 		if decodeErr != nil {
 			return nil, decodeErr
+		}
+		if actual != expected {
+			return nil, fmt.Errorf("configuration fingerprint mismatch: got %s", actual)
 		}
 		mutation, mutationErr := mutationFor(layout.ConfigPath, raw, 0o644, false, false)
 		if mutationErr != nil {
