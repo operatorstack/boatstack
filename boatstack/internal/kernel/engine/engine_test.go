@@ -1,0 +1,317 @@
+package engine
+
+import (
+	"context"
+	"errors"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
+)
+
+type fixedClock struct{ now time.Time }
+
+func (c fixedClock) Now() time.Time { return c.now }
+
+func fixtureAbsolutePath(parts ...string) string {
+	path, err := filepath.Abs(filepath.Join(parts...))
+	if err != nil {
+		panic(err)
+	}
+	return path
+}
+
+type sequenceObserver struct {
+	mu    sync.Mutex
+	items []model.Observation
+}
+
+func (o *sequenceObserver) Observe(context.Context, ports.ObservationRequest) (model.Observation, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if len(o.items) == 0 {
+		return model.Observation{}, errors.New("unexpected observation")
+	}
+	item := o.items[0]
+	o.items = o.items[1:]
+	return item, nil
+}
+
+type fakeLock struct{ released bool }
+
+func (l *fakeLock) Release() error { l.released = true; return nil }
+
+type fakeLocker struct{ lock *fakeLock }
+
+func (l fakeLocker) Acquire(context.Context, model.InvocationContext, []string) (ports.Lock, error) {
+	return l.lock, nil
+}
+
+type fakeJournal struct {
+	begun, committed, aborted, recovery int
+	failMark                            string
+}
+
+func (j *fakeJournal) Begin(context.Context, protocol.Admission, catalog.Transition) error {
+	j.begun++
+	return nil
+}
+func (j *fakeJournal) Stage(context.Context, string, []ports.ResourceMutation) error { return nil }
+func (j *fakeJournal) Mark(_ context.Context, _ string, status string) error {
+	if status == j.failMark {
+		return errors.New("injected journal mark failure")
+	}
+	return nil
+}
+func (j *fakeJournal) Commit(context.Context, protocol.TransitionReceipt) error {
+	j.committed++
+	return nil
+}
+func (j *fakeJournal) Abort(context.Context, string, string) error { j.aborted++; return nil }
+func (j *fakeJournal) RequireRecovery(context.Context, string, string) error {
+	j.recovery++
+	return nil
+}
+
+type fakeEffects struct {
+	executions, rollbacks int
+	result                ports.EffectResult
+}
+
+func (e *fakeEffects) Prepare(context.Context, protocol.Admission, catalog.Transition) (ports.PreparedEffect, error) {
+	return e, nil
+}
+func (e *fakeEffects) Manifest() []ports.ResourceMutation { return nil }
+func (e *fakeEffects) VerificationInvocation() (model.InvocationContext, bool) {
+	return model.InvocationContext{}, false
+}
+func (e *fakeEffects) Execute(context.Context) (ports.EffectResult, error) {
+	e.executions++
+	return e.result, nil
+}
+func (e *fakeEffects) Rollback(context.Context) error {
+	e.rollbacks++
+	return nil
+}
+
+type memoryReceipts struct {
+	next   uint64
+	values []protocol.TransitionReceipt
+}
+
+func (s *memoryReceipts) Bind(context.Context, string, protocol.Admission) error { return nil }
+func (s *memoryReceipts) Unbind(string)                                          {}
+
+func (s *memoryReceipts) NextSequence(context.Context, string) (uint64, error) {
+	s.next++
+	return s.next, nil
+}
+func (s *memoryReceipts) FindByIdempotency(_ context.Context, _ model.InvocationContext, key string) (protocol.TransitionReceipt, bool, error) {
+	for _, receipt := range s.values {
+		if receipt.IdempotencyKey == key {
+			return receipt, true, nil
+		}
+	}
+	return protocol.TransitionReceipt{}, false, nil
+}
+func (s *memoryReceipts) Append(_ context.Context, receipt protocol.TransitionReceipt) error {
+	s.values = append(s.values, receipt)
+	return nil
+}
+
+func observation(phase model.ProtocolPhase, fingerprint string) model.Observation {
+	e := model.Evidence{Source: "fixture", Fingerprint: fingerprint, ObservedAt: time.Unix(20, 0).UTC()}
+	configurationEvidence := model.Evidence{Source: "configuration:/repo/.boatstack/project.json", Fingerprint: "config-fingerprint", ObservedAt: time.Unix(20, 0).UTC()}
+	return model.Observation{
+		SchemaVersion: model.SnapshotSchemaVersion,
+		Invocation:    model.InvocationContext{RepositoryID: "repo", GitCommonID: "git", WorktreeID: "wt", Ref: "refs/heads/f", ControllerID: "ctl", InvokingPath: fixtureAbsolutePath("test-fixture", "repo"), RuntimePath: fixtureAbsolutePath("test-fixture", "runtime"), RuntimeFingerprint: "runtime", Topology: model.TopologyEmbedded, Host: "cli", Correlation: "corr"},
+		Phase:         model.Known(phase, e), Engagement: model.Known(model.EngagementActive, e), Delivery: model.Known(model.DeliveryActive, e), Workspace: model.Known(model.WorkspaceActive, e),
+		Plan: model.Known(model.PlanApproved, e), Configuration: model.Known(model.ConfigurationVerified, configurationEvidence), Runtime: model.Known(model.RuntimeVerified, e),
+		ConfigurationPolicy: model.Known(model.ConfigurationPolicy{PlanApproval: "human", VisualEvidence: "optional", ExternalEffectAuthority: "human-or-autonomy-plus-provider", Hosts: []string{"cli"}}, configurationEvidence),
+		Publication:         model.Known(model.PublicationNone, e), Verification: model.Known(model.VerificationUnverified, e), Recovery: model.Known(model.RecoveryNone, e),
+		Transaction: model.Known(model.TransactionNone, e), RecoveryInfo: model.Absent[model.RecoveryContext]("none", e), TransactionInfo: model.Absent[model.TransactionContext]("none", e),
+		Terminal: model.Known(model.TerminalNonterminal, e), Goal: model.Known(model.Goal{ID: "goal", Kind: model.GoalVerified, DeliveryID: "delivery"}, e), ObservedAt: time.Unix(20, 0).UTC(),
+	}
+}
+
+func recoveryObservation(fingerprint string) model.Observation {
+	value := observation(model.PhaseRecovery, fingerprint)
+	evidence := value.Phase.Evidence[0]
+	value.Recovery = model.Known(model.RecoveryReconcile, evidence)
+	value.Transaction = model.Known(model.TransactionLocalApplied, evidence)
+	value.RecoveryInfo = model.Known(model.RecoveryContext{
+		TransactionID: "adm-pending", Cause: "receipt commit interrupted", SourcePhase: model.PhaseObserved,
+		Permitted: []string{"recovery.escalate"}, BudgetRemaining: 1, Resumption: model.PhaseObserved,
+	}, evidence)
+	value.TransactionInfo = model.Known(model.TransactionContext{ID: "adm-pending", TransitionID: "test.advance", Status: "recovery-required"}, evidence)
+	value.Terminal = model.Known(model.TerminalStale, evidence)
+	return value
+}
+
+func testRegistry(t *testing.T) catalog.Registry {
+	t.Helper()
+	identity := []string{"repository-id", "git-common-id", "worktree-id"}
+	interruption := func(recovery catalog.TransitionID) catalog.InterruptionContract {
+		return catalog.InterruptionContract{
+			Points: []string{"after-effect"}, PartialState: []string{"effect-possibly-installed"}, Detection: "test-observation",
+			ResumeContract: "test-resume", RollbackContract: "test-rollback", CompensationContract: "not-required",
+			Recovery: recovery, RecoveryAuthority: "test-authority", ResumptionPredicate: "test-resumption",
+		}
+	}
+	r, err := catalog.New([]catalog.Transition{{
+		ID: "test.advance", Version: 1, Class: catalog.EventOwnedLocal,
+		SourcePhases: []model.ProtocolPhase{model.PhaseObserved}, TargetPhases: []model.ProtocolPhase{model.PhaseActive},
+		RequiredIdentity: identity, Authority: []catalog.AuthorityClass{catalog.AuthorityRepository}, RequiredEvidence: []string{"snapshot"}, OwnedResources: []string{"state"}, Effect: "test.advance", LocalEffects: []catalog.EffectID{"test.advance"}, Idempotent: true,
+		Prescription: catalog.Prescription{Operation: "test.advance", ExpectedPostcondition: "active"}, SourcePredicate: "observed", AdmissionPredicate: "exact-admission", TargetPredicate: "active", Verifier: "fresh-active",
+		SourceConditions: []catalog.FacetCondition{{Facet: model.FacetEngagement, Statuses: []model.FactStatus{model.FactKnown}, Values: []string{string(model.EngagementActive)}}},
+		TargetConditions: []catalog.FacetCondition{{Facet: model.FacetEngagement, Statuses: []model.FactStatus{model.FactKnown}, Values: []string{string(model.EngagementActive)}}},
+		Interruption:     interruption("test.recover"), Reversibility: catalog.Reversible, TerminalEffect: "none",
+		PrivacyClassification: "metadata-only", TelemetryClassification: "transition-receipt", CostClass: "test", Priority: 1,
+	}, {
+		ID: "test.recover", Version: 1, Class: catalog.EventRecovery,
+		SourcePhases: []model.ProtocolPhase{model.PhaseRecovery}, TargetPhases: []model.ProtocolPhase{model.PhaseFrontier},
+		RequiredIdentity: identity, Authority: []catalog.AuthorityClass{catalog.AuthorityRepository}, RequiredEvidence: []string{"snapshot"}, OwnedResources: []string{"state"}, Effect: "test.recover", LocalEffects: []catalog.EffectID{"test.recover"}, Idempotent: true,
+		Prescription: catalog.Prescription{Operation: "test.recover", ExpectedPostcondition: "frontier"}, SourcePredicate: "recovery", AdmissionPredicate: "exact-recovery-admission", TargetPredicate: "frontier", Verifier: "fresh-frontier",
+		SourceConditions: []catalog.FacetCondition{{Facet: model.FacetRecovery, Statuses: []model.FactStatus{model.FactKnown}, Values: []string{string(model.RecoveryReconcile)}}},
+		TargetConditions: []catalog.FacetCondition{{Facet: model.FacetRecovery, Statuses: []model.FactStatus{model.FactKnown}, Values: []string{string(model.RecoveryEscalated)}}},
+		Interruption:     interruption("test.recover"), Reversibility: catalog.Reversible, TerminalEffect: "none",
+		PrivacyClassification: "metadata-only", TelemetryClassification: "transition-receipt", CostClass: "test", Priority: 2,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+func request(now time.Time) ApplyRequest {
+	invocation := observation(model.PhaseObserved, "source").Invocation
+	return ApplyRequest{ResolveRequest: ResolveRequest{
+		Invocation: invocation, Goal: model.Goal{ID: "goal", Kind: model.GoalVerified, DeliveryID: "delivery"}, Requested: "test.advance",
+		Authority: protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{ID: "auth", Class: catalog.AuthorityRepository, Subject: "repo", Fingerprint: "config-fingerprint", IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)}}},
+	}, FlowID: "flow", AdmissionLifetime: time.Minute}
+}
+
+func TestApplyCrossesAdmissionEffectVerificationAndReceiptBoundary(t *testing.T) {
+	// control-law: managed-effect-requires-exact-admission-and-postcondition
+	now := time.Unix(30, 0).UTC()
+	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source"), observation(model.PhaseActive, "target"), observation(model.PhaseActive, "target")}}
+	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{result: ports.EffectResult{Settlement: ports.EffectSettled}}, &memoryReceipts{}, &fakeLock{}
+	kernel, err := New(testRegistry(t), observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := kernel.Apply(context.Background(), request(now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if effects.executions != 1 || effects.rollbacks != 0 || journal.committed != 1 || journal.aborted != 0 || len(receipts.values) != 1 || result.Receipt.ID == "" || !lock.released {
+		t.Fatalf("unexpected boundary evidence: effects=%+v journal=%+v receipts=%d receipt=%q released=%v", effects, journal, len(receipts.values), result.Receipt.ID, lock.released)
+	}
+	retry := request(now)
+	retry.IdempotencyKey = result.Admission.IdempotencyKey
+	replayed, err := kernel.Apply(context.Background(), retry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !replayed.Replayed || replayed.Receipt.ID != result.Receipt.ID || effects.executions != 1 || journal.begun != 1 {
+		t.Fatalf("idempotent replay crossed effect boundary: replay=%+v effects=%d journals=%d", replayed, effects.executions, journal.begun)
+	}
+}
+
+func TestIdempotencyReceiptCannotHideUncommittedRecoveryJournal(t *testing.T) {
+	// control-law: receipt-before-journal-commit-is-not-a-clean-replay
+	now := time.Unix(30, 0).UTC()
+	observer := &sequenceObserver{items: []model.Observation{
+		observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source"), observation(model.PhaseActive, "target"),
+		recoveryObservation("recovery"),
+	}}
+	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{result: ports.EffectResult{Settlement: ports.EffectSettled}}, &memoryReceipts{}, &fakeLock{}
+	kernel, err := New(testRegistry(t), observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	completed, err := kernel.Apply(context.Background(), request(now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	retry := request(now)
+	retry.IdempotencyKey = completed.Admission.IdempotencyKey
+	_, err = kernel.Apply(context.Background(), retry)
+	var recovery ReplayRecoveryError
+	if !errors.As(err, &recovery) {
+		t.Fatalf("replay error=%v, want ReplayRecoveryError", err)
+	}
+	if effects.executions != 1 {
+		t.Fatalf("recovery replay executed effect %d times", effects.executions)
+	}
+}
+
+func TestApplyRejectsSnapshotDriftBeforeEffect(t *testing.T) {
+	// control-law: stale-prescription-fails-before-mutation
+	now := time.Unix(30, 0).UTC()
+	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "drifted")}}
+	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{}, &memoryReceipts{}, &fakeLock{}
+	kernel, _ := New(testRegistry(t), observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
+	_, err := kernel.Apply(context.Background(), request(now))
+	var stale StaleAdmissionError
+	if !errors.As(err, &stale) {
+		t.Fatalf("error = %v, want StaleAdmissionError", err)
+	}
+	if effects.executions != 0 || journal.aborted != 0 || journal.begun != 0 {
+		t.Fatalf("effect executions=%d aborted=%d", effects.executions, journal.aborted)
+	}
+}
+
+func TestApplyRollsBackFailedPostconditionAndDoesNotReceipt(t *testing.T) {
+	// control-law: successful-effect-call-is-not-transition-success
+	now := time.Unix(30, 0).UTC()
+	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "unchanged")}}
+	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{result: ports.EffectResult{Settlement: ports.EffectSettled}}, &memoryReceipts{}, &fakeLock{}
+	kernel, _ := New(testRegistry(t), observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
+	_, err := kernel.Apply(context.Background(), request(now))
+	var postcondition PostconditionError
+	if !errors.As(err, &postcondition) {
+		t.Fatalf("error = %v, want PostconditionError", err)
+	}
+	if effects.executions != 1 || effects.rollbacks != 1 || len(receipts.values) != 0 || journal.aborted != 1 {
+		t.Fatalf("effects=%+v receipts=%d journal=%+v", effects, len(receipts.values), journal)
+	}
+}
+
+func TestApplyRequiresRecoveryWhenJournalFailsAfterEffect(t *testing.T) {
+	// control-law: post-effect-journal-failure-cannot-be-collapsed-to-abort
+	now := time.Unix(30, 0).UTC()
+	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source")}}
+	journal := &fakeJournal{failMark: "verifying"}
+	effects, receipts, lock := &fakeEffects{result: ports.EffectResult{Settlement: ports.EffectSettled}}, &memoryReceipts{}, &fakeLock{}
+	kernel, _ := New(testRegistry(t), observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
+	_, err := kernel.Apply(context.Background(), request(now))
+	if err == nil || !strings.Contains(err.Error(), "injected journal mark failure") {
+		t.Fatalf("error=%v, want injected post-effect journal failure", err)
+	}
+	if effects.executions != 1 || effects.rollbacks != 0 || journal.recovery != 1 || journal.aborted != 0 || len(receipts.values) != 0 {
+		t.Fatalf("post-effect journal failure was not preserved: effects=%+v journal=%+v receipts=%d", effects, journal, len(receipts.values))
+	}
+}
+
+func TestApplyPreservesUnknownExternalOutcomeForReconciliation(t *testing.T) {
+	// control-law: unknown-external-outcome-is-never-retried-or-collapsed-to-false
+	now := time.Unix(30, 0).UTC()
+	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "unchanged")}}
+	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{result: ports.EffectResult{Settlement: ports.EffectUnknown}}, &memoryReceipts{}, &fakeLock{}
+	kernel, _ := New(testRegistry(t), observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
+	_, err := kernel.Apply(context.Background(), request(now))
+	var unknown ExternalOutcomeUnknownError
+	if !errors.As(err, &unknown) {
+		t.Fatalf("error=%v, want ExternalOutcomeUnknownError", err)
+	}
+	if effects.executions != 1 || effects.rollbacks != 0 || journal.recovery != 1 || len(receipts.values) != 0 {
+		t.Fatalf("external uncertainty was not preserved: effects=%+v journal=%+v receipts=%d", effects, journal, len(receipts.values))
+	}
+}

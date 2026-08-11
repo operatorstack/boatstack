@@ -1,31 +1,47 @@
-# Irreversible-operation safety
-
-Boatstack leaves implementation open while removing high-confidence irreversible side effects from the coding agent's reachable action space.
-
-## What is always denied
-
-- database/schema drop, truncate, reset, flush, destructive downgrade, clean restore, and unbounded delete/update;
-- broad recursive deletion of repository, home, root, parent, or wildcard targets;
-- destructive Git cleanup, hard reset, and forced remote-history replacement;
-- cloud, project, database, cluster, namespace, or volume destruction;
-- disabling recovery or deleting backups and snapshots.
-
-There is no break-glass token or approval phrase. Intentional destructive recovery is performed by a human through a separately controlled operator surface outside Boatstack.
-
-## What happens after a failed external write
-
-Boatstack preserves the partial state, allows bounded read-only diagnosis, and blocks authority or target broadening. A retry must be proven transactional and retry-safe; otherwise the plan fixes forward. Planning and evidence identify the immutable target, affected paths, reversibility, failure policy, and an independent safety oracle.
-
-Source may describe dangerous behavior for review. That is not execution permission: invoking such a repository script is denied, and an operational diff containing the capability blocks later gates until it is removed or transferred to the operator boundary.
-
-## How installation enforces it
-
-The installer merges only Boatstack-owned fragments into the repository's Cursor, Claude, and Codex hook configuration and preserves unrelated settings. Portable Bash and PowerShell launchers call the verified repository-local helper. Missing helpers, malformed events, drift, and ambiguous hook collisions fail closed. `doctor` checks fragment integrity, launchers, helper version, and safe/deny smoke behavior.
-
-Host trust or enablement may not be machine-inspectable. Hooks are therefore defense in depth rather than a complete sandbox. [Codex documents incomplete interception for some shell paths](https://learn.chatgpt.com/docs/hooks), [Claude notes that command hooks run with the user's full permissions](https://code.claude.com/docs/en/hooks), and Cursor's pre-shell/pre-MCP hooks still depend on the host loading the project configuration. Protected systems still need least-privilege credentials, scoped service roles, backups, and service-side approval for destructive administration.
-
-Managed-run preflight names that boundary. `HOOK_GUARDED` means Boatstack blocks recognized unsafe operations but does not prove ambient cloud authority absent. `CREDENTIAL_ENFORCED` requires a short-lived repository-only receipt signed by a configured external service-IAM, credential-broker, or isolated-host attestor. Boatstack verifies the receipt and never holds an attestor signing key.
+# Boatstack V2 safety
 
 ## Evidence status
 
-This is a **PROPOSED** Move, not a claim of experimental proof. Existing benchmark results support deterministic enforcement over stronger prompting, and a sanitized partial-schema incident establishes the target failure mechanism. Promotion requires paired evaluation against the unguarded baseline: zero destructive executions, safe diagnostics and transactional operations retained, bounded latency, no secret-bearing denial logs, and no existing-workflow regression.
+Known, absent, unknown, stale, ambiguous, and conflicting are separate fact
+states. Missing or uncertain evidence never grants permission to delete,
+publish, overwrite, approve, or advance.
+
+## Exact admission
+
+Each managed effect binds the snapshot fingerprint, invocation, goal,
+transition, parameters, authority receipts, configuration evidence, and expiry.
+The engine re-observes under the effect lock. Drift rejects the admission before
+mutation.
+
+## Transaction boundary
+
+Local writes stage exact prior and target bytes. The authoritative state installs
+last. A fresh observation must satisfy the transition's executable target
+predicate before a receipt is committed. Failure restores prior bytes when
+reversible or exposes a typed recovery transaction after restart.
+
+External effects use preview, authority, execute, observe, and reconcile.
+Unknown settlement is preserved as unknown and is never blindly retried.
+
+## Hook guard
+
+Every host submits raw command text to the same `guard` query. One classifier
+reduces it to an allowlisted intent fingerprint; raw text is not recorded.
+
+- high-confidence destructive commands are denied;
+- direct push, PR mutation, and worktree removal are routed to their registered
+  transition while Boatstack is engaged;
+- ordinary repository commands remain allowed;
+- non-destructive direct work remains inert when Boatstack is dormant.
+
+The guard is defense in depth, not a sandbox. Keep least-privilege credentials
+and provider-side protections.
+
+## Cleanup and merge
+
+Git ancestry does not prove publication. Cleanup needs durable merged evidence
+and a landed workspace, or explicit abandonment. It validates the preserved
+source checkout before deleting the destination and verifies the resulting
+terminal from that source.
+
+Boatstack never grants merge authority.

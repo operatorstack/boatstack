@@ -1,0 +1,1266 @@
+{
+  "schema_version": 1,
+  "fixture_count": 22,
+  "fixtures": [
+    {
+      "name": "stale-worktree-runtime-selection",
+      "initial_plant_facts": {
+        "phase": "OBSERVED",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "active",
+        "workspace": "active",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "wrong-source",
+        "publication": "none",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature",
+        "evidence_source": "historical:stale-worktree-runtime-selection"
+      },
+      "canonical_observation": {
+        "phase": "OBSERVED",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "active",
+        "workspace": "active",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "wrong-source",
+        "publication": "none",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature"
+      },
+      "requested_goal": {
+        "id": "goal-stale-worktree-runtime-selection",
+        "kind": "verified-implementation",
+        "delivery_id": "delivery-stale-worktree-runtime-selection"
+      },
+      "event": "runtime.hydrate",
+      "authority": [
+        "repository-policy"
+      ],
+      "expected_decision": "PRESCRIBED",
+      "expected_admitted_transition": "runtime.hydrate",
+      "expected_postcondition": {
+        "runtime": "verified"
+      },
+      "forbidden_transition": "publication.execute",
+      "source_provenance": [
+        "PR #172"
+      ],
+      "failure_class": "stale runtime selection"
+    },
+    {
+      "name": "detached-bootstrap-hydration",
+      "initial_plant_facts": {
+        "phase": "OBSERVED",
+        "topology": "detached",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "uninitialized",
+        "workspace": "absent",
+        "plan": "absent",
+        "configuration": "verified",
+        "runtime": "absent",
+        "publication": "none",
+        "verification": "unverified",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature",
+        "evidence_source": "historical:detached-bootstrap-hydration"
+      },
+      "canonical_observation": {
+        "phase": "OBSERVED",
+        "topology": "detached",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "uninitialized",
+        "workspace": "absent",
+        "plan": "absent",
+        "configuration": "verified",
+        "runtime": "absent",
+        "publication": "none",
+        "verification": "unverified",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature"
+      },
+      "requested_goal": {
+        "id": "goal-detached-bootstrap-hydration",
+        "kind": "approved-plan",
+        "delivery_id": "delivery-detached-bootstrap-hydration"
+      },
+      "event": "runtime.hydrate",
+      "authority": [
+        "repository-policy"
+      ],
+      "expected_decision": "PRESCRIBED",
+      "expected_admitted_transition": "runtime.hydrate",
+      "expected_postcondition": {
+        "runtime": "verified"
+      },
+      "forbidden_transition": "plan.activate",
+      "source_provenance": [
+        "PR #173"
+      ],
+      "failure_class": "missing recovery coreachability"
+    },
+    {
+      "name": "workspace-transition-deadlock",
+      "initial_plant_facts": {
+        "phase": "ACTIVE",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "active",
+        "workspace": "attention-required",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature",
+        "evidence_source": "historical:workspace-transition-deadlock"
+      },
+      "canonical_observation": {
+        "phase": "ACTIVE",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "active",
+        "workspace": "attention-required",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature"
+      },
+      "requested_goal": {
+        "id": "goal-workspace-transition-deadlock",
+        "kind": "safely-abandoned",
+        "delivery_id": "delivery-workspace-transition-deadlock"
+      },
+      "event": "workspace.abandon",
+      "authority": [
+        "human"
+      ],
+      "expected_decision": "PRESCRIBED",
+      "expected_admitted_transition": "workspace.abandon",
+      "expected_postcondition": {
+        "workspace": "abandoned"
+      },
+      "forbidden_transition": "workspace.cleanup",
+      "source_provenance": [
+        "PR #174"
+      ],
+      "failure_class": "workspace lifecycle deadlock"
+    },
+    {
+      "name": "cleanup-before-publication",
+      "initial_plant_facts": {
+        "phase": "ACTIVE",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "gates-passed",
+        "workspace": "active",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature",
+        "evidence_source": "historical:cleanup-before-publication"
+      },
+      "canonical_observation": {
+        "phase": "ACTIVE",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "gates-passed",
+        "workspace": "active",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature"
+      },
+      "requested_goal": {
+        "id": "goal-cleanup-before-publication",
+        "kind": "open-or-updated-pr",
+        "delivery_id": "delivery-cleanup-before-publication"
+      },
+      "event": "workspace.cleanup",
+      "authority": [
+        "human"
+      ],
+      "expected_decision": "REFUSED",
+      "expected_admitted_transition": "",
+      "expected_postcondition": {
+        "preserves": "workspace"
+      },
+      "forbidden_transition": "workspace.cleanup",
+      "source_provenance": [
+        "PR #175",
+        "PR #176"
+      ],
+      "failure_class": "cleanup treated as completion"
+    },
+    {
+      "name": "saved-plan-ambient-restriction",
+      "initial_plant_facts": {
+        "phase": "OBSERVED",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "dormant",
+        "delivery": "approved",
+        "workspace": "absent",
+        "plan": "approved",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "unverified",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature",
+        "evidence_source": "historical:saved-plan-ambient-restriction"
+      },
+      "canonical_observation": {
+        "phase": "OBSERVED",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "dormant",
+        "delivery": "approved",
+        "workspace": "absent",
+        "plan": "approved",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "unverified",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature"
+      },
+      "requested_goal": {
+        "id": "goal-saved-plan-ambient-restriction",
+        "kind": "verified-implementation",
+        "delivery_id": "delivery-saved-plan-ambient-restriction"
+      },
+      "event": "plan.activate",
+      "authority": [
+        "human"
+      ],
+      "expected_decision": "REFUSED",
+      "expected_admitted_transition": "",
+      "expected_postcondition": {
+        "engagement": "dormant"
+      },
+      "forbidden_transition": "plan.activate",
+      "source_provenance": [
+        "PR #177"
+      ],
+      "failure_class": "ambient engagement leakage"
+    },
+    {
+      "name": "detached-command-admission-mismatch",
+      "initial_plant_facts": {
+        "phase": "OBSERVED",
+        "topology": "detached",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "planning",
+        "workspace": "absent",
+        "plan": "draft",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "unverified",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature",
+        "evidence_source": "historical:detached-command-admission-mismatch"
+      },
+      "canonical_observation": {
+        "phase": "OBSERVED",
+        "topology": "detached",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "planning",
+        "workspace": "absent",
+        "plan": "draft",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "unverified",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature"
+      },
+      "requested_goal": {
+        "id": "goal-detached-command-admission-mismatch",
+        "kind": "approved-plan",
+        "delivery_id": "delivery-detached-command-admission-mismatch"
+      },
+      "event": "plan.validate",
+      "authority": [
+        "repository-policy"
+      ],
+      "expected_decision": "PRESCRIBED",
+      "expected_admitted_transition": "plan.validate",
+      "expected_postcondition": {
+        "plan": "valid"
+      },
+      "forbidden_transition": "plan.activate",
+      "source_provenance": [
+        "PR #178"
+      ],
+      "failure_class": "host and native controller disagreement"
+    },
+    {
+      "name": "split-bootstrap-command-authority",
+      "initial_plant_facts": {
+        "phase": "OBSERVED",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "uninitialized",
+        "workspace": "absent",
+        "plan": "absent",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "unverified",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature",
+        "evidence_source": "historical:split-bootstrap-command-authority"
+      },
+      "canonical_observation": {
+        "phase": "OBSERVED",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "uninitialized",
+        "workspace": "absent",
+        "plan": "absent",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "unverified",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature"
+      },
+      "requested_goal": {
+        "id": "goal-split-bootstrap-command-authority",
+        "kind": "approved-plan",
+        "delivery_id": "delivery-split-bootstrap-command-authority"
+      },
+      "event": "plan.create",
+      "authority": [
+        "human"
+      ],
+      "expected_decision": "PRESCRIBED",
+      "expected_admitted_transition": "plan.create",
+      "expected_postcondition": {
+        "plan": "draft"
+      },
+      "forbidden_transition": "plan.activate",
+      "source_provenance": [
+        "PR #179"
+      ],
+      "failure_class": "split transition authority"
+    },
+    {
+      "name": "configuration-projection-drift",
+      "initial_plant_facts": {
+        "phase": "OBSERVED",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "active",
+        "workspace": "active",
+        "plan": "locked",
+        "configuration": "divergent",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature",
+        "evidence_source": "historical:configuration-projection-drift"
+      },
+      "canonical_observation": {
+        "phase": "OBSERVED",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "active",
+        "workspace": "active",
+        "plan": "locked",
+        "configuration": "divergent",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature"
+      },
+      "requested_goal": {
+        "id": "goal-configuration-projection-drift",
+        "kind": "verified-implementation",
+        "delivery_id": "delivery-configuration-projection-drift"
+      },
+      "event": "configuration.mutate",
+      "authority": [
+        "human"
+      ],
+      "expected_decision": "PRESCRIBED",
+      "expected_admitted_transition": "configuration.mutate",
+      "expected_postcondition": {
+        "configuration": "verified"
+      },
+      "forbidden_transition": "publication.execute",
+      "source_provenance": [
+        "PR #180"
+      ],
+      "failure_class": "configuration projection ownership"
+    },
+    {
+      "name": "partial-delivery-vs-merged-projection",
+      "initial_plant_facts": {
+        "phase": "ACTIVE",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "active",
+        "workspace": "active",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "merged",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature",
+        "evidence_source": "historical:partial-delivery-vs-merged-projection"
+      },
+      "canonical_observation": {
+        "phase": "ACTIVE",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "active",
+        "workspace": "active",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "merged",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature"
+      },
+      "requested_goal": {
+        "id": "goal-partial-delivery-vs-merged-projection",
+        "kind": "merged-delivery",
+        "delivery_id": "delivery-partial-delivery-vs-merged-projection"
+      },
+      "event": "workspace.cleanup",
+      "authority": [
+        "human"
+      ],
+      "expected_decision": "REFUSED",
+      "expected_admitted_transition": "",
+      "expected_postcondition": {
+        "workspace": "active"
+      },
+      "forbidden_transition": "workspace.cleanup",
+      "source_provenance": [
+        "PR #181",
+        "PR #185"
+      ],
+      "failure_class": "control-insufficient state projection"
+    },
+    {
+      "name": "dormant-repository-interference",
+      "initial_plant_facts": {
+        "phase": "OBSERVED",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "dormant",
+        "delivery": "uninitialized",
+        "workspace": "absent",
+        "plan": "absent",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "unverified",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature",
+        "evidence_source": "historical:dormant-repository-interference"
+      },
+      "canonical_observation": {
+        "phase": "OBSERVED",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "dormant",
+        "delivery": "uninitialized",
+        "workspace": "absent",
+        "plan": "absent",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "unverified",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature"
+      },
+      "requested_goal": {
+        "id": "goal-dormant-repository-interference",
+        "kind": "approved-plan",
+        "delivery_id": "delivery-dormant-repository-interference"
+      },
+      "event": "plan.create",
+      "authority": [
+        "human"
+      ],
+      "expected_decision": "REFUSED",
+      "expected_admitted_transition": "",
+      "expected_postcondition": {
+        "engagement": "dormant"
+      },
+      "forbidden_transition": "plan.create",
+      "source_provenance": [
+        "PR #182"
+      ],
+      "failure_class": "ambient engagement leakage"
+    },
+    {
+      "name": "configuration-mutation-self-invalidation",
+      "initial_plant_facts": {
+        "phase": "OBSERVED",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "active",
+        "workspace": "active",
+        "plan": "locked",
+        "configuration": "stale",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature",
+        "evidence_source": "historical:configuration-mutation-self-invalidation"
+      },
+      "canonical_observation": {
+        "phase": "OBSERVED",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "active",
+        "workspace": "active",
+        "plan": "locked",
+        "configuration": "stale",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature"
+      },
+      "requested_goal": {
+        "id": "goal-configuration-mutation-self-invalidation",
+        "kind": "verified-implementation",
+        "delivery_id": "delivery-configuration-mutation-self-invalidation"
+      },
+      "event": "configuration.mutate",
+      "authority": [
+        "human"
+      ],
+      "expected_decision": "PRESCRIBED",
+      "expected_admitted_transition": "configuration.mutate",
+      "expected_postcondition": {
+        "configuration": "verified"
+      },
+      "forbidden_transition": "publication.execute",
+      "source_provenance": [
+        "PR #183"
+      ],
+      "failure_class": "successful command invalidated its own state"
+    },
+    {
+      "name": "cross-shard-deterministic-resolution",
+      "initial_plant_facts": {
+        "phase": "OBSERVED",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "planning",
+        "workspace": "absent",
+        "plan": "draft",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "unverified",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature",
+        "evidence_source": "historical:cross-shard-deterministic-resolution"
+      },
+      "canonical_observation": {
+        "phase": "OBSERVED",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "planning",
+        "workspace": "absent",
+        "plan": "draft",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "unverified",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature"
+      },
+      "requested_goal": {
+        "id": "goal-cross-shard-deterministic-resolution",
+        "kind": "approved-plan",
+        "delivery_id": "delivery-cross-shard-deterministic-resolution"
+      },
+      "event": "plan.validate",
+      "authority": [
+        "repository-policy"
+      ],
+      "expected_decision": "PRESCRIBED",
+      "expected_admitted_transition": "plan.validate",
+      "expected_postcondition": {
+        "plan": "valid"
+      },
+      "forbidden_transition": "",
+      "source_provenance": [
+        "PR #184"
+      ],
+      "failure_class": "test order as hidden authority"
+    },
+    {
+      "name": "unpublished-equal-main-not-landed",
+      "initial_plant_facts": {
+        "phase": "ACTIVE",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "active",
+        "workspace": "active",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/main",
+        "evidence_source": "historical:unpublished-equal-main-not-landed"
+      },
+      "canonical_observation": {
+        "phase": "ACTIVE",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "active",
+        "workspace": "active",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/main"
+      },
+      "requested_goal": {
+        "id": "goal-unpublished-equal-main-not-landed",
+        "kind": "merged-delivery",
+        "delivery_id": "delivery-unpublished-equal-main-not-landed"
+      },
+      "event": "workspace.cleanup",
+      "authority": [
+        "human"
+      ],
+      "expected_decision": "REFUSED",
+      "expected_admitted_transition": "",
+      "expected_postcondition": {
+        "workspace": "active"
+      },
+      "forbidden_transition": "workspace.cleanup",
+      "source_provenance": [
+        "PR #185"
+      ],
+      "failure_class": "Git ancestry confused with publication"
+    },
+    {
+      "name": "closed-unmerged-not-cleanup-eligible",
+      "initial_plant_facts": {
+        "phase": "ACTIVE",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "published",
+        "workspace": "published",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "closed-unmerged",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature",
+        "evidence_source": "historical:closed-unmerged-not-cleanup-eligible"
+      },
+      "canonical_observation": {
+        "phase": "ACTIVE",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "published",
+        "workspace": "published",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "closed-unmerged",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature"
+      },
+      "requested_goal": {
+        "id": "goal-closed-unmerged-not-cleanup-eligible",
+        "kind": "merged-delivery",
+        "delivery_id": "delivery-closed-unmerged-not-cleanup-eligible"
+      },
+      "event": "workspace.cleanup",
+      "authority": [
+        "human"
+      ],
+      "expected_decision": "REFUSED",
+      "expected_admitted_transition": "",
+      "expected_postcondition": {
+        "workspace": "published"
+      },
+      "forbidden_transition": "workspace.cleanup",
+      "source_provenance": [
+        "PR #185"
+      ],
+      "failure_class": "closed PR collapsed into merged"
+    },
+    {
+      "name": "configured-merged-terminal",
+      "initial_plant_facts": {
+        "phase": "TERMINAL",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "terminal",
+        "workspace": "landed",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "merged",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "established",
+        "ref": "refs/heads/feature",
+        "evidence_source": "historical:configured-merged-terminal"
+      },
+      "canonical_observation": {
+        "phase": "TERMINAL",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "terminal",
+        "workspace": "landed",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "merged",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "established",
+        "ref": "refs/heads/feature"
+      },
+      "requested_goal": {
+        "id": "goal-configured-merged-terminal",
+        "kind": "merged-delivery",
+        "delivery_id": "delivery-configured-merged-terminal"
+      },
+      "event": "",
+      "authority": [
+        "repository-policy"
+      ],
+      "expected_decision": "TERMINAL",
+      "expected_admitted_transition": "",
+      "expected_postcondition": {
+        "terminal": "established"
+      },
+      "forbidden_transition": "workspace.cleanup",
+      "source_provenance": [
+        "PR #185"
+      ],
+      "failure_class": "configured terminal ignored"
+    },
+    {
+      "name": "active-workspace-preserved",
+      "initial_plant_facts": {
+        "phase": "ACTIVE",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "active",
+        "workspace": "active",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "merged",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature",
+        "evidence_source": "historical:active-workspace-preserved"
+      },
+      "canonical_observation": {
+        "phase": "ACTIVE",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "active",
+        "workspace": "active",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "merged",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature"
+      },
+      "requested_goal": {
+        "id": "goal-active-workspace-preserved",
+        "kind": "merged-delivery",
+        "delivery_id": "delivery-active-workspace-preserved"
+      },
+      "event": "workspace.cleanup",
+      "authority": [
+        "human"
+      ],
+      "expected_decision": "REFUSED",
+      "expected_admitted_transition": "",
+      "expected_postcondition": {
+        "workspace": "active"
+      },
+      "forbidden_transition": "workspace.cleanup",
+      "source_provenance": [
+        "PR #185"
+      ],
+      "failure_class": "workspace completion outside kernel"
+    },
+    {
+      "name": "amendment-deadlock",
+      "initial_plant_facts": {
+        "phase": "ACTIVE",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "amendment",
+        "workspace": "active",
+        "plan": "amendment-required",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature",
+        "evidence_source": "historical:amendment-deadlock"
+      },
+      "canonical_observation": {
+        "phase": "ACTIVE",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "amendment",
+        "workspace": "active",
+        "plan": "amendment-required",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature"
+      },
+      "requested_goal": {
+        "id": "goal-amendment-deadlock",
+        "kind": "verified-implementation",
+        "delivery_id": "delivery-amendment-deadlock"
+      },
+      "event": "plan.approve-amendment",
+      "authority": [
+        "human"
+      ],
+      "expected_decision": "PRESCRIBED",
+      "expected_admitted_transition": "plan.approve-amendment",
+      "expected_postcondition": {
+        "plan": "approved"
+      },
+      "forbidden_transition": "plan.activate",
+      "source_provenance": [
+        "PR #181",
+        "release-note amendment recovery"
+      ],
+      "failure_class": "missing transition coreachability"
+    },
+    {
+      "name": "ambiguous-detached-controller-alias",
+      "initial_plant_facts": {
+        "phase": "OBSERVED",
+        "topology": "detached",
+        "identity_status": "ambiguous",
+        "engagement": "command",
+        "delivery": "active",
+        "workspace": "active",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature",
+        "evidence_source": "historical:ambiguous-detached-controller-alias"
+      },
+      "canonical_observation": {
+        "phase": "OBSERVED",
+        "topology": "detached",
+        "identity_status": "ambiguous",
+        "engagement": "command",
+        "delivery": "active",
+        "workspace": "active",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature"
+      },
+      "requested_goal": {
+        "id": "goal-ambiguous-detached-controller-alias",
+        "kind": "verified-implementation",
+        "delivery_id": "delivery-ambiguous-detached-controller-alias"
+      },
+      "event": "workspace.cleanup",
+      "authority": [
+        "human"
+      ],
+      "expected_decision": "IDENTITY_REFUSED",
+      "expected_admitted_transition": "",
+      "expected_postcondition": {
+        "preserves": "all-resources"
+      },
+      "forbidden_transition": "workspace.cleanup",
+      "source_provenance": [
+        "PRs #164-#167",
+        "PR #185"
+      ],
+      "failure_class": "non-injective reverse identity lookup"
+    },
+    {
+      "name": "activation-wrong-worktree-identity",
+      "initial_plant_facts": {
+        "phase": "OBSERVED",
+        "topology": "embedded",
+        "identity_status": "conflicting",
+        "engagement": "command",
+        "delivery": "active",
+        "workspace": "active",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature",
+        "evidence_source": "historical:activation-wrong-worktree-identity"
+      },
+      "canonical_observation": {
+        "phase": "OBSERVED",
+        "topology": "embedded",
+        "identity_status": "conflicting",
+        "engagement": "command",
+        "delivery": "active",
+        "workspace": "active",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature"
+      },
+      "requested_goal": {
+        "id": "goal-activation-wrong-worktree-identity",
+        "kind": "verified-implementation",
+        "delivery_id": "delivery-activation-wrong-worktree-identity"
+      },
+      "event": "plan.activate",
+      "authority": [
+        "human"
+      ],
+      "expected_decision": "IDENTITY_REFUSED",
+      "expected_admitted_transition": "",
+      "expected_postcondition": {
+        "preserves": "delivery"
+      },
+      "forbidden_transition": "plan.activate",
+      "source_provenance": [
+        "PRs #111-#123"
+      ],
+      "failure_class": "ambiguous repository or worktree identity"
+    },
+    {
+      "name": "runtime-publication-before-lock-release",
+      "initial_plant_facts": {
+        "phase": "ACTIVE",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "active",
+        "workspace": "active",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "partially-published",
+        "publication": "none",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature",
+        "evidence_source": "historical:runtime-publication-before-lock-release"
+      },
+      "canonical_observation": {
+        "phase": "ACTIVE",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "active",
+        "workspace": "active",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "partially-published",
+        "publication": "none",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature"
+      },
+      "requested_goal": {
+        "id": "goal-runtime-publication-before-lock-release",
+        "kind": "open-or-updated-pr",
+        "delivery_id": "delivery-runtime-publication-before-lock-release"
+      },
+      "event": "publication.preview",
+      "authority": [
+        "repository-policy"
+      ],
+      "expected_decision": "REFUSED",
+      "expected_admitted_transition": "",
+      "expected_postcondition": {
+        "runtime": "partially-published"
+      },
+      "forbidden_transition": "publication.preview",
+      "source_provenance": [
+        "PR #172",
+        "PR #184"
+      ],
+      "failure_class": "runtime publication race"
+    },
+    {
+      "name": "recovery-outranks-slice-position",
+      "initial_plant_facts": {
+        "phase": "RECOVERY",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "recovery",
+        "workspace": "active",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "current",
+        "recovery": "reconcile",
+        "transaction": "local-applied",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature",
+        "evidence_source": "historical:recovery-outranks-slice-position"
+      },
+      "canonical_observation": {
+        "phase": "RECOVERY",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "recovery",
+        "workspace": "active",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "none",
+        "verification": "current",
+        "recovery": "reconcile",
+        "transaction": "local-applied",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature"
+      },
+      "requested_goal": {
+        "id": "goal-recovery-outranks-slice-position",
+        "kind": "verified-implementation",
+        "delivery_id": "delivery-recovery-outranks-slice-position"
+      },
+      "event": "recovery.resume",
+      "authority": [
+        "repository-policy"
+      ],
+      "expected_decision": "PRESCRIBED",
+      "expected_admitted_transition": "recovery.resume",
+      "expected_postcondition": {
+        "recovery": "none"
+      },
+      "forbidden_transition": "plan.activate",
+      "source_provenance": [
+        "PRs #124-#138"
+      ],
+      "failure_class": "recovery overridden by slice status"
+    },
+    {
+      "name": "unknown-provider-is-not-complete",
+      "initial_plant_facts": {
+        "phase": "UNRESOLVED",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "active",
+        "workspace": "active",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "unavailable",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature",
+        "evidence_source": "historical:unknown-provider-is-not-complete"
+      },
+      "canonical_observation": {
+        "phase": "UNRESOLVED",
+        "topology": "embedded",
+        "identity_status": "known",
+        "engagement": "command",
+        "delivery": "active",
+        "workspace": "active",
+        "plan": "locked",
+        "configuration": "verified",
+        "runtime": "verified",
+        "publication": "unavailable",
+        "verification": "current",
+        "recovery": "none",
+        "transaction": "none",
+        "terminal": "nonterminal",
+        "ref": "refs/heads/feature"
+      },
+      "requested_goal": {
+        "id": "goal-unknown-provider-is-not-complete",
+        "kind": "open-or-updated-pr",
+        "delivery_id": "delivery-unknown-provider-is-not-complete"
+      },
+      "event": "publication.execute",
+      "authority": [
+        "human",
+        "external-provider"
+      ],
+      "expected_decision": "REFUSED",
+      "expected_admitted_transition": "",
+      "expected_postcondition": {
+        "publication": "unavailable"
+      },
+      "forbidden_transition": "publication.execute",
+      "source_provenance": [
+        "PRs #145-#150"
+      ],
+      "failure_class": "unknown external state collapsed into complete"
+    }
+  ]
+}

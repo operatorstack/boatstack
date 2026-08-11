@@ -1,0 +1,4469 @@
+{
+  "schema_version": 1,
+  "id": "boatstack-v2-executable-catalog-safety-v1",
+  "subject": "Finite stable-phase abstraction generated from the executable Boatstack V2 registry. It contains one event for every runtime catalog entry and expands each declared source and target phase set. The 17-facet predicates, operating-system behavior, and external-provider truth remain executable evidence obligations rather than theorem assumptions.",
+  "evidence": [
+    {
+      "path": "boatstack/internal/kernel/catalog/default.go",
+      "note": "Executable registry, exact transition count, event classes, phase predicates, authority, and materialization."
+    },
+    {
+      "path": "docs/architecture/boatstack-v2-transition-catalog.md",
+      "note": "Generated readable projection from the same runtime registry."
+    },
+    {
+      "path": "boatstack/internal/kernel/protocol/admission.go",
+      "note": "Exact admission, authority, parameter, source-revision, provider-request, expiry, and stale-snapshot checks."
+    },
+    {
+      "path": "boatstack/internal/kernel/engine/engine.go",
+      "note": "Single apply path across lock, journal, effect, fresh observation, target predicate, receipt, and recovery."
+    },
+    {
+      "path": "boatstack/internal/kernel/reducer/reducer.go",
+      "note": "Single executable reducer for every controllable semantic transition."
+    },
+    {
+      "path": "boatstack/internal/kernel/catalog/completeness_test.go",
+      "note": "Runtime facet/event classification, writer-boundary inventory, and reducer-completeness refusing tests."
+    },
+    {
+      "path": "boatstack/internal/kernel/engine/engine_test.go",
+      "note": "Exact-admission, stale-snapshot, postcondition, interruption, idempotency, and unknown-outcome tests."
+    },
+    {
+      "path": "boatstack/internal/effects/prepared.go",
+      "note": "Staged effect ordering, atomic resource application, rollback, and external settlement boundary."
+    },
+    {
+      "path": "boatstack/internal/kernel/catalog/historical_test.go",
+      "note": "Historical incidents resolved through the executable runtime supervisor."
+    }
+  ],
+  "states": [
+    {
+      "id": "DORMANT"
+    },
+    {
+      "id": "OBSERVED"
+    },
+    {
+      "id": "ACTIVE"
+    },
+    {
+      "id": "RECOVERY"
+    },
+    {
+      "id": "UNRESOLVED"
+    },
+    {
+      "id": "FRONTIER",
+      "marked": true
+    },
+    {
+      "id": "TERMINAL",
+      "marked": true
+    },
+    {
+      "id": "ABANDONED",
+      "marked": true
+    },
+    {
+      "id": "UNADMITTED_EFFECT"
+    }
+  ],
+  "events": [
+    {
+      "id": "configuration.initialize",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "configuration.mutate",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "configuration.reconcile",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "delivery.slice.advance",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "engagement.begin",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "engagement.release",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "engagement.renew",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "evidence.approval.revoke",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "evidence.visual.attach",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "external.branch-changed",
+      "controllable": false,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "external.ci-completed",
+      "controllable": false,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "external.configuration-drifted",
+      "controllable": false,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "external.files-changed",
+      "controllable": false,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "external.head-changed",
+      "controllable": false,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "external.host-interrupted",
+      "controllable": false,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "external.lease-expired",
+      "controllable": false,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "external.pr-closed",
+      "controllable": false,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "external.pr-merged",
+      "controllable": false,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "external.pr-opened",
+      "controllable": false,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "external.pr-updated",
+      "controllable": false,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "external.provider-unavailable",
+      "controllable": false,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "external.runtime-disappeared",
+      "controllable": false,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "gate.build.record",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "gate.change.record",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "gate.journey.record",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "gate.review.record",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "gate.test.record",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "goal.configure",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "installation.initialize",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "installation.update",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "invocation.rebind",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "plan.abandon",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "plan.activate",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "plan.amend",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "plan.approve",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "plan.approve-amendment",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "plan.create",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "plan.invalidate",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "plan.validate",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "publication.abandon",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "publication.correct",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "publication.execute",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "publication.observe",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "publication.preview",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "publication.reconcile",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "recovery.escalate",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "recovery.resume",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "recovery.rollback",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "repository.attach",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "repository.detach",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "runtime.hydrate",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "runtime.reconcile",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "runtime.replace",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "workspace.abandon",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "workspace.activate",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "workspace.cleanup",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "workspace.cut",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "workspace.publish",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "workspace.reap",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "workspace.reconcile",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "workspace.sync",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    }
+  ],
+  "transitions": [
+    {
+      "from": "OBSERVED",
+      "event": "configuration.initialize",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "configuration.initialize",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "configuration.mutate",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "configuration.mutate",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "configuration.mutate",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "configuration.mutate",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "configuration.mutate",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "configuration.mutate",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "configuration.mutate",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "configuration.mutate",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "configuration.mutate",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "configuration.mutate",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "configuration.mutate",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "configuration.mutate",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "configuration.reconcile",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "configuration.reconcile",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "configuration.reconcile",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "configuration.reconcile",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "configuration.reconcile",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "configuration.reconcile",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "delivery.slice.advance",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "delivery.slice.advance",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "engagement.begin",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "engagement.begin",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "engagement.begin",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "engagement.begin",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "engagement.release",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "engagement.release",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "engagement.renew",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "evidence.approval.revoke",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "evidence.approval.revoke",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "evidence.visual.attach",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "evidence.visual.attach",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.branch-changed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.branch-changed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.branch-changed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.branch-changed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.branch-changed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.branch-changed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.ci-completed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.ci-completed",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.ci-completed",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.ci-completed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.ci-completed",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.ci-completed",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.ci-completed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.ci-completed",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.ci-completed",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.ci-completed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.ci-completed",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.ci-completed",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.ci-completed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.ci-completed",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.ci-completed",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.ci-completed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.ci-completed",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.ci-completed",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.configuration-drifted",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.configuration-drifted",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.configuration-drifted",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.configuration-drifted",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.configuration-drifted",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.configuration-drifted",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.configuration-drifted",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.configuration-drifted",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.configuration-drifted",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.configuration-drifted",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.configuration-drifted",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.configuration-drifted",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.files-changed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.files-changed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.files-changed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.files-changed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.files-changed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.files-changed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.head-changed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.head-changed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.head-changed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.head-changed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.head-changed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.head-changed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.host-interrupted",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.host-interrupted",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.host-interrupted",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.host-interrupted",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.host-interrupted",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.host-interrupted",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.lease-expired",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.lease-expired",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.lease-expired",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.lease-expired",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.lease-expired",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.lease-expired",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.lease-expired",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.lease-expired",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.lease-expired",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.lease-expired",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.lease-expired",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.lease-expired",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.pr-closed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.pr-closed",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.pr-closed",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.pr-closed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.pr-closed",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.pr-closed",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.pr-closed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.pr-closed",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.pr-closed",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.pr-closed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.pr-closed",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.pr-closed",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.pr-closed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.pr-closed",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.pr-closed",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.pr-closed",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.pr-closed",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.pr-closed",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.pr-merged",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.pr-merged",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.pr-merged",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.pr-merged",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.pr-merged",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.pr-merged",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.pr-merged",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.pr-merged",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.pr-merged",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.pr-merged",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.pr-merged",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.pr-merged",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.pr-merged",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.pr-merged",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.pr-merged",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.pr-merged",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.pr-merged",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.pr-merged",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.pr-opened",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.pr-opened",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.pr-opened",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.pr-opened",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.pr-opened",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.pr-opened",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.pr-opened",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.pr-opened",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.pr-opened",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.pr-opened",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.pr-opened",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.pr-opened",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.pr-opened",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.pr-opened",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.pr-opened",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.pr-opened",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.pr-opened",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.pr-opened",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.pr-updated",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.pr-updated",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.pr-updated",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.pr-updated",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.pr-updated",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.pr-updated",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.pr-updated",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.pr-updated",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.pr-updated",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.pr-updated",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.pr-updated",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.pr-updated",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.pr-updated",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.pr-updated",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.pr-updated",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.pr-updated",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.pr-updated",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.pr-updated",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.provider-unavailable",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.provider-unavailable",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.provider-unavailable",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.provider-unavailable",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.provider-unavailable",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.provider-unavailable",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.provider-unavailable",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.provider-unavailable",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.provider-unavailable",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.provider-unavailable",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.provider-unavailable",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.provider-unavailable",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.runtime-disappeared",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "external.runtime-disappeared",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.runtime-disappeared",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "external.runtime-disappeared",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.runtime-disappeared",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "external.runtime-disappeared",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.runtime-disappeared",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "external.runtime-disappeared",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.runtime-disappeared",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "external.runtime-disappeared",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.runtime-disappeared",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "external.runtime-disappeared",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "gate.build.record",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "gate.change.record",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "gate.journey.record",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "gate.review.record",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "gate.review.record",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "gate.test.record",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "gate.test.record",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "goal.configure",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "goal.configure",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "goal.configure",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "goal.configure",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "goal.configure",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "goal.configure",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "goal.configure",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "goal.configure",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "goal.configure",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "goal.configure",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "goal.configure",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "goal.configure",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "goal.configure",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "goal.configure",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "goal.configure",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "installation.initialize",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "installation.initialize",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "installation.update",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "installation.update",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "installation.update",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "installation.update",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "installation.update",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "installation.update",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "invocation.rebind",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "invocation.rebind",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "plan.abandon",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "plan.abandon",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "plan.abandon",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "plan.activate",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "plan.activate",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "plan.amend",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "plan.amend",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "plan.approve",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "plan.approve",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "plan.approve",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "plan.approve",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "plan.approve-amendment",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "plan.approve-amendment",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "plan.create",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "plan.create",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "plan.invalidate",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "plan.invalidate",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "plan.validate",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "plan.validate",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "plan.validate",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "plan.validate",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "publication.abandon",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "publication.abandon",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "publication.correct",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "publication.correct",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "publication.correct",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "publication.correct",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "publication.correct",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "publication.correct",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "publication.execute",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "publication.execute",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "publication.observe",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "publication.observe",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "publication.observe",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "publication.observe",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "publication.observe",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "publication.observe",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "publication.observe",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "publication.observe",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "publication.observe",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "publication.observe",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "publication.observe",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "publication.observe",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "publication.observe",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "publication.observe",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "publication.observe",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "publication.observe",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "publication.preview",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "publication.reconcile",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "publication.reconcile",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "publication.reconcile",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "publication.reconcile",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "publication.reconcile",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "publication.reconcile",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "publication.reconcile",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "publication.reconcile",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "recovery.escalate",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "recovery.escalate",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "recovery.resume",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "recovery.resume",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "recovery.resume",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "recovery.resume",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "recovery.resume",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "recovery.resume",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "recovery.rollback",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "recovery.rollback",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "recovery.rollback",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "recovery.rollback",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "recovery.rollback",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "recovery.rollback",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "repository.attach",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "repository.attach",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "repository.detach",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "repository.detach",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "repository.detach",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "runtime.hydrate",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "runtime.hydrate",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "runtime.hydrate",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "runtime.hydrate",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "runtime.hydrate",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "runtime.hydrate",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "runtime.hydrate",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "runtime.hydrate",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "runtime.hydrate",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "runtime.reconcile",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "runtime.reconcile",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "runtime.reconcile",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "runtime.reconcile",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "runtime.reconcile",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "runtime.reconcile",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "runtime.replace",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "runtime.replace",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "runtime.replace",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "runtime.replace",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "workspace.abandon",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "workspace.abandon",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "workspace.activate",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "workspace.activate",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "workspace.cleanup",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "workspace.cleanup",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "workspace.cleanup",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "workspace.cleanup",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "workspace.cleanup",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "workspace.cleanup",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "workspace.cleanup",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "workspace.cleanup",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "workspace.cleanup",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "workspace.cleanup",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "workspace.cleanup",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "workspace.cleanup",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "workspace.cut",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "workspace.cut",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "workspace.publish",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "workspace.reap",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "workspace.reap",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "workspace.reap",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "workspace.reap",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "workspace.reap",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "workspace.reap",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "workspace.reap",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "workspace.reap",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "workspace.reap",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "workspace.reconcile",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "workspace.reconcile",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "workspace.reconcile",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "workspace.reconcile",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "workspace.reconcile",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "workspace.reconcile",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "workspace.reconcile",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "workspace.reconcile",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "workspace.reconcile",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "workspace.reconcile",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "workspace.reconcile",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "workspace.reconcile",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "workspace.sync",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "workspace.sync",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "publication.execute",
+      "to": "UNADMITTED_EFFECT",
+      "guard": "exact-admission",
+      "evidence": [
+        2,
+        3,
+        6
+      ],
+      "basis": "inferred"
+    }
+  ],
+  "spec": {
+    "description": "Managed publication is unreachable from DORMANT without the exact-admission guard.",
+    "forbidden_states": [
+      "UNADMITTED_EFFECT"
+    ],
+    "forbidden_transitions": []
+  },
+  "targets": {
+    "selector": "marked"
+  },
+  "mutation": {
+    "id": "remove-exact-admission",
+    "kind": "remove-guard",
+    "guard_id": "exact-admission"
+  },
+  "unknowns": [
+    "The stable-phase graph is a conservative expansion of declared source and target phase sets; facet combinations and deterministic reducer branches remain executable-test obligations.",
+    "External provider state and operating-system crash behavior are represented by declared outcomes and restart tests, not exhaustively observed by Locus."
+  ]
+}
