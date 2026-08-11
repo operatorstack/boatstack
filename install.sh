@@ -1,116 +1,99 @@
 #!/usr/bin/env bash
-# Boatstack installer maintained in operatorstack/boatstack.
 set -euo pipefail
 
-repository="operatorstack/boatstack"
-version="${BOATSTACK_VERSION:-latest}"
-target_repo="${BOATSTACK_REPO:-$PWD}"
-mode="${BOATSTACK_MODE:-install}"
-repair="${BOATSTACK_REPAIR:-0}"
-allow_downgrade="${BOATSTACK_ALLOW_DOWNGRADE:-0}"
+# Boatstack V2 bootstrap trust boundary. This script installs a checksum-bound
+# runtime transport. Every repository mutation is then performed by the
+# installation.initialize or installation.update kernel transition.
 
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --repair) repair=1 ;;
-    --allow-downgrade) allow_downgrade=1 ;;
-    *) echo "BLOCKED: unsupported installer argument: $1" >&2; exit 1 ;;
-  esac
-  shift
-done
+repository="${BOATSTACK_REPO:-$PWD}"
+version="${BOATSTACK_VERSION:-latest}"
+mode="${BOATSTACK_MODE:-install}"
+actor="${BOATSTACK_ACTOR:-${USER:-operator}}"
+install_dir="${BOATSTACK_INSTALL_DIR:-${HOME}/.local/bin}"
+config_source="${BOATSTACK_CONFIG:-}"
 
 case "$mode" in
-  install|update|hydrate) ;;
-  *) echo "BLOCKED: BOATSTACK_MODE must be install, update, or hydrate" >&2; exit 1 ;;
+  install|update) ;;
+  *) echo "Boatstack V2 supports BOATSTACK_MODE=install or update" >&2; exit 2 ;;
 esac
 
-if [ "$mode" = "install" ] && { [ -f "$target_repo/.product-loop/generated.lock.json" ] || [ -f "$target_repo/.product-loop/bin/boatstack-helper" ] || [ -f "$target_repo/.product-loop/bin/boatstack-helper.exe" ]; }; then
-  if [ "$repair" = "1" ]; then
-    mode="update"
-    echo "Existing Boatstack installation detected; preserving its configuration and using update repair semantics."
-  else
-    echo "BLOCKED: Boatstack is already installed; use BOATSTACK_MODE=update, or add --repair when owned control state prevents updating" >&2
-    exit 1
-  fi
+repository="$(git -C "$repository" rev-parse --show-toplevel)"
+current_branch="$(git -C "$repository" symbolic-ref --quiet --short HEAD)" || {
+  echo "Boatstack installation requires an attached branch" >&2
+  exit 2
+}
+remote_default="$(git -C "$repository" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+default_branch="${remote_default#origin/}"
+if [[ -z "$default_branch" ]]; then
+  default_branch="$current_branch"
 fi
-
+git check-ref-format --branch "$default_branch" >/dev/null || {
+  echo "Boatstack could not resolve a valid default branch" >&2
+  exit 2
+}
 case "$(uname -s)" in
-  Darwin) os_name="darwin" ;;
-  Linux) os_name="linux" ;;
-  MINGW*|MSYS*|CYGWIN*) os_name="windows" ;;
-  *) echo "BLOCKED: unsupported operating system: $(uname -s)" >&2; exit 1 ;;
+  Darwin) os=darwin ;;
+  Linux) os=linux ;;
+  *) echo "unsupported operating system" >&2; exit 2 ;;
 esac
-
 case "$(uname -m)" in
-  x86_64|amd64) arch="amd64" ;;
-  arm64|aarch64) arch="arm64" ;;
-  *) echo "BLOCKED: unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+  x86_64|amd64) arch=amd64 ;;
+  arm64|aarch64) arch=arm64 ;;
+  *) echo "unsupported architecture" >&2; exit 2 ;;
 esac
 
-command -v curl >/dev/null 2>&1 || { echo "BLOCKED: curl is required to download Boatstack" >&2; exit 1; }
-command -v git >/dev/null 2>&1 || { echo "BLOCKED: Git is required because Boatstack operates on reviewable repository state" >&2; exit 1; }
-
-extension=""
-[ "$os_name" = "windows" ] && extension=".exe"
-asset="boatstack-helper_${os_name}_${arch}${extension}"
-if [ "$version" = "latest" ]; then
-  base="https://github.com/${repository}/releases/latest/download"
-else
-  base="https://github.com/${repository}/releases/download/${version}"
-fi
-
-temporary="$(mktemp -d 2>/dev/null || mktemp -d -t boatstack)"
+temporary="$(mktemp -d)"
 trap 'rm -rf "$temporary"' EXIT
-binary="$temporary/$asset"
-checksum="$temporary/$asset.sha256"
+asset="boatstack-helper_${os}_${arch}"
+candidate="$temporary/$asset"
 
-echo "Downloading verified Boatstack helper for ${os_name}/${arch}..."
-curl -fsSL "$base/$asset" -o "$binary"
-curl -fsSL "$base/$asset.sha256" -o "$checksum"
-expected="$(awk '{print $1}' "$checksum")"
-if command -v shasum >/dev/null 2>&1; then
-  actual="$(shasum -a 256 "$binary" | awk '{print $1}')"
-elif command -v sha256sum >/dev/null 2>&1; then
-  actual="$(sha256sum "$binary" | awk '{print $1}')"
+if [[ -n "${BOATSTACK_BINARY:-}" ]]; then
+  [[ -n "${BOATSTACK_BINARY_SHA256:-}" ]] || { echo "BOATSTACK_BINARY_SHA256 is required with BOATSTACK_BINARY" >&2; exit 2; }
+  cp "$BOATSTACK_BINARY" "$candidate"
+  expected="$BOATSTACK_BINARY_SHA256"
 else
-  echo "BLOCKED: shasum or sha256sum is required to verify the Boatstack binary" >&2
-  exit 1
-fi
-[ "$expected" = "$actual" ] || { echo "BLOCKED: Boatstack binary checksum mismatch" >&2; exit 1; }
-chmod +x "$binary"
-
-if [ "$mode" = "update" ]; then
-  current_helper="$target_repo/.product-loop/bin/boatstack-helper${extension}"
-  if [ -x "$current_helper" ]; then
-    if ! "$current_helper" doctor --repo "$target_repo"; then
-      echo "Current Boatstack doctor reported drift; the verified target helper will classify whether it is safely repairable." >&2
-    fi
+  if [[ "$version" == latest ]]; then
+    base="https://github.com/operatorstack/boatstack/releases/latest/download"
   else
-    echo "Current Boatstack helper is missing; the verified target helper will classify whether it is safely repairable." >&2
+    base="https://github.com/operatorstack/boatstack/releases/download/$version"
   fi
+  curl --fail --silent --show-error --location "$base/$asset" --output "$candidate"
+  curl --fail --silent --show-error --location "$base/$asset.sha256" --output "$temporary/$asset.sha256"
+  expected="$(awk '{print $1}' "$temporary/$asset.sha256")"
 fi
 
-# hydrate mode only populates the version-keyed shared runtime slot (and this
-# worktree's ignored bin/) from the just-verified binary. It runs the binary as
-# itself — running == installed — so no --binary handoff is needed, and it never
-# touches committed generated files or requires a dedicated update branch.
-if [ "$mode" = "hydrate" ]; then
-  exec "$binary" hydrate-runtime --repo "$target_repo"
+if command -v sha256sum >/dev/null 2>&1; then
+  actual="$(sha256sum "$candidate" | awk '{print $1}')"
+else
+  actual="$(shasum -a 256 "$candidate" | awk '{print $1}')"
+fi
+[[ "$actual" == "$expected" ]] || { echo "Boatstack runtime checksum mismatch" >&2; exit 1; }
+chmod 0755 "$candidate"
+
+mkdir -p "$install_dir"
+safe_version="${version//[^a-zA-Z0-9._-]/-}"
+runtime="$install_dir/boatstack-v2-${safe_version}-${actual:0:16}"
+install -m 0755 "$candidate" "$runtime"
+runtime="$(cd -P -- "$(dirname "$runtime")" && pwd)/$(basename "$runtime")"
+
+if [[ "$mode" == install ]]; then
+  if [[ -z "$config_source" ]]; then
+    config_source="$temporary/project.json"
+    json_default_branch="${default_branch//\\/\\\\}"
+    json_default_branch="${json_default_branch//\"/\\\"}"
+    printf '%s\n' "{\"schema_version\":2,\"project\":{\"name\":\"repository\",\"default_branch\":\"$json_default_branch\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\",\"cursor\",\"codex\",\"claude\",\"gemini\",\"mcp\"]}" > "$config_source"
+  fi
+  "$runtime" init --repo "$repository" --human "$actor" --param "config_path=$config_source" --format text
+else
+  "$runtime" update --repo "$repository" --human "$actor" \
+    --param "runtime_path=$runtime" \
+    --param "runtime_sha256=$actual" --format text
 fi
 
-command_name="init"
-[ "$mode" = "update" ] && command_name="update"
-arguments=("$command_name" --repo "$target_repo" --binary "$binary")
-if [ "$mode" = "install" ] && [ -n "${BOATSTACK_INTEGRATIONS:-}" ]; then
-  arguments+=(--integrations "$BOATSTACK_INTEGRATIONS")
-fi
-if [ "${BOATSTACK_YES:-0}" = "1" ]; then
-  arguments+=(--yes)
-fi
-if [ "$repair" = "1" ]; then
-  arguments+=(--repair)
-fi
-if [ "$allow_downgrade" = "1" ]; then
-  arguments+=(--allow-downgrade)
-fi
+launcher_temp="$install_dir/.boatstack-launcher.$$"
+ln -s "$(basename "$runtime")" "$launcher_temp"
+mv -f "$launcher_temp" "$install_dir/boatstack"
 
-exec "$binary" "${arguments[@]}"
+echo "Boatstack V2 installed at $runtime"
+echo "Review and commit $repository/.boatstack/project.json"
+echo "Run: $install_dir/boatstack doctor --repo $repository --format text"

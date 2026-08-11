@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -35,17 +36,47 @@ class RepositoryContract(unittest.TestCase):
     def tearDownClass(cls) -> None:
         cls.build.cleanup()
 
-    def run_command(self, *args: object, cwd: Path | None = None, expected: int = 0):
+    def run_command(
+        self,
+        *args: object,
+        cwd: Path | None = None,
+        env: dict[str, str] | None = None,
+        stdin: str | None = None,
+        expected: int = 0,
+    ) -> subprocess.CompletedProcess[str]:
         result = subprocess.run(
-            [*map(str, args)], cwd=cwd, text=True, capture_output=True
+            [*map(str, args)],
+            cwd=cwd,
+            env=env,
+            input=stdin,
+            text=True,
+            capture_output=True,
         )
         self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
         return result
 
-    def run_helper(self, *args: object, expected: int = 0):
-        return self.run_command(self.helper, *args, expected=expected)
+    def run_helper(
+        self,
+        *args: object,
+        env: dict[str, str] | None = None,
+        stdin: str | None = None,
+        expected: int = 0,
+    ) -> subprocess.CompletedProcess[str]:
+        return self.run_command(
+            self.helper, *args, env=env, stdin=stdin, expected=expected
+        )
 
-    def test_active_workflows_have_no_intelligence_flow_path(self) -> None:
+    def init_repository(self, root: Path) -> None:
+        self.run_command("git", "init", "-b", "main", cwd=root)
+        self.run_command("git", "config", "user.name", "Boatstack Test", cwd=root)
+        self.run_command(
+            "git", "config", "user.email", "boatstack@example.invalid", cwd=root
+        )
+        (root / "README.md").write_text("# Fixture\n")
+        self.run_command("git", "add", "README.md", cwd=root)
+        self.run_command("git", "commit", "-m", "fixture", cwd=root)
+
+    def test_active_workflows_have_no_private_upstream_authority(self) -> None:
         workflows = REPO / ".github" / "workflows"
         self.assertFalse((workflows / "sync-upstream.yml").exists())
         for workflow in workflows.glob("*.yml"):
@@ -53,44 +84,38 @@ class RepositoryContract(unittest.TestCase):
             self.assertNotIn("operatorstack/intelligence-flow", value, workflow)
             self.assertNotIn("sync/intelligence-flow-", value, workflow)
             self.assertNotIn("UPSTREAM.json", value, workflow)
+        self.assertFalse((REPO / "UPSTREAM.json").exists())
 
-    def test_release_authority_uses_boatstack_revision(self) -> None:
+    def test_release_builds_six_checksum_bound_v2_runtimes(self) -> None:
         release = (REPO / ".github" / "workflows" / "release.yml").read_text()
         automatic = (REPO / ".github" / "workflows" / "auto-release.yml").read_text()
+        for asset in (
+            "boatstack-helper_linux_amd64",
+            "boatstack-helper_linux_arm64",
+            "boatstack-helper_darwin_amd64",
+            "boatstack-helper_darwin_arm64",
+            "boatstack-helper_windows_amd64.exe",
+            "boatstack-helper_windows_arm64.exe",
+        ):
+            self.assertIn(asset, release)
+        for symbol in ("boatstack.Version", "boatstack.SourceCommit", "boatstack.ChecksumsSHA256"):
+            self.assertIn(symbol, release)
         self.assertIn('source_commit="$(git rev-parse HEAD)"', release)
-        self.assertNotIn("IMPORT_PROVENANCE.json", release)
-        self.assertNotIn("UPSTREAM.json", release)
+        self.assertIn("sha256sum", release)
         self.assertIn('workflows: ["Verify Boatstack distribution"]', automatic)
-        self.assertIn("github.event.workflow_run.event == 'push'", automatic)
-        self.assertIn("github.event.workflow_run.head_branch == 'main'", automatic)
-        self.assertIn("repositories: boatstack", automatic)
-
-    def test_current_public_surface_is_boatstack_owned(self) -> None:
-        current = [REPO / "README.md", REPO / "CONTRIBUTING.md", *sorted((REPO / "docs").glob("*"))]
-        forbidden = (
-            "Generated from operatorstack/intelligence-flow",
-            "Edit the upstream public source",
-            "edit in Intelligence Flow",
-            "generated content distribution",
-        )
-        for path in current:
-            if not path.is_file() or path.suffix not in {".md", ".json"}:
-                continue
-            value = path.read_text()
-            for phrase in forbidden:
-                self.assertNotIn(phrase, value, path)
-        self.assertFalse((REPO / "UPSTREAM.json").exists())
 
     def test_document_links_claims_and_assets_are_valid(self) -> None:
         def anchors(document: Path) -> set[str]:
-            result = set()
-            for heading in re.findall(r"^#{1,6}\s+(.+?)\s*$", document.read_text(), re.MULTILINE):
+            result: set[str] = set()
+            for heading in re.findall(
+                r"^#{1,6}\s+(.+?)\s*$", document.read_text(), re.MULTILINE
+            ):
                 plain = re.sub(r"<[^>]+>", "", heading).strip().lower()
                 plain = re.sub(r"[^\w\s-]", "", plain)
                 result.add(re.sub(r"\s+", "-", plain))
             return result
 
-        documents = [REPO / "README.md", *sorted((REPO / "docs").glob("*.md"))]
+        documents = [REPO / "README.md", *sorted((REPO / "docs").rglob("*.md"))]
         for document in documents:
             for target in re.findall(r"\[[^\]]+\]\(([^)]+)\)", document.read_text()):
                 if target.startswith(("http://", "https://", "#", "mailto:")):
@@ -106,7 +131,7 @@ class RepositoryContract(unittest.TestCase):
             json.loads(example)
 
         claims = json.loads((REPO / "docs" / "public-claims.json").read_text())
-        self.assertNotIn("source_commit", claims)
+        self.assertEqual(claims["schema_version"], 2)
         allowed = set(claims["statuses"])
         for claim in claims["claims"]:
             self.assertIn(claim["status"], allowed)
@@ -118,7 +143,11 @@ class RepositoryContract(unittest.TestCase):
             for evidence in claim["implementation"] + claim["verification"]:
                 self.assertTrue((REPO / "docs" / evidence).resolve().is_file(), evidence)
 
-        for name in ("boatstack-mark.svg", "boatstack-journey.svg", "boatstack-portability.svg"):
+        for name in (
+            "boatstack-mark.svg",
+            "boatstack-journey.svg",
+            "boatstack-portability.svg",
+        ):
             path = REPO / "assets" / name
             root = ET.parse(path).getroot()
             self.assertEqual(root.attrib.get("role"), "img", name)
@@ -126,7 +155,7 @@ class RepositoryContract(unittest.TestCase):
             self.assertIn("<title", value, name)
             self.assertIn("<desc", value, name)
 
-    def test_public_examples_exclude_private_context(self) -> None:
+    def test_public_tree_excludes_private_context_and_v1_operating_guidance(self) -> None:
         private_values = (
             "Tax" + "Weave",
             "/" + "Users/apple/Documents/GitHub/" + "tax" + "weave",
@@ -141,92 +170,220 @@ class RepositoryContract(unittest.TestCase):
             for private in private_values:
                 self.assertNotIn(private, value, path)
 
-    def test_executable_documentation_examples_use_registered_cli(self) -> None:
+        current_guidance = [
+            REPO / "README.md",
+            REPO / "boatstack" / "SKILL.md",
+            *sorted((REPO / "docs").glob("*.md")),
+            *sorted((REPO / "boatstack" / "references").glob("*.md")),
+            *sorted((REPO / "boatstack" / "agents").glob("*.yaml")),
+        ]
+        deprecated = (
+            "plan-gate",
+            "product-loop",
+            "planning-write",
+            "ship-gate",
+            "insight-capture",
+            "deliverycontrol",
+        )
+        for document in current_guidance:
+            value = document.read_text().lower()
+            for token in deprecated:
+                self.assertNotIn(token, value, document)
+
+    def test_documented_cli_verbs_are_registered_v2_surfaces(self) -> None:
         documents = [
             REPO / "README.md",
             REPO / "boatstack" / "SKILL.md",
             *sorted((REPO / "docs").glob("*.md")),
             *sorted((REPO / "boatstack" / "references").glob("*.md")),
         ]
-        command_pattern = re.compile(
-            r"(?:\.product-loop/boatstack(?:\.ps1)?|boatstack-helper)\s+"
-            r"(?P<verb>[a-z][a-z0-9-]*)(?:\s+(?P<subcommand>[a-z][a-z0-9-]*))?"
+        registered = {
+            "status", "next", "next-status", "apply", "recover", "doctor",
+            "events", "catalog", "guard", "rpc", "retro", "version", "init",
+            "update", "attach", "detach", "hydrate-runtime", "configure",
+            "goal-configure", "plan-create", "plan-validate", "plan-approve",
+            "plan-activate", "plan-amend", "workspace-cut", "workspace-sync",
+            "workspace-cleanup", "workspace-reap", "record-build", "record-test",
+            "record-review", "record-change", "record-journey",
+            "publication-preview", "publish-pr", "observe-pr", "correct-pr",
+            "abandon",
+        }
+        pattern = re.compile(
+            r"(?m)^[ \t]*(?:\$[A-Za-z_][A-Za-z0-9_]*/)?"
+            r"boatstack(?:-helper)?[ \t]+([a-z][a-z0-9-]*)"
         )
-        nested = {"flow", "insight", "retro"}
-        checked: dict[tuple[str, ...], str] = {}
+        seen: set[str] = set()
         for document in documents:
-            value = document.read_text().replace("\\\n", " ")
-            for match in command_pattern.finditer(value):
-                verb = match.group("verb")
-                subcommand = match.group("subcommand") if verb in nested else None
-                command = (verb, subcommand) if subcommand else (verb,)
-                line_end = value.find("\n", match.end())
-                if line_end < 0:
-                    line_end = len(value)
-                segment = value[match.start():line_end]
-                flags = set(re.findall(r"--([a-z][a-z0-9-]*)", segment))
-                if command not in checked:
-                    help_result = self.run_helper(*command, "--help", expected=2)
-                    checked[command] = help_result.stdout + help_result.stderr
-                help_text = checked[command]
-                self.assertIn(f"Usage of {' '.join(command)}:", help_text, document)
-                for flag in flags:
-                    self.assertRegex(help_text, rf"(?m)^  -{re.escape(flag)}(?:\s|$)", document)
+            for verb in pattern.findall(document.read_text().replace("\\\n", " ")):
+                seen.add(verb)
+                self.assertIn(verb, registered, f"unregistered command in {document}")
+        self.assertTrue({"status", "apply", "catalog"}.issubset(seen))
 
-        public_guidance = "\n".join(document.read_text() for document in documents)
-        self.assertNotIn(".product-loop/boatstack planning-write", public_guidance)
-        self.assertNotIn(".product-loop\\boatstack.ps1' planning-write", public_guidance)
+    def test_catalog_and_generated_artifacts_match_the_executable_registry(self) -> None:
+        response = json.loads(self.run_helper("catalog").stdout)
+        transitions = response["catalog"]
+        self.assertEqual(len(transitions), 61)
+        self.assertEqual(len({item["id"] for item in transitions}), 61)
+        self.assertEqual(
+            {item["class"] for item in transitions},
+            {"authority", "owned-local", "owned-external", "recovery", "observed-external"},
+        )
+        markdown = self.run_helper("catalog", "--format", "markdown").stdout
+        mermaid = self.run_helper("catalog", "--format", "mermaid").stdout
+        locus_safety = self.run_helper(
+            "catalog", "--format", "locus-safety"
+        ).stdout
+        locus_liveness = self.run_helper(
+            "catalog", "--format", "locus-liveness"
+        ).stdout
+        self.assertEqual(
+            markdown,
+            (REPO / "docs" / "architecture" / "boatstack-v2-transition-catalog.md").read_text(),
+        )
+        self.assertEqual(
+            mermaid,
+            (REPO / "docs" / "architecture" / "boatstack-v2-transition-catalog.mmd").read_text(),
+        )
+        for name, rendered in (
+            ("boatstack-v2-locus-safety.json", locus_safety),
+            ("boatstack-v2-locus-liveness.json", locus_liveness),
+        ):
+            checked = (REPO / "docs" / "architecture" / name).read_text()
+            self.assertEqual(rendered, checked)
+            model = json.loads(checked)
+            self.assertEqual(len(model["events"]), 61)
+            self.assertEqual(
+                {event["id"] for event in model["events"]},
+                {item["id"] for item in transitions},
+            )
 
-    def test_export_and_drift_contract(self) -> None:
+    def test_rpc_and_configuration_decoders_fail_closed(self) -> None:
+        malformed_rpc = json.dumps(
+            {
+                "schema_version": 2,
+                "operation": "catalog",
+                "repository": ".",
+                "host": "cli",
+                "correlation_id": "contract",
+                "unexpected": True,
+            }
+        )
+        rejected = self.run_helper("rpc", stdin=malformed_rpc, expected=1)
+        self.assertIn("unknown field", rejected.stderr.lower())
+
         with tempfile.TemporaryDirectory() as temp:
-            target = Path(temp)
-            self.run_helper("export", "--repo", target, "--config", CONFIG, "--adapter-name", "boatstack", "--write")
-            checked = self.run_helper("export", "--repo", target, "--config", CONFIG, "--adapter-name", "boatstack", "--check")
-            self.assertIn("PASS", checked.stdout)
-            self.assertTrue((target / ".cursor" / "commands" / "auto-plan.md").is_file())
-            self.assertTrue((target / ".agents" / "skills" / "boatstack" / "SKILL.md").is_file())
-            (target / ".cursor" / "commands" / "auto-plan.md").write_text("drift\n")
-            drift = self.run_helper("export", "--repo", target, "--config", CONFIG, "--adapter-name", "boatstack", "--check", expected=1)
-            self.assertIn("drift", (drift.stdout + drift.stderr).lower())
+            root = Path(temp)
+            repository = root / "repo"
+            repository.mkdir()
+            self.init_repository(repository)
+            invalid = json.loads(CONFIG.read_text())
+            invalid["unexpected"] = True
+            invalid_path = root / "invalid.json"
+            invalid_path.write_text(json.dumps(invalid))
+            env = dict(os.environ)
+            env["BOATSTACK_STATE_ROOT"] = str(root / "state")
+            rejected = self.run_helper(
+                "init", "--repo", repository, "--human", "contract",
+                "--param", f"config_path={invalid_path}", env=env, expected=1,
+            )
+            self.assertIn("unknown field", (rejected.stdout + rejected.stderr).lower())
+            self.assertFalse((repository / ".boatstack" / "project.json").exists())
 
-    def test_plan_activation_and_pr_preview_contract(self) -> None:
+    def test_offline_installer_initializes_updates_and_guards_through_kernel(self) -> None:
+        if os.name == "nt":
+            self.skipTest("the repository contract job exercises the POSIX installer")
         with tempfile.TemporaryDirectory() as temp:
-            repo = Path(temp)
-            self.run_command("git", "init", "-b", "main", cwd=repo)
-            self.run_command("git", "config", "user.name", "Boatstack Test", cwd=repo)
-            self.run_command("git", "config", "user.email", "boatstack@example.invalid", cwd=repo)
-            (repo / ".product-loop").mkdir()
-            config = json.loads(CONFIG.read_text())
-            config["project"]["default_branch"] = "main"
-            (repo / ".product-loop" / "project.json").write_text(json.dumps(config) + "\n")
-            (repo / "README.md").write_text("# Fixture\n")
-            self.run_command("git", "add", ".", cwd=repo)
-            self.run_command("git", "commit", "-m", "base", cwd=repo)
-            bare = repo / ".git" / "origin.git"
-            self.run_command("git", "init", "--bare", bare)
-            self.run_command("git", "remote", "add", "origin", bare, cwd=repo)
-            self.run_command("git", "push", "-u", "origin", "main", cwd=repo)
-            self.run_command("git", "switch", "-c", "feat/direct", cwd=repo)
-            (repo / "feature.txt").write_text("value\n")
-            self.run_command("git", "add", "feature.txt", cwd=repo)
-            self.run_command("git", "commit", "-m", "feature", cwd=repo)
-            context = json.loads(self.run_helper("pr-context", "--repo", repo).stdout)
-            self.assertEqual(context["mode"], "ad-hoc")
-            template = self.run_helper("pr-context", "--repo", repo, "--format", "template")
-            self.assertIn("boatstack_pr_version: 4", template.stdout)
-            self.assertIn("## Review order", template.stdout)
+            root = Path(temp)
+            repository = root / "repo"
+            install_dir = root / "bin"
+            repository.mkdir()
+            self.init_repository(repository)
+            digest = hashlib.sha256(self.helper.read_bytes()).hexdigest()
+            env = dict(os.environ)
+            env.update(
+                {
+                    "BOATSTACK_REPO": str(repository),
+                    "BOATSTACK_BINARY": str(self.helper),
+                    "BOATSTACK_BINARY_SHA256": digest,
+                    "BOATSTACK_INSTALL_DIR": str(install_dir),
+                    "BOATSTACK_CONFIG": str(CONFIG),
+                    "BOATSTACK_STATE_ROOT": str(root / "state"),
+                    "BOATSTACK_ACTOR": "contract",
+                    "BOATSTACK_VERSION": "contract-v2",
+                }
+            )
+            self.run_command("bash", REPO / "install.sh", cwd=repository, env=env)
+            launcher = install_dir / "boatstack"
+            self.assertTrue(launcher.is_symlink())
+            self.assertTrue((repository / ".boatstack" / "project.json").is_file())
 
-        demo = REPO / "labs" / "diagram-json"
-        checked = self.run_helper("check-plan", "--plan", demo / "plan.md")
-        self.assertIn("PASS", checked.stdout)
+            doctor = json.loads(
+                self.run_command(launcher, "doctor", "--repo", repository, env=env).stdout
+            )
+            self.assertTrue(doctor["doctor"]["healthy"])
+            self.assertEqual(doctor["doctor"]["transition_count"], 61)
+            self.assertEqual(doctor["snapshot"]["runtime"]["value"], "verified")
 
-    def test_installers_verify_downloads_and_support_updates(self) -> None:
+            goal = (
+                "--goal-id", "bootstrap", "--goal-kind", "approved-plan",
+                "--delivery", "bootstrap",
+            )
+            self.run_command(
+                launcher, "apply", "--repo", repository,
+                "--transition", "engagement.begin", *goal,
+                "--repository-authority", env=env,
+            )
+            ordinary = json.loads(
+                self.run_command(
+                    launcher, "guard", "--repo", repository,
+                    "--command", "go test ./...", env=env,
+                ).stdout
+            )
+            self.assertTrue(ordinary["guard"]["allowed"])
+            managed = json.loads(
+                self.run_command(
+                    launcher, "guard", "--repo", repository,
+                    "--command", "git push origin HEAD", env=env,
+                ).stdout
+            )
+            self.assertFalse(managed["guard"]["allowed"])
+            self.assertEqual(managed["guard"]["required_transition"], "publication.execute")
+            destructive = json.loads(
+                self.run_command(
+                    launcher, "guard", "--repo", repository,
+                    "--command", "git reset --hard HEAD~1", env=env,
+                ).stdout
+            )
+            self.assertFalse(destructive["guard"]["allowed"])
+
+            env["BOATSTACK_MODE"] = "update"
+            env["BOATSTACK_VERSION"] = "contract-v2-next"
+            self.run_command("bash", REPO / "install.sh", cwd=repository, env=env)
+            updated = json.loads(
+                self.run_command(launcher, "doctor", "--repo", repository, env=env).stdout
+            )
+            self.assertTrue(updated["doctor"]["healthy"])
+            self.assertIn("contract-v2-next", updated["snapshot"]["invocation"]["runtime_path"])
+            events = self.run_command(
+                launcher, "events", "--repo", repository, "--format", "jsonl", env=env
+            ).stdout.splitlines()
+            transitions = {json.loads(line)["transition_id"] for line in events}
+            self.assertTrue({"installation.initialize", "engagement.begin", "installation.update"}.issubset(transitions))
+
+    def test_installers_are_checksum_first_and_kernel_owned(self) -> None:
         shell = (REPO / "install.sh").read_text()
         powershell = (REPO / "install.ps1").read_text()
-        for expected in ("sha256sum", "BOATSTACK_INTEGRATIONS", "BOATSTACK_MODE", "BOATSTACK_VERSION", "--repair"):
+        for expected in (
+            "BOATSTACK_BINARY_SHA256", "sha256sum", "shasum -a 256",
+            '"$runtime" init', '"$runtime" update',
+        ):
             self.assertIn(expected, shell)
-        for expected in ("Get-FileHash", "BOATSTACK_INTEGRATIONS", "BOATSTACK_MODE", "BOATSTACK_VERSION", "--repair"):
+        for expected in (
+            "BOATSTACK_BINARY_SHA256", "Get-FileHash", "$Runtime init", "$Runtime update",
+        ):
             self.assertIn(expected, powershell)
+        self.assertNotIn("--repair", shell)
+        self.assertNotIn("--repair", powershell)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
 interface:
   display_name: "Boatstack"
-  short_description: "Build freely; approve, verify, review, and ship with evidence."
-  default_prompt: "Use $boatstack as an evidence-engineered coding node: keep implementation tactics open and require evidence for approval, completion, review, and shipping."
+  short_description: "Use one V2 kernel for delivery state, authority, effects, and proof."
+  default_prompt: "Use $boatstack V2. Read status once, follow the returned semantic transition, preserve exact goal and invocation identity, and never infer authority or completion from files, branches, authentication, or prior conversation."

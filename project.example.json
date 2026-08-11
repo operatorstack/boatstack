@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "project": {
     "name": "example-product",
     "default_branch": "main",
@@ -21,22 +21,18 @@
       "billing/**"
     ]
   },
-  "workflow": {
-    "human_plan_approval": true,
+  "policy": {
+    "plan_approval": "human",
     "independent_review_for_high_risk": true,
-    "allow_pass_with_gaps": true,
-    "maintain_changelog": false,
-    "pr_visual_evidence": "off"
+    "visual_evidence": "optional",
+    "external_effect_authority": "human-or-autonomy-plus-provider"
   },
-  "integrations": {
-    "gstack": {
-      "requested": false,
-      "version": "a3259400a366593e0c909dd9ac3e59752efd2488"
-    },
-    "spec-kit": {
-      "requested": false,
-      "version": "v0.12.16"
-    }
-  },
-  "adapters": ["cursor", "claude", "codex", "gemini", "github"]
+  "hosts": [
+    "cli",
+    "cursor",
+    "codex",
+    "claude",
+    "gemini",
+    "mcp"
+  ]
 }

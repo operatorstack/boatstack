@@ -1,128 +1,160 @@
 {
-  "schema_version": 1,
-  "statuses": ["verified", "observed", "still_being_evaluated"],
+  "schema_version": 2,
+  "statuses": [
+    "verified",
+    "theorem_only",
+    "advisory"
+  ],
   "claims": [
     {
-      "id": "portable-product-flow",
-      "public_claim": "Boatstack is a repository-local delivery harness that exposes one product-development workflow across Cursor, Codex, and Claude Code while keeping its durable planning, decision, gap, evidence, and review state in the repository.",
+      "id": "one-authoritative-kernel",
+      "public_claim": "Every V2 lifecycle decision and managed effect crosses one executable transition registry and engine.",
       "status": "verified",
-      "originating_observation": "Coding-host configuration, model choice, and specialist skills otherwise become separate places where a product-development process and its working state can fragment.",
-      "safeguard": "Portable host adapters project one workflow contract while canonical feature artifacts remain repository-owned and model-neutral.",
-      "readable_evidence": "research-and-design.md#host-portability",
-      "implementation": ["../boatstack/export.go", "../boatstack/references/artifacts.md", "../boatstack/references/workflow.md"],
-      "verification": ["../boatstack/export_test.go"],
-      "last_verified_version": "v0.7.120"
+      "readable_evidence": "architecture/boatstack-v2-kernel.md#14-package-and-dependency-architecture",
+      "implementation": [
+        "../boatstack/internal/kernel/engine/engine.go",
+        "../boatstack/internal/kernel/catalog/default.go",
+        "../boatstack/v2_kernel.go"
+      ],
+      "verification": [
+        "../boatstack/internal/kernel/catalog/completeness_test.go",
+        "../boatstack/internal/kernel/engine/engine_test.go"
+      ],
+      "last_verified_version": "v2.0.0"
     },
     {
-      "id": "human-decisions",
-      "public_claim": "Boatstack asks for material product decisions, records the human answer, and requires approval before build.",
+      "id": "explicit-worktree-transfer",
+      "public_claim": "Workspace creation transfers authority to one exact destination, parks the source checkout, and returns verified cleanup state to that source.",
       "status": "verified",
-      "originating_observation": "A password-reset request conflicted with a passwordless product model and required a human product choice.",
-      "safeguard": "Question states, explicit Markdown approval, approval fingerprints, and stale-plan rejection.",
-      "readable_evidence": "research-and-design.md#commands-and-the-approval-boundary",
-      "implementation": ["../boatstack/references/workflow.md", "../boatstack/plan.go"],
-      "verification": ["../boatstack/plan_test.go", "../boatstack/planning_test.go"],
-      "last_verified_version": "v0.7.120"
+      "readable_evidence": "generated-files.md#machine-local-controller-state",
+      "implementation": [
+        "../boatstack/internal/plant/resolver.go",
+        "../boatstack/internal/effects/driver.go",
+        "../boatstack/internal/effects/command_boundary.go"
+      ],
+      "verification": [
+        "../boatstack/internal/effects/integration_test.go"
+      ],
+      "last_verified_version": "v2.0.0"
     },
     {
-      "id": "validation-provenance",
-      "public_claim": "Boatstack links every planned acceptance criterion to a validation procedure and records why that check can support the claim.",
+      "id": "transactional-recovery",
+      "public_claim": "V2 stages local resources, installs authority last, verifies a fresh target, and exposes interrupted work through a restart-safe journal.",
       "status": "verified",
-      "originating_observation": "Stronger verification wording and same-model checks did not reliably distinguish correct completion from unsupported claims.",
-      "safeguard": "Criterion coverage, validation origin, named falsifier, and independence level.",
-      "readable_evidence": "validation-and-evidence.md#the-validation-contract",
-      "implementation": ["validation-and-evidence.md", "../boatstack/plan.go"],
-      "verification": ["../boatstack/plan_test.go"],
-      "last_verified_version": "v0.7.120"
+      "readable_evidence": "safety.md#transaction-boundary",
+      "implementation": [
+        "../boatstack/internal/effects/prepared.go",
+        "../boatstack/internal/effects/journal.go",
+        "../boatstack/internal/effects/recovery.go"
+      ],
+      "verification": [
+        "../boatstack/internal/effects/prepared_test.go",
+        "../boatstack/internal/effects/recovery_test.go"
+      ],
+      "last_verified_version": "v2.0.0"
     },
     {
-      "id": "irreversible-operations",
-      "public_claim": "Boatstack denies high-confidence destructive recovery operations before supported hosts execute them.",
+      "id": "consumer-parity",
+      "public_claim": "CLI, Cursor, Codex, Claude Code, Gemini CLI, MCP, and the Go SDK project the same transition prescription.",
       "status": "verified",
-      "evaluation_status": "still_being_evaluated",
-      "originating_observation": "A failed external schema apply led to an invented reset path before human review removed it.",
-      "safeguard": "Fail-closed host hooks, immutable destructive classes, and read-only diagnosis after failure.",
-      "readable_evidence": "safety.md#evidence-status",
-      "implementation": ["safety.md", "../boatstack/safety.go", "../boatstack/hooks.go"],
-      "verification": ["../boatstack/safety_test.go", "../boatstack/hooks_test.go"],
-      "last_verified_version": "v0.7.120"
+      "readable_evidence": "architecture/boatstack-v2-kernel.md#15-cli-hook-sdk-mcp-and-host-adapter-contracts",
+      "implementation": [
+        "../boatstack/internal/surfaces/protocol.go",
+        "../boatstack/internal/surfaces/render.go",
+        "../boatstack/sdk/sdk.go"
+      ],
+      "verification": [
+        "../boatstack/internal/surfaces/render_test.go",
+        "../boatstack/sdk/sdk_test.go"
+      ],
+      "last_verified_version": "v2.0.0"
     },
     {
-      "id": "reviewer-ready-pr",
-      "public_claim": "Boatstack previews a reviewer-first PR body derived from the committed diff and available evidence before changing GitHub.",
+      "id": "shared-safety-guard",
+      "public_claim": "Supported hosts use one guard law for destructive commands and attempts to bypass managed effects.",
       "status": "verified",
-      "originating_observation": "A generated PR summary omitted product decisions, accepted gaps, review findings, rollout, and rollback context.",
-      "safeguard": "Managed and evidence-limited PR projection, stale-preview checks, and explicit open or update confirmation.",
-      "readable_evidence": "evidence-engineered-coding.md#what-is-evidence-backed",
-      "implementation": ["../boatstack/pr.go", "getting-started.md"],
-      "verification": ["../boatstack/pr_test.go"],
-      "last_verified_version": "v0.7.120"
+      "readable_evidence": "safety.md#hook-guard",
+      "implementation": [
+        "../boatstack/internal/kernel/supervisor/guard.go",
+        "../boatstack/internal/kernel/supervisor/classify.go",
+        "../boatstack/internal/surfaces/guard.go"
+      ],
+      "verification": [
+        "../boatstack/internal/kernel/supervisor/supervisor_test.go",
+        "../boatstack/internal/surfaces/render_test.go"
+      ],
+      "last_verified_version": "v2.0.0"
     },
     {
-      "id": "phase-scoped-delivery",
-      "public_claim": "When an approved plan intentionally contains multiple PR-sized delivery slices, Boatstack requires a fresh test, review, preview, and publication confirmation for each slice.",
+      "id": "revision-bound-gate-proof",
+      "public_claim": "Verified delivery requires current build, test, and review evidence; build and test execute guarded repository commands and generated proof cannot invalidate itself.",
       "status": "verified",
-      "originating_observation": "A coding host treated an approved multi-phase plan as standing permission to open several PRs during build without returning through the gates.",
-      "safeguard": "Explicit task-to-slice partitioning, affected-path scope, diff-bound gate receipts, active-slice publication, and direct push/PR hook denial.",
-      "readable_evidence": "evidence-engineered-coding.md#the-graph-follows-the-work",
-      "implementation": ["../boatstack/delivery.go", "../boatstack/safety.go", "../boatstack/hooks.go", "../boatstack/references/workflow.md"],
-      "verification": ["../boatstack/delivery_test.go", "../boatstack/pr_test.go"],
-      "last_verified_version": "v0.7.120"
+      "readable_evidence": "architecture/boatstack-v2-kernel.md#11-verification-and-receipt-model",
+      "implementation": [
+        "../boatstack/internal/kernel/protocol/admission.go",
+        "../boatstack/internal/effects/artifacts.go",
+        "../boatstack/internal/effects/command_boundary.go",
+        "../boatstack/internal/plant/observer.go"
+      ],
+      "verification": [
+        "../boatstack/internal/effects/command_boundary_test.go",
+        "../boatstack/internal/effects/integration_test.go",
+        "../boatstack/internal/plant/observer_test.go"
+      ],
+      "last_verified_version": "v2.0.0"
     },
     {
-      "id": "model-neutral-contract",
-      "public_claim": "Boatstack applies the same planning, approval, validation, review, and shipping requirements regardless of model, provider, or price.",
+      "id": "privacy-safe-process-events",
+      "public_claim": "The passive JSONL stream derives from real transition receipts and excludes prompts, source, diffs, documents, command output, and secrets.",
       "status": "verified",
-      "originating_observation": "Changing models relocated the dominant benchmark bottleneck instead of producing one stable lower-cost-model or frontier-model failure profile.",
-      "safeguard": "One model-neutral workflow that branches on observable decisions, risk, tool outcomes, convergence, and evidence rather than model identity.",
-      "readable_evidence": "research-and-design.md#why-the-workflow-has-no-model-conditions",
-      "implementation": ["research-and-design.md", "../boatstack/references/workflow.md"],
-      "verification": ["../boatstack/export_test.go", "../boatstack/planning_test.go"],
-      "last_verified_version": "v0.7.120"
+      "readable_evidence": "architecture/boatstack-v2-kernel.md#16-process-telemetry-contract",
+      "implementation": [
+        "../boatstack/internal/effects/receipts.go",
+        "../boatstack/v2_kernel.go"
+      ],
+      "verification": [
+        "../boatstack/internal/effects/integration_test.go"
+      ],
+      "last_verified_version": "v2.0.0"
     },
     {
-      "id": "cross-model-failures",
-      "public_claim": "The audited benchmark runs exposed failures in protocol handling, context, verification, and recovery in addition to differences in model capability.",
-      "status": "observed",
-      "originating_observation": "The audited Gemini, Qwen, and submission runs recorded malformed responses, context-window regression, unsupported verification, step exhaustion, near misses, and unsafe recovery behavior.",
-      "safeguard": "Trace safeguards to observed failure mechanics without treating model provider or price as the failure state.",
-      "readable_evidence": "research-and-design.md#outcome-sizing-and-where-value-emerges",
-      "implementation": ["research-and-design.md"],
-      "verification": ["benchmark-corpus-audit.md", "benchmark-submission-audit.md"],
-      "last_verified_version": "v0.7.120"
-    },
-    {
-      "id": "lower-cost-outcomes",
-      "public_claim": "Whether Boatstack improves product correctness, completion cost, or delivery time when using lower-cost models is still being evaluated.",
-      "status": "still_being_evaluated",
-      "originating_observation": "The existing corpus supports specific failure mechanisms but contains no paired product-feature result proving a lower-cost-model outcome uplift.",
-      "safeguard": "Keep the outcome claim unpromoted until the same feature, model, budget, environment, and host are evaluated with and without Boatstack.",
-      "readable_evidence": "research-and-design.md#evaluation-of-the-finished-node",
-      "implementation": ["research-and-design.md"],
-      "verification": ["benchmark-corpus-audit.md", "benchmark-submission-audit.md"],
-      "last_verified_version": "v0.7.120"
-    },
-    {
-      "id": "git-worktree-activation",
-      "public_claim": "Boatstack tracks exact-runtime launchers in every generated repository. A linked worktree verifies its pinned Git-common runtime, and a managed transition verifies the exact planning package and controller identity before approval or autonomy.",
+      "id": "configuration-policy-is-controlling",
+      "public_claim": "Plan approval, high-risk independent review, visual evidence, external authority, and enabled hosts are canonical control inputs rather than decorative configuration.",
       "status": "verified",
-      "originating_observation": "A linked Claude Code worktree inherited committed fail-closed hooks but not the ignored helper, causing every shell call—including installation—to be denied. A later transition could strand a validated plan in the source checkout before approval or autonomy.",
-      "safeguard": "Tracked launchers verify the pinned runtime. Transactional workspace cuts verify the fetched base, complete plan fingerprint, destination ownership, and controller identity before authority moves.",
-      "readable_evidence": "generated-files.md#worktrees-fresh-clones-and-updates",
-      "implementation": ["../boatstack/launcher.go", "../boatstack/runtime_cache.go", "../boatstack/workspace.go", "../boatstack/detached.go"],
-      "verification": ["../boatstack/launcher_test.go", "../boatstack/runtime_cache_test.go", "../boatstack/hooks_hydrate_test.go", "../boatstack/workspace_transition_conformance_test.go", "../boatstack/solution_closure_conformance_test.go"],
-      "last_verified_version": "v0.7.120"
+      "readable_evidence": "configuration.md#required-values",
+      "implementation": [
+        "../boatstack/internal/kernel/model/state.go",
+        "../boatstack/internal/kernel/supervisor/supervisor.go",
+        "../boatstack/internal/kernel/reducer/reducer.go"
+      ],
+      "verification": [
+        "../boatstack/internal/kernel/supervisor/supervisor_test.go",
+        "../boatstack/internal/kernel/protocol/policy_test.go",
+        "../boatstack/internal/plant/observer_test.go",
+        "../boatstack/internal/kernel/reducer/reducer_test.go",
+        "../boatstack/internal/effects/integration_test.go"
+      ],
+      "last_verified_version": "v2.0.0"
     },
     {
-      "id": "visible-updates",
-      "public_claim": "Boatstack reports available stable releases after successful PR publication and prepares accepted updates in a separate reviewable infrastructure branch without merging them.",
-      "status": "verified",
-      "originating_observation": "Installer-based updates depended on remembered commands and could be mixed into feature work or reset optional integration choices.",
-      "safeguard": "Cached post-ship discovery, clean-default-branch enforcement, exact release verification, integration preservation, diff preview, and explicit update-PR publication.",
-      "readable_evidence": "generated-files.md#worktrees-fresh-clones-and-updates",
-      "implementation": ["../boatstack/update.go", "../boatstack/init.go"],
-      "verification": ["../boatstack/update_test.go", "../boatstack/init_test.go", "../boatstack/export_test.go"],
-      "last_verified_version": "v0.7.120"
+      "id": "formal-live-system-closure",
+      "public_claim": "The generated 61-event stable-phase abstraction satisfies the checked safety and liveness properties; executable tests separately bind catalog completeness, facets, reducer branches, operating-system behavior, and provider outcomes.",
+      "status": "advisory",
+      "readable_evidence": "architecture/boatstack-v2-kernel.md#17-test-and-formal-property-strategy",
+      "implementation": [
+        "architecture/boatstack-v2-transition-catalog.md",
+        "architecture/boatstack-v2-locus-safety.json",
+        "architecture/boatstack-v2-locus-liveness.json",
+        "../boatstack/internal/kernel/catalog/default.go"
+      ],
+      "verification": [
+        "../boatstack/internal/kernel/catalog/completeness_test.go",
+        "../boatstack/internal/kernel/catalog/historical_test.go",
+        "../boatstack/internal/surfaces/render_test.go",
+        "../boatstack/internal/kernel/engine/engine_test.go",
+        "../boatstack/internal/effects/integration_test.go"
+      ],
+      "last_verified_version": "v2.0.0"
     }
   ]
 }

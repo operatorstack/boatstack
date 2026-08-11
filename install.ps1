@@ -1,110 +1,96 @@
-# Boatstack installer maintained in operatorstack/boatstack.
-[CmdletBinding()]
-param(
-    [switch]$Repair,
-    [switch]$AllowDowngrade
-)
 $ErrorActionPreference = "Stop"
 
-$repository = "operatorstack/boatstack"
-$version = if ($env:BOATSTACK_VERSION) { $env:BOATSTACK_VERSION } else { "latest" }
-$targetRepo = if ($env:BOATSTACK_REPO) { $env:BOATSTACK_REPO } else { (Get-Location).Path }
-$mode = if ($env:BOATSTACK_MODE) { $env:BOATSTACK_MODE } else { "install" }
-$repairRequested = $Repair -or $env:BOATSTACK_REPAIR -eq "1"
-$downgradeRequested = $AllowDowngrade -or $env:BOATSTACK_ALLOW_DOWNGRADE -eq "1"
-if ($mode -notin @("install", "update", "hydrate")) {
-    throw "BLOCKED: BOATSTACK_MODE must be install, update, or hydrate"
-}
+# Boatstack V2 bootstrap trust boundary. The script installs a verified runtime;
+# the kernel owns every subsequent repository mutation.
 
-$existingGeneratedLock = Test-Path -PathType Leaf (Join-Path $targetRepo ".product-loop/generated.lock.json")
-$existingHelper = (Test-Path -PathType Leaf (Join-Path $targetRepo ".product-loop/bin/boatstack-helper")) -or (Test-Path -PathType Leaf (Join-Path $targetRepo ".product-loop/bin/boatstack-helper.exe"))
-if ($mode -eq "install" -and ($existingGeneratedLock -or $existingHelper)) {
-    if ($repairRequested) {
-        $mode = "update"
-        Write-Host "Existing Boatstack installation detected; preserving its configuration and using update repair semantics."
-    } else {
-        throw "BLOCKED: Boatstack is already installed; use BOATSTACK_MODE=update, or add -Repair when owned control state prevents updating"
-    }
-}
+$Repository = if ($env:BOATSTACK_REPO) { $env:BOATSTACK_REPO } else { (Get-Location).Path }
+$Version = if ($env:BOATSTACK_VERSION) { $env:BOATSTACK_VERSION } else { "latest" }
+$Mode = if ($env:BOATSTACK_MODE) { $env:BOATSTACK_MODE } else { "install" }
+$Actor = if ($env:BOATSTACK_ACTOR) { $env:BOATSTACK_ACTOR } elseif ($env:USERNAME) { $env:USERNAME } else { "operator" }
+$InstallDir = if ($env:BOATSTACK_INSTALL_DIR) { $env:BOATSTACK_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA "Boatstack\bin" }
 
-if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-    throw "BLOCKED: Git is required because Boatstack operates on reviewable repository state"
-}
-
-$architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
-$arch = switch ($architecture) {
-    "x64" { "amd64" }
-    "arm64" { "arm64" }
-    default { throw "BLOCKED: unsupported Windows architecture: $architecture" }
-}
-
-$asset = "boatstack-helper_windows_${arch}.exe"
-$base = if ($version -eq "latest") {
-    "https://github.com/$repository/releases/latest/download"
+if ($Mode -notin @("install", "update")) { throw "Boatstack V2 supports BOATSTACK_MODE=install or update" }
+$RepositoryOutput = & git -C $Repository rev-parse --show-toplevel
+$RepositoryStatus = $LASTEXITCODE
+if ($RepositoryStatus -ne 0 -or -not $RepositoryOutput) { throw "Boatstack installation requires a Git repository" }
+$Repository = ($RepositoryOutput -join "`n").Trim()
+$CurrentBranchOutput = & git -C $Repository symbolic-ref --quiet --short HEAD
+$CurrentBranchStatus = $LASTEXITCODE
+if ($CurrentBranchStatus -ne 0 -or -not $CurrentBranchOutput) { throw "Boatstack installation requires an attached branch" }
+$CurrentBranch = ($CurrentBranchOutput -join "`n").Trim()
+$RemoteDefaultOutput = & git -C $Repository symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>$null
+$RemoteDefaultStatus = $LASTEXITCODE
+$DefaultBranch = if ($RemoteDefaultStatus -eq 0 -and $RemoteDefaultOutput) {
+  (($RemoteDefaultOutput -join "`n").Trim() -replace '^origin/', '')
 } else {
-    "https://github.com/$repository/releases/download/$version"
+  $CurrentBranch
 }
+& git check-ref-format --branch $DefaultBranch | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Boatstack could not resolve a valid default branch" }
+$Architecture = switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()) {
+  "x64" { "amd64" }
+  "arm64" { "arm64" }
+  default { throw "unsupported architecture" }
+}
+$Asset = "boatstack-helper_windows_$Architecture.exe"
+$Temporary = Join-Path ([System.IO.Path]::GetTempPath()) ("boatstack-v2-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $Temporary | Out-Null
 
-$temporary = Join-Path ([System.IO.Path]::GetTempPath()) ("boatstack-" + [guid]::NewGuid().ToString("N"))
-New-Item -ItemType Directory -Path $temporary | Out-Null
 try {
-    $binary = Join-Path $temporary $asset
-    $checksum = "$binary.sha256"
-    Write-Host "Downloading verified Boatstack helper for windows/$arch..."
-    Invoke-WebRequest -UseBasicParsing -Uri "$base/$asset" -OutFile $binary
-    Invoke-WebRequest -UseBasicParsing -Uri "$base/$asset.sha256" -OutFile $checksum
-    $expected = ((Get-Content -Raw $checksum).Trim() -split "\s+")[0].ToLowerInvariant()
-    $actual = (Get-FileHash -Algorithm SHA256 $binary).Hash.ToLowerInvariant()
-    if ($expected -ne $actual) {
-        throw "BLOCKED: Boatstack binary checksum mismatch"
+  $Candidate = Join-Path $Temporary $Asset
+  if ($env:BOATSTACK_BINARY) {
+    if (-not $env:BOATSTACK_BINARY_SHA256) { throw "BOATSTACK_BINARY_SHA256 is required with BOATSTACK_BINARY" }
+    Copy-Item -LiteralPath $env:BOATSTACK_BINARY -Destination $Candidate
+    $Expected = $env:BOATSTACK_BINARY_SHA256.ToLowerInvariant()
+  } else {
+    $Base = if ($Version -eq "latest") {
+      "https://github.com/operatorstack/boatstack/releases/latest/download"
+    } else {
+      "https://github.com/operatorstack/boatstack/releases/download/$Version"
     }
+    Invoke-WebRequest -UseBasicParsing -Uri "$Base/$Asset" -OutFile $Candidate
+    $ChecksumPath = Join-Path $Temporary "$Asset.sha256"
+    Invoke-WebRequest -UseBasicParsing -Uri "$Base/$Asset.sha256" -OutFile $ChecksumPath
+    $Expected = ((Get-Content -LiteralPath $ChecksumPath -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
+  }
+  $Actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $Candidate).Hash.ToLowerInvariant()
+  if ($Actual -ne $Expected) { throw "Boatstack runtime checksum mismatch" }
 
-    if ($mode -eq "update") {
-        $currentHelper = Join-Path $targetRepo ".product-loop/bin/boatstack-helper.exe"
-        if (Test-Path -PathType Leaf $currentHelper) {
-            try {
-                & $currentHelper doctor --repo $targetRepo
-                if ($LASTEXITCODE -ne 0) {
-                    Write-Warning "Current Boatstack doctor reported drift; the verified target helper will classify whether it is safely repairable."
-                }
-            } catch {
-                Write-Warning "Current Boatstack doctor reported drift; the verified target helper will classify whether it is safely repairable."
-            }
-        } else {
-            Write-Warning "Current Boatstack helper is missing; the verified target helper will classify whether it is safely repairable."
-        }
-    }
+  New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+  $SafeVersion = [regex]::Replace($Version, '[^A-Za-z0-9._-]', '-')
+  $Runtime = Join-Path $InstallDir ("boatstack-v2-$SafeVersion-" + $Actual.Substring(0, 16) + ".exe")
+  Copy-Item -LiteralPath $Candidate -Destination $Runtime -Force
+  $Runtime = (Resolve-Path -LiteralPath $Runtime).Path
 
-    # hydrate mode only populates the version-keyed shared runtime slot (and this
-    # worktree's ignored bin/) from the just-verified binary. It runs the binary
-    # as itself — running == installed — so no --binary handoff is needed, and it
-    # never touches committed generated files or requires a dedicated update branch.
-    if ($mode -eq "hydrate") {
-        & $binary hydrate-runtime --repo $targetRepo
-        if ($LASTEXITCODE -ne 0) {
-            throw "Boatstack runtime hydration failed with exit code $LASTEXITCODE"
-        }
-        return
+  if ($Mode -eq "install") {
+    $ConfigSource = $env:BOATSTACK_CONFIG
+    if (-not $ConfigSource) {
+      $ConfigSource = Join-Path $Temporary "project.json"
+      $Config = [ordered]@{
+        schema_version = 2
+        project = [ordered]@{ name = "repository"; default_branch = $DefaultBranch; commands = [ordered]@{} }
+        policy = [ordered]@{ plan_approval = "human"; visual_evidence = "optional" }
+        hosts = @("cli", "cursor", "codex", "claude", "gemini", "mcp")
+      }
+      $ConfigText = $Config | ConvertTo-Json -Depth 4 -Compress
+      [System.IO.File]::WriteAllText($ConfigSource, $ConfigText, [System.Text.UTF8Encoding]::new($false))
     }
+    & $Runtime init --repo $Repository --human $Actor --param "config_path=$ConfigSource" --format text
+  } else {
+    & $Runtime update --repo $Repository --human $Actor `
+      --param "runtime_path=$Runtime" `
+      --param "runtime_sha256=$Actual" --format text
+  }
+  if ($LASTEXITCODE -ne 0) { throw "Boatstack kernel rejected installation" }
 
-    $commandName = if ($mode -eq "update") { "update" } else { "init" }
-    $arguments = @($commandName, "--repo", $targetRepo, "--binary", $binary)
-    if ($mode -eq "install" -and $env:BOATSTACK_INTEGRATIONS) {
-        $arguments += @("--integrations", $env:BOATSTACK_INTEGRATIONS)
-    }
-    if ($env:BOATSTACK_YES -eq "1") {
-        $arguments += "--yes"
-    }
-    if ($repairRequested) {
-        $arguments += "--repair"
-    }
-    if ($downgradeRequested) {
-        $arguments += "--allow-downgrade"
-    }
-    & $binary @arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "Boatstack initialization failed with exit code $LASTEXITCODE"
-    }
+  $Launcher = Join-Path $InstallDir "boatstack.cmd"
+  $LauncherTemporary = "$Launcher.tmp"
+  "@echo off`r`n`"$Runtime`" %*`r`n" | Set-Content -LiteralPath $LauncherTemporary -Encoding ascii
+  Move-Item -LiteralPath $LauncherTemporary -Destination $Launcher -Force
+
+  Write-Host "Boatstack V2 installed at $Runtime"
+  Write-Host "Review and commit $Repository\.boatstack\project.json"
+  Write-Host "Run: $Launcher doctor --repo `"$Repository`" --format text"
 } finally {
-    Remove-Item -Recurse -Force $temporary -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $Temporary -Recurse -Force -ErrorAction SilentlyContinue
 }

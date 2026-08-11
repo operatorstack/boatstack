@@ -1,179 +1,65 @@
-# Troubleshooting Boatstack
+# Troubleshooting Boatstack V2
 
-**For:** someone blocked during installation or a feature.
-**Outcome:** identify the smallest safe action that restores the intended workflow.
+## Doctor reports configuration drift
 
-Start with:
+Run:
 
-```bash
-.product-loop/boatstack doctor --repo .
+```sh
+boatstack doctor --repo . --format json
 ```
 
-## A command is denied as destructive
+Do not edit machine state. Compare `.boatstack/project.json` with the intended
+schema-2 file and request `configuration.mutate` with its exact SHA-256.
+Malformed or unsupported configuration is not treated as verified.
 
-Boatstack has no in-session bypass. Preserve the current external state and diagnose with read-only commands. Replace the destructive capability with transactional or fix-forward behavior, or move intentional recovery into a separately controlled operator runbook.
+## Runtime is absent, stale, or wrong
 
-If a safe diagnostic was denied, keep the denial output and report the smallest reproducible command. Do not rename or wrap it to evade the check.
+Use the checksum-verifying installer in update mode. It installs a versioned
+runtime candidate, requests `installation.update`, and changes the launcher
+only after the kernel verifies the candidate.
 
-## The runtime or hook is missing
-
-Run `.product-loop/boatstack doctor --repo .` from the linked worktree. The tracked launcher verifies the committed pin and exact shared runtime before it restores the ignored local helper. This activation does not depend on hook trust. If the exact shared runtime is absent, the launcher runs the tag-pinned, checksum-verified installer and reports one pinned recovery command if activation still fails. Do not copy an executable from another worktree or select a newer cached runtime.
-
-A missing `.product-loop/bin/` directory is activation state, not evidence that a newer Boatstack release is required.
-
-`doctor` proves the generated host contract, not host activation. In Codex, trust the exact linked-worktree path, open `/hooks`, review and trust the current Boatstack hook hash, and start a new task. In Claude Code, reload and use `/hooks` to confirm the `PreToolUse` hook; Bash is required. In Cursor, reload the window and confirm both pre-execution hooks are enabled. Cursor hooks remain defense in depth because host-side output handling can change independently of Boatstack.
-
-If the worktree expects a different Boatstack version or source commit, update or rebase its committed Boatstack infrastructure. Boatstack will not run a newer cached helper against an older worktree contract.
-
-## Cursor reports `MainThreadShellExec not initialized`
-
-This is a Cursor host initialization failure: Boatstack's hook process did not start. Keep the hook fail-closed, run **Developer: Reload Window** in Cursor, and retry the Boatstack operation. Do not reinstall Boatstack for this error alone. Reinstall only when Boatstack itself reports a missing, drifted, unsafe, or checksum-invalid helper or shared runtime.
-
-## A host reports `HOST_PAYLOAD_MALFORMED`
-
-Boatstack received a hook event without a decodable command or tool call. It fails closed, but no unsafe operation was detected. Retry once with an explicit non-empty command. If the same code repeats, stop agent shell and tool retries, preserve edits, and run this from a normal terminal outside the blocked agent path:
-
-```bash
-.product-loop/boatstack diagnose-hook --host cursor --repo .
+```sh
+BOATSTACK_MODE=update BOATSTACK_VERSION=<tag> \
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/operatorstack/boatstack/main/install.sh)"
 ```
 
-Replace `cursor` with `claude` or `codex` for those hosts. A passing probe proves the installed wrapper, shared runtime, decoder, and canonical allow response; it cannot reveal the live payload emitted by the coding host. For Cursor, start a new task after a passing probe. Do not reinstall or hydrate Boatstack unless it separately reports a missing, drifted, unsafe, or checksum-invalid runtime.
+Do not copy a helper from another worktree or select a “latest” cache slot.
 
-## A published PR fails CI or receives review feedback
+## A transition is FRONTIER
 
-Describe the failure normally. Boatstack resolves the current branch and recorded PR, preserves the published parent, and prepares a corrective delivery for approval. Do not manually repeat a push or PR mutation denied by the safety hook. If several features match, choose from the named candidates; if GitHub is unavailable, the correction may be planned but its PR destination remains unverified until publication.
+The transition is legal but its required authority is missing. Supply a current
+human, autonomy, repository-policy, or provider receipt as named. Provider
+authority is mandatory in addition to human/autonomy for external publication.
 
-## Repair reports no matching delivery
+## A transition is REFUSED
 
-Recovery compares an exact requested change with an activated or published baseline. If no feature matches the current branch or recorded PR, save a new host Plan-mode file. If a draft or approved feature already exists, run the one planning or build operation reported by the status check; do not create or clear delivery state manually.
+The requested transition does not match the current source predicate or goal.
+Run `status --format json` and `next --format json`. Do not edit state files or
+retry through another host.
 
-## Boatstack reports invalid or orphaned delivery state
+## The snapshot is in RECOVERY
 
-Preserve the named plan, lock, preview, receipts, and managed state. A missing `plan.lock.json`, stale lock hash, or orphan `pr.md` cannot be repaired by choosing the newest artifact or deleting state. Restore the missing tracked evidence from version control or the originating feature branch, then rerun `/boatstack-next`. If the evidence cannot be restored, stop and prepare a separately reviewed recovery rather than resetting progress in place.
+Run `status --format json` to read the exact transaction ID and permitted
+recovery transitions. Use `recover --transition <id> --param
+transaction_id=<id>` with the required authority. Generic compensation refuses
+unknown external effects; use publication reconciliation or escalation.
 
-## Cursor cannot find a slash command
+## A workspace cut is refused
 
-Cursor reads project commands from `.cursor/commands/*.md`:
+The destination must not exist. Its parent must resolve canonically. The branch
+must be valid, and `base_ref` must contain the exact verified
+`.boatstack/project.json`. This prevents a new worktree from starting with
+stale or absent policy.
 
-```bash
-ls .cursor/commands
-.product-loop/boatstack doctor --repo .
-```
+## Cleanup is refused
 
-Rerun the installer and reload Cursor when files are missing. Commit the restored adapter in a dedicated infrastructure PR.
+Boatstack preserves active, unpublished, closed-unmerged, ambiguous, and
+unresolved workspaces. Observe the PR, prove merged landing, or explicitly
+abandon the delivery. The preserved source checkout must still have its original
+worktree identity and ref.
 
-## Claude Code cannot find a slash command
+## A host disagrees with the CLI
 
-Claude Code reads Boatstack's user-facing workflow skills from `.claude/skills/<operation>/SKILL.md`. The central `.claude/skills/boatstack/SKILL.md` router is intentionally hidden from slash suggestions and remains available for natural-language requests.
-
-```bash
-ls .claude/skills
-.product-loop/boatstack doctor --repo .
-```
-
-If Boatstack created `.claude/skills/` while Claude Code was already running, reload Claude Code once. Rerun the installer when `doctor` reports a missing generated skill, and never replace a user-owned skill with the same name without reviewing the collision.
-
-## `/auto-plan` cannot find a source plan
-
-Finish the host's Plan-mode exploration and save it as a durable file, then rerun `/auto-plan` with that path via `--plan <path>`. Boatstack does not scan directories for plans, so the path is always required; point it at a file that stays present and unchanged through build.
-
-## Plan mode cannot write an artifact
-
-Planning is Markdown-only. Send the selected feature, durable in-repository source plan, artifact name, target shell, and complete Markdown to `flow bootstrap --repo <path> --feature <slug> --source-plan <path> --artifact <name> --shell posix|powershell` through the current Boatstack operation entrypoint. Execute only the returned `planning_envelope`, unchanged. The oracle selects the valid embedded or detached helper and renders the shell transport; documentation is never command authority.
-
-The adapter must not run a bare helper, construct a `planning-write` command, split either envelope across calls, prepend or append another command, use an expansion-capable delimiter, paste Markdown at a shell prompt, or edit product code. After `workspace-cut`, discard the earlier prescription and resolve again from `destination_repository`. `PLANNING_TRANSPORT_INVALID` means Boatstack stopped the command before execution; obtain a fresh prescription. If PowerShell cannot represent a document or path safely, use Git Bash and request `--shell posix`.
-
-## `/build` says it is ready but cannot start
-
-The plan is authorized, but the host remains read-only. Enter the host's normal execution-capable mode and rerun `/build`. Boatstack deliberately creates no compiled state or lock before that transition.
-
-## Approval is stale
-
-The source plan, feature spec, or complete plan changed after approval. Return to `/auto-plan`, review the new plan at `/plan-gate`, and approve it again. Never edit approval metadata manually.
-
-## Build does not create `approval.md`
-
-Check `workflow.human_plan_approval`. When it is `false`, this is expected: activation writes a fingerprinted schema-v2 plan lock with `authorization_mode: policy` and does not claim human approval.
-
-## A gate passes with gaps
-
-The proven criteria passed while named non-critical gaps remain. Each gap needs an impact, owner, reason, affected criteria, and revisit trigger. A critical correctness, safety, or acceptance gap blocks instead.
-
-If `workflow.allow_pass_with_gaps` is `false`, resolve the gaps and record `PASS`; changing evidence text alone cannot bypass the controller.
-
-## High-risk review requires reviewer provenance
-
-The current diff matches `project.high_risk_paths` and independent review is enabled. Rerun review with a real `--reviewer-identity` and `--review-method human_peer` or `separate_agent`. Boatstack retains these fields in the review receipt.
-
-## An unrelated base-branch check fails
-
-Reproduce the failure against the target branch. Keep its repair in a separate PR. Use a bypass only when repository policy permits it and a human explicitly authorizes it; do not hide unrelated edits in the approved feature.
-
-## Non-interactive installation cannot find the tests
-
-Boatstack detects common package-manager tests, `scripts/check.sh`, Go, Rust, Make, and Python/pytest projects. For a custom command, install interactively or define the real test command in `.boatstack-project.json`. Boatstack will not invent one merely to complete setup.
-
-## A fresh clone has no helper
-
-This is expected: the repository-family cache lives inside that clone's Git common directory and `.product-loop/bin/` is ignored. Run `.product-loop/boatstack doctor --repo .`. The tracked launcher hydrates the exact pinned runtime through the tag-pinned, checksum-verified installer. Future linked worktrees reuse that clone-wide runtime without another download.
-
-## `/boatstack-update` is postponed
-
-Updates never share a feature branch. Finish and merge the current feature PR, switch to the configured default branch, pull its current remote state, confirm the worktree is clean, and rerun `/boatstack-update`. Boatstack does not stash, switch away from, or modify active product work.
-
-## The update check is unavailable
-
-Release discovery uses a short, unauthenticated request to GitHub and a 24-hour ignored cache. A timeout, rate limit, or malformed response never blocks `/ship-gate`. Retry `/boatstack-update` later; do not bypass checksum verification or install from an unverified asset.
-
-## The update reports generated drift
-
-Boatstack classifies the named path before writing. Exact installed state migrates automatically. If the path is provably Boatstack-owned but drifted, an interactive update shows the fingerprinted repair and asks whether to continue; a noninteractive update returns one retry using `--repair`. The repair is backed up outside the worktree and included in the same update PR.
-
-Admission and final diff validation use the same ownership projection. Marker-bounded updates to `.cursorrules`, `CLAUDE.md`, and `GEMINI.md` are accepted only when all content outside the Boatstack markers is byte-equivalent. If final validation rejects a path that preflight classified as owned, stop rather than retrying: that is a controller consistency failure and must not consume another attempt.
-
-Do not use `--repair` for user-owned or mixed changes. Move durable project content into `.boatstack-project.json` or repository documentation first. A downgrade additionally requires `--allow-downgrade`; repair authority alone never removes newer behavior.
-
-## The installed helper or hook prevents updating
-
-Use the installer for the target release in update mode. It downloads and verifies the target helper before treating the installed helper's `doctor` result as diagnostic, so a missing helper or stale owned hook cannot disable recovery. Run `repair-status --repo . --json` to inspect the secret-free classification. Malformed host JSON, partial interceptor markers, symlinks, and unverifiable user content remain blocking and are never overwritten.
-
-If the ignored local install lock says `dev`, has an unknown source commit, is malformed, or is absent, rerun the same verified target installer with `BOATSTACK_REPAIR=1`. The target helper recovers the prior stable version from the repository's committed generated pin and repairs only verified Boatstack-owned state. Do not delete repository files or move detached state by hand. Detached operation receipts and runtime slots are validated against their external Boatstack ownership root, so a path under `Application Support/boatstack` is not treated as a repository escape.
-
-If a previous update succeeded but its generated diff was later discarded, rerun the verified target installer. Boatstack now checks the current repository and runtime postcondition before consuming the detached success receipt. A clean old-pin worktree reopens only the same local update and regenerates it; publication and other external terminal receipts remain closed.
-
-## A tool call repeats or publication appears stuck
-
-Run `.product-loop/boatstack operation-status --repo . --json`. `EXECUTING` means the exact call already has a live lease, so wait instead of launching it again. `RECONCILE_REQUIRED` means Boatstack did not observe completion; verify the reported Git, GitHub, file, browser, or MCP postcondition before retrying. A successful operation whose response was lost is recovered from that observation. Do not reset the task, repeat a denied push, or open another PR.
-
-Operation receipts are shared by linked worktrees and retry budgets survive new chats and host restarts. If more than one unfinished operation matches, rerun status with the reported operation ID rather than choosing the newest. The receipts contain fingerprints and secret-free observations; no command payload or credential should be added to them.
-
-## An update PR response was interrupted
-
-Keep the update branch and rerun the Boatstack update publication step with the same displayed preview fingerprint. The deterministic publisher queries the exact head branch first and returns the existing PR when GitHub accepted the earlier request. If the update diff changed, regenerate and review the preview; never bypass it with a direct push or `gh pr create`.
-
-## The PR preview is stale
-
-A new commit, changed evidence, changed approval artifact, or base-branch update invalidated the preview. Ask Boatstack to regenerate it. Do not copy the old body forward.
-
-## Visual evidence is unavailable or stale
-
-Confirm the development launch instruction and retry the bounded health probe. Boatstack reuses a machine capability receipt only while its Boatstack version, lockfile, launch command, browser version, framework configuration, and health state still match. Under `suggest`, keep the missing screenshot visible as a PR gap or attach the displayed local PNG manually. Under `require`, recapture and publish to the same PR; do not open a duplicate PR. If the PR already opened before upload failed, preserve it and fix forward from `visual_pending`.
-
-## A phased plan cannot push or open its next PR
-
-Plan approval is not publication authority. Run `delivery-status` through the active
-Boatstack operation and confirm that the intended delivery slice is active. Commit
-only that slice's declared affected paths, then run `/test-gate`, `/review-gate`, and
-`/ship-gate`. Direct pushes, GitHub CLI PR mutations, GitHub tool mutations, and the
-ad-hoc PR route are denied until the managed publisher receives the explicit open or
-update confirmation. Successful publication activates the next declared slice.
-
-## GitHub CLI is unavailable
-
-Boatstack retains the validated `pr.md`. Authenticate or install GitHub CLI and repeat the open/update confirmation, or copy the exact preview into GitHub manually. Neither path authorizes merge.
-
-## A product edit is denied before build
-
-After `auto-plan` saves a feature plan, Boatstack owns the workflow boundary even though implementation has not started. Review the reported stage and continue with `plan-gate` when the plan is draft, or `build` when it is approved or policy-ready. Product files remain unchanged until build activation creates a current lock. Do not retry through another editor, shell redirection, package installer, or MCP tool; all supported host events share the same decision. If the denial reports ambiguous, stale, or invalid state, follow its single recovery operation.
-
-If `check-plan` reports a non-empty product baseline, inspect its exact diff and changed paths. Pass the displayed baseline fingerprint to `record-approval`. A changed fingerprint means the pre-existing edits drifted; preserve them, review the new diff, and approve again. Schema-v1 receipts remain valid only when this baseline is clean.
+Send the same schema-2 request to `boatstack rpc`. Hosts may change rendering,
+but they may not change transition IDs, authority, source predicates, or target
+postconditions. A parity failure is a product defect.
