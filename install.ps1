@@ -117,7 +117,7 @@ try {
   Copy-Item -LiteralPath $Candidate -Destination $StagedLauncher
   Move-Item -LiteralPath $StagedLauncher -Destination $Launcher -Force
   Write-Host "Boatstack V2 installed at $Runtime"
-  Write-Host "Review and commit $Repository\.boatstack\project.json and the generated host skills"
+  Write-Host "Review and commit $Repository\.boatstack\project.json, $Repository\.boatstack\runtime.json, and the generated host skills"
   Write-Host "Run: $Launcher doctor --repo `"$Repository`" --format text"
 } finally {
   Remove-Item -LiteralPath $Temporary -Recurse -Force -ErrorAction SilentlyContinue

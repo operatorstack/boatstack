@@ -430,17 +430,58 @@ class RepositoryContract(unittest.TestCase):
                     "BOATSTACK_BINARY": str(self.old_helper),
                     "BOATSTACK_BINARY_SHA256": digest,
                     "BOATSTACK_INSTALL_DIR": str(install_dir),
+                    "BOATSTACK_HOME": str(root / "home"),
                     "BOATSTACK_CONFIG": str(CONFIG),
                     "BOATSTACK_STATE_ROOT": str(root / "state"),
                     "BOATSTACK_ACTOR": "contract",
                     "BOATSTACK_VERSION": "contract-v2",
                 }
             )
-            self.run_command("bash", REPO / "install.sh", cwd=repository, env=env)
+            installed = self.run_command("bash", REPO / "install.sh", cwd=repository, env=env)
+            self.assertIn(".boatstack/runtime.json", installed.stdout)
             launcher = install_dir / "boatstack"
             self.assertTrue(launcher.is_file())
             self.assertFalse(launcher.is_symlink())
             self.assertTrue((repository / ".boatstack" / "project.json").is_file())
+
+            self.run_command("git", "add", ".", cwd=repository)
+            self.run_command("git", "commit", "-m", "install Boatstack", cwd=repository)
+            clone = root / "clone"
+            self.run_command("git", "clone", str(repository), str(clone))
+            fresh = json.loads(
+                self.run_command(
+                    launcher, "init", "--repo", clone, "--human", "contract",
+                    "--param", f"config_path={clone / '.boatstack' / 'project.json'}",
+                    "--format", "json", env=env,
+                ).stdout
+            )
+            self.assertEqual(fresh["receipt"]["transition_id"], "installation.initialize")
+            fresh_doctor = json.loads(
+                self.run_command(launcher, "doctor", "--repo", clone, env=env).stdout
+            )
+            self.assertTrue(fresh_doctor["doctor"]["healthy"])
+
+            invalid_clone = root / "invalid-clone"
+            self.run_command("git", "clone", str(repository), str(invalid_clone))
+            invalid_pin_path = invalid_clone / ".boatstack" / "runtime.json"
+            invalid_pin = json.loads(invalid_pin_path.read_text())
+            invalid_pin["version"] = "v-conflicting"
+            invalid_pin_path.write_text(json.dumps(invalid_pin, indent=2) + "\n")
+            state_before = {
+                path.relative_to(root / "state"): path.read_bytes()
+                for path in (root / "state").rglob("*") if path.is_file()
+            }
+            refused = self.run_command(
+                self.old_helper, "init", "--repo", invalid_clone, "--human", "contract",
+                "--param", f"config_path={invalid_clone / '.boatstack' / 'project.json'}",
+                "--format", "json", env=env, expected=1,
+            )
+            self.assertIn("not admissible", refused.stderr)
+            state_after = {
+                path.relative_to(root / "state"): path.read_bytes()
+                for path in (root / "state").rglob("*") if path.is_file()
+            }
+            self.assertEqual(state_after, state_before)
 
             doctor = json.loads(
                 self.run_command(launcher, "doctor", "--repo", repository, env=env).stdout
@@ -639,11 +680,13 @@ class RepositoryContract(unittest.TestCase):
             "BOATSTACK_BINARY_SHA256", "sha256sum", "shasum -a 256",
             '"$runtime" init', "update_arguments=(", '"$runtime" "${update_arguments[@]}"',
             "BOATSTACK_ACCEPT_PROGRAM_CHANGE", "--accept-program-change",
+            ".boatstack/runtime.json",
         ):
             self.assertIn(expected, shell)
         for expected in (
             "BOATSTACK_BINARY_SHA256", "Get-FileHash", "$Runtime init", "$Runtime update",
             "BOATSTACK_ACCEPT_PROGRAM_CHANGE", "--accept-program-change",
+            ".boatstack\\runtime.json",
         ):
             self.assertIn(expected, powershell)
         self.assertNotIn("--repair", shell)

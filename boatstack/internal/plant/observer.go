@@ -50,7 +50,7 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 		return model.Observation{}, err
 	}
 	now := o.clock.Now().UTC()
-	state, stateEvidence, err := o.readState(layout.StatePath, current, now)
+	state, stateEvidence, stateExists, err := o.readState(layout.StatePath, current, now)
 	if err != nil {
 		return model.Observation{}, err
 	}
@@ -104,6 +104,36 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 		}
 		if pinExists {
 			runtimeState = model.RuntimeConflicting
+			if !stateExists && state.Runtime == model.RuntimeAbsent {
+				pinRaw, readPinErr := os.ReadFile(pinPath)
+				if readPinErr != nil {
+					return model.Observation{}, readPinErr
+				}
+				pin, decodePinErr := boatstackruntime.DecodePin(pinRaw)
+				if decodePinErr == nil && pin.StateSchemaVersion == durable.StateSchemaVersion &&
+					pin.Version == current.RuntimeVersion && pin.SHA256 == current.RuntimeFingerprint {
+					home, homeErr := boatstackruntime.Home("")
+					if homeErr != nil {
+						return model.Observation{}, homeErr
+					}
+					runtimePath, pathErr := boatstackruntime.ExecutablePath(home, pin.Identity())
+					if pathErr == nil {
+						evidence, fingerprint, exists, runtimeErr := fileEvidence(runtimePath, "runtime", now)
+						if runtimeErr != nil {
+							return model.Observation{}, runtimeErr
+						}
+						runtimeEvidence = append(runtimeEvidence, evidence)
+						switch {
+						case !exists:
+							runtimeState = model.RuntimeStale
+						case boatstackruntime.VerifyExecutable(runtimePath, pin.Identity()) != nil || fingerprint != pin.SHA256:
+							runtimeState = model.RuntimeStale
+						default:
+							runtimeState = model.RuntimeAbsent
+						}
+					}
+				}
+			}
 		}
 	} else if !pinExists {
 		runtimeState = model.RuntimeAbsent
@@ -336,21 +366,21 @@ func doublestarMatch(pattern, name string) (bool, error) {
 	return compiled.MatchString(filepath.ToSlash(name)), nil
 }
 
-func (o Observer) readState(path string, invocation model.InvocationContext, now time.Time) (durable.State, []model.Evidence, error) {
+func (o Observer) readState(path string, invocation model.InvocationContext, now time.Time) (durable.State, []model.Evidence, bool, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			fingerprint := hashBytes([]byte("absent:" + path + ":" + invocation.RepositoryID + ":" + invocation.WorktreeID))
 			evidence := []model.Evidence{{Source: path, Fingerprint: fingerprint, ObservedAt: now}}
-			return durable.Default(invocation, now), evidence, nil
+			return durable.Default(invocation, now), evidence, false, nil
 		}
-		return durable.State{}, nil, fmt.Errorf("read durable state: %w", err)
+		return durable.State{}, nil, false, fmt.Errorf("read durable state: %w", err)
 	}
 	state, err := durable.DecodeState(raw)
 	if err != nil {
-		return durable.State{}, nil, fmt.Errorf("decode durable state: %w", err)
+		return durable.State{}, nil, false, fmt.Errorf("decode durable state: %w", err)
 	}
-	return state, []model.Evidence{{Source: path, Fingerprint: hashBytes(raw), ObservedAt: now}}, nil
+	return state, []model.Evidence{{Source: path, Fingerprint: hashBytes(raw), ObservedAt: now}}, true, nil
 }
 
 func (o Observer) gitEvidence(ctx context.Context, repository string, now time.Time) ([]model.Evidence, string, string, error) {

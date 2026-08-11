@@ -128,5 +128,5 @@ install -m 0755 "$candidate" "$launcher_staged"
 mv -f "$launcher_staged" "$install_dir/boatstack"
 
 echo "Boatstack V2 installed at $runtime"
-echo "Review and commit $repository/.boatstack/project.json and the generated host skills"
+echo "Review and commit $repository/.boatstack/project.json, $repository/.boatstack/runtime.json, and the generated host skills"
 echo "Run: $install_dir/boatstack doctor --repo $repository --format text"
