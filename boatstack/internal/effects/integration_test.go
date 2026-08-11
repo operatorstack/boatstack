@@ -229,8 +229,8 @@ func TestExternalConfigurationAuthorityTransfersAcrossAttachAndDetach(t *testing
 	}
 }
 
-func TestProgramDriftRequiresExplicitCatalogReconciliation(t *testing.T) {
-	// control-law: frozen-program-cannot-change-without-exact-human-reconciliation
+func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
+	// control-law: frozen-program-and-runtime-change-only-through-one-exact-human-admission
 	ctx := context.Background()
 	repository := testRepository(t)
 	externalRoot := t.TempDir()
@@ -307,8 +307,11 @@ func TestProgramDriftRequiresExplicitCatalogReconciliation(t *testing.T) {
 	}
 	request := surfaces.Request{
 		SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationApply, Repository: repository, Host: "cli", CorrelationID: "program-drift-reconcile",
-		FlowID: "flow-program-drift", Goal: goal, TransitionID: "catalog.reconcile",
-		Parameters: protocol.Parameters{{Name: "prior_program_fingerprint", Value: oldProgram.Fingerprint()}, {Name: "accept_obligation_change", Value: "true"}},
+		FlowID: "flow-program-drift", Goal: goal, TransitionID: "installation.reconcile-update",
+		Parameters: protocol.Parameters{
+			{Name: "source_revision", Value: "program-new"}, {Name: "runtime_path", Value: executable}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
+			{Name: "accept_obligation_change", Value: "true"},
+		},
 	}
 	frontier, err := newKernel.Handle(ctx, request)
 	if err == nil || frontier.Decision == nil || frontier.Decision.Kind != supervisor.DecisionFrontier {
@@ -319,21 +322,39 @@ func TestProgramDriftRequiresExplicitCatalogReconciliation(t *testing.T) {
 		t.Fatal("authority-free reconciliation mutated durable state")
 	}
 	request.Authority = human
-	request.Parameters[1].Value = "false"
+	request.Parameters[3].Value = "false"
 	if _, err := newKernel.Handle(ctx, request); err == nil {
-		t.Fatal("reconciliation without explicit obligation acceptance succeeded")
+		t.Fatal("program-changing update without explicit obligation acceptance succeeded")
 	}
 	afterInvalid, _ := os.ReadFile(layout.StatePath)
 	if !bytes.Equal(before, afterInvalid) {
 		t.Fatal("invalid reconciliation mutated durable state")
 	}
-	request.Parameters[1].Value = "true"
+	request.Parameters[3].Value = "true"
 	reconciled, err := newKernel.Handle(ctx, request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reconciled.Receipt == nil || reconciled.Receipt.ProgramFingerprint != newProgram.Fingerprint() || reconciled.Snapshot == nil || reconciled.Snapshot.Program.Value != model.ProgramCurrent {
+	if reconciled.Receipt == nil || reconciled.Receipt.ProgramFingerprint != newProgram.Fingerprint() ||
+		reconciled.Receipt.PriorProgramFingerprint != oldProgram.Fingerprint() || reconciled.Receipt.ProgramDeltaFingerprint == "" ||
+		!reconciled.Receipt.ProgramChangeAccepted || reconciled.Receipt.RuntimeFingerprint != digestBytes(runtimeRaw) ||
+		reconciled.Receipt.RuntimeSourceRevision != "program-new" || reconciled.Snapshot == nil ||
+		reconciled.Snapshot.Program.Value != model.ProgramCurrent || reconciled.Snapshot.Phase.Value != model.PhaseObserved {
 		t.Fatalf("reconciliation did not establish exact program identity: %#v", reconciled)
+	}
+	afterSuccess, err := os.ReadFile(layout.StatePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newKernel.Handle(ctx, request); err == nil {
+		t.Fatal("already reconciled program delta was accepted a second time")
+	}
+	afterReplay, err := os.ReadFile(layout.StatePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(afterSuccess, afterReplay) {
+		t.Fatal("rejected repeated reconciliation mutated durable state")
 	}
 }
 

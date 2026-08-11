@@ -5,7 +5,7 @@ description: Apply a checksum-verified Boatstack update. Use only when the user 
 
 # Boatstack Update
 
-Select the `installation.update` transition. This trigger does not reclassify or advance a product delivery.
+Select `installation.update` or, after exact human acceptance of program drift, `installation.reconcile-update`. This trigger does not reclassify or advance a product delivery.
 
 Run `boatstack status --repo . --format json` once for observation. An authority-free
 `FRONTIER` from status is diagnostic only and cannot terminate this selected operation.
@@ -21,8 +21,21 @@ For this operation, request only checksum-verified installation authority. Do no
 request or materialize repository, provider, publication, product-delivery, or
 merge authority. Installation receipts cannot be reused to broaden this scope.
 
-Begin each cycle with an untargeted authority-bearing `next`. Apply only the
-stable transition ID from the immediately preceding prescription and only its
+If the candidate reports exact compiled-program drift, preserve the healthy old
+launcher and present the prior program fingerprint, candidate program
+fingerprint, and program-delta fingerprint. Do not accept the delta implicitly.
+After explicit human acceptance, rerun the same checksum-bound update with
+`--accept-program-change` so the Kernel uses the single atomic
+`installation.reconcile-update` boundary. If the update has an interrupted local
+transaction and `recovery.rollback` is permitted, carry the same human authority
+through that rollback, preserve its complete receipt, and retry once from the
+restored healthy old state. Never acquire repository authority to escape an
+update recovery frontier.
+
+Begin each cycle with an untargeted authority-bearing `next`. A `CANDIDATE`
+identifies the next transition but is not permission to apply it: bind only its
+declared parameters and re-resolve that exact transition. Apply only the stable
+transition ID from the immediately preceding `PRESCRIBED` result and only its
 declared parameters. Preserve the complete apply response and stderr, including
 admission, receipt, postcondition, error, recovery, and transaction fields.
 Re-resolve with the same context after every complete receipt.

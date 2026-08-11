@@ -33,20 +33,24 @@ func (d Driver) prepareRecoveryReplay(ctx context.Context, layout ports.Controll
 	}
 	mutations := make([]ports.ResourceMutation, 0, len(record.Mutations)+2)
 	for _, original := range record.Mutations {
-		if err := validateRecoveryPath(layout, original.Path); err != nil {
+		if err := validateRecoveryPath(layout, record.Admission, original.Path); err != nil {
 			return nil, err
 		}
 		var target []byte
+		var targetLink string
 		deleteResource := false
 		if resume {
 			target = original.Target
+			targetLink = original.TargetLink
 			deleteResource = original.Delete
+		} else if original.PriorLink != "" {
+			targetLink = original.PriorLink
 		} else if original.PriorExists {
 			target = original.Prior
 		} else {
 			deleteResource = true
 		}
-		mutation, mutationErr := mutationFor(original.Path, target, os.FileMode(original.Mode), original.InstallLast, deleteResource)
+		mutation, mutationErr := mutationForExactResource(original.Path, target, targetLink, os.FileMode(original.Mode), original.InstallLast, deleteResource)
 		if mutationErr != nil {
 			return nil, mutationErr
 		}
@@ -93,7 +97,7 @@ func (d Driver) prepareWorkspaceCutReconciliation(ctx context.Context, layout po
 
 	mutations := make([]ports.ResourceMutation, 0, len(record.Mutations)+2)
 	for _, original := range record.Mutations {
-		if err := validateRecoveryPath(layout, original.Path); err != nil {
+		if err := validateRecoveryPath(layout, record.Admission, original.Path); err != nil {
 			return nil, err
 		}
 		var target []byte
@@ -203,7 +207,7 @@ func prepareJournalClosureFromRecord(pendingPath string, record journalRecord, o
 	return []ports.ResourceMutation{archive, removePending}, nil
 }
 
-func validateRecoveryPath(layout ports.ControllerLayout, path string) error {
+func validateRecoveryPath(layout ports.ControllerLayout, admission protocol.Admission, path string) error {
 	if !filepath.IsAbs(path) {
 		return fmt.Errorf("interrupted transaction contains a non-absolute resource path")
 	}
@@ -211,6 +215,13 @@ func validateRecoveryPath(layout ports.ControllerLayout, path string) error {
 		if root == "" {
 			continue
 		}
+		relative, err := filepath.Rel(root, path)
+		if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return nil
+		}
+	}
+	if runtimePath, ok := admission.Parameters.Get("runtime_path"); ok {
+		root := filepath.Dir(runtimePath)
 		relative, err := filepath.Rel(root, path)
 		if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 			return nil

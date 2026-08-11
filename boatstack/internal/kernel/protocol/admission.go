@@ -12,23 +12,25 @@ import (
 const AdmissionSchemaVersion = 2
 
 type Admission struct {
-	SchemaVersion       int                     `json:"schema_version"`
-	ID                  string                  `json:"id"`
-	TransitionID        catalog.TransitionID    `json:"transition_id"`
-	TransitionVersion   int                     `json:"transition_version"`
-	ProgramFingerprint  string                  `json:"program_fingerprint"`
-	SnapshotFingerprint string                  `json:"snapshot_fingerprint"`
-	SourceRevision      string                  `json:"source_revision,omitempty"`
-	WorktreeFingerprint string                  `json:"worktree_fingerprint,omitempty"`
-	SourcePhase         model.ProtocolPhase     `json:"source_phase"`
-	Invocation          model.InvocationContext `json:"invocation"`
-	Goal                model.Goal              `json:"goal"`
-	Authority           AuthorityBundle         `json:"authority"`
-	Parameters          Parameters              `json:"parameters,omitempty"`
-	Evidence            []string                `json:"evidence"`
-	IdempotencyKey      string                  `json:"idempotency_key"`
-	IssuedAt            time.Time               `json:"issued_at"`
-	ExpiresAt           time.Time               `json:"expires_at"`
+	SchemaVersion           int                     `json:"schema_version"`
+	ID                      string                  `json:"id"`
+	TransitionID            catalog.TransitionID    `json:"transition_id"`
+	TransitionVersion       int                     `json:"transition_version"`
+	ProgramFingerprint      string                  `json:"program_fingerprint"`
+	PriorProgramFingerprint string                  `json:"prior_program_fingerprint,omitempty"`
+	ProgramDeltaFingerprint string                  `json:"program_delta_fingerprint,omitempty"`
+	SnapshotFingerprint     string                  `json:"snapshot_fingerprint"`
+	SourceRevision          string                  `json:"source_revision,omitempty"`
+	WorktreeFingerprint     string                  `json:"worktree_fingerprint,omitempty"`
+	SourcePhase             model.ProtocolPhase     `json:"source_phase"`
+	Invocation              model.InvocationContext `json:"invocation"`
+	Goal                    model.Goal              `json:"goal"`
+	Authority               AuthorityBundle         `json:"authority"`
+	Parameters              Parameters              `json:"parameters,omitempty"`
+	Evidence                []string                `json:"evidence"`
+	IdempotencyKey          string                  `json:"idempotency_key"`
+	IssuedAt                time.Time               `json:"issued_at"`
+	ExpiresAt               time.Time               `json:"expires_at"`
 }
 
 func NewAdmission(snapshot model.Snapshot, goal model.Goal, transition catalog.Transition, authority AuthorityBundle, parameters Parameters, now time.Time, lifetime time.Duration) (Admission, error) {
@@ -44,6 +46,14 @@ func NewAdmission(snapshot model.Snapshot, goal model.Goal, transition catalog.T
 		ProgramFingerprint: snapshot.ProgramFingerprint, SnapshotFingerprint: snapshot.Fingerprint, SourceRevision: sourceRevision, WorktreeFingerprint: worktreeFingerprint,
 		SourcePhase: snapshot.Phase.Value, Invocation: snapshot.Invocation, Goal: goal, Authority: authority.canonical(),
 		Evidence: append([]string(nil), transition.RequiredEvidence...), Parameters: parameters.Canonical(), IssuedAt: now.UTC(), ExpiresAt: now.Add(lifetime).UTC(),
+	}
+	if snapshot.RecordedProgramFingerprint != "" && snapshot.RecordedProgramFingerprint != snapshot.ProgramFingerprint {
+		a.PriorProgramFingerprint = snapshot.RecordedProgramFingerprint
+		delta, err := ProgramDeltaFingerprint(snapshot.RecordedProgramFingerprint, snapshot.ProgramFingerprint)
+		if err != nil {
+			return Admission{}, err
+		}
+		a.ProgramDeltaFingerprint = delta
 	}
 	key, err := contentID("idem-", struct {
 		Transition catalog.TransitionID    `json:"transition"`
@@ -130,6 +140,19 @@ func (a Admission) ValidateCurrent(snapshot model.Snapshot, goal model.Goal, tra
 	}
 	if a.ProgramFingerprint != snapshot.ProgramFingerprint {
 		return fmt.Errorf("admission %q is bound to a different control program", a.ID)
+	}
+	expectedPrior := ""
+	if snapshot.RecordedProgramFingerprint != "" && snapshot.RecordedProgramFingerprint != snapshot.ProgramFingerprint {
+		expectedPrior = snapshot.RecordedProgramFingerprint
+	}
+	if a.PriorProgramFingerprint != expectedPrior {
+		return fmt.Errorf("admission %q is bound to a different prior control program", a.ID)
+	}
+	if a.PriorProgramFingerprint != "" {
+		delta, err := ProgramDeltaFingerprint(a.PriorProgramFingerprint, a.ProgramFingerprint)
+		if err != nil || delta != a.ProgramDeltaFingerprint {
+			return fmt.Errorf("admission %q has an invalid program delta binding", a.ID)
+		}
 	}
 	if snapshot.Phase.Status != model.FactKnown || a.SourcePhase != snapshot.Phase.Value {
 		return fmt.Errorf("admission %q is bound to a different source phase", a.ID)
@@ -274,6 +297,21 @@ func validateAuthorityEvidence(snapshot model.Snapshot, authority AuthorityBundl
 func (a Admission) ValidateIdentity() error {
 	if a.SchemaVersion != AdmissionSchemaVersion || a.ID == "" || a.TransitionID == "" || a.TransitionVersion < 1 || len(a.ProgramFingerprint) != 64 || a.SnapshotFingerprint == "" || !a.SourcePhase.Valid() || a.IdempotencyKey == "" || a.IssuedAt.IsZero() || a.ExpiresAt.Before(a.IssuedAt) {
 		return fmt.Errorf("admission: invalid schema, identity, source, or lifetime")
+	}
+	if (a.PriorProgramFingerprint == "") != (a.ProgramDeltaFingerprint == "") {
+		return fmt.Errorf("admission has incomplete program delta identity")
+	}
+	if a.PriorProgramFingerprint != "" {
+		delta, err := ProgramDeltaFingerprint(a.PriorProgramFingerprint, a.ProgramFingerprint)
+		if err != nil || delta != a.ProgramDeltaFingerprint {
+			return fmt.Errorf("admission has invalid program delta identity")
+		}
+	}
+	if a.TransitionID == "installation.reconcile-update" {
+		accepted, _ := a.Parameters.Get("accept_obligation_change")
+		if a.PriorProgramFingerprint == "" || accepted != "true" {
+			return fmt.Errorf("reconciled installation admission lacks exact program acceptance")
+		}
 	}
 	if err := a.Invocation.Validate(true); err != nil {
 		return err

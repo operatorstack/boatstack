@@ -48,3 +48,40 @@ func TestKernelLockUsesProcessScopedHandleNotFilePresence(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestInstallationLockCoordinatesRepositoriesSharingOneLauncher(t *testing.T) {
+	// control-law: shared-launcher-installation-has-one-cross-repository-writer
+	resolver, err := plant.NewResolver(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstRepository := recoveryRepository(t)
+	secondRepository := recoveryRepository(t)
+	firstInvocation, err := resolver.ResolveInvocation(context.Background(), firstRepository, "cli", "first-installation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondInvocation, err := resolver.ResolveInvocation(context.Background(), secondRepository, "cli", "second-installation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	locker, err := NewLocker(resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := locker.Acquire(context.Background(), firstInvocation, []string{"installation"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Release()
+	if _, err := locker.Acquire(context.Background(), secondInvocation, []string{"installation"}); err == nil {
+		t.Fatal("two repositories concurrently acquired their shared launcher installation")
+	}
+	independent, err := locker.Acquire(context.Background(), secondInvocation, []string{"state"})
+	if err != nil {
+		t.Fatalf("unrelated repository state lock was coupled to installation: %v", err)
+	}
+	if err := independent.Release(); err != nil {
+		t.Fatal(err)
+	}
+}

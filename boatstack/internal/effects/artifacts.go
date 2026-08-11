@@ -281,7 +281,7 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 			return nil, err
 		}
 	}
-	if transition.ID == "configuration.initialize" || transition.ID == "configuration.mutate" || transition.ID == "installation.initialize" || transition.ID == "installation.update" {
+	if transition.ID == "configuration.initialize" || transition.ID == "configuration.mutate" || transition.ID == "installation.initialize" || transition.ID == "installation.update" || transition.ID == "installation.reconcile-update" {
 		hostMutations, hostErr := prepareHostSkillMutations(layout.RepositoryRoot, state.EnabledHosts)
 		if hostErr != nil {
 			return nil, hostErr

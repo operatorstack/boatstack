@@ -30,16 +30,17 @@ func NewJournal(resolver ports.InvocationResolver, clock ports.Clock) (*Journal,
 }
 
 type journalRecord struct {
-	SchemaVersion   int                      `json:"schema_version"`
-	Admission       protocol.Admission       `json:"admission"`
-	TransitionID    catalog.TransitionID     `json:"transition_id"`
-	TransitionClass catalog.EventClass       `json:"transition_class"`
-	Status          string                   `json:"status"`
-	Mutations       []ports.ResourceMutation `json:"mutations,omitempty"`
-	Reason          string                   `json:"reason,omitempty"`
-	ReceiptID       string                   `json:"receipt_id,omitempty"`
-	CreatedAt       time.Time                `json:"created_at"`
-	UpdatedAt       time.Time                `json:"updated_at"`
+	SchemaVersion     int                      `json:"schema_version"`
+	Admission         protocol.Admission       `json:"admission"`
+	TransitionID      catalog.TransitionID     `json:"transition_id"`
+	TransitionClass   catalog.EventClass       `json:"transition_class"`
+	ReconcilesProgram bool                     `json:"reconciles_program,omitempty"`
+	Status            string                   `json:"status"`
+	Mutations         []ports.ResourceMutation `json:"mutations,omitempty"`
+	Reason            string                   `json:"reason,omitempty"`
+	ReceiptID         string                   `json:"receipt_id,omitempty"`
+	CreatedAt         time.Time                `json:"created_at"`
+	UpdatedAt         time.Time                `json:"updated_at"`
 }
 
 func journalName(id, suffix string) (string, error) {
@@ -72,7 +73,7 @@ func (j *Journal) Begin(ctx context.Context, admission protocol.Admission, trans
 		return statErr
 	}
 	now := j.clock.Now().UTC()
-	record := journalRecord{SchemaVersion: 2, Admission: admission, TransitionID: transition.ID, TransitionClass: transition.Class, Status: "begun", CreatedAt: now, UpdatedAt: now}
+	record := journalRecord{SchemaVersion: 2, Admission: admission, TransitionID: transition.ID, TransitionClass: transition.Class, ReconcilesProgram: transition.Policy.ReconcilesProgram, Status: "begun", CreatedAt: now, UpdatedAt: now}
 	raw, err := encodeJSON(record)
 	if err != nil {
 		return err

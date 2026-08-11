@@ -88,6 +88,12 @@ func TestHostSkillProjectionPreservesDeferredRepositoryAuthority(t *testing.T) {
 			for _, contract := range []string{
 				"request only checksum-verified installation authority",
 				"Do not\nrequest or materialize repository, provider, publication, product-delivery, or\nmerge authority",
+				"preserve the healthy old\nlauncher",
+				"program-delta fingerprint",
+				"Do not accept the delta implicitly",
+				"`--accept-program-change`",
+				"single atomic\n`installation.reconcile-update` boundary",
+				"carry the same human authority\nthrough that rollback",
 			} {
 				if !strings.Contains(value, contract) {
 					t.Fatalf("%s is missing update authority boundary %q", path, contract)

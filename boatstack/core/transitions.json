@@ -2277,13 +2277,20 @@
     "selection_class": "EXPLICIT_ONLY",
     "class": "owned-local",
     "source_phases": [
-      "OBSERVED",
-      "ACTIVE"
-    ],
-    "target_phases": [
+      "DORMANT",
       "OBSERVED",
       "ACTIVE",
-      "TERMINAL"
+      "FRONTIER",
+      "TERMINAL",
+      "ABANDONED"
+    ],
+    "target_phases": [
+      "DORMANT",
+      "OBSERVED",
+      "ACTIVE",
+      "FRONTIER",
+      "TERMINAL",
+      "ABANDONED"
     ],
     "goal_kinds": [
       "approved-plan",
@@ -2359,6 +2366,7 @@
           "known"
         ],
         "values": [
+          "absent",
           "verified",
           "stale",
           "invalid",
@@ -2402,17 +2410,8 @@
         ],
         "values": [
           "nonterminal",
-          "stale"
-        ]
-      },
-      {
-        "facet": "engagement",
-        "statuses": [
-          "known"
-        ],
-        "values": [
-          "command",
-          "active"
+          "stale",
+          "established"
         ]
       },
       {
@@ -2473,6 +2472,103 @@
     "cost_class": "declared-neutral",
     "policy": {},
     "priority": 65
+  },
+  {
+    "id": "installation.reconcile-update",
+    "version": 1,
+    "origin": {"kind": "", "id": "", "version": "", "manifest_fingerprint": ""},
+    "owner": "",
+    "selection_class": "EXPLICIT_ONLY",
+    "class": "owned-local",
+    "source_phases": ["DORMANT", "OBSERVED", "ACTIVE", "FRONTIER", "TERMINAL", "ABANDONED"],
+    "target_phases": ["DORMANT", "OBSERVED", "ACTIVE", "FRONTIER", "TERMINAL", "ABANDONED"],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": ["human"],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:runtime",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:goal",
+      "facet:configuration"
+    ],
+    "owned_resources": ["installation"],
+    "effect": "installation.reconcile-update",
+    "local_effects": ["installation.reconcile-update"],
+    "idempotent": true,
+    "parameters": [
+      {"name": "source_revision", "required": true, "secret": false},
+      {"name": "runtime_path", "required": true, "secret": false},
+      {"name": "runtime_sha256", "required": true, "secret": false},
+      {"name": "accept_obligation_change", "required": true, "secret": false}
+    ],
+    "prescription": {
+      "operation": "installation.reconcile-update",
+      "authority_prompt": "Explicitly accept the exact prior-to-candidate program delta before activation.",
+      "expected_postcondition": "predicate:target-phase:installation.reconcile-update"
+    },
+    "source_predicate": "predicate:source-phase:installation.reconcile-update",
+    "source_conditions": [
+      {
+        "facet": "runtime",
+        "statuses": ["known"],
+        "values": ["absent", "verified", "stale", "invalid", "conflicting", "wrong-source", "partially-published"]
+      },
+      {"facet": "program", "statuses": ["known"], "values": ["drift"]},
+      {"facet": "recovery", "statuses": ["known"], "values": ["none"]},
+      {"facet": "transaction", "statuses": ["known"], "values": ["none"]},
+      {"facet": "terminal", "statuses": ["known"], "values": ["nonterminal", "stale", "established"]},
+      {"facet": "goal", "statuses": ["known"]},
+      {"facet": "configuration", "statuses": ["known"], "values": ["verified"]}
+    ],
+    "admission_predicate": "predicate:exact-admission:installation.reconcile-update",
+    "target_predicate": "predicate:target-phase:installation.reconcile-update",
+    "target_conditions": [
+      {"facet": "runtime", "statuses": ["known"], "values": ["verified"]},
+      {"facet": "program", "statuses": ["known"], "values": ["current"]}
+    ],
+    "verifier": "verifier:fresh-observation:installation.reconcile-update",
+    "interruption": {
+      "points": ["after-lock", "after-stage", "after-effect", "before-receipt"],
+      "partial_state": ["journal-begun", "effect-staged", "effect-possibly-installed", "postcondition-unreceipted"],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "never-activate-a-partial-program-update",
+      "rollback_contract": "restore-runtime-launcher-program-state-and-generated-artifacts-together",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.rollback",
+      "recovery_authority": "declared-by:recovery.rollback",
+      "resumption_predicate": "recovery-contract-for:installation.reconcile-update"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "preserves-the-existing-delivery-and-engagement-state",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {"reconciles_program": true},
+    "priority": 1
   },
   {
     "id": "catalog.reconcile",

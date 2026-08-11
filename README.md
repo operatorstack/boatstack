@@ -72,7 +72,7 @@ boatstack apply --repo . --transition <stable-id> --format json
 ```
 
 - `status`, `next`, `doctor`, `catalog`, and `events` are read-only.
-- `apply` and `recover` request stable transition IDs from the 62-event
+- `apply` and `recover` request stable transition IDs from the 63-event
   executable catalog.
 - Friendly aliases such as `plan-create`, `plan-approve`,
   `workspace-cut`, `record-test`, and `publish-pr` map to those IDs.
@@ -106,7 +106,10 @@ coding host:
 - `boatstack-autoplan` reaches an approved plan.
 - `boatstack-run` drives delivery through a normal PR open or update and never
   grants merge authority.
-- `boatstack-update` runs the checksum-verified installation update path.
+- `boatstack-update` runs the checksum-verified installation update path. A
+  control-program change preserves the old launcher until a human accepts the
+  exact prior-to-candidate program delta; Boatstack then activates the runtime,
+  launcher, managed skills, and program state through one recoverable transition.
 
 Codex and compatible Agent Skills hosts show `$boatstack-autoplan`,
 `$boatstack-run`, and `$boatstack-update`. Claude Code and Gemini CLI receive

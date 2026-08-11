@@ -44,7 +44,7 @@ architecture artifacts:
 | `docs/architecture/boatstack-v2-locus-liveness.json` | `boatstack-helper catalog --format locus-liveness` |
 
 Repository and Go tests compare every checked byte with a fresh render and
-require both Locus alphabets to equal all 62 executable catalog transitions.
+require both Locus alphabets to equal all 63 executable catalog transitions.
 The StandardFlow graph contains exactly the 30 transitions whose compiled
 origin is the primary flow.
 The Locus phase graph is intentionally conservative: it expands each declared

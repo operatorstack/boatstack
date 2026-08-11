@@ -77,17 +77,17 @@ try {
     }
     & $Runtime init --repo $Repository --human $Actor --param "config_path=$ConfigSource" --format text
   } else {
+    $AcceptProgramChange = @()
+    if ($env:BOATSTACK_ACCEPT_PROGRAM_CHANGE -eq "true") {
+      $AcceptProgramChange = @("--accept-program-change")
+    }
     & $Runtime update --repo $Repository --human $Actor `
       --param "runtime_path=$Runtime" `
-      --param "runtime_sha256=$Actual" --format text
+      --param "runtime_sha256=$Actual" @AcceptProgramChange --format json
   }
   if ($LASTEXITCODE -ne 0) { throw "Boatstack kernel rejected installation" }
 
   $Launcher = Join-Path $InstallDir "boatstack.cmd"
-  $LauncherTemporary = "$Launcher.tmp"
-  "@echo off`r`n`"$Runtime`" %*`r`n" | Set-Content -LiteralPath $LauncherTemporary -Encoding ascii
-  Move-Item -LiteralPath $LauncherTemporary -Destination $Launcher -Force
-
   Write-Host "Boatstack V2 installed at $Runtime"
   Write-Host "Review and commit $Repository\.boatstack\project.json and the generated host skills"
   Write-Host "Run: $Launcher doctor --repo `"$Repository`" --format text"

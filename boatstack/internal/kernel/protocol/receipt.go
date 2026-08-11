@@ -20,29 +20,34 @@ const (
 )
 
 type TransitionReceipt struct {
-	SchemaVersion       int                  `json:"schema_version"`
-	ID                  string               `json:"id"`
-	FlowID              string               `json:"flow_id"`
-	Sequence            uint64               `json:"sequence"`
-	TransitionID        catalog.TransitionID `json:"transition_id"`
-	TransitionVersion   int                  `json:"transition_version"`
-	ProgramFingerprint  string               `json:"program_fingerprint"`
-	AdmissionID         string               `json:"admission_id"`
-	GoalID              string               `json:"goal_id"`
-	GoalKind            model.GoalKind       `json:"goal_kind"`
-	DeliveryID          string               `json:"delivery_id"`
-	SourceFingerprint   string               `json:"source_fingerprint"`
-	TargetFingerprint   string               `json:"target_fingerprint"`
-	AuthorityClasses    []string             `json:"authority_classes"`
-	IdempotencyKey      string               `json:"idempotency_key"`
-	Verifier            string               `json:"verifier"`
-	Outcome             Outcome              `json:"outcome"`
-	Recovery            catalog.TransitionID `json:"recovery,omitempty"`
-	Terminal            model.TerminalStatus `json:"terminal"`
-	StartedAt           time.Time            `json:"started_at"`
-	CompletedAt         time.Time            `json:"completed_at"`
-	DurationNanoseconds int64                `json:"duration_nanoseconds"`
-	FailureClass        string               `json:"failure_class,omitempty"`
+	SchemaVersion           int                  `json:"schema_version"`
+	ID                      string               `json:"id"`
+	FlowID                  string               `json:"flow_id"`
+	Sequence                uint64               `json:"sequence"`
+	TransitionID            catalog.TransitionID `json:"transition_id"`
+	TransitionVersion       int                  `json:"transition_version"`
+	ProgramFingerprint      string               `json:"program_fingerprint"`
+	PriorProgramFingerprint string               `json:"prior_program_fingerprint,omitempty"`
+	ProgramDeltaFingerprint string               `json:"program_delta_fingerprint,omitempty"`
+	ProgramChangeAccepted   bool                 `json:"program_change_accepted,omitempty"`
+	RuntimeFingerprint      string               `json:"runtime_fingerprint,omitempty"`
+	RuntimeSourceRevision   string               `json:"runtime_source_revision,omitempty"`
+	AdmissionID             string               `json:"admission_id"`
+	GoalID                  string               `json:"goal_id"`
+	GoalKind                model.GoalKind       `json:"goal_kind"`
+	DeliveryID              string               `json:"delivery_id"`
+	SourceFingerprint       string               `json:"source_fingerprint"`
+	TargetFingerprint       string               `json:"target_fingerprint"`
+	AuthorityClasses        []string             `json:"authority_classes"`
+	IdempotencyKey          string               `json:"idempotency_key"`
+	Verifier                string               `json:"verifier"`
+	Outcome                 Outcome              `json:"outcome"`
+	Recovery                catalog.TransitionID `json:"recovery,omitempty"`
+	Terminal                model.TerminalStatus `json:"terminal"`
+	StartedAt               time.Time            `json:"started_at"`
+	CompletedAt             time.Time            `json:"completed_at"`
+	DurationNanoseconds     int64                `json:"duration_nanoseconds"`
+	FailureClass            string               `json:"failure_class,omitempty"`
 }
 
 func NewReceipt(flowID string, sequence uint64, admission Admission, transition catalog.Transition, target model.Snapshot, startedAt, completedAt time.Time, outcome Outcome, failureClass string) (TransitionReceipt, error) {
@@ -69,6 +74,16 @@ func NewReceipt(flowID string, sequence uint64, admission Admission, transition 
 		StartedAt: startedAt.UTC(), CompletedAt: completedAt.UTC(), DurationNanoseconds: completedAt.Sub(startedAt).Nanoseconds(),
 		FailureClass: failureClass,
 	}
+	receipt.PriorProgramFingerprint = admission.PriorProgramFingerprint
+	receipt.ProgramDeltaFingerprint = admission.ProgramDeltaFingerprint
+	if accepted, ok := admission.Parameters.Get("accept_obligation_change"); ok && accepted == "true" {
+		receipt.ProgramChangeAccepted = true
+	}
+	receipt.RuntimeFingerprint, _ = admission.Parameters.Get("runtime_sha256")
+	receipt.RuntimeSourceRevision, _ = admission.Parameters.Get("source_revision")
+	if transition.Policy.ReconcilesProgram && receipt.RuntimeFingerprint == "" {
+		receipt.RuntimeFingerprint = admission.Invocation.RuntimeFingerprint
+	}
 	identity := receipt
 	identity.ID = ""
 	var err error
@@ -90,6 +105,21 @@ func (r TransitionReceipt) Validate() error {
 	case OutcomeSucceeded, OutcomeRecovered, OutcomeRefused, OutcomeUnknown:
 	default:
 		return fmt.Errorf("receipt has invalid outcome %q", r.Outcome)
+	}
+	if (r.PriorProgramFingerprint == "") != (r.ProgramDeltaFingerprint == "") {
+		return fmt.Errorf("receipt has incomplete program delta identity")
+	}
+	if r.PriorProgramFingerprint != "" {
+		delta, err := ProgramDeltaFingerprint(r.PriorProgramFingerprint, r.ProgramFingerprint)
+		if err != nil || delta != r.ProgramDeltaFingerprint {
+			return fmt.Errorf("receipt has invalid program delta identity")
+		}
+	}
+	if r.ProgramChangeAccepted && (r.PriorProgramFingerprint == "" || len(r.RuntimeFingerprint) != 64) {
+		return fmt.Errorf("receipt accepts a program change without exact delta and runtime identity")
+	}
+	if r.TransitionID == "installation.reconcile-update" && (!r.ProgramChangeAccepted || r.PriorProgramFingerprint == "" || len(r.RuntimeFingerprint) != 64 || r.RuntimeSourceRevision == "") {
+		return fmt.Errorf("reconciled installation receipt lacks exact program and runtime identity")
 	}
 	identity := r
 	want := identity.ID

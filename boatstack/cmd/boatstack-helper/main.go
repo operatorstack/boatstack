@@ -22,6 +22,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/supervisor"
 	"github.com/operatorstack/boatstack/boatstack/internal/surfaces"
 )
 
@@ -34,21 +35,22 @@ func (s *stringList) Set(value string) error {
 }
 
 type commandOptions struct {
-	repository        string
-	format            string
-	goalID            string
-	goalKind          string
-	deliveryID        string
-	flowID            string
-	transitionID      string
-	idempotencyKey    string
-	humanActor        string
-	repositoryPolicy  bool
-	parameters        stringList
-	authorityReceipts stringList
-	follow            bool
-	host              string
-	command           string
+	repository          string
+	format              string
+	goalID              string
+	goalKind            string
+	deliveryID          string
+	flowID              string
+	transitionID        string
+	idempotencyKey      string
+	humanActor          string
+	repositoryPolicy    bool
+	acceptProgramChange bool
+	parameters          stringList
+	authorityReceipts   stringList
+	follow              bool
+	host                string
+	command             string
 }
 
 func main() {
@@ -90,6 +92,12 @@ func run(arguments []string) error {
 		return err
 	}
 	response, handleErr := kernel.Handle(context.Background(), request)
+	if command == "update" && options.acceptProgramChange && handleErr != nil && response.ProgramChange != nil && response.Decision != nil &&
+		response.Decision.Kind == supervisor.DecisionUnresolved && response.Decision.Reason == supervisor.ReasonProgramDrift {
+		request.TransitionID = "installation.reconcile-update"
+		request.Parameters = append(request.Parameters, protocol.Parameter{Name: "accept_obligation_change", Value: "true"}).Canonical()
+		response, handleErr = kernel.Handle(context.Background(), request)
+	}
 	if command == "events" && options.follow {
 		if options.format != "jsonl" {
 			return fmt.Errorf("events --follow requires --format jsonl")
@@ -167,7 +175,7 @@ func runRetrospective(arguments []string) error {
 
 func classifyCommand(command string) (surfaces.Operation, catalog.TransitionID, map[string]string, error) {
 	aliases := map[string]catalog.TransitionID{
-		"init": "installation.initialize", "update": "installation.update", "attach": "repository.attach", "detach": "repository.detach",
+		"init": "installation.initialize", "update": "installation.update", "reconcile-update": "installation.reconcile-update", "attach": "repository.attach", "detach": "repository.detach",
 		"hydrate-runtime": "runtime.hydrate", "configure": "configuration.mutate", "goal-configure": "goal.configure",
 		"plan-create": "plan.create", "plan-validate": "plan.validate", "plan-approve": "plan.approve", "plan-activate": "plan.activate", "plan-amend": "plan.amend",
 		"workspace-cut": "workspace.cut", "workspace-sync": "workspace.sync", "workspace-cleanup": "workspace.cleanup", "workspace-reap": "workspace.reap",
@@ -218,6 +226,7 @@ func parseOptions(command string, arguments []string, transition catalog.Transit
 	flags.StringVar(&options.idempotencyKey, "idempotency-key", "", "exact prior admission idempotency key for safe replay")
 	flags.StringVar(&options.humanActor, "human", "", "explicit command-scoped human authority actor")
 	flags.BoolVar(&options.repositoryPolicy, "repository-authority", false, "derive repository-policy authority from the V2 project configuration")
+	flags.BoolVar(&options.acceptProgramChange, "accept-program-change", false, "explicitly accept the exact prior-to-candidate control-program delta during update")
 	flags.Var(&options.parameters, "param", "transition parameter name=value (repeatable)")
 	flags.Var(&options.authorityReceipts, "authority-receipt", "authority receipt JSON path (repeatable)")
 	flags.BoolVar(&options.follow, "follow", false, "follow passive process events (events with jsonl only)")
@@ -234,9 +243,15 @@ func parseOptions(command string, arguments []string, transition catalog.Transit
 		if err := populateInitParameters(&options); err != nil {
 			return commandOptions{}, err
 		}
-	case "update", "hydrate-runtime":
+	case "update", "reconcile-update", "hydrate-runtime":
 		if err := populateRuntimeParameters(&options); err != nil {
 			return commandOptions{}, err
+		}
+		if command == "reconcile-update" {
+			if !options.acceptProgramChange {
+				return commandOptions{}, fmt.Errorf("reconcile-update requires explicit --accept-program-change")
+			}
+			options.parameters = append(options.parameters, "accept_obligation_change=true")
 		}
 	case "correct-pr":
 		if err := populateFileFingerprint(&options, "body_path", "body_sha256"); err != nil {
@@ -534,14 +549,19 @@ func renderResponse(response surfaces.Response, format string) error {
 	case "text":
 		if response.Error != "" {
 			fmt.Println("UNRESOLVED:", response.Error)
+			if response.ProgramChange != nil {
+				fmt.Printf("program_change prior=%s candidate=%s delta=%s transition=%s accept=%s\n",
+					response.ProgramChange.PriorProgramFingerprint, response.ProgramChange.CandidateProgramFingerprint,
+					response.ProgramChange.ProgramDeltaFingerprint, response.ProgramChange.RequiredTransition, response.ProgramChange.AcceptanceFlag)
+			}
 			return nil
 		}
 		if response.Doctor != nil {
-			fmt.Printf("healthy=%t kernel=%s core=%s@%s flow=%s@%s core_transitions=%d flow_transitions=%d extension_transitions=%d transitions=%d program=%s drift=%t snapshot=%s\n%s\n",
+			fmt.Printf("healthy=%t kernel=%s core=%s@%s flow=%s@%s core_transitions=%d flow_transitions=%d extension_transitions=%d transitions=%d program=%s drift=%t runtime_healthy=%t update_ready=%t recovery_required=%t snapshot=%s\n%s\n",
 				response.Doctor.Healthy, response.Doctor.KernelVersion, response.Doctor.CoreSystemID, response.Doctor.CoreSystemVersion,
 				response.Doctor.PrimaryFlowID, response.Doctor.PrimaryFlowVersion, response.Doctor.CoreTransitionCount,
 				response.Doctor.FlowTransitionCount, response.Doctor.ExtensionTransitionCount, response.Doctor.TransitionCount,
-				response.Doctor.ProgramFingerprint, response.Doctor.UnresolvedProgramDrift, response.Doctor.Snapshot, response.Doctor.Detail)
+				response.Doctor.ProgramFingerprint, response.Doctor.UnresolvedProgramDrift, response.Doctor.RuntimeHealthy, response.Doctor.UpdateReady, response.Doctor.RecoveryRequired, response.Doctor.Snapshot, response.Doctor.Detail)
 			return nil
 		}
 		if response.Decision != nil {

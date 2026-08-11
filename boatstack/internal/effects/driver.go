@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -78,6 +79,9 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 	if state.ProgramFingerprint != "" && state.ProgramFingerprint != admission.ProgramFingerprint && !transition.Policy.ReconcilesProgram {
 		return nil, fmt.Errorf("compiled control program drifted; explicit program reconciliation is required")
 	}
+	if transition.ID == "catalog.reconcile" && (state.RuntimePath != admission.Invocation.RuntimePath || state.RuntimeFingerprint != admission.Invocation.RuntimeFingerprint) {
+		return nil, fmt.Errorf("catalog reconciliation cannot activate a different runtime; use installation.reconcile-update")
+	}
 	if err := verifyWorkspaceBranchParameter(state, admission, transition.ID); err != nil {
 		return nil, err
 	}
@@ -93,6 +97,15 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 	}
 	if err := applyStateTransition(&next, admission, transition); err != nil {
 		return nil, err
+	}
+	var launcherMutation *ports.ResourceMutation
+	if transition.ID == "installation.initialize" || transition.ID == "installation.update" || transition.ID == "installation.reconcile-update" {
+		mutation, launcherPath, launcherFingerprint, launcherErr := prepareLauncherMutation(admission)
+		if launcherErr != nil {
+			return nil, launcherErr
+		}
+		next.LauncherPath, next.LauncherFingerprint = launcherPath, launcherFingerprint
+		launcherMutation = &mutation
 	}
 	next.Revision++
 	next.UpdatedAt = d.clock.Now().UTC()
@@ -140,6 +153,9 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 	mutations, err := prepareArtifacts(layout, admission, transition, &next)
 	if err != nil {
 		return nil, err
+	}
+	if launcherMutation != nil {
+		mutations = append(mutations, *launcherMutation)
 	}
 	statePath := layout.StatePath
 	stateInstallLast := true
@@ -369,7 +385,7 @@ func loadDurableState(path string, invocation model.InvocationContext, now time.
 }
 
 func verifyRuntimeParameters(admission protocol.Admission, transition catalog.Transition) error {
-	if transition.ID != "runtime.hydrate" && transition.ID != "runtime.replace" && transition.ID != "runtime.reconcile" && transition.ID != "installation.initialize" && transition.ID != "installation.update" {
+	if transition.ID != "runtime.hydrate" && transition.ID != "runtime.replace" && transition.ID != "runtime.reconcile" && transition.ID != "installation.initialize" && transition.ID != "installation.update" && transition.ID != "installation.reconcile-update" {
 		return nil
 	}
 	runtimePath, _ := admission.Parameters.Get("runtime_path")
@@ -391,7 +407,74 @@ func verifyRuntimeParameters(admission protocol.Admission, transition catalog.Tr
 	if actual := sha256Bytes(raw); actual != expected {
 		return fmt.Errorf("declared runtime fingerprint mismatch: got %s", actual)
 	}
+	if strings.HasPrefix(string(transition.ID), "installation.") && (runtimePath != admission.Invocation.RuntimePath || expected != admission.Invocation.RuntimeFingerprint) {
+		return fmt.Errorf("installation runtime must be the exact candidate process that owns admission")
+	}
 	return nil
+}
+
+func prepareLauncherMutation(admission protocol.Admission) (ports.ResourceMutation, string, string, error) {
+	runtimePath, _ := admission.Parameters.Get("runtime_path")
+	launcherPath := filepath.Join(filepath.Dir(runtimePath), "boatstack")
+	if runtime.GOOS == "windows" {
+		launcherPath += ".cmd"
+		body := []byte("@echo off\r\n\"" + runtimePath + "\" %*\r\n")
+		mutation, err := mutationFor(launcherPath, body, 0o700, false, false)
+		return mutation, launcherPath, sha256Bytes(body), err
+	}
+	target := filepath.Base(runtimePath)
+	mutation, err := mutationForSymlink(launcherPath, target, false)
+	return mutation, launcherPath, sha256Bytes([]byte("symlink\x00" + target)), err
+}
+
+func mutationForSymlink(path, target string, installLast bool) (ports.ResourceMutation, error) {
+	if !filepath.IsAbs(path) || target == "" {
+		return ports.ResourceMutation{}, fmt.Errorf("managed symlink requires an absolute path and target")
+	}
+	mutation := ports.ResourceMutation{Path: path, TargetLink: target, Mode: 0o700, InstallLast: installLast}
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return mutation, nil
+	}
+	if err != nil {
+		return ports.ResourceMutation{}, err
+	}
+	mutation.PriorExists = true
+	if info.Mode()&os.ModeSymlink != 0 {
+		mutation.PriorLink, err = os.Readlink(path)
+		return mutation, err
+	}
+	if !info.Mode().IsRegular() {
+		return ports.ResourceMutation{}, fmt.Errorf("managed launcher is neither a regular file nor symlink: %s", path)
+	}
+	mutation.Prior, err = os.ReadFile(path)
+	mutation.Mode = uint32(info.Mode().Perm())
+	return mutation, err
+}
+
+func mutationForExactResource(path string, target []byte, targetLink string, mode os.FileMode, installLast, deleteResource bool) (ports.ResourceMutation, error) {
+	if !filepath.IsAbs(path) || (targetLink != "" && deleteResource) {
+		return ports.ResourceMutation{}, fmt.Errorf("managed resource target is invalid: %s", path)
+	}
+	mutation := ports.ResourceMutation{Path: path, Target: target, TargetLink: targetLink, Mode: uint32(mode.Perm()), InstallLast: installLast, Delete: deleteResource}
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return mutation, nil
+	}
+	if err != nil {
+		return ports.ResourceMutation{}, err
+	}
+	mutation.PriorExists = true
+	if info.Mode()&os.ModeSymlink != 0 {
+		mutation.PriorLink, err = os.Readlink(path)
+		return mutation, err
+	}
+	if !info.Mode().IsRegular() {
+		return ports.ResourceMutation{}, fmt.Errorf("managed resource is neither a regular file nor symlink: %s", path)
+	}
+	mutation.Prior, err = os.ReadFile(path)
+	mutation.Mode = uint32(info.Mode().Perm())
+	return mutation, err
 }
 
 func mutationFor(path string, target []byte, mode os.FileMode, installLast, deleteResource bool) (ports.ResourceMutation, error) {

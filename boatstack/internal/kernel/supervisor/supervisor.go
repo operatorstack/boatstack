@@ -18,6 +18,7 @@ const (
 	DecisionBlocked    DecisionKind = "BLOCKED"
 	DecisionRefused    DecisionKind = "REFUSED"
 	DecisionUnresolved DecisionKind = "UNRESOLVED"
+	ReasonProgramDrift              = "compiled control program drift requires explicit reconciliation"
 )
 
 type Decision struct {
@@ -53,8 +54,8 @@ func (s Supervisor) Resolve(snapshot model.Snapshot, goal model.Goal, authority 
 	}
 	if snapshot.Program.Value == model.ProgramDrift {
 		transition, ok := s.registry.Lookup(requested)
-		if !ok || !transition.Policy.ReconcilesProgram {
-			base.Kind, base.Reason = DecisionUnresolved, "compiled control program drift requires explicit reconciliation"
+		if !ok || (!transition.Policy.ReconcilesProgram && !permittedProgramDriftRecovery(snapshot, transition)) {
+			base.Kind, base.Reason = DecisionUnresolved, ReasonProgramDrift
 			return base
 		}
 	}
@@ -153,6 +154,18 @@ func (s Supervisor) Resolve(snapshot model.Snapshot, goal model.Goal, authority 
 	}
 	base.Kind, base.Reason, base.Transition = DecisionPrescribed, "deterministic highest-priority transition", &top[0]
 	return base
+}
+
+func permittedProgramDriftRecovery(snapshot model.Snapshot, transition catalog.Transition) bool {
+	if transition.Class != catalog.EventRecovery || snapshot.Phase.Status != model.FactKnown || snapshot.Phase.Value != model.PhaseRecovery || snapshot.RecoveryInfo.Status != model.FactKnown {
+		return false
+	}
+	for _, permitted := range snapshot.RecoveryInfo.Value.Permitted {
+		if permitted == string(transition.ID) {
+			return true
+		}
+	}
+	return false
 }
 
 func targetAlreadySatisfied(snapshot model.Snapshot, goal model.Goal, transition catalog.Transition) bool {
