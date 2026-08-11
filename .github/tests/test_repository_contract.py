@@ -159,14 +159,33 @@ class RepositoryContract(unittest.TestCase):
             "authority-free\n`FRONTIER`",
             "command-scoped context",
             "every `next`, `apply`, `recover`, and re-resolution",
+            "requested authority sources separately from currently\nmaterialized authority receipts",
             "untargeted authority-bearing `next`",
             "immediately preceding prescription",
             "complete apply response and stderr",
             "authority-bearing `FRONTIER`",
+            "every requested authority source is materialized\nor conclusively rejected against the post-receipt state",
         ):
             for name, skill in skills.items():
                 self.assertIn(contract, skill, name)
         self.assertIn("never grants merge authority", skills["boatstack-run"])
+        for name in ("boatstack-autoplan", "boatstack-run"):
+            for contract in (
+                "request human and repository-policy authority sources",
+                "repository-policy source remains requested",
+                "do not pass `--repository-authority`\nuntil the current configuration has exact verified fingerprint evidence",
+                "one bounded attempt for that receipt",
+                "The kernel must derive the\nreceipt from that exact verified fingerprint",
+                "do not retry it\nagain for the same receipt",
+            ):
+                self.assertIn(contract, skills[name], name)
+        update = skills["boatstack-update"]
+        self.assertIn("request only checksum-verified installation authority", update)
+        self.assertIn(
+            "Do not\nrequest or materialize repository, provider, publication, product-delivery, or\nmerge authority",
+            update,
+        )
+        self.assertNotIn("repository-policy source remains requested", update)
         self.assertIn("Untargeted resolution selects\nonly a transition that advances the configured goal", readme)
         self.assertIn("exactly three operation skills", readme)
 

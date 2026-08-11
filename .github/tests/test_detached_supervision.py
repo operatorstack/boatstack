@@ -284,6 +284,108 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         self.assertEqual(resolved["decision"]["kind"], "PRESCRIBED")
         self.assertEqual(resolved["decision"]["transition"]["id"], "plan.validate")
 
+    def test_one_delivery_context_rematerializes_repository_authority_after_initialization(self) -> None:
+        # control-law: retained-repository-source-crosses-maintenance-receipt-once
+        goal = (
+            "--goal-id", "preserve-repository-authority-context",
+            "--goal-kind", "open-or-updated-pr",
+            "--delivery", "preserve-repository-authority-context",
+        )
+        flow = ("--flow", "flow-preserve-repository-authority-context")
+        actor = ("--human", "contract")
+        self.helper_json(
+            "attach", "--repo", self.repo, *goal, *flow, *actor,
+            "--param", "topology=detached", "--param", "config_authority=repository",
+        )
+
+        prescribed = self.helper_json(
+            "next", "--repo", self.repo, *goal, *flow, *actor,
+        )
+        self.assertEqual(prescribed["decision"]["kind"], "PRESCRIBED")
+        self.assertEqual(
+            prescribed["decision"]["transition"]["id"], "installation.initialize"
+        )
+
+        config = Path(self.work.name) / "retained-authority-project.json"
+        config.write_text(
+            json.dumps(
+                {
+                    "schema_version": 2,
+                    "project": {
+                        "name": "retained-authority-fixture",
+                        "default_branch": "main",
+                        "commands": {},
+                    },
+                    "policy": {"plan_approval": "human", "visual_evidence": "optional"},
+                    "hosts": ["cli", "codex"],
+                }
+            )
+        )
+        initialized_process = self.run_helper(
+            "init", "--repo", self.repo, *goal, *flow, *actor,
+            "--param", f"config_path={config}",
+        )
+        initialized = json.loads(initialized_process.stdout)
+        self.assertEqual(initialized["receipt"]["transition_id"], "installation.initialize")
+        self.assertEqual(initialized["receipt"]["flow_id"], flow[1])
+        self.assertEqual(initialized["snapshot"]["configuration"]["value"], "verified")
+        for field in ('"admission"', '"receipt"', '"snapshot"', '"target_fingerprint"', '"recovery"'):
+            self.assertIn(field, initialized_process.stdout)
+
+        engagement = self.helper_json(
+            "next", "--repo", self.repo, *goal, *flow, *actor,
+            "--repository-authority",
+        )
+        self.assertEqual(engagement["decision"]["kind"], "PRESCRIBED")
+        self.assertEqual(engagement["decision"]["transition"]["id"], "engagement.begin")
+
+        engaged_process = self.run_helper(
+            "apply", "--repo", self.repo, "--transition", "engagement.begin",
+            *goal, *flow, *actor, "--repository-authority",
+        )
+        engaged = json.loads(engaged_process.stdout)
+        self.assertEqual(engaged["receipt"]["transition_id"], "engagement.begin")
+        self.assertEqual(engaged["receipt"]["flow_id"], flow[1])
+        self.assertEqual(
+            {receipt["class"] for receipt in engaged["admission"]["authority"]["receipts"]},
+            {"human", "repository-policy"},
+        )
+        for field in ('"admission"', '"receipt"', '"snapshot"', '"target_fingerprint"', '"recovery"'):
+            self.assertIn(field, engaged_process.stdout)
+
+        plan = self.helper_json(
+            "next", "--repo", self.repo, *goal, *flow, *actor,
+            "--repository-authority",
+        )
+        self.assertEqual(plan["decision"]["kind"], "PRESCRIBED")
+        self.assertEqual(plan["decision"]["transition"]["id"], "plan.create")
+
+    def test_repository_authority_rematerialization_fails_closed_without_verified_config(self) -> None:
+        # control-law: repository-authority-requires-exact-verified-fingerprint
+        root = Path(self.work.name) / "unverified"
+        root.mkdir()
+        self._git(root, "init", "-b", "main")
+        self._git(root, "config", "user.name", "Boatstack Test")
+        self._git(root, "config", "user.email", "boatstack@example.invalid")
+        (root / "README.md").write_text("# unverified fixture\n")
+        self._git(root, "add", "README.md")
+        self._git(root, "commit", "-m", "fixture")
+        before = self.porcelain(root)
+        result = self.run_helper(
+            "next", "--repo", root,
+            "--goal-id", "unverified-authority",
+            "--goal-kind", "open-or-updated-pr",
+            "--delivery", "unverified-authority",
+            "--flow", "flow-unverified-authority",
+            "--human", "contract", "--repository-authority",
+            cwd=root, expected=1,
+        )
+        self.assertIn(
+            "repository authority requires current verified configuration evidence",
+            result.stderr,
+        )
+        self.assertEqual(self.porcelain(root), before)
+
 
 if __name__ == "__main__":
     unittest.main()
