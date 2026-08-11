@@ -109,6 +109,84 @@ func TestObserverBindsVerifiedRuntimeToExecutingBinary(t *testing.T) {
 	}
 }
 
+func TestObserverAdmitsExactCommittedPinOnlyForAbsentState(t *testing.T) {
+	// control-law: exact-committed-pin-is-bootstrap-evidence-not-controller-state
+	repository := t.TempDir()
+	runGit(t, repository, "init", "-q")
+	runGit(t, repository, "config", "user.email", "boatstack@example.invalid")
+	runGit(t, repository, "config", "user.name", "Boatstack Test")
+	if err := os.WriteFile(filepath.Join(repository, "README.md"), []byte("fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repository, "add", "README.md")
+	runGit(t, repository, "commit", "-q", "-m", "fixture")
+
+	resolver, err := NewResolver(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	t.Setenv(boatstackruntime.HomeEnvironment, home)
+	identity := boatstackruntime.Identity{Version: resolver.runtimeVersion, SHA256: resolver.runtimeFingerprint, SourceRevision: "fixture-revision"}
+	installed, err := boatstackruntime.InstallExecutable(resolver.runtimePath, home, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver.runtimePath = installed
+	invocation, err := resolver.ResolveInvocation(context.Background(), repository, "cli", "fresh-clone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinRaw, err := boatstackruntime.EncodePin(boatstackruntime.NewPin(identity, strings.Repeat("a", 64), durable.StateSchemaVersion))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(boatstackruntime.PinPath(repository)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(boatstackruntime.PinPath(repository), pinRaw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	observer, err := NewObserver(resolver, observerClock{now: time.Unix(200, 0).UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed, err := observer.Observe(context.Background(), ports.ObservationRequest{Invocation: invocation})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observed.Runtime.Value != model.RuntimeAbsent {
+		t.Fatalf("exact pin with absent controller state observed as %s, want absent", observed.Runtime.Value)
+	}
+	if err := os.Remove(installed); err != nil {
+		t.Fatal(err)
+	}
+	observed, err = observer.Observe(context.Background(), ports.ObservationRequest{Invocation: invocation})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observed.Runtime.Value != model.RuntimeStale {
+		t.Fatalf("pin with missing immutable runtime observed as %s, want stale", observed.Runtime.Value)
+	}
+
+	conflicting := boatstackruntime.NewPin(identity, strings.Repeat("a", 64), durable.StateSchemaVersion)
+	conflicting.Version = "v-conflicting"
+	conflictingRaw, err := boatstackruntime.EncodePin(conflicting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(boatstackruntime.PinPath(repository), conflictingRaw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	observed, err = observer.Observe(context.Background(), ports.ObservationRequest{Invocation: invocation})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observed.Runtime.Value != model.RuntimeConflicting {
+		t.Fatalf("candidate-mismatched pin observed as %s, want conflicting", observed.Runtime.Value)
+	}
+}
+
 func TestDoubleStarMatchesRootAndNestedPaths(t *testing.T) {
 	for _, test := range []struct {
 		pattern string
