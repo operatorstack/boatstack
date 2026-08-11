@@ -92,6 +92,8 @@ type PreparedEffect interface {
 }
 
 type EffectDriver interface {
+	// Prepare is a side-effect-free preflight. It may read exact plant state and
+	// construct a mutation manifest, but it must not execute or install it.
 	Prepare(context.Context, protocol.Admission, catalog.Transition) (PreparedEffect, error)
 }
 

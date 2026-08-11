@@ -531,6 +531,7 @@ it is not an independently maintained graph.
 `supervisor.Resolve(snapshot, goal, authority, optionalObservedEvent)` is pure and
 deterministic. It evaluates the executable registry and returns exactly one:
 
+- `CANDIDATE`: one deterministic next transition still needs declared parameters;
 - `PRESCRIBED`: one exact next transition and prescription;
 - `TERMINAL`: goal predicate established by current terminal evidence;
 - `FRONTIER`: a genuine human/reasoning authority decision is required;
@@ -547,6 +548,9 @@ repository presence is not engagement; a saved plan is not active authority.
 Resolution never fabricates progress. If several controllable events remain
 equally admissible after declared deterministic priority, the answer is
 `FRONTIER` or `UNRESOLVED`, never map-order selection or first-match behavior.
+Before `PRESCRIBED`, resolution also runs the effect driver's side-effect-free
+preflight over the exact admission context; deterministic artifact, durable-state,
+or recovery refusals therefore cannot first appear at apply.
 
 ## 9. Admission and authority model
 

@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -14,6 +15,20 @@ type Parameter struct {
 }
 
 type Parameters []Parameter
+
+type MissingParameterError struct {
+	Transition catalog.TransitionID
+	Parameter  string
+}
+
+func (e MissingParameterError) Error() string {
+	return fmt.Sprintf("transition %q requires parameter %q", e.Transition, e.Parameter)
+}
+
+func IsMissingParameter(err error) bool {
+	var missing MissingParameterError
+	return errors.As(err, &missing)
+}
 
 func (p Parameters) Canonical() Parameters {
 	result := append(Parameters(nil), p...)
@@ -63,7 +78,7 @@ func (p Parameters) Validate(transition catalog.Transition) error {
 	}
 	for _, spec := range transition.Parameters {
 		if spec.Required && !seen[spec.Name] {
-			return fmt.Errorf("transition %q requires parameter %q", transition.ID, spec.Name)
+			return MissingParameterError{Transition: transition.ID, Parameter: spec.Name}
 		}
 	}
 	return nil

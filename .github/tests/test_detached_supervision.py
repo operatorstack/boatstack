@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -247,7 +248,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
             "next", "--repo", self.repo, *goal, *flow,
             "--human", "contract", "--repository-authority",
         )
-        self.assertEqual(progressing["decision"]["kind"], "PRESCRIBED")
+        self.assertEqual(progressing["decision"]["kind"], "CANDIDATE")
         self.assertEqual(progressing["decision"]["transition"]["id"], "plan.create")
 
         plan = Path(self.work.name) / "source-plan.md"
@@ -301,7 +302,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         prescribed = self.helper_json(
             "next", "--repo", self.repo, *goal, *flow, *actor,
         )
-        self.assertEqual(prescribed["decision"]["kind"], "PRESCRIBED")
+        self.assertEqual(prescribed["decision"]["kind"], "CANDIDATE")
         self.assertEqual(
             prescribed["decision"]["transition"]["id"], "installation.initialize"
         )
@@ -320,6 +321,28 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
                     "hosts": ["cli", "codex"],
                 }
             )
+        )
+        canonical_config = json.loads(config.read_text())
+        canonical_config["hosts"] = sorted(canonical_config["hosts"])
+        canonical_config["policy"]["external_effect_authority"] = (
+            "human-or-autonomy-plus-provider"
+        )
+        config_fingerprint = hashlib.sha256(
+            json.dumps(canonical_config, separators=(",", ":")).encode()
+        ).hexdigest()
+        bound_initialization = self.helper_json(
+            "next", "--repo", self.repo,
+            "--transition", "installation.initialize", *goal, *flow, *actor,
+            "--param", f"source_revision={self._git(self.repo, 'rev-parse', 'HEAD').stdout.strip()}",
+            "--param", f"runtime_path={self.binary.resolve()}",
+            "--param", f"runtime_sha256={hashlib.sha256(self.binary.read_bytes()).hexdigest()}",
+            "--param", f"config_path={config}",
+            "--param", f"config_sha256={config_fingerprint}",
+        )
+        self.assertEqual(bound_initialization["decision"]["kind"], "PRESCRIBED")
+        self.assertEqual(
+            bound_initialization["decision"]["transition"]["id"],
+            "installation.initialize",
         )
         initialized_process = self.run_helper(
             "init", "--repo", self.repo, *goal, *flow, *actor,
@@ -357,8 +380,19 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
             "next", "--repo", self.repo, *goal, *flow, *actor,
             "--repository-authority",
         )
-        self.assertEqual(plan["decision"]["kind"], "PRESCRIBED")
+        self.assertEqual(plan["decision"]["kind"], "CANDIDATE")
         self.assertEqual(plan["decision"]["transition"]["id"], "plan.create")
+
+        plan_source = Path(self.work.name) / "retained-authority-plan.md"
+        plan_source.write_text("# Retained authority\n\nContinue in one operation context.\n")
+        bound = self.helper_json(
+            "next", "--repo", self.repo, "--transition", "plan.create",
+            *goal, *flow, *actor, "--repository-authority",
+            "--param", f"source_path={plan_source}",
+            "--param", "delivery_id=preserve-repository-authority-context",
+        )
+        self.assertEqual(bound["decision"]["kind"], "PRESCRIBED")
+        self.assertEqual(bound["decision"]["transition"]["id"], "plan.create")
 
     def test_repository_authority_rematerialization_fails_closed_without_verified_config(self) -> None:
         # control-law: repository-authority-requires-exact-verified-fingerprint

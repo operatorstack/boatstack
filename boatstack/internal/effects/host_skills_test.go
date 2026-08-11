@@ -50,7 +50,7 @@ func TestHostSkillProjectionPreservesAuthorityBoundaries(t *testing.T) {
 		for _, contract := range []string{
 			"authority-free\n`FRONTIER`", "command-scoped context", "every `next`, `apply`, `recover`, and re-resolution",
 			"requested authority sources separately from currently\nmaterialized authority receipts",
-			"complete apply response and stderr", "authority-bearing `FRONTIER`", "Never synthesize missing\nauthority",
+			"complete apply response and stderr", "authority-bearing `FRONTIER`", "Never synthesize missing\nauthority", "`CANDIDATE`", "immediately preceding `PRESCRIBED`",
 			"every requested authority source is materialized\nor conclusively rejected against the post-receipt state",
 		} {
 			if !strings.Contains(value, contract) {

@@ -3404,6 +3404,39 @@
       "basis": "inferred"
     },
     {
+      "from": "DORMANT",
+      "event": "goal.configure",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "goal.configure",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "goal.configure",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
       "from": "ACTIVE",
       "event": "goal.configure",
       "to": "OBSERVED",

@@ -12,6 +12,7 @@ type DecisionKind string
 
 const (
 	DecisionPrescribed DecisionKind = "PRESCRIBED"
+	DecisionCandidate  DecisionKind = "CANDIDATE"
 	DecisionTerminal   DecisionKind = "TERMINAL"
 	DecisionFrontier   DecisionKind = "FRONTIER"
 	DecisionBlocked    DecisionKind = "BLOCKED"
@@ -57,11 +58,7 @@ func (s Supervisor) Resolve(snapshot model.Snapshot, goal model.Goal, authority 
 			return base
 		}
 	}
-	if requested != "" && snapshot.Goal.Status == model.FactKnown && snapshot.Goal.Value != goal && requested != "goal.configure" {
-		base.Kind, base.Reason = DecisionRefused, "requested goal differs from configured goal; goal.configure is required"
-		return base
-	}
-	if requested != "" && snapshot.ConfigurationPolicy.Status == model.FactKnown && !hostEnabled(snapshot.ConfigurationPolicy.Value.Hosts, snapshot.Invocation.Host) {
+	if snapshot.ConfigurationPolicy.Status == model.FactKnown && !hostEnabled(snapshot.ConfigurationPolicy.Value.Hosts, snapshot.Invocation.Host) {
 		base.Kind, base.Reason = DecisionRefused, fmt.Sprintf("host %q is not enabled by repository policy", snapshot.Invocation.Host)
 		return base
 	}
@@ -70,6 +67,15 @@ func (s Supervisor) Resolve(snapshot model.Snapshot, goal model.Goal, authority 
 		return base
 	}
 	admissible := s.registry.Admissible(snapshot, goal)
+	if snapshot.Goal.Status == model.FactKnown && snapshot.Goal.Value != goal {
+		filtered := admissible[:0]
+		for _, candidate := range admissible {
+			if candidate.Policy.BindsRequestedGoal {
+				filtered = append(filtered, candidate)
+			}
+		}
+		admissible = filtered
+	}
 	if snapshot.Phase.Value == model.PhaseRecovery {
 		filtered := admissible[:0]
 		for _, candidate := range admissible {
@@ -150,6 +156,9 @@ func (s Supervisor) Resolve(snapshot model.Snapshot, goal model.Goal, authority 
 }
 
 func targetAlreadySatisfied(snapshot model.Snapshot, goal model.Goal, transition catalog.Transition) bool {
+	if transition.Policy.RechecksExternalState {
+		return false
+	}
 	if transition.Policy.BindsRequestedGoal {
 		return snapshot.Goal.Status == model.FactKnown && snapshot.Goal.Value == goal
 	}

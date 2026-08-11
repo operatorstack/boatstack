@@ -105,9 +105,13 @@ type fakeEffects struct {
 	executions, rollbacks int
 	result                ports.EffectResult
 	err                   error
+	prepareErr            error
 }
 
 func (e *fakeEffects) Prepare(context.Context, protocol.Admission, catalog.Transition) (ports.PreparedEffect, error) {
+	if e.prepareErr != nil {
+		return nil, e.prepareErr
+	}
 	return e, nil
 }
 func (e *fakeEffects) Manifest() []ports.ResourceMutation { return nil }
@@ -271,6 +275,66 @@ func TestRequiredObserverFailureReturnsTypedUnresolvedDecision(t *testing.T) {
 	}
 	if effects.executions != 0 || journal.begun != 0 || len(receipts.values) != 0 {
 		t.Fatalf("observer failure crossed mutation boundary: effects=%d journal=%d receipts=%d", effects.executions, journal.begun, len(receipts.values))
+	}
+}
+
+func TestResolutionDoesNotPrescribeBeforeRequiredParametersAreBound(t *testing.T) {
+	// control-law: a selected transition is only a candidate until deterministic admission inputs are complete
+	now := time.Unix(30, 0).UTC()
+	transitions := testRegistry(t).All()
+	for index := range transitions {
+		if transitions[index].ID == "test.advance" {
+			transitions[index].Parameters = []catalog.ParameterSpec{{Name: "value", Required: true}}
+		}
+	}
+	registry, err := catalog.New(transitions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source")}}
+	kernel, err := New(registry, syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{&fakeLock{}}, &fakeJournal{}, &fakeEffects{}, &memoryReceipts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := request(now).ResolveRequest
+	req.Requested = ""
+	candidate, err := kernel.Resolve(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if candidate.Decision.Kind != supervisor.DecisionCandidate || candidate.Decision.Transition == nil || candidate.Decision.Transition.ID != "test.advance" {
+		t.Fatalf("incomplete resolution = %+v, want CANDIDATE", candidate.Decision)
+	}
+	req.Requested = "test.advance"
+	req.Parameters = protocol.Parameters{{Name: "value", Value: "bound"}}
+	prescribed, err := kernel.Resolve(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prescribed.Decision.Kind != supervisor.DecisionPrescribed || prescribed.Decision.Transition == nil || prescribed.Decision.Transition.ID != "test.advance" {
+		t.Fatalf("complete resolution = %+v, want PRESCRIBED", prescribed.Decision)
+	}
+}
+
+func TestResolutionDoesNotPrescribeAnEffectThatDeterministicPreflightRejects(t *testing.T) {
+	// control-law: effect preparation cannot introduce a deterministic apply-only refusal
+	now := time.Unix(30, 0).UTC()
+	effects := &fakeEffects{prepareErr: errors.New("malformed artifact")}
+	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source")}}
+	journal := &fakeJournal{}
+	kernel, err := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{&fakeLock{}}, journal, effects, &memoryReceipts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := kernel.Resolve(context.Background(), request(now).ResolveRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Decision.Kind != supervisor.DecisionUnresolved || resolved.Decision.Transition != nil || !strings.Contains(resolved.Decision.Reason, "malformed artifact") {
+		t.Fatalf("preflight decision = %+v, want typed UNRESOLVED without prescription", resolved.Decision)
+	}
+	if effects.executions != 0 || journal.begun != 0 {
+		t.Fatalf("preflight crossed mutation boundary: effects=%d journals=%d", effects.executions, journal.begun)
 	}
 }
 

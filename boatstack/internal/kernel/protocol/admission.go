@@ -32,49 +32,13 @@ type Admission struct {
 }
 
 func NewAdmission(snapshot model.Snapshot, goal model.Goal, transition catalog.Transition, authority AuthorityBundle, parameters Parameters, now time.Time, lifetime time.Duration) (Admission, error) {
-	if !transition.Controllable() {
-		return Admission{}, fmt.Errorf("transition %q is uncontrollable and cannot be admitted", transition.ID)
-	}
-	if err := snapshot.Invocation.Validate(true); err != nil {
+	if err := ValidateApplicability(snapshot, goal, transition, authority, parameters, now); err != nil {
 		return Admission{}, err
-	}
-	if err := goal.Validate(); err != nil {
-		return Admission{}, err
-	}
-	if snapshot.Fingerprint == "" || len(snapshot.ProgramFingerprint) != 64 || !transition.SourceMatches(snapshot) || !transition.SupportsGoal(goal) {
-		return Admission{}, fmt.Errorf("transition %q is not admissible from snapshot %q", transition.ID, snapshot.Fingerprint)
 	}
 	if lifetime <= 0 {
 		return Admission{}, fmt.Errorf("admission lifetime must be positive")
 	}
-	if err := authority.Validate(now); err != nil {
-		return Admission{}, err
-	}
-	if err := validateAuthorityEvidence(snapshot, authority); err != nil {
-		return Admission{}, err
-	}
-	if err := parameters.Validate(transition); err != nil {
-		return Admission{}, err
-	}
-	if err := validateProviderAuthorityBinding(authority, transition, parameters); err != nil {
-		return Admission{}, err
-	}
 	sourceRevision, worktreeFingerprint := gitBinding(snapshot)
-	if transition.BindsSourceRevision {
-		declared, _ := parameters.Get("source_revision")
-		if sourceRevision == "" || worktreeFingerprint == "" || declared != sourceRevision {
-			return Admission{}, fmt.Errorf("transition %q must bind the current Git revision and worktree fingerprint", transition.ID)
-		}
-	}
-	if !authority.Set(now).Satisfies(transition.Authority, transition.AuthorityAll) {
-		return Admission{}, fmt.Errorf("transition %q lacks required authority", transition.ID)
-	}
-	if err := validatePolicyAuthority(snapshot, transition, authority.Set(now)); err != nil {
-		return Admission{}, err
-	}
-	if err := validateRecoveryPermission(snapshot, transition); err != nil {
-		return Admission{}, err
-	}
 	a := Admission{
 		SchemaVersion: AdmissionSchemaVersion, TransitionID: transition.ID, TransitionVersion: transition.Version,
 		ProgramFingerprint: snapshot.ProgramFingerprint, SnapshotFingerprint: snapshot.Fingerprint, SourceRevision: sourceRevision, WorktreeFingerprint: worktreeFingerprint,
@@ -99,6 +63,56 @@ func NewAdmission(snapshot model.Snapshot, goal model.Goal, transition catalog.T
 		return Admission{}, err
 	}
 	return a, nil
+}
+
+// ValidateApplicability is the deterministic transition law shared by
+// resolution and admission. A transition that fails here must never be
+// reported as prescribed for the same snapshot and context.
+func ValidateApplicability(snapshot model.Snapshot, goal model.Goal, transition catalog.Transition, authority AuthorityBundle, parameters Parameters, now time.Time) error {
+	if !transition.Controllable() {
+		return fmt.Errorf("transition %q is uncontrollable and cannot be admitted", transition.ID)
+	}
+	if err := snapshot.Invocation.Validate(true); err != nil {
+		return err
+	}
+	if err := goal.Validate(); err != nil {
+		return err
+	}
+	if snapshot.Fingerprint == "" || len(snapshot.ProgramFingerprint) != 64 || !transition.SourceMatches(snapshot) || !transition.SupportsGoal(goal) {
+		return fmt.Errorf("transition %q is not admissible from snapshot %q", transition.ID, snapshot.Fingerprint)
+	}
+	if snapshot.Goal.Status == model.FactKnown && snapshot.Goal.Value != goal && !transition.Policy.BindsRequestedGoal {
+		return fmt.Errorf("transition %q cannot replace configured goal; goal.configure is required", transition.ID)
+	}
+	if err := authority.Validate(now); err != nil {
+		return err
+	}
+	if err := validateAuthorityEvidence(snapshot, authority); err != nil {
+		return err
+	}
+	if err := parameters.Validate(transition); err != nil {
+		return err
+	}
+	if err := validateProviderAuthorityBinding(authority, transition, parameters); err != nil {
+		return err
+	}
+	sourceRevision, worktreeFingerprint := gitBinding(snapshot)
+	if transition.BindsSourceRevision {
+		declared, _ := parameters.Get("source_revision")
+		if sourceRevision == "" || worktreeFingerprint == "" || declared != sourceRevision {
+			return fmt.Errorf("transition %q must bind the current Git revision and worktree fingerprint", transition.ID)
+		}
+	}
+	if !authority.Set(now).Satisfies(transition.Authority, transition.AuthorityAll) {
+		return fmt.Errorf("transition %q lacks required authority", transition.ID)
+	}
+	if err := validatePolicyAuthority(snapshot, transition, authority.Set(now)); err != nil {
+		return err
+	}
+	if err := validateRecoveryPermission(snapshot, transition); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (a Admission) ValidateCurrent(snapshot model.Snapshot, goal model.Goal, transition catalog.Transition, now time.Time) error {

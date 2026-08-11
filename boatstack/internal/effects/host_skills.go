@@ -92,8 +92,10 @@ materialized authority receipts.
 
 %s
 
-Begin each cycle with an untargeted authority-bearing `+"`next`"+`. Apply only the
-stable transition ID from the immediately preceding prescription and only its
+Begin each cycle with an untargeted authority-bearing `+"`next`"+`. A `+"`CANDIDATE`"+`
+identifies the next transition but is not permission to apply it: bind only its
+declared parameters and re-resolve that exact transition. Apply only the stable
+transition ID from the immediately preceding `+"`PRESCRIBED`"+` result and only its
 declared parameters. Preserve the complete apply response and stderr, including
 admission, receipt, postcondition, error, recovery, and transaction fields.
 Re-resolve with the same context after every complete receipt.
