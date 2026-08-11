@@ -104,6 +104,7 @@ func (j *fakeJournal) RequireRecovery(context.Context, string, string) error {
 type fakeEffects struct {
 	executions, rollbacks int
 	result                ports.EffectResult
+	err                   error
 }
 
 func (e *fakeEffects) Prepare(context.Context, protocol.Admission, catalog.Transition) (ports.PreparedEffect, error) {
@@ -115,7 +116,7 @@ func (e *fakeEffects) VerificationInvocation() (model.InvocationContext, bool) {
 }
 func (e *fakeEffects) Execute(context.Context) (ports.EffectResult, error) {
 	e.executions++
-	return e.result, nil
+	return e.result, e.err
 }
 func (e *fakeEffects) Rollback(context.Context) error {
 	e.rollbacks++
@@ -184,6 +185,10 @@ func recoveryObservation(fingerprint string) model.Observation {
 }
 
 func testRegistry(t *testing.T) catalog.Registry {
+	return testRegistryWithAdvanceClass(t, catalog.EventOwnedLocal)
+}
+
+func testRegistryWithAdvanceClass(t *testing.T, class catalog.EventClass) catalog.Registry {
 	t.Helper()
 	identity := []string{"repository-id", "git-common-id", "worktree-id"}
 	interruption := func(recovery catalog.TransitionID) catalog.InterruptionContract {
@@ -193,11 +198,19 @@ func testRegistry(t *testing.T) catalog.Registry {
 			Recovery: recovery, RecoveryAuthority: "test-authority", ResumptionPredicate: "test-resumption",
 		}
 	}
+	authority := []catalog.AuthorityClass{catalog.AuthorityRepository}
+	localEffects := []catalog.EffectID{"test.advance"}
+	var externalEffects []catalog.EffectID
+	if class == catalog.EventOwnedExternal {
+		authority = []catalog.AuthorityClass{catalog.AuthorityHuman}
+		localEffects = nil
+		externalEffects = []catalog.EffectID{"test.advance"}
+	}
 	r, err := catalog.New([]catalog.Transition{{
-		ID: "test.advance", Version: 1, Class: catalog.EventOwnedLocal,
+		ID: "test.advance", Version: 1, Class: class,
 		Origin: catalog.TransitionOrigin{Kind: catalog.OriginPrimaryFlow, ID: "test.synthetic", Version: "1.0.0", ManifestFingerprint: syntheticProgramFingerprint}, Owner: "test.synthetic", SelectionClass: catalog.SelectionFlowProgress,
 		SourcePhases: []model.ProtocolPhase{model.PhaseObserved}, TargetPhases: []model.ProtocolPhase{model.PhaseActive},
-		RequiredIdentity: identity, Authority: []catalog.AuthorityClass{catalog.AuthorityRepository}, RequiredEvidence: []string{"snapshot"}, OwnedResources: []string{"state"}, Effect: "test.advance", LocalEffects: []catalog.EffectID{"test.advance"}, Idempotent: true,
+		RequiredIdentity: identity, Authority: authority, RequiredEvidence: []string{"snapshot"}, OwnedResources: []string{"state"}, Effect: "test.advance", LocalEffects: localEffects, ExternalEffects: externalEffects, Idempotent: true,
 		Prescription: catalog.Prescription{Operation: "test.advance", ExpectedPostcondition: "active"}, SourcePredicate: "observed", AdmissionPredicate: "exact-admission", TargetPredicate: "active", Verifier: "fresh-active",
 		SourceConditions: []catalog.FacetCondition{{Facet: model.FacetName("test.synthetic.stage"), Statuses: []model.FactStatus{model.FactKnown}, Values: []string{"start"}}},
 		TargetConditions: []catalog.FacetCondition{{Facet: model.FacetName("test.synthetic.stage"), Statuses: []model.FactStatus{model.FactKnown}, Values: []string{"terminal"}}},
@@ -417,5 +430,27 @@ func TestApplyPreservesUnknownExternalOutcomeForReconciliation(t *testing.T) {
 	}
 	if effects.executions != 1 || effects.rollbacks != 0 || journal.recovery != 1 || len(receipts.values) != 0 {
 		t.Fatalf("external uncertainty was not preserved: effects=%+v journal=%+v receipts=%d", effects, journal, len(receipts.values))
+	}
+}
+
+func TestOwnedExternalExecutionErrorRequiresRecoveryWithoutRollback(t *testing.T) {
+	// control-law: a returned transport error cannot prove an external effect did not settle
+	now := time.Unix(30, 0).UTC()
+	registry := testRegistryWithAdvanceClass(t, catalog.EventOwnedExternal)
+	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source")}}
+	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{err: context.DeadlineExceeded}, &memoryReceipts{}, &fakeLock{}
+	kernel, err := New(registry, syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apply := request(now)
+	apply.Authority.Receipts[0].Class = catalog.AuthorityHuman
+	_, err = kernel.Apply(context.Background(), apply)
+	var unknown ExternalOutcomeUnknownError
+	if !errors.As(err, &unknown) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("error=%v, want unknown external outcome joined with deadline", err)
+	}
+	if effects.executions != 1 || effects.rollbacks != 0 || journal.recovery != 1 || journal.aborted != 0 || len(receipts.values) != 0 {
+		t.Fatalf("ambiguous external error was collapsed: effects=%+v journal=%+v receipts=%d", effects, journal, len(receipts.values))
 	}
 }

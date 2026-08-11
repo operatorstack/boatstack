@@ -35,6 +35,7 @@ func TestRepositorySubprocessExtensionsAreStrictAndSemanticallyFingerprinted(t *
 		Hosts:         []string{"cli", "sdk"},
 		Extensions: []SubprocessExtensionSettings{{
 			ID: "example.guard", Version: "1.0.0", Executable: executable, SHA256: strings.Repeat("a", 64),
+			Manifest: json.RawMessage(`{"id":"example.guard","version":"1.0.0","protocol_version":1,"settings_schema":{"type":"object"},"privacy_classification":"metadata-only","telemetry_classification":"transition-receipt"}`),
 			Settings: json.RawMessage(`{"level":"strict","enabled":true}`), DeadlineMillis: 1000, StdoutBytes: 2048, StderrBytes: 1024,
 		}},
 	}

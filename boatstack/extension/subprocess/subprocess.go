@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/control"
+	"github.com/operatorstack/boatstack/boatstack/internal/effects"
 )
 
 const maxRequestBytes = 1 << 20
@@ -27,17 +28,20 @@ type Config struct {
 	Version    string
 	Executable string
 	SHA256     string
+	Manifest   json.RawMessage
 	Settings   json.RawMessage
 	Limits     control.SubprocessLimits
 }
 
 type Extension struct {
-	config Config
+	config      Config
+	manifestRaw json.RawMessage
+	beforeStart func()
 }
 
 func New(config Config) (*Extension, error) {
-	if config.ID == "" || config.Version == "" || !filepath.IsAbs(config.Executable) || len(config.SHA256) != 64 {
-		return nil, fmt.Errorf("subprocess extension requires id, version, absolute executable path, and SHA-256")
+	if config.ID == "" || config.Version == "" || !filepath.IsAbs(config.Executable) || len(config.SHA256) != 64 || len(config.Manifest) == 0 {
+		return nil, fmt.Errorf("subprocess extension requires id, version, absolute executable path, SHA-256, and declarative manifest")
 	}
 	clean := filepath.Clean(config.Executable)
 	resolved, err := filepath.EvalSymlinks(clean)
@@ -62,8 +66,24 @@ func New(config Config) (*Extension, error) {
 		config.Limits.StderrBytes < 1 || config.Limits.StderrBytes > 1<<20 {
 		return nil, fmt.Errorf("subprocess extension limits are outside the supported bounds")
 	}
-	extension := &Extension{config: config}
-	if err := extension.verifyExecutable(); err != nil {
+	manifest, err := decodeManifest(config.Manifest)
+	if err != nil {
+		return nil, fmt.Errorf("decode declarative subprocess extension manifest: %w", err)
+	}
+	if manifest.ID != config.ID || manifest.Version != config.Version || manifest.ProtocolVersion != control.ExtensionProtocolVersion {
+		return nil, fmt.Errorf("subprocess extension manifest identity mismatch")
+	}
+	if manifest.ExecutableSHA256 != "" && manifest.ExecutableSHA256 != config.SHA256 {
+		return nil, fmt.Errorf("subprocess extension manifest executable fingerprint mismatch")
+	}
+	manifest.ExecutableSHA256 = config.SHA256
+	manifest.Settings = append(json.RawMessage(nil), config.Settings...)
+	manifestRaw, err := json.Marshal(manifest)
+	if err != nil {
+		return nil, fmt.Errorf("encode declarative subprocess extension manifest: %w", err)
+	}
+	extension := &Extension{config: config, manifestRaw: manifestRaw}
+	if _, err := extension.verifiedExecutable(); err != nil {
 		return nil, err
 	}
 	return extension, nil
@@ -71,28 +91,8 @@ func New(config Config) (*Extension, error) {
 
 func (e *Extension) Runtime() control.ExtensionRuntime { return e }
 
-func (e *Extension) ExtensionManifest(ctx context.Context) (control.ExtensionManifest, error) {
-	correlation := "manifest-" + e.config.SHA256[:16]
-	response, err := e.Invoke(ctx, control.ExtensionRequest{
-		ProtocolVersion: control.ExtensionProtocolVersion, Operation: control.ExtensionManifestOperation,
-		ExtensionID: e.config.ID, ExtensionVersion: e.config.Version, CorrelationID: correlation,
-	})
-	if err != nil {
-		return control.ExtensionManifest{}, err
-	}
-	if response.Manifest == nil {
-		return control.ExtensionManifest{}, fmt.Errorf("subprocess extension returned no manifest")
-	}
-	manifest := *response.Manifest
-	if manifest.ID != e.config.ID || manifest.Version != e.config.Version || manifest.ProtocolVersion != control.ExtensionProtocolVersion {
-		return control.ExtensionManifest{}, fmt.Errorf("subprocess extension manifest identity mismatch")
-	}
-	if manifest.ExecutableSHA256 != "" && manifest.ExecutableSHA256 != e.config.SHA256 {
-		return control.ExtensionManifest{}, fmt.Errorf("subprocess extension manifest executable fingerprint mismatch")
-	}
-	manifest.ExecutableSHA256 = e.config.SHA256
-	manifest.Settings = append(json.RawMessage(nil), e.config.Settings...)
-	return manifest, nil
+func (e *Extension) ExtensionManifest(context.Context) (control.ExtensionManifest, error) {
+	return decodeManifest(e.manifestRaw)
 }
 
 func (e *Extension) Invoke(ctx context.Context, request control.ExtensionRequest) (control.ExtensionResponse, error) {
@@ -105,8 +105,17 @@ func (e *Extension) Invoke(ctx context.Context, request control.ExtensionRequest
 	default:
 		return control.ExtensionResponse{}, fmt.Errorf("unsupported subprocess extension operation %q", request.Operation)
 	}
-	if err := e.verifyExecutable(); err != nil {
+	executable, err := e.verifiedExecutable()
+	if err != nil {
 		return control.ExtensionResponse{}, err
+	}
+	stagedPath, cleanup, err := effects.StageVerifiedExecutable(e.config.Executable, executable)
+	if err != nil {
+		return control.ExtensionResponse{}, err
+	}
+	defer cleanup()
+	if e.beforeStart != nil {
+		e.beforeStart()
 	}
 	raw, err := json.Marshal(request)
 	if err != nil {
@@ -117,7 +126,7 @@ func (e *Extension) Invoke(ctx context.Context, request control.ExtensionRequest
 	}
 	deadlineContext, cancel := context.WithTimeout(ctx, e.config.Limits.Deadline)
 	defer cancel()
-	command := exec.CommandContext(deadlineContext, e.config.Executable)
+	command := exec.CommandContext(deadlineContext, stagedPath)
 	command.Env = []string{"LANG=C", "LC_ALL=C"}
 	command.Stdin = bytes.NewReader(raw)
 	stdout := &boundedBuffer{limit: e.config.Limits.StdoutBytes, cancel: cancel}
@@ -155,33 +164,47 @@ func (e *Extension) Invoke(ctx context.Context, request control.ExtensionRequest
 	return response, nil
 }
 
-func (e *Extension) verifyExecutable() error {
+func (e *Extension) verifiedExecutable() ([]byte, error) {
 	info, err := os.Lstat(e.config.Executable)
 	if err != nil {
-		return fmt.Errorf("stat subprocess extension executable: %w", err)
+		return nil, fmt.Errorf("stat subprocess extension executable: %w", err)
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("subprocess extension executable path drifted to a symlink")
+		return nil, fmt.Errorf("subprocess extension executable path drifted to a symlink")
 	}
 	if !info.Mode().IsRegular() {
-		return fmt.Errorf("subprocess extension executable is not a regular file")
+		return nil, fmt.Errorf("subprocess extension executable is not a regular file")
 	}
 	resolved, err := filepath.EvalSymlinks(e.config.Executable)
 	if err != nil {
-		return fmt.Errorf("resolve subprocess extension executable: %w", err)
+		return nil, fmt.Errorf("resolve subprocess extension executable: %w", err)
 	}
 	if resolved != e.config.Executable {
-		return fmt.Errorf("subprocess extension executable path must remain exact and symlink-free")
+		return nil, fmt.Errorf("subprocess extension executable path must remain exact and symlink-free")
 	}
 	raw, err := os.ReadFile(e.config.Executable)
 	if err != nil {
-		return fmt.Errorf("read subprocess extension executable: %w", err)
+		return nil, fmt.Errorf("read subprocess extension executable: %w", err)
 	}
 	digest := sha256.Sum256(raw)
 	if hex.EncodeToString(digest[:]) != e.config.SHA256 {
-		return fmt.Errorf("subprocess extension executable fingerprint drifted")
+		return nil, fmt.Errorf("subprocess extension executable fingerprint drifted")
 	}
-	return nil
+	return raw, nil
+}
+
+func decodeManifest(raw json.RawMessage) (control.ExtensionManifest, error) {
+	var manifest control.ExtensionManifest
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&manifest); err != nil {
+		return control.ExtensionManifest{}, err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return control.ExtensionManifest{}, fmt.Errorf("manifest contains trailing JSON")
+	}
+	return manifest, nil
 }
 
 type boundedBuffer struct {

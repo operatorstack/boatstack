@@ -15,6 +15,7 @@ import (
 
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 type Transition = catalog.Transition
@@ -525,6 +526,9 @@ func validateFlow(manifest PrimaryFlowManifest) error {
 		manifest.PrivacyClassification == "" || manifest.TelemetryClassification == "" {
 		return fmt.Errorf("PrimaryFlow requires semantic id, version, configuration schema, goals, and transitions")
 	}
+	if err := validateDeclaredSchema(manifest.ConfigurationSchema, manifest.Settings, "PrimaryFlow "+manifest.ID+" configuration"); err != nil {
+		return err
+	}
 	supported := map[GoalKind]bool{}
 	for _, goal := range manifest.SupportedGoals {
 		if !goal.Valid() || supported[goal] {
@@ -629,6 +633,9 @@ func validateExtension(manifest ExtensionManifest, seen, reserved map[string]boo
 	}
 	if !validJSONObject(manifest.SettingsSchema) {
 		return fmt.Errorf("extension %q requires a JSON-object settings schema", manifest.ID)
+	}
+	if err := validateDeclaredSchema(manifest.SettingsSchema, manifest.Settings, "extension "+manifest.ID+" settings"); err != nil {
+		return err
 	}
 	if manifest.ExecutableSHA256 != "" {
 		if len(manifest.ExecutableSHA256) != 64 {
@@ -736,6 +743,54 @@ func validateExtension(manifest ExtensionManifest, seen, reserved map[string]boo
 		if !seenTransitions[recovery] {
 			return fmt.Errorf("extension %q recovery %q has no declared transition", manifest.ID, recovery)
 		}
+	}
+	return nil
+}
+
+type rejectingSchemaLoader struct{}
+
+func (rejectingSchemaLoader) Load(url string) (any, error) {
+	return nil, fmt.Errorf("external JSON Schema reference %q is not permitted", url)
+}
+
+func validateDeclaredSchema(schemaRaw, instanceRaw json.RawMessage, label string) error {
+	decode := func(raw json.RawMessage, fallback string) (any, error) {
+		if len(raw) == 0 {
+			raw = json.RawMessage(fallback)
+		}
+		decoder := json.NewDecoder(strings.NewReader(string(raw)))
+		decoder.UseNumber()
+		var value any
+		if err := decoder.Decode(&value); err != nil {
+			return nil, err
+		}
+		var trailing any
+		if err := decoder.Decode(&trailing); err != io.EOF {
+			return nil, fmt.Errorf("contains trailing JSON")
+		}
+		return value, nil
+	}
+	schemaValue, err := decode(schemaRaw, `{}`)
+	if err != nil {
+		return fmt.Errorf("%s schema is invalid JSON: %w", label, err)
+	}
+	instance, err := decode(instanceRaw, `{}`)
+	if err != nil {
+		return fmt.Errorf("%s value is invalid JSON: %w", label, err)
+	}
+	compiler := jsonschema.NewCompiler()
+	compiler.DefaultDraft(jsonschema.Draft2020)
+	compiler.UseLoader(rejectingSchemaLoader{})
+	const location = "urn:boatstack:component-schema"
+	if err := compiler.AddResource(location, schemaValue); err != nil {
+		return fmt.Errorf("%s schema could not be loaded: %w", label, err)
+	}
+	schema, err := compiler.Compile(location)
+	if err != nil {
+		return fmt.Errorf("%s schema is invalid: %w", label, err)
+	}
+	if err := schema.Validate(instance); err != nil {
+		return fmt.Errorf("%s does not satisfy its declared schema: %w", label, err)
 	}
 	return nil
 }

@@ -2,6 +2,7 @@ package control
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -32,6 +33,8 @@ func TestFlowOperationResponsesAreAnExactTaggedUnion(t *testing.T) {
 		{"recover-external", FlowRecoverOperation, FlowResponse{ExternalResult: json.RawMessage(`{}`)}},
 		{"partial-error", FlowObserveOperation, FlowResponse{ErrorClass: "temporary"}},
 		{"error-payload", FlowObserveOperation, FlowResponse{ErrorClass: "temporary", Error: "failed", Facts: []ExtensionFact{{ID: "wrong"}}}},
+		{"error-class-too-long", FlowObserveOperation, FlowResponse{ErrorClass: strings.Repeat("x", 129), Error: "failed"}},
+		{"error-message-too-long", FlowObserveOperation, FlowResponse{ErrorClass: "temporary", Error: strings.Repeat("x", 4097)}},
 		{"unknown-operation", FlowOperation("unknown"), FlowResponse{}},
 	}
 	for _, test := range invalid {
@@ -75,6 +78,8 @@ func TestExtensionOperationResponsesAreAnExactTaggedUnion(t *testing.T) {
 		{"recover-external", ExtensionRecoverOperation, ExtensionResponse{ExternalResult: json.RawMessage(`{}`)}},
 		{"partial-error", ExtensionObserveOperation, ExtensionResponse{Error: "failed"}},
 		{"error-payload", ExtensionObserveOperation, ExtensionResponse{ErrorClass: "temporary", Error: "failed", Facts: []ExtensionFact{{ID: "wrong"}}}},
+		{"error-class-too-long", ExtensionObserveOperation, ExtensionResponse{ErrorClass: strings.Repeat("x", 129), Error: "failed"}},
+		{"error-message-too-long", ExtensionObserveOperation, ExtensionResponse{ErrorClass: "temporary", Error: strings.Repeat("x", 4097)}},
 		{"unknown-operation", ExtensionOperation("unknown"), ExtensionResponse{}},
 	}
 	for _, test := range invalid {

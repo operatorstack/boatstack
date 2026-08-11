@@ -277,6 +277,10 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 	startedAt := e.clock.Now()
 	effectResult, effectErr := prepared.Execute(ctx)
 	if effectErr != nil {
+		if transition.Class == catalog.EventOwnedExternal {
+			unknown := ExternalOutcomeUnknownError{Transition: transition.ID, Recovery: transition.Interruption.Recovery}
+			return result, requireRecovery("external effect returned without a provable outcome", errors.Join(unknown, effectErr))
+		}
 		rollbackErr := prepared.Rollback(ctx)
 		if rollbackErr != nil {
 			return result, requireRecovery("effect and rollback failed", errors.Join(effectErr, rollbackErr))

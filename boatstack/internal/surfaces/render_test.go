@@ -55,9 +55,12 @@ func TestCatalogArtifactsAreGeneratedFromEveryRuntimeTransition(t *testing.T) {
 		if strings.Count(markdown, rowPrefix) != 1 {
 			t.Errorf("markdown does not contain transition %s exactly once", transition.ID)
 		}
-		if strings.Count(mermaid, string(transition.ID)+"<br/>") != 1 {
+		if strings.Count(mermaid, `["`+string(transition.ID)+`<br/>`) != 1 {
 			t.Errorf("Mermaid does not contain transition %s exactly once", transition.ID)
 		}
+	}
+	if !strings.Contains(mermaid, " --> ") {
+		t.Fatal("Mermaid transition inventory is not connected to protocol phases")
 	}
 	if markdown != RenderCatalogMarkdown(registry.All()) || mermaid != RenderCatalogMermaid(registry.All()) {
 		t.Fatal("catalog artifact rendering is not deterministic")

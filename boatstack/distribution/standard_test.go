@@ -13,6 +13,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/operatorstack/boatstack/boatstack/control"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
 )
 
@@ -43,8 +44,16 @@ func TestRepositoryScopedProgramsAreIndependentUnderConcurrency(t *testing.T) {
 			t.Fatal(err)
 		}
 		digest := sha256.Sum256(content)
+		manifest, err := json.Marshal(control.ExtensionManifest{
+			ID: id, Version: "1.0.0", ProtocolVersion: control.ExtensionProtocolVersion,
+			SettingsSchema: json.RawMessage(`{"type":"object"}`), Facts: []string{id + ".present"},
+			PrivacyClassification: "metadata-only", TelemetryClassification: "transition-receipt",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 		return protocol.SubprocessExtensionSettings{
-			ID: id, Version: "1.0.0", Executable: resolved, SHA256: hex.EncodeToString(digest[:]), DeadlineMillis: 30_000,
+			ID: id, Version: "1.0.0", Executable: resolved, SHA256: hex.EncodeToString(digest[:]), Manifest: manifest, DeadlineMillis: 30_000,
 		}
 	}
 	x, y := extensions("fixture.echo"), extensions("fixture.second")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -12,7 +13,22 @@ import (
 	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/control"
+	"github.com/operatorstack/boatstack/boatstack/core"
+	"github.com/operatorstack/boatstack/boatstack/flow/standard"
 )
+
+func fixtureManifest(t *testing.T, id string) json.RawMessage {
+	t.Helper()
+	raw, err := json.Marshal(control.ExtensionManifest{
+		ID: id, Version: "1.0.0", ProtocolVersion: control.ExtensionProtocolVersion,
+		SettingsSchema: json.RawMessage(`{"type":"object"}`), Facts: []string{id + ".present"},
+		PrivacyClassification: "metadata-only", TelemetryClassification: "transition-receipt",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
 
 func fixtureExtension(t *testing.T) *Extension {
 	t.Helper()
@@ -33,7 +49,8 @@ func fixtureExtension(t *testing.T) *Extension {
 	digest := sha256.Sum256(raw)
 	extension, err := New(Config{
 		ID: "fixture.echo", Version: "1.0.0", Executable: path, SHA256: hex.EncodeToString(digest[:]),
-		Limits: control.SubprocessLimits{Deadline: 30 * time.Second},
+		Manifest: fixtureManifest(t, "fixture.echo"),
+		Limits:   control.SubprocessLimits{Deadline: 30 * time.Second},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -58,7 +75,8 @@ func pythonFixture(t *testing.T, mutate func(string) string) *Extension {
 	digest := sha256.Sum256(content)
 	extension, err := New(Config{
 		ID: "fixture.echo", Version: "1.0.0", Executable: path, SHA256: hex.EncodeToString(digest[:]),
-		Limits: control.SubprocessLimits{Deadline: 30 * time.Second},
+		Manifest: fixtureManifest(t, "fixture.echo"),
+		Limits:   control.SubprocessLimits{Deadline: 30 * time.Second},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -107,7 +125,7 @@ func TestExecutableDriftFailsBeforeInvocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	digest := sha256.Sum256(source)
-	extension, err := New(Config{ID: "fixture.echo", Version: "1.0.0", Executable: path, SHA256: hex.EncodeToString(digest[:])})
+	extension, err := New(Config{ID: "fixture.echo", Version: "1.0.0", Executable: path, SHA256: hex.EncodeToString(digest[:]), Manifest: fixtureManifest(t, "fixture.echo")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,6 +135,60 @@ func TestExecutableDriftFailsBeforeInvocation(t *testing.T) {
 	_, err = extension.Invoke(context.Background(), control.ExtensionRequest{ProtocolVersion: 1, Operation: control.ExtensionObserveOperation, ExtensionID: "fixture.echo", ExtensionVersion: "1.0.0", CorrelationID: "drift"})
 	if err == nil || !strings.Contains(err.Error(), "fingerprint drifted") {
 		t.Fatalf("drift error = %v", err)
+	}
+}
+
+func TestInvocationExecutesTheExactVerifiedBytesAfterPathReplacement(t *testing.T) {
+	// control-law: executable-identity-is-bound-to-the-bytes-actually-executed
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX atomic replacement semantics are exercised here")
+	}
+	extension := pythonFixture(t, func(source string) string { return source })
+	replacement := []byte("#!/bin/sh\nexit 42\n")
+	extension.beforeStart = func() {
+		temporary := extension.config.Executable + ".replacement"
+		if err := os.WriteFile(temporary, replacement, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(temporary, extension.config.Executable); err != nil {
+			t.Fatal(err)
+		}
+	}
+	response, err := extension.Invoke(context.Background(), control.ExtensionRequest{
+		ProtocolVersion: 1, Operation: control.ExtensionObserveOperation, ExtensionID: "fixture.echo", ExtensionVersion: "1.0.0", CorrelationID: "atomic-replacement",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Facts) != 1 || response.Facts[0].Value != "clean" {
+		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestDeclarativeManifestDoesNotStartExecutable(t *testing.T) {
+	// control-law: program-compilation-never-executes-repository-selected-code
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX script fixture")
+	}
+	directory := exactPath(t, t.TempDir())
+	marker := filepath.Join(directory, "started")
+	content := []byte("#!/bin/sh\ntouch \"" + marker + "\"\n")
+	path := filepath.Join(directory, "extension.sh")
+	if err := os.WriteFile(path, content, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(content)
+	extension, err := New(Config{ID: "fixture.echo", Version: "1.0.0", Executable: path, SHA256: hex.EncodeToString(digest[:]), Manifest: fixtureManifest(t, "fixture.echo")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := control.Compile(context.Background(), control.CompileRequest{
+		KernelVersion: "test-kernel", Core: core.System(), Flow: standard.Definition(), Extensions: []control.Extension{extension},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("declarative manifest started executable: %v", err)
 	}
 }
 
@@ -138,7 +210,7 @@ func TestExecutableCannotBecomeASymlinkAfterConstruction(t *testing.T) {
 		t.Fatal(err)
 	}
 	digest := sha256.Sum256(source)
-	extension, err := New(Config{ID: "fixture.echo", Version: "1.0.0", Executable: path, SHA256: hex.EncodeToString(digest[:])})
+	extension, err := New(Config{ID: "fixture.echo", Version: "1.0.0", Executable: path, SHA256: hex.EncodeToString(digest[:]), Manifest: fixtureManifest(t, "fixture.echo")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +244,7 @@ func TestDeadlineAndOutputBoundsFailClosed(t *testing.T) {
 				t.Fatal(err)
 			}
 			digest := sha256.Sum256([]byte(fixture.body))
-			extension, err := New(Config{ID: "fixture.echo", Version: "1.0.0", Executable: path, SHA256: hex.EncodeToString(digest[:]), Limits: control.SubprocessLimits{Deadline: fixture.deadline, StdoutBytes: fixture.stdout, StderrBytes: 64}})
+			extension, err := New(Config{ID: "fixture.echo", Version: "1.0.0", Executable: path, SHA256: hex.EncodeToString(digest[:]), Manifest: fixtureManifest(t, "fixture.echo"), Limits: control.SubprocessLimits{Deadline: fixture.deadline, StdoutBytes: fixture.stdout, StderrBytes: 64}})
 			if err != nil {
 				t.Fatal(err)
 			}

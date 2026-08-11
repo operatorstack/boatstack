@@ -14,6 +14,12 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/flow/standard"
 )
 
+type staticFlowDefinition struct{ manifest control.PrimaryFlowManifest }
+
+func (f staticFlowDefinition) FlowManifest(context.Context) (control.PrimaryFlowManifest, error) {
+	return f.manifest, nil
+}
+
 func TestStandardProgramHasExplicitStableComposition(t *testing.T) {
 	// control-law: compile-produces-one-immutable-registry-with-explicit-origins
 	one, err := distribution.StandardProgram(context.Background())
@@ -63,9 +69,10 @@ func TestProgramFingerprintBindsCompositionAndPolicyInputs(t *testing.T) {
 	variants["executable"] = executable
 	settings := cloneManifest(t, manifest)
 	settings.Settings = json.RawMessage(`{"required":true}`)
+	settings.SettingsSchema = json.RawMessage(`{"type":"object","properties":{"required":{"type":"boolean"}},"additionalProperties":false}`)
 	variants["extension-settings"] = settings
 	settingsSchema := cloneManifest(t, manifest)
-	settingsSchema.SettingsSchema = json.RawMessage(`{"type":"object","required":["mode"]}`)
+	settingsSchema.SettingsSchema = json.RawMessage(`{"type":"object","description":"alternate valid schema","additionalProperties":false}`)
 	variants["extension-settings-schema"] = settingsSchema
 	resource := cloneManifest(t, manifest)
 	resource.OwnedResources = []string{"boatstack.release-note.alternate-evidence"}
@@ -119,6 +126,46 @@ func TestProgramFingerprintBindsCompositionAndPolicyInputs(t *testing.T) {
 	}
 	if policyOne.Fingerprint() == policyTwo.Fingerprint() {
 		t.Fatal("repository policy did not change program fingerprint")
+	}
+}
+
+func TestCompileEnforcesDeclaredComponentSchemas(t *testing.T) {
+	// control-law: component-settings-cannot-cross-runtime-boundaries-unvalidated
+	reference := releasenote.Definition()
+	manifest, err := reference.ExtensionManifest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name, schema, settings string
+	}{
+		{"missing-required", `{"type":"object","required":["mode"]}`, `{}`},
+		{"wrong-type", `{"type":"object","properties":{"mode":{"type":"string"}}}`, `{"mode":1}`},
+		{"additional-property", `{"type":"object","additionalProperties":false}`, `{"mode":"strict"}`},
+		{"invalid-schema", `{"type":"object","required":"mode"}`, `{}`},
+	}
+	for _, test := range cases {
+		t.Run("extension-"+test.name, func(t *testing.T) {
+			candidate := cloneManifest(t, manifest)
+			candidate.SettingsSchema = json.RawMessage(test.schema)
+			candidate.Settings = json.RawMessage(test.settings)
+			definition, err := extension.NewInProcess(candidate, reference.Runtime())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := distribution.StandardProgram(context.Background(), definition); err == nil {
+				t.Fatal("invalid extension settings or schema compiled")
+			}
+		})
+	}
+	flow, err := standard.Definition().FlowManifest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	flow.ConfigurationSchema = json.RawMessage(`{"type":"object","required":["mode"],"additionalProperties":false}`)
+	flow.Settings = json.RawMessage(`{}`)
+	if _, err := control.Compile(context.Background(), control.CompileRequest{KernelVersion: "kernel", Core: core.System(), Flow: staticFlowDefinition{manifest: flow}}); err == nil {
+		t.Fatal("PrimaryFlow settings that violate ConfigurationSchema compiled")
 	}
 }
 

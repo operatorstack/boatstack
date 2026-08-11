@@ -61,9 +61,8 @@ func RenderCatalogMarkdown(transitions []catalog.Transition) string {
 	return output.String()
 }
 
-// RenderCatalogMermaid generates one inventory node per runtime transition,
-// grouped by event class. Phase sets are labels on the exact transition node,
-// avoiding a second hand-maintained graph.
+// RenderCatalogMermaid generates one connected phase-transition graph from the
+// runtime registry, avoiding a second hand-maintained graph.
 func RenderCatalogMermaid(transitions []catalog.Transition) string {
 	return renderCatalogMermaid(transitions, "%% Generated from the compiled ControlProgram registry by surfaces.RenderCatalogMermaid. Do not edit.\n")
 }
@@ -93,18 +92,50 @@ func renderCatalogMermaid(transitions []catalog.Transition, header string) strin
 	var output strings.Builder
 	output.WriteString(header)
 	output.WriteString("flowchart TB\n")
+	phases := map[model.ProtocolPhase]bool{}
+	for _, transition := range ordered {
+		for _, phase := range append(append([]model.ProtocolPhase(nil), transition.SourcePhases...), transition.TargetPhases...) {
+			phases[phase] = true
+		}
+	}
+	orderedPhases := make([]model.ProtocolPhase, 0, len(phases))
+	for phase := range phases {
+		orderedPhases = append(orderedPhases, phase)
+	}
+	sort.Slice(orderedPhases, func(i, j int) bool { return orderedPhases[i] < orderedPhases[j] })
+	output.WriteString("  subgraph phases[\"protocol phases\"]\n")
+	for _, phase := range orderedPhases {
+		fmt.Fprintf(&output, "    p_%s[\"%s\"]\n", strings.ReplaceAll(string(phase), "-", "_"), escapeMermaid(string(phase)))
+	}
+	output.WriteString("  end\n")
 	index := 0
+	type edgeSet struct {
+		node    string
+		sources []model.ProtocolPhase
+		targets []model.ProtocolPhase
+	}
+	edges := make([]edgeSet, 0, len(ordered))
 	for _, class := range classes {
 		fmt.Fprintf(&output, "  subgraph %s[\"%s\"]\n", strings.ReplaceAll(string(class), "-", "_"), class)
 		for _, transition := range ordered {
 			if transition.Class != class {
 				continue
 			}
-			label := fmt.Sprintf("%s<br/>%s → %s", transition.ID, strings.Join(phaseStrings(transition.SourcePhases), " | "), strings.Join(phaseStrings(transition.TargetPhases), " | "))
-			fmt.Fprintf(&output, "    t%02d[\"%s\"]\n", index, escapeMermaid(label))
+			node := fmt.Sprintf("t%02d", index)
+			label := fmt.Sprintf("%s<br/>%s", transition.ID, transition.Class)
+			fmt.Fprintf(&output, "    %s[\"%s\"]\n", node, escapeMermaid(label))
+			edges = append(edges, edgeSet{node: node, sources: transition.SourcePhases, targets: transition.TargetPhases})
 			index++
 		}
 		output.WriteString("  end\n")
+	}
+	for _, edge := range edges {
+		for _, phase := range edge.sources {
+			fmt.Fprintf(&output, "  p_%s --> %s\n", strings.ReplaceAll(string(phase), "-", "_"), edge.node)
+		}
+		for _, phase := range edge.targets {
+			fmt.Fprintf(&output, "  %s --> p_%s\n", edge.node, strings.ReplaceAll(string(phase), "-", "_"))
+		}
 	}
 	return output.String()
 }

@@ -117,8 +117,8 @@ func ConfiguredExtensions(ctx context.Context, request RepositoryProgramRequest)
 	for _, declaration := range configuration.Extensions {
 		extension, extensionErr := subprocess.New(subprocess.Config{
 			ID: declaration.ID, Version: declaration.Version, Executable: declaration.Executable, SHA256: declaration.SHA256,
-			Settings: declaration.Settings,
-			Limits:   control.SubprocessLimits{Deadline: time.Duration(declaration.DeadlineMillis) * time.Millisecond, StdoutBytes: declaration.StdoutBytes, StderrBytes: declaration.StderrBytes},
+			Manifest: declaration.Manifest, Settings: declaration.Settings,
+			Limits: control.SubprocessLimits{Deadline: time.Duration(declaration.DeadlineMillis) * time.Millisecond, StdoutBytes: declaration.StdoutBytes, StderrBytes: declaration.StderrBytes},
 		})
 		if extensionErr != nil {
 			return nil, nil, fmt.Errorf("verify configured subprocess extension %q: %w", declaration.ID, extensionErr)
@@ -135,18 +135,25 @@ func ConfiguredExtensions(ctx context.Context, request RepositoryProgramRequest)
 func canonicalProgramSettings(values []protocol.SubprocessExtensionSettings) (programSettings, error) {
 	extensions := append([]protocol.SubprocessExtensionSettings(nil), values...)
 	for index := range extensions {
-		if len(extensions[index].Settings) == 0 {
-			continue
+		items := []struct {
+			name  string
+			value *json.RawMessage
+		}{{"manifest", &extensions[index].Manifest}, {"settings", &extensions[index].Settings}}
+		for _, item := range items {
+			name, value := item.name, item.value
+			if len(*value) == 0 {
+				continue
+			}
+			var decoded any
+			if err := json.Unmarshal(*value, &decoded); err != nil {
+				return programSettings{}, fmt.Errorf("canonicalize extension %q %s: %w", extensions[index].ID, name, err)
+			}
+			canonical, err := json.Marshal(decoded)
+			if err != nil {
+				return programSettings{}, fmt.Errorf("canonicalize extension %q %s: %w", extensions[index].ID, name, err)
+			}
+			*value = canonical
 		}
-		var decoded any
-		if err := json.Unmarshal(extensions[index].Settings, &decoded); err != nil {
-			return programSettings{}, fmt.Errorf("canonicalize extension %q settings: %w", extensions[index].ID, err)
-		}
-		canonical, err := json.Marshal(decoded)
-		if err != nil {
-			return programSettings{}, fmt.Errorf("canonicalize extension %q settings: %w", extensions[index].ID, err)
-		}
-		extensions[index].Settings = canonical
 	}
 	sort.Slice(extensions, func(i, j int) bool { return extensions[i].ID < extensions[j].ID })
 	return programSettings{Extensions: extensions}, nil

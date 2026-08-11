@@ -3,6 +3,8 @@ package boatstack
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,23 +21,47 @@ func (o fixedObservation) Observe(context.Context, ports.ObservationRequest) (mo
 	return o.value, nil
 }
 
+func TestRuntimeErrorPreservesBoundedClassAndMessage(t *testing.T) {
+	extension := control.CompiledExtension{
+		Identity: control.ComponentIdentity{ID: "example.runtime", Version: "1.0.0"},
+	}
+	err := validateExtensionResponse(extension, control.ExtensionObserveOperation, "correlation", control.ExtensionResponse{
+		ProtocolVersion: control.ExtensionProtocolVersion, Operation: control.ExtensionObserveOperation,
+		ExtensionID: "example.runtime", ExtensionVersion: "1.0.0", CorrelationID: "correlation",
+		ErrorClass: "temporary", Error: "provider response was incomplete",
+	})
+	var runtimeErr ComponentRuntimeError
+	if !errors.As(err, &runtimeErr) || runtimeErr.Class != "temporary" || runtimeErr.Message != "provider response was incomplete" {
+		t.Fatalf("runtime error detail was lost: %#v (%v)", runtimeErr, err)
+	}
+}
+
 type isolatedObservationExtension struct {
-	id      string
-	forbid  string
-	sawFact *bool
+	id         string
+	forbid     string
+	sawFact    *bool
+	executable bool
+	calls      *int
 }
 
 func (e isolatedObservationExtension) ExtensionManifest(context.Context) (control.ExtensionManifest, error) {
-	return control.ExtensionManifest{
+	manifest := control.ExtensionManifest{
 		ID: e.id, Version: "1.0.0", ProtocolVersion: control.ExtensionProtocolVersion,
 		SettingsSchema: json.RawMessage(`{"type":"object"}`), Facts: []string{e.id + ".fact"},
 		PrivacyClassification: "metadata-only", TelemetryClassification: "transition-receipt",
-	}, nil
+	}
+	if e.executable {
+		manifest.ExecutableSHA256 = strings.Repeat("a", 64)
+	}
+	return manifest, nil
 }
 
 func (e isolatedObservationExtension) Runtime() control.ExtensionRuntime { return e }
 
 func (e isolatedObservationExtension) Invoke(_ context.Context, request control.ExtensionRequest) (control.ExtensionResponse, error) {
+	if e.calls != nil {
+		*e.calls++
+	}
 	var projection struct {
 		ExtensionFacts map[string]json.RawMessage `json:"extension_facts"`
 	}
@@ -48,6 +74,41 @@ func (e isolatedObservationExtension) Invoke(_ context.Context, request control.
 		ExtensionID: e.id, ExtensionVersion: "1.0.0", CorrelationID: request.CorrelationID,
 		Facts: []control.ExtensionFact{{ID: e.id + ".fact", Status: control.FactKnown, Value: "observed", Fingerprint: e.id + "-fingerprint"}},
 	}, nil
+}
+
+func TestExecutableExtensionObservationWaitsForVerifiedProgramBinding(t *testing.T) {
+	// control-law: repository-selected-code-is-inert-before-exact-program-admission
+	var calls int
+	var sawFact bool
+	extension := isolatedObservationExtension{id: "example.external", sawFact: &sawFact, executable: true, calls: &calls}
+	program, err := control.Compile(context.Background(), control.CompileRequest{
+		KernelVersion: "test-kernel", Core: core.System(), Flow: standard.Definition(), Extensions: []control.Extension{extension},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation := model.InvocationContext{Correlation: "pre-admission-gate"}
+	base := model.Observation{
+		Invocation: invocation, ObservedAt: time.Unix(100, 0).UTC(),
+		Configuration: model.Known(model.ConfigurationVerified, model.Evidence{Source: "test", Fingerprint: "configuration", ObservedAt: time.Unix(100, 0).UTC()}),
+	}
+	observer := programObserver{base: fixedObservation{value: base}, program: program}
+	observed, err := observer.Observe(context.Background(), ports.ObservationRequest{Invocation: invocation})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 0 || len(observed.ExtensionFacts) != 0 {
+		t.Fatalf("unbound program executed extension: calls=%d facts=%#v", calls, observed.ExtensionFacts)
+	}
+	base.RecordedProgramFingerprint = program.Fingerprint()
+	observer.base = fixedObservation{value: base}
+	observed, err = observer.Observe(context.Background(), ports.ObservationRequest{Invocation: invocation})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || observed.ExtensionFacts["example.external.fact"].Value != "observed" {
+		t.Fatalf("verified binding did not execute extension once: calls=%d facts=%#v", calls, observed.ExtensionFacts)
+	}
 }
 
 func TestExtensionObserversConsumeOneOrderIndependentProjection(t *testing.T) {

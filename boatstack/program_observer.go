@@ -16,6 +16,19 @@ type programObserver struct {
 	program control.ControlProgram
 }
 
+// ComponentRuntimeError preserves a bounded protocol error classification and
+// message without granting a component control over recovery policy.
+type ComponentRuntimeError struct {
+	Component string
+	Operation string
+	Class     string
+	Message   string
+}
+
+func (e ComponentRuntimeError) Error() string {
+	return fmt.Sprintf("%s %s reported %s: %s", e.Component, e.Operation, e.Class, e.Message)
+}
+
 func (o programObserver) Observe(ctx context.Context, request ports.ObservationRequest) (model.Observation, error) {
 	observation, err := o.base.Observe(ctx, request)
 	if err != nil {
@@ -76,6 +89,12 @@ func (o programObserver) Observe(ctx context.Context, request ports.ObservationR
 	extensionProjection := observation
 	for _, extension := range o.program.Extensions() {
 		if len(extension.Manifest.Facts) == 0 {
+			continue
+		}
+		// Repository-selected executable extensions remain inert until the
+		// observed configuration and recorded program identity prove that this
+		// exact composition has already crossed the Kernel admission boundary.
+		if extension.Manifest.ExecutableSHA256 != "" && !observation.ExecutableRuntimeAdmitted(o.program.Fingerprint()) {
 			continue
 		}
 		if extension.Runtime == nil {
@@ -187,7 +206,7 @@ func validateFlowResponse(flow control.CompiledFlow, operation control.FlowOpera
 		return fmt.Errorf("primary flow %q returned an invalid operation response: %w", flow.Identity.ID, err)
 	}
 	if response.ErrorClass != "" || response.Error != "" {
-		return fmt.Errorf("primary flow %q reported %s", flow.Identity.ID, response.ErrorClass)
+		return ComponentRuntimeError{Component: fmt.Sprintf("primary flow %q", flow.Identity.ID), Operation: string(operation), Class: response.ErrorClass, Message: response.Error}
 	}
 	return nil
 }
@@ -202,7 +221,7 @@ func validateExtensionResponse(extension control.CompiledExtension, operation co
 		return fmt.Errorf("extension %q returned an invalid operation response: %w", extension.Identity.ID, err)
 	}
 	if response.ErrorClass != "" || response.Error != "" {
-		return fmt.Errorf("extension %q reported %s", extension.Identity.ID, response.ErrorClass)
+		return ComponentRuntimeError{Component: fmt.Sprintf("extension %q", extension.Identity.ID), Operation: string(operation), Class: response.ErrorClass, Message: response.Error}
 	}
 	return nil
 }

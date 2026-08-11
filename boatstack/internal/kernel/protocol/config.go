@@ -38,6 +38,7 @@ type SubprocessExtensionSettings struct {
 	Version        string          `json:"version"`
 	Executable     string          `json:"executable"`
 	SHA256         string          `json:"sha256"`
+	Manifest       json.RawMessage `json:"manifest"`
 	Settings       json.RawMessage `json:"settings,omitempty"`
 	DeadlineMillis int             `json:"deadline_millis,omitempty"`
 	StdoutBytes    int64           `json:"stdout_bytes,omitempty"`
@@ -99,14 +100,22 @@ func ProjectConfigFingerprint(value []byte) (ProjectConfig, string, error) {
 	sort.Strings(canonical.Hosts)
 	canonical.Extensions = append([]SubprocessExtensionSettings(nil), config.Extensions...)
 	for index := range canonical.Extensions {
-		if len(canonical.Extensions[index].Settings) != 0 {
-			var settings any
-			if err := json.Unmarshal(canonical.Extensions[index].Settings, &settings); err != nil {
-				return ProjectConfig{}, "", fmt.Errorf("canonicalize extension %q settings: %w", canonical.Extensions[index].ID, err)
+		values := []struct {
+			name  string
+			value *json.RawMessage
+		}{{"manifest", &canonical.Extensions[index].Manifest}, {"settings", &canonical.Extensions[index].Settings}}
+		for _, item := range values {
+			name, value := item.name, item.value
+			if len(*value) == 0 {
+				continue
 			}
-			canonical.Extensions[index].Settings, err = json.Marshal(settings)
+			var decoded any
+			if err := json.Unmarshal(*value, &decoded); err != nil {
+				return ProjectConfig{}, "", fmt.Errorf("canonicalize extension %q %s: %w", canonical.Extensions[index].ID, name, err)
+			}
+			*value, err = json.Marshal(decoded)
 			if err != nil {
-				return ProjectConfig{}, "", fmt.Errorf("canonicalize extension %q settings: %w", canonical.Extensions[index].ID, err)
+				return ProjectConfig{}, "", fmt.Errorf("canonicalize extension %q %s: %w", canonical.Extensions[index].ID, name, err)
 			}
 		}
 	}
@@ -158,8 +167,8 @@ func (c ProjectConfig) Validate() error {
 	}
 	seenExtensions := map[string]bool{}
 	for _, extension := range c.Extensions {
-		if !extensionID.MatchString(extension.ID) || extension.Version == "" || !filepath.IsAbs(extension.Executable) || filepath.Clean(extension.Executable) != extension.Executable || len(extension.SHA256) != 64 {
-			return fmt.Errorf("subprocess extension requires semantic id, version, exact absolute executable, and SHA-256")
+		if !extensionID.MatchString(extension.ID) || extension.Version == "" || !filepath.IsAbs(extension.Executable) || filepath.Clean(extension.Executable) != extension.Executable || len(extension.SHA256) != 64 || len(extension.Manifest) == 0 {
+			return fmt.Errorf("subprocess extension requires semantic id, version, exact absolute executable, SHA-256, and declarative manifest")
 		}
 		if _, err := hex.DecodeString(extension.SHA256); err != nil {
 			return fmt.Errorf("subprocess extension %q has invalid SHA-256", extension.ID)
@@ -171,16 +180,29 @@ func (c ProjectConfig) Validate() error {
 		if extension.DeadlineMillis < 0 || extension.StdoutBytes < 0 || extension.StderrBytes < 0 {
 			return fmt.Errorf("subprocess extension %q has negative limits", extension.ID)
 		}
-		if len(extension.Settings) != 0 {
+		values := []struct {
+			name  string
+			value json.RawMessage
+		}{{"manifest", extension.Manifest}, {"settings", extension.Settings}}
+		for _, item := range values {
+			name, value := item.name, item.value
+			if len(value) == 0 {
+				continue
+			}
 			var settings any
-			decoder := json.NewDecoder(bytes.NewReader(extension.Settings))
+			decoder := json.NewDecoder(bytes.NewReader(value))
 			decoder.UseNumber()
 			if err := decoder.Decode(&settings); err != nil {
-				return fmt.Errorf("subprocess extension %q settings are invalid JSON", extension.ID)
+				return fmt.Errorf("subprocess extension %q %s is invalid JSON", extension.ID, name)
 			}
 			var trailing any
 			if err := decoder.Decode(&trailing); err != io.EOF {
-				return fmt.Errorf("subprocess extension %q settings contain trailing JSON", extension.ID)
+				return fmt.Errorf("subprocess extension %q %s contains trailing JSON", extension.ID, name)
+			}
+			if name == "manifest" {
+				if _, ok := settings.(map[string]any); !ok {
+					return fmt.Errorf("subprocess extension %q manifest must be a JSON object", extension.ID)
+				}
 			}
 		}
 	}

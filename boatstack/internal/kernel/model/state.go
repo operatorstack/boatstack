@@ -414,6 +414,13 @@ type Observation struct {
 	ObservedAt                 time.Time                 `json:"observed_at"`
 }
 
+// ExecutableRuntimeAdmitted reports whether repository-selected executable
+// observers may run for this exact compiled program.
+func (o Observation) ExecutableRuntimeAdmitted(programFingerprint string) bool {
+	return o.RecordedProgramFingerprint == programFingerprint &&
+		o.Configuration.Status == FactKnown && o.Configuration.Value == ConfigurationVerified
+}
+
 type Snapshot struct {
 	Observation
 	Fingerprint string `json:"fingerprint"`

@@ -75,6 +75,9 @@ func ValidateExtensionOperationResponse(operation ExtensionOperation, response E
 	}
 	hasPayload := response.Manifest != nil || len(response.Facts) != 0 || len(response.Writes) != 0 || len(response.ExternalResult) != 0 || response.Verified != nil
 	if response.Error != "" {
+		if len(response.ErrorClass) > 128 || len(response.Error) > 4096 {
+			return fmt.Errorf("extension error classification or message exceeds its bound")
+		}
 		if hasPayload {
 			return fmt.Errorf("extension error response contains an operation payload")
 		}

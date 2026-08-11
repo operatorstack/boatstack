@@ -62,6 +62,14 @@ it cannot select or replace the trusted primary flow:
       "version": "1.0.0",
       "executable": "/absolute/symlink-free/path/security-extension",
       "sha256": "<64 lowercase hexadecimal characters>",
+      "manifest": {
+        "id": "example.security",
+        "version": "1.0.0",
+        "protocol_version": 1,
+        "settings_schema": {"type": "object", "additionalProperties": false},
+        "privacy_classification": "metadata-only",
+        "telemetry_classification": "transition-receipt"
+      },
       "settings": {"profile": "strict"},
       "deadline_millis": 5000,
       "stdout_bytes": 1048576,
@@ -71,9 +79,11 @@ it cannot select or replace the trusted primary flow:
 }
 ```
 
-The executable is invoked directly without a shell, receives only the bounded
-versioned JSON protocol and fixed locale variables, and is re-hashed before
-every invocation. Crossing either output bound cancels the subprocess
+The declarative manifest is compiled without starting the executable. Once the
+exact configuration and ControlProgram binding is current, the executable is
+invoked directly without a shell from a private copy of the exact bytes hashed
+for that invocation. It receives only the bounded versioned JSON protocol and
+fixed locale variables. Crossing either output bound cancels the subprocess
 immediately and fails the operation closed. It is a trusted executable
 boundary, not an OS sandbox.
 Changing its set, version, executable bytes, settings, or limits changes the

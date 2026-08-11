@@ -1,74 +1,397 @@
 %% Generated from the compiled ControlProgram registry by surfaces.RenderCatalogMermaid. Do not edit.
 flowchart TB
+  subgraph phases["protocol phases"]
+    p_ABANDONED["ABANDONED"]
+    p_ACTIVE["ACTIVE"]
+    p_DORMANT["DORMANT"]
+    p_FRONTIER["FRONTIER"]
+    p_OBSERVED["OBSERVED"]
+    p_RECOVERY["RECOVERY"]
+    p_TERMINAL["TERMINAL"]
+    p_UNRESOLVED["UNRESOLVED"]
+  end
   subgraph authority["authority"]
-    t00["engagement.begin<br/>DORMANT | OBSERVED → OBSERVED | ACTIVE"]
-    t01["engagement.release<br/>ACTIVE | FRONTIER → DORMANT"]
-    t02["engagement.renew<br/>ACTIVE → ACTIVE"]
-    t03["evidence.approval.revoke<br/>ACTIVE | FRONTIER → FRONTIER"]
-    t04["goal.configure<br/>OBSERVED | ACTIVE | FRONTIER | TERMINAL | ABANDONED → OBSERVED | ACTIVE | FRONTIER"]
-    t05["plan.abandon<br/>OBSERVED | ACTIVE | FRONTIER → ABANDONED"]
-    t06["plan.approve<br/>ACTIVE | FRONTIER → ACTIVE | TERMINAL"]
-    t07["plan.approve-amendment<br/>ACTIVE | FRONTIER → ACTIVE"]
-    t08["publication.abandon<br/>ACTIVE | FRONTIER → ABANDONED"]
+    t00["engagement.begin<br/>authority"]
+    t01["engagement.release<br/>authority"]
+    t02["engagement.renew<br/>authority"]
+    t03["evidence.approval.revoke<br/>authority"]
+    t04["goal.configure<br/>authority"]
+    t05["plan.abandon<br/>authority"]
+    t06["plan.approve<br/>authority"]
+    t07["plan.approve-amendment<br/>authority"]
+    t08["publication.abandon<br/>authority"]
   end
   subgraph owned_local["owned-local"]
-    t09["catalog.reconcile<br/>DORMANT | OBSERVED | ACTIVE | RECOVERY | FRONTIER | UNRESOLVED | TERMINAL | ABANDONED → DORMANT | OBSERVED | ACTIVE | RECOVERY | FRONTIER | UNRESOLVED | TERMINAL | ABANDONED"]
-    t10["configuration.initialize<br/>OBSERVED → OBSERVED | TERMINAL"]
-    t11["configuration.mutate<br/>OBSERVED | ACTIVE | FRONTIER | UNRESOLVED → OBSERVED | ACTIVE | TERMINAL"]
-    t12["delivery.slice.advance<br/>ACTIVE → ACTIVE | TERMINAL"]
-    t13["evidence.visual.attach<br/>ACTIVE → ACTIVE | TERMINAL"]
-    t14["gate.build.record<br/>ACTIVE → ACTIVE"]
-    t15["gate.change.record<br/>ACTIVE → ACTIVE"]
-    t16["gate.journey.record<br/>ACTIVE → ACTIVE"]
-    t17["gate.review.record<br/>ACTIVE → ACTIVE | TERMINAL"]
-    t18["gate.test.record<br/>ACTIVE → ACTIVE | TERMINAL"]
-    t19["installation.initialize<br/>DORMANT | OBSERVED → OBSERVED"]
-    t20["installation.update<br/>OBSERVED | ACTIVE → OBSERVED | ACTIVE | TERMINAL"]
-    t21["invocation.rebind<br/>OBSERVED | UNRESOLVED → OBSERVED"]
-    t22["plan.activate<br/>OBSERVED | ACTIVE → ACTIVE"]
-    t23["plan.amend<br/>ACTIVE | FRONTIER → ACTIVE"]
-    t24["plan.create<br/>OBSERVED | ACTIVE → ACTIVE"]
-    t25["plan.invalidate<br/>ACTIVE | OBSERVED → FRONTIER"]
-    t26["plan.validate<br/>OBSERVED | ACTIVE → ACTIVE | FRONTIER"]
-    t27["publication.observe<br/>OBSERVED | ACTIVE | RECOVERY | UNRESOLVED → ACTIVE | TERMINAL | FRONTIER | UNRESOLVED"]
-    t28["publication.preview<br/>ACTIVE → ACTIVE"]
-    t29["repository.attach<br/>DORMANT | OBSERVED → OBSERVED"]
-    t30["repository.detach<br/>DORMANT | OBSERVED | FRONTIER → DORMANT"]
-    t31["runtime.hydrate<br/>OBSERVED | RECOVERY | UNRESOLVED → OBSERVED | ACTIVE | TERMINAL"]
-    t32["runtime.replace<br/>OBSERVED | RECOVERY → OBSERVED | TERMINAL"]
-    t33["workspace.abandon<br/>ACTIVE | FRONTIER → ABANDONED"]
-    t34["workspace.activate<br/>OBSERVED | ACTIVE → ACTIVE"]
-    t35["workspace.cleanup<br/>OBSERVED | ACTIVE | TERMINAL | ABANDONED → OBSERVED | TERMINAL | ABANDONED"]
-    t36["workspace.cut<br/>OBSERVED | ACTIVE → ACTIVE"]
-    t37["workspace.publish<br/>ACTIVE → ACTIVE"]
-    t38["workspace.reap<br/>OBSERVED | TERMINAL | ABANDONED → OBSERVED | TERMINAL | ABANDONED"]
-    t39["workspace.sync<br/>ACTIVE → ACTIVE | FRONTIER"]
+    t09["catalog.reconcile<br/>owned-local"]
+    t10["configuration.initialize<br/>owned-local"]
+    t11["configuration.mutate<br/>owned-local"]
+    t12["delivery.slice.advance<br/>owned-local"]
+    t13["evidence.visual.attach<br/>owned-local"]
+    t14["gate.build.record<br/>owned-local"]
+    t15["gate.change.record<br/>owned-local"]
+    t16["gate.journey.record<br/>owned-local"]
+    t17["gate.review.record<br/>owned-local"]
+    t18["gate.test.record<br/>owned-local"]
+    t19["installation.initialize<br/>owned-local"]
+    t20["installation.update<br/>owned-local"]
+    t21["invocation.rebind<br/>owned-local"]
+    t22["plan.activate<br/>owned-local"]
+    t23["plan.amend<br/>owned-local"]
+    t24["plan.create<br/>owned-local"]
+    t25["plan.invalidate<br/>owned-local"]
+    t26["plan.validate<br/>owned-local"]
+    t27["publication.observe<br/>owned-local"]
+    t28["publication.preview<br/>owned-local"]
+    t29["repository.attach<br/>owned-local"]
+    t30["repository.detach<br/>owned-local"]
+    t31["runtime.hydrate<br/>owned-local"]
+    t32["runtime.replace<br/>owned-local"]
+    t33["workspace.abandon<br/>owned-local"]
+    t34["workspace.activate<br/>owned-local"]
+    t35["workspace.cleanup<br/>owned-local"]
+    t36["workspace.cut<br/>owned-local"]
+    t37["workspace.publish<br/>owned-local"]
+    t38["workspace.reap<br/>owned-local"]
+    t39["workspace.sync<br/>owned-local"]
   end
   subgraph owned_external["owned-external"]
-    t40["publication.correct<br/>OBSERVED | ACTIVE | TERMINAL → ACTIVE | RECOVERY"]
-    t41["publication.execute<br/>ACTIVE → ACTIVE | RECOVERY"]
+    t40["publication.correct<br/>owned-external"]
+    t41["publication.execute<br/>owned-external"]
   end
   subgraph recovery["recovery"]
-    t42["configuration.reconcile<br/>RECOVERY | UNRESOLVED → OBSERVED | FRONTIER | TERMINAL"]
-    t43["publication.reconcile<br/>RECOVERY | UNRESOLVED → ACTIVE | TERMINAL | FRONTIER | UNRESOLVED"]
-    t44["recovery.escalate<br/>RECOVERY | UNRESOLVED → FRONTIER"]
-    t45["recovery.resume<br/>RECOVERY → DORMANT | OBSERVED | ACTIVE | FRONTIER | TERMINAL | ABANDONED"]
-    t46["recovery.rollback<br/>RECOVERY → DORMANT | OBSERVED | ACTIVE | FRONTIER | TERMINAL | ABANDONED"]
-    t47["runtime.reconcile<br/>RECOVERY | UNRESOLVED → OBSERVED | FRONTIER | TERMINAL"]
-    t48["workspace.reconcile<br/>RECOVERY | UNRESOLVED → DORMANT | OBSERVED | ACTIVE | FRONTIER | TERMINAL | ABANDONED"]
+    t42["configuration.reconcile<br/>recovery"]
+    t43["publication.reconcile<br/>recovery"]
+    t44["recovery.escalate<br/>recovery"]
+    t45["recovery.resume<br/>recovery"]
+    t46["recovery.rollback<br/>recovery"]
+    t47["runtime.reconcile<br/>recovery"]
+    t48["workspace.reconcile<br/>recovery"]
   end
   subgraph observed_external["observed-external"]
-    t49["external.branch-changed<br/>DORMANT | OBSERVED | ACTIVE | RECOVERY | FRONTIER | UNRESOLVED → OBSERVED"]
-    t50["external.ci-completed<br/>DORMANT | OBSERVED | ACTIVE | RECOVERY | FRONTIER | UNRESOLVED → OBSERVED | ACTIVE | TERMINAL"]
-    t51["external.configuration-drifted<br/>DORMANT | OBSERVED | ACTIVE | RECOVERY | FRONTIER | UNRESOLVED → OBSERVED | UNRESOLVED"]
-    t52["external.files-changed<br/>DORMANT | OBSERVED | ACTIVE | RECOVERY | FRONTIER | UNRESOLVED → OBSERVED"]
-    t53["external.head-changed<br/>DORMANT | OBSERVED | ACTIVE | RECOVERY | FRONTIER | UNRESOLVED → OBSERVED"]
-    t54["external.host-interrupted<br/>DORMANT | OBSERVED | ACTIVE | RECOVERY | FRONTIER | UNRESOLVED → RECOVERY"]
-    t55["external.lease-expired<br/>DORMANT | OBSERVED | ACTIVE | RECOVERY | FRONTIER | UNRESOLVED → DORMANT | FRONTIER"]
-    t56["external.pr-closed<br/>DORMANT | OBSERVED | ACTIVE | RECOVERY | FRONTIER | UNRESOLVED → OBSERVED | ACTIVE | FRONTIER"]
-    t57["external.pr-merged<br/>DORMANT | OBSERVED | ACTIVE | RECOVERY | FRONTIER | UNRESOLVED → OBSERVED | ACTIVE | TERMINAL"]
-    t58["external.pr-opened<br/>DORMANT | OBSERVED | ACTIVE | RECOVERY | FRONTIER | UNRESOLVED → OBSERVED | ACTIVE | TERMINAL"]
-    t59["external.pr-updated<br/>DORMANT | OBSERVED | ACTIVE | RECOVERY | FRONTIER | UNRESOLVED → OBSERVED | ACTIVE | TERMINAL"]
-    t60["external.provider-unavailable<br/>DORMANT | OBSERVED | ACTIVE | RECOVERY | FRONTIER | UNRESOLVED → UNRESOLVED | RECOVERY"]
-    t61["external.runtime-disappeared<br/>DORMANT | OBSERVED | ACTIVE | RECOVERY | FRONTIER | UNRESOLVED → OBSERVED | RECOVERY"]
+    t49["external.branch-changed<br/>observed-external"]
+    t50["external.ci-completed<br/>observed-external"]
+    t51["external.configuration-drifted<br/>observed-external"]
+    t52["external.files-changed<br/>observed-external"]
+    t53["external.head-changed<br/>observed-external"]
+    t54["external.host-interrupted<br/>observed-external"]
+    t55["external.lease-expired<br/>observed-external"]
+    t56["external.pr-closed<br/>observed-external"]
+    t57["external.pr-merged<br/>observed-external"]
+    t58["external.pr-opened<br/>observed-external"]
+    t59["external.pr-updated<br/>observed-external"]
+    t60["external.provider-unavailable<br/>observed-external"]
+    t61["external.runtime-disappeared<br/>observed-external"]
   end
+  p_DORMANT --> t00
+  p_OBSERVED --> t00
+  t00 --> p_OBSERVED
+  t00 --> p_ACTIVE
+  p_ACTIVE --> t01
+  p_FRONTIER --> t01
+  t01 --> p_DORMANT
+  p_ACTIVE --> t02
+  t02 --> p_ACTIVE
+  p_ACTIVE --> t03
+  p_FRONTIER --> t03
+  t03 --> p_FRONTIER
+  p_OBSERVED --> t04
+  p_ACTIVE --> t04
+  p_FRONTIER --> t04
+  p_TERMINAL --> t04
+  p_ABANDONED --> t04
+  t04 --> p_OBSERVED
+  t04 --> p_ACTIVE
+  t04 --> p_FRONTIER
+  p_OBSERVED --> t05
+  p_ACTIVE --> t05
+  p_FRONTIER --> t05
+  t05 --> p_ABANDONED
+  p_ACTIVE --> t06
+  p_FRONTIER --> t06
+  t06 --> p_ACTIVE
+  t06 --> p_TERMINAL
+  p_ACTIVE --> t07
+  p_FRONTIER --> t07
+  t07 --> p_ACTIVE
+  p_ACTIVE --> t08
+  p_FRONTIER --> t08
+  t08 --> p_ABANDONED
+  p_DORMANT --> t09
+  p_OBSERVED --> t09
+  p_ACTIVE --> t09
+  p_RECOVERY --> t09
+  p_FRONTIER --> t09
+  p_UNRESOLVED --> t09
+  p_TERMINAL --> t09
+  p_ABANDONED --> t09
+  t09 --> p_DORMANT
+  t09 --> p_OBSERVED
+  t09 --> p_ACTIVE
+  t09 --> p_RECOVERY
+  t09 --> p_FRONTIER
+  t09 --> p_UNRESOLVED
+  t09 --> p_TERMINAL
+  t09 --> p_ABANDONED
+  p_OBSERVED --> t10
+  t10 --> p_OBSERVED
+  t10 --> p_TERMINAL
+  p_OBSERVED --> t11
+  p_ACTIVE --> t11
+  p_FRONTIER --> t11
+  p_UNRESOLVED --> t11
+  t11 --> p_OBSERVED
+  t11 --> p_ACTIVE
+  t11 --> p_TERMINAL
+  p_ACTIVE --> t12
+  t12 --> p_ACTIVE
+  t12 --> p_TERMINAL
+  p_ACTIVE --> t13
+  t13 --> p_ACTIVE
+  t13 --> p_TERMINAL
+  p_ACTIVE --> t14
+  t14 --> p_ACTIVE
+  p_ACTIVE --> t15
+  t15 --> p_ACTIVE
+  p_ACTIVE --> t16
+  t16 --> p_ACTIVE
+  p_ACTIVE --> t17
+  t17 --> p_ACTIVE
+  t17 --> p_TERMINAL
+  p_ACTIVE --> t18
+  t18 --> p_ACTIVE
+  t18 --> p_TERMINAL
+  p_DORMANT --> t19
+  p_OBSERVED --> t19
+  t19 --> p_OBSERVED
+  p_OBSERVED --> t20
+  p_ACTIVE --> t20
+  t20 --> p_OBSERVED
+  t20 --> p_ACTIVE
+  t20 --> p_TERMINAL
+  p_OBSERVED --> t21
+  p_UNRESOLVED --> t21
+  t21 --> p_OBSERVED
+  p_OBSERVED --> t22
+  p_ACTIVE --> t22
+  t22 --> p_ACTIVE
+  p_ACTIVE --> t23
+  p_FRONTIER --> t23
+  t23 --> p_ACTIVE
+  p_OBSERVED --> t24
+  p_ACTIVE --> t24
+  t24 --> p_ACTIVE
+  p_ACTIVE --> t25
+  p_OBSERVED --> t25
+  t25 --> p_FRONTIER
+  p_OBSERVED --> t26
+  p_ACTIVE --> t26
+  t26 --> p_ACTIVE
+  t26 --> p_FRONTIER
+  p_OBSERVED --> t27
+  p_ACTIVE --> t27
+  p_RECOVERY --> t27
+  p_UNRESOLVED --> t27
+  t27 --> p_ACTIVE
+  t27 --> p_TERMINAL
+  t27 --> p_FRONTIER
+  t27 --> p_UNRESOLVED
+  p_ACTIVE --> t28
+  t28 --> p_ACTIVE
+  p_DORMANT --> t29
+  p_OBSERVED --> t29
+  t29 --> p_OBSERVED
+  p_DORMANT --> t30
+  p_OBSERVED --> t30
+  p_FRONTIER --> t30
+  t30 --> p_DORMANT
+  p_OBSERVED --> t31
+  p_RECOVERY --> t31
+  p_UNRESOLVED --> t31
+  t31 --> p_OBSERVED
+  t31 --> p_ACTIVE
+  t31 --> p_TERMINAL
+  p_OBSERVED --> t32
+  p_RECOVERY --> t32
+  t32 --> p_OBSERVED
+  t32 --> p_TERMINAL
+  p_ACTIVE --> t33
+  p_FRONTIER --> t33
+  t33 --> p_ABANDONED
+  p_OBSERVED --> t34
+  p_ACTIVE --> t34
+  t34 --> p_ACTIVE
+  p_OBSERVED --> t35
+  p_ACTIVE --> t35
+  p_TERMINAL --> t35
+  p_ABANDONED --> t35
+  t35 --> p_OBSERVED
+  t35 --> p_TERMINAL
+  t35 --> p_ABANDONED
+  p_OBSERVED --> t36
+  p_ACTIVE --> t36
+  t36 --> p_ACTIVE
+  p_ACTIVE --> t37
+  t37 --> p_ACTIVE
+  p_OBSERVED --> t38
+  p_TERMINAL --> t38
+  p_ABANDONED --> t38
+  t38 --> p_OBSERVED
+  t38 --> p_TERMINAL
+  t38 --> p_ABANDONED
+  p_ACTIVE --> t39
+  t39 --> p_ACTIVE
+  t39 --> p_FRONTIER
+  p_OBSERVED --> t40
+  p_ACTIVE --> t40
+  p_TERMINAL --> t40
+  t40 --> p_ACTIVE
+  t40 --> p_RECOVERY
+  p_ACTIVE --> t41
+  t41 --> p_ACTIVE
+  t41 --> p_RECOVERY
+  p_RECOVERY --> t42
+  p_UNRESOLVED --> t42
+  t42 --> p_OBSERVED
+  t42 --> p_FRONTIER
+  t42 --> p_TERMINAL
+  p_RECOVERY --> t43
+  p_UNRESOLVED --> t43
+  t43 --> p_ACTIVE
+  t43 --> p_TERMINAL
+  t43 --> p_FRONTIER
+  t43 --> p_UNRESOLVED
+  p_RECOVERY --> t44
+  p_UNRESOLVED --> t44
+  t44 --> p_FRONTIER
+  p_RECOVERY --> t45
+  t45 --> p_DORMANT
+  t45 --> p_OBSERVED
+  t45 --> p_ACTIVE
+  t45 --> p_FRONTIER
+  t45 --> p_TERMINAL
+  t45 --> p_ABANDONED
+  p_RECOVERY --> t46
+  t46 --> p_DORMANT
+  t46 --> p_OBSERVED
+  t46 --> p_ACTIVE
+  t46 --> p_FRONTIER
+  t46 --> p_TERMINAL
+  t46 --> p_ABANDONED
+  p_RECOVERY --> t47
+  p_UNRESOLVED --> t47
+  t47 --> p_OBSERVED
+  t47 --> p_FRONTIER
+  t47 --> p_TERMINAL
+  p_RECOVERY --> t48
+  p_UNRESOLVED --> t48
+  t48 --> p_DORMANT
+  t48 --> p_OBSERVED
+  t48 --> p_ACTIVE
+  t48 --> p_FRONTIER
+  t48 --> p_TERMINAL
+  t48 --> p_ABANDONED
+  p_DORMANT --> t49
+  p_OBSERVED --> t49
+  p_ACTIVE --> t49
+  p_RECOVERY --> t49
+  p_FRONTIER --> t49
+  p_UNRESOLVED --> t49
+  t49 --> p_OBSERVED
+  p_DORMANT --> t50
+  p_OBSERVED --> t50
+  p_ACTIVE --> t50
+  p_RECOVERY --> t50
+  p_FRONTIER --> t50
+  p_UNRESOLVED --> t50
+  t50 --> p_OBSERVED
+  t50 --> p_ACTIVE
+  t50 --> p_TERMINAL
+  p_DORMANT --> t51
+  p_OBSERVED --> t51
+  p_ACTIVE --> t51
+  p_RECOVERY --> t51
+  p_FRONTIER --> t51
+  p_UNRESOLVED --> t51
+  t51 --> p_OBSERVED
+  t51 --> p_UNRESOLVED
+  p_DORMANT --> t52
+  p_OBSERVED --> t52
+  p_ACTIVE --> t52
+  p_RECOVERY --> t52
+  p_FRONTIER --> t52
+  p_UNRESOLVED --> t52
+  t52 --> p_OBSERVED
+  p_DORMANT --> t53
+  p_OBSERVED --> t53
+  p_ACTIVE --> t53
+  p_RECOVERY --> t53
+  p_FRONTIER --> t53
+  p_UNRESOLVED --> t53
+  t53 --> p_OBSERVED
+  p_DORMANT --> t54
+  p_OBSERVED --> t54
+  p_ACTIVE --> t54
+  p_RECOVERY --> t54
+  p_FRONTIER --> t54
+  p_UNRESOLVED --> t54
+  t54 --> p_RECOVERY
+  p_DORMANT --> t55
+  p_OBSERVED --> t55
+  p_ACTIVE --> t55
+  p_RECOVERY --> t55
+  p_FRONTIER --> t55
+  p_UNRESOLVED --> t55
+  t55 --> p_DORMANT
+  t55 --> p_FRONTIER
+  p_DORMANT --> t56
+  p_OBSERVED --> t56
+  p_ACTIVE --> t56
+  p_RECOVERY --> t56
+  p_FRONTIER --> t56
+  p_UNRESOLVED --> t56
+  t56 --> p_OBSERVED
+  t56 --> p_ACTIVE
+  t56 --> p_FRONTIER
+  p_DORMANT --> t57
+  p_OBSERVED --> t57
+  p_ACTIVE --> t57
+  p_RECOVERY --> t57
+  p_FRONTIER --> t57
+  p_UNRESOLVED --> t57
+  t57 --> p_OBSERVED
+  t57 --> p_ACTIVE
+  t57 --> p_TERMINAL
+  p_DORMANT --> t58
+  p_OBSERVED --> t58
+  p_ACTIVE --> t58
+  p_RECOVERY --> t58
+  p_FRONTIER --> t58
+  p_UNRESOLVED --> t58
+  t58 --> p_OBSERVED
+  t58 --> p_ACTIVE
+  t58 --> p_TERMINAL
+  p_DORMANT --> t59
+  p_OBSERVED --> t59
+  p_ACTIVE --> t59
+  p_RECOVERY --> t59
+  p_FRONTIER --> t59
+  p_UNRESOLVED --> t59
+  t59 --> p_OBSERVED
+  t59 --> p_ACTIVE
+  t59 --> p_TERMINAL
+  p_DORMANT --> t60
+  p_OBSERVED --> t60
+  p_ACTIVE --> t60
+  p_RECOVERY --> t60
+  p_FRONTIER --> t60
+  p_UNRESOLVED --> t60
+  t60 --> p_UNRESOLVED
+  t60 --> p_RECOVERY
+  p_DORMANT --> t61
+  p_OBSERVED --> t61
+  p_ACTIVE --> t61
+  p_RECOVERY --> t61
+  p_FRONTIER --> t61
+  p_UNRESOLVED --> t61
+  t61 --> p_OBSERVED
+  t61 --> p_RECOVERY
