@@ -14,6 +14,12 @@ Bind one command-scoped context containing the exact goal, delivery, repository,
 worktree, flow, actor, and supplied authority receipts. Preserve that context
 through every `next`, `apply`, `recover`, and re-resolution. Never synthesize missing
 authority or infer it from authentication, files, branches, or prior conversation.
+Within that context, track requested authority sources separately from currently
+materialized authority receipts.
+
+For this operation, request only checksum-verified installation authority. Do not
+request or materialize repository, provider, publication, product-delivery, or
+merge authority. Installation receipts cannot be reused to broaden this scope.
 
 Begin each cycle with an untargeted authority-bearing `next`. Apply only the
 stable transition ID from the immediately preceding prescription and only its
@@ -21,7 +27,9 @@ declared parameters. Preserve the complete apply response and stderr, including
 admission, receipt, postcondition, error, recovery, and transaction fields.
 Re-resolve with the same context after every complete receipt.
 
-Stop only on an authority-bearing `FRONTIER`, `BLOCKED`, `REFUSED`, or
+Evaluate a frontier only after every requested authority source is materialized
+or conclusively rejected against the post-receipt state. Stop only on an
+authority-bearing `FRONTIER`, `BLOCKED`, `REFUSED`, or
 `UNRESOLVED` result for this operation. Treat `TERMINAL` as exact goal evidence.
 If recovery is active, use only a transition in `recovery_info.permitted` and
 the exact transaction ID. Never choose maintenance, correction, abandonment,

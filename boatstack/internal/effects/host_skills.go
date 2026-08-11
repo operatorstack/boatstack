@@ -19,33 +19,55 @@ type hostSkillManifest struct {
 }
 
 type hostSkillMode struct {
-	Slug        string
-	DisplayName string
-	Description string
-	Target      string
-	Extra       string
+	Slug              string
+	DisplayName       string
+	Description       string
+	Target            string
+	Extra             string
+	AuthorityContract string
 }
 
 var hostSkillModes = []hostSkillMode{
 	{
 		Slug: "boatstack-autoplan", DisplayName: "Boatstack Autoplan",
-		Description: "Create and approve a verified delivery plan.",
-		Target:      "the `approved-plan` terminal",
-		Extra:       "This trigger supplies planning intent only. It never approves unseen plan bytes.",
+		Description:       "Create and approve a verified delivery plan.",
+		Target:            "the `approved-plan` terminal",
+		Extra:             "This trigger supplies planning intent only. It never approves unseen plan bytes.",
+		AuthorityContract: deliveryAuthorityContract,
 	},
 	{
 		Slug: "boatstack-run", DisplayName: "Boatstack Run",
-		Description: "Drive delivery to an open or updated pull request.",
-		Target:      "the `open-or-updated-pr` terminal",
-		Extra:       "This trigger never grants merge authority. Provider authority remains a separate verified receipt.",
+		Description:       "Drive delivery to an open or updated pull request.",
+		Target:            "the `open-or-updated-pr` terminal",
+		Extra:             "This trigger never grants merge authority. Provider authority remains a separate verified receipt.",
+		AuthorityContract: deliveryAuthorityContract,
 	},
 	{
 		Slug: "boatstack-update", DisplayName: "Boatstack Update",
-		Description: "Apply a checksum-verified Boatstack update.",
-		Target:      "the `installation.update` transition",
-		Extra:       "This trigger does not reclassify or advance a product delivery.",
+		Description:       "Apply a checksum-verified Boatstack update.",
+		Target:            "the `installation.update` transition",
+		Extra:             "This trigger does not reclassify or advance a product delivery.",
+		AuthorityContract: updateAuthorityContract,
 	},
 }
+
+const deliveryAuthorityContract = `For this operation, request human and repository-policy authority sources. The
+repository-policy source remains requested when configuration is
+stale, uninitialized, or under recovery; do not pass ` + "`--repository-authority`" + `
+until the current configuration has exact verified fingerprint evidence.
+
+After a complete ` + "`installation.initialize`" + `, ` + "`configuration.initialize`" + `, or recovery
+receipt, re-observe the post-receipt state. If configuration is now verified,
+make one bounded attempt for that receipt to materialize the retained source by
+adding ` + "`--repository-authority`" + ` to the next resolution. The kernel must derive the
+receipt from that exact verified fingerprint. Never derive repository authority
+from file presence, authentication, or prior conversation. If the source remains
+unverifiable, record it as conclusively rejected and fail closed; do not retry it
+again for the same receipt.`
+
+const updateAuthorityContract = `For this operation, request only checksum-verified installation authority. Do not
+request or materialize repository, provider, publication, product-delivery, or
+merge authority. Installation receipts cannot be reused to broaden this scope.`
 
 func renderHostSkill(mode hostSkillMode) []byte {
 	return []byte(fmt.Sprintf(`---
@@ -65,6 +87,10 @@ Bind one command-scoped context containing the exact goal, delivery, repository,
 worktree, flow, actor, and supplied authority receipts. Preserve that context
 through every `+"`next`"+`, `+"`apply`"+`, `+"`recover`"+`, and re-resolution. Never synthesize missing
 authority or infer it from authentication, files, branches, or prior conversation.
+Within that context, track requested authority sources separately from currently
+materialized authority receipts.
+
+%s
 
 Begin each cycle with an untargeted authority-bearing `+"`next`"+`. Apply only the
 stable transition ID from the immediately preceding prescription and only its
@@ -72,12 +98,14 @@ declared parameters. Preserve the complete apply response and stderr, including
 admission, receipt, postcondition, error, recovery, and transaction fields.
 Re-resolve with the same context after every complete receipt.
 
-Stop only on an authority-bearing `+"`FRONTIER`"+`, `+"`BLOCKED`"+`, `+"`REFUSED`"+`, or
+Evaluate a frontier only after every requested authority source is materialized
+or conclusively rejected against the post-receipt state. Stop only on an
+authority-bearing `+"`FRONTIER`"+`, `+"`BLOCKED`"+`, `+"`REFUSED`"+`, or
 `+"`UNRESOLVED`"+` result for this operation. Treat `+"`TERMINAL`"+` as exact goal evidence.
 If recovery is active, use only a transition in `+"`recovery_info.permitted`"+` and
 the exact transaction ID. Never choose maintenance, correction, abandonment,
 merge, provider, or destructive authority as an escape from a frontier.
-`, mode.Slug, mode.Description, mode.DisplayName, mode.Target, mode.Extra))
+`, mode.Slug, mode.Description, mode.DisplayName, mode.Target, mode.Extra, mode.AuthorityContract))
 }
 
 func renderOpenAIMetadata(mode hostSkillMode) []byte {

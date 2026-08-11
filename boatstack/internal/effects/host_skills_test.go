@@ -49,10 +49,66 @@ func TestHostSkillProjectionPreservesAuthorityBoundaries(t *testing.T) {
 		}
 		for _, contract := range []string{
 			"authority-free\n`FRONTIER`", "command-scoped context", "every `next`, `apply`, `recover`, and re-resolution",
+			"requested authority sources separately from currently\nmaterialized authority receipts",
 			"complete apply response and stderr", "authority-bearing `FRONTIER`", "Never synthesize missing\nauthority",
+			"every requested authority source is materialized\nor conclusively rejected against the post-receipt state",
 		} {
 			if !strings.Contains(value, contract) {
 				t.Fatalf("%s is missing authority contract %q", path, contract)
+			}
+		}
+	}
+}
+
+func TestHostSkillProjectionPreservesDeferredRepositoryAuthority(t *testing.T) {
+	// control-law: retained-repository-source-rematerializes-once-after-verification
+	files := desiredHostSkillFiles([]string{"cursor", "codex", "claude", "gemini"})
+	for path, raw := range files {
+		if strings.HasSuffix(path, "openai.yaml") {
+			continue
+		}
+		value := string(raw)
+		isDelivery := strings.Contains(path, "boatstack-autoplan") || strings.Contains(path, "boatstack-run")
+		for _, contract := range []string{
+			"request human and repository-policy authority sources",
+			"repository-policy source remains requested",
+			"do not pass `--repository-authority`\nuntil the current configuration has exact verified fingerprint evidence",
+			"one bounded attempt for that receipt",
+			"The kernel must derive the\nreceipt from that exact verified fingerprint",
+			"do not retry it\nagain for the same receipt",
+		} {
+			if isDelivery && !strings.Contains(value, contract) {
+				t.Fatalf("%s is missing deferred authority contract %q", path, contract)
+			}
+			if !isDelivery && strings.Contains(value, contract) {
+				t.Fatalf("%s improperly gains delivery authority contract %q", path, contract)
+			}
+		}
+		if !isDelivery {
+			for _, contract := range []string{
+				"request only checksum-verified installation authority",
+				"Do not\nrequest or materialize repository, provider, publication, product-delivery, or\nmerge authority",
+			} {
+				if !strings.Contains(value, contract) {
+					t.Fatalf("%s is missing update authority boundary %q", path, contract)
+				}
+			}
+		}
+	}
+}
+
+func TestHostSkillProjectionInventoriesEveryDriverPath(t *testing.T) {
+	// control-law: generated-driver-event-slice-is-complete
+	for path, raw := range desiredHostSkillFiles([]string{"cursor", "codex", "claude", "gemini"}) {
+		if strings.HasSuffix(path, "openai.yaml") {
+			continue
+		}
+		value := string(raw)
+		for _, pathEvent := range []string{
+			"status", "`next`", "`apply`", "`recover`", "materialize", "Re-resolve", "Stop only",
+		} {
+			if !strings.Contains(value, pathEvent) {
+				t.Fatalf("%s omits driver path event %q", path, pathEvent)
 			}
 		}
 	}
