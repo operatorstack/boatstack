@@ -35,12 +35,27 @@ func applyStateTransition(state *durable.State, admission protocol.Admission, tr
 		state.Phase = model.PhaseObserved
 	case "repository.detach":
 		state.Phase, state.Engagement = model.PhaseDormant, model.EngagementDormant
-	case "runtime.hydrate", "runtime.replace", "installation.update":
+	case "runtime.hydrate", "runtime.replace":
 		state.Runtime = model.RuntimeVerified
 		state.RuntimeFingerprint, _ = admission.Parameters.Get("runtime_sha256")
 		state.RuntimePath, _ = admission.Parameters.Get("runtime_path")
 		state.RuntimeSource, _ = admission.Parameters.Get("source_revision")
 		state.Phase = settledPhase(*state)
+	case "installation.update":
+		state.Runtime = model.RuntimeVerified
+		state.RuntimeFingerprint, _ = admission.Parameters.Get("runtime_sha256")
+		state.RuntimePath, _ = admission.Parameters.Get("runtime_path")
+		state.RuntimeSource, _ = admission.Parameters.Get("source_revision")
+	case "installation.reconcile-update":
+		accepted, _ := admission.Parameters.Get("accept_obligation_change")
+		if accepted != "true" || admission.PriorProgramFingerprint == "" || admission.ProgramDeltaFingerprint == "" || state.ProgramFingerprint != admission.PriorProgramFingerprint {
+			return fmt.Errorf("reconciled installation update must bind and explicitly accept the exact prior-to-candidate program delta")
+		}
+		state.ProgramFingerprint = admission.ProgramFingerprint
+		state.Runtime = model.RuntimeVerified
+		state.RuntimeFingerprint, _ = admission.Parameters.Get("runtime_sha256")
+		state.RuntimePath, _ = admission.Parameters.Get("runtime_path")
+		state.RuntimeSource, _ = admission.Parameters.Get("source_revision")
 	case "runtime.reconcile":
 		state.Runtime, state.Recovery, state.Transaction = model.RuntimeVerified, model.RecoveryNone, model.TransactionNone
 		state.RuntimeFingerprint, _ = admission.Parameters.Get("runtime_sha256")

@@ -34,6 +34,7 @@ const (
 type Request = surfaces.Request
 type Response = surfaces.Response
 type DoctorReport = surfaces.DoctorReport
+type ProgramChange = surfaces.ProgramChange
 type Goal = model.Goal
 type GoalKind = model.GoalKind
 

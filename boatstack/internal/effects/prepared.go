@@ -58,6 +58,8 @@ func (p *preparedEffect) Execute(ctx context.Context) (ports.EffectResult, error
 			if os.IsNotExist(err) {
 				err = nil
 			}
+		} else if mutation.TargetLink != "" {
+			err = atomicSymlink(mutation.Path, mutation.TargetLink)
 		} else {
 			err = atomicWrite(mutation.Path, mutation.Target, os.FileMode(mutation.Mode))
 		}
@@ -73,7 +75,11 @@ func (p *preparedEffect) Rollback(context.Context) error {
 	var rollbackErrors []error
 	for index := len(p.applied) - 1; index >= 0; index-- {
 		mutation := p.applied[index]
-		if mutation.PriorExists {
+		if mutation.PriorLink != "" {
+			if err := atomicSymlink(mutation.Path, mutation.PriorLink); err != nil {
+				rollbackErrors = append(rollbackErrors, err)
+			}
+		} else if mutation.PriorExists {
 			if err := atomicWrite(mutation.Path, mutation.Prior, os.FileMode(mutation.Mode)); err != nil {
 				rollbackErrors = append(rollbackErrors, err)
 			}

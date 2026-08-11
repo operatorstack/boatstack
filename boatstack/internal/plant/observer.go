@@ -109,6 +109,16 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 			runtimeState = model.RuntimeWrongSource
 		}
 	}
+	if state.LauncherPath != "" {
+		launcherEvidence, launcherFingerprint, launcherExists, launcherErr := observeLauncher(state.LauncherPath, now)
+		if launcherErr != nil {
+			return model.Observation{}, launcherErr
+		}
+		runtimeEvidence = append(runtimeEvidence, launcherEvidence)
+		if !launcherExists || launcherFingerprint != state.LauncherFingerprint {
+			runtimeState = model.RuntimePartiallyPublished
+		}
+	}
 	verification := state.Verification
 	if state.SourceRevision != "" && head != "" && state.SourceRevision != head {
 		verification = model.VerificationStale
@@ -163,7 +173,7 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 	}
 	recordedProgramFingerprint := state.ProgramFingerprint
 	if pending.ProgramFingerprint != "" {
-		if recordedProgramFingerprint != "" && recordedProgramFingerprint != pending.ProgramFingerprint {
+		if recordedProgramFingerprint != "" && recordedProgramFingerprint != pending.ProgramFingerprint && !pending.ReconcilesProgram {
 			return model.Observation{}, fmt.Errorf("durable state and pending transaction bind different control programs")
 		}
 		recordedProgramFingerprint = pending.ProgramFingerprint
@@ -217,6 +227,36 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 		Goal:                goalFact,
 		ObservedAt:          now,
 	}, nil
+}
+
+func observeLauncher(path string, now time.Time) (model.Evidence, string, bool, error) {
+	evidence := model.Evidence{Source: "launcher:" + path, ObservedAt: now}
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		evidence.Fingerprint = hashBytes([]byte("absent:" + path))
+		return evidence, "", false, nil
+	}
+	if err != nil {
+		return model.Evidence{}, "", false, err
+	}
+	var fingerprint string
+	if info.Mode()&os.ModeSymlink != 0 {
+		target, readErr := os.Readlink(path)
+		if readErr != nil {
+			return model.Evidence{}, "", false, readErr
+		}
+		fingerprint = hashBytes([]byte("symlink\x00" + target))
+	} else if info.Mode().IsRegular() {
+		raw, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return model.Evidence{}, "", false, readErr
+		}
+		fingerprint = hashBytes(raw)
+	} else {
+		return model.Evidence{}, "", false, fmt.Errorf("managed launcher is neither a regular file nor symlink: %s", path)
+	}
+	evidence.Fingerprint = fingerprint
+	return evidence, fingerprint, true, nil
 }
 
 func (o Observer) highRiskChange(ctx context.Context, repository, defaultBranch string, patterns []string) (bool, error) {
@@ -546,12 +586,13 @@ func observeRepositoryArtifacts(layout ports.ControllerLayout, state durable.Sta
 }
 
 type pendingJournalHeader struct {
-	SchemaVersion   int    `json:"schema_version"`
-	TransitionID    string `json:"transition_id"`
-	TransitionClass string `json:"transition_class"`
-	Status          string `json:"status"`
-	Reason          string `json:"reason"`
-	Admission       struct {
+	SchemaVersion     int    `json:"schema_version"`
+	TransitionID      string `json:"transition_id"`
+	TransitionClass   string `json:"transition_class"`
+	ReconcilesProgram bool   `json:"reconciles_program"`
+	Status            string `json:"status"`
+	Reason            string `json:"reason"`
+	Admission         struct {
 		ID                 string                  `json:"id"`
 		ProgramFingerprint string                  `json:"program_fingerprint"`
 		SourcePhase        model.ProtocolPhase     `json:"source_phase"`
@@ -573,6 +614,7 @@ type pendingJournalSet struct {
 	Transaction        model.TransactionContext
 	TransactionState   model.TransactionState
 	ProgramFingerprint string
+	ReconcilesProgram  bool
 }
 
 type pendingJournalRecord struct {
@@ -654,6 +696,7 @@ func pendingJournalEvidence(root, ignoreAdmissionID string, now time.Time) (pend
 			set := pendingJournalSet{
 				Found: true, Evidence: []model.Evidence{evidence}, TransactionState: transactionState,
 				ProgramFingerprint: header.Admission.ProgramFingerprint,
+				ReconcilesProgram:  header.ReconcilesProgram,
 				Recovery:           model.RecoveryContext{TransactionID: header.Admission.ID, Cause: cause, SourcePhase: header.Admission.SourcePhase, Permitted: permitted, BudgetRemaining: budget, Resumption: header.Admission.SourcePhase},
 				Transaction:        model.TransactionContext{ID: header.Admission.ID, TransitionID: header.TransitionID, Status: header.Status, ResourceDigests: resourceDigests, ExternalPossible: external},
 			}
@@ -747,6 +790,8 @@ func recoveryContract(transitionID string, external, staged bool, budget int) []
 		return []string{"publication.reconcile", "recovery.escalate"}
 	}
 	switch transitionID {
+	case "installation.reconcile-update":
+		return []string{"recovery.rollback", "recovery.escalate"}
 	case "runtime.hydrate", "runtime.replace", "installation.update", "installation.initialize":
 		return []string{"runtime.reconcile", "recovery.rollback", "recovery.escalate"}
 	case "configuration.initialize", "configuration.mutate":

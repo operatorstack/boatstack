@@ -251,6 +251,12 @@
       "basis": "observed"
     },
     {
+      "id": "installation.reconcile-update",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
       "id": "installation.update",
       "controllable": true,
       "observable": true,
@@ -3591,6 +3597,479 @@
       "basis": "inferred"
     },
     {
+      "from": "DORMANT",
+      "event": "installation.reconcile-update",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "installation.reconcile-update",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "installation.reconcile-update",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "installation.reconcile-update",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "installation.reconcile-update",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "installation.reconcile-update",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "installation.reconcile-update",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "installation.reconcile-update",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "installation.reconcile-update",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "installation.reconcile-update",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "installation.reconcile-update",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "installation.reconcile-update",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "installation.reconcile-update",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "installation.reconcile-update",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "installation.reconcile-update",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "installation.reconcile-update",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "installation.reconcile-update",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "installation.reconcile-update",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "installation.reconcile-update",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "installation.reconcile-update",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "installation.reconcile-update",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "installation.reconcile-update",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "installation.reconcile-update",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "installation.reconcile-update",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "installation.reconcile-update",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "installation.reconcile-update",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "installation.reconcile-update",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "installation.reconcile-update",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "installation.reconcile-update",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "installation.reconcile-update",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "installation.reconcile-update",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "installation.reconcile-update",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "installation.reconcile-update",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "installation.reconcile-update",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "installation.reconcile-update",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "installation.reconcile-update",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "installation.update",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "installation.update",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "installation.update",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "installation.update",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "installation.update",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "installation.update",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "installation.update",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
       "from": "OBSERVED",
       "event": "installation.update",
       "to": "OBSERVED",
@@ -3615,7 +4094,40 @@
     {
       "from": "OBSERVED",
       "event": "installation.update",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "installation.update",
       "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "installation.update",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "installation.update",
+      "to": "DORMANT",
       "evidence": [
         0,
         1,
@@ -3648,7 +4160,227 @@
     {
       "from": "ACTIVE",
       "event": "installation.update",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "installation.update",
       "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "installation.update",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "installation.update",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "installation.update",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "installation.update",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "installation.update",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "installation.update",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "installation.update",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "installation.update",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "installation.update",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "installation.update",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "installation.update",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "installation.update",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "installation.update",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "installation.update",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "installation.update",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "installation.update",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "installation.update",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "installation.update",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "installation.update",
+      "to": "ABANDONED",
       "evidence": [
         0,
         1,

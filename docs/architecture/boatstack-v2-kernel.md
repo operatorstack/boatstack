@@ -163,15 +163,15 @@ must fail closed until explicit reconciliation.
 
 ### Compiled transition ownership
 
-The current 62-event Standard distribution is classified from compiled
+The current 63-event Standard distribution is classified from compiled
 component declarations:
 
 | Owner | Families | Count |
 | --- | --- | ---: |
-| CoreSystem | `engagement.*`, `invocation.*`, `repository.*`, `runtime.*`, `configuration.*`, `installation.*`, `catalog.*`, `goal.*`, `recovery.*`, `external.*` | 32 |
+| CoreSystem | `engagement.*`, `invocation.*`, `repository.*`, `runtime.*`, `configuration.*`, `installation.*`, `catalog.*`, `goal.*`, `recovery.*`, `external.*` | 33 |
 | StandardFlow | `plan.*`, `workspace.*`, `gate.*`, `evidence.*`, `delivery.*`, `publication.*` | 30 |
 | Extensions in the default distribution | none | 0 |
-| **Compiled total** | one registry | **62** |
+| **Compiled total** | one registry | **63** |
 
 The CoreSystem ownership of `external.*` declares the event vocabulary and
 observation boundary; StandardFlow consumes the bounded publication and
@@ -489,14 +489,14 @@ gain event authority merely because they are commands.
 
 ## 7. Transition registry
 
-The compiled Standard distribution contains **62 semantic events**. This count
+The compiled Standard distribution contains **63 semantic events**. This count
 is generated from CoreSystem and StandardFlow declaration bytes and must remain
 synchronized with this table.
 
 | Family | Count | Required IDs |
 | --- | ---: | --- |
 | Invocation and engagement | 6 | `engagement.begin`, `engagement.renew`, `engagement.release`, `invocation.rebind`, `repository.attach`, `repository.detach` |
-| Installation, runtime, configuration | 8 | `runtime.hydrate`, `runtime.replace`, `runtime.reconcile`, `configuration.initialize`, `configuration.mutate`, `configuration.reconcile`, `installation.initialize`, `installation.update` |
+| Installation, runtime, configuration | 9 | `runtime.hydrate`, `runtime.replace`, `runtime.reconcile`, `configuration.initialize`, `configuration.mutate`, `configuration.reconcile`, `installation.initialize`, `installation.update`, `installation.reconcile-update` |
 | Catalog identity | 1 | `catalog.reconcile` |
 | Goal and plan | 9 | `goal.configure`, `plan.create`, `plan.validate`, `plan.approve`, `plan.activate`, `plan.amend`, `plan.approve-amendment`, `plan.invalidate`, `plan.abandon` |
 | Workspace | 8 | `workspace.cut`, `workspace.sync`, `workspace.activate`, `workspace.publish`, `workspace.cleanup`, `workspace.reap`, `workspace.abandon`, `workspace.reconcile` |
@@ -731,7 +731,7 @@ SurfaceRequest {
 
 SurfaceResponse {
   schema_version, operation, goal?, snapshot?, decision?, admission?, receipt?,
-  replayed?, catalog?, events?, doctor?, guard?, error?
+  replayed?, catalog?, events?, doctor?, program_change?, guard?, error?
 }
 ```
 
@@ -836,9 +836,9 @@ Capability analysis records three separate dispositions without modifying Locus:
 
 The executable registry now deterministically generates the checked
 [safety model](boatstack-v2-locus-safety.json) and
-[liveness model](boatstack-v2-locus-liveness.json). Both contain exactly the 62
+[liveness model](boatstack-v2-locus-liveness.json). Both contain exactly the 63
 runtime events. The liveness abstraction expands the declared phase predicates
-to 427 inferred stable-phase edges over eight reachable phases; the safety
+to 496 inferred stable-phase edges over eight reachable phases; the safety
 model adds one guarded counterfactual edge and `UNADMITTED_EFFECT` state.
 Repository and Go tests reject byte drift or an alphabet mismatch.
 
@@ -848,13 +848,18 @@ Observed Locus runs over those generated artifacts produced:
 | --- | --- | --- |
 | `verification.trace-refinement` | the programmable ControlProgram protocol refines the preimplementation Kernel protocol with no distinguishing trace | accepted finite-model result; advisory claim |
 | `verification.conservative-feature-extension` | the reference release-note extension is conservative across all six checks with no violation | accepted bounded-extension result; advisory claim |
-| `verification.safety-reachability` | `UNADMITTED_EFFECT` is unreachable; result `res-6e8d6372eea4a7aaf2fcfa8ce5fcc91271b1f99a208f34006ba952d9825343a1` | accepted finite-model result; advisory claim |
-| `verification.guard-essentiality` | `exact-admission` is essential; removing it admits `DORMANT --publication.execute--> UNADMITTED_EFFECT`; result `res-10a40fec10fa47086e1e5ef83ee3434cffb461e30166961e4cc18d08812f2caa` | accepted finite-model result; advisory claim |
-| `control.nonblockingness` | all eight reachable stable phases are coreachable; no blocking states; result `res-a6a465d2e50cd830e0b95777f631ca9254d475757a6941c4d6922b2b7ff701f4` | accepted finite-model result; advisory claim |
+| `verification.safety-reachability` | `UNADMITTED_EFFECT` is unreachable; result `res-4dadb41740df7808f42ad554647e0f7d8cb3c3af1967df50a39be255e49d228b` | accepted finite-model result; advisory claim |
+| `verification.guard-essentiality` | `exact-admission` is essential; removing it admits `DORMANT --publication.execute--> UNADMITTED_EFFECT`; result `res-90a51acda26e2c32b523ca9ca0024ab5c9bba4388c9737701f3e098f0fa83802` | accepted finite-model result; advisory claim |
+| `control.nonblockingness` | all eight reachable stable phases are coreachable; no blocking states; result `res-31b004b60ddf87a2941192591639c18ac0eb7be3bd83fd38cb3a73a58cb2f07b` | accepted finite-model result; advisory claim |
 | `practice.zca-projection` | both shipped slices cover all nine declared facets and all 14 bounded Go-module sites | accepted source-bound projection; no runtime authority granted |
 | declared-slice completeness | every declared event-completeness obligation and the conservative-extension facet obligation were accepted as complete | closes the modeled source, writer, command, lifecycle, reducer, and generated-artifact inventories |
 
 The content-addressed Locus results and derivations are archived in Observatory.
+The current generated-catalog derivations are
+`drv-51b05a959b98e8bb395f681a7588c0eecd3566ac9373e3e48d011b4b332ce4b9`
+for safety/guard essentiality and
+`drv-602cda5444f193f68e69531f4cb8ba8c6ca019f4295661bd670919dd88356847`
+for nonblockingness.
 They remain advisory because each model deliberately names facts outside its
 bounded source slice rather than treating them as assumptions.
 

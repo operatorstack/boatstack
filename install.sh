@@ -85,14 +85,17 @@ if [[ "$mode" == install ]]; then
   fi
   "$runtime" init --repo "$repository" --human "$actor" --param "config_path=$config_source" --format text
 else
-  "$runtime" update --repo "$repository" --human "$actor" \
-    --param "runtime_path=$runtime" \
-    --param "runtime_sha256=$actual" --format text
+  update_arguments=(
+    update --repo "$repository" --human "$actor"
+    --param "runtime_path=$runtime"
+    --param "runtime_sha256=$actual"
+    --format json
+  )
+  if [[ "${BOATSTACK_ACCEPT_PROGRAM_CHANGE:-false}" == "true" ]]; then
+    update_arguments+=(--accept-program-change)
+  fi
+  "$runtime" "${update_arguments[@]}"
 fi
-
-launcher_temp="$install_dir/.boatstack-launcher.$$"
-ln -s "$(basename "$runtime")" "$launcher_temp"
-mv -f "$launcher_temp" "$install_dir/boatstack"
 
 echo "Boatstack V2 installed at $runtime"
 echo "Review and commit $repository/.boatstack/project.json and the generated host skills"

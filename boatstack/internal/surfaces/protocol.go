@@ -101,8 +101,19 @@ type DoctorReport struct {
 	EnabledExtensions        []string `json:"enabled_extensions,omitempty"`
 	ProgramFingerprint       string   `json:"program_fingerprint"`
 	UnresolvedProgramDrift   bool     `json:"unresolved_program_drift"`
+	RuntimeHealthy           bool     `json:"runtime_healthy"`
+	UpdateReady              bool     `json:"update_ready"`
+	RecoveryRequired         bool     `json:"recovery_required"`
 	Snapshot                 string   `json:"snapshot,omitempty"`
 	Detail                   string   `json:"detail"`
+}
+
+type ProgramChange struct {
+	PriorProgramFingerprint     string               `json:"prior_program_fingerprint"`
+	CandidateProgramFingerprint string               `json:"candidate_program_fingerprint"`
+	ProgramDeltaFingerprint     string               `json:"program_delta_fingerprint"`
+	RequiredTransition          catalog.TransitionID `json:"required_transition"`
+	AcceptanceFlag              string               `json:"acceptance_flag"`
 }
 
 type Response struct {
@@ -117,6 +128,7 @@ type Response struct {
 	Catalog       []catalog.Transition        `json:"catalog,omitempty"`
 	Events        []map[string]any            `json:"events,omitempty"`
 	Doctor        *DoctorReport               `json:"doctor,omitempty"`
+	ProgramChange *ProgramChange              `json:"program_change,omitempty"`
 	Guard         *supervisor.GuardDecision   `json:"guard,omitempty"`
 	Error         string                      `json:"error,omitempty"`
 }

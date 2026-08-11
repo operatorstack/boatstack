@@ -34,7 +34,7 @@ func TestStandardProgramHasExplicitStableComposition(t *testing.T) {
 		t.Fatalf("identical compilation drifted: %s != %s", one.Fingerprint(), two.Fingerprint())
 	}
 	summary := one.Summary()
-	if summary.CoreTransitionCount != 32 || summary.FlowTransitionCount != 30 || summary.ExtensionTransitionCount != 0 || summary.TotalTransitionCount != 62 {
+	if summary.CoreTransitionCount != 33 || summary.FlowTransitionCount != 30 || summary.ExtensionTransitionCount != 0 || summary.TotalTransitionCount != 63 {
 		t.Fatalf("compiled counts = %+v", summary)
 	}
 	counts := map[string]int{}
@@ -44,7 +44,7 @@ func TestStandardProgramHasExplicitStableComposition(t *testing.T) {
 			t.Fatalf("transition lost compiled ownership: %+v", transition)
 		}
 	}
-	if counts["core-system"] != 32 || counts["primary-flow"] != 30 || counts["extension"] != 0 {
+	if counts["core-system"] != 33 || counts["primary-flow"] != 30 || counts["extension"] != 0 {
 		t.Fatalf("origin counts = %#v", counts)
 	}
 }

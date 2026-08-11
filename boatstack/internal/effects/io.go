@@ -59,6 +59,35 @@ func atomicWrite(path string, value []byte, mode os.FileMode) error {
 	return syncDirectory(directory)
 }
 
+func atomicSymlink(path, target string) error {
+	if !filepath.IsAbs(path) || target == "" {
+		return fmt.Errorf("effect symlink requires an absolute path and non-empty target")
+	}
+	directory := filepath.Dir(path)
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(directory, ".boatstack-v2-link-*")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	if err := os.Remove(temporaryPath); err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(temporaryPath) }()
+	if err := os.Symlink(target, temporaryPath); err != nil {
+		return err
+	}
+	if err := replaceFile(temporaryPath, path); err != nil {
+		return err
+	}
+	return syncDirectory(directory)
+}
+
 func readAllIfExists(path string) ([]byte, bool, os.FileMode, error) {
 	file, err := os.Open(path)
 	if err != nil {

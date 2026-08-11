@@ -114,6 +114,7 @@ func (k Kernel) Handle(ctx context.Context, request surfaces.Request) (surfaces.
 		if resolution.Snapshot.Fingerprint != "" {
 			response.Snapshot = &resolution.Snapshot
 		}
+		response.ProgramChange = programChangeFor(response.Snapshot)
 		if resolveErr != nil {
 			response.Error = resolveErr.Error()
 			return response, resolveErr
@@ -139,6 +140,7 @@ func (k Kernel) Handle(ctx context.Context, request surfaces.Request) (surfaces.
 		if result.Receipt.ID != "" {
 			response.Receipt = &result.Receipt
 		}
+		response.ProgramChange = programChangeFor(response.Snapshot)
 		response.Replayed = result.Replayed
 		if applyErr != nil {
 			response.Error = applyErr.Error()
@@ -173,12 +175,27 @@ func (k Kernel) Handle(ctx context.Context, request surfaces.Request) (surfaces.
 			return response, canonicalErr
 		}
 		response.Snapshot = &snapshot
+		response.ProgramChange = programChangeFor(response.Snapshot)
+		health := model.ProjectOperationalHealth(snapshot)
 		report.UnresolvedProgramDrift = snapshot.Program.Status != model.FactKnown || snapshot.Program.Value == model.ProgramDrift
-		report.Healthy = k.registry.Len() == summary.TotalTransitionCount && !report.UnresolvedProgramDrift
+		report.RuntimeHealthy = health.RuntimeVerified
+		report.RecoveryRequired = health.RecoveryRequired
+		for _, transitionID := range []catalog.TransitionID{"installation.update", "installation.reconcile-update"} {
+			if transition, ok := k.registry.Lookup(transitionID); ok && transition.SourceMatches(snapshot) {
+				report.UpdateReady = true
+			}
+		}
+		report.Healthy = k.registry.Len() == summary.TotalTransitionCount && !report.UnresolvedProgramDrift && report.RuntimeHealthy && report.UpdateReady && !report.RecoveryRequired
 		report.Snapshot = snapshot.Fingerprint
 		report.Detail = "Kernel, observation, and compiled control program are valid"
 		if report.UnresolvedProgramDrift {
-			report.Detail = "compiled control program drift requires explicit reconciliation"
+			report.Detail = supervisor.ReasonProgramDrift
+		} else if report.RecoveryRequired {
+			report.Detail = "an interrupted transaction requires exact recovery"
+		} else if !report.RuntimeHealthy {
+			report.Detail = "runtime or managed launcher is not verified"
+		} else if !report.UpdateReady {
+			report.Detail = "no structurally admissible installation update continuation"
 		}
 		response.Doctor = &report
 		return response, nil
@@ -211,6 +228,20 @@ func (k Kernel) Handle(ctx context.Context, request surfaces.Request) (surfaces.
 		return response, nil
 	default:
 		return response, fmt.Errorf("unsupported surface operation %q", request.Operation)
+	}
+}
+
+func programChangeFor(snapshot *model.Snapshot) *surfaces.ProgramChange {
+	if snapshot == nil || snapshot.Program.Status != model.FactKnown || snapshot.Program.Value != model.ProgramDrift {
+		return nil
+	}
+	delta, err := protocol.ProgramDeltaFingerprint(snapshot.RecordedProgramFingerprint, snapshot.ProgramFingerprint)
+	if err != nil {
+		return nil
+	}
+	return &surfaces.ProgramChange{
+		PriorProgramFingerprint: snapshot.RecordedProgramFingerprint, CandidateProgramFingerprint: snapshot.ProgramFingerprint,
+		ProgramDeltaFingerprint: delta, RequiredTransition: "installation.reconcile-update", AcceptanceFlag: "--accept-program-change",
 	}
 }
 

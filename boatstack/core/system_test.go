@@ -14,7 +14,7 @@ func TestManifestOwnsOnlyOperationalCapabilities(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.ID != core.ID || manifest.Version != core.Version || len(manifest.Transitions) != 32 {
+	if manifest.ID != core.ID || manifest.Version != core.Version || len(manifest.Transitions) != 33 {
 		t.Fatalf("CoreSystem identity/count = %s@%s/%d", manifest.ID, manifest.Version, len(manifest.Transitions))
 	}
 	for _, transition := range manifest.Transitions {

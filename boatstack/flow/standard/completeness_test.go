@@ -49,7 +49,7 @@ func TestEveryControllingFacetAndEventIsClassifiedByTheRuntimeCatalog(t *testing
 			t.Errorf("controlling facet %s is absent from executable predicates", facet)
 		}
 	}
-	want := map[string]int{"invocation-engagement": 6, "installation-runtime-configuration": 8, "catalog": 1, "goal-plan": 9, "workspace": 8, "gate-evidence-delivery": 8, "publication": 6, "recovery": 3, "external": 13}
+	want := map[string]int{"invocation-engagement": 6, "installation-runtime-configuration": 9, "catalog": 1, "goal-plan": 9, "workspace": 8, "gate-evidence-delivery": 8, "publication": 6, "recovery": 3, "external": 13}
 	for family, count := range want {
 		if families[family] != count {
 			t.Errorf("family %s=%d, want %d", family, families[family], count)

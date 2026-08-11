@@ -63,30 +63,37 @@ func (l Locker) Acquire(ctx context.Context, invocation model.InvocationContext,
 			unique = append(unique, name)
 		}
 	}
-	held := &heldLocks{}
+	paths := make([]string, 0, len(unique)+1)
 	for _, name := range unique {
-		path := filepath.Join(layout.LockRoot, name+".lock")
+		paths = append(paths, filepath.Join(layout.LockRoot, name+".lock"))
+	}
+	if containsString(unique, "installation") {
+		paths = append(paths, filepath.Join(filepath.Dir(invocation.RuntimePath), ".boatstack-installation.lock"))
+	}
+	sort.Strings(paths)
+	held := &heldLocks{}
+	for _, path := range paths {
 		file, openErr := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
 		if openErr != nil {
 			_ = held.Release()
-			return nil, fmt.Errorf("open lock %s: %w", name, openErr)
+			return nil, fmt.Errorf("open lock %s: %w", path, openErr)
 		}
 		if lockErr := lockFile(file); lockErr != nil {
 			_ = file.Close()
 			_ = held.Release()
-			return nil, fmt.Errorf("acquire lock %s: %w", name, lockErr)
+			return nil, fmt.Errorf("acquire lock %s: %w", path, lockErr)
 		}
 		if truncateErr := file.Truncate(0); truncateErr != nil {
 			_ = unlockFile(file)
 			_ = file.Close()
 			_ = held.Release()
-			return nil, fmt.Errorf("truncate lock %s: %w", name, truncateErr)
+			return nil, fmt.Errorf("truncate lock %s: %w", path, truncateErr)
 		}
 		if _, seekErr := file.Seek(0, 0); seekErr != nil {
 			_ = unlockFile(file)
 			_ = file.Close()
 			_ = held.Release()
-			return nil, fmt.Errorf("seek lock %s: %w", name, seekErr)
+			return nil, fmt.Errorf("seek lock %s: %w", path, seekErr)
 		}
 		_, writeErr := fmt.Fprintf(file, "%s\n%s\n", invocation.Correlation, invocation.Ref)
 		syncErr := file.Sync()
@@ -102,4 +109,13 @@ func (l Locker) Acquire(ctx context.Context, invocation model.InvocationContext,
 		held.values = append(held.values, heldLock{path: path, file: file})
 	}
 	return held, nil
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }

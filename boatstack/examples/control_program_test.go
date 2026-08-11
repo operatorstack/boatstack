@@ -24,7 +24,7 @@ func Example_standardFlowWithReleaseNoteExtension() {
 	summary := program.Summary()
 	fmt.Printf("%s + %s + %s: %d transitions\n", summary.Core.ID, summary.Flow.ID, summary.Extensions[0].ID, summary.TotalTransitionCount)
 	// Output:
-	// boatstack.core + boatstack.standard + boatstack.release-note: 63 transitions
+	// boatstack.core + boatstack.standard + boatstack.release-note: 64 transitions
 }
 
 func Example_sdkCustomKernel() {

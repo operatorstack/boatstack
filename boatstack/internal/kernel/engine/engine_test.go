@@ -405,6 +405,38 @@ func TestSyntheticStartVerifyTerminalContractNeedsNoStandardFlowFacet(t *testing
 	}
 }
 
+func TestExactPermittedRecoveryRemainsReachableAcrossProgramDrift(t *testing.T) {
+	// control-law: interrupted-program-update-can-rollback-under-either-program-epoch
+	observed := recoveryObservation("program-change-pending")
+	observed.RecordedProgramFingerprint = strings.Repeat("a", 64)
+	evidence := observed.Phase.Evidence[0]
+	recovery := observed.RecoveryInfo.Value
+	recovery.Permitted = []string{"test.recover"}
+	observed.RecoveryInfo = model.Known(recovery, evidence)
+	snapshot, err := model.CanonicalizeForProgram(observed, syntheticProgramFingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Program.Value != model.ProgramDrift {
+		t.Fatalf("program state = %s, want drift", snapshot.Program.Value)
+	}
+	control := supervisor.New(testRegistry(t), syntheticGoalContracts(t))
+	decision := control.Resolve(snapshot, snapshot.Goal.Value, catalog.AuthoritySet{catalog.AuthorityRepository: true}, "test.recover")
+	if decision.Kind != supervisor.DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "test.recover" {
+		t.Fatalf("permitted recovery across drift = %+v", decision)
+	}
+	recovery.Permitted = []string{"recovery.escalate"}
+	observed.RecoveryInfo = model.Known(recovery, evidence)
+	snapshot, err = model.CanonicalizeForProgram(observed, syntheticProgramFingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocked := control.Resolve(snapshot, snapshot.Goal.Value, catalog.AuthoritySet{catalog.AuthorityRepository: true}, "test.recover")
+	if blocked.Kind != supervisor.DecisionUnresolved {
+		t.Fatalf("unpermitted recovery crossed program drift: %+v", blocked)
+	}
+}
+
 func TestIdempotencyReceiptCannotHideUncommittedRecoveryJournal(t *testing.T) {
 	// control-law: receipt-before-journal-commit-is-not-a-clean-replay
 	now := time.Unix(30, 0).UTC()

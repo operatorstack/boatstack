@@ -138,7 +138,7 @@
     },
     {
       "id": "formal-live-system-closure",
-      "public_claim": "The generated 62-event stable-phase abstraction satisfies the checked safety and liveness properties; executable tests separately bind catalog completeness, facets, reducer branches, operating-system behavior, and provider outcomes.",
+      "public_claim": "The generated 63-event stable-phase abstraction satisfies the checked safety and liveness properties; executable tests separately bind catalog completeness, facets, reducer branches, operating-system behavior, and provider outcomes.",
       "status": "advisory",
       "readable_evidence": "architecture/boatstack-v2-kernel.md#17-test-and-formal-property-strategy",
       "implementation": [
