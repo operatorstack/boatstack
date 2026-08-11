@@ -459,7 +459,7 @@ func TestWorkspaceCutTransfersAuthorityToExactDestinationWorktree(t *testing.T) 
 	if activated.Target.Workspace.Value != model.WorkspaceActive || activated.Target.Invocation.WorktreeID != destinationInvocation.WorktreeID {
 		t.Fatalf("destination activation failed: %#v", activated.Target)
 	}
-	if err := os.WriteFile(destinationConfigPath, configRaw, 0o600); err != nil {
+	if err := os.WriteFile(destinationConfigPath, destinationConfig, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	goal = model.Goal{ID: "goal-workspace-abandon", Kind: model.GoalAbandoned, DeliveryID: "delivery-workspace"}
