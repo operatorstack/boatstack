@@ -184,6 +184,7 @@ func TestExternalConfigurationAuthorityTransfersAcrossAttachAndDetach(t *testing
 		{Name: "source_revision", Value: "external-config-fixture"}, {Name: "runtime_path", Value: executable}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
 		{Name: "config_path", Value: initialPath}, {Name: "config_sha256", Value: configFingerprint(t, initialConfig)},
 	})
+	apply("goal.configure", human, false, protocol.Parameters{{Name: "goal_kind", Value: string(goal.Kind)}, {Name: "delivery_id", Value: goal.DeliveryID}})
 	apply("repository.attach", human, false, protocol.Parameters{{Name: "topology", Value: "detached"}, {Name: "config_authority", Value: "external"}})
 	resolver, err := plant.NewResolver(externalRoot)
 	if err != nil {
@@ -273,6 +274,9 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 	if initialized.Receipt == nil || initialized.Receipt.ProgramFingerprint != oldProgram.Fingerprint() {
 		t.Fatalf("initial receipt did not freeze old program: %#v", initialized.Receipt)
 	}
+	if initialized.Snapshot == nil || initialized.Snapshot.Goal.Status != model.FactAbsent || initialized.Receipt.GoalStatus != model.FactAbsent || initialized.Receipt.GoalID != "" {
+		t.Fatalf("installation initialization invented product intent: %#v", initialized)
+	}
 
 	newProgram := testProgram()
 	newKernel, err := boatstack.NewKernel(externalRoot, newProgram)
@@ -342,6 +346,9 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 		reconciled.Snapshot.Program.Value != model.ProgramCurrent || reconciled.Snapshot.Phase.Value != model.PhaseObserved {
 		t.Fatalf("reconciliation did not establish exact program identity: %#v", reconciled)
 	}
+	if reconciled.Snapshot.Goal.Status != model.FactAbsent || reconciled.Receipt.GoalStatus != model.FactAbsent || reconciled.Receipt.GoalID != "" {
+		t.Fatalf("reconcile-update invented product intent: %#v", reconciled)
+	}
 	afterSuccess, err := os.ReadFile(layout.StatePath)
 	if err != nil {
 		t.Fatal(err)
@@ -355,6 +362,20 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 	}
 	if !bytes.Equal(afterSuccess, afterReplay) {
 		t.Fatal("rejected repeated reconciliation mutated durable state")
+	}
+	updated, err := newKernel.Handle(ctx, surfaces.Request{
+		SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationApply, Repository: repository, Host: "cli", CorrelationID: "program-current-update",
+		FlowID: "flow-program-drift", Goal: model.Goal{ID: "ignored-command-goal", Kind: model.GoalOpenPR, DeliveryID: "ignored"},
+		TransitionID: "installation.update", Authority: human,
+		Parameters: protocol.Parameters{
+			{Name: "source_revision", Value: "program-current"}, {Name: "runtime_path", Value: executable}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
+		},
+	})
+	if err != nil {
+		t.Fatalf("current-program update after reconciliation: %v", err)
+	}
+	if updated.Snapshot == nil || updated.Snapshot.Goal.Status != model.FactAbsent || updated.Receipt == nil || updated.Receipt.GoalStatus != model.FactAbsent || updated.Receipt.GoalID != "" {
+		t.Fatalf("reconcile to update composition invented product intent: %#v", updated)
 	}
 }
 
@@ -420,6 +441,7 @@ func TestReferenceExtensionUsesKernelAdmissionVerificationAndReceiptPath(t *test
 		{Name: "source_revision", Value: "extension-fixture"}, {Name: "runtime_path", Value: executable}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
 		{Name: "config_path", Value: configPath}, {Name: "config_sha256", Value: configFingerprint(t, configRaw)},
 	})
+	apply("goal.configure", authority(catalog.AuthorityHuman), protocol.Parameters{{Name: "goal_kind", Value: string(goal.Kind)}, {Name: "delivery_id", Value: goal.DeliveryID}})
 	apply("engagement.begin", authority(catalog.AuthorityRepository), nil)
 	planPath := filepath.Join(t.TempDir(), "plan.md")
 	planRaw := []byte("# Extension plan\n")
@@ -547,6 +569,7 @@ func TestConcreteWorkflowPreservesConfigurationProofAndGoalTerminals(t *testing.
 		{Name: "source_revision", Value: "integration-revision"}, {Name: "runtime_path", Value: executable}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
 		{Name: "config_path", Value: configPath}, {Name: "config_sha256", Value: configFingerprint(t, configRaw)},
 	})
+	apply(approvedGoal, "goal.configure", authority(catalog.AuthorityHuman), protocol.Parameters{{Name: "goal_kind", Value: string(approvedGoal.Kind)}, {Name: "delivery_id", Value: approvedGoal.DeliveryID}})
 	apply(approvedGoal, "engagement.begin", authority(catalog.AuthorityRepository), nil)
 
 	updatedConfigPath := filepath.Join(t.TempDir(), "project-v2-updated.json")
@@ -677,6 +700,7 @@ func TestWorkspaceCutTransfersAuthorityToExactDestinationWorktree(t *testing.T) 
 		{Name: "source_revision", Value: "integration-revision"}, {Name: "runtime_path", Value: executable}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
 		{Name: "config_path", Value: configSource}, {Name: "config_sha256", Value: configFingerprint(t, configRaw)},
 	})
+	apply(sourceInvocation, "goal.configure", human, protocol.Parameters{{Name: "goal_kind", Value: string(goal.Kind)}, {Name: "delivery_id", Value: goal.DeliveryID}})
 	run(t, repository, "git", "add", ".boatstack/project.json")
 	run(t, repository, "git", "commit", "-q", "-m", "install V2 configuration")
 	repositoryAuthority := func(path string) protocol.AuthorityBundle {
@@ -768,7 +792,7 @@ func TestWorkspaceCutTransfersAuthorityToExactDestinationWorktree(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(strings.TrimSpace(string(eventBytes)), "\n")+1 != 7 {
+	if strings.Count(strings.TrimSpace(string(eventBytes)), "\n")+1 != 8 {
 		t.Fatalf("shared flow telemetry lost a cross-worktree transition: %s", eventBytes)
 	}
 }

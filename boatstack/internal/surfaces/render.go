@@ -25,7 +25,10 @@ type CommandAST struct {
 }
 
 func PrescriptionCommand(transition catalog.Transition, repository string, goal model.Goal, flowID string, parameters protocol.Parameters) CommandAST {
-	arguments := []string{"apply", "--repo", repository, "--transition", string(transition.ID), "--goal-kind", string(goal.Kind), "--delivery", goal.DeliveryID, "--goal-id", goal.ID, "--flow", flowID}
+	arguments := []string{"apply", "--repo", repository, "--transition", string(transition.ID), "--flow", flowID}
+	if goal.Validate() == nil {
+		arguments = append(arguments, "--goal-kind", string(goal.Kind), "--delivery", goal.DeliveryID, "--goal-id", goal.ID)
+	}
 	canonical := parameters.Canonical()
 	for _, parameter := range canonical {
 		arguments = append(arguments, "--param", parameter.Name+"="+parameter.Value)

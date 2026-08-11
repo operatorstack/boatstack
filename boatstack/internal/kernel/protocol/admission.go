@@ -25,6 +25,8 @@ type Admission struct {
 	SourcePhase             model.ProtocolPhase     `json:"source_phase"`
 	Invocation              model.InvocationContext `json:"invocation"`
 	Goal                    model.Goal              `json:"goal"`
+	GoalScope               catalog.GoalScope       `json:"goal_scope,omitempty"`
+	GoalStatus              model.FactStatus        `json:"goal_status,omitempty"`
 	Authority               AuthorityBundle         `json:"authority"`
 	Parameters              Parameters              `json:"parameters,omitempty"`
 	Evidence                []string                `json:"evidence"`
@@ -34,6 +36,11 @@ type Admission struct {
 }
 
 func NewAdmission(snapshot model.Snapshot, goal model.Goal, transition catalog.Transition, authority AuthorityBundle, parameters Parameters, now time.Time, lifetime time.Duration) (Admission, error) {
+	var err error
+	goal, err = GoalForTransition(snapshot, goal, transition)
+	if err != nil {
+		return Admission{}, err
+	}
 	if err := ValidateApplicability(snapshot, goal, transition, authority, parameters, now); err != nil {
 		return Admission{}, err
 	}
@@ -44,8 +51,11 @@ func NewAdmission(snapshot model.Snapshot, goal model.Goal, transition catalog.T
 	a := Admission{
 		SchemaVersion: AdmissionSchemaVersion, TransitionID: transition.ID, TransitionVersion: transition.Version,
 		ProgramFingerprint: snapshot.ProgramFingerprint, SnapshotFingerprint: snapshot.Fingerprint, SourceRevision: sourceRevision, WorktreeFingerprint: worktreeFingerprint,
-		SourcePhase: snapshot.Phase.Value, Invocation: snapshot.Invocation, Goal: goal, Authority: authority.canonical(),
+		SourcePhase: snapshot.Phase.Value, Invocation: snapshot.Invocation, Goal: goal, GoalScope: transition.Policy.GoalScope, Authority: authority.canonical(),
 		Evidence: append([]string(nil), transition.RequiredEvidence...), Parameters: parameters.Canonical(), IssuedAt: now.UTC(), ExpiresAt: now.Add(lifetime).UTC(),
+	}
+	if transition.Policy.GoalScope == catalog.GoalScopeOptionalPreserve {
+		a.GoalStatus = snapshot.Goal.Status
 	}
 	if snapshot.RecordedProgramFingerprint != "" && snapshot.RecordedProgramFingerprint != snapshot.ProgramFingerprint {
 		a.PriorProgramFingerprint = snapshot.RecordedProgramFingerprint
@@ -75,6 +85,28 @@ func NewAdmission(snapshot model.Snapshot, goal model.Goal, transition catalog.T
 	return a, nil
 }
 
+// GoalForTransition binds maintenance to verified durable product-goal state.
+// Command-scoped product intent is deliberately irrelevant to maintenance.
+func GoalForTransition(snapshot model.Snapshot, requested model.Goal, transition catalog.Transition) (model.Goal, error) {
+	if transition.Policy.GoalScope != catalog.GoalScopeOptionalPreserve {
+		if err := requested.Validate(); err != nil {
+			return model.Goal{}, err
+		}
+		return requested, nil
+	}
+	switch snapshot.Goal.Status {
+	case model.FactKnown:
+		if err := snapshot.Goal.Value.Validate(); err != nil {
+			return model.Goal{}, fmt.Errorf("transition %q has invalid configured product-goal evidence: %w", transition.ID, err)
+		}
+		return snapshot.Goal.Value, nil
+	case model.FactAbsent:
+		return model.Goal{}, nil
+	default:
+		return model.Goal{}, fmt.Errorf("transition %q requires known or verified-absent product goal evidence", transition.ID)
+	}
+}
+
 // ValidateApplicability is the deterministic transition law shared by
 // resolution and admission. A transition that fails here must never be
 // reported as prescribed for the same snapshot and context.
@@ -85,7 +117,9 @@ func ValidateApplicability(snapshot model.Snapshot, goal model.Goal, transition 
 	if err := snapshot.Invocation.Validate(true); err != nil {
 		return err
 	}
-	if err := goal.Validate(); err != nil {
+	var err error
+	goal, err = GoalForTransition(snapshot, goal, transition)
+	if err != nil {
 		return err
 	}
 	if snapshot.Fingerprint == "" || len(snapshot.ProgramFingerprint) != 64 || !transition.SourceMatches(snapshot) || !transition.SupportsGoal(goal) {
@@ -135,6 +169,9 @@ func (a Admission) ValidateCurrent(snapshot model.Snapshot, goal model.Goal, tra
 	if a.TransitionID != transition.ID || a.TransitionVersion != transition.Version {
 		return fmt.Errorf("admission %q is bound to a different transition", a.ID)
 	}
+	if a.GoalScope != transition.Policy.GoalScope {
+		return fmt.Errorf("admission %q is bound to a different product-goal scope", a.ID)
+	}
 	if a.SnapshotFingerprint != snapshot.Fingerprint {
 		return fmt.Errorf("admission %q is stale: snapshot changed", a.ID)
 	}
@@ -162,6 +199,9 @@ func (a Admission) ValidateCurrent(snapshot model.Snapshot, goal model.Goal, tra
 	}
 	if a.Goal != goal {
 		return fmt.Errorf("admission %q is bound to a different goal", a.ID)
+	}
+	if a.GoalScope == catalog.GoalScopeOptionalPreserve && (a.GoalStatus != snapshot.Goal.Status || (a.GoalStatus == model.FactKnown && a.Goal != snapshot.Goal.Value)) {
+		return fmt.Errorf("admission %q is stale: product goal changed", a.ID)
 	}
 	if err := a.Authority.Validate(now); err != nil {
 		return err
@@ -316,7 +356,23 @@ func (a Admission) ValidateIdentity() error {
 	if err := a.Invocation.Validate(true); err != nil {
 		return err
 	}
-	if err := a.Goal.Validate(); err != nil {
+	if !a.GoalScope.Valid() {
+		return fmt.Errorf("admission has invalid product-goal scope %q", a.GoalScope)
+	}
+	if a.GoalScope == catalog.GoalScopeOptionalPreserve {
+		switch a.GoalStatus {
+		case model.FactKnown:
+			if err := a.Goal.Validate(); err != nil {
+				return err
+			}
+		case model.FactAbsent:
+			if a.Goal.Validate() == nil {
+				return fmt.Errorf("maintenance admission cannot bind product intent to verified absence")
+			}
+		default:
+			return fmt.Errorf("maintenance admission requires known or verified-absent product goal status")
+		}
+	} else if err := a.Goal.Validate(); err != nil {
 		return err
 	}
 	identity := a

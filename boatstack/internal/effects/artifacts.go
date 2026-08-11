@@ -89,9 +89,13 @@ type publicationPreview struct {
 
 func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admission, transition catalog.Transition, state *durable.State) ([]ports.ResourceMutation, error) {
 	var mutations []ports.ResourceMutation
-	deliveryID, err := safeSegment(admission.Goal.DeliveryID, "delivery identity")
-	if err != nil {
-		return nil, err
+	var deliveryID string
+	if transitionUsesDeliveryArtifacts(transition.ID) {
+		var err error
+		deliveryID, err = safeSegment(admission.Goal.DeliveryID, "delivery identity")
+		if err != nil {
+			return nil, err
+		}
 	}
 	artifactRoot := filepath.Join(layout.RepositoryRoot, ".boatstack")
 	switch transition.ID {
@@ -289,6 +293,18 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		mutations = append(mutations, hostMutations...)
 	}
 	return mutations, nil
+}
+
+func transitionUsesDeliveryArtifacts(id catalog.TransitionID) bool {
+	switch id {
+	case "plan.create", "plan.amend", "plan.validate", "plan.approve", "plan.approve-amendment",
+		"evidence.approval.revoke", "gate.build.record", "gate.test.record", "gate.review.record",
+		"gate.change.record", "gate.journey.record", "evidence.visual.attach", "publication.preview",
+		"publication.execute", "publication.correct":
+		return true
+	default:
+		return false
+	}
 }
 
 func loadPublicationPreview(path string) (publicationPreview, error) {

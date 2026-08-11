@@ -454,6 +454,12 @@ class RepositoryContract(unittest.TestCase):
             )
             self.run_command(
                 launcher, "apply", "--repo", repository,
+                "--transition", "goal.configure", *goal,
+                "--human", "contract", "--param", "goal_kind=approved-plan",
+                "--param", "delivery_id=bootstrap", env=env,
+            )
+            self.run_command(
+                launcher, "apply", "--repo", repository,
                 "--transition", "engagement.begin", *goal,
                 "--repository-authority", env=env,
             )

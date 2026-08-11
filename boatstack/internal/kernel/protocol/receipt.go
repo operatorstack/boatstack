@@ -36,6 +36,8 @@ type TransitionReceipt struct {
 	GoalID                  string               `json:"goal_id"`
 	GoalKind                model.GoalKind       `json:"goal_kind"`
 	DeliveryID              string               `json:"delivery_id"`
+	GoalScope               catalog.GoalScope    `json:"goal_scope,omitempty"`
+	GoalStatus              model.FactStatus     `json:"goal_status,omitempty"`
 	SourceFingerprint       string               `json:"source_fingerprint"`
 	TargetFingerprint       string               `json:"target_fingerprint"`
 	AuthorityClasses        []string             `json:"authority_classes"`
@@ -68,6 +70,7 @@ func NewReceipt(flowID string, sequence uint64, admission Admission, transition 
 	receipt := TransitionReceipt{
 		SchemaVersion: ReceiptSchemaVersion, FlowID: flowID, Sequence: sequence, TransitionID: transition.ID,
 		TransitionVersion: transition.Version, ProgramFingerprint: admission.ProgramFingerprint, AdmissionID: admission.ID, GoalID: admission.Goal.ID, GoalKind: admission.Goal.Kind, DeliveryID: admission.Goal.DeliveryID,
+		GoalScope: admission.GoalScope, GoalStatus: admission.GoalStatus,
 		SourceFingerprint: admission.SnapshotFingerprint, TargetFingerprint: target.Fingerprint,
 		AuthorityClasses: classes, IdempotencyKey: admission.IdempotencyKey, Verifier: transition.Verifier,
 		Outcome: outcome, Recovery: transition.Interruption.Recovery, Terminal: terminal,
@@ -95,8 +98,27 @@ func NewReceipt(flowID string, sequence uint64, admission Admission, transition 
 }
 
 func (r TransitionReceipt) Validate() error {
-	if r.SchemaVersion != ReceiptSchemaVersion || r.ID == "" || r.FlowID == "" || r.Sequence == 0 || r.TransitionID == "" || r.TransitionVersion < 1 || len(r.ProgramFingerprint) != 64 || r.AdmissionID == "" || r.GoalID == "" || !r.GoalKind.Valid() || r.DeliveryID == "" || r.SourceFingerprint == "" || r.TargetFingerprint == "" || r.IdempotencyKey == "" || r.Verifier == "" {
+	if r.SchemaVersion != ReceiptSchemaVersion || r.ID == "" || r.FlowID == "" || r.Sequence == 0 || r.TransitionID == "" || r.TransitionVersion < 1 || len(r.ProgramFingerprint) != 64 || r.AdmissionID == "" || r.SourceFingerprint == "" || r.TargetFingerprint == "" || r.IdempotencyKey == "" || r.Verifier == "" {
 		return fmt.Errorf("receipt has incomplete identity or evidence")
+	}
+	if !r.GoalScope.Valid() {
+		return fmt.Errorf("receipt has invalid product-goal scope %q", r.GoalScope)
+	}
+	if r.GoalScope == catalog.GoalScopeOptionalPreserve {
+		switch r.GoalStatus {
+		case model.FactKnown:
+			if r.GoalID == "" || !r.GoalKind.Valid() || r.DeliveryID == "" {
+				return fmt.Errorf("maintenance receipt has incomplete known product-goal binding")
+			}
+		case model.FactAbsent:
+			if r.GoalID != "" || r.GoalKind != "" || r.DeliveryID != "" {
+				return fmt.Errorf("maintenance receipt invents product intent from verified absence")
+			}
+		default:
+			return fmt.Errorf("maintenance receipt requires known or verified-absent product-goal status")
+		}
+	} else if r.GoalID == "" || !r.GoalKind.Valid() || r.DeliveryID == "" {
+		return fmt.Errorf("receipt has incomplete product-goal identity")
 	}
 	if r.StartedAt.IsZero() || r.CompletedAt.Before(r.StartedAt) || r.DurationNanoseconds != r.CompletedAt.Sub(r.StartedAt).Nanoseconds() {
 		return fmt.Errorf("receipt has invalid timing evidence")

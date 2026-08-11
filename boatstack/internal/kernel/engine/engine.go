@@ -66,11 +66,20 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 		return Resolution{}, fmt.Errorf("observer returned a different invocation identity")
 	}
 	goal := request.Goal
-	if err := goal.Validate(); err != nil {
-		if snapshot.Goal.Status != model.FactKnown {
+	if transition, requested := e.registry.Lookup(request.Requested); requested && transition.Policy.GoalScope == catalog.GoalScopeOptionalPreserve {
+		goal, err = protocol.GoalForTransition(snapshot, request.Goal, transition)
+		if err != nil {
+			return Resolution{}, err
+		}
+	} else if err := goal.Validate(); err != nil {
+		switch snapshot.Goal.Status {
+		case model.FactKnown:
+			goal = snapshot.Goal.Value
+		case model.FactAbsent:
+			goal = model.Goal{}
+		default:
 			return Resolution{}, fmt.Errorf("no valid requested or configured goal: %w", err)
 		}
-		goal = snapshot.Goal.Value
 	}
 	now := e.clock.Now()
 	if err := request.Authority.Validate(now); err != nil {
@@ -78,6 +87,13 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 	}
 	decision := e.control.Resolve(snapshot, goal, request.Authority.Set(now), request.Requested)
 	if decision.Kind == supervisor.DecisionPrescribed && decision.Transition != nil {
+		goal, err = protocol.GoalForTransition(snapshot, goal, *decision.Transition)
+		if err != nil {
+			decision.Kind = supervisor.DecisionRefused
+			decision.Reason = err.Error()
+			decision.Transition = nil
+			return Resolution{Snapshot: snapshot, Goal: goal, Decision: decision}, nil
+		}
 		if applicabilityErr := protocol.ValidateApplicability(snapshot, goal, *decision.Transition, request.Authority, request.Parameters, now); applicabilityErr != nil {
 			if protocol.IsMissingParameter(applicabilityErr) {
 				decision.Kind = supervisor.DecisionCandidate
@@ -182,6 +198,9 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 			if canonicalErr != nil {
 				return result, canonicalErr
 			}
+			if err := validateReplayGoalState(prior, snapshot); err != nil {
+				return result, err
+			}
 			if !replayStateSettled(snapshot) {
 				return result, ReplayRecoveryError{ReceiptID: prior.ID}
 			}
@@ -233,6 +252,9 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 		if canonicalErr != nil {
 			return result, canonicalErr
 		}
+		if err := validateReplayGoalState(prior, current); err != nil {
+			return result, err
+		}
 		if !replayStateSettled(current) {
 			return result, ReplayRecoveryError{ReceiptID: prior.ID}
 		}
@@ -262,6 +284,9 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 		return result, fmt.Errorf("check locked idempotency: %w", findErr)
 	} else if ok {
 		if err := validateReplayRequest(prior, request, e.programFingerprint); err != nil {
+			return result, err
+		}
+		if err := validateReplayGoalState(prior, lockedSnapshot); err != nil {
 			return result, err
 		}
 		if !replayStateSettled(lockedSnapshot) {
@@ -370,11 +395,33 @@ func validateReplayRequest(prior protocol.TransitionReceipt, request ApplyReques
 	if prior.FlowID != request.FlowID {
 		return fmt.Errorf("idempotency receipt belongs to flow %q, not %q", prior.FlowID, request.FlowID)
 	}
-	if request.Goal.Validate() == nil && (prior.GoalID != request.Goal.ID || prior.GoalKind != request.Goal.Kind || prior.DeliveryID != request.Goal.DeliveryID) {
-		return fmt.Errorf("idempotency receipt belongs to a different configured goal")
+	if prior.GoalScope != catalog.GoalScopeOptionalPreserve && request.Goal.Validate() == nil {
+		if prior.GoalID != request.Goal.ID || prior.GoalKind != request.Goal.Kind || prior.DeliveryID != request.Goal.DeliveryID {
+			return fmt.Errorf("idempotency receipt belongs to a different configured goal")
+		}
 	}
 	if request.Requested != "" && prior.TransitionID != request.Requested {
 		return fmt.Errorf("idempotency receipt belongs to transition %q, not %q", prior.TransitionID, request.Requested)
+	}
+	return nil
+}
+
+func validateReplayGoalState(prior protocol.TransitionReceipt, snapshot model.Snapshot) error {
+	if prior.GoalScope != catalog.GoalScopeOptionalPreserve {
+		return nil
+	}
+	switch prior.GoalStatus {
+	case model.FactKnown:
+		if snapshot.Goal.Status != model.FactKnown || snapshot.Goal.Value.ID != prior.GoalID ||
+			snapshot.Goal.Value.Kind != prior.GoalKind || snapshot.Goal.Value.DeliveryID != prior.DeliveryID {
+			return fmt.Errorf("idempotency receipt product-goal binding no longer matches current state")
+		}
+	case model.FactAbsent:
+		if snapshot.Goal.Status != model.FactAbsent {
+			return fmt.Errorf("idempotency receipt preserved an absent product goal, but current state is %q", snapshot.Goal.Status)
+		}
+	default:
+		return fmt.Errorf("idempotency receipt has invalid preserved product-goal status %q", prior.GoalStatus)
 	}
 	return nil
 }

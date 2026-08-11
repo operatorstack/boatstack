@@ -25,6 +25,7 @@ type AuthorityClass = catalog.AuthorityClass
 type FacetCondition = catalog.FacetCondition
 type SelectionClass = catalog.SelectionClass
 type GoalContract = catalog.GoalContract
+type GoalScope = catalog.GoalScope
 type EffectID = catalog.EffectID
 type Prescription = catalog.Prescription
 type ParameterSpec = catalog.ParameterSpec
@@ -55,6 +56,8 @@ const (
 	SelectionFlowProgress      = catalog.SelectionFlowProgress
 	SelectionExplicitOnly      = catalog.SelectionExplicitOnly
 	SelectionObservedExternal  = catalog.SelectionObservedExternal
+
+	GoalScopeOptionalPreserve = catalog.GoalScopeOptionalPreserve
 
 	GoalApprovedPlan = model.GoalApprovedPlan
 	GoalVerified     = model.GoalVerified

@@ -176,15 +176,22 @@ type InterruptionContract struct {
 	ResumptionPredicate  string       `json:"resumption_predicate"`
 }
 
+type GoalScope string
+
+const GoalScopeOptionalPreserve GoalScope = "optional-preserve"
+
+func (s GoalScope) Valid() bool { return s == "" || s == GoalScopeOptionalPreserve }
+
 type PolicyContract struct {
-	RequiredWhen          string   `json:"required_when,omitempty"`
-	AuthorityRule         string   `json:"authority_rule,omitempty"`
-	AvailabilityRule      string   `json:"availability_rule,omitempty"`
-	CurrentEvidencePrefix string   `json:"current_evidence_prefix,omitempty"`
-	ManagedOperations     []string `json:"managed_operations,omitempty"`
-	BindsRequestedGoal    bool     `json:"binds_requested_goal,omitempty"`
-	ReconcilesProgram     bool     `json:"reconciles_program,omitempty"`
-	RechecksExternalState bool     `json:"rechecks_external_state,omitempty"`
+	RequiredWhen          string    `json:"required_when,omitempty"`
+	AuthorityRule         string    `json:"authority_rule,omitempty"`
+	AvailabilityRule      string    `json:"availability_rule,omitempty"`
+	CurrentEvidencePrefix string    `json:"current_evidence_prefix,omitempty"`
+	ManagedOperations     []string  `json:"managed_operations,omitempty"`
+	BindsRequestedGoal    bool      `json:"binds_requested_goal,omitempty"`
+	ReconcilesProgram     bool      `json:"reconciles_program,omitempty"`
+	RechecksExternalState bool      `json:"rechecks_external_state,omitempty"`
+	GoalScope             GoalScope `json:"goal_scope,omitempty"`
 }
 
 // FacetCondition is an executable, serializable predicate over one canonical
@@ -280,6 +287,9 @@ func (t Transition) ImplicitlySelectable() bool {
 }
 
 func (t Transition) SupportsGoal(goal model.Goal) bool {
+	if t.Policy.GoalScope == GoalScopeOptionalPreserve {
+		return true
+	}
 	if len(t.GoalKinds) == 0 {
 		return true
 	}
@@ -308,6 +318,9 @@ func (t Transition) SourceMatches(snapshot model.Snapshot) bool {
 		if !condition.Matches(snapshot) {
 			return false
 		}
+	}
+	if t.Policy.GoalScope == GoalScopeOptionalPreserve && snapshot.Goal.Status != model.FactKnown && snapshot.Goal.Status != model.FactAbsent {
+		return false
 	}
 	return true
 }
@@ -484,6 +497,12 @@ func validateTransition(t Transition) error {
 			return fmt.Errorf("%s: managed operations must be semantic and unique", t.ID)
 		}
 		managedOperations[operation] = true
+	}
+	if !t.Policy.GoalScope.Valid() {
+		return fmt.Errorf("%s: invalid goal scope %q", t.ID, t.Policy.GoalScope)
+	}
+	if t.Policy.GoalScope == GoalScopeOptionalPreserve && t.Policy.BindsRequestedGoal {
+		return fmt.Errorf("%s: optional-preserve maintenance cannot bind a requested product goal", t.ID)
 	}
 	if t.Policy.BindsRequestedGoal && (t.Origin.Kind != OriginCoreSystem || !conditionNamesFacet(t.TargetConditions, model.FacetGoal)) {
 		return fmt.Errorf("%s: requested-goal binding requires a CoreSystem goal target", t.ID)
