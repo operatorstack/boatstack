@@ -8,15 +8,31 @@ import (
 	"testing"
 	"time"
 
+	"github.com/operatorstack/boatstack/boatstack/flow/standard"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/engine"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/plant"
+	"github.com/operatorstack/boatstack/boatstack/internal/testprogram"
 )
 
 type recoveryClock struct{ value time.Time }
+
+const testProgramFingerprint = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+func testGoalContracts() catalog.GoalContracts {
+	manifest, err := standard.Definition().FlowManifest(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	contracts, err := catalog.NewGoalContracts(manifest.GoalContracts, nil)
+	if err != nil {
+		panic(err)
+	}
+	return contracts
+}
 
 func (c recoveryClock) Now() time.Time { return c.value }
 
@@ -65,7 +81,7 @@ func TestRestartRecoveryRollsBackExactPriorBytesAndArchivesJournal(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	initial, err := model.Canonicalize(initialObservation)
+	initial, err := model.CanonicalizeForProgram(initialObservation, testProgramFingerprint)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +90,7 @@ func TestRestartRecoveryRollsBackExactPriorBytesAndArchivesJournal(t *testing.T)
 		ID: "recovery-human", Class: catalog.AuthorityHuman, Subject: "fixture", Fingerprint: "recovery-human-fingerprint",
 		IssuedAt: clock.Now().Add(-time.Minute), ExpiresAt: clock.Now().Add(time.Hour),
 	}}}
-	transition, _ := catalog.Default().Lookup("installation.initialize")
+	transition, _ := testprogram.StandardRegistry().Lookup("installation.initialize")
 	executable, _ := os.Executable()
 	executable, _ = filepath.Abs(executable)
 	executable, _ = filepath.EvalSymlinks(executable)
@@ -126,7 +142,7 @@ func TestRestartRecoveryRollsBackExactPriorBytesAndArchivesJournal(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	recoverySnapshot, err := model.Canonicalize(recoveryObservation)
+	recoverySnapshot, err := model.CanonicalizeForProgram(recoveryObservation, testProgramFingerprint)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +153,7 @@ func TestRestartRecoveryRollsBackExactPriorBytesAndArchivesJournal(t *testing.T)
 	locker, _ := NewLocker(resolver)
 	journalAfterRestart, _ := NewJournal(resolver, clock)
 	receipts, _ := NewReceiptStore(resolver, clock)
-	restartedEngine, err := engine.New(catalog.Default(), observer, clock, locker, journalAfterRestart, driver, receipts)
+	restartedEngine, err := engine.New(testprogram.StandardRegistry(), testGoalContracts(), testProgramFingerprint, observer, clock, locker, journalAfterRestart, driver, receipts)
 	if err != nil {
 		t.Fatal(err)
 	}

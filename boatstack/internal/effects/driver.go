@@ -14,7 +14,6 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/reducer"
 )
 
 type CommandBoundary interface {
@@ -23,9 +22,10 @@ type CommandBoundary interface {
 }
 
 type Driver struct {
-	resolver ports.InvocationResolver
-	clock    ports.Clock
-	boundary CommandBoundary
+	resolver          ports.InvocationResolver
+	clock             ports.Clock
+	boundary          CommandBoundary
+	resourceOwnership map[string]string
 }
 
 func NewDriver(resolver ports.InvocationResolver, clock ports.Clock, boundary CommandBoundary) (Driver, error) {
@@ -35,7 +35,29 @@ func NewDriver(resolver ports.InvocationResolver, clock ports.Clock, boundary Co
 	return Driver{resolver: resolver, clock: clock, boundary: boundary}, nil
 }
 
+func NewProgramDriver(resolver ports.InvocationResolver, clock ports.Clock, boundary CommandBoundary, ownership map[string]string) (Driver, error) {
+	driver, err := NewDriver(resolver, clock, boundary)
+	if err != nil {
+		return Driver{}, err
+	}
+	if len(ownership) == 0 {
+		return Driver{}, fmt.Errorf("effect driver requires compiled resource ownership")
+	}
+	driver.resourceOwnership = make(map[string]string, len(ownership))
+	for resource, owner := range ownership {
+		driver.resourceOwnership[resource] = owner
+	}
+	return driver, nil
+}
+
 func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, transition catalog.Transition) (ports.PreparedEffect, error) {
+	if len(d.resourceOwnership) != 0 {
+		for _, resource := range transition.OwnedResources {
+			if owner := d.resourceOwnership[resource]; owner == "" || owner != transition.Owner {
+				return nil, fmt.Errorf("transition %q cannot write resource %q owned by %q", transition.ID, resource, owner)
+			}
+		}
+	}
 	layout, currentInvocation, err := d.resolver.ResolveLayout(ctx, admission.Invocation)
 	if err != nil {
 		return nil, err
@@ -53,6 +75,9 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 	if state.RepositoryID != admission.Invocation.RepositoryID || state.GitCommonID != admission.Invocation.GitCommonID || state.WorktreeID != admission.Invocation.WorktreeID {
 		return nil, fmt.Errorf("durable state belongs to a different invocation")
 	}
+	if state.ProgramFingerprint != "" && state.ProgramFingerprint != admission.ProgramFingerprint && !transition.Policy.ReconcilesProgram {
+		return nil, fmt.Errorf("compiled control program drifted; explicit program reconciliation is required")
+	}
 	if err := verifyWorkspaceBranchParameter(state, admission, transition.ID); err != nil {
 		return nil, err
 	}
@@ -60,10 +85,13 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 		return nil, err
 	}
 	next := state
+	if next.ProgramFingerprint == "" {
+		next.ProgramFingerprint = admission.ProgramFingerprint
+	}
 	if err := d.boundary.PrepareObservation(ctx, admission, transition, layout, &next); err != nil {
 		return nil, err
 	}
-	if err := reducer.Apply(&next, admission, transition); err != nil {
+	if err := applyStateTransition(&next, admission, transition); err != nil {
 		return nil, err
 	}
 	next.Revision++
@@ -198,6 +226,13 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 		}
 		mutations = append(mutations, recoveryMutations...)
 	}
+	for index := range mutations {
+		if len(transition.OwnedResources) == 0 {
+			return nil, fmt.Errorf("transition %q produced an undeclared resource write", transition.ID)
+		}
+		mutations[index].Resource = transition.OwnedResources[0]
+		mutations[index].Owner = transition.Owner
+	}
 	prepared := &preparedEffect{mutations: mutations, verifyInvocation: verificationInvocation}
 	if requiresCommandBoundary(transition.ID) {
 		prepared.boundary = func(boundaryContext context.Context) (ports.EffectResult, error) {
@@ -298,7 +333,7 @@ func parkedSourceState(state durable.State, transition catalog.TransitionID, now
 	state.PublicationURL = ""
 	state.PreviewFingerprint = ""
 	state.Gates = nil
-	reducer.ClearRecoveryContext(&state)
+	clearRecoveryContext(&state)
 	state.LastTransition = transition
 	state.UpdatedAt = now.UTC()
 	return state

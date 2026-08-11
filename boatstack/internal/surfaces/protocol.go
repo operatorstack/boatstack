@@ -74,13 +74,6 @@ func (r Request) Validate(now time.Time) error {
 			return fmt.Errorf("apply/recover request requires flow and transition identity")
 		}
 	}
-	if r.Operation == OperationRecover {
-		switch r.TransitionID {
-		case "recovery.resume", "recovery.rollback", "recovery.escalate", "runtime.reconcile", "configuration.reconcile", "workspace.reconcile", "publication.reconcile":
-		default:
-			return fmt.Errorf("recover operation requires a registered recovery transition")
-		}
-	}
 	if r.Operation == OperationGuard && (strings.TrimSpace(r.Command) == "" || len(r.Command) > 1<<20) {
 		return fmt.Errorf("guard operation requires a bounded command")
 	}
@@ -94,10 +87,22 @@ func (r Request) Validate(now time.Time) error {
 }
 
 type DoctorReport struct {
-	Healthy         bool   `json:"healthy"`
-	TransitionCount int    `json:"transition_count"`
-	Snapshot        string `json:"snapshot,omitempty"`
-	Detail          string `json:"detail"`
+	Healthy                  bool     `json:"healthy"`
+	KernelVersion            string   `json:"kernel_version"`
+	CoreSystemID             string   `json:"core_system_id"`
+	CoreSystemVersion        string   `json:"core_system_version"`
+	PrimaryFlowID            string   `json:"primary_flow_id"`
+	PrimaryFlowVersion       string   `json:"primary_flow_version"`
+	PrimaryFlowFingerprint   string   `json:"primary_flow_fingerprint"`
+	CoreTransitionCount      int      `json:"core_transition_count"`
+	FlowTransitionCount      int      `json:"flow_transition_count"`
+	ExtensionTransitionCount int      `json:"extension_transition_count"`
+	TransitionCount          int      `json:"transition_count"`
+	EnabledExtensions        []string `json:"enabled_extensions,omitempty"`
+	ProgramFingerprint       string   `json:"program_fingerprint"`
+	UnresolvedProgramDrift   bool     `json:"unresolved_program_drift"`
+	Snapshot                 string   `json:"snapshot,omitempty"`
+	Detail                   string   `json:"detail"`
 }
 
 type Response struct {

@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
+	"regexp"
 	"sort"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
@@ -29,14 +31,30 @@ type PolicySettings struct {
 	ExternalEffectAuthority      string `json:"external_effect_authority,omitempty"`
 }
 
-type ProjectConfig struct {
-	SchemaVersion int             `json:"schema_version"`
-	Project       ProjectSettings `json:"project"`
-	Policy        PolicySettings  `json:"policy"`
-	Hosts         []string        `json:"hosts"`
+// SubprocessExtensionSettings is a repository-selected, checksum-bound
+// additive capability. It cannot select or replace the primary flow.
+type SubprocessExtensionSettings struct {
+	ID             string          `json:"id"`
+	Version        string          `json:"version"`
+	Executable     string          `json:"executable"`
+	SHA256         string          `json:"sha256"`
+	Manifest       json.RawMessage `json:"manifest"`
+	Settings       json.RawMessage `json:"settings,omitempty"`
+	DeadlineMillis int             `json:"deadline_millis,omitempty"`
+	StdoutBytes    int64           `json:"stdout_bytes,omitempty"`
+	StderrBytes    int64           `json:"stderr_bytes,omitempty"`
 }
 
-var canonicalHosts = []string{"claude", "cli", "codex", "cursor", "gemini", "mcp"}
+type ProjectConfig struct {
+	SchemaVersion int                           `json:"schema_version"`
+	Project       ProjectSettings               `json:"project"`
+	Policy        PolicySettings                `json:"policy"`
+	Hosts         []string                      `json:"hosts"`
+	Extensions    []SubprocessExtensionSettings `json:"extensions,omitempty"`
+}
+
+var canonicalHosts = []string{"claude", "cli", "codex", "cursor", "gemini", "mcp", "sdk"}
+var extensionID = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$`)
 
 func CanonicalHosts() []string { return append([]string(nil), canonicalHosts...) }
 
@@ -80,6 +98,28 @@ func ProjectConfigFingerprint(value []byte) (ProjectConfig, string, error) {
 	canonical := config
 	canonical.Hosts = append([]string(nil), config.Hosts...)
 	sort.Strings(canonical.Hosts)
+	canonical.Extensions = append([]SubprocessExtensionSettings(nil), config.Extensions...)
+	for index := range canonical.Extensions {
+		values := []struct {
+			name  string
+			value *json.RawMessage
+		}{{"manifest", &canonical.Extensions[index].Manifest}, {"settings", &canonical.Extensions[index].Settings}}
+		for _, item := range values {
+			name, value := item.name, item.value
+			if len(*value) == 0 {
+				continue
+			}
+			var decoded any
+			if err := json.Unmarshal(*value, &decoded); err != nil {
+				return ProjectConfig{}, "", fmt.Errorf("canonicalize extension %q %s: %w", canonical.Extensions[index].ID, name, err)
+			}
+			*value, err = json.Marshal(decoded)
+			if err != nil {
+				return ProjectConfig{}, "", fmt.Errorf("canonicalize extension %q %s: %w", canonical.Extensions[index].ID, name, err)
+			}
+		}
+	}
+	sort.Slice(canonical.Extensions, func(i, j int) bool { return canonical.Extensions[i].ID < canonical.Extensions[j].ID })
 	if canonical.Policy.ExternalEffectAuthority == "" {
 		canonical.Policy.ExternalEffectAuthority = "human-or-autonomy-plus-provider"
 	}
@@ -124,6 +164,47 @@ func (c ProjectConfig) Validate() error {
 	}
 	if !seen["cli"] {
 		return fmt.Errorf("V2 project configuration must enable the canonical CLI surface")
+	}
+	seenExtensions := map[string]bool{}
+	for _, extension := range c.Extensions {
+		if !extensionID.MatchString(extension.ID) || extension.Version == "" || !filepath.IsAbs(extension.Executable) || filepath.Clean(extension.Executable) != extension.Executable || len(extension.SHA256) != 64 || len(extension.Manifest) == 0 {
+			return fmt.Errorf("subprocess extension requires semantic id, version, exact absolute executable, SHA-256, and declarative manifest")
+		}
+		if _, err := hex.DecodeString(extension.SHA256); err != nil {
+			return fmt.Errorf("subprocess extension %q has invalid SHA-256", extension.ID)
+		}
+		if seenExtensions[extension.ID] {
+			return fmt.Errorf("duplicated subprocess extension %q", extension.ID)
+		}
+		seenExtensions[extension.ID] = true
+		if extension.DeadlineMillis < 0 || extension.StdoutBytes < 0 || extension.StderrBytes < 0 {
+			return fmt.Errorf("subprocess extension %q has negative limits", extension.ID)
+		}
+		values := []struct {
+			name  string
+			value json.RawMessage
+		}{{"manifest", extension.Manifest}, {"settings", extension.Settings}}
+		for _, item := range values {
+			name, value := item.name, item.value
+			if len(value) == 0 {
+				continue
+			}
+			var settings any
+			decoder := json.NewDecoder(bytes.NewReader(value))
+			decoder.UseNumber()
+			if err := decoder.Decode(&settings); err != nil {
+				return fmt.Errorf("subprocess extension %q %s is invalid JSON", extension.ID, name)
+			}
+			var trailing any
+			if err := decoder.Decode(&trailing); err != io.EOF {
+				return fmt.Errorf("subprocess extension %q %s contains trailing JSON", extension.ID, name)
+			}
+			if name == "manifest" {
+				if _, ok := settings.(map[string]any); !ok {
+					return fmt.Errorf("subprocess extension %q manifest must be a JSON object", extension.ID)
+				}
+			}
+		}
 	}
 	return nil
 }

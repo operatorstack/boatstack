@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -13,6 +14,7 @@ type FacetName string
 
 const (
 	FacetPhase               FacetName = "phase"
+	FacetProgram             FacetName = "program"
 	FacetTopology            FacetName = "topology"
 	FacetEngagement          FacetName = "engagement"
 	FacetDelivery            FacetName = "delivery"
@@ -32,21 +34,27 @@ const (
 )
 
 var controllingFacets = []FacetName{
-	FacetPhase, FacetTopology, FacetEngagement, FacetDelivery, FacetWorkspace,
+	FacetPhase, FacetProgram, FacetTopology, FacetEngagement, FacetDelivery, FacetWorkspace,
 	FacetPlan, FacetConfiguration, FacetConfigurationPolicy, FacetRuntime, FacetPublication,
 	FacetVerification, FacetRecovery, FacetTransaction, FacetRecoveryInfo,
 	FacetTransactionInfo, FacetTerminal, FacetGoal,
 }
 
-func ControllingFacets() []FacetName { return append([]FacetName(nil), controllingFacets...) }
+var namespacedFacet = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[.-][a-z0-9]+){2,}$`)
 
-func (f FacetName) Valid() bool {
+func controllingFacet(facet FacetName) bool {
 	for _, candidate := range controllingFacets {
-		if f == candidate {
+		if facet == candidate {
 			return true
 		}
 	}
 	return false
+}
+
+func ControllingFacets() []FacetName { return append([]FacetName(nil), controllingFacets...) }
+
+func (f FacetName) Valid() bool {
+	return controllingFacet(f) || namespacedFacet.MatchString(string(f))
 }
 
 // Facet returns the status and canonical scalar value used by catalog
@@ -56,6 +64,8 @@ func (s Snapshot) Facet(name FacetName) (FactStatus, string, bool) {
 	switch name {
 	case FacetPhase:
 		return s.Phase.Status, string(s.Phase.Value), true
+	case FacetProgram:
+		return s.Program.Status, string(s.Program.Value), true
 	case FacetTopology:
 		return FactKnown, string(s.Invocation.Topology), true
 	case FacetEngagement:
@@ -95,6 +105,13 @@ func (s Snapshot) Facet(name FacetName) (FactStatus, string, bool) {
 		value := s.Goal.Value
 		return s.Goal.Status, strings.Join([]string{value.ID, string(value.Kind), value.DeliveryID, value.EvidenceFingerprint, fmt.Sprint(value.FrontierIsStop)}, "|"), true
 	default:
-		return "", "", false
+		if fact, ok := s.FlowFacts[string(name)]; ok {
+			return fact.Status, fact.Value, true
+		}
+		fact, ok := s.ExtensionFacts[string(name)]
+		if !ok {
+			return "", "", false
+		}
+		return fact.Status, fact.Value, true
 	}
 }

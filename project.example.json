@@ -33,6 +33,7 @@
     "codex",
     "claude",
     "gemini",
-    "mcp"
+    "mcp",
+    "sdk"
   ]
 }

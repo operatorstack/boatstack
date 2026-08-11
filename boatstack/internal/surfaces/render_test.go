@@ -2,10 +2,7 @@ package surfaces
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"reflect"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -13,11 +10,12 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/supervisor"
+	"github.com/operatorstack/boatstack/boatstack/internal/testprogram"
 )
 
 func TestShellRenderersConsumeOneCommandAST(t *testing.T) {
 	// control-law: shell-rendering-never-changes-transition-semantics
-	transition, ok := catalog.Default().Lookup("plan.create")
+	transition, ok := testprogram.StandardRegistry().Lookup("plan.create")
 	if !ok {
 		t.Fatal("missing plan.create")
 	}
@@ -49,17 +47,20 @@ func TestShellRenderersConsumeOneCommandAST(t *testing.T) {
 }
 
 func TestCatalogArtifactsAreGeneratedFromEveryRuntimeTransition(t *testing.T) {
-	registry := catalog.Default()
+	registry := testprogram.StandardRegistry()
 	markdown := RenderCatalogMarkdown(registry.All())
 	mermaid := RenderCatalogMermaid(registry.All())
 	for _, transition := range registry.All() {
-		rowPrefix := "\n| `" + string(transition.ID) + "` | " + string(transition.Class) + " |"
+		rowPrefix := "\n| `" + string(transition.ID) + "` | " + string(transition.Origin.Kind) + ":"
 		if strings.Count(markdown, rowPrefix) != 1 {
 			t.Errorf("markdown does not contain transition %s exactly once", transition.ID)
 		}
-		if strings.Count(mermaid, string(transition.ID)+"<br/>") != 1 {
+		if strings.Count(mermaid, `["`+string(transition.ID)+`<br/>`) != 1 {
 			t.Errorf("Mermaid does not contain transition %s exactly once", transition.ID)
 		}
+	}
+	if !strings.Contains(mermaid, " --> ") {
+		t.Fatal("Mermaid transition inventory is not connected to protocol phases")
 	}
 	if markdown != RenderCatalogMarkdown(registry.All()) || mermaid != RenderCatalogMermaid(registry.All()) {
 		t.Fatal("catalog artifact rendering is not deterministic")
@@ -68,7 +69,7 @@ func TestCatalogArtifactsAreGeneratedFromEveryRuntimeTransition(t *testing.T) {
 
 func TestLocusModelsAreGeneratedFromEveryRuntimeTransition(t *testing.T) {
 	// control-law: formal-model-alphabet-is-the-runtime-catalog
-	registry := catalog.Default()
+	registry := testprogram.StandardRegistry()
 	for _, render := range []func([]catalog.Transition) (string, error){RenderCatalogLocusSafety, RenderCatalogLocusLiveness} {
 		one, err := render(registry.All())
 		if err != nil {
@@ -101,41 +102,9 @@ func TestLocusModelsAreGeneratedFromEveryRuntimeTransition(t *testing.T) {
 	}
 }
 
-func TestCheckedArchitectureArtifactsMatchExecutableCatalog(t *testing.T) {
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("cannot locate checked architecture artifacts")
-	}
-	repositoryRoot := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", ".."))
-	checks := map[string]string{
-		"boatstack-v2-transition-catalog.md":  RenderCatalogMarkdown(catalog.Default().All()),
-		"boatstack-v2-transition-catalog.mmd": RenderCatalogMermaid(catalog.Default().All()),
-	}
-	safety, err := RenderCatalogLocusSafety(catalog.Default().All())
-	if err != nil {
-		t.Fatal(err)
-	}
-	liveness, err := RenderCatalogLocusLiveness(catalog.Default().All())
-	if err != nil {
-		t.Fatal(err)
-	}
-	checks["boatstack-v2-locus-safety.json"] = safety
-	checks["boatstack-v2-locus-liveness.json"] = liveness
-	for name, expected := range checks {
-		path := filepath.Join(repositoryRoot, "docs", "architecture", name)
-		actual, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if string(actual) != expected {
-			t.Errorf("%s drifted; regenerate it with boatstack catalog", name)
-		}
-	}
-}
-
 func TestEveryHostConsumesOneSemanticPrescription(t *testing.T) {
 	goal := model.Goal{ID: "goal", Kind: model.GoalVerified, DeliveryID: "delivery"}
-	for _, transition := range catalog.Default().All() {
+	for _, transition := range testprogram.StandardRegistry().All() {
 		if !transition.Controllable() {
 			continue
 		}
@@ -162,7 +131,7 @@ func TestEveryHostConsumesOneSemanticPrescription(t *testing.T) {
 }
 
 func TestCanonicalHostsAreDataNotControllers(t *testing.T) {
-	want := []string{"claude", "cli", "codex", "cursor", "gemini", "mcp"}
+	want := []string{"claude", "cli", "codex", "cursor", "gemini", "mcp", "sdk"}
 	if got := CanonicalHostNames(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("hosts = %v, want %v", got, want)
 	}
@@ -177,7 +146,7 @@ func TestGuardClassifierIsShellNeutralAndPrivacyBounded(t *testing.T) {
 		}
 	}
 	managed := ClassifyCommandIntent("gh pr create --base main --head feature")
-	if managed.Class != supervisor.IntentManagedBypass || managed.Transition != "publication.execute" {
+	if managed.Class != supervisor.IntentManagedBypass || managed.Operation != "publication.create" || managed.Transition != "" {
 		t.Fatalf("managed intent = %#v", managed)
 	}
 	ordinary := ClassifyCommandIntent("go test ./...")

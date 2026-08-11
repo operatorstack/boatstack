@@ -1,0 +1,162 @@
+%% Generated from compiled PrimaryFlow declarations by surfaces.RenderStandardFlowMermaid. Do not edit.
+flowchart TB
+  subgraph phases["protocol phases"]
+    p_ABANDONED["ABANDONED"]
+    p_ACTIVE["ACTIVE"]
+    p_DORMANT["DORMANT"]
+    p_FRONTIER["FRONTIER"]
+    p_OBSERVED["OBSERVED"]
+    p_RECOVERY["RECOVERY"]
+    p_TERMINAL["TERMINAL"]
+    p_UNRESOLVED["UNRESOLVED"]
+  end
+  subgraph authority["authority"]
+    t00["evidence.approval.revoke<br/>authority"]
+    t01["plan.abandon<br/>authority"]
+    t02["plan.approve<br/>authority"]
+    t03["plan.approve-amendment<br/>authority"]
+    t04["publication.abandon<br/>authority"]
+  end
+  subgraph owned_local["owned-local"]
+    t05["delivery.slice.advance<br/>owned-local"]
+    t06["evidence.visual.attach<br/>owned-local"]
+    t07["gate.build.record<br/>owned-local"]
+    t08["gate.change.record<br/>owned-local"]
+    t09["gate.journey.record<br/>owned-local"]
+    t10["gate.review.record<br/>owned-local"]
+    t11["gate.test.record<br/>owned-local"]
+    t12["plan.activate<br/>owned-local"]
+    t13["plan.amend<br/>owned-local"]
+    t14["plan.create<br/>owned-local"]
+    t15["plan.invalidate<br/>owned-local"]
+    t16["plan.validate<br/>owned-local"]
+    t17["publication.observe<br/>owned-local"]
+    t18["publication.preview<br/>owned-local"]
+    t19["workspace.abandon<br/>owned-local"]
+    t20["workspace.activate<br/>owned-local"]
+    t21["workspace.cleanup<br/>owned-local"]
+    t22["workspace.cut<br/>owned-local"]
+    t23["workspace.publish<br/>owned-local"]
+    t24["workspace.reap<br/>owned-local"]
+    t25["workspace.sync<br/>owned-local"]
+  end
+  subgraph owned_external["owned-external"]
+    t26["publication.correct<br/>owned-external"]
+    t27["publication.execute<br/>owned-external"]
+  end
+  subgraph recovery["recovery"]
+    t28["publication.reconcile<br/>recovery"]
+    t29["workspace.reconcile<br/>recovery"]
+  end
+  subgraph observed_external["observed-external"]
+  end
+  p_ACTIVE --> t00
+  p_FRONTIER --> t00
+  t00 --> p_FRONTIER
+  p_OBSERVED --> t01
+  p_ACTIVE --> t01
+  p_FRONTIER --> t01
+  t01 --> p_ABANDONED
+  p_ACTIVE --> t02
+  p_FRONTIER --> t02
+  t02 --> p_ACTIVE
+  t02 --> p_TERMINAL
+  p_ACTIVE --> t03
+  p_FRONTIER --> t03
+  t03 --> p_ACTIVE
+  p_ACTIVE --> t04
+  p_FRONTIER --> t04
+  t04 --> p_ABANDONED
+  p_ACTIVE --> t05
+  t05 --> p_ACTIVE
+  t05 --> p_TERMINAL
+  p_ACTIVE --> t06
+  t06 --> p_ACTIVE
+  t06 --> p_TERMINAL
+  p_ACTIVE --> t07
+  t07 --> p_ACTIVE
+  p_ACTIVE --> t08
+  t08 --> p_ACTIVE
+  p_ACTIVE --> t09
+  t09 --> p_ACTIVE
+  p_ACTIVE --> t10
+  t10 --> p_ACTIVE
+  t10 --> p_TERMINAL
+  p_ACTIVE --> t11
+  t11 --> p_ACTIVE
+  t11 --> p_TERMINAL
+  p_OBSERVED --> t12
+  p_ACTIVE --> t12
+  t12 --> p_ACTIVE
+  p_ACTIVE --> t13
+  p_FRONTIER --> t13
+  t13 --> p_ACTIVE
+  p_OBSERVED --> t14
+  p_ACTIVE --> t14
+  t14 --> p_ACTIVE
+  p_ACTIVE --> t15
+  p_OBSERVED --> t15
+  t15 --> p_FRONTIER
+  p_OBSERVED --> t16
+  p_ACTIVE --> t16
+  t16 --> p_ACTIVE
+  t16 --> p_FRONTIER
+  p_OBSERVED --> t17
+  p_ACTIVE --> t17
+  p_RECOVERY --> t17
+  p_UNRESOLVED --> t17
+  t17 --> p_ACTIVE
+  t17 --> p_TERMINAL
+  t17 --> p_FRONTIER
+  t17 --> p_UNRESOLVED
+  p_ACTIVE --> t18
+  t18 --> p_ACTIVE
+  p_ACTIVE --> t19
+  p_FRONTIER --> t19
+  t19 --> p_ABANDONED
+  p_OBSERVED --> t20
+  p_ACTIVE --> t20
+  t20 --> p_ACTIVE
+  p_OBSERVED --> t21
+  p_ACTIVE --> t21
+  p_TERMINAL --> t21
+  p_ABANDONED --> t21
+  t21 --> p_OBSERVED
+  t21 --> p_TERMINAL
+  t21 --> p_ABANDONED
+  p_OBSERVED --> t22
+  p_ACTIVE --> t22
+  t22 --> p_ACTIVE
+  p_ACTIVE --> t23
+  t23 --> p_ACTIVE
+  p_OBSERVED --> t24
+  p_TERMINAL --> t24
+  p_ABANDONED --> t24
+  t24 --> p_OBSERVED
+  t24 --> p_TERMINAL
+  t24 --> p_ABANDONED
+  p_ACTIVE --> t25
+  t25 --> p_ACTIVE
+  t25 --> p_FRONTIER
+  p_OBSERVED --> t26
+  p_ACTIVE --> t26
+  p_TERMINAL --> t26
+  t26 --> p_ACTIVE
+  t26 --> p_RECOVERY
+  p_ACTIVE --> t27
+  t27 --> p_ACTIVE
+  t27 --> p_RECOVERY
+  p_RECOVERY --> t28
+  p_UNRESOLVED --> t28
+  t28 --> p_ACTIVE
+  t28 --> p_TERMINAL
+  t28 --> p_FRONTIER
+  t28 --> p_UNRESOLVED
+  p_RECOVERY --> t29
+  p_UNRESOLVED --> t29
+  t29 --> p_DORMANT
+  t29 --> p_OBSERVED
+  t29 --> p_ACTIVE
+  t29 --> p_FRONTIER
+  t29 --> p_TERMINAL
+  t29 --> p_ABANDONED

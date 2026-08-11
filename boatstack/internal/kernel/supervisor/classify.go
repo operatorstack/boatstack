@@ -5,8 +5,6 @@ import (
 	"encoding/hex"
 	"regexp"
 	"strings"
-
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 )
 
 type commandPattern struct {
@@ -43,16 +41,15 @@ var (
 )
 
 var managedCommandPatterns = []struct {
-	pattern    *regexp.Regexp
-	operation  string
-	transition catalog.TransitionID
+	pattern   *regexp.Regexp
+	operation string
 }{
-	{regexp.MustCompile(`(?i)\bgit\s+worktree\s+remove\b`), "workspace.remove", "workspace.cleanup"},
-	{regexp.MustCompile(`(?i)\bgh\s+pr\s+create\b`), "publication.create", "publication.execute"},
-	{regexp.MustCompile(`(?i)\bgh\s+pr\s+edit\b`), "publication.edit", "publication.correct"},
-	{regexp.MustCompile(`(?i)\bgh\s+pr\s+ready\b`), "publication.ready", "publication.correct"},
-	{regexp.MustCompile(`(?i)\bgh\s+api\b[^\n;&|]*(?:/pulls\b|/pull-requests\b)[^\n;&|]*(?:\s-X\s*(?:POST|PATCH)|--request\s+(?:POST|PATCH))`), "publication.api-write", "publication.correct"},
-	{regexp.MustCompile(`(?i)\bgit\s+push\b`), "publication.push", "publication.execute"},
+	{regexp.MustCompile(`(?i)\bgit\s+worktree\s+remove\b`), "workspace.remove"},
+	{regexp.MustCompile(`(?i)\bgh\s+pr\s+create\b`), "publication.create"},
+	{regexp.MustCompile(`(?i)\bgh\s+pr\s+edit\b`), "publication.edit"},
+	{regexp.MustCompile(`(?i)\bgh\s+pr\s+ready\b`), "publication.ready"},
+	{regexp.MustCompile(`(?i)\bgh\s+api\b[^\n;&|]*(?:/pulls\b|/pull-requests\b)[^\n;&|]*(?:\s-X\s*(?:POST|PATCH)|--request\s+(?:POST|PATCH))`), "publication.api-write"},
+	{regexp.MustCompile(`(?i)\bgit\s+push\b`), "publication.push"},
 }
 
 func ClassifyCommandIntent(command string) CommandIntent {
@@ -78,7 +75,7 @@ func ClassifyCommandIntent(command string) CommandIntent {
 	}
 	for _, candidate := range managedCommandPatterns {
 		if candidate.pattern.MatchString(normalized) {
-			intent.Class, intent.Operation, intent.Transition = IntentManagedBypass, candidate.operation, candidate.transition
+			intent.Class, intent.Operation = IntentManagedBypass, candidate.operation
 			return intent
 		}
 	}

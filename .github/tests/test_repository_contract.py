@@ -309,19 +309,23 @@ class RepositoryContract(unittest.TestCase):
             "docs/architecture/boatstack-v2-*.md text eol=lf",
             "docs/architecture/boatstack-v2-*.mmd text eol=lf",
             "docs/architecture/boatstack-v2-*.json text eol=lf",
+            "docs/architecture/boatstack-standard-flow.mmd text eol=lf",
         ):
             self.assertIn(pattern, attributes)
 
         response = json.loads(self.run_helper("catalog").stdout)
         transitions = response["catalog"]
-        self.assertEqual(len(transitions), 61)
-        self.assertEqual(len({item["id"] for item in transitions}), 61)
+        self.assertEqual(len(transitions), 62)
+        self.assertEqual(len({item["id"] for item in transitions}), 62)
         self.assertEqual(
             {item["class"] for item in transitions},
             {"authority", "owned-local", "owned-external", "recovery", "observed-external"},
         )
         markdown = self.run_helper("catalog", "--format", "markdown").stdout
         mermaid = self.run_helper("catalog", "--format", "mermaid").stdout
+        standard_flow = self.run_helper(
+            "catalog", "--format", "standard-flow-mermaid"
+        ).stdout
         locus_safety = self.run_helper(
             "catalog", "--format", "locus-safety"
         ).stdout
@@ -336,6 +340,11 @@ class RepositoryContract(unittest.TestCase):
             mermaid,
             (REPO / "docs" / "architecture" / "boatstack-v2-transition-catalog.mmd").read_text(),
         )
+        self.assertEqual(
+            standard_flow,
+            (REPO / "docs" / "architecture" / "boatstack-standard-flow.mmd").read_text(),
+        )
+        self.assertEqual(standard_flow.count("<br/>"), 30)
         for name, rendered in (
             ("boatstack-v2-locus-safety.json", locus_safety),
             ("boatstack-v2-locus-liveness.json", locus_liveness),
@@ -343,7 +352,7 @@ class RepositoryContract(unittest.TestCase):
             checked = (REPO / "docs" / "architecture" / name).read_text()
             self.assertEqual(rendered, checked)
             model = json.loads(checked)
-            self.assertEqual(len(model["events"]), 61)
+            self.assertEqual(len(model["events"]), 62)
             self.assertEqual(
                 {event["id"] for event in model["events"]},
                 {item["id"] for item in transitions},
@@ -413,7 +422,7 @@ class RepositoryContract(unittest.TestCase):
                 self.run_command(launcher, "doctor", "--repo", repository, env=env).stdout
             )
             self.assertTrue(doctor["doctor"]["healthy"])
-            self.assertEqual(doctor["doctor"]["transition_count"], 61)
+            self.assertEqual(doctor["doctor"]["transition_count"], 62)
             self.assertEqual(doctor["snapshot"]["runtime"]["value"], "verified")
 
             goal = (

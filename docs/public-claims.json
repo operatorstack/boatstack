@@ -13,11 +13,11 @@
       "readable_evidence": "architecture/boatstack-v2-kernel.md#14-package-and-dependency-architecture",
       "implementation": [
         "../boatstack/internal/kernel/engine/engine.go",
-        "../boatstack/internal/kernel/catalog/default.go",
-        "../boatstack/v2_kernel.go"
+        "../boatstack/control/control.go",
+        "../boatstack/kernel.go"
       ],
       "verification": [
-        "../boatstack/internal/kernel/catalog/completeness_test.go",
+        "../boatstack/flow/standard/completeness_test.go",
         "../boatstack/internal/kernel/engine/engine_test.go"
       ],
       "last_verified_version": "v2.0.0"
@@ -80,7 +80,7 @@
         "../boatstack/internal/surfaces/guard.go"
       ],
       "verification": [
-        "../boatstack/internal/kernel/supervisor/supervisor_test.go",
+        "../boatstack/flow/standard/supervisor_parity_test.go",
         "../boatstack/internal/surfaces/render_test.go"
       ],
       "last_verified_version": "v2.0.0"
@@ -110,7 +110,7 @@
       "readable_evidence": "architecture/boatstack-v2-kernel.md#16-process-telemetry-contract",
       "implementation": [
         "../boatstack/internal/effects/receipts.go",
-        "../boatstack/v2_kernel.go"
+        "../boatstack/kernel.go"
       ],
       "verification": [
         "../boatstack/internal/effects/integration_test.go"
@@ -125,31 +125,33 @@
       "implementation": [
         "../boatstack/internal/kernel/model/state.go",
         "../boatstack/internal/kernel/supervisor/supervisor.go",
-        "../boatstack/internal/kernel/reducer/reducer.go"
+        "../boatstack/internal/effects/state_reducer.go"
       ],
       "verification": [
-        "../boatstack/internal/kernel/supervisor/supervisor_test.go",
+        "../boatstack/flow/standard/supervisor_parity_test.go",
         "../boatstack/internal/kernel/protocol/policy_test.go",
         "../boatstack/internal/plant/observer_test.go",
-        "../boatstack/internal/kernel/reducer/reducer_test.go",
+        "../boatstack/internal/effects/state_reducer_test.go",
         "../boatstack/internal/effects/integration_test.go"
       ],
       "last_verified_version": "v2.0.0"
     },
     {
       "id": "formal-live-system-closure",
-      "public_claim": "The generated 61-event stable-phase abstraction satisfies the checked safety and liveness properties; executable tests separately bind catalog completeness, facets, reducer branches, operating-system behavior, and provider outcomes.",
+      "public_claim": "The generated 62-event stable-phase abstraction satisfies the checked safety and liveness properties; executable tests separately bind catalog completeness, facets, reducer branches, operating-system behavior, and provider outcomes.",
       "status": "advisory",
       "readable_evidence": "architecture/boatstack-v2-kernel.md#17-test-and-formal-property-strategy",
       "implementation": [
         "architecture/boatstack-v2-transition-catalog.md",
         "architecture/boatstack-v2-locus-safety.json",
         "architecture/boatstack-v2-locus-liveness.json",
-        "../boatstack/internal/kernel/catalog/default.go"
+        "../boatstack/control/control.go",
+        "../boatstack/core/transitions.json",
+        "../boatstack/flow/standard/transitions.json"
       ],
       "verification": [
-        "../boatstack/internal/kernel/catalog/completeness_test.go",
-        "../boatstack/internal/kernel/catalog/historical_test.go",
+        "../boatstack/flow/standard/completeness_test.go",
+        "../boatstack/flow/standard/historical_test.go",
         "../boatstack/internal/surfaces/render_test.go",
         "../boatstack/internal/kernel/engine/engine_test.go",
         "../boatstack/internal/effects/integration_test.go"

@@ -1,14 +1,16 @@
-# Boatstack V2 authoritative delivery kernel
+# Boatstack programmable delivery control architecture
 
 Status: normative implementation specification
-Base revision: `c5b5e10cdcf4d97b645d705cb164e762acf93ff1` (`origin/main`, including PR #185)
-Rewrite branch: `rewrite/v2-delivery-kernel`
-Scope: one flag-day rewrite and one final pull request; no merge is authorized by this document
+Base revision: `f7a5c9d1f2d15057f484371f348ee57311c0155e` (`origin/main`, after the V2 kernel replacement)
+Implementation branch: `feat/control-program-and-standard-flow`
+Scope: separate mechanism, system capabilities, primary delivery flow, optional
+extensions, and product surfaces in one final pull request; no merge is
+authorized by this document
 
 > Boatstack V2 is a flag-day replacement. Existing machine-local state may be
 > discarded and regenerated. No V1 runtime remains after cutover.
 
-This document is the source of truth for the V2 implementation. If code and this
+This document is the source of truth for the Boatstack implementation. If code and this
 document disagree, the discrepancy is a release blocker: either the code must be
 corrected or this document must be deliberately amended with matching tests.
 The [replacement closure report](boatstack-v2-closure-report.md) binds its frozen
@@ -21,11 +23,11 @@ slices. They are logical ownership boundaries, not rollout phases.
 
 | Slice | Domain | Structure | Goal | Operator | Immediate value |
 | --- | --- | --- | --- | --- | --- |
-| 1. Authoritative kernel | Repository-local delivery control | One evidence-backed composite snapshot and one transition catalog | Every managed state has a safe path to progress, recovery, authority frontier, or terminal | Observe, resolve, admit, execute, verify, record, recover | One executable delivery law replaces distributed state and authority reconstruction |
-| 2. Product surfaces | Shipped CLI, hooks, SDK/MCP, hosts, and renderers | One adapter protocol projected from kernel decisions and prescriptions | Every consumer observes and requests the same semantics | Decode, invoke, render | Hosts stop acting as independent controllers while useful workflows remain available |
+| 1. Compiled control law | Repository-local delivery control | CoreSystem plus one PrimaryFlow and zero or more conservative Extensions compiled into one immutable ControlProgram | Every managed state has a safe path to progress, recovery, authority frontier, or terminal | Compile, observe, resolve, admit, execute, verify, record, recover | Delivery policy can evolve without changing the mechanism that protects authority and effects |
+| 2. Product surfaces | Shipped CLI, hooks, SDK/MCP, hosts, and renderers | One adapter protocol projected from Kernel decisions and prescriptions | Every consumer observes and requests the same compiled semantics | Assemble, decode, invoke, render | Hosts stop acting as independent controllers while useful workflows remain available |
 
-Canonical form for slice 1: one domain, the `Snapshot` schema, the configured
-`Goal`, and the `Engine.Apply` operator. Canonical form for slice 2: one domain,
+Canonical form for slice 1: one domain, the `ControlProgram` and `Snapshot`
+schemas, the configured `Goal`, and the `Kernel.Handle` operator. Canonical form for slice 2: one domain,
 the `SurfaceRequest`/`SurfaceResponse` schema, the same goal, and the adapter
 projection operator.
 
@@ -44,7 +46,219 @@ which external outcomes can be proved, and which platform primitive provides
 atomic replacement. A user decision is required only if a new transition would
 change who may authorize an effect or what counts as a delivery terminal.
 
-## 1. Product contract
+Value emerges at the compilation boundary: the smallest valuable change is not
+a second workflow engine, but one deterministic program that preserves the V2
+effect protocol while moving delivery policy out of the mechanism. The two
+jointly shipped slices are therefore (1) program compilation and Kernel
+execution, and (2) standard distribution and surface projection.
+
+## 1. Program architecture
+
+Boatstack is a programmable supervisory control runtime for software delivery,
+with a first-party standard delivery flow. Its dependency direction is:
+
+```text
+kernel contracts
+    ^
+    |-- CoreSystem
+    |-- one PrimaryFlow
+    `-- zero or more Extensions
+              ^
+              |
+       distribution assembly
+              ^
+              |
+        SDK / CLI / hosts
+```
+
+The application assembles one immutable program before resolution:
+
+```text
+CoreSystem + PrimaryFlow + Extensions + RepositoryPolicy
+    -> Compile
+    -> ControlProgram
+    -> Kernel
+    -> observe -> resolve -> admit -> execute -> verify -> receipt -> recover
+```
+
+### Ownership
+
+- **Kernel** is the stable deterministic mechanism. It accepts an explicit
+  compiled program and owns observation orchestration, canonicalization,
+  resolution, admission, effect routing, postcondition verification,
+  journaling, receipts, replay, recovery, and drift refusal. It imports no
+  primary flow, extension implementation, CLI, SDK wrapper, or host renderer.
+- **CoreSystem** declares Boatstack operational capabilities: invocation and
+  repository identity, engagement, runtime, configuration, installation,
+  generic goal identity, transactions, recovery, process events, and external
+  observations.
+- **PrimaryFlow** is exactly one trusted in-process delivery law. It declares
+  goal contracts, facts, transitions, resources, effects, verifiers, recovery,
+  policy projection, and telemetry. The application selects it; repository
+  configuration cannot select an arbitrary executable flow.
+- **StandardFlow** is the first-party primary flow preserving the familiar
+  plan, approval, workspace, gate, evidence, publication, correction, and
+  abandonment behavior.
+- **Extensions** are additive. In-process extensions are trusted compiled Go
+  capabilities constrained by the compiler. Subprocess extensions are trusted
+  executable boundaries using a strict bounded JSON protocol; they are not OS
+  sandboxes. Extensions may add namespaced facts, resources, transitions,
+  recovery, and conjunctive goal obligations, but may not replace the flow,
+  weaken a goal contract, or mutate another owner's state.
+- **Surfaces** assemble or invoke a program and render typed results. They do
+  not decide lifecycle, terminal state, authority, or recovery.
+
+### ControlProgram
+
+`Compile` consumes an explicit CoreSystem definition, one PrimaryFlow manifest,
+zero or more extension manifests, and canonical program-affecting settings. It
+rejects missing or multiple flows, ID collisions, unnamespaced extension IDs,
+overlapping mutable-resource ownership, undeclared effects or verifiers,
+missing recovery contracts, dependency cycles, and goal constraints that are
+not conservative.
+
+The result is immutable and contains one transition registry, one goal-contract
+set, one resource-ownership map, compiled handlers, origin metadata, and one
+content fingerprint. The registry is the only runtime graph. There is no core,
+flow, extension, terminal, or verification shadow graph.
+
+The stable Go authoring and construction boundaries are:
+
+```go
+type FlowDefinition interface {
+    FlowManifest(context.Context) (PrimaryFlowManifest, error)
+}
+
+type Extension interface {
+    ExtensionManifest(context.Context) (ExtensionManifest, error)
+}
+
+func Compile(context.Context, CompileRequest) (ControlProgram, error)
+func NewKernel(externalStateRoot string, program control.ControlProgram) (Kernel, error)
+```
+
+Primary-flow runtime adapters are trusted in-process implementations of
+`FlowRuntime`; this release has no subprocess primary-flow loader. The bounded
+request/response contract gives custom flows immutable projections rather than
+a mutable Kernel object. Every operation has an exact tagged response payload,
+and identity, version, correlation, error classification, and operation type
+are checked at the Kernel boundary.
+
+`sdk.New(...)` assembles CoreSystem plus StandardFlow and repository-scoped
+extensions. `sdk.NewKernel(..., sdk.WithFlow(flow), sdk.WithExtension(...))`
+requires exactly one explicit primary flow and never inserts StandardFlow.
+
+The fingerprint covers the Kernel version; CoreSystem ID, version, manifest,
+and transitions; PrimaryFlow ID, version, manifest, goal contracts, and
+transitions; extension manifests, versions, executable SHA-256 values,
+settings, goal constraints, and transitions; the compiled transition registry;
+resource ownership; verifier and recovery declarations; and canonical
+program-affecting repository policy. In this version that repository projection
+is exactly the checksum-bound extension composition; approval, host, visual,
+and risk policy remain controlling snapshot facts rather than catalog identity.
+The fingerprint is bound into snapshots, admissions,
+flow records, transition receipts, recovery journals, and telemetry. Once a
+flow admits its first transition, a different fingerprint is program drift and
+must fail closed until explicit reconciliation.
+
+### Compiled transition ownership
+
+The current 62-event Standard distribution is classified from compiled
+component declarations:
+
+| Owner | Families | Count |
+| --- | --- | ---: |
+| CoreSystem | `engagement.*`, `invocation.*`, `repository.*`, `runtime.*`, `configuration.*`, `installation.*`, `catalog.*`, `goal.*`, `recovery.*`, `external.*` | 32 |
+| StandardFlow | `plan.*`, `workspace.*`, `gate.*`, `evidence.*`, `delivery.*`, `publication.*` | 30 |
+| Extensions in the default distribution | none | 0 |
+| **Compiled total** | one registry | **62** |
+
+The CoreSystem ownership of `external.*` declares the event vocabulary and
+observation boundary; StandardFlow consumes the bounded publication and
+verification facts without taking ownership of that boundary.
+
+### Selection and terminal contracts
+
+Every transition records its origin, owner, manifest fingerprint, and bounded
+selection class: `SYSTEM_RECOVERY`, `FLOW_RECOVERY`, `EXTENSION_RECOVERY`,
+`GOAL_REQUIRED`, `FLOW_PROGRESS`, `EXPLICIT_ONLY`, or `OBSERVED_EXTERNAL`. Third-party
+extensions cannot supply raw numeric priority. An extension becomes implicitly
+selectable only to discharge an active unmet extension obligation or its own
+recovery contract.
+
+CoreSystem and PrimaryFlow declarations own their selection semantics; the
+compiler never infers ordering from a transition ID or family name. An omitted
+extension selection is bounded to `EXPLICIT_ONLY`, or to
+`EXTENSION_RECOVERY` for an explicitly declared extension recovery. A
+PrimaryFlow recovery manifest lists only recovery transitions owned by that
+flow; cross-component interruption references are resolved only after the one
+compiled registry exists.
+
+Command classification is similarly policy-neutral. A host classifier emits a
+semantic managed operation, and the compiled registry maps that operation to a
+transition through `PolicyContract.ManagedOperations`. A custom program that
+does not claim an operation does not inherit StandardFlow transition IDs.
+
+The five software-delivery goal kinds remain closed. The PrimaryFlow supplies
+the base terminal contract. Extension obligations are conjoined with that
+contract, so for the same base state:
+
+```text
+Terminal(StandardFlow + Extension) subseteq Terminal(StandardFlow)
+```
+
+Only the Kernel evaluates the compiled terminal contract. A flow or extension
+cannot report terminal state directly.
+
+### Observation and effects
+
+Observation is layered in deterministic owner and ID order: core observation,
+PrimaryFlow observation, then extension observations. Owners receive bounded
+immutable projections. Required observer failure remains explicit unresolved,
+blocked, or recovery evidence; it never disappears or becomes false. Snapshot
+identity includes all controlling core, flow, and extension facts plus the
+program fingerprint.
+
+PrimaryFlow and extension responses are validated as exact operation-specific
+unions before their facts, writes, external settlement, or verifier result can
+be interpreted. Classified errors cannot carry success payloads. Subprocess
+extensions additionally use strict JSON with no unknown fields or trailing
+data, and their exact symlink-free executable path and SHA-256 are revalidated
+before every invocation.
+
+The compiled resource map assigns every mutable resource exactly one owner.
+Effect routing rejects undeclared effects, handlers, and writes before any
+mutation. StandardFlow and extension effects still pass through the same exact
+admission, journal, verification, recovery, and Kernel-written receipt path.
+
+### Standard and custom distributions
+
+The default SDK and CLI explicitly assemble `CoreSystem + StandardFlow +
+configured extensions`; users acquire no new configuration burden. A low-level
+SDK constructor requires an explicit PrimaryFlow. A custom application can
+assemble `CoreSystem + another trusted flow + selected extensions` without
+forking Kernel and without parsing CLI output.
+
+```go
+standardClient, err := sdk.New(stateRoot, sdk.WithExtension(extension))
+customClient, err := sdk.NewKernel(
+    stateRoot,
+    sdk.WithFlow(primaryFlow),
+    sdk.WithExtension(extension),
+)
+```
+
+The first form always selects StandardFlow. The second form never inserts it.
+Both clients compile the repository-scoped program and delegate every request
+through `Client.Do`.
+
+The deterministic Kernel test target uses synthetic facts, flows, clocks,
+effects, journals, receipts, and verifiers. One unrelated `START -> VERIFY ->
+TERMINAL` flow proves that Kernel has no dependency on plan, workspace, PR, or
+publication semantics. StandardFlow parity, extension conformance, surface
+parity, and platform integration are separate test layers.
+
+## 2. Product contract
 
 Boatstack is a repository-local supervisory controller for software delivery by
 humans and coding agents. The agent writes software. Boatstack deterministically
@@ -275,13 +489,15 @@ gain event authority merely because they are commands.
 
 ## 7. Transition registry
 
-The initial V2 catalog contains **61 semantic events**. This count is generated
-from code and must remain synchronized with this table.
+The compiled Standard distribution contains **62 semantic events**. This count
+is generated from CoreSystem and StandardFlow declaration bytes and must remain
+synchronized with this table.
 
 | Family | Count | Required IDs |
 | --- | ---: | --- |
 | Invocation and engagement | 6 | `engagement.begin`, `engagement.renew`, `engagement.release`, `invocation.rebind`, `repository.attach`, `repository.detach` |
 | Installation, runtime, configuration | 8 | `runtime.hydrate`, `runtime.replace`, `runtime.reconcile`, `configuration.initialize`, `configuration.mutate`, `configuration.reconcile`, `installation.initialize`, `installation.update` |
+| Catalog identity | 1 | `catalog.reconcile` |
 | Goal and plan | 9 | `goal.configure`, `plan.create`, `plan.validate`, `plan.approve`, `plan.activate`, `plan.amend`, `plan.approve-amendment`, `plan.invalidate`, `plan.abandon` |
 | Workspace | 8 | `workspace.cut`, `workspace.sync`, `workspace.activate`, `workspace.publish`, `workspace.cleanup`, `workspace.reap`, `workspace.abandon`, `workspace.reconcile` |
 | Delivery gates and evidence | 8 | `gate.build.record`, `gate.test.record`, `gate.review.record`, `gate.change.record`, `gate.journey.record`, `evidence.visual.attach`, `evidence.approval.revoke`, `delivery.slice.advance` |
@@ -306,6 +522,9 @@ prescription. The registry is executable runtime authority, not a shadow model.
 The checked [catalog table](boatstack-v2-transition-catalog.md) and
 [Mermaid graph](boatstack-v2-transition-catalog.mmd) are deterministic
 projections of this registry. Golden tests reject either artifact when it drifts.
+The checked [StandardFlow graph](boatstack-standard-flow.mmd) filters that same
+compiled registry by primary-flow origin and contains exactly 30 transitions;
+it is not an independently maintained graph.
 
 ## 8. Supervisory control law
 
@@ -470,17 +689,21 @@ Dependencies point downward in this table and are acyclic.
 | Package | Owns | Public boundary and verifier | Allowed dependencies | Forbidden dependencies |
 | --- | --- | --- | --- | --- |
 | `internal/kernel/model` | typed facts, identity, snapshot, goal, fingerprints | constructors/canonical encoding; schema and invariant tests | standard library | plant, effects, surfaces, facade |
-| `internal/kernel/catalog` | 61 transition declarations and catalog invariants | read-only registry; uniqueness/completeness/reachability verifier | model | effects implementations, surfaces |
-| `internal/kernel/supervisor` | admissible-set and deterministic outcome law | pure `Resolve`; exhaustive reachable-state/property tests | model, catalog | I/O, effects, surfaces |
+| `control` | stable CoreSystem, PrimaryFlow, Extension, and immutable ControlProgram compiler contracts | strict manifests, conservative extension compilation, fingerprints, ownership map | kernel contracts | concrete distribution or surfaces |
+| `core` | 32 operational-capability transition declarations | embedded strict declaration bytes through `CoreManifest` | control contracts | StandardFlow, extensions, surfaces |
+| `flow/standard` | 30 first-party delivery transitions and five base goal contracts | `standard.Definition()` plus default-flow parity, historical, ownership, and completeness tests | control contracts and model vocabulary | Kernel mechanism, CLI, host rendering, SDK |
+| `extension/*` | additive in-process and checksum-bound subprocess capabilities | strict extension manifests and bounded runtime protocol | control contracts | Kernel state, admissions, receipts, foreign resources |
+| `internal/kernel/catalog` | transition, registry, and goal-contract mechanism and invariants | read-only registry; uniqueness and recovery-reference validation | model | CoreSystem or StandardFlow declarations, effects, surfaces |
+| `internal/kernel/supervisor` | admissible-set and deterministic outcome law | pure `Resolve`; synthetic mechanism tests through the engine, with StandardFlow parity outside Kernel packages | model, catalog | I/O, effects, surfaces |
 | `internal/kernel/protocol` | prescriptions, admission, receipts, recovery records | typed codecs and content identity verifier | model, catalog | concrete I/O and surfaces |
 | `internal/kernel/durable` | strict machine-state and detached-binding codecs | canonical encode/decode and invariant validation | model, catalog | observation, effects, surfaces |
 | `internal/kernel/ports` | observer, clock, lock, journal, local/external effect ports | compile-time narrow interfaces and fakes | model, protocol | concrete adapters |
-| `internal/kernel/reducer` | the sole durable lifecycle reduction for admitted controllable events | `Apply` plus exhaustive catalog coverage tests | model, catalog, durable, protocol | I/O, plant, surfaces |
 | `internal/kernel/engine` | observe-resolve-admit-execute-reobserve-verify-record orchestration | `Resolve`, `Apply`, `Recover`; protocol/conformance tests | model, catalog, supervisor, protocol, ports | concrete surfaces and host logic |
 | `internal/plant` | Git/worktree identity, layout, configuration, runtime, durable-state and journal observation | one read-only composite observer; fact/fingerprint fixtures | model, protocol, ports, durable codecs | engine decisions, mutating effects, surfaces |
-| `internal/effects` | transactions, local/external effect drivers and recovery | port implementations; fault-injection/postcondition tests | model, catalog, durable, protocol, ports, reducer, shared supervisor command classifier | surfaces and independent lifecycle reduction |
+| `internal/effects` | transactions, local/external effect drivers, trusted StandardFlow native state adapters, and recovery | port implementations; exhaustive admitted-reducer coverage; fault-injection/postcondition tests | model, catalog, durable, protocol, ports, shared supervisor command classifier | surfaces and any decision graph independent of the compiled registry |
 | `internal/surfaces` | request decoding and decision/prescription rendering | CLI/hook/host/SDK/MCP adapter protocol; golden parity tests | model, protocol, engine facade interfaces | plant/effect implementations, lifecycle logic |
-| top-level `boatstack` | product construction and stable V2 facade | dependency injection and public operations; end-to-end tests | engine, plant, effects, surfaces | independent durable state or alternate decisions |
+| top-level `boatstack` | stable Kernel facade over one explicit ControlProgram | dependency injection and public operations; end-to-end tests | control, engine, plant, effects, surfaces | StandardFlow, distribution assembly, independent durable state or alternate decisions |
+| `distribution` | Standard distribution composition and repository-scoped extension assembly | `StandardProgram` and `StandardProgramForRepository` | CoreSystem, StandardFlow, verified extensions, control | mutable global program state |
 | `cmd/boatstack-helper` | process startup and command parsing | parse -> facade request -> render; command tests | top-level facade/surfaces | direct plant writes or workflow decisions |
 | `sdk` | public Go aliases and client | schema-2 request/response and one facade delegate | top-level facade and public aliases | internal decision or effect implementations |
 | `analysis` | passive retrospective API | bounded deterministic report | `internal/retromine` | lifecycle decisions or managed writes |
@@ -609,9 +832,9 @@ Capability analysis records three separate dispositions without modifying Locus:
 
 The executable registry now deterministically generates the checked
 [safety model](boatstack-v2-locus-safety.json) and
-[liveness model](boatstack-v2-locus-liveness.json). Both contain exactly the 61
+[liveness model](boatstack-v2-locus-liveness.json). Both contain exactly the 62
 runtime events. The liveness abstraction expands the declared phase predicates
-to 363 inferred stable-phase edges over eight reachable phases; the safety
+to 427 inferred stable-phase edges over eight reachable phases; the safety
 model adds one guarded counterfactual edge and `UNADMITTED_EFFECT` state.
 Repository and Go tests reject byte drift or an alphabet mismatch.
 
@@ -619,33 +842,31 @@ Observed Locus runs over those generated artifacts produced:
 
 | Claim/operator | Postimplementation result | Disposition |
 | --- | --- | --- |
-| `verification.safety-reachability` | `UNADMITTED_EFFECT` is unreachable; result `res-e90ff62f70169697c81e851f44fc4f423a0c26ca2d589f69b59b663200f4913e` | accepted finite-model result; advisory claim |
-| `verification.guard-essentiality` | `exact-admission` is essential; removing it admits `DORMANT --publication.execute--> UNADMITTED_EFFECT`; result `res-b095833a4f708aedec42f62f3c10ab9634ae102e88f31522ca4aa97f1d6c2481` | accepted finite-model result; advisory claim |
-| `control.nonblockingness` | all eight reachable stable phases are coreachable; no blocking states; result `res-f8ca50706925277190a6c0fba49a3ac44665d0a894203ea88c321434a7a4e549` | accepted finite-model result; advisory claim |
-| event-completeness obligation | source inventory, sole reducer, generated-model parity, and repository-contract refusing tests were accepted as complete | closes the declared event alphabet obligation |
+| `verification.trace-refinement` | the programmable ControlProgram protocol refines the preimplementation Kernel protocol with no distinguishing trace | accepted finite-model result; advisory claim |
+| `verification.conservative-feature-extension` | the reference release-note extension is conservative across all six checks with no violation | accepted bounded-extension result; advisory claim |
+| `verification.safety-reachability` | `UNADMITTED_EFFECT` is unreachable; result `res-6e8d6372eea4a7aaf2fcfa8ce5fcc91271b1f99a208f34006ba952d9825343a1` | accepted finite-model result; advisory claim |
+| `verification.guard-essentiality` | `exact-admission` is essential; removing it admits `DORMANT --publication.execute--> UNADMITTED_EFFECT`; result `res-10a40fec10fa47086e1e5ef83ee3434cffb461e30166961e4cc18d08812f2caa` | accepted finite-model result; advisory claim |
+| `control.nonblockingness` | all eight reachable stable phases are coreachable; no blocking states; result `res-a6a465d2e50cd830e0b95777f631ca9254d475757a6941c4d6922b2b7ff701f4` | accepted finite-model result; advisory claim |
+| `practice.zca-projection` | both shipped slices cover all nine declared facets and all 14 bounded Go-module sites | accepted source-bound projection; no runtime authority granted |
+| declared-slice completeness | every declared event-completeness obligation and the conservative-extension facet obligation were accepted as complete | closes the modeled source, writer, command, lifecycle, reducer, and generated-artifact inventories |
 
-Safety/guard derivation
-`drv-bfc66012cb01e28ea3e1ef7407acf433d2340a166a14a4120a09a27fc77f1859`
-and liveness derivation
-`drv-a9534324fdc7e93fcfba3fd6919cbe9513a7dff9e97428f66f46b5489c39c9a4`
-remain advisory because the applicable Locus operators are currently candidate
-capabilities and because the model deliberately names real-system unknowns.
-The verified liveness frontier returned `current_claim: advisory`,
-`termination: blocked`, and no `EvidenceAction`; there is no honest additional
-action to invent inside V2.
+The content-addressed Locus results and derivations are archived in Observatory.
+They remain advisory because each model deliberately names facts outside its
+bounded source slice rather than treating them as assumptions.
 
-This closes the finite stable-phase abstraction, not the whole live system.
-The source-phase by target-phase expansion is conservative. Exact 17-facet
-predicates, reducer branches, operating-system interruption behavior, and
-external-provider truth are separately closed by executable unit, fault,
-integration, historical, repository, and platform tests.
+This closes the finite stable-phase abstraction and the declared Go-module
+event surface, not every possible host integration. The source-phase by
+target-phase expansion is conservative. Exact 18-facet predicates, reducer
+branches, arbitrary third-party extension executables, fresh coding-host
+execution, operating-system interruption behavior, and external-provider truth
+remain executable integration evidence rather than whole-host formal proof.
 
 ## 18. Complete V2 replacement work order
 
 This is one atomic branch and one final PR. The order controls build safety, not
 rollout compatibility.
 
-1. Freeze this specification against base `c5b5e10...` and record historical
+1. Freeze this specification against base `f7a5c9d1f2d15057f484371f348ee57311c0155e` and record historical
    fixtures.
 2. Add slice 1 model, catalog, supervisor, protocol, ports, engine, generated
    graph, and formal/property tests.

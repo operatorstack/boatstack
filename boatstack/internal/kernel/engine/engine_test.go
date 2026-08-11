@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -13,9 +14,24 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/supervisor"
 )
 
 type fixedClock struct{ now time.Time }
+
+const syntheticProgramFingerprint = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+func syntheticGoalContracts(t *testing.T) catalog.GoalContracts {
+	t.Helper()
+	contracts, err := catalog.NewGoalContracts([]catalog.GoalContract{{
+		GoalKind:   model.GoalVerified,
+		Conditions: []catalog.FacetCondition{{Facet: model.FacetName("test.synthetic.stage"), Statuses: []model.FactStatus{model.FactKnown}, Values: []string{"terminal"}}},
+	}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return contracts
+}
 
 func (c fixedClock) Now() time.Time { return c.now }
 
@@ -41,6 +57,12 @@ func (o *sequenceObserver) Observe(context.Context, ports.ObservationRequest) (m
 	item := o.items[0]
 	o.items = o.items[1:]
 	return item, nil
+}
+
+type failingObserver struct{ err error }
+
+func (o failingObserver) Observe(context.Context, ports.ObservationRequest) (model.Observation, error) {
+	return model.Observation{}, o.err
 }
 
 type fakeLock struct{ released bool }
@@ -82,6 +104,7 @@ func (j *fakeJournal) RequireRecovery(context.Context, string, string) error {
 type fakeEffects struct {
 	executions, rollbacks int
 	result                ports.EffectResult
+	err                   error
 }
 
 func (e *fakeEffects) Prepare(context.Context, protocol.Admission, catalog.Transition) (ports.PreparedEffect, error) {
@@ -93,7 +116,7 @@ func (e *fakeEffects) VerificationInvocation() (model.InvocationContext, bool) {
 }
 func (e *fakeEffects) Execute(context.Context) (ports.EffectResult, error) {
 	e.executions++
-	return e.result, nil
+	return e.result, e.err
 }
 func (e *fakeEffects) Rollback(context.Context) error {
 	e.rollbacks++
@@ -128,6 +151,12 @@ func (s *memoryReceipts) Append(_ context.Context, receipt protocol.TransitionRe
 func observation(phase model.ProtocolPhase, fingerprint string) model.Observation {
 	e := model.Evidence{Source: "fixture", Fingerprint: fingerprint, ObservedAt: time.Unix(20, 0).UTC()}
 	configurationEvidence := model.Evidence{Source: "configuration:/repo/.boatstack/project.json", Fingerprint: "config-fingerprint", ObservedAt: time.Unix(20, 0).UTC()}
+	stage := "start"
+	if phase == model.PhaseActive {
+		stage = "terminal"
+	} else if phase == model.PhaseRecovery {
+		stage = "verify"
+	}
 	return model.Observation{
 		SchemaVersion: model.SnapshotSchemaVersion,
 		Invocation:    model.InvocationContext{RepositoryID: "repo", GitCommonID: "git", WorktreeID: "wt", Ref: "refs/heads/f", ControllerID: "ctl", InvokingPath: fixtureAbsolutePath("test-fixture", "repo"), RuntimePath: fixtureAbsolutePath("test-fixture", "runtime"), RuntimeFingerprint: "runtime", Topology: model.TopologyEmbedded, Host: "cli", Correlation: "corr"},
@@ -137,6 +166,7 @@ func observation(phase model.ProtocolPhase, fingerprint string) model.Observatio
 		Publication:         model.Known(model.PublicationNone, e), Verification: model.Known(model.VerificationUnverified, e), Recovery: model.Known(model.RecoveryNone, e),
 		Transaction: model.Known(model.TransactionNone, e), RecoveryInfo: model.Absent[model.RecoveryContext]("none", e), TransactionInfo: model.Absent[model.TransactionContext]("none", e),
 		Terminal: model.Known(model.TerminalNonterminal, e), Goal: model.Known(model.Goal{ID: "goal", Kind: model.GoalVerified, DeliveryID: "delivery"}, e), ObservedAt: time.Unix(20, 0).UTC(),
+		FlowFacts: map[string]model.Fact[string]{"test.synthetic.stage": model.Known(stage, e)},
 	}
 }
 
@@ -155,6 +185,10 @@ func recoveryObservation(fingerprint string) model.Observation {
 }
 
 func testRegistry(t *testing.T) catalog.Registry {
+	return testRegistryWithAdvanceClass(t, catalog.EventOwnedLocal)
+}
+
+func testRegistryWithAdvanceClass(t *testing.T, class catalog.EventClass) catalog.Registry {
 	t.Helper()
 	identity := []string{"repository-id", "git-common-id", "worktree-id"}
 	interruption := func(recovery catalog.TransitionID) catalog.InterruptionContract {
@@ -164,17 +198,27 @@ func testRegistry(t *testing.T) catalog.Registry {
 			Recovery: recovery, RecoveryAuthority: "test-authority", ResumptionPredicate: "test-resumption",
 		}
 	}
+	authority := []catalog.AuthorityClass{catalog.AuthorityRepository}
+	localEffects := []catalog.EffectID{"test.advance"}
+	var externalEffects []catalog.EffectID
+	if class == catalog.EventOwnedExternal {
+		authority = []catalog.AuthorityClass{catalog.AuthorityHuman}
+		localEffects = nil
+		externalEffects = []catalog.EffectID{"test.advance"}
+	}
 	r, err := catalog.New([]catalog.Transition{{
-		ID: "test.advance", Version: 1, Class: catalog.EventOwnedLocal,
+		ID: "test.advance", Version: 1, Class: class,
+		Origin: catalog.TransitionOrigin{Kind: catalog.OriginPrimaryFlow, ID: "test.synthetic", Version: "1.0.0", ManifestFingerprint: syntheticProgramFingerprint}, Owner: "test.synthetic", SelectionClass: catalog.SelectionFlowProgress,
 		SourcePhases: []model.ProtocolPhase{model.PhaseObserved}, TargetPhases: []model.ProtocolPhase{model.PhaseActive},
-		RequiredIdentity: identity, Authority: []catalog.AuthorityClass{catalog.AuthorityRepository}, RequiredEvidence: []string{"snapshot"}, OwnedResources: []string{"state"}, Effect: "test.advance", LocalEffects: []catalog.EffectID{"test.advance"}, Idempotent: true,
+		RequiredIdentity: identity, Authority: authority, RequiredEvidence: []string{"snapshot"}, OwnedResources: []string{"state"}, Effect: "test.advance", LocalEffects: localEffects, ExternalEffects: externalEffects, Idempotent: true,
 		Prescription: catalog.Prescription{Operation: "test.advance", ExpectedPostcondition: "active"}, SourcePredicate: "observed", AdmissionPredicate: "exact-admission", TargetPredicate: "active", Verifier: "fresh-active",
-		SourceConditions: []catalog.FacetCondition{{Facet: model.FacetEngagement, Statuses: []model.FactStatus{model.FactKnown}, Values: []string{string(model.EngagementActive)}}},
-		TargetConditions: []catalog.FacetCondition{{Facet: model.FacetEngagement, Statuses: []model.FactStatus{model.FactKnown}, Values: []string{string(model.EngagementActive)}}},
+		SourceConditions: []catalog.FacetCondition{{Facet: model.FacetName("test.synthetic.stage"), Statuses: []model.FactStatus{model.FactKnown}, Values: []string{"start"}}},
+		TargetConditions: []catalog.FacetCondition{{Facet: model.FacetName("test.synthetic.stage"), Statuses: []model.FactStatus{model.FactKnown}, Values: []string{"terminal"}}},
 		Interruption:     interruption("test.recover"), Reversibility: catalog.Reversible, TerminalEffect: "none",
 		PrivacyClassification: "metadata-only", TelemetryClassification: "transition-receipt", CostClass: "test", Priority: 1,
 	}, {
 		ID: "test.recover", Version: 1, Class: catalog.EventRecovery,
+		Origin: catalog.TransitionOrigin{Kind: catalog.OriginPrimaryFlow, ID: "test.synthetic", Version: "1.0.0", ManifestFingerprint: syntheticProgramFingerprint}, Owner: "test.synthetic", SelectionClass: catalog.SelectionFlowRecovery,
 		SourcePhases: []model.ProtocolPhase{model.PhaseRecovery}, TargetPhases: []model.ProtocolPhase{model.PhaseFrontier},
 		RequiredIdentity: identity, Authority: []catalog.AuthorityClass{catalog.AuthorityRepository}, RequiredEvidence: []string{"snapshot"}, OwnedResources: []string{"state"}, Effect: "test.recover", LocalEffects: []catalog.EffectID{"test.recover"}, Idempotent: true,
 		Prescription: catalog.Prescription{Operation: "test.recover", ExpectedPostcondition: "frontier"}, SourcePredicate: "recovery", AdmissionPredicate: "exact-recovery-admission", TargetPredicate: "frontier", Verifier: "fresh-frontier",
@@ -197,12 +241,45 @@ func request(now time.Time) ApplyRequest {
 	}, FlowID: "flow", AdmissionLifetime: time.Minute}
 }
 
+func TestRequiredObserverFailureReturnsTypedUnresolvedDecision(t *testing.T) {
+	// control-law: required-observation-failure-is-a-typed-fail-closed-decision
+	now := time.Unix(30, 0).UTC()
+	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{}, &memoryReceipts{}, &fakeLock{}
+	kernel, err := New(
+		testRegistry(t), syntheticGoalContracts(t), syntheticProgramFingerprint,
+		failingObserver{err: errors.New("observer unavailable")}, fixedClock{now},
+		fakeLocker{lock}, journal, effects, receipts,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resolved, resolveErr := kernel.Resolve(context.Background(), request(now).ResolveRequest)
+	if resolveErr == nil || !strings.Contains(resolveErr.Error(), "observer unavailable") {
+		t.Fatalf("resolve error = %v, want observer failure", resolveErr)
+	}
+	if resolved.Decision.Kind != supervisor.DecisionUnresolved || resolved.Decision.Reason != "required observation failed" {
+		t.Fatalf("resolve decision = %+v, want typed UNRESOLVED", resolved.Decision)
+	}
+
+	applied, applyErr := kernel.Apply(context.Background(), request(now))
+	if applyErr == nil || !strings.Contains(applyErr.Error(), "observer unavailable") {
+		t.Fatalf("apply error = %v, want observer failure", applyErr)
+	}
+	if applied.Decision.Kind != supervisor.DecisionUnresolved || applied.Decision.Reason != "required observation failed" {
+		t.Fatalf("apply decision = %+v, want typed UNRESOLVED", applied.Decision)
+	}
+	if effects.executions != 0 || journal.begun != 0 || len(receipts.values) != 0 {
+		t.Fatalf("observer failure crossed mutation boundary: effects=%d journal=%d receipts=%d", effects.executions, journal.begun, len(receipts.values))
+	}
+}
+
 func TestApplyCrossesAdmissionEffectVerificationAndReceiptBoundary(t *testing.T) {
-	// control-law: managed-effect-requires-exact-admission-and-postcondition
+	// control-law: synthetic-flow-crosses-exact-admission-and-postcondition-without-standard-flow
 	now := time.Unix(30, 0).UTC()
 	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source"), observation(model.PhaseActive, "target"), observation(model.PhaseActive, "target")}}
 	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{result: ports.EffectResult{Settlement: ports.EffectSettled}}, &memoryReceipts{}, &fakeLock{}
-	kernel, err := New(testRegistry(t), observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
+	kernel, err := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,6 +301,46 @@ func TestApplyCrossesAdmissionEffectVerificationAndReceiptBoundary(t *testing.T)
 	}
 }
 
+func TestSyntheticStartVerifyTerminalContractNeedsNoStandardFlowFacet(t *testing.T) {
+	// control-law: kernel-terminal-is-defined-only-by-the-compiled-primary-flow-contract
+	goal := model.Goal{ID: "goal", Kind: model.GoalVerified, DeliveryID: "delivery"}
+	source, err := model.CanonicalizeForProgram(observation(model.PhaseObserved, "source"), syntheticProgramFingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	syntheticSupervisor := supervisor.New(testRegistry(t), syntheticGoalContracts(t))
+	one := syntheticSupervisor.Resolve(source, goal, catalog.AuthoritySet{catalog.AuthorityRepository: true}, "")
+	two := syntheticSupervisor.Resolve(source, goal, catalog.AuthoritySet{catalog.AuthorityRepository: true}, "")
+	if !reflect.DeepEqual(one, two) || one.Kind != supervisor.DecisionPrescribed || one.Transition == nil || one.Transition.ID != "test.advance" {
+		t.Fatalf("synthetic resolution is not deterministic: one=%+v two=%+v", one, two)
+	}
+	outside := syntheticSupervisor.Resolve(source, goal, catalog.AuthoritySet{catalog.AuthorityRepository: true}, "not.compiled")
+	if outside.Kind != supervisor.DecisionRefused || outside.Transition != nil {
+		t.Fatalf("transition outside compiled program was not refused: %+v", outside)
+	}
+
+	observed := observation(model.PhaseActive, "target")
+	evidence := observed.Phase.Evidence[0]
+	observed.Plan = model.Known(model.PlanAbsent, evidence)
+	observed.Workspace = model.Known(model.WorkspaceAbsent, evidence)
+	observed.Delivery = model.Known(model.DeliveryPlanning, evidence)
+	target, err := model.CanonicalizeForProgram(observed, syntheticProgramFingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision := syntheticSupervisor.Resolve(target, goal, nil, "")
+	if decision.Kind != supervisor.DecisionTerminal {
+		t.Fatalf("synthetic terminal decision = %+v", decision)
+	}
+	withoutContract := supervisor.New(testRegistry(t), catalog.GoalContracts{}).Resolve(target, goal, nil, "")
+	if withoutContract.Kind == supervisor.DecisionTerminal {
+		t.Fatalf("synthetic state terminated without a compiled flow goal contract: %+v", withoutContract)
+	}
+	if target.Terminal.Value != model.TerminalNonterminal || target.Plan.Value != model.PlanAbsent || target.Publication.Value != model.PublicationNone {
+		t.Fatalf("fixture unexpectedly relied on StandardFlow terminal state: %+v", target)
+	}
+}
+
 func TestIdempotencyReceiptCannotHideUncommittedRecoveryJournal(t *testing.T) {
 	// control-law: receipt-before-journal-commit-is-not-a-clean-replay
 	now := time.Unix(30, 0).UTC()
@@ -232,7 +349,7 @@ func TestIdempotencyReceiptCannotHideUncommittedRecoveryJournal(t *testing.T) {
 		recoveryObservation("recovery"),
 	}}
 	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{result: ports.EffectResult{Settlement: ports.EffectSettled}}, &memoryReceipts{}, &fakeLock{}
-	kernel, err := New(testRegistry(t), observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
+	kernel, err := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +374,7 @@ func TestApplyRejectsSnapshotDriftBeforeEffect(t *testing.T) {
 	now := time.Unix(30, 0).UTC()
 	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "drifted")}}
 	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{}, &memoryReceipts{}, &fakeLock{}
-	kernel, _ := New(testRegistry(t), observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
+	kernel, _ := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
 	_, err := kernel.Apply(context.Background(), request(now))
 	var stale StaleAdmissionError
 	if !errors.As(err, &stale) {
@@ -273,7 +390,7 @@ func TestApplyRollsBackFailedPostconditionAndDoesNotReceipt(t *testing.T) {
 	now := time.Unix(30, 0).UTC()
 	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "unchanged")}}
 	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{result: ports.EffectResult{Settlement: ports.EffectSettled}}, &memoryReceipts{}, &fakeLock{}
-	kernel, _ := New(testRegistry(t), observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
+	kernel, _ := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
 	_, err := kernel.Apply(context.Background(), request(now))
 	var postcondition PostconditionError
 	if !errors.As(err, &postcondition) {
@@ -290,7 +407,7 @@ func TestApplyRequiresRecoveryWhenJournalFailsAfterEffect(t *testing.T) {
 	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source")}}
 	journal := &fakeJournal{failMark: "verifying"}
 	effects, receipts, lock := &fakeEffects{result: ports.EffectResult{Settlement: ports.EffectSettled}}, &memoryReceipts{}, &fakeLock{}
-	kernel, _ := New(testRegistry(t), observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
+	kernel, _ := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
 	_, err := kernel.Apply(context.Background(), request(now))
 	if err == nil || !strings.Contains(err.Error(), "injected journal mark failure") {
 		t.Fatalf("error=%v, want injected post-effect journal failure", err)
@@ -305,7 +422,7 @@ func TestApplyPreservesUnknownExternalOutcomeForReconciliation(t *testing.T) {
 	now := time.Unix(30, 0).UTC()
 	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "unchanged")}}
 	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{result: ports.EffectResult{Settlement: ports.EffectUnknown}}, &memoryReceipts{}, &fakeLock{}
-	kernel, _ := New(testRegistry(t), observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
+	kernel, _ := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
 	_, err := kernel.Apply(context.Background(), request(now))
 	var unknown ExternalOutcomeUnknownError
 	if !errors.As(err, &unknown) {
@@ -313,5 +430,27 @@ func TestApplyPreservesUnknownExternalOutcomeForReconciliation(t *testing.T) {
 	}
 	if effects.executions != 1 || effects.rollbacks != 0 || journal.recovery != 1 || len(receipts.values) != 0 {
 		t.Fatalf("external uncertainty was not preserved: effects=%+v journal=%+v receipts=%d", effects, journal, len(receipts.values))
+	}
+}
+
+func TestOwnedExternalExecutionErrorRequiresRecoveryWithoutRollback(t *testing.T) {
+	// control-law: a returned transport error cannot prove an external effect did not settle
+	now := time.Unix(30, 0).UTC()
+	registry := testRegistryWithAdvanceClass(t, catalog.EventOwnedExternal)
+	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source")}}
+	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{err: context.DeadlineExceeded}, &memoryReceipts{}, &fakeLock{}
+	kernel, err := New(registry, syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apply := request(now)
+	apply.Authority.Receipts[0].Class = catalog.AuthorityHuman
+	_, err = kernel.Apply(context.Background(), apply)
+	var unknown ExternalOutcomeUnknownError
+	if !errors.As(err, &unknown) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("error=%v, want unknown external outcome joined with deadline", err)
+	}
+	if effects.executions != 1 || effects.rollbacks != 0 || journal.recovery != 1 || journal.aborted != 0 || len(receipts.values) != 0 {
+		t.Fatalf("ambiguous external error was collapsed: effects=%+v journal=%+v receipts=%d", effects, journal, len(receipts.values))
 	}
 }

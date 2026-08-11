@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
+	"github.com/operatorstack/boatstack/boatstack/internal/testprogram"
 )
 
 type boundaryRunner struct {
@@ -57,7 +57,7 @@ func TestConfiguredBuildCommandMustPassBeforeGateInstallation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	transition, _ := catalog.Default().Lookup("gate.build.record")
+	transition, _ := testprogram.StandardRegistry().Lookup("gate.build.record")
 	_, err = boundary.Execute(context.Background(), protocol.Admission{}, transition, writeBoundaryConfig(t, "go test ./..."), durable.State{})
 	if err == nil || runner.calls != 1 {
 		t.Fatalf("failed configured command result: err=%v calls=%d", err, runner.calls)
@@ -73,7 +73,7 @@ func TestConfiguredBuildCommandCannotCrossConstitutionalGuard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	transition, _ := catalog.Default().Lookup("gate.build.record")
+	transition, _ := testprogram.StandardRegistry().Lookup("gate.build.record")
 	_, err = boundary.Execute(context.Background(), protocol.Admission{}, transition, writeBoundaryConfig(t, "git reset --hard HEAD~1"), durable.State{})
 	if err == nil || runner.calls != 0 {
 		t.Fatalf("protected configured command result: err=%v calls=%d", err, runner.calls)
@@ -86,7 +86,7 @@ func TestPublicationObservationTerminatesOptionsBeforeIdentifier(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	transition, _ := catalog.Default().Lookup("publication.observe")
+	transition, _ := testprogram.StandardRegistry().Lookup("publication.observe")
 	admission := protocol.Admission{
 		Invocation: model.InvocationContext{Ref: "refs/heads/feature"}, SourceRevision: "revision",
 		Parameters: protocol.Parameters{{Name: "publication_id", Value: "-dangerous"}},
@@ -108,7 +108,7 @@ func TestPublicationObservationTerminatesOptionsBeforeIdentifier(t *testing.T) {
 func TestPublicationObservationRejectsUnrelatedProviderIdentity(t *testing.T) {
 	runner := &boundaryRunner{output: []byte(`{"state":"OPEN","url":"https://example.invalid/pull/8","number":8,"baseRefName":"main","headRefName":"other","headRefOid":"revision","isCrossRepository":false}`)}
 	boundary, _ := NewNativeBoundaryWithRunner(runner)
-	transition, _ := catalog.Default().Lookup("publication.observe")
+	transition, _ := testprogram.StandardRegistry().Lookup("publication.observe")
 	admission := protocol.Admission{
 		Invocation: model.InvocationContext{Ref: "refs/heads/feature"}, SourceRevision: "revision",
 		Parameters: protocol.Parameters{{Name: "publication_id", Value: "8"}},
@@ -156,7 +156,7 @@ func TestPublicationPreviewRejectsFieldTamperingUnderAnOldFingerprint(t *testing
 func TestPublicationCorrectionRejectsBodyDriftBeforeProviderCall(t *testing.T) {
 	runner := &boundaryRunner{}
 	boundary, _ := NewNativeBoundaryWithRunner(runner)
-	transition, _ := catalog.Default().Lookup("publication.correct")
+	transition, _ := testprogram.StandardRegistry().Lookup("publication.correct")
 	layout := writeBoundaryConfig(t, "go test ./...")
 	bodyPath := filepath.Join(layout.RepositoryRoot, "body.md")
 	if err := os.WriteFile(bodyPath, []byte("changed"), 0o600); err != nil {

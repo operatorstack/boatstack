@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/operatorstack/boatstack/boatstack/control"
 	"github.com/operatorstack/boatstack/boatstack/internal/effects"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/engine"
@@ -25,51 +26,58 @@ var (
 	ChecksumsSHA256 = "development"
 )
 
-// V2Kernel is a product facade over the authoritative engine and its concrete
-// plant/effect ports. It owns no independent durable or lifecycle state.
-type V2Kernel struct {
+// Kernel is the deterministic mechanism facade over one immutable compiled
+// ControlProgram and its concrete plant/effect ports. It owns no independent
+// delivery-flow policy or durable lifecycle state.
+type Kernel struct {
+	program  control.ControlProgram
 	registry catalog.Registry
 	resolver plant.Resolver
-	observer plant.Observer
+	observer ports.Observer
 	engine   engine.Engine
 	clock    effects.Clock
 }
 
-func NewV2Kernel(externalStateRoot string) (V2Kernel, error) {
+func NewKernel(externalStateRoot string, program control.ControlProgram) (Kernel, error) {
+	if program.Fingerprint() == "" || program.TransitionCount() == 0 {
+		return Kernel{}, fmt.Errorf("Kernel requires an immutable compiled ControlProgram")
+	}
 	clock := effects.Clock{}
 	resolver, err := plant.NewResolver(externalStateRoot)
 	if err != nil {
-		return V2Kernel{}, err
+		return Kernel{}, err
 	}
-	observer, err := plant.NewObserver(resolver, clock)
+	baseObserver, err := plant.NewObserver(resolver, clock)
 	if err != nil {
-		return V2Kernel{}, err
+		return Kernel{}, err
 	}
+	observer := programObserver{base: baseObserver, program: program}
 	locker, err := effects.NewLocker(resolver)
 	if err != nil {
-		return V2Kernel{}, err
+		return Kernel{}, err
 	}
 	journal, err := effects.NewJournal(resolver, clock)
 	if err != nil {
-		return V2Kernel{}, err
+		return Kernel{}, err
 	}
 	receipts, err := effects.NewReceiptStore(resolver, clock)
 	if err != nil {
-		return V2Kernel{}, err
+		return Kernel{}, err
 	}
-	driver, err := effects.NewDriver(resolver, clock, effects.NewNativeBoundary())
+	baseDriver, err := effects.NewProgramDriver(resolver, clock, effects.NewNativeBoundary(), program.ResourceOwnership())
 	if err != nil {
-		return V2Kernel{}, err
+		return Kernel{}, err
 	}
-	registry := catalog.Default()
-	runtimeEngine, err := engine.New(registry, observer, clock, locker, journal, driver, receipts)
+	driver := programEffectDriver{base: baseDriver, program: program}
+	registry := program.RuntimeRegistry()
+	runtimeEngine, err := engine.New(registry, program.RuntimeGoalContracts(), program.Fingerprint(), observer, clock, locker, journal, driver, receipts)
 	if err != nil {
-		return V2Kernel{}, err
+		return Kernel{}, err
 	}
-	return V2Kernel{registry: registry, resolver: resolver, observer: observer, engine: runtimeEngine, clock: clock}, nil
+	return Kernel{program: program, registry: registry, resolver: resolver, observer: observer, engine: runtimeEngine, clock: clock}, nil
 }
 
-func (k V2Kernel) Handle(ctx context.Context, request surfaces.Request) (surfaces.Response, error) {
+func (k Kernel) Handle(ctx context.Context, request surfaces.Request) (surfaces.Response, error) {
 	response := surfaces.Response{SchemaVersion: surfaces.SchemaVersion, Operation: request.Operation}
 	if err := request.Validate(k.clock.Now()); err != nil {
 		response.Error = err.Error()
@@ -78,6 +86,14 @@ func (k V2Kernel) Handle(ctx context.Context, request surfaces.Request) (surface
 	if request.Operation == surfaces.OperationCatalog {
 		response.Catalog = k.registry.All()
 		return response, nil
+	}
+	if request.Operation == surfaces.OperationRecover {
+		transition, ok := k.registry.Lookup(request.TransitionID)
+		if !ok || transition.Class != catalog.EventRecovery {
+			err := fmt.Errorf("recover operation requires a recovery transition from the compiled control program")
+			response.Error = err.Error()
+			return response, err
+		}
 	}
 	invocation, err := k.resolver.ResolveInvocation(ctx, request.Repository, request.Host, request.CorrelationID)
 	if err != nil {
@@ -94,18 +110,26 @@ func (k V2Kernel) Handle(ctx context.Context, request surfaces.Request) (surface
 	switch request.Operation {
 	case surfaces.OperationResolve:
 		resolution, resolveErr := k.engine.Resolve(ctx, engine.ResolveRequest{Invocation: invocation, Goal: request.Goal, Authority: request.Authority, Requested: request.TransitionID})
+		response.Goal, response.Decision = resolution.Goal, &resolution.Decision
+		if resolution.Snapshot.Fingerprint != "" {
+			response.Snapshot = &resolution.Snapshot
+		}
 		if resolveErr != nil {
 			response.Error = resolveErr.Error()
 			return response, resolveErr
 		}
-		response.Goal, response.Snapshot, response.Decision = resolution.Goal, &resolution.Snapshot, &resolution.Decision
 		return response, nil
 	case surfaces.OperationApply, surfaces.OperationRecover:
 		result, applyErr := k.engine.Apply(ctx, engine.ApplyRequest{
 			ResolveRequest: engine.ResolveRequest{Invocation: invocation, Goal: request.Goal, Authority: request.Authority, Requested: request.TransitionID},
 			FlowID:         request.FlowID, Parameters: request.Parameters, IdempotencyKey: request.IdempotencyKey, AdmissionLifetime: 2 * time.Minute,
 		})
-		response.Goal, response.Snapshot = result.Goal, &result.Target
+		response.Goal = result.Goal
+		if result.Target.Fingerprint != "" {
+			response.Snapshot = &result.Target
+		} else if result.Source.Fingerprint != "" {
+			response.Snapshot = &result.Source
+		}
 		if result.Decision.Kind != "" {
 			response.Decision = &result.Decision
 		}
@@ -118,34 +142,52 @@ func (k V2Kernel) Handle(ctx context.Context, request surfaces.Request) (surface
 		response.Replayed = result.Replayed
 		if applyErr != nil {
 			response.Error = applyErr.Error()
-			if result.Target.Fingerprint == "" {
-				response.Snapshot = &result.Source
-			}
 			return response, applyErr
 		}
 		return response, nil
 	case surfaces.OperationDoctor:
+		summary := k.program.Summary()
+		extensionIDs := make([]string, 0, len(summary.Extensions))
+		for _, extension := range summary.Extensions {
+			extensionIDs = append(extensionIDs, extension.ID+"@"+extension.Version)
+		}
+		report := surfaces.DoctorReport{
+			KernelVersion: summary.KernelVersion, CoreSystemID: summary.Core.ID, CoreSystemVersion: summary.Core.Version,
+			PrimaryFlowID: summary.Flow.ID, PrimaryFlowVersion: summary.Flow.Version, PrimaryFlowFingerprint: summary.Flow.Fingerprint,
+			CoreTransitionCount: summary.CoreTransitionCount, FlowTransitionCount: summary.FlowTransitionCount,
+			ExtensionTransitionCount: summary.ExtensionTransitionCount, TransitionCount: summary.TotalTransitionCount,
+			EnabledExtensions: extensionIDs, ProgramFingerprint: summary.ProgramFingerprint,
+		}
 		observation, observeErr := k.observer.Observe(ctx, ports.ObservationRequest{Invocation: invocation})
 		if observeErr != nil {
-			response.Doctor = &surfaces.DoctorReport{Healthy: false, TransitionCount: k.registry.Len(), Detail: observeErr.Error()}
+			report.Healthy, report.Detail = false, observeErr.Error()
+			response.Doctor = &report
 			response.Error = observeErr.Error()
 			return response, observeErr
 		}
-		snapshot, canonicalErr := model.Canonicalize(observation)
+		snapshot, canonicalErr := model.CanonicalizeForProgram(observation, k.program.Fingerprint())
 		if canonicalErr != nil {
-			response.Doctor = &surfaces.DoctorReport{Healthy: false, TransitionCount: k.registry.Len(), Detail: canonicalErr.Error()}
+			report.Healthy, report.Detail = false, canonicalErr.Error()
+			response.Doctor = &report
 			response.Error = canonicalErr.Error()
 			return response, canonicalErr
 		}
 		response.Snapshot = &snapshot
-		response.Doctor = &surfaces.DoctorReport{Healthy: k.registry.Len() == catalog.DefaultTransitionCount, TransitionCount: k.registry.Len(), Snapshot: snapshot.Fingerprint, Detail: "V2 kernel, observation, and catalog are valid"}
+		report.UnresolvedProgramDrift = snapshot.Program.Status != model.FactKnown || snapshot.Program.Value == model.ProgramDrift
+		report.Healthy = k.registry.Len() == summary.TotalTransitionCount && !report.UnresolvedProgramDrift
+		report.Snapshot = snapshot.Fingerprint
+		report.Detail = "Kernel, observation, and compiled control program are valid"
+		if report.UnresolvedProgramDrift {
+			report.Detail = "compiled control program drift requires explicit reconciliation"
+		}
+		response.Doctor = &report
 		return response, nil
 	case surfaces.OperationEvents:
 		layout, _, layoutErr := k.resolver.ResolveLayout(ctx, invocation)
 		if layoutErr != nil {
 			return response, layoutErr
 		}
-		events, readErr := readV2Events(layout.EventPath)
+		events, readErr := readEvents(layout.EventPath)
 		if readErr != nil {
 			response.Error = readErr.Error()
 			return response, readErr
@@ -158,13 +200,13 @@ func (k V2Kernel) Handle(ctx context.Context, request surfaces.Request) (surface
 			response.Error = observeErr.Error()
 			return response, observeErr
 		}
-		snapshot, canonicalErr := model.Canonicalize(observation)
+		snapshot, canonicalErr := model.CanonicalizeForProgram(observation, k.program.Fingerprint())
 		if canonicalErr != nil {
 			response.Error = canonicalErr.Error()
 			return response, canonicalErr
 		}
 		intent := surfaces.ClassifyCommandIntent(request.Command)
-		guard := supervisor.New(k.registry).Guard(snapshot, intent)
+		guard := supervisor.New(k.registry, k.program.RuntimeGoalContracts()).Guard(snapshot, intent)
 		response.Snapshot, response.Guard = &snapshot, &guard
 		return response, nil
 	default:
@@ -172,24 +214,24 @@ func (k V2Kernel) Handle(ctx context.Context, request surfaces.Request) (surface
 	}
 }
 
-func (k V2Kernel) deriveRepositoryAuthority(ctx context.Context, invocation model.InvocationContext, bundle protocol.AuthorityBundle) (protocol.AuthorityBundle, error) {
+func (k Kernel) deriveRepositoryAuthority(ctx context.Context, invocation model.InvocationContext, bundle protocol.AuthorityBundle) (protocol.AuthorityBundle, error) {
 	for _, receipt := range bundle.Receipts {
 		if receipt.Class == catalog.AuthorityRepository {
-			return protocol.AuthorityBundle{}, fmt.Errorf("repository authority must be derived once by the V2 kernel")
+			return protocol.AuthorityBundle{}, fmt.Errorf("repository authority must be derived once by Kernel")
 		}
 	}
 	observation, err := k.observer.Observe(ctx, ports.ObservationRequest{Invocation: invocation})
 	if err != nil {
 		return protocol.AuthorityBundle{}, err
 	}
-	snapshot, err := model.Canonicalize(observation)
+	snapshot, err := model.CanonicalizeForProgram(observation, k.program.Fingerprint())
 	if err != nil {
 		return protocol.AuthorityBundle{}, err
 	}
 	return protocol.DeriveRepositoryAuthority(snapshot, bundle, k.clock.Now())
 }
 
-func readV2Events(path string) ([]map[string]any, error) {
+func readEvents(path string) ([]map[string]any, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {

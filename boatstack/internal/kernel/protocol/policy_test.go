@@ -6,6 +6,7 @@ import (
 
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
+	"github.com/operatorstack/boatstack/boatstack/internal/testprogram"
 )
 
 func policySnapshot(policy model.ConfigurationPolicy) model.Snapshot {
@@ -21,7 +22,7 @@ func TestProviderAuthorityBindsExactExternalRequest(t *testing.T) {
 		ID: "provider", Class: catalog.AuthorityProvider, Subject: "github",
 		Fingerprint: "different-preview", IssuedAt: now, ExpiresAt: now.Add(time.Minute),
 	}}}
-	transition, _ := catalog.Default().Lookup("publication.execute")
+	transition, _ := testprogram.StandardRegistry().Lookup("publication.execute")
 	parameters := Parameters{{Name: "preview_fingerprint", Value: "reviewed-preview"}}
 	if err := validateProviderAuthorityBinding(authority, transition, parameters); err == nil {
 		t.Fatal("provider authority for different preview was accepted")
@@ -37,7 +38,7 @@ func TestAdmissionPolicyRejectsRepositoryOnlyHighRiskReview(t *testing.T) {
 		PlanApproval: "human", IndependentReviewForHighRisk: true, HighRiskChange: true,
 		VisualEvidence: "optional", ExternalEffectAuthority: "human-or-autonomy-plus-provider", Hosts: []string{"cli"},
 	})
-	transition := catalog.Transition{ID: "gate.review.record"}
+	transition, _ := testprogram.StandardRegistry().Lookup("gate.review.record")
 	if err := validatePolicyAuthority(snapshot, transition, catalog.AuthoritySet{catalog.AuthorityRepository: true}); err == nil {
 		t.Fatal("repository-only authority admitted a high-risk review")
 	}
@@ -51,7 +52,7 @@ func TestAdmissionPolicyRejectsDisabledVisualEvidence(t *testing.T) {
 		PlanApproval: "human", VisualEvidence: "off",
 		ExternalEffectAuthority: "human-or-autonomy-plus-provider", Hosts: []string{"cli"},
 	})
-	transition := catalog.Transition{ID: "evidence.visual.attach"}
+	transition, _ := testprogram.StandardRegistry().Lookup("evidence.visual.attach")
 	if err := validatePolicyAuthority(snapshot, transition, catalog.AuthoritySet{catalog.AuthorityHuman: true}); err == nil {
 		t.Fatal("visual evidence attachment admitted while disabled")
 	}

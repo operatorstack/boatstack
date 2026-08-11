@@ -1,0 +1,4584 @@
+[
+  {
+    "id": "engagement.begin",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "GOAL_REQUIRED",
+    "class": "authority",
+    "source_phases": [
+      "DORMANT",
+      "OBSERVED"
+    ],
+    "target_phases": [
+      "OBSERVED",
+      "ACTIVE"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "repository-policy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:configuration",
+      "facet:runtime"
+    ],
+    "owned_resources": [
+      "engagement"
+    ],
+    "effect": "engagement.begin",
+    "local_effects": [
+      "engagement.begin"
+    ],
+    "idempotent": true,
+    "prescription": {
+      "operation": "engagement.begin",
+      "expected_postcondition": "predicate:target-phase:engagement.begin"
+    },
+    "source_predicate": "predicate:source-phase:engagement.begin",
+    "source_conditions": [
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "dormant",
+          "command"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:engagement.begin",
+    "target_predicate": "predicate:target-phase:engagement.begin",
+    "target_conditions": [
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:engagement.begin",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:engagement.begin"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 10
+  },
+  {
+    "id": "engagement.renew",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "EXPLICIT_ONLY",
+    "class": "authority",
+    "source_phases": [
+      "ACTIVE"
+    ],
+    "target_phases": [
+      "ACTIVE"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "repository-policy",
+      "autonomy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:configuration",
+      "facet:runtime"
+    ],
+    "owned_resources": [
+      "engagement"
+    ],
+    "effect": "engagement.renew",
+    "local_effects": [
+      "engagement.renew"
+    ],
+    "idempotent": true,
+    "prescription": {
+      "operation": "engagement.renew",
+      "expected_postcondition": "predicate:target-phase:engagement.renew"
+    },
+    "source_predicate": "predicate:source-phase:engagement.renew",
+    "source_conditions": [
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:engagement.renew",
+    "target_predicate": "predicate:target-phase:engagement.renew",
+    "target_conditions": [
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "active"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:engagement.renew",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:engagement.renew"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 70
+  },
+  {
+    "id": "engagement.release",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "EXPLICIT_ONLY",
+    "class": "authority",
+    "source_phases": [
+      "ACTIVE",
+      "FRONTIER"
+    ],
+    "target_phases": [
+      "DORMANT"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "repository-policy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:configuration",
+      "facet:runtime"
+    ],
+    "owned_resources": [
+      "engagement"
+    ],
+    "effect": "engagement.release",
+    "local_effects": [
+      "engagement.release"
+    ],
+    "idempotent": true,
+    "prescription": {
+      "operation": "engagement.release",
+      "expected_postcondition": "predicate:target-phase:engagement.release"
+    },
+    "source_predicate": "predicate:source-phase:engagement.release",
+    "source_conditions": [
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "active",
+          "stale",
+          "command"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:engagement.release",
+    "target_predicate": "predicate:target-phase:engagement.release",
+    "target_conditions": [
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "dormant"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:engagement.release",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:engagement.release"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 95
+  },
+  {
+    "id": "invocation.rebind",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "EXPLICIT_ONLY",
+    "class": "owned-local",
+    "source_phases": [
+      "OBSERVED",
+      "UNRESOLVED"
+    ],
+    "target_phases": [
+      "OBSERVED"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "repository-policy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:topology",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal"
+    ],
+    "owned_resources": [
+      "identity-binding"
+    ],
+    "effect": "invocation.rebind",
+    "local_effects": [
+      "invocation.rebind"
+    ],
+    "idempotent": true,
+    "prescription": {
+      "operation": "invocation.rebind",
+      "expected_postcondition": "predicate:target-phase:invocation.rebind"
+    },
+    "source_predicate": "predicate:source-phase:invocation.rebind",
+    "source_conditions": [
+      {
+        "facet": "topology",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:invocation.rebind",
+    "target_predicate": "predicate:target-phase:invocation.rebind",
+    "target_conditions": [
+      {
+        "facet": "topology",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:invocation.rebind",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:invocation.rebind"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 15,
+    "allows_identity_rebind": true
+  },
+  {
+    "id": "repository.attach",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "EXPLICIT_ONLY",
+    "class": "owned-local",
+    "source_phases": [
+      "DORMANT",
+      "OBSERVED"
+    ],
+    "target_phases": [
+      "OBSERVED"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:topology",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal"
+    ],
+    "owned_resources": [
+      "repository-binding"
+    ],
+    "effect": "repository.attach",
+    "local_effects": [
+      "repository.attach"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "topology",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "config_authority",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "repository.attach",
+      "expected_postcondition": "predicate:target-phase:repository.attach"
+    },
+    "source_predicate": "predicate:source-phase:repository.attach",
+    "source_conditions": [
+      {
+        "facet": "topology",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "embedded"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:repository.attach",
+    "target_predicate": "predicate:target-phase:repository.attach",
+    "target_conditions": [
+      {
+        "facet": "topology",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "detached",
+          "hybrid"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:repository.attach",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:repository.attach"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 12,
+    "allows_identity_rebind": true
+  },
+  {
+    "id": "repository.detach",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "EXPLICIT_ONLY",
+    "class": "owned-local",
+    "source_phases": [
+      "DORMANT",
+      "OBSERVED",
+      "FRONTIER"
+    ],
+    "target_phases": [
+      "DORMANT"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:topology",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal"
+    ],
+    "owned_resources": [
+      "repository-binding"
+    ],
+    "effect": "repository.detach",
+    "local_effects": [
+      "repository.detach"
+    ],
+    "idempotent": true,
+    "prescription": {
+      "operation": "repository.detach",
+      "expected_postcondition": "predicate:target-phase:repository.detach"
+    },
+    "source_predicate": "predicate:source-phase:repository.detach",
+    "source_conditions": [
+      {
+        "facet": "topology",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "detached",
+          "hybrid"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:repository.detach",
+    "target_predicate": "predicate:target-phase:repository.detach",
+    "target_conditions": [
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "dormant"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:repository.detach",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:repository.detach"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 96,
+    "allows_identity_rebind": true
+  },
+  {
+    "id": "runtime.hydrate",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "GOAL_REQUIRED",
+    "class": "owned-local",
+    "source_phases": [
+      "OBSERVED",
+      "RECOVERY",
+      "UNRESOLVED"
+    ],
+    "target_phases": [
+      "OBSERVED",
+      "ACTIVE",
+      "TERMINAL"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "repository-policy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:runtime",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal"
+    ],
+    "owned_resources": [
+      "runtime"
+    ],
+    "effect": "runtime.hydrate",
+    "local_effects": [
+      "runtime.hydrate"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "source_revision",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "runtime_path",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "runtime_sha256",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "runtime.hydrate",
+      "expected_postcondition": "predicate:target-phase:runtime.hydrate"
+    },
+    "source_predicate": "predicate:source-phase:runtime.hydrate",
+    "source_conditions": [
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "absent",
+          "stale",
+          "invalid",
+          "conflicting",
+          "wrong-source",
+          "partially-published"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal",
+          "stale"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:runtime.hydrate",
+    "target_predicate": "predicate:target-phase:runtime.hydrate",
+    "target_conditions": [
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:runtime.hydrate",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "runtime.reconcile",
+      "recovery_authority": "declared-by:runtime.reconcile",
+      "resumption_predicate": "recovery-contract-for:runtime.hydrate"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 20
+  },
+  {
+    "id": "runtime.replace",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "EXPLICIT_ONLY",
+    "class": "owned-local",
+    "source_phases": [
+      "OBSERVED",
+      "RECOVERY"
+    ],
+    "target_phases": [
+      "OBSERVED",
+      "TERMINAL"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human",
+      "repository-policy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:runtime",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal"
+    ],
+    "owned_resources": [
+      "runtime"
+    ],
+    "effect": "runtime.replace",
+    "local_effects": [
+      "runtime.replace"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "source_revision",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "runtime_path",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "runtime_sha256",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "runtime.replace",
+      "expected_postcondition": "predicate:target-phase:runtime.replace"
+    },
+    "source_predicate": "predicate:source-phase:runtime.replace",
+    "source_conditions": [
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified",
+          "stale",
+          "invalid",
+          "conflicting",
+          "wrong-source",
+          "partially-published"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal",
+          "stale"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:runtime.replace",
+    "target_predicate": "predicate:target-phase:runtime.replace",
+    "target_conditions": [
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:runtime.replace",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "runtime.reconcile",
+      "recovery_authority": "declared-by:runtime.reconcile",
+      "resumption_predicate": "recovery-contract-for:runtime.replace"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 25
+  },
+  {
+    "id": "runtime.reconcile",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "SYSTEM_RECOVERY",
+    "class": "recovery",
+    "source_phases": [
+      "RECOVERY",
+      "UNRESOLVED"
+    ],
+    "target_phases": [
+      "OBSERVED",
+      "FRONTIER",
+      "TERMINAL"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "repository-policy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:recovery-info",
+      "facet:program"
+    ],
+    "owned_resources": [
+      "runtime"
+    ],
+    "effect": "runtime.reconcile",
+    "local_effects": [
+      "runtime.reconcile"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "source_revision",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "runtime_path",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "runtime_sha256",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "transaction_id",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "runtime.reconcile",
+      "expected_postcondition": "predicate:target-phase:runtime.reconcile"
+    },
+    "source_predicate": "predicate:source-phase:runtime.reconcile",
+    "source_conditions": [
+      {
+        "facet": "recovery-info",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:runtime.reconcile",
+    "target_predicate": "predicate:target-phase:runtime.reconcile",
+    "target_conditions": [
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:runtime.reconcile",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "never-blindly-retry-interrupted-recovery",
+      "rollback_contract": "preserve-original-transaction-group",
+      "compensation_contract": "escalation-only-after-nested-interruption",
+      "recovery": "recovery.escalate",
+      "recovery_authority": "declared-by:recovery.escalate",
+      "resumption_predicate": "recovery-contract-for:runtime.reconcile"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 4
+  },
+  {
+    "id": "configuration.initialize",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "GOAL_REQUIRED",
+    "class": "owned-local",
+    "source_phases": [
+      "OBSERVED"
+    ],
+    "target_phases": [
+      "OBSERVED",
+      "TERMINAL"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human",
+      "repository-policy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:configuration",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal"
+    ],
+    "owned_resources": [
+      "configuration"
+    ],
+    "effect": "configuration.initialize",
+    "local_effects": [
+      "configuration.initialize"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "config_path",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "config_sha256",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "configuration.initialize",
+      "expected_postcondition": "predicate:target-phase:configuration.initialize"
+    },
+    "source_predicate": "predicate:source-phase:configuration.initialize",
+    "source_conditions": [
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unsupported",
+          "stale",
+          "conflicting"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal",
+          "stale"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:configuration.initialize",
+    "target_predicate": "predicate:target-phase:configuration.initialize",
+    "target_conditions": [
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:configuration.initialize",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "configuration.reconcile",
+      "recovery_authority": "declared-by:configuration.reconcile",
+      "resumption_predicate": "recovery-contract-for:configuration.initialize"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 22
+  },
+  {
+    "id": "configuration.mutate",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "EXPLICIT_ONLY",
+    "class": "owned-local",
+    "source_phases": [
+      "OBSERVED",
+      "ACTIVE",
+      "FRONTIER",
+      "UNRESOLVED"
+    ],
+    "target_phases": [
+      "OBSERVED",
+      "ACTIVE",
+      "TERMINAL"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human",
+      "autonomy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:configuration",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:runtime"
+    ],
+    "owned_resources": [
+      "configuration"
+    ],
+    "effect": "configuration.mutate",
+    "local_effects": [
+      "configuration.mutate"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "config_path",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "config_sha256",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "configuration.mutate",
+      "expected_postcondition": "predicate:target-phase:configuration.mutate"
+    },
+    "source_predicate": "predicate:source-phase:configuration.mutate",
+    "source_conditions": [
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified",
+          "stale",
+          "divergent",
+          "conflicting"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal",
+          "stale"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:configuration.mutate",
+    "target_predicate": "predicate:target-phase:configuration.mutate",
+    "target_conditions": [
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:configuration.mutate",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "configuration.reconcile",
+      "recovery_authority": "declared-by:configuration.reconcile",
+      "resumption_predicate": "recovery-contract-for:configuration.mutate"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 60
+  },
+  {
+    "id": "configuration.reconcile",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "SYSTEM_RECOVERY",
+    "class": "recovery",
+    "source_phases": [
+      "RECOVERY",
+      "UNRESOLVED"
+    ],
+    "target_phases": [
+      "OBSERVED",
+      "FRONTIER",
+      "TERMINAL"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human",
+      "repository-policy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:recovery-info",
+      "facet:program"
+    ],
+    "owned_resources": [
+      "configuration"
+    ],
+    "effect": "configuration.reconcile",
+    "local_effects": [
+      "configuration.reconcile"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "transaction_id",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "configuration.reconcile",
+      "expected_postcondition": "predicate:target-phase:configuration.reconcile"
+    },
+    "source_predicate": "predicate:source-phase:configuration.reconcile",
+    "source_conditions": [
+      {
+        "facet": "recovery-info",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:configuration.reconcile",
+    "target_predicate": "predicate:target-phase:configuration.reconcile",
+    "target_conditions": [
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:configuration.reconcile",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "never-blindly-retry-interrupted-recovery",
+      "rollback_contract": "preserve-original-transaction-group",
+      "compensation_contract": "escalation-only-after-nested-interruption",
+      "recovery": "recovery.escalate",
+      "recovery_authority": "declared-by:recovery.escalate",
+      "resumption_predicate": "recovery-contract-for:configuration.reconcile"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 3
+  },
+  {
+    "id": "installation.initialize",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "GOAL_REQUIRED",
+    "class": "owned-local",
+    "source_phases": [
+      "DORMANT",
+      "OBSERVED"
+    ],
+    "target_phases": [
+      "OBSERVED"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:runtime",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal"
+    ],
+    "owned_resources": [
+      "installation"
+    ],
+    "effect": "installation.initialize",
+    "local_effects": [
+      "installation.initialize"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "source_revision",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "runtime_path",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "runtime_sha256",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "config_path",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "config_sha256",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "installation.initialize",
+      "expected_postcondition": "predicate:target-phase:installation.initialize"
+    },
+    "source_predicate": "predicate:source-phase:installation.initialize",
+    "source_conditions": [
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "absent",
+          "invalid",
+          "stale"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:installation.initialize",
+    "target_predicate": "predicate:target-phase:installation.initialize",
+    "target_conditions": [
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:installation.initialize",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "runtime.reconcile",
+      "recovery_authority": "declared-by:runtime.reconcile",
+      "resumption_predicate": "recovery-contract-for:installation.initialize"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 11
+  },
+  {
+    "id": "installation.update",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "EXPLICIT_ONLY",
+    "class": "owned-local",
+    "source_phases": [
+      "OBSERVED",
+      "ACTIVE"
+    ],
+    "target_phases": [
+      "OBSERVED",
+      "ACTIVE",
+      "TERMINAL"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human",
+      "autonomy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:runtime",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal",
+      "facet:engagement",
+      "facet:goal",
+      "facet:configuration"
+    ],
+    "owned_resources": [
+      "installation"
+    ],
+    "effect": "installation.update",
+    "local_effects": [
+      "installation.update"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "source_revision",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "runtime_path",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "runtime_sha256",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "installation.update",
+      "expected_postcondition": "predicate:target-phase:installation.update"
+    },
+    "source_predicate": "predicate:source-phase:installation.update",
+    "source_conditions": [
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified",
+          "stale",
+          "invalid",
+          "conflicting",
+          "wrong-source",
+          "partially-published"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal",
+          "stale"
+        ]
+      },
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "command",
+          "active"
+        ]
+      },
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:installation.update",
+    "target_predicate": "predicate:target-phase:installation.update",
+    "target_conditions": [
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:installation.update",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "runtime.reconcile",
+      "recovery_authority": "declared-by:runtime.reconcile",
+      "resumption_predicate": "recovery-contract-for:installation.update"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 65
+  },
+  {
+    "id": "catalog.reconcile",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "EXPLICIT_ONLY",
+    "class": "owned-local",
+    "source_phases": [
+      "DORMANT",
+      "OBSERVED",
+      "ACTIVE",
+      "RECOVERY",
+      "FRONTIER",
+      "UNRESOLVED",
+      "TERMINAL",
+      "ABANDONED"
+    ],
+    "target_phases": [
+      "DORMANT",
+      "OBSERVED",
+      "ACTIVE",
+      "RECOVERY",
+      "FRONTIER",
+      "UNRESOLVED",
+      "TERMINAL",
+      "ABANDONED"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:program",
+      "facet:program",
+      "facet:recovery",
+      "facet:transaction",
+      "facet:terminal"
+    ],
+    "owned_resources": [
+      "catalog-identity"
+    ],
+    "effect": "catalog.reconcile",
+    "local_effects": [
+      "catalog.reconcile"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "prior_program_fingerprint",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "accept_obligation_change",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "catalog.reconcile",
+      "expected_postcondition": "predicate:target-phase:catalog.reconcile"
+    },
+    "source_predicate": "predicate:source-phase:catalog.reconcile",
+    "source_conditions": [
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "drift"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "drift"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal",
+          "stale",
+          "established"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:catalog.reconcile",
+    "target_predicate": "predicate:target-phase:catalog.reconcile",
+    "target_conditions": [
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "current"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:catalog.reconcile",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:catalog.reconcile"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {
+      "reconciles_program": true
+    },
+    "priority": 1
+  },
+  {
+    "id": "goal.configure",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "GOAL_REQUIRED",
+    "class": "authority",
+    "source_phases": [
+      "OBSERVED",
+      "ACTIVE",
+      "FRONTIER",
+      "TERMINAL",
+      "ABANDONED"
+    ],
+    "target_phases": [
+      "OBSERVED",
+      "ACTIVE",
+      "FRONTIER"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human",
+      "autonomy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:goal",
+      "facet:program"
+    ],
+    "owned_resources": [
+      "goal"
+    ],
+    "effect": "goal.configure",
+    "local_effects": [
+      "goal.configure"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "goal_kind",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "delivery_id",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "goal.configure",
+      "expected_postcondition": "predicate:target-phase:goal.configure"
+    },
+    "source_predicate": "predicate:source-phase:goal.configure",
+    "source_conditions": [
+      {
+        "facet": "goal",
+        "statuses": [
+          "known",
+          "absent"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:goal.configure",
+    "target_predicate": "predicate:target-phase:goal.configure",
+    "target_conditions": [
+      {
+        "facet": "goal",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:goal.configure",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "journal-target-replay-when-permitted",
+      "rollback_contract": "exact-prior-byte-replay-when-permitted",
+      "compensation_contract": "not-required-for-owned-local-effects",
+      "recovery": "recovery.resume",
+      "recovery_authority": "declared-by:recovery.resume",
+      "resumption_predicate": "recovery-contract-for:goal.configure"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {
+      "binds_requested_goal": true
+    },
+    "priority": 30
+  },
+  {
+    "id": "recovery.resume",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "SYSTEM_RECOVERY",
+    "class": "recovery",
+    "source_phases": [
+      "RECOVERY"
+    ],
+    "target_phases": [
+      "DORMANT",
+      "OBSERVED",
+      "ACTIVE",
+      "FRONTIER",
+      "TERMINAL",
+      "ABANDONED"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human",
+      "autonomy",
+      "repository-policy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:recovery-info",
+      "facet:program"
+    ],
+    "owned_resources": [
+      "recovery-journal"
+    ],
+    "effect": "recovery.resume",
+    "local_effects": [
+      "recovery.resume"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "transaction_id",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "recovery.resume",
+      "expected_postcondition": "predicate:target-phase:recovery.resume"
+    },
+    "source_predicate": "predicate:source-phase:recovery.resume",
+    "source_conditions": [
+      {
+        "facet": "recovery-info",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:recovery.resume",
+    "target_predicate": "predicate:target-phase:recovery.resume",
+    "target_conditions": [
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:recovery.resume",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "never-blindly-retry-interrupted-recovery",
+      "rollback_contract": "preserve-original-transaction-group",
+      "compensation_contract": "escalation-only-after-nested-interruption",
+      "recovery": "recovery.escalate",
+      "recovery_authority": "declared-by:recovery.escalate",
+      "resumption_predicate": "recovery-contract-for:recovery.resume"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 2
+  },
+  {
+    "id": "recovery.rollback",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "SYSTEM_RECOVERY",
+    "class": "recovery",
+    "source_phases": [
+      "RECOVERY"
+    ],
+    "target_phases": [
+      "DORMANT",
+      "OBSERVED",
+      "ACTIVE",
+      "FRONTIER",
+      "TERMINAL",
+      "ABANDONED"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "human",
+      "repository-policy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:recovery-info",
+      "facet:program"
+    ],
+    "owned_resources": [
+      "recovery-journal"
+    ],
+    "effect": "recovery.rollback",
+    "local_effects": [
+      "recovery.rollback"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "transaction_id",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "recovery.rollback",
+      "expected_postcondition": "predicate:target-phase:recovery.rollback"
+    },
+    "source_predicate": "predicate:source-phase:recovery.rollback",
+    "source_conditions": [
+      {
+        "facet": "recovery-info",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:recovery.rollback",
+    "target_predicate": "predicate:target-phase:recovery.rollback",
+    "target_conditions": [
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:recovery.rollback",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "never-blindly-retry-interrupted-recovery",
+      "rollback_contract": "preserve-original-transaction-group",
+      "compensation_contract": "escalation-only-after-nested-interruption",
+      "recovery": "recovery.escalate",
+      "recovery_authority": "declared-by:recovery.escalate",
+      "resumption_predicate": "recovery-contract-for:recovery.rollback"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 3
+  },
+  {
+    "id": "recovery.escalate",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "SYSTEM_RECOVERY",
+    "class": "recovery",
+    "source_phases": [
+      "RECOVERY",
+      "UNRESOLVED"
+    ],
+    "target_phases": [
+      "FRONTIER"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "repository-policy"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:recovery-info",
+      "facet:program"
+    ],
+    "owned_resources": [
+      "recovery-journal"
+    ],
+    "effect": "recovery.escalate",
+    "local_effects": [
+      "recovery.escalate"
+    ],
+    "idempotent": true,
+    "parameters": [
+      {
+        "name": "transaction_id",
+        "required": true,
+        "secret": false
+      }
+    ],
+    "prescription": {
+      "operation": "recovery.escalate",
+      "expected_postcondition": "predicate:target-phase:recovery.escalate"
+    },
+    "source_predicate": "predicate:source-phase:recovery.escalate",
+    "source_conditions": [
+      {
+        "facet": "recovery-info",
+        "statuses": [
+          "known"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unbound",
+          "current"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:recovery.escalate",
+    "target_predicate": "predicate:target-phase:recovery.escalate",
+    "target_conditions": [
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "escalated"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:recovery.escalate",
+    "interruption": {
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
+      "detection": "pending-journal-plus-fresh-canonical-observation",
+      "resume_contract": "never-blindly-retry-interrupted-recovery",
+      "rollback_contract": "preserve-original-transaction-group",
+      "compensation_contract": "escalation-only-after-nested-interruption",
+      "recovery": "recovery.escalate",
+      "recovery_authority": "declared-by:recovery.escalate",
+      "resumption_predicate": "recovery-contract-for:recovery.escalate"
+    },
+    "reversibility": "reversible",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 5
+  },
+  {
+    "id": "external.files-changed",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "OBSERVED_EXTERNAL",
+    "class": "observed-external",
+    "source_phases": [
+      "DORMANT",
+      "OBSERVED",
+      "ACTIVE",
+      "RECOVERY",
+      "FRONTIER",
+      "UNRESOLVED"
+    ],
+    "target_phases": [
+      "OBSERVED"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "none"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:verification"
+    ],
+    "idempotent": false,
+    "prescription": {
+      "operation": "external.files-changed",
+      "expected_postcondition": "predicate:target-phase:external.files-changed"
+    },
+    "source_predicate": "predicate:source-phase:external.files-changed",
+    "source_conditions": [
+      {
+        "facet": "verification",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:external.files-changed",
+    "target_predicate": "predicate:target-phase:external.files-changed",
+    "target_conditions": [
+      {
+        "facet": "verification",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:external.files-changed",
+    "interruption": {
+      "points": [
+        "after-observation"
+      ],
+      "partial_state": [
+        "no-owned-partial-state"
+      ],
+      "detection": "fresh-canonical-observation",
+      "resume_contract": "not-applicable",
+      "rollback_contract": "not-applicable",
+      "compensation_contract": "not-applicable",
+      "recovery_authority": "not-applicable",
+      "resumption_predicate": "predicate:target-phase:external.files-changed"
+    },
+    "reversibility": "observation-only",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 100
+  },
+  {
+    "id": "external.head-changed",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "OBSERVED_EXTERNAL",
+    "class": "observed-external",
+    "source_phases": [
+      "DORMANT",
+      "OBSERVED",
+      "ACTIVE",
+      "RECOVERY",
+      "FRONTIER",
+      "UNRESOLVED"
+    ],
+    "target_phases": [
+      "OBSERVED"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "none"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:verification"
+    ],
+    "idempotent": false,
+    "prescription": {
+      "operation": "external.head-changed",
+      "expected_postcondition": "predicate:target-phase:external.head-changed"
+    },
+    "source_predicate": "predicate:source-phase:external.head-changed",
+    "source_conditions": [
+      {
+        "facet": "verification",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:external.head-changed",
+    "target_predicate": "predicate:target-phase:external.head-changed",
+    "target_conditions": [
+      {
+        "facet": "verification",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:external.head-changed",
+    "interruption": {
+      "points": [
+        "after-observation"
+      ],
+      "partial_state": [
+        "no-owned-partial-state"
+      ],
+      "detection": "fresh-canonical-observation",
+      "resume_contract": "not-applicable",
+      "rollback_contract": "not-applicable",
+      "compensation_contract": "not-applicable",
+      "recovery_authority": "not-applicable",
+      "resumption_predicate": "predicate:target-phase:external.head-changed"
+    },
+    "reversibility": "observation-only",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 100
+  },
+  {
+    "id": "external.branch-changed",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "OBSERVED_EXTERNAL",
+    "class": "observed-external",
+    "source_phases": [
+      "DORMANT",
+      "OBSERVED",
+      "ACTIVE",
+      "RECOVERY",
+      "FRONTIER",
+      "UNRESOLVED"
+    ],
+    "target_phases": [
+      "OBSERVED"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "none"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:workspace"
+    ],
+    "idempotent": false,
+    "prescription": {
+      "operation": "external.branch-changed",
+      "expected_postcondition": "predicate:target-phase:external.branch-changed"
+    },
+    "source_predicate": "predicate:source-phase:external.branch-changed",
+    "source_conditions": [
+      {
+        "facet": "workspace",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:external.branch-changed",
+    "target_predicate": "predicate:target-phase:external.branch-changed",
+    "target_conditions": [
+      {
+        "facet": "workspace",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:external.branch-changed",
+    "interruption": {
+      "points": [
+        "after-observation"
+      ],
+      "partial_state": [
+        "no-owned-partial-state"
+      ],
+      "detection": "fresh-canonical-observation",
+      "resume_contract": "not-applicable",
+      "rollback_contract": "not-applicable",
+      "compensation_contract": "not-applicable",
+      "recovery_authority": "not-applicable",
+      "resumption_predicate": "predicate:target-phase:external.branch-changed"
+    },
+    "reversibility": "observation-only",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 100
+  },
+  {
+    "id": "external.runtime-disappeared",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "OBSERVED_EXTERNAL",
+    "class": "observed-external",
+    "source_phases": [
+      "DORMANT",
+      "OBSERVED",
+      "ACTIVE",
+      "RECOVERY",
+      "FRONTIER",
+      "UNRESOLVED"
+    ],
+    "target_phases": [
+      "OBSERVED",
+      "RECOVERY"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "none"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:runtime"
+    ],
+    "idempotent": false,
+    "prescription": {
+      "operation": "external.runtime-disappeared",
+      "expected_postcondition": "predicate:target-phase:external.runtime-disappeared"
+    },
+    "source_predicate": "predicate:source-phase:external.runtime-disappeared",
+    "source_conditions": [
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified",
+          "stale"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:external.runtime-disappeared",
+    "target_predicate": "predicate:target-phase:external.runtime-disappeared",
+    "target_conditions": [
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "absent",
+          "stale"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:external.runtime-disappeared",
+    "interruption": {
+      "points": [
+        "after-observation"
+      ],
+      "partial_state": [
+        "no-owned-partial-state"
+      ],
+      "detection": "fresh-canonical-observation",
+      "resume_contract": "not-applicable",
+      "rollback_contract": "not-applicable",
+      "compensation_contract": "not-applicable",
+      "recovery_authority": "not-applicable",
+      "resumption_predicate": "predicate:target-phase:external.runtime-disappeared"
+    },
+    "reversibility": "observation-only",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 100
+  },
+  {
+    "id": "external.configuration-drifted",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "OBSERVED_EXTERNAL",
+    "class": "observed-external",
+    "source_phases": [
+      "DORMANT",
+      "OBSERVED",
+      "ACTIVE",
+      "RECOVERY",
+      "FRONTIER",
+      "UNRESOLVED"
+    ],
+    "target_phases": [
+      "OBSERVED",
+      "UNRESOLVED"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "none"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:configuration"
+    ],
+    "idempotent": false,
+    "prescription": {
+      "operation": "external.configuration-drifted",
+      "expected_postcondition": "predicate:target-phase:external.configuration-drifted"
+    },
+    "source_predicate": "predicate:source-phase:external.configuration-drifted",
+    "source_conditions": [
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:external.configuration-drifted",
+    "target_predicate": "predicate:target-phase:external.configuration-drifted",
+    "target_conditions": [
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "stale",
+          "divergent",
+          "conflicting"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:external.configuration-drifted",
+    "interruption": {
+      "points": [
+        "after-observation"
+      ],
+      "partial_state": [
+        "no-owned-partial-state"
+      ],
+      "detection": "fresh-canonical-observation",
+      "resume_contract": "not-applicable",
+      "rollback_contract": "not-applicable",
+      "compensation_contract": "not-applicable",
+      "recovery_authority": "not-applicable",
+      "resumption_predicate": "predicate:target-phase:external.configuration-drifted"
+    },
+    "reversibility": "observation-only",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 100
+  },
+  {
+    "id": "external.lease-expired",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "OBSERVED_EXTERNAL",
+    "class": "observed-external",
+    "source_phases": [
+      "DORMANT",
+      "OBSERVED",
+      "ACTIVE",
+      "RECOVERY",
+      "FRONTIER",
+      "UNRESOLVED"
+    ],
+    "target_phases": [
+      "DORMANT",
+      "FRONTIER"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "none"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:engagement"
+    ],
+    "idempotent": false,
+    "prescription": {
+      "operation": "external.lease-expired",
+      "expected_postcondition": "predicate:target-phase:external.lease-expired"
+    },
+    "source_predicate": "predicate:source-phase:external.lease-expired",
+    "source_conditions": [
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "active",
+          "command"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:external.lease-expired",
+    "target_predicate": "predicate:target-phase:external.lease-expired",
+    "target_conditions": [
+      {
+        "facet": "engagement",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "dormant",
+          "stale"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:external.lease-expired",
+    "interruption": {
+      "points": [
+        "after-observation"
+      ],
+      "partial_state": [
+        "no-owned-partial-state"
+      ],
+      "detection": "fresh-canonical-observation",
+      "resume_contract": "not-applicable",
+      "rollback_contract": "not-applicable",
+      "compensation_contract": "not-applicable",
+      "recovery_authority": "not-applicable",
+      "resumption_predicate": "predicate:target-phase:external.lease-expired"
+    },
+    "reversibility": "observation-only",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 100
+  },
+  {
+    "id": "external.host-interrupted",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "OBSERVED_EXTERNAL",
+    "class": "observed-external",
+    "source_phases": [
+      "DORMANT",
+      "OBSERVED",
+      "ACTIVE",
+      "RECOVERY",
+      "FRONTIER",
+      "UNRESOLVED"
+    ],
+    "target_phases": [
+      "RECOVERY"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "none"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:transaction",
+      "facet:transaction-info"
+    ],
+    "idempotent": false,
+    "prescription": {
+      "operation": "external.host-interrupted",
+      "expected_postcondition": "predicate:target-phase:external.host-interrupted"
+    },
+    "source_predicate": "predicate:source-phase:external.host-interrupted",
+    "source_conditions": [
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "staged",
+          "local-applied",
+          "external-uncertain",
+          "verifying"
+        ]
+      },
+      {
+        "facet": "transaction-info",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:external.host-interrupted",
+    "target_predicate": "predicate:target-phase:external.host-interrupted",
+    "target_conditions": [
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:external.host-interrupted",
+    "interruption": {
+      "points": [
+        "after-observation"
+      ],
+      "partial_state": [
+        "no-owned-partial-state"
+      ],
+      "detection": "fresh-canonical-observation",
+      "resume_contract": "not-applicable",
+      "rollback_contract": "not-applicable",
+      "compensation_contract": "not-applicable",
+      "recovery_authority": "not-applicable",
+      "resumption_predicate": "predicate:target-phase:external.host-interrupted"
+    },
+    "reversibility": "observation-only",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 100
+  },
+  {
+    "id": "external.ci-completed",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "OBSERVED_EXTERNAL",
+    "class": "observed-external",
+    "source_phases": [
+      "DORMANT",
+      "OBSERVED",
+      "ACTIVE",
+      "RECOVERY",
+      "FRONTIER",
+      "UNRESOLVED"
+    ],
+    "target_phases": [
+      "OBSERVED",
+      "ACTIVE",
+      "TERMINAL"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "none"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:verification"
+    ],
+    "idempotent": false,
+    "prescription": {
+      "operation": "external.ci-completed",
+      "expected_postcondition": "predicate:target-phase:external.ci-completed"
+    },
+    "source_predicate": "predicate:source-phase:external.ci-completed",
+    "source_conditions": [
+      {
+        "facet": "verification",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:external.ci-completed",
+    "target_predicate": "predicate:target-phase:external.ci-completed",
+    "target_conditions": [
+      {
+        "facet": "verification",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:external.ci-completed",
+    "interruption": {
+      "points": [
+        "after-observation"
+      ],
+      "partial_state": [
+        "no-owned-partial-state"
+      ],
+      "detection": "fresh-canonical-observation",
+      "resume_contract": "not-applicable",
+      "rollback_contract": "not-applicable",
+      "compensation_contract": "not-applicable",
+      "recovery_authority": "not-applicable",
+      "resumption_predicate": "predicate:target-phase:external.ci-completed"
+    },
+    "reversibility": "observation-only",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 100
+  },
+  {
+    "id": "external.pr-opened",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "OBSERVED_EXTERNAL",
+    "class": "observed-external",
+    "source_phases": [
+      "DORMANT",
+      "OBSERVED",
+      "ACTIVE",
+      "RECOVERY",
+      "FRONTIER",
+      "UNRESOLVED"
+    ],
+    "target_phases": [
+      "OBSERVED",
+      "ACTIVE",
+      "TERMINAL"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "none"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:publication"
+    ],
+    "idempotent": false,
+    "prescription": {
+      "operation": "external.pr-opened",
+      "expected_postcondition": "predicate:target-phase:external.pr-opened"
+    },
+    "source_predicate": "predicate:source-phase:external.pr-opened",
+    "source_conditions": [
+      {
+        "facet": "publication",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:external.pr-opened",
+    "target_predicate": "predicate:target-phase:external.pr-opened",
+    "target_conditions": [
+      {
+        "facet": "publication",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "open"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:external.pr-opened",
+    "interruption": {
+      "points": [
+        "after-observation"
+      ],
+      "partial_state": [
+        "no-owned-partial-state"
+      ],
+      "detection": "fresh-canonical-observation",
+      "resume_contract": "not-applicable",
+      "rollback_contract": "not-applicable",
+      "compensation_contract": "not-applicable",
+      "recovery_authority": "not-applicable",
+      "resumption_predicate": "predicate:target-phase:external.pr-opened"
+    },
+    "reversibility": "observation-only",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 100
+  },
+  {
+    "id": "external.pr-updated",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "OBSERVED_EXTERNAL",
+    "class": "observed-external",
+    "source_phases": [
+      "DORMANT",
+      "OBSERVED",
+      "ACTIVE",
+      "RECOVERY",
+      "FRONTIER",
+      "UNRESOLVED"
+    ],
+    "target_phases": [
+      "OBSERVED",
+      "ACTIVE",
+      "TERMINAL"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "none"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:publication"
+    ],
+    "idempotent": false,
+    "prescription": {
+      "operation": "external.pr-updated",
+      "expected_postcondition": "predicate:target-phase:external.pr-updated"
+    },
+    "source_predicate": "predicate:source-phase:external.pr-updated",
+    "source_conditions": [
+      {
+        "facet": "publication",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:external.pr-updated",
+    "target_predicate": "predicate:target-phase:external.pr-updated",
+    "target_conditions": [
+      {
+        "facet": "publication",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "open"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:external.pr-updated",
+    "interruption": {
+      "points": [
+        "after-observation"
+      ],
+      "partial_state": [
+        "no-owned-partial-state"
+      ],
+      "detection": "fresh-canonical-observation",
+      "resume_contract": "not-applicable",
+      "rollback_contract": "not-applicable",
+      "compensation_contract": "not-applicable",
+      "recovery_authority": "not-applicable",
+      "resumption_predicate": "predicate:target-phase:external.pr-updated"
+    },
+    "reversibility": "observation-only",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 100
+  },
+  {
+    "id": "external.pr-closed",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "OBSERVED_EXTERNAL",
+    "class": "observed-external",
+    "source_phases": [
+      "DORMANT",
+      "OBSERVED",
+      "ACTIVE",
+      "RECOVERY",
+      "FRONTIER",
+      "UNRESOLVED"
+    ],
+    "target_phases": [
+      "OBSERVED",
+      "ACTIVE",
+      "FRONTIER"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "none"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:publication"
+    ],
+    "idempotent": false,
+    "prescription": {
+      "operation": "external.pr-closed",
+      "expected_postcondition": "predicate:target-phase:external.pr-closed"
+    },
+    "source_predicate": "predicate:source-phase:external.pr-closed",
+    "source_conditions": [
+      {
+        "facet": "publication",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:external.pr-closed",
+    "target_predicate": "predicate:target-phase:external.pr-closed",
+    "target_conditions": [
+      {
+        "facet": "publication",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "closed-unmerged",
+          "merged"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:external.pr-closed",
+    "interruption": {
+      "points": [
+        "after-observation"
+      ],
+      "partial_state": [
+        "no-owned-partial-state"
+      ],
+      "detection": "fresh-canonical-observation",
+      "resume_contract": "not-applicable",
+      "rollback_contract": "not-applicable",
+      "compensation_contract": "not-applicable",
+      "recovery_authority": "not-applicable",
+      "resumption_predicate": "predicate:target-phase:external.pr-closed"
+    },
+    "reversibility": "observation-only",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 100
+  },
+  {
+    "id": "external.pr-merged",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "OBSERVED_EXTERNAL",
+    "class": "observed-external",
+    "source_phases": [
+      "DORMANT",
+      "OBSERVED",
+      "ACTIVE",
+      "RECOVERY",
+      "FRONTIER",
+      "UNRESOLVED"
+    ],
+    "target_phases": [
+      "OBSERVED",
+      "ACTIVE",
+      "TERMINAL"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "none"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:publication"
+    ],
+    "idempotent": false,
+    "prescription": {
+      "operation": "external.pr-merged",
+      "expected_postcondition": "predicate:target-phase:external.pr-merged"
+    },
+    "source_predicate": "predicate:source-phase:external.pr-merged",
+    "source_conditions": [
+      {
+        "facet": "publication",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:external.pr-merged",
+    "target_predicate": "predicate:target-phase:external.pr-merged",
+    "target_conditions": [
+      {
+        "facet": "publication",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "merged"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:external.pr-merged",
+    "interruption": {
+      "points": [
+        "after-observation"
+      ],
+      "partial_state": [
+        "no-owned-partial-state"
+      ],
+      "detection": "fresh-canonical-observation",
+      "resume_contract": "not-applicable",
+      "rollback_contract": "not-applicable",
+      "compensation_contract": "not-applicable",
+      "recovery_authority": "not-applicable",
+      "resumption_predicate": "predicate:target-phase:external.pr-merged"
+    },
+    "reversibility": "observation-only",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 100
+  },
+  {
+    "id": "external.provider-unavailable",
+    "version": 1,
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
+    "owner": "",
+    "selection_class": "OBSERVED_EXTERNAL",
+    "class": "observed-external",
+    "source_phases": [
+      "DORMANT",
+      "OBSERVED",
+      "ACTIVE",
+      "RECOVERY",
+      "FRONTIER",
+      "UNRESOLVED"
+    ],
+    "target_phases": [
+      "UNRESOLVED",
+      "RECOVERY"
+    ],
+    "goal_kinds": [
+      "approved-plan",
+      "verified-implementation",
+      "open-or-updated-pr",
+      "merged-delivery",
+      "safely-abandoned"
+    ],
+    "required_identity": [
+      "repository-id",
+      "git-common-id",
+      "worktree-id",
+      "ref",
+      "controller-id",
+      "invoking-path",
+      "runtime-path",
+      "runtime-fingerprint",
+      "topology",
+      "host",
+      "correlation-id"
+    ],
+    "authority": [
+      "none"
+    ],
+    "required_evidence": [
+      "invocation-context",
+      "snapshot-fingerprint",
+      "goal",
+      "facet:publication"
+    ],
+    "idempotent": false,
+    "prescription": {
+      "operation": "external.provider-unavailable",
+      "expected_postcondition": "predicate:target-phase:external.provider-unavailable"
+    },
+    "source_predicate": "predicate:source-phase:external.provider-unavailable",
+    "source_conditions": [
+      {
+        "facet": "publication",
+        "statuses": [
+          "known"
+        ]
+      }
+    ],
+    "admission_predicate": "predicate:exact-admission:external.provider-unavailable",
+    "target_predicate": "predicate:target-phase:external.provider-unavailable",
+    "target_conditions": [
+      {
+        "facet": "publication",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "unavailable"
+        ]
+      }
+    ],
+    "verifier": "verifier:fresh-observation:external.provider-unavailable",
+    "interruption": {
+      "points": [
+        "after-observation"
+      ],
+      "partial_state": [
+        "no-owned-partial-state"
+      ],
+      "detection": "fresh-canonical-observation",
+      "resume_contract": "not-applicable",
+      "rollback_contract": "not-applicable",
+      "compensation_contract": "not-applicable",
+      "recovery_authority": "not-applicable",
+      "resumption_predicate": "predicate:target-phase:external.provider-unavailable"
+    },
+    "reversibility": "observation-only",
+    "terminal_effect": "none",
+    "privacy_classification": "metadata-only",
+    "telemetry_classification": "transition-receipt",
+    "cost_class": "declared-neutral",
+    "policy": {},
+    "priority": 100
+  }
+]

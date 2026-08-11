@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "id": "boatstack-v2-executable-catalog-liveness-v1",
-  "subject": "Finite stable-phase abstraction generated from the executable Boatstack V2 registry. It contains one event for every runtime catalog entry and expands each declared source and target phase set. The 17-facet predicates, operating-system behavior, and external-provider truth remain executable evidence obligations rather than theorem assumptions.",
+  "subject": "Finite stable-phase abstraction generated from the compiled Boatstack ControlProgram registry. It contains one event for every runtime entry and expands each declared source and target phase set. The 18-facet predicates, operating-system behavior, and external-provider truth remain executable evidence obligations rather than theorem assumptions.",
   "evidence": [
     {
-      "path": "boatstack/internal/kernel/catalog/default.go",
-      "note": "Executable registry, exact transition count, event classes, phase predicates, authority, and materialization."
+      "path": "boatstack/control/control.go",
+      "note": "Compiler combines exact CoreSystem, PrimaryFlow, extension, contract, and ownership declarations into one immutable runtime registry."
     },
     {
       "path": "docs/architecture/boatstack-v2-transition-catalog.md",
@@ -20,11 +20,11 @@
       "note": "Single apply path across lock, journal, effect, fresh observation, target predicate, receipt, and recovery."
     },
     {
-      "path": "boatstack/internal/kernel/reducer/reducer.go",
-      "note": "Single executable reducer for every controllable semantic transition."
+      "path": "boatstack/internal/effects/state_reducer.go",
+      "note": "Admitted native effects reduce every controllable Standard distribution transition through one state adapter."
     },
     {
-      "path": "boatstack/internal/kernel/catalog/completeness_test.go",
+      "path": "boatstack/flow/standard/completeness_test.go",
       "note": "Runtime facet/event classification, writer-boundary inventory, and reducer-completeness refusing tests."
     },
     {
@@ -36,7 +36,7 @@
       "note": "Staged effect ordering, atomic resource application, rollback, and external settlement boundary."
     },
     {
-      "path": "boatstack/internal/kernel/catalog/historical_test.go",
+      "path": "boatstack/flow/standard/historical_test.go",
       "note": "Historical incidents resolved through the executable runtime supervisor."
     }
   ],
@@ -70,6 +70,12 @@
     }
   ],
   "events": [
+    {
+      "id": "catalog.reconcile",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
     {
       "id": "configuration.initialize",
       "controllable": true,
@@ -438,6 +444,710 @@
     }
   ],
   "transitions": [
+    {
+      "from": "DORMANT",
+      "event": "catalog.reconcile",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "catalog.reconcile",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "catalog.reconcile",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "catalog.reconcile",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "catalog.reconcile",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "catalog.reconcile",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "catalog.reconcile",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "catalog.reconcile",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "catalog.reconcile",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "catalog.reconcile",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "catalog.reconcile",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "catalog.reconcile",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "catalog.reconcile",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "catalog.reconcile",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "catalog.reconcile",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "catalog.reconcile",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "catalog.reconcile",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "catalog.reconcile",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "catalog.reconcile",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "catalog.reconcile",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "catalog.reconcile",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "catalog.reconcile",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "catalog.reconcile",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "catalog.reconcile",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "catalog.reconcile",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "catalog.reconcile",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "catalog.reconcile",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "catalog.reconcile",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "catalog.reconcile",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "catalog.reconcile",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "catalog.reconcile",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "RECOVERY",
+      "event": "catalog.reconcile",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "catalog.reconcile",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "catalog.reconcile",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "catalog.reconcile",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "catalog.reconcile",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "catalog.reconcile",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "catalog.reconcile",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "catalog.reconcile",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "catalog.reconcile",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "catalog.reconcile",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "catalog.reconcile",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "catalog.reconcile",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "catalog.reconcile",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "catalog.reconcile",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "catalog.reconcile",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "catalog.reconcile",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "UNRESOLVED",
+      "event": "catalog.reconcile",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "catalog.reconcile",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "catalog.reconcile",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "catalog.reconcile",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "catalog.reconcile",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "catalog.reconcile",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "catalog.reconcile",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "catalog.reconcile",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "catalog.reconcile",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "catalog.reconcile",
+      "to": "DORMANT",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "catalog.reconcile",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "catalog.reconcile",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "catalog.reconcile",
+      "to": "RECOVERY",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "catalog.reconcile",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "catalog.reconcile",
+      "to": "UNRESOLVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "catalog.reconcile",
+      "to": "TERMINAL",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "catalog.reconcile",
+      "to": "ABANDONED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
     {
       "from": "OBSERVED",
       "event": "configuration.initialize",

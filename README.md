@@ -1,9 +1,11 @@
 # Boatstack
 
-Boatstack V2 is one repository-delivery controller for humans and coding agents.
-It observes a repository, resolves one legal transition, binds exact authority,
-executes owned effects transactionally, verifies the result, and records a
-receipt.
+Boatstack is a programmable supervisory control runtime for software delivery,
+with a first-party standard delivery flow. It compiles one CoreSystem, one
+explicit primary flow, and optional conservative extensions into an immutable
+ControlProgram before it observes a repository, resolves one legal transition,
+binds exact authority, executes owned effects, verifies the result, and records
+a receipt.
 
 Cursor, Codex, Claude Code, Gemini CLI, MCP, the CLI, and the Go SDK use the same
 versioned protocol. They do not keep separate workflow state machines.
@@ -70,7 +72,7 @@ boatstack apply --repo . --transition <stable-id> --format json
 ```
 
 - `status`, `next`, `doctor`, `catalog`, and `events` are read-only.
-- `apply` and `recover` request stable transition IDs from the 61-event
+- `apply` and `recover` request stable transition IDs from the 62-event
   executable catalog.
 - Friendly aliases such as `plan-create`, `plan-approve`,
   `workspace-cut`, `record-test`, and `publish-pr` map to those IDs.
@@ -85,9 +87,16 @@ boatstack apply --repo . --transition <stable-id> --format json
 
 The generated [transition catalog](docs/architecture/boatstack-v2-transition-catalog.md)
 and [Mermaid inventory](docs/architecture/boatstack-v2-transition-catalog.mmd)
-come directly from the runtime registry.
+come directly from the runtime registry. The generated
+[StandardFlow graph](docs/architecture/boatstack-standard-flow.mmd) filters the
+same compiled registry by primary-flow origin; it is not a second graph.
 The [replacement closure report](docs/architecture/boatstack-v2-closure-report.md)
 records the deleted V1 authority and its V2 evidence.
+
+The Go SDK keeps the standard distribution ergonomic with `sdk.New(...)`.
+Custom applications use `sdk.NewKernel(..., sdk.WithFlow(flow),
+sdk.WithExtension(extension))`; the lower-level constructor requires an
+explicit trusted in-process primary flow and never inserts StandardFlow.
 
 ## Coding-agent skills
 

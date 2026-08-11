@@ -1,4 +1,4 @@
-package reducer
+package effects
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
 )
 
-func Apply(state *durable.State, admission protocol.Admission, transition catalog.Transition) error {
+func applyStateTransition(state *durable.State, admission protocol.Admission, transition catalog.Transition) error {
 	configured := state.Goal.Validate() == nil
 	switch transition.ID {
 	case "installation.initialize", "goal.configure":
@@ -46,7 +46,7 @@ func Apply(state *durable.State, admission protocol.Admission, transition catalo
 		state.RuntimeFingerprint, _ = admission.Parameters.Get("runtime_sha256")
 		state.RuntimePath, _ = admission.Parameters.Get("runtime_path")
 		state.RuntimeSource, _ = admission.Parameters.Get("source_revision")
-		ClearRecoveryContext(state)
+		clearRecoveryContext(state)
 		state.Phase = settledPhase(*state)
 	case "configuration.initialize", "configuration.mutate":
 		state.Configuration = model.ConfigurationVerified
@@ -54,8 +54,15 @@ func Apply(state *durable.State, admission protocol.Admission, transition catalo
 		state.Phase = settledPhase(*state)
 	case "configuration.reconcile":
 		state.Configuration, state.Recovery, state.Transaction = model.ConfigurationVerified, model.RecoveryNone, model.TransactionNone
-		ClearRecoveryContext(state)
+		clearRecoveryContext(state)
 		state.Phase = settledPhase(*state)
+	case "catalog.reconcile":
+		prior, _ := admission.Parameters.Get("prior_program_fingerprint")
+		accepted, _ := admission.Parameters.Get("accept_obligation_change")
+		if prior == "" || prior != state.ProgramFingerprint || accepted != "true" {
+			return fmt.Errorf("catalog reconciliation must bind the prior program and explicitly accept obligation changes")
+		}
+		state.ProgramFingerprint = admission.ProgramFingerprint
 	case "installation.initialize":
 		state.Runtime, state.Configuration = model.RuntimeVerified, model.ConfigurationVerified
 		state.RuntimeFingerprint, _ = admission.Parameters.Get("runtime_sha256")
@@ -99,12 +106,12 @@ func Apply(state *durable.State, admission protocol.Admission, transition catalo
 			state.Workspace = model.WorkspaceAbandoned
 		}
 		state.Recovery, state.Transaction = model.RecoveryNone, model.TransactionNone
-		ClearRecoveryContext(state)
+		clearRecoveryContext(state)
 		establishTerminal(state, model.PhaseAbandoned)
 	case "workspace.abandon":
 		state.Delivery, state.Workspace = model.DeliveryDiscarded, model.WorkspaceAbandoned
 		state.Recovery, state.Transaction = model.RecoveryNone, model.TransactionNone
-		ClearRecoveryContext(state)
+		clearRecoveryContext(state)
 		establishTerminal(state, model.PhaseAbandoned)
 	case "workspace.cut":
 		state.Workspace, state.Phase = model.WorkspaceCut, model.PhaseActive
@@ -129,9 +136,9 @@ func Apply(state *durable.State, admission protocol.Admission, transition catalo
 		state.Phase = terminalPhase(*state)
 	case "workspace.reconcile":
 		state.Recovery, state.Transaction, state.Phase = model.RecoveryNone, model.TransactionNone, engagedPhase(*state)
-		ClearRecoveryContext(state)
+		clearRecoveryContext(state)
 	case "gate.build.record", "gate.test.record", "gate.review.record", "gate.change.record", "gate.journey.record":
-		gate, _ := catalog.GateName(transition.ID)
+		gate, _ := standardGateName(transition.ID)
 		revision, _ := admission.Parameters.Get("source_revision")
 		fingerprint, _ := admission.Parameters.Get("evidence_fingerprint")
 		upsertGate(state, durable.GateEvidence{Gate: gate, Revision: revision, Fingerprint: fingerprint})
@@ -167,7 +174,7 @@ func Apply(state *durable.State, admission protocol.Admission, transition catalo
 		state.Publication, state.Workspace, state.Delivery, state.Phase = model.PublicationPublishedNotLanded, model.WorkspacePublished, model.DeliveryPublished, model.PhaseActive
 	case "publication.observe", "publication.reconcile":
 		state.Recovery, state.Transaction = model.RecoveryNone, model.TransactionNone
-		ClearRecoveryContext(state)
+		clearRecoveryContext(state)
 		if state.Publication == model.PublicationUnavailable || state.Publication == model.PublicationConflicting {
 			state.Phase = model.PhaseUnresolved
 		} else if state.Publication == model.PublicationClosedUnmerged {
@@ -185,10 +192,10 @@ func Apply(state *durable.State, admission protocol.Admission, transition catalo
 		state.Terminal, state.Phase = model.TerminalNonterminal, model.PhaseActive
 	case "recovery.resume":
 		state.Recovery, state.Transaction, state.Delivery, state.Phase = model.RecoveryNone, model.TransactionNone, model.DeliveryActive, model.PhaseActive
-		ClearRecoveryContext(state)
+		clearRecoveryContext(state)
 	case "recovery.rollback":
 		state.Recovery, state.Transaction, state.Phase = model.RecoveryNone, model.TransactionNone, model.PhaseObserved
-		ClearRecoveryContext(state)
+		clearRecoveryContext(state)
 	case "recovery.escalate":
 		state.Recovery, state.Phase = model.RecoveryEscalated, model.PhaseFrontier
 		state.Transaction = model.TransactionNone
@@ -207,7 +214,7 @@ func Apply(state *durable.State, admission protocol.Admission, transition catalo
 	return nil
 }
 
-func ClearRecoveryContext(state *durable.State) {
+func clearRecoveryContext(state *durable.State) {
 	state.TransactionID = ""
 	state.TransactionTransition = ""
 	state.RecoveryCause = ""

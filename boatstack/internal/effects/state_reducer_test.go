@@ -1,4 +1,4 @@
-package reducer
+package effects
 
 import (
 	"testing"
@@ -7,6 +7,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
+	"github.com/operatorstack/boatstack/boatstack/internal/testprogram"
 )
 
 func TestRequiredVisualEvidenceParticipatesInVerifiedTerminal(t *testing.T) {
@@ -22,11 +23,11 @@ func TestRequiredVisualEvidenceParticipatesInVerifiedTerminal(t *testing.T) {
 	}
 	apply := func(id catalog.TransitionID, parameters protocol.Parameters) {
 		t.Helper()
-		transition, ok := catalog.Default().Lookup(id)
+		transition, ok := testprogram.StandardRegistry().Lookup(id)
 		if !ok {
 			t.Fatalf("missing transition %s", id)
 		}
-		if err := Apply(&state, protocol.Admission{Goal: goal, Parameters: parameters, SourceRevision: "revision", WorktreeFingerprint: "worktree"}, transition); err != nil {
+		if err := applyStateTransition(&state, protocol.Admission{Goal: goal, Parameters: parameters, SourceRevision: "revision", WorktreeFingerprint: "worktree"}, transition); err != nil {
 			t.Fatalf("apply %s: %v", id, err)
 		}
 	}
@@ -56,17 +57,17 @@ func TestPublicationCorrectionRequiresIndependentObservationForTerminal(t *testi
 		Verification: model.VerificationCurrent, Recovery: model.RecoveryNone, Transaction: model.TransactionNone, Terminal: model.TerminalEstablished,
 		Goal: goal,
 	}
-	correct, _ := catalog.Default().Lookup("publication.correct")
+	correct, _ := testprogram.StandardRegistry().Lookup("publication.correct")
 	admission := protocol.Admission{Goal: goal, Parameters: protocol.Parameters{{Name: "publication_id", Value: "7"}, {Name: "body_path", Value: "/body"}}}
-	if err := Apply(&state, admission, correct); err != nil {
+	if err := applyStateTransition(&state, admission, correct); err != nil {
 		t.Fatal(err)
 	}
 	if state.Terminal != model.TerminalNonterminal || state.Publication != model.PublicationPublishedNotLanded || state.Phase != model.PhaseActive {
 		t.Fatalf("external correction self-certified terminal: %#v", state)
 	}
 	state.Publication = model.PublicationOpen // supplied only by PrepareObservation through gh pr view
-	observe, _ := catalog.Default().Lookup("publication.observe")
-	if err := Apply(&state, admission, observe); err != nil {
+	observe, _ := testprogram.StandardRegistry().Lookup("publication.observe")
+	if err := applyStateTransition(&state, admission, observe); err != nil {
 		t.Fatal(err)
 	}
 	if state.Terminal != model.TerminalEstablished || state.Phase != model.PhaseTerminal {
@@ -90,8 +91,8 @@ func TestWorkspaceReapPreservesEstablishedTerminalPhase(t *testing.T) {
 			Plan: model.PlanLocked, Configuration: model.ConfigurationVerified, Runtime: model.RuntimeVerified, Publication: model.PublicationMerged,
 			Verification: model.VerificationCurrent, Recovery: model.RecoveryNone, Transaction: model.TransactionNone, Terminal: model.TerminalEstablished, Goal: goal,
 		}
-		transition, _ := catalog.Default().Lookup("workspace.reap")
-		if err := Apply(&state, protocol.Admission{Goal: goal}, transition); err != nil {
+		transition, _ := testprogram.StandardRegistry().Lookup("workspace.reap")
+		if err := applyStateTransition(&state, protocol.Admission{Goal: goal}, transition); err != nil {
 			t.Fatal(err)
 		}
 		if state.Workspace != model.WorkspaceAbsent || state.Phase != fixture.phase || state.Terminal != model.TerminalEstablished {
@@ -111,18 +112,18 @@ func TestEscalatedRecoveryCanOnlyBeReconfiguredTowardExplicitAbandonment(t *test
 		Goal: original, TransactionID: "adm-interrupted", RecoveryCause: "provider unknown", RecoverySourcePhase: model.PhaseActive,
 		RecoveryResumption: model.PhaseFrontier, RecoveryBudget: 0,
 	}
-	configure, _ := catalog.Default().Lookup("goal.configure")
+	configure, _ := testprogram.StandardRegistry().Lookup("goal.configure")
 	configureAdmission := protocol.Admission{Goal: abandoned, Parameters: protocol.Parameters{
 		{Name: "goal_kind", Value: string(abandoned.Kind)}, {Name: "delivery_id", Value: abandoned.DeliveryID},
 	}}
-	if err := Apply(&state, configureAdmission, configure); err != nil {
+	if err := applyStateTransition(&state, configureAdmission, configure); err != nil {
 		t.Fatal(err)
 	}
 	if state.Phase != model.PhaseFrontier || state.Recovery != model.RecoveryEscalated {
 		t.Fatalf("goal reconfiguration bypassed escalated recovery: %#v", state)
 	}
-	abandon, _ := catalog.Default().Lookup("plan.abandon")
-	if err := Apply(&state, protocol.Admission{Goal: abandoned}, abandon); err != nil {
+	abandon, _ := testprogram.StandardRegistry().Lookup("plan.abandon")
+	if err := applyStateTransition(&state, protocol.Admission{Goal: abandoned}, abandon); err != nil {
 		t.Fatal(err)
 	}
 	if state.Phase != model.PhaseAbandoned || state.Recovery != model.RecoveryNone || state.TransactionID != "" || state.Terminal != model.TerminalEstablished {
