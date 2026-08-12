@@ -162,6 +162,10 @@ func TestProgramManifestNamespaceAndCompatibilityBoundary(t *testing.T) {
 		{"host-native-state-handler", func(value *delivery.ProgramManifest) {
 			value.Transitions[0].StateEffect = delivery.StateEffect{Kind: delivery.StateEffectNative, NativeHandler: "abandon-delivery"}
 		}, runtimeFixture(), delivery.ProgramInvalid},
+		{"optional-assignment-parameter", func(value *delivery.ProgramManifest) {
+			value.Transitions[0].Parameters = append(value.Transitions[0].Parameters, delivery.ParameterSpec{Name: "optional_state"})
+			value.Transitions[0].StateEffect.Assignments = []delivery.StateAssignment{{Facet: "phase", ValueFrom: delivery.StateValueReference{Parameter: "optional_state"}}}
+		}, runtimeFixture(), delivery.ProgramInvalid},
 		{"duplicate-condition", func(value *delivery.ProgramManifest) {
 			value.Transitions[0].SourceConditions = append(value.Transitions[0].SourceConditions, value.Transitions[0].SourceConditions[0])
 		}, runtimeFixture(), delivery.ProgramInvalid},

@@ -1,6 +1,7 @@
 package effects
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -146,6 +147,19 @@ func TestDeclaredAssignmentReducesUnknownTransitionWithoutGoDispatch(t *testing.
 	}
 	if state.Phase != model.PhaseObserved || state.LastTransition != transition.ID {
 		t.Fatalf("declared state effect did not run: %#v", state)
+	}
+}
+
+func TestDeclaredAssignmentRefusesMissingAdmittedParameter(t *testing.T) {
+	// control-law: assignment-parameter-sources-are-total-before-effect-preparation
+	state := ownershipState()
+	transition := transitionFixture("fixture.parameter-assignment", catalog.OriginControlProgram, true)
+	transition.TargetPhases = []model.ProtocolPhase{model.PhaseActive}
+	transition.StateEffect = catalog.StateEffect{Kind: catalog.StateEffectAssignments, Assignments: []catalog.StateAssignment{
+		{Facet: "phase", ValueFrom: catalog.StateValueReference{Parameter: "required_phase"}},
+	}}
+	if err := applyStateTransition(&state, protocol.Admission{Objective: state.Objective}, transition); err == nil || !strings.Contains(err.Error(), "parameter \"required_phase\" is absent") {
+		t.Fatalf("missing assignment parameter was not refused: %v", err)
 	}
 }
 

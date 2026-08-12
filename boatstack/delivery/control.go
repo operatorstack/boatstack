@@ -708,6 +708,9 @@ func validateProgramRuntime(manifest ProgramRuntimeManifest) error {
 			}
 			if manifest.RuntimeMode == ProgramRuntimeProtocol {
 				for _, condition := range transition.TargetConditions {
+					if stateEffectTargetsFacet(transition.StateEffect, condition.Facet) {
+						continue
+					}
 					if !strings.HasPrefix(string(condition.Facet), manifest.ID+".") {
 						return fmt.Errorf("protocol ProgramRuntime transition %q targets non-owned fact %q", transition.ID, condition.Facet)
 					}
@@ -735,6 +738,16 @@ func stringSet(values []string) map[string]bool {
 		}
 	}
 	return result
+}
+
+func stateEffectTargetsFacet(effect StateEffect, target FacetName) bool {
+	for _, assignment := range effect.Assignments {
+		facet, ok := catalog.DeclaredStateResolverFacet(assignment.Facet)
+		if ok && facet == target {
+			return true
+		}
+	}
+	return false
 }
 
 func transitionSet(values []TransitionID) map[TransitionID]bool {
@@ -853,6 +866,9 @@ func validateExtension(manifest ExtensionManifest, seen, reserved map[string]boo
 		}
 		seenTransitions[transition.ID] = true
 		for _, condition := range transition.TargetConditions {
+			if stateEffectTargetsFacet(transition.StateEffect, condition.Facet) {
+				continue
+			}
 			if !strings.HasPrefix(string(condition.Facet), manifest.ID+".") {
 				return fmt.Errorf("extension transition %q targets non-owned fact %q", transition.ID, condition.Facet)
 			}

@@ -734,9 +734,9 @@ func validateStateEffect(t Transition) error {
 	for _, facet := range t.OwnedFacets {
 		owned[facet] = true
 	}
-	parameters := map[string]bool{}
+	parameters := map[string]ParameterSpec{}
 	for _, parameter := range t.Parameters {
-		parameters[parameter.Name] = true
+		parameters[parameter.Name] = parameter
 	}
 	preconditions := map[string]bool{}
 	for _, condition := range t.StateEffect.Preconditions {
@@ -784,8 +784,14 @@ func validateStateEffect(t Transition) error {
 		if !stateAssignmentMatchesTarget(t, assignment) {
 			return fmt.Errorf("%s: state-effect assignment %q is not compatible with resolver target conditions", t.ID, assignment.Facet)
 		}
-		if parameter := assignment.ValueFrom.Parameter; parameter != "" && !parameters[parameter] {
-			return fmt.Errorf("%s: state-effect assignment %q references undeclared parameter %q", t.ID, assignment.Facet, parameter)
+		if parameter := assignment.ValueFrom.Parameter; parameter != "" {
+			spec, declared := parameters[parameter]
+			if !declared {
+				return fmt.Errorf("%s: state-effect assignment %q references undeclared parameter %q", t.ID, assignment.Facet, parameter)
+			}
+			if !spec.Required {
+				return fmt.Errorf("%s: state-effect assignment %q references optional parameter %q", t.ID, assignment.Facet, parameter)
+			}
 		}
 		if source := assignment.ValueFrom.Admission; source != "" && source != "source_revision" && source != "worktree_fingerprint" && source != "expected_program_fingerprint" {
 			return fmt.Errorf("%s: state-effect assignment %q references unknown admission value %q", t.ID, assignment.Facet, source)
@@ -810,7 +816,7 @@ func statePreconditionImpliedBySource(t Transition, condition StatePrecondition)
 		}
 		return true
 	}
-	facet, ok := declaredStateResolverFacet(condition.Facet)
+	facet, ok := DeclaredStateResolverFacet(condition.Facet)
 	if !ok {
 		return false
 	}
@@ -832,7 +838,7 @@ func stateAssignmentMatchesTarget(t Transition, assignment StateAssignment) bool
 	if assignment.Facet == "phase" {
 		return assignment.Value != nil && t.DeclaresTargetPhase(model.ProtocolPhase(*assignment.Value))
 	}
-	facet, stateFacet := declaredStateResolverFacet(assignment.Facet)
+	facet, stateFacet := DeclaredStateResolverFacet(assignment.Facet)
 	if !stateFacet {
 		return true
 	}

@@ -92,7 +92,9 @@ func ValidDeclaredStateLiteral(field, value string) bool {
 	}
 }
 
-func declaredStateResolverFacet(field string) (model.FacetName, bool) {
+// DeclaredStateResolverFacet projects a durable assignment field onto the
+// canonical resolver facet that can verify its postcondition.
+func DeclaredStateResolverFacet(field string) (model.FacetName, bool) {
 	switch field {
 	case "engagement":
 		return model.FacetEngagement, true

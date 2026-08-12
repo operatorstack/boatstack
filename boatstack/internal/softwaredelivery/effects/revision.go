@@ -45,14 +45,16 @@ func BindStateRevision(ctx context.Context, prepared ports.PreparedEffect, resol
 		return nil, fmt.Errorf("compiled control program changed before revision binding")
 	}
 	before := state
+	if state.ProgramFingerprint == "" {
+		state.ProgramFingerprint = admission.ExpectedProgramFingerprint
+	}
+	if err := applyStateTransition(&state, admission, transition); err != nil {
+		return nil, err
+	}
 	state.Revision, err = durable.NextRevision(state.Revision)
 	if err != nil {
 		return nil, err
 	}
-	if state.ProgramFingerprint == "" {
-		state.ProgramFingerprint = admission.ExpectedProgramFingerprint
-	}
-	state.LastTransition = transition.ID
 	state.UpdatedAt = clock.Now().UTC()
 	raw, err := durable.EncodeState(state)
 	if err != nil {

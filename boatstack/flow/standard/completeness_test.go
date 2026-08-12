@@ -203,6 +203,11 @@ func TestMalformedDeclaredStateEffectsFailClosedAtCatalogBoundary(t *testing.T) 
 			value.StateEffect.Assignments[0].Value = nil
 			value.StateEffect.Assignments[0].ValueFrom.Parameter = "not_declared"
 		}},
+		{"optional-assignment-parameter", func(value *catalog.Transition) {
+			value.Parameters = append(value.Parameters, catalog.ParameterSpec{Name: "optional_state", Required: false})
+			value.StateEffect.Assignments[0].Value = nil
+			value.StateEffect.Assignments[0].ValueFrom.Parameter = "optional_state"
+		}},
 		{"unknown-admission-source", func(value *catalog.Transition) {
 			value.StateEffect.Assignments[0].Value = nil
 			value.StateEffect.Assignments[0].ValueFrom.Admission = "not_admitted"
