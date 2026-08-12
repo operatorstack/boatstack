@@ -42,7 +42,7 @@ func (d *integerDomain) Admissible(_ context.Context, evaluation Evaluation) (bo
 	case "counter.inspect":
 		return true, "inspection is always available", nil
 	case "counter.reset":
-		return observed.Value > 0, "value is nonzero", nil
+		return observed.Value > 0 || evaluation.State.Recovery != nil, "value is nonzero or recovery remains active", nil
 	default:
 		return false, "unknown transition", nil
 	}
@@ -393,5 +393,40 @@ func TestAtomicTransactionFailureEntersRecoveryWithoutDuplicateEffect(t *testing
 	}
 	if domain.incrementExecutions != 1 {
 		t.Fatalf("original operator ran %d times", domain.incrementExecutions)
+	}
+}
+
+func TestFailedRecoveryAttemptPreservesOriginalRecoveryObligation(t *testing.T) {
+	runtime, store, _, domain, objective, authority := newIntegerRuntime(t, true)
+	domain.failAfterIncrement = true
+	ctx := context.Background()
+
+	resolution, err := runtime.Resolve(ctx, ResolveRequest{InstanceID: "counter-fixture", Objective: &objective, Authority: authority, Requested: "counter.increment-first"})
+	if err != nil || resolution.Decision.Kind != Prescribed {
+		t.Fatalf("resolve: %#v %v", resolution.Decision, err)
+	}
+	_, err = runtime.Apply(ctx, ApplyRequest{ResolveRequest: ResolveRequest{InstanceID: "counter-fixture", Objective: &objective, Authority: authority, Requested: "counter.increment-first"}, Prescription: *resolution.Prescription})
+	if !IsRecoveryRequired(err) || store.state.Recovery == nil {
+		t.Fatalf("initial recovery: state=%#v err=%v", store.state, err)
+	}
+	original := *store.state.Recovery
+
+	recovery, err := runtime.Resolve(ctx, ResolveRequest{InstanceID: "counter-fixture", Objective: &objective, Authority: authority})
+	if err != nil || recovery.Decision.Kind != Prescribed || recovery.Decision.Transition != "counter.recover" {
+		t.Fatalf("first recovery resolve: %#v %v", recovery.Decision, err)
+	}
+	store.commitFailures = 1
+	_, err = runtime.Apply(ctx, ApplyRequest{ResolveRequest: ResolveRequest{InstanceID: "counter-fixture", Objective: &objective, Authority: authority, Requested: "counter.recover"}, Prescription: *recovery.Prescription})
+	if !IsRecoveryRequired(err) || store.state.Recovery == nil || *store.state.Recovery != original || domain.value != 0 {
+		t.Fatalf("failed recovery attempt: state=%#v value=%d err=%v", store.state, domain.value, err)
+	}
+
+	retry, err := runtime.Resolve(ctx, ResolveRequest{InstanceID: "counter-fixture", Objective: &objective, Authority: authority})
+	if err != nil || retry.Decision.Kind != Prescribed || retry.Decision.Transition != "counter.recover" {
+		t.Fatalf("recovery retry resolve: %#v %v", retry.Decision, err)
+	}
+	_, err = runtime.Apply(ctx, ApplyRequest{ResolveRequest: ResolveRequest{InstanceID: "counter-fixture", Objective: &objective, Authority: authority, Requested: "counter.recover"}, Prescription: *retry.Prescription})
+	if err != nil || store.state.Recovery != nil || store.state.Mode != "zero" || store.state.Revision != 4 {
+		t.Fatalf("recovery retry result: state=%#v err=%v", store.state, err)
 	}
 }

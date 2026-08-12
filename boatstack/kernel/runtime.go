@@ -43,6 +43,9 @@ type Evaluation struct {
 
 type Domain interface {
 	Observe(context.Context, string) (Observation, error)
+	// Admissible must keep a declared recovery transition admissible while its
+	// matching RecoveryState is active, including after an earlier recovery
+	// attempt may already have changed the domain.
 	Admissible(context.Context, Evaluation) (bool, string, error)
 	Verify(context.Context, Evaluation, Effect, Observation) error
 }
@@ -391,7 +394,16 @@ func IsRecoveryRequired(err error) bool {
 func (r Runtime) requireRecovery(ctx context.Context, state ControlState, prescription Prescription, reason string) error {
 	target := state
 	target.Revision++
-	target.Recovery = &RecoveryState{PrescriptionID: prescription.ID, TransitionID: prescription.TransitionID, Reason: reason}
+	if state.Recovery == nil {
+		target.Recovery = &RecoveryState{PrescriptionID: prescription.ID, TransitionID: prescription.TransitionID, Reason: reason}
+	} else {
+		// A failed recovery attempt does not replace the original obligation.
+		// Keeping that identity lets the same declared reconciler observe the
+		// partial outcome and continue instead of creating an unmapped nested
+		// recovery transition.
+		recovery := *state.Recovery
+		target.Recovery = &recovery
+	}
 	if err := r.store.EnterRecovery(ctx, state.Revision, target); err != nil {
 		return RecoveryRequiredError{Reason: reason + "; recovery state commit failed: " + err.Error()}
 	}
