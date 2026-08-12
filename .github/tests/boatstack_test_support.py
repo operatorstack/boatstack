@@ -14,6 +14,8 @@ def prescription_cli_arguments(
         correlation,
         "--prescription-id",
         str(prescription["id"]),
+        "--expected-instance-id",
+        str(prescription["expected_instance_id"]),
         "--expected-state-revision",
         str(prescription["expected_state_revision"]),
         "--expected-program-fingerprint",

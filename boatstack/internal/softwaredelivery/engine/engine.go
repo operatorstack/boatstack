@@ -482,7 +482,7 @@ func validatePrescriptionCurrent(prescription protocol.Prescription, snapshot mo
 	if err != nil {
 		return err
 	}
-	current, err := general.NewFreshness(snapshot.StateRevision, snapshot.ProgramFingerprint, snapshot.Fingerprint, objectiveBindingFingerprint, prescription.AuthorityFingerprint)
+	current, err := general.NewFreshness(snapshot.Invocation.RepositoryID, snapshot.StateRevision, snapshot.ProgramFingerprint, snapshot.Fingerprint, objectiveBindingFingerprint, prescription.AuthorityFingerprint)
 	if err != nil {
 		return err
 	}

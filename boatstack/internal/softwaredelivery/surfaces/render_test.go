@@ -23,13 +23,13 @@ func TestShellRenderersConsumeOneCommandAST(t *testing.T) {
 	objective := model.Objective{ID: "objective", Kind: model.ObjectiveVerified, DeliveryID: "delivery"}
 	parameters := protocol.Parameters{{Name: "source_path", Value: "/tmp/O'Brien plan.md"}, {Name: "delivery_id", Value: "delivery"}}
 	prescription := protocol.Prescription{
-		ID: "prx-fixture", Freshness: general.Freshness{ExpectedStateRevision: 41, ExpectedProgramFingerprint: strings.Repeat("a", 64), ExpectedSnapshotFingerprint: strings.Repeat("b", 64), ExpectedObjectiveBindingFingerprint: strings.Repeat("c", 64), AuthorityFingerprint: "auth-fixture"},
+		ID: "prx-fixture", Freshness: general.Freshness{ExpectedInstanceID: "repo-fixture", ExpectedStateRevision: 41, ExpectedProgramFingerprint: strings.Repeat("a", 64), ExpectedSnapshotFingerprint: strings.Repeat("b", 64), ExpectedObjectiveBindingFingerprint: strings.Repeat("c", 64), AuthorityFingerprint: "auth-fixture"},
 		RequiredCapabilities:  []catalog.Capability{catalog.CapabilityRepositoryWrite, catalog.CapabilityCommandExecute},
 		EffectiveCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite, catalog.CapabilityCommandExecute},
 	}
 	command := PrescriptionCommand(transition, prescription, "corr-1", "/repo with space", objective, "flow", parameters)
 	joined := strings.Join(command.Arguments, " ")
-	for _, binding := range []string{"--correlation corr-1", "--prescription-id prx-fixture", "--expected-state-revision 41", "--expected-program-fingerprint", "--expected-snapshot-fingerprint", "--expected-objective-binding-fingerprint", "--authority-fingerprint auth-fixture", "--required-capability repository.write", "--required-capability command.execute", "--effective-capability repository.write", "--effective-capability command.execute"} {
+	for _, binding := range []string{"--correlation corr-1", "--prescription-id prx-fixture", "--expected-instance-id repo-fixture", "--expected-state-revision 41", "--expected-program-fingerprint", "--expected-snapshot-fingerprint", "--expected-objective-binding-fingerprint", "--authority-fingerprint auth-fixture", "--required-capability repository.write", "--required-capability command.execute", "--effective-capability repository.write", "--effective-capability command.execute"} {
 		if !strings.Contains(joined, binding) {
 			t.Fatalf("prescription command omitted CAS binding %q: %s", binding, joined)
 		}
@@ -119,7 +119,7 @@ func TestLocusModelsAreGeneratedFromEveryRuntimeTransition(t *testing.T) {
 
 func TestEveryHostConsumesOneSemanticPrescription(t *testing.T) {
 	objective := model.Objective{ID: "objective", Kind: model.ObjectiveVerified, DeliveryID: "delivery"}
-	prescription := protocol.Prescription{ID: "prx-fixture", Freshness: general.Freshness{ExpectedStateRevision: 41, ExpectedProgramFingerprint: strings.Repeat("a", 64), ExpectedSnapshotFingerprint: strings.Repeat("b", 64), ExpectedObjectiveBindingFingerprint: strings.Repeat("c", 64)}}
+	prescription := protocol.Prescription{ID: "prx-fixture", Freshness: general.Freshness{ExpectedInstanceID: "repo-fixture", ExpectedStateRevision: 41, ExpectedProgramFingerprint: strings.Repeat("a", 64), ExpectedSnapshotFingerprint: strings.Repeat("b", 64), ExpectedObjectiveBindingFingerprint: strings.Repeat("c", 64)}}
 	for _, transition := range testprogram.StandardRegistry().All() {
 		if !transition.Controllable() {
 			continue

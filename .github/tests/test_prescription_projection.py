@@ -11,6 +11,7 @@ class PrescriptionProjectionContract(unittest.TestCase):
     def setUp(self) -> None:
         self.prescription = {
             "id": "prx-example",
+            "expected_instance_id": "repo-example",
             "expected_state_revision": 41,
             "expected_program_fingerprint": "a" * 64,
             "expected_snapshot_fingerprint": "snapshot-example",
@@ -26,6 +27,7 @@ class PrescriptionProjectionContract(unittest.TestCase):
             (
                 "--correlation", "correlation-example",
                 "--prescription-id", "prx-example",
+                "--expected-instance-id", "repo-example",
                 "--expected-state-revision", "41",
                 "--expected-program-fingerprint", "a" * 64,
                 "--expected-snapshot-fingerprint", "snapshot-example",

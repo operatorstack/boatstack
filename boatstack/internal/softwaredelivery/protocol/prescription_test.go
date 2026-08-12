@@ -11,8 +11,15 @@ import (
 func TestPrescriptionContentIdentityBindsTransitionStateProgramAndSnapshot(t *testing.T) {
 	// control-law: resolution emits one immutable state-program CAS identity
 	base := model.Snapshot{
-		Observation: model.Observation{StateRevision: 41, ProgramFingerprint: strings.Repeat("a", 64)},
+		Observation: model.Observation{Invocation: model.InvocationContext{RepositoryID: "repo-fixture"}, StateRevision: 41, ProgramFingerprint: strings.Repeat("a", 64)},
 		Fingerprint: strings.Repeat("b", 64),
+	}
+	snapshot := func(revision uint64, program, fingerprint string) model.Snapshot {
+		value := base
+		value.StateRevision = revision
+		value.ProgramFingerprint = program
+		value.Fingerprint = fingerprint
+		return value
 	}
 	transition := catalog.Transition{ID: "program/advance"}
 	capabilities := CapabilityProjection{AuthorityFingerprint: "auth-test", Required: []catalog.Capability{catalog.CapabilityRepositoryWrite}, Effective: []catalog.Capability{catalog.CapabilityRepositoryWrite}}
@@ -28,9 +35,10 @@ func TestPrescriptionContentIdentityBindsTransitionStateProgramAndSnapshot(t *te
 		snapshot   model.Snapshot
 		transition catalog.Transition
 	}{
-		{name: "state", snapshot: model.Snapshot{Observation: model.Observation{StateRevision: 42, ProgramFingerprint: strings.Repeat("a", 64)}, Fingerprint: strings.Repeat("b", 64)}, transition: transition},
-		{name: "program", snapshot: model.Snapshot{Observation: model.Observation{StateRevision: 41, ProgramFingerprint: strings.Repeat("c", 64)}, Fingerprint: strings.Repeat("b", 64)}, transition: transition},
-		{name: "snapshot", snapshot: model.Snapshot{Observation: model.Observation{StateRevision: 41, ProgramFingerprint: strings.Repeat("a", 64)}, Fingerprint: strings.Repeat("d", 64)}, transition: transition},
+		{name: "instance", snapshot: func() model.Snapshot { value := base; value.Invocation.RepositoryID = "repo-other"; return value }(), transition: transition},
+		{name: "state", snapshot: snapshot(42, strings.Repeat("a", 64), strings.Repeat("b", 64)), transition: transition},
+		{name: "program", snapshot: snapshot(41, strings.Repeat("c", 64), strings.Repeat("b", 64)), transition: transition},
+		{name: "snapshot", snapshot: snapshot(41, strings.Repeat("a", 64), strings.Repeat("d", 64)), transition: transition},
 		{name: "transition", snapshot: base, transition: catalog.Transition{ID: "program/other"}},
 	}
 	for _, mutation := range mutations {

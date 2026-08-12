@@ -8,7 +8,7 @@ import (
 	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
-const PrescriptionSchemaVersion = 3
+const PrescriptionSchemaVersion = 4
 
 // Prescription is the immutable compare-and-swap binding emitted by
 // resolution and required by apply. It carries no reusable authority or
@@ -27,7 +27,7 @@ func NewPrescription(snapshot model.Snapshot, transition catalog.Transition, cap
 	if err != nil {
 		return Prescription{}, err
 	}
-	freshness, err := general.NewFreshness(snapshot.StateRevision, snapshot.ProgramFingerprint, snapshot.Fingerprint, objectiveBindingFingerprint, capabilities.AuthorityFingerprint)
+	freshness, err := general.NewFreshness(snapshot.Invocation.RepositoryID, snapshot.StateRevision, snapshot.ProgramFingerprint, snapshot.Fingerprint, objectiveBindingFingerprint, capabilities.AuthorityFingerprint)
 	if err != nil {
 		return Prescription{}, err
 	}
@@ -86,7 +86,7 @@ func (p Prescription) ValidateCurrent(snapshot model.Snapshot, transition catalo
 	if err != nil {
 		return err
 	}
-	current, err := general.NewFreshness(snapshot.StateRevision, snapshot.ProgramFingerprint, snapshot.Fingerprint, objectiveBindingFingerprint, capabilities.AuthorityFingerprint)
+	current, err := general.NewFreshness(snapshot.Invocation.RepositoryID, snapshot.StateRevision, snapshot.ProgramFingerprint, snapshot.Fingerprint, objectiveBindingFingerprint, capabilities.AuthorityFingerprint)
 	if err != nil {
 		return err
 	}

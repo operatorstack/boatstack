@@ -137,6 +137,7 @@ type ApplyRequest struct {
 type Receipt struct {
 	SchemaVersion        int               `json:"schema_version"`
 	ID                   string            `json:"id"`
+	InstanceID           string            `json:"instance_id"`
 	PrescriptionID       string            `json:"prescription_id"`
 	Program              ProgramIdentity   `json:"program"`
 	TransitionID         string            `json:"transition_id"`
@@ -333,7 +334,7 @@ func (r Runtime) Apply(ctx context.Context, request ApplyRequest) (Receipt, erro
 	if len(transition.Recovers) != 0 {
 		target.Recovery = nil
 	}
-	receipt := Receipt{SchemaVersion: ReceiptSchemaVersion, PrescriptionID: request.Prescription.ID, Program: state.Program, TransitionID: transition.ID, PriorStateRevision: state.Revision, ResultStateRevision: target.Revision, ObjectiveBinding: cloneBinding(target.ObjectiveBinding), AuthorityFingerprint: authority.Fingerprint, Capabilities: required, Effects: append([]EffectFact(nil), effect.Facts...), PriorObservation: observation.Fingerprint, ResultObservation: targetObservation.Fingerprint, Verification: "satisfied", CommittedAt: r.clock.Now().UTC()}
+	receipt := Receipt{SchemaVersion: ReceiptSchemaVersion, InstanceID: state.InstanceID, PrescriptionID: request.Prescription.ID, Program: state.Program, TransitionID: transition.ID, PriorStateRevision: state.Revision, ResultStateRevision: target.Revision, ObjectiveBinding: cloneBinding(target.ObjectiveBinding), AuthorityFingerprint: authority.Fingerprint, Capabilities: required, Effects: append([]EffectFact(nil), effect.Facts...), PriorObservation: observation.Fingerprint, ResultObservation: targetObservation.Fingerprint, Verification: "satisfied", CommittedAt: r.clock.Now().UTC()}
 	identity := receipt
 	identity.ID = ""
 	receipt.ID, err = contentHash(identity)
@@ -358,8 +359,8 @@ func (r Receipt) Validate() error {
 	if err != nil || want != "rcp-"+got {
 		return fmt.Errorf("receipt content identity is invalid")
 	}
-	if r.SchemaVersion != ReceiptSchemaVersion || r.PrescriptionID == "" || !semanticID.MatchString(r.TransitionID) || r.PriorStateRevision == 0 || r.ResultStateRevision != r.PriorStateRevision+1 || r.AuthorityFingerprint == "" || len(r.PriorObservation) != 64 || len(r.ResultObservation) != 64 || r.Verification != "satisfied" || r.CommittedAt.IsZero() {
-		return fmt.Errorf("receipt is missing exact transition, revision, observation, authority, or verification facts")
+	if r.SchemaVersion != ReceiptSchemaVersion || !semanticID.MatchString(r.InstanceID) || r.PrescriptionID == "" || !semanticID.MatchString(r.TransitionID) || r.PriorStateRevision == 0 || r.ResultStateRevision != r.PriorStateRevision+1 || r.AuthorityFingerprint == "" || len(r.PriorObservation) != 64 || len(r.ResultObservation) != 64 || r.Verification != "satisfied" || r.CommittedAt.IsZero() {
+		return fmt.Errorf("receipt is missing exact instance, transition, revision, observation, authority, or verification facts")
 	}
 	if err := r.Program.Validate(); err != nil {
 		return err
@@ -415,7 +416,7 @@ func newPrescription(state ControlState, observation Observation, transition Tra
 	if err != nil {
 		return Prescription{}, err
 	}
-	freshness, err := NewFreshness(state.Revision, state.Program.Fingerprint, observation.Fingerprint, bindingFingerprint, authority.Fingerprint)
+	freshness, err := NewFreshness(state.InstanceID, state.Revision, state.Program.Fingerprint, observation.Fingerprint, bindingFingerprint, authority.Fingerprint)
 	if err != nil {
 		return Prescription{}, err
 	}
@@ -447,9 +448,9 @@ func (p Prescription) validateCurrent(state ControlState, observation Observatio
 		return StalePrescriptionError{Reason: "prescription content identity is invalid"}
 	}
 	bindingFingerprint, bindingErr := Fingerprint(state.ObjectiveBinding)
-	current, freshnessErr := NewFreshness(state.Revision, state.Program.Fingerprint, observation.Fingerprint, bindingFingerprint, authority.Fingerprint)
+	current, freshnessErr := NewFreshness(state.InstanceID, state.Revision, state.Program.Fingerprint, observation.Fingerprint, bindingFingerprint, authority.Fingerprint)
 	if p.SchemaVersion != PrescriptionSchemaVersion || bindingErr != nil || freshnessErr != nil || p.Freshness.Check(current) != nil || !equalBinding(p.ExpectedObjectiveBinding, state.ObjectiveBinding) {
-		return StalePrescriptionError{Reason: "state, program, objective binding, observation, or authority changed"}
+		return StalePrescriptionError{Reason: "instance, state, program, objective binding, observation, or authority changed"}
 	}
 	return nil
 }

@@ -40,3 +40,13 @@ func TestProgramRejectsRecoveryThatCannotRunFromRecoveredSourceMode(t *testing.T
 		t.Fatalf("compile error = %v", err)
 	}
 }
+
+func TestProgramRejectsObjectiveDependentRecovery(t *testing.T) {
+	_, err := CompileProgram("blocked-objective-recovery", "1", "kernel-v1", "idle", []string{"done"}, []Transition{
+		{ID: "advance", SourceModes: []string{"idle"}, TargetMode: "done", ObjectiveScope: ObjectiveNone, ObjectiveMutation: PreserveObjective, RequiredCapabilities: []Capability{"counter.increment"}, OwnedFacets: []string{"counter.value"}, Operation: "counter.increment", Priority: 1},
+		{ID: "recover", SourceModes: []string{"idle"}, TargetMode: "idle", ObjectiveScope: ObjectiveBoundExact, ObjectiveMutation: PreserveObjective, RequiredCapabilities: []Capability{"counter.reset"}, OwnedFacets: []string{"counter.value"}, Operation: "counter.reset", Priority: 1, Recovers: []string{"advance"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), `recovery transition "recover" must preserve objective state without requiring an exact objective`) {
+		t.Fatalf("compile error = %v", err)
+	}
+}

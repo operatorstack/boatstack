@@ -16,8 +16,8 @@ import (
 
 const (
 	ProgramSchemaVersion      = 1
-	PrescriptionSchemaVersion = 1
-	ReceiptSchemaVersion      = 1
+	PrescriptionSchemaVersion = 2
+	ReceiptSchemaVersion      = 2
 )
 
 var semanticID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)

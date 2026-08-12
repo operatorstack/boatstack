@@ -430,3 +430,17 @@ func TestFailedRecoveryAttemptPreservesOriginalRecoveryObligation(t *testing.T) 
 		t.Fatalf("recovery retry result: state=%#v err=%v", store.state, err)
 	}
 }
+
+func TestPrescriptionCannotReplayAcrossControlInstances(t *testing.T) {
+	runtime, store, _, domain, objective, authority := newIntegerRuntime(t, true)
+	ctx := context.Background()
+	resolution, err := runtime.Resolve(ctx, ResolveRequest{InstanceID: "counter-fixture", Objective: &objective, Authority: authority, Requested: "counter.increment-first"})
+	if err != nil || resolution.Decision.Kind != Prescribed {
+		t.Fatalf("resolve: %#v %v", resolution.Decision, err)
+	}
+	store.state.InstanceID = "counter-other"
+	_, err = runtime.Apply(ctx, ApplyRequest{ResolveRequest: ResolveRequest{InstanceID: "counter-other", Objective: &objective, Authority: authority, Requested: "counter.increment-first"}, Prescription: *resolution.Prescription})
+	if !IsStale(err) || domain.value != 0 || domain.incrementExecutions != 0 {
+		t.Fatalf("cross-instance apply: value=%d executions=%d err=%v", domain.value, domain.incrementExecutions, err)
+	}
+}

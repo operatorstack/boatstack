@@ -3215,7 +3215,7 @@
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
     "policy": {
-      "objective_scope": "bound-exact"
+      "objective_scope": "optional-preserve"
     },
     "priority": 2,
     "allows_worktree_transfer": true
@@ -5851,7 +5851,7 @@
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
     "policy": {
-      "objective_scope": "bound-exact"
+      "objective_scope": "optional-preserve"
     },
     "priority": 1,
     "authority_fingerprint_parameter": "publication_id"

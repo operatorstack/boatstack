@@ -46,6 +46,7 @@ type commandOptions struct {
 	transitionID                        string
 	correlationID                       string
 	prescriptionID                      string
+	expectedInstanceID                  string
 	expectedStateRevision               uint64
 	expectedProgramFingerprint          string
 	expectedSnapshotFingerprint         string
@@ -254,6 +255,7 @@ func parseOptions(command string, arguments []string, transition catalog.Transit
 	flags.StringVar(&options.transitionID, "transition", options.transitionID, "stable semantic transition id")
 	flags.StringVar(&options.correlationID, "correlation", "", "command-scoped correlation identity from resolution")
 	flags.StringVar(&options.prescriptionID, "prescription-id", "", "exact prescription identity from resolution")
+	flags.StringVar(&options.expectedInstanceID, "expected-instance-id", "", "exact control instance identity observed during resolution")
 	flags.Uint64Var(&options.expectedStateRevision, "expected-state-revision", 0, "exact durable state revision observed during resolution")
 	flags.StringVar(&options.expectedProgramFingerprint, "expected-program-fingerprint", "", "exact executable control-program fingerprint observed during resolution")
 	flags.StringVar(&options.expectedSnapshotFingerprint, "expected-snapshot-fingerprint", "", "exact admission-relevant snapshot fingerprint observed during resolution")
@@ -477,7 +479,7 @@ func buildRequest(operation surfaces.Operation, options commandOptions) (surface
 		FlowID: flowID, Objective: objective, TransitionID: catalog.TransitionID(options.transitionID), Authority: authority, Parameters: parameters,
 		Prescription: protocol.Prescription{SchemaVersion: protocol.PrescriptionSchemaVersion, ID: options.prescriptionID,
 			TransitionID: catalog.TransitionID(options.transitionID), Freshness: general.Freshness{
-				ExpectedStateRevision: options.expectedStateRevision, ExpectedProgramFingerprint: options.expectedProgramFingerprint,
+				ExpectedInstanceID: options.expectedInstanceID, ExpectedStateRevision: options.expectedStateRevision, ExpectedProgramFingerprint: options.expectedProgramFingerprint,
 				ExpectedSnapshotFingerprint: options.expectedSnapshotFingerprint, ExpectedObjectiveBindingFingerprint: options.expectedObjectiveBindingFingerprint,
 				AuthorityFingerprint: options.authorityFingerprint,
 			}, RequiredCapabilities: requiredCapabilities, EffectiveCapabilities: effectiveCapabilities},

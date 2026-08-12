@@ -150,6 +150,9 @@ func (p *Program) prepare() error {
 		p.byID[transition.ID] = transition
 	}
 	for _, transition := range p.Transitions {
+		if len(transition.Recovers) != 0 && (transition.ObjectiveScope == ObjectiveBoundExact || transition.ObjectiveMutation != PreserveObjective) {
+			return fmt.Errorf("recovery transition %q must preserve objective state without requiring an exact objective", transition.ID)
+		}
 		for _, recovered := range transition.Recovers {
 			recoveredTransition, exists := p.byID[recovered]
 			if !exists {

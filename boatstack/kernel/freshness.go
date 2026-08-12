@@ -7,6 +7,7 @@ import "fmt"
 // ObjectiveBindingFingerprint identifies either the exact bound revision or
 // verified absence.
 type Freshness struct {
+	ExpectedInstanceID                  string `json:"expected_instance_id"`
 	ExpectedStateRevision               uint64 `json:"expected_state_revision"`
 	ExpectedProgramFingerprint          string `json:"expected_program_fingerprint"`
 	ExpectedSnapshotFingerprint         string `json:"expected_snapshot_fingerprint"`
@@ -14,9 +15,9 @@ type Freshness struct {
 	AuthorityFingerprint                string `json:"authority_fingerprint"`
 }
 
-func NewFreshness(stateRevision uint64, programFingerprint, snapshotFingerprint, objectiveBindingFingerprint, authorityFingerprint string) (Freshness, error) {
+func NewFreshness(instanceID string, stateRevision uint64, programFingerprint, snapshotFingerprint, objectiveBindingFingerprint, authorityFingerprint string) (Freshness, error) {
 	value := Freshness{
-		ExpectedStateRevision: stateRevision, ExpectedProgramFingerprint: programFingerprint,
+		ExpectedInstanceID: instanceID, ExpectedStateRevision: stateRevision, ExpectedProgramFingerprint: programFingerprint,
 		ExpectedSnapshotFingerprint:         snapshotFingerprint,
 		ExpectedObjectiveBindingFingerprint: objectiveBindingFingerprint,
 		AuthorityFingerprint:                authorityFingerprint,
@@ -25,8 +26,8 @@ func NewFreshness(stateRevision uint64, programFingerprint, snapshotFingerprint,
 }
 
 func (f Freshness) Validate() error {
-	if f.ExpectedStateRevision == 0 || len(f.ExpectedProgramFingerprint) != 64 || len(f.ExpectedSnapshotFingerprint) != 64 || len(f.ExpectedObjectiveBindingFingerprint) != 64 || f.AuthorityFingerprint == "" {
-		return fmt.Errorf("freshness requires exact state, program, snapshot, objective binding, and authority identities")
+	if f.ExpectedInstanceID == "" || f.ExpectedStateRevision == 0 || len(f.ExpectedProgramFingerprint) != 64 || len(f.ExpectedSnapshotFingerprint) != 64 || len(f.ExpectedObjectiveBindingFingerprint) != 64 || f.AuthorityFingerprint == "" {
+		return fmt.Errorf("freshness requires exact instance, state, program, snapshot, objective binding, and authority identities")
 	}
 	return nil
 }
@@ -39,7 +40,7 @@ func (f Freshness) Check(current Freshness) error {
 		return err
 	}
 	if f != current {
-		return fmt.Errorf("state, program, snapshot, objective binding, or authority changed")
+		return fmt.Errorf("instance, state, program, snapshot, objective binding, or authority changed")
 	}
 	return nil
 }

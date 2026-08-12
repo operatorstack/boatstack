@@ -28,6 +28,7 @@ type CommandAST struct {
 func PrescriptionCommand(transition catalog.Transition, prescription protocol.Prescription, correlation, repository string, objective model.Objective, flowID string, parameters protocol.Parameters) CommandAST {
 	arguments := []string{"apply", "--repo", repository, "--transition", string(transition.ID), "--flow", flowID,
 		"--correlation", correlation, "--prescription-id", prescription.ID,
+		"--expected-instance-id", prescription.ExpectedInstanceID,
 		"--expected-state-revision", strconv.FormatUint(prescription.ExpectedStateRevision, 10),
 		"--expected-program-fingerprint", prescription.ExpectedProgramFingerprint,
 		"--expected-snapshot-fingerprint", prescription.ExpectedSnapshotFingerprint,
