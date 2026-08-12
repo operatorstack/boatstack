@@ -89,6 +89,13 @@ func TestProgramManifestCanonicalFingerprintContract(t *testing.T) {
 			value.Transitions[0].Interruption.Recovery = "alternate.recover"
 		},
 		"priority": func(value *delivery.ProgramManifest) { value.Transitions[0].Priority++ },
+		"owned-facets": func(value *delivery.ProgramManifest) {
+			value.Transitions[0].OwnedFacets = append(value.Transitions[0].OwnedFacets, delivery.StateFacetProduct)
+		},
+		"state-effect": func(value *delivery.ProgramManifest) {
+			phase := string(delivery.PhaseTerminal)
+			value.Transitions[0].StateEffect.Assignments = []delivery.StateAssignment{{Facet: "phase", Value: &phase}}
+		},
 	}
 	for name, mutate := range mutations {
 		t.Run(name, func(t *testing.T) {
@@ -151,6 +158,9 @@ func TestProgramManifestNamespaceAndCompatibilityBoundary(t *testing.T) {
 		}, runtimeFixture(), delivery.ProgramInvalid},
 		{"under-declared-kernel-effect", func(value *delivery.ProgramManifest) {
 			value.Capabilities.CapabilitySurface = []delivery.Capability{delivery.CapabilityRepositoryWrite}
+		}, runtimeFixture(), delivery.ProgramInvalid},
+		{"host-native-state-handler", func(value *delivery.ProgramManifest) {
+			value.Transitions[0].StateEffect = delivery.StateEffect{Kind: delivery.StateEffectNative, NativeHandler: "abandon-delivery"}
 		}, runtimeFixture(), delivery.ProgramInvalid},
 		{"duplicate-condition", func(value *delivery.ProgramManifest) {
 			value.Transitions[0].SourceConditions = append(value.Transitions[0].SourceConditions, value.Transitions[0].SourceConditions[0])
@@ -238,7 +248,8 @@ func programFixture() delivery.ProgramManifest {
 		ID: "recover", Version: 1, SelectionClass: delivery.SelectionProgramRecovery, Class: delivery.EventRecovery,
 		SourcePhases: []delivery.ProtocolPhase{delivery.PhaseRecovery}, TargetPhases: []delivery.ProtocolPhase{delivery.PhaseActive},
 		RequiredIdentity: []string{"repository-id"}, Authority: []delivery.AuthorityClass{delivery.AuthorityRepository}, RequiredCapabilities: []delivery.Capability{delivery.CapabilityRepositoryWrite}, RequiredEvidence: []string{"snapshot"},
-		OwnedResources: []string{"program.state"}, Effect: "program.recover", LocalEffects: []delivery.EffectID{"program.recover"}, Idempotent: true,
+		OwnedResources: []string{"program.state"}, OwnedFacets: []delivery.StateFacet{delivery.StateFacetControl}, StateEffect: delivery.StateEffect{Kind: delivery.StateEffectAssignments},
+		Effect: "program.recover", LocalEffects: []delivery.EffectID{"program.recover"}, Idempotent: true,
 		Prescription: delivery.Prescription{Operation: "recover", ExpectedPostcondition: "active"}, SourcePredicate: "recovery-required",
 		SourceConditions: []delivery.FacetCondition{delivery.KnownCondition(delivery.FacetRecovery, "required")}, AdmissionPredicate: "exact-admission",
 		TargetPredicate: "active", TargetConditions: []delivery.FacetCondition{delivery.KnownCondition(delivery.FacetProgram, "current")}, Verifier: "program.current",

@@ -6,7 +6,7 @@ import sys
 request = json.load(sys.stdin)
 operation = request["operation"]
 response = {
-    "protocol_version": 2,
+    "protocol_version": 3,
     "operation": operation,
     "extension_id": request["extension_id"],
     "extension_version": request["extension_version"],
@@ -17,7 +17,7 @@ if operation == "manifest":
     response["manifest"] = {
         "id": "fixture.echo",
         "version": "1.0.0",
-        "protocol_version": 2,
+        "protocol_version": 3,
         "settings_schema": {"type": "object"},
         "facts": ["fixture.echo.present"],
         "capabilities": ["command.execute"],

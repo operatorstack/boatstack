@@ -58,6 +58,8 @@ type ProgramTransition struct {
 	RequiredCapabilities          []Capability         `json:"required_capabilities"`
 	RequiredEvidence              []string             `json:"required_evidence"`
 	OwnedResources                []string             `json:"owned_resources,omitempty"`
+	OwnedFacets                   []StateFacet         `json:"owned_facets"`
+	StateEffect                   StateEffect          `json:"state_effect"`
 	Effect                        EffectID             `json:"effect,omitempty"`
 	LocalEffects                  []EffectID           `json:"local_effects,omitempty"`
 	ExternalEffects               []EffectID           `json:"external_effects,omitempty"`
@@ -337,6 +339,7 @@ func (value ProgramTransition) runtimeTransition() Transition {
 		RequiredIdentity: value.RequiredIdentity, Authority: value.Authority, AuthorityAll: value.AuthorityAll,
 		RequiredCapabilities: value.RequiredCapabilities,
 		RequiredEvidence:     value.RequiredEvidence, OwnedResources: value.OwnedResources, Effect: value.Effect,
+		OwnedFacets: value.OwnedFacets, StateEffect: value.StateEffect,
 		LocalEffects: value.LocalEffects, ExternalEffects: value.ExternalEffects, Idempotent: value.Idempotent,
 		Parameters: value.Parameters, Prescription: value.Prescription, SourcePredicate: value.SourcePredicate,
 		SourceConditions: value.SourceConditions, AdmissionPredicate: value.AdmissionPredicate,
@@ -466,6 +469,10 @@ func normalizeProgramTransition(value Transition) (Transition, error) {
 		return Transition{}, err
 	}
 	value.OwnedResources, err = uniqueSorted(value.OwnedResources, func(v string) string { return v })
+	if err != nil {
+		return Transition{}, err
+	}
+	value.OwnedFacets, err = uniqueSorted(value.OwnedFacets, func(v StateFacet) string { return string(v) })
 	if err != nil {
 		return Transition{}, err
 	}

@@ -18,69 +18,136 @@ var allStateFacets = []model.StateFacet{
 	model.StateFacetProduct,
 }
 
-var controlStateFacets = []model.StateFacet{model.StateFacetControl}
-var productStateFacets = []model.StateFacet{model.StateFacetControl, model.StateFacetProduct}
-var installationStateFacets = []model.StateFacet{model.StateFacetControl, model.StateFacetInstallation}
-var installationProgramStateFacets = []model.StateFacet{model.StateFacetControl, model.StateFacetInstallation, model.StateFacetProgram}
-var programStateFacets = []model.StateFacet{model.StateFacetControl, model.StateFacetProgram}
+var declaredStateFieldFacets = map[string]model.StateFacet{
+	"program_fingerprint":    model.StateFacetProgram,
+	"phase":                  model.StateFacetControl,
+	"engagement":             model.StateFacetProduct,
+	"delivery":               model.StateFacetProduct,
+	"workspace":              model.StateFacetProduct,
+	"plan":                   model.StateFacetProduct,
+	"configuration":          model.StateFacetControl,
+	"runtime":                model.StateFacetInstallation,
+	"publication":            model.StateFacetProduct,
+	"verification":           model.StateFacetProduct,
+	"recovery":               model.StateFacetControl,
+	"transaction":            model.StateFacetControl,
+	"terminal":               model.StateFacetProduct,
+	"source_revision":        model.StateFacetProduct,
+	"worktree_fingerprint":   model.StateFacetProduct,
+	"config_fingerprint":     model.StateFacetControl,
+	"runtime_version":        model.StateFacetInstallation,
+	"runtime_fingerprint":    model.StateFacetInstallation,
+	"runtime_source":         model.StateFacetInstallation,
+	"workspace_branch":       model.StateFacetProduct,
+	"workspace_path":         model.StateFacetProduct,
+	"workspace_base_ref":     model.StateFacetProduct,
+	"workspace_source_path":  model.StateFacetProduct,
+	"workspace_source_id":    model.StateFacetProduct,
+	"workspace_source_ref":   model.StateFacetProduct,
+	"transaction_id":         model.StateFacetControl,
+	"transaction_transition": model.StateFacetControl,
+	"recovery_cause":         model.StateFacetControl,
+	"recovery_source_phase":  model.StateFacetControl,
+	"recovery_resumption":    model.StateFacetControl,
+	"recovery_budget":        model.StateFacetControl,
+}
 
-// DurableStateFacetPolicy is kernel-owned. A repository program's manifest
-// cannot grant itself access to installation or program durable state.
+func DeclaredStateFieldFacet(field string) (model.StateFacet, bool) {
+	facet, ok := declaredStateFieldFacets[field]
+	return facet, ok
+}
+
+func ValidDeclaredStateLiteral(field, value string) bool {
+	switch field {
+	case "phase":
+		return model.ProtocolPhase(value).Valid()
+	case "engagement":
+		return model.EngagementState(value).Valid()
+	case "delivery":
+		return model.DeliveryState(value).Valid()
+	case "workspace":
+		return model.WorkspaceState(value).Valid()
+	case "plan":
+		return model.PlanState(value).Valid()
+	case "configuration":
+		return model.ConfigurationState(value).Valid()
+	case "runtime":
+		return model.RuntimeState(value).Valid()
+	case "publication":
+		return model.PublicationState(value).Valid()
+	case "verification":
+		return model.VerificationState(value).Valid()
+	case "recovery":
+		return model.RecoveryState(value).Valid()
+	case "transaction":
+		return model.TransactionState(value).Valid()
+	case "terminal":
+		return model.TerminalStatus(value).Valid()
+	case "recovery_source_phase", "recovery_resumption":
+		return value == "" || model.ProtocolPhase(value).Valid()
+	case "recovery_budget":
+		return value == "0"
+	default:
+		return true
+	}
+}
+
+func declaredStateResolverFacet(field string) (model.FacetName, bool) {
+	switch field {
+	case "engagement":
+		return model.FacetEngagement, true
+	case "delivery":
+		return model.FacetDelivery, true
+	case "workspace":
+		return model.FacetWorkspace, true
+	case "plan":
+		return model.FacetPlan, true
+	case "configuration":
+		return model.FacetConfiguration, true
+	case "runtime":
+		return model.FacetRuntime, true
+	case "publication":
+		return model.FacetPublication, true
+	case "verification":
+		return model.FacetVerification, true
+	case "recovery":
+		return model.FacetRecovery, true
+	case "transaction":
+		return model.FacetTransaction, true
+	case "terminal":
+		return model.FacetTerminal, true
+	default:
+		return "", false
+	}
+}
+
+// DurableStateFacetPolicy projects the domain declaration into the kernel's
+// OwnedFacets law. Repository-authored programs may own control and product
+// state, but cannot grant themselves installation or program state.
 func DurableStateFacetPolicy(transition Transition) (StateFacetPolicy, error) {
 	if transition.Class == EventObservedExternal {
 		return StateFacetPolicy{Reads: append([]model.StateFacet(nil), allStateFacets...)}, nil
 	}
-	writes, known := durableStateWritesForID(transition.ID)
-	if known {
-		return StateFacetPolicy{Reads: append([]model.StateFacet(nil), allStateFacets...), Writes: writes}, nil
+	writes, err := model.NormalizeStateFacets(string(transition.ID)+".owned_facets", transition.OwnedFacets)
+	if err != nil || len(writes) == 0 {
+		return StateFacetPolicy{}, fmt.Errorf("%s: controllable transition requires valid owned facets: %v", transition.ID, err)
 	}
 	switch transition.Origin.Kind {
 	case OriginControlProgram:
-		if transition.RuntimeExecution {
-			return StateFacetPolicy{Reads: append([]model.StateFacet(nil), allStateFacets...), Writes: append([]model.StateFacet(nil), controlStateFacets...)}, nil
+		for _, facet := range writes {
+			if facet == model.StateFacetInstallation || facet == model.StateFacetProgram {
+				return StateFacetPolicy{}, fmt.Errorf("%s: control program cannot own %q durable state", transition.ID, facet)
+			}
 		}
-		return StateFacetPolicy{Reads: append([]model.StateFacet(nil), allStateFacets...), Writes: append([]model.StateFacet(nil), productStateFacets...)}, nil
 	case OriginExtension:
-		return StateFacetPolicy{Reads: append([]model.StateFacet(nil), allStateFacets...), Writes: append([]model.StateFacet(nil), controlStateFacets...)}, nil
+		for _, facet := range writes {
+			if facet != model.StateFacetControl {
+				return StateFacetPolicy{}, fmt.Errorf("%s: extension cannot own %q durable state", transition.ID, facet)
+			}
+		}
 	case OriginCoreSystem:
-		return StateFacetPolicy{}, fmt.Errorf("core transition %q has no durable state facet policy", transition.ID)
 	default:
 		return StateFacetPolicy{}, fmt.Errorf("transition %q has no valid durable state facet policy origin", transition.ID)
 	}
-}
-
-// DurableStateWritesForRecovery returns the write envelope for a transition
-// recorded in an interrupted journal. Unknown repository-defined transitions
-// fail closed to control bookkeeping only.
-func DurableStateWritesForRecovery(id TransitionID) []model.StateFacet {
-	if writes, ok := durableStateWritesForID(id); ok {
-		return writes
-	}
-	return append([]model.StateFacet(nil), controlStateFacets...)
-}
-
-func durableStateWritesForID(id TransitionID) ([]model.StateFacet, bool) {
-	switch id {
-	case "runtime.hydrate", "runtime.replace", "runtime.reconcile", "installation.update":
-		return append([]model.StateFacet(nil), installationStateFacets...), true
-	case "installation.initialize", "installation.reconcile-update":
-		return append([]model.StateFacet(nil), installationProgramStateFacets...), true
-	case "repository.attach", "catalog.reconcile":
-		return append([]model.StateFacet(nil), programStateFacets...), true
-	case "invocation.rebind", "configuration.initialize", "configuration.mutate", "configuration.reconcile", "recovery.escalate":
-		return append([]model.StateFacet(nil), controlStateFacets...), true
-	case "engagement.begin", "engagement.renew", "engagement.release", "repository.detach", "objective.bind",
-		"plan.create", "plan.validate", "plan.approve", "plan.activate", "plan.amend", "plan.approve-amendment", "plan.invalidate", "plan.abandon",
-		"workspace.cut", "workspace.sync", "workspace.activate", "workspace.publish", "workspace.cleanup", "workspace.reap", "workspace.abandon", "workspace.reconcile",
-		"gate.build.record", "gate.test.record", "gate.review.record", "gate.change.record", "gate.journey.record",
-		"evidence.visual.attach", "evidence.approval.revoke", "delivery.slice.advance",
-		"publication.preview", "publication.execute", "publication.observe", "publication.reconcile", "publication.correct", "publication.abandon":
-		return append([]model.StateFacet(nil), productStateFacets...), true
-	case "recovery.resume", "recovery.rollback":
-		return append([]model.StateFacet(nil), controlStateFacets...), true
-	case "external.files-changed", "external.head-changed", "external.branch-changed", "external.runtime-disappeared", "external.configuration-drifted", "external.lease-expired", "external.host-interrupted", "external.ci-completed", "external.pr-opened", "external.pr-updated", "external.pr-closed", "external.pr-merged", "external.provider-unavailable":
-		return nil, true
-	default:
-		return nil, false
-	}
+	return StateFacetPolicy{Reads: append([]model.StateFacet(nil), allStateFacets...), Writes: writes}, nil
 }

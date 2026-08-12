@@ -18,148 +18,379 @@ func applyStateTransition(state *durable.State, admission protocol.Admission, tr
 		if !configured && admission.Objective.Validate() == nil {
 			return fmt.Errorf("transition %q cannot create product intent from verified absence", transition.ID)
 		}
-	} else if transition.ID == "objective.bind" {
-		state.Objective = admission.Objective
-		configured = true
 	} else {
-		if configured && state.Objective != admission.Objective {
+		if configured && state.Objective != admission.Objective && transition.StateEffect.NativeHandler != "objective-bind" {
 			return fmt.Errorf("transition %q cannot replace configured objective; use objective.bind", transition.ID)
 		}
 	}
 	state.LastTransition = transition.ID
-	if transition.ID == "objective.bind" {
-		state.Terminal = model.TerminalNonterminal
+	if err := applyDeclaredStateEffect(state, admission, transition); err != nil {
+		return err
 	}
-	switch transition.ID {
-	case "engagement.begin":
-		state.Phase, state.Engagement = model.PhaseObserved, model.EngagementCommand
-	case "engagement.renew":
-		state.Phase, state.Engagement = model.PhaseActive, model.EngagementActive
-	case "engagement.release":
-		state.Phase, state.Engagement = model.PhaseDormant, model.EngagementDormant
-	case "invocation.rebind", "repository.attach":
-		state.Phase = model.PhaseObserved
-	case "repository.detach":
-		state.Phase, state.Engagement = model.PhaseDormant, model.EngagementDormant
-	case "runtime.hydrate", "runtime.replace":
-		state.Runtime = model.RuntimeVerified
-		state.RuntimeVersion, _ = admission.Parameters.Get("runtime_version")
-		state.RuntimeFingerprint, _ = admission.Parameters.Get("runtime_sha256")
-		state.RuntimeSource, _ = admission.Parameters.Get("source_revision")
-		state.Phase = settledPhase(*state)
-	case "installation.update":
-		state.Runtime = model.RuntimeVerified
-		state.RuntimeVersion, _ = admission.Parameters.Get("runtime_version")
-		state.RuntimeFingerprint, _ = admission.Parameters.Get("runtime_sha256")
-		state.RuntimeSource, _ = admission.Parameters.Get("source_revision")
-	case "installation.reconcile-update":
-		accepted, _ := admission.Parameters.Get("accept_obligation_change")
-		if accepted != "true" || admission.PriorProgramFingerprint == "" || admission.ProgramDeltaFingerprint == "" || state.ProgramFingerprint != admission.PriorProgramFingerprint {
-			return fmt.Errorf("reconciled installation update must bind and explicitly accept the exact prior-to-candidate program delta")
+	if !transition.DeclaresTargetPhase(state.Phase) {
+		return fmt.Errorf("transition %q reducer produced undeclared target phase %s", transition.ID, state.Phase)
+	}
+	return nil
+}
+
+func applyDeclaredStateEffect(state *durable.State, admission protocol.Admission, transition catalog.Transition) error {
+	for _, condition := range transition.StateEffect.Preconditions {
+		current, err := stateFacetValue(*state, condition.Facet)
+		if err != nil {
+			return fmt.Errorf("transition %q state precondition: %w", transition.ID, err)
 		}
-		state.ProgramFingerprint = admission.ExpectedProgramFingerprint
-		state.Runtime = model.RuntimeVerified
-		state.RuntimeVersion, _ = admission.Parameters.Get("runtime_version")
-		state.RuntimeFingerprint, _ = admission.Parameters.Get("runtime_sha256")
-		state.RuntimeSource, _ = admission.Parameters.Get("source_revision")
-	case "runtime.reconcile":
-		state.Runtime, state.Recovery, state.Transaction = model.RuntimeVerified, model.RecoveryNone, model.TransactionNone
-		state.RuntimeVersion, _ = admission.Parameters.Get("runtime_version")
-		state.RuntimeFingerprint, _ = admission.Parameters.Get("runtime_sha256")
-		state.RuntimeSource, _ = admission.Parameters.Get("source_revision")
-		clearRecoveryContext(state)
-		state.Phase = settledPhase(*state)
-	case "configuration.initialize", "configuration.mutate":
-		state.Configuration = model.ConfigurationVerified
-		state.ConfigFingerprint, _ = admission.Parameters.Get("config_sha256")
-		state.Phase = settledPhase(*state)
-	case "configuration.reconcile":
-		state.Configuration, state.Recovery, state.Transaction = model.ConfigurationVerified, model.RecoveryNone, model.TransactionNone
-		clearRecoveryContext(state)
-		state.Phase = settledPhase(*state)
-	case "catalog.reconcile":
-		prior, _ := admission.Parameters.Get("prior_program_fingerprint")
-		accepted, _ := admission.Parameters.Get("accept_obligation_change")
-		if prior == "" || prior != state.ProgramFingerprint || accepted != "true" {
-			return fmt.Errorf("catalog reconciliation must bind the prior program and explicitly accept obligation changes")
+		matched := false
+		for _, value := range condition.Values {
+			if current == value {
+				matched = true
+				break
+			}
 		}
-		state.ProgramFingerprint = admission.ExpectedProgramFingerprint
-	case "installation.initialize":
-		state.Runtime, state.Configuration = model.RuntimeVerified, model.ConfigurationVerified
-		state.RuntimeVersion, _ = admission.Parameters.Get("runtime_version")
-		state.RuntimeFingerprint, _ = admission.Parameters.Get("runtime_sha256")
-		state.RuntimeSource, _ = admission.Parameters.Get("source_revision")
-		state.ConfigFingerprint, _ = admission.Parameters.Get("config_sha256")
-		state.Phase = model.PhaseObserved
-	case "objective.bind":
-		wasActive := state.Phase == model.PhaseActive
-		kind, _ := admission.Parameters.Get("objective_kind")
-		delivery, _ := admission.Parameters.Get("delivery_id")
-		if kind != string(admission.Objective.Kind) || delivery != admission.Objective.DeliveryID {
-			return fmt.Errorf("objective parameters do not match admitted objective")
+		if !matched {
+			return fmt.Errorf("transition %q state precondition %q rejected value %q", transition.ID, condition.Facet, current)
 		}
-		state.Phase = model.PhaseObserved
-		if state.Recovery == model.RecoveryEscalated {
-			state.Phase = model.PhaseFrontier
-		} else if wasActive {
-			state.Phase = model.PhaseActive
+	}
+	switch transition.StateEffect.Kind {
+	case catalog.StateEffectAssignments:
+		for _, assignment := range transition.StateEffect.Assignments {
+			value, err := assignmentValue(admission, assignment)
+			if err != nil {
+				return fmt.Errorf("transition %q state assignment %q: %w", transition.ID, assignment.Facet, err)
+			}
+			if err := assignStateFacet(state, assignment.Facet, value); err != nil {
+				return fmt.Errorf("transition %q state assignment: %w", transition.ID, err)
+			}
 		}
-	case "plan.create":
-		state.Plan, state.Delivery, state.Phase, state.Terminal = model.PlanDraft, model.DeliveryPlanning, model.PhaseActive, model.TerminalNonterminal
-	case "plan.validate":
-		state.Plan, state.Phase, state.Terminal = model.PlanValid, model.PhaseActive, model.TerminalNonterminal
-	case "plan.approve":
-		state.Plan, state.Delivery, state.Phase = model.PlanApproved, model.DeliveryApproved, model.PhaseActive
-		if admission.Objective.Kind == model.ObjectiveApprovedPlan {
-			establishTerminal(state, model.PhaseTerminal)
+		return nil
+	case catalog.StateEffectNative:
+		handler, ok := nativeStateHandlers[transition.StateEffect.NativeHandler]
+		if !ok {
+			return fmt.Errorf("transition %q declares unknown native state handler %q", transition.ID, transition.StateEffect.NativeHandler)
 		}
-	case "plan.activate":
-		state.Plan, state.Delivery, state.Phase = model.PlanLocked, model.DeliveryActive, model.PhaseActive
-	case "plan.amend":
-		state.Plan, state.Delivery, state.Phase, state.Terminal = model.PlanAmendmentRequired, model.DeliveryAmendment, model.PhaseActive, model.TerminalNonterminal
-	case "plan.approve-amendment":
-		state.Plan, state.Delivery, state.Phase = model.PlanApproved, model.DeliveryApproved, model.PhaseActive
-	case "plan.invalidate":
-		state.Plan, state.Delivery, state.Phase, state.Terminal = model.PlanInvalid, model.DeliveryInvalid, model.PhaseFrontier, model.TerminalNonterminal
-	case "plan.abandon", "publication.abandon":
-		state.Delivery = model.DeliveryDiscarded
-		if state.Workspace != model.WorkspaceAbsent {
-			state.Workspace = model.WorkspaceAbandoned
+		return handler(state, admission, transition)
+	default:
+		return fmt.Errorf("transition %q has no valid declared state effect", transition.ID)
+	}
+}
+
+type nativeStateHandler func(*durable.State, protocol.Admission, catalog.Transition) error
+
+var nativeStateHandlers = map[string]nativeStateHandler{
+	"runtime-verified-settled":       applyRuntimeVerifiedSettled,
+	"runtime-reconcile":              applyRuntimeReconcile,
+	"configuration-verified-settled": applyConfigurationVerifiedSettled,
+	"configuration-reconcile":        applyConfigurationReconcile,
+	"installation-reconcile-update":  applyInstallationReconcileUpdate,
+	"catalog-reconcile":              applyCatalogReconcile,
+	"objective-bind":                 applyObjectiveBind,
+	"plan-approve":                   applyPlanApprove,
+	"abandon-delivery":               applyAbandonDelivery,
+	"workspace-cleanup":              applyWorkspaceCleanup,
+	"workspace-reap":                 applyWorkspaceReap,
+	"workspace-reconcile":            applyWorkspaceReconcile,
+	"gate-build-record":              gateStateHandler("build"),
+	"gate-test-record":               gateStateHandler("test"),
+	"gate-review-record":             gateStateHandler("review"),
+	"gate-change-record":             gateStateHandler("change"),
+	"gate-journey-record":            gateStateHandler("journey"),
+	"visual-evidence-attach":         applyVisualEvidence,
+	"publication-observe":            applyPublicationObservation,
+}
+
+func assignmentValue(admission protocol.Admission, assignment catalog.StateAssignment) (string, error) {
+	if assignment.Value != nil {
+		return *assignment.Value, nil
+	}
+	if assignment.ValueFrom.Parameter != "" {
+		value, ok := admission.Parameters.Get(assignment.ValueFrom.Parameter)
+		if !ok {
+			return "", fmt.Errorf("parameter %q is absent", assignment.ValueFrom.Parameter)
 		}
-		state.Recovery, state.Transaction = model.RecoveryNone, model.TransactionNone
-		clearRecoveryContext(state)
-		establishTerminal(state, model.PhaseAbandoned)
-	case "workspace.abandon":
-		state.Delivery, state.Workspace = model.DeliveryDiscarded, model.WorkspaceAbandoned
-		state.Recovery, state.Transaction = model.RecoveryNone, model.TransactionNone
-		clearRecoveryContext(state)
-		establishTerminal(state, model.PhaseAbandoned)
-	case "workspace.cut":
-		state.Workspace, state.Phase = model.WorkspaceCut, model.PhaseActive
-		state.WorkspaceBranch, _ = admission.Parameters.Get("branch")
-		state.WorkspaceBaseRef, _ = admission.Parameters.Get("base_ref")
-		state.WorkspacePath, _ = admission.Parameters.Get("destination")
-		state.WorkspaceSourcePath = admission.Invocation.InvokingPath
-		state.WorkspaceSourceID = admission.Invocation.WorktreeID
-		state.WorkspaceSourceRef = admission.Invocation.Ref
-	case "workspace.sync", "workspace.activate":
-		state.Workspace, state.Phase = model.WorkspaceActive, model.PhaseActive
-	case "workspace.publish":
-		state.Workspace, state.Phase = model.WorkspacePublished, model.PhaseActive
-	case "workspace.cleanup":
-		if state.Workspace != model.WorkspaceLanded && state.Workspace != model.WorkspaceAbandoned {
-			return fmt.Errorf("workspace cleanup requires landed or explicitly abandoned state")
+		return value, nil
+	}
+	switch assignment.ValueFrom.Admission {
+	case "source_revision":
+		return admission.SourceRevision, nil
+	case "worktree_fingerprint":
+		return admission.WorktreeFingerprint, nil
+	case "expected_program_fingerprint":
+		return admission.ExpectedProgramFingerprint, nil
+	case "":
+	default:
+		return "", fmt.Errorf("admission value %q is unknown", assignment.ValueFrom.Admission)
+	}
+	switch assignment.ValueFrom.Invocation {
+	case "invoking_path":
+		return admission.Invocation.InvokingPath, nil
+	case "worktree_id":
+		return admission.Invocation.WorktreeID, nil
+	case "ref":
+		return admission.Invocation.Ref, nil
+	case "":
+	default:
+		return "", fmt.Errorf("invocation value %q is unknown", assignment.ValueFrom.Invocation)
+	}
+	return "", fmt.Errorf("value source is absent")
+}
+
+func stateFacetValue(state durable.State, facet string) (string, error) {
+	switch facet {
+	case "program_fingerprint":
+		return state.ProgramFingerprint, nil
+	case "phase":
+		return string(state.Phase), nil
+	case "engagement":
+		return string(state.Engagement), nil
+	case "delivery":
+		return string(state.Delivery), nil
+	case "workspace":
+		return string(state.Workspace), nil
+	case "plan":
+		return string(state.Plan), nil
+	case "configuration":
+		return string(state.Configuration), nil
+	case "runtime":
+		return string(state.Runtime), nil
+	case "publication":
+		return string(state.Publication), nil
+	case "verification":
+		return string(state.Verification), nil
+	case "recovery":
+		return string(state.Recovery), nil
+	case "transaction":
+		return string(state.Transaction), nil
+	case "terminal":
+		return string(state.Terminal), nil
+	case "source_revision":
+		return state.SourceRevision, nil
+	case "worktree_fingerprint":
+		return state.WorktreeFingerprint, nil
+	case "config_fingerprint":
+		return state.ConfigFingerprint, nil
+	case "runtime_version":
+		return state.RuntimeVersion, nil
+	case "runtime_fingerprint":
+		return state.RuntimeFingerprint, nil
+	case "runtime_source":
+		return state.RuntimeSource, nil
+	case "workspace_branch":
+		return state.WorkspaceBranch, nil
+	case "workspace_path":
+		return state.WorkspacePath, nil
+	case "workspace_base_ref":
+		return state.WorkspaceBaseRef, nil
+	case "workspace_source_path":
+		return state.WorkspaceSourcePath, nil
+	case "workspace_source_id":
+		return state.WorkspaceSourceID, nil
+	case "workspace_source_ref":
+		return state.WorkspaceSourceRef, nil
+	case "transaction_id":
+		return state.TransactionID, nil
+	case "transaction_transition":
+		return state.TransactionTransition, nil
+	case "recovery_cause":
+		return state.RecoveryCause, nil
+	case "recovery_source_phase":
+		return string(state.RecoverySourcePhase), nil
+	case "recovery_resumption":
+		return string(state.RecoveryResumption), nil
+	case "recovery_budget":
+		return fmt.Sprintf("%d", state.RecoveryBudget), nil
+	default:
+		return "", fmt.Errorf("durable state facet %q is unknown", facet)
+	}
+}
+
+func assignStateFacet(state *durable.State, facet, value string) error {
+	switch facet {
+	case "program_fingerprint":
+		state.ProgramFingerprint = value
+	case "phase":
+		state.Phase = model.ProtocolPhase(value)
+	case "engagement":
+		state.Engagement = model.EngagementState(value)
+	case "delivery":
+		state.Delivery = model.DeliveryState(value)
+	case "workspace":
+		state.Workspace = model.WorkspaceState(value)
+	case "plan":
+		state.Plan = model.PlanState(value)
+	case "configuration":
+		state.Configuration = model.ConfigurationState(value)
+	case "runtime":
+		state.Runtime = model.RuntimeState(value)
+	case "publication":
+		state.Publication = model.PublicationState(value)
+	case "verification":
+		state.Verification = model.VerificationState(value)
+	case "recovery":
+		state.Recovery = model.RecoveryState(value)
+	case "transaction":
+		state.Transaction = model.TransactionState(value)
+	case "terminal":
+		state.Terminal = model.TerminalStatus(value)
+	case "source_revision":
+		state.SourceRevision = value
+	case "worktree_fingerprint":
+		state.WorktreeFingerprint = value
+	case "config_fingerprint":
+		state.ConfigFingerprint = value
+	case "runtime_version":
+		state.RuntimeVersion = value
+	case "runtime_fingerprint":
+		state.RuntimeFingerprint = value
+	case "runtime_source":
+		state.RuntimeSource = value
+	case "workspace_branch":
+		state.WorkspaceBranch = value
+	case "workspace_path":
+		state.WorkspacePath = value
+	case "workspace_base_ref":
+		state.WorkspaceBaseRef = value
+	case "workspace_source_path":
+		state.WorkspaceSourcePath = value
+	case "workspace_source_id":
+		state.WorkspaceSourceID = value
+	case "workspace_source_ref":
+		state.WorkspaceSourceRef = value
+	case "transaction_id":
+		state.TransactionID = value
+	case "transaction_transition":
+		state.TransactionTransition = value
+	case "recovery_cause":
+		state.RecoveryCause = value
+	case "recovery_source_phase":
+		state.RecoverySourcePhase = model.ProtocolPhase(value)
+	case "recovery_resumption":
+		state.RecoveryResumption = model.ProtocolPhase(value)
+	case "recovery_budget":
+		if value != "0" {
+			return fmt.Errorf("recovery_budget currently accepts only the fail-closed zero literal")
 		}
-		state.Workspace = model.WorkspaceAbsent
-		state.Phase = terminalPhase(*state)
-	case "workspace.reap":
-		state.Workspace = model.WorkspaceAbsent
-		state.Phase = terminalPhase(*state)
-	case "workspace.reconcile":
-		state.Recovery, state.Transaction, state.Phase = model.RecoveryNone, model.TransactionNone, engagedPhase(*state)
-		clearRecoveryContext(state)
-	case "gate.build.record", "gate.test.record", "gate.review.record", "gate.change.record", "gate.journey.record":
-		gate, _ := standardGateName(transition.ID)
+		state.RecoveryBudget = 0
+	default:
+		return fmt.Errorf("durable state facet %q is unknown", facet)
+	}
+	return nil
+}
+
+func applyRuntimeVerifiedSettled(state *durable.State, admission protocol.Admission, _ catalog.Transition) error {
+	state.Runtime = model.RuntimeVerified
+	state.RuntimeVersion, _ = admission.Parameters.Get("runtime_version")
+	state.RuntimeFingerprint, _ = admission.Parameters.Get("runtime_sha256")
+	state.RuntimeSource, _ = admission.Parameters.Get("source_revision")
+	state.Phase = settledPhase(*state)
+	return nil
+}
+
+func applyRuntimeReconcile(state *durable.State, admission protocol.Admission, transition catalog.Transition) error {
+	if err := applyRuntimeVerifiedSettled(state, admission, transition); err != nil {
+		return err
+	}
+	state.Recovery, state.Transaction = model.RecoveryNone, model.TransactionNone
+	clearRecoveryContext(state)
+	state.Phase = settledPhase(*state)
+	return nil
+}
+
+func applyConfigurationVerifiedSettled(state *durable.State, admission protocol.Admission, _ catalog.Transition) error {
+	state.Configuration = model.ConfigurationVerified
+	state.ConfigFingerprint, _ = admission.Parameters.Get("config_sha256")
+	state.Phase = settledPhase(*state)
+	return nil
+}
+
+func applyConfigurationReconcile(state *durable.State, _ protocol.Admission, _ catalog.Transition) error {
+	state.Configuration, state.Recovery, state.Transaction = model.ConfigurationVerified, model.RecoveryNone, model.TransactionNone
+	clearRecoveryContext(state)
+	state.Phase = settledPhase(*state)
+	return nil
+}
+
+func applyInstallationReconcileUpdate(state *durable.State, admission protocol.Admission, _ catalog.Transition) error {
+	accepted, _ := admission.Parameters.Get("accept_obligation_change")
+	if accepted != "true" || admission.PriorProgramFingerprint == "" || admission.ProgramDeltaFingerprint == "" || state.ProgramFingerprint != admission.PriorProgramFingerprint {
+		return fmt.Errorf("reconciled installation update must bind and explicitly accept the exact prior-to-candidate program delta")
+	}
+	state.ProgramFingerprint = admission.ExpectedProgramFingerprint
+	state.Runtime = model.RuntimeVerified
+	state.RuntimeVersion, _ = admission.Parameters.Get("runtime_version")
+	state.RuntimeFingerprint, _ = admission.Parameters.Get("runtime_sha256")
+	state.RuntimeSource, _ = admission.Parameters.Get("source_revision")
+	return nil
+}
+
+func applyCatalogReconcile(state *durable.State, admission protocol.Admission, _ catalog.Transition) error {
+	prior, _ := admission.Parameters.Get("prior_program_fingerprint")
+	accepted, _ := admission.Parameters.Get("accept_obligation_change")
+	if prior == "" || prior != state.ProgramFingerprint || accepted != "true" {
+		return fmt.Errorf("catalog reconciliation must bind the prior program and explicitly accept obligation changes")
+	}
+	state.ProgramFingerprint = admission.ExpectedProgramFingerprint
+	return nil
+}
+
+func applyObjectiveBind(state *durable.State, admission protocol.Admission, _ catalog.Transition) error {
+	wasActive := state.Phase == model.PhaseActive
+	kind, _ := admission.Parameters.Get("objective_kind")
+	delivery, _ := admission.Parameters.Get("delivery_id")
+	if kind != string(admission.Objective.Kind) || delivery != admission.Objective.DeliveryID {
+		return fmt.Errorf("objective parameters do not match admitted objective")
+	}
+	state.Objective = admission.Objective
+	state.Terminal = model.TerminalNonterminal
+	state.Phase = model.PhaseObserved
+	if state.Recovery == model.RecoveryEscalated {
+		state.Phase = model.PhaseFrontier
+	} else if wasActive {
+		state.Phase = model.PhaseActive
+	}
+	return nil
+}
+
+func applyPlanApprove(state *durable.State, admission protocol.Admission, _ catalog.Transition) error {
+	state.Plan, state.Delivery, state.Phase = model.PlanApproved, model.DeliveryApproved, model.PhaseActive
+	if admission.Objective.Kind == model.ObjectiveApprovedPlan {
+		establishTerminal(state, model.PhaseTerminal)
+	}
+	return nil
+}
+
+func applyAbandonDelivery(state *durable.State, _ protocol.Admission, _ catalog.Transition) error {
+	state.Delivery = model.DeliveryDiscarded
+	if state.Workspace != model.WorkspaceAbsent {
+		state.Workspace = model.WorkspaceAbandoned
+	}
+	state.Recovery, state.Transaction = model.RecoveryNone, model.TransactionNone
+	clearRecoveryContext(state)
+	establishTerminal(state, model.PhaseAbandoned)
+	return nil
+}
+
+func applyWorkspaceCleanup(state *durable.State, _ protocol.Admission, _ catalog.Transition) error {
+	if state.Workspace != model.WorkspaceLanded && state.Workspace != model.WorkspaceAbandoned {
+		return fmt.Errorf("workspace cleanup requires landed or explicitly abandoned state")
+	}
+	state.Workspace = model.WorkspaceAbsent
+	state.Phase = terminalPhase(*state)
+	return nil
+}
+
+func applyWorkspaceReap(state *durable.State, _ protocol.Admission, _ catalog.Transition) error {
+	state.Workspace = model.WorkspaceAbsent
+	state.Phase = terminalPhase(*state)
+	return nil
+}
+
+func applyWorkspaceReconcile(state *durable.State, _ protocol.Admission, _ catalog.Transition) error {
+	state.Recovery, state.Transaction, state.Phase = model.RecoveryNone, model.TransactionNone, engagedPhase(*state)
+	clearRecoveryContext(state)
+	return nil
+}
+
+func gateStateHandler(gate string) nativeStateHandler {
+	return func(state *durable.State, admission protocol.Admission, _ catalog.Transition) error {
 		revision, _ := admission.Parameters.Get("source_revision")
 		fingerprint, _ := admission.Parameters.Get("evidence_fingerprint")
 		upsertGate(state, durable.GateEvidence{Gate: gate, Revision: revision, Fingerprint: fingerprint})
@@ -170,67 +401,41 @@ func applyStateTransition(state *durable.State, admission protocol.Admission, tr
 			state.Delivery = model.DeliveryGatesPassed
 			establishTerminal(state, model.PhaseTerminal)
 		}
-	case "evidence.visual.attach":
-		revision, _ := admission.Parameters.Get("source_revision")
-		fingerprint, _ := admission.Parameters.Get("privacy_receipt")
-		upsertGate(state, durable.GateEvidence{Gate: "visual", Revision: revision, Fingerprint: fingerprint})
-		state.SourceRevision, state.WorktreeFingerprint = admission.SourceRevision, admission.WorktreeFingerprint
-		state.Terminal = model.TerminalNonterminal
-		if admission.Objective.Kind == model.ObjectiveVerified {
-			state.Delivery = model.DeliveryActive
-		}
-		state.Verification, state.Phase = model.VerificationCurrent, model.PhaseActive
-		if verifiedObjectiveSatisfied(*state, admission.Objective) {
-			state.Delivery = model.DeliveryGatesPassed
-			establishTerminal(state, model.PhaseTerminal)
-		}
-	case "evidence.approval.revoke":
-		state.Plan, state.Phase, state.Terminal = model.PlanValid, model.PhaseFrontier, model.TerminalNonterminal
-	case "delivery.slice.advance":
-		state.Delivery, state.Phase = model.DeliveryActive, model.PhaseActive
-		state.SourceRevision, state.WorktreeFingerprint = admission.SourceRevision, admission.WorktreeFingerprint
-	case "publication.preview":
-		state.Publication, state.Phase = model.PublicationCandidate, model.PhaseActive
-	case "publication.execute":
-		state.Publication, state.Workspace, state.Delivery, state.Phase = model.PublicationPublishedNotLanded, model.WorkspacePublished, model.DeliveryPublished, model.PhaseActive
-	case "publication.observe", "publication.reconcile":
-		state.Recovery, state.Transaction = model.RecoveryNone, model.TransactionNone
-		clearRecoveryContext(state)
-		if state.Publication == model.PublicationUnavailable || state.Publication == model.PublicationConflicting {
-			state.Phase = model.PhaseUnresolved
-		} else if state.Publication == model.PublicationClosedUnmerged {
-			state.Phase = model.PhaseFrontier
-		} else if admission.Objective.Kind == model.ObjectiveOpenPR && state.Publication == model.PublicationOpen {
-			establishTerminal(state, model.PhaseTerminal)
-		} else if admission.Objective.Kind == model.ObjectiveMerged && state.Publication == model.PublicationMerged {
-			state.Workspace, state.Delivery = model.WorkspaceLanded, model.DeliveryTerminal
-			establishTerminal(state, model.PhaseTerminal)
-		} else {
-			state.Phase = model.PhaseActive
-		}
-	case "publication.correct":
-		state.Publication, state.Delivery = model.PublicationPublishedNotLanded, model.DeliveryPublished
-		state.Terminal, state.Phase = model.TerminalNonterminal, model.PhaseActive
-	case "recovery.resume":
-		state.Recovery, state.Transaction, state.Delivery, state.Phase = model.RecoveryNone, model.TransactionNone, model.DeliveryActive, model.PhaseActive
-		clearRecoveryContext(state)
-	case "recovery.rollback":
-		state.Recovery, state.Transaction, state.Phase = model.RecoveryNone, model.TransactionNone, model.PhaseObserved
-		clearRecoveryContext(state)
-	case "recovery.escalate":
-		state.Recovery, state.Phase = model.RecoveryEscalated, model.PhaseFrontier
-		state.Transaction = model.TransactionNone
-		state.TransactionID, _ = admission.Parameters.Get("transaction_id")
-		state.TransactionTransition = "recovery.escalate"
-		state.RecoveryCause = "recovery requires explicit external resolution"
-		state.RecoverySourcePhase = model.PhaseRecovery
-		state.RecoveryResumption = model.PhaseFrontier
-		state.RecoveryBudget = 0
-	default:
-		return fmt.Errorf("transition %q has no V2 state reducer", transition.ID)
+		return nil
 	}
-	if !transition.DeclaresTargetPhase(state.Phase) {
-		return fmt.Errorf("transition %q reducer produced undeclared target phase %s", transition.ID, state.Phase)
+}
+
+func applyVisualEvidence(state *durable.State, admission protocol.Admission, _ catalog.Transition) error {
+	revision, _ := admission.Parameters.Get("source_revision")
+	fingerprint, _ := admission.Parameters.Get("privacy_receipt")
+	upsertGate(state, durable.GateEvidence{Gate: "visual", Revision: revision, Fingerprint: fingerprint})
+	state.SourceRevision, state.WorktreeFingerprint = admission.SourceRevision, admission.WorktreeFingerprint
+	state.Terminal = model.TerminalNonterminal
+	if admission.Objective.Kind == model.ObjectiveVerified {
+		state.Delivery = model.DeliveryActive
+	}
+	state.Verification, state.Phase = model.VerificationCurrent, model.PhaseActive
+	if verifiedObjectiveSatisfied(*state, admission.Objective) {
+		state.Delivery = model.DeliveryGatesPassed
+		establishTerminal(state, model.PhaseTerminal)
+	}
+	return nil
+}
+
+func applyPublicationObservation(state *durable.State, admission protocol.Admission, _ catalog.Transition) error {
+	state.Recovery, state.Transaction = model.RecoveryNone, model.TransactionNone
+	clearRecoveryContext(state)
+	if state.Publication == model.PublicationUnavailable || state.Publication == model.PublicationConflicting {
+		state.Phase = model.PhaseUnresolved
+	} else if state.Publication == model.PublicationClosedUnmerged {
+		state.Phase = model.PhaseFrontier
+	} else if admission.Objective.Kind == model.ObjectiveOpenPR && state.Publication == model.PublicationOpen {
+		establishTerminal(state, model.PhaseTerminal)
+	} else if admission.Objective.Kind == model.ObjectiveMerged && state.Publication == model.PublicationMerged {
+		state.Workspace, state.Delivery = model.WorkspaceLanded, model.DeliveryTerminal
+		establishTerminal(state, model.PhaseTerminal)
+	} else {
+		state.Phase = model.PhaseActive
 	}
 	return nil
 }

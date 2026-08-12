@@ -165,6 +165,49 @@ type ParameterSpec struct {
 	Secret   bool   `json:"secret"`
 }
 
+// StateEffectKind selects the software-delivery domain's durable-state
+// interpreter. It is domain ABI data; the general kernel continues to own
+// transition selection, objective scope, capabilities, and facet ownership.
+type StateEffectKind string
+
+const (
+	StateEffectAssignments StateEffectKind = "assignments"
+	StateEffectNative      StateEffectKind = "native"
+)
+
+// StateValueReference binds an assignment to one admitted input. Exactly one
+// reference field or Assignment.Value must be present.
+type StateValueReference struct {
+	Parameter  string `json:"parameter,omitempty"`
+	Admission  string `json:"admission,omitempty"`
+	Invocation string `json:"invocation,omitempty"`
+}
+
+// StateAssignment assigns one closed durable-state field from a literal or
+// an admitted input. Value is a pointer so the empty string remains an
+// explicit literal rather than an omitted field.
+type StateAssignment struct {
+	Facet     string              `json:"facet"`
+	Value     *string             `json:"value,omitempty"`
+	ValueFrom StateValueReference `json:"value_from,omitempty"`
+}
+
+// StatePrecondition is an ANDed guard over the current durable snapshot. The
+// listed values are ORed.
+type StatePrecondition struct {
+	Facet  string   `json:"facet"`
+	Values []string `json:"values"`
+}
+
+// StateEffect is the domain-owned executable state declaration. Generic
+// assignments and native handlers are mutually exclusive.
+type StateEffect struct {
+	Kind          StateEffectKind     `json:"kind"`
+	Preconditions []StatePrecondition `json:"preconditions,omitempty"`
+	Assignments   []StateAssignment   `json:"assignments,omitempty"`
+	NativeHandler string              `json:"native_handler,omitempty"`
+}
+
 type InterruptionContract struct {
 	Points               []string     `json:"points"`
 	PartialState         []string     `json:"partial_state"`
@@ -253,6 +296,8 @@ type Transition struct {
 	RuntimeExecution              bool                  `json:"-"`
 	RequiredEvidence              []string              `json:"required_evidence"`
 	OwnedResources                []string              `json:"owned_resources,omitempty"`
+	OwnedFacets                   []model.StateFacet    `json:"owned_facets,omitempty"`
+	StateEffect                   StateEffect           `json:"state_effect,omitempty"`
 	Effect                        EffectID              `json:"effect,omitempty"`
 	LocalEffects                  []EffectID            `json:"local_effects,omitempty"`
 	ExternalEffects               []EffectID            `json:"external_effects,omitempty"`
@@ -408,6 +453,9 @@ func validateTransition(t Transition) error {
 		return fmt.Errorf("%s: transition origin, owner, version, and manifest fingerprint are required", t.ID)
 	}
 	if _, err := DurableStateFacetPolicy(t); err != nil {
+		return err
+	}
+	if err := validateStateEffect(t); err != nil {
 		return err
 	}
 	if !t.SelectionClass.Valid() {
@@ -636,6 +684,18 @@ func cloneTransition(value Transition) Transition {
 	value.DeclaredCapabilities = append([]Capability(nil), value.DeclaredCapabilities...)
 	value.RequiredEvidence = append([]string(nil), value.RequiredEvidence...)
 	value.OwnedResources = append([]string(nil), value.OwnedResources...)
+	value.OwnedFacets = append([]model.StateFacet(nil), value.OwnedFacets...)
+	value.StateEffect.Preconditions = append([]StatePrecondition(nil), value.StateEffect.Preconditions...)
+	for index := range value.StateEffect.Preconditions {
+		value.StateEffect.Preconditions[index].Values = append([]string(nil), value.StateEffect.Preconditions[index].Values...)
+	}
+	value.StateEffect.Assignments = append([]StateAssignment(nil), value.StateEffect.Assignments...)
+	for index := range value.StateEffect.Assignments {
+		if literal := value.StateEffect.Assignments[index].Value; literal != nil {
+			copy := *literal
+			value.StateEffect.Assignments[index].Value = &copy
+		}
+	}
 	value.LocalEffects = append([]EffectID(nil), value.LocalEffects...)
 	value.ExternalEffects = append([]EffectID(nil), value.ExternalEffects...)
 	value.Parameters = append([]ParameterSpec(nil), value.Parameters...)
@@ -646,6 +706,157 @@ func cloneTransition(value Transition) Transition {
 	value.Interruption.PartialState = append([]string(nil), value.Interruption.PartialState...)
 	value.Policy.ManagedOperations = append([]string(nil), value.Policy.ManagedOperations...)
 	return value
+}
+
+func validateStateEffect(t Transition) error {
+	if !t.Controllable() {
+		if t.StateEffect.Kind != "" || len(t.OwnedFacets) != 0 {
+			return fmt.Errorf("%s: observed external transition cannot declare a durable state effect", t.ID)
+		}
+		return nil
+	}
+	switch t.StateEffect.Kind {
+	case StateEffectAssignments:
+		if t.StateEffect.NativeHandler != "" {
+			return fmt.Errorf("%s: assignment state effect cannot name a native handler", t.ID)
+		}
+	case StateEffectNative:
+		if t.StateEffect.NativeHandler == "" || !semanticID.MatchString(t.StateEffect.NativeHandler) || len(t.StateEffect.Assignments) != 0 {
+			return fmt.Errorf("%s: native state effect requires one semantic handler and no assignments", t.ID)
+		}
+		if t.RuntimeExecution {
+			return fmt.Errorf("%s: component runtime transition cannot invoke a host-native state handler", t.ID)
+		}
+	default:
+		return fmt.Errorf("%s: controllable transition requires a declared state effect", t.ID)
+	}
+	owned := map[model.StateFacet]bool{}
+	for _, facet := range t.OwnedFacets {
+		owned[facet] = true
+	}
+	parameters := map[string]bool{}
+	for _, parameter := range t.Parameters {
+		parameters[parameter.Name] = true
+	}
+	preconditions := map[string]bool{}
+	for _, condition := range t.StateEffect.Preconditions {
+		_, supported := DeclaredStateFieldFacet(condition.Facet)
+		if !supported || len(condition.Values) == 0 || preconditions[condition.Facet] {
+			return fmt.Errorf("%s: state-effect preconditions require unique facets and values", t.ID)
+		}
+		preconditions[condition.Facet] = true
+		values := map[string]bool{}
+		for _, value := range condition.Values {
+			if values[value] || !ValidDeclaredStateLiteral(condition.Facet, value) {
+				return fmt.Errorf("%s: state-effect precondition %q has invalid or duplicate value %q", t.ID, condition.Facet, value)
+			}
+			values[value] = true
+		}
+		if !statePreconditionImpliedBySource(t, condition) {
+			return fmt.Errorf("%s: state-effect precondition %q is not implied by resolver source conditions", t.ID, condition.Facet)
+		}
+	}
+	assignments := map[string]bool{}
+	for _, assignment := range t.StateEffect.Assignments {
+		facet, supported := DeclaredStateFieldFacet(assignment.Facet)
+		if !supported || assignments[assignment.Facet] {
+			return fmt.Errorf("%s: state-effect assignments require unique facets", t.ID)
+		}
+		if !owned[facet] {
+			return fmt.Errorf("%s: state-effect assignment %q exceeds owned facet %q", t.ID, assignment.Facet, facet)
+		}
+		assignments[assignment.Facet] = true
+		sources := 0
+		if assignment.Value != nil {
+			sources++
+		}
+		for _, source := range []string{assignment.ValueFrom.Parameter, assignment.ValueFrom.Admission, assignment.ValueFrom.Invocation} {
+			if source != "" {
+				sources++
+			}
+		}
+		if sources != 1 {
+			return fmt.Errorf("%s: state-effect assignment %q requires exactly one value source", t.ID, assignment.Facet)
+		}
+		if assignment.Value != nil && !ValidDeclaredStateLiteral(assignment.Facet, *assignment.Value) {
+			return fmt.Errorf("%s: state-effect assignment %q has invalid literal %q", t.ID, assignment.Facet, *assignment.Value)
+		}
+		if !stateAssignmentMatchesTarget(t, assignment) {
+			return fmt.Errorf("%s: state-effect assignment %q is not compatible with resolver target conditions", t.ID, assignment.Facet)
+		}
+		if parameter := assignment.ValueFrom.Parameter; parameter != "" && !parameters[parameter] {
+			return fmt.Errorf("%s: state-effect assignment %q references undeclared parameter %q", t.ID, assignment.Facet, parameter)
+		}
+		if source := assignment.ValueFrom.Admission; source != "" && source != "source_revision" && source != "worktree_fingerprint" && source != "expected_program_fingerprint" {
+			return fmt.Errorf("%s: state-effect assignment %q references unknown admission value %q", t.ID, assignment.Facet, source)
+		}
+		if source := assignment.ValueFrom.Invocation; source != "" && source != "invoking_path" && source != "worktree_id" && source != "ref" {
+			return fmt.Errorf("%s: state-effect assignment %q references unknown invocation value %q", t.ID, assignment.Facet, source)
+		}
+	}
+	return nil
+}
+
+func statePreconditionImpliedBySource(t Transition, condition StatePrecondition) bool {
+	allowed := make(map[string]bool, len(condition.Values))
+	for _, value := range condition.Values {
+		allowed[value] = true
+	}
+	if condition.Facet == "phase" {
+		for _, phase := range t.SourcePhases {
+			if !allowed[string(phase)] {
+				return false
+			}
+		}
+		return true
+	}
+	facet, ok := declaredStateResolverFacet(condition.Facet)
+	if !ok {
+		return false
+	}
+	for _, source := range t.SourceConditions {
+		if source.Facet != facet || len(source.Statuses) != 1 || source.Statuses[0] != model.FactKnown || len(source.Values) == 0 {
+			continue
+		}
+		for _, value := range source.Values {
+			if !allowed[value] {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+func stateAssignmentMatchesTarget(t Transition, assignment StateAssignment) bool {
+	if assignment.Facet == "phase" {
+		return assignment.Value != nil && t.DeclaresTargetPhase(model.ProtocolPhase(*assignment.Value))
+	}
+	facet, stateFacet := declaredStateResolverFacet(assignment.Facet)
+	if !stateFacet {
+		return true
+	}
+	if assignment.Value == nil {
+		return false
+	}
+	for _, target := range t.TargetConditions {
+		if target.Facet != facet {
+			continue
+		}
+		if len(target.Statuses) != 1 || target.Statuses[0] != model.FactKnown {
+			return false
+		}
+		if len(target.Values) == 0 {
+			return true
+		}
+		for _, value := range target.Values {
+			if value == *assignment.Value {
+				return true
+			}
+		}
+		return false
+	}
+	return true
 }
 
 func cloneConditions(values []FacetCondition) []FacetCondition {

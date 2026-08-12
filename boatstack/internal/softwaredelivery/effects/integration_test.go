@@ -191,6 +191,82 @@ func TestConcreteBoundaryAppliesAndReceiptsOneTransition(t *testing.T) {
 	}
 }
 
+func TestDeclaredStateEffectAppliesAndReceiptsWithoutTransitionDispatch(t *testing.T) {
+	// control-law: a valid repository-authored state declaration does not require a Go reducer case
+	ctx := context.Background()
+	repository := testRepository(t)
+	clock := fixedClock{value: time.Unix(1100, 0).UTC()}
+	resolver, err := plant.NewResolver(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, err := resolver.ResolveInvocation(ctx, repository, "cli", "declared-state")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := testprogram.StandardRegistry()
+	transitions := base.All()
+	synthetic, declared := base.Lookup("fixture.declared-state")
+	if !declared {
+		var ok bool
+		synthetic, ok = base.Lookup("invocation.rebind")
+		if !ok {
+			t.Fatal("missing invocation.rebind template")
+		}
+		synthetic.ID = "fixture.declared-state"
+		synthetic.Effect = catalog.EffectID(synthetic.ID)
+		synthetic.LocalEffects = []catalog.EffectID{synthetic.Effect}
+		synthetic.Prescription.Operation = string(synthetic.ID)
+		synthetic.Authority = []catalog.AuthorityClass{catalog.AuthorityHuman}
+		synthetic.StateEffect = catalog.StateEffect{Kind: catalog.StateEffectAssignments, Assignments: []catalog.StateAssignment{
+			{Facet: "phase", Value: pointer(string(model.PhaseObserved))},
+		}}
+		transitions = append(transitions, synthetic)
+	}
+	registry, err := catalog.New(transitions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observer, _ := plant.NewObserver(resolver, clock)
+	locker, _ := effects.NewLocker(resolver)
+	journal, _ := effects.NewJournal(resolver, clock)
+	receipts, _ := effects.NewReceiptStore(resolver, clock)
+	driver, _ := effects.NewDriver(resolver, clock, effects.NewNativeBoundary())
+	kernel, err := engine.New(registry, testObjectiveContracts(), testProgramIdentity, observer, clock, locker, journal, driver, receipts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	objective := model.Objective{ID: "declared-state-objective", Kind: model.ObjectiveVerified, DeliveryID: "declared-state-delivery"}
+	human := protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{
+		ID: "declared-state-human", Class: catalog.AuthorityHuman, Subject: invocation.RepositoryID, Fingerprint: "explicit-human",
+		IssuedAt: clock.Now().Add(-time.Minute), ExpiresAt: clock.Now().Add(time.Hour),
+	}}}
+	attach := engine.ApplyRequest{
+		ResolveRequest: engine.ResolveRequest{Invocation: invocation, Objective: objective, Authority: human, Requested: "repository.attach"},
+		FlowID:         "declared-state-flow", Parameters: protocol.Parameters{{Name: "topology", Value: string(model.TopologyDetached)}, {Name: "config_authority", Value: "repository"}}, AdmissionLifetime: time.Minute,
+	}
+	if _, err := kernel.Apply(ctx, prescribeEngine(t, ctx, kernel, attach)); err != nil {
+		t.Fatal(err)
+	}
+	invocation, err = resolver.ResolveInvocation(ctx, repository, "cli", "declared-state-apply")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := engine.ApplyRequest{
+		ResolveRequest: engine.ResolveRequest{Invocation: invocation, Objective: objective, Authority: human, Requested: synthetic.ID},
+		FlowID:         "declared-state-flow", AdmissionLifetime: time.Minute,
+	}
+	result, err := kernel.Apply(ctx, prescribeEngine(t, ctx, kernel, request))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Receipt.TransitionID != synthetic.ID || result.Target.Phase.Value != model.PhaseObserved {
+		t.Fatalf("declared transition result = %#v", result)
+	}
+}
+
+func pointer(value string) *string { return &value }
+
 func TestExternalConfigurationAuthorityTransfersAcrossAttachAndDetach(t *testing.T) {
 	// control-law: detached-config-authority-selects-the-real-reader-and-writer
 	ctx := context.Background()

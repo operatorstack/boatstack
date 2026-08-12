@@ -173,45 +173,59 @@ func TestSourceInventoryHasNoWriterOrLifecycleAuthorityOutsideOwnedPackages(t *t
 }
 
 func TestEveryControllableRuntimeEventHasAnExecutableStateReducer(t *testing.T) {
-	// control-law: registry-entry-cannot-exist-without-runtime-effect-reduction
-	path := filepath.Join(sourceRoot(t), "internal", "softwaredelivery", "effects", "state_reducer.go")
-	parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	covered := map[catalog.TransitionID]bool{}
+	// control-law: registry-entry-cannot-exist-without-declared-runtime-effect-reduction
 	registry := testprogram.StandardRegistry()
-	for _, declaration := range parsed.Decls {
-		function, ok := declaration.(*ast.FuncDecl)
-		if !ok || function.Name.Name != "applyStateTransition" {
+	for _, transition := range registry.All() {
+		if !transition.Controllable() {
+			if transition.StateEffect.Kind != "" || len(transition.OwnedFacets) != 0 {
+				t.Errorf("observed transition %s owns a durable state effect", transition.ID)
+			}
 			continue
 		}
-		ast.Inspect(function.Body, func(node ast.Node) bool {
-			clause, ok := node.(*ast.CaseClause)
-			if !ok {
-				return true
-			}
-			for _, expression := range clause.List {
-				literal, ok := expression.(*ast.BasicLit)
-				if !ok || literal.Kind != token.STRING {
-					continue
-				}
-				value, unquoteErr := strconv.Unquote(literal.Value)
-				if unquoteErr != nil {
-					t.Fatal(unquoteErr)
-				}
-				id := catalog.TransitionID(value)
-				if transition, exists := registry.Lookup(id); exists && transition.Controllable() {
-					covered[id] = true
-				}
-			}
-			return true
-		})
-	}
-	for _, transition := range registry.All() {
-		if transition.Controllable() && !covered[transition.ID] {
-			t.Errorf("controllable transition %s has no applyStateTransition reducer case", transition.ID)
+		if len(transition.OwnedFacets) == 0 {
+			t.Errorf("controllable transition %s has no declared durable state facets", transition.ID)
 		}
+		if transition.StateEffect.Kind != catalog.StateEffectAssignments && transition.StateEffect.Kind != catalog.StateEffectNative {
+			t.Errorf("controllable transition %s has no executable declared state effect", transition.ID)
+		}
+	}
+}
+
+func TestMalformedDeclaredStateEffectsFailClosedAtCatalogBoundary(t *testing.T) {
+	// control-law: malformed-state-declarations-never-reach-effect-preparation
+	cases := []struct {
+		name   string
+		mutate func(*catalog.Transition)
+	}{
+		{"unknown-field", func(value *catalog.Transition) { value.StateEffect.Assignments[0].Facet = "not_a_state_field" }},
+		{"unowned-field", func(value *catalog.Transition) { value.OwnedFacets = []model.StateFacet{model.StateFacetControl} }},
+		{"undeclared-parameter", func(value *catalog.Transition) {
+			value.StateEffect.Assignments[0].Value = nil
+			value.StateEffect.Assignments[0].ValueFrom.Parameter = "not_declared"
+		}},
+		{"unknown-admission-source", func(value *catalog.Transition) {
+			value.StateEffect.Assignments[0].Value = nil
+			value.StateEffect.Assignments[0].ValueFrom.Admission = "not_admitted"
+		}},
+		{"invalid-state-literal", func(value *catalog.Transition) { *value.StateEffect.Assignments[0].Value = "NOT_A_PHASE" }},
+		{"target-mismatched-state-literal", func(value *catalog.Transition) { *value.StateEffect.Assignments[0].Value = string(model.PhaseDormant) }},
+		{"unmodeled-apply-precondition", func(value *catalog.Transition) {
+			value.StateEffect.Preconditions = []catalog.StatePrecondition{{Facet: "phase", Values: []string{string(model.PhaseDormant)}}}
+		}},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			transitions := testprogram.StandardRegistry().All()
+			for index := range transitions {
+				if transitions[index].ID == "plan.create" {
+					test.mutate(&transitions[index])
+					break
+				}
+			}
+			if _, err := catalog.New(transitions); err == nil {
+				t.Fatal("malformed declared state effect reached the runtime registry")
+			}
+		})
 	}
 }
 

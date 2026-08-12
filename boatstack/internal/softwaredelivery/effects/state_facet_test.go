@@ -20,7 +20,20 @@ func ownershipState() durable.State {
 }
 
 func transitionFixture(id catalog.TransitionID, origin catalog.OriginKind, runtime bool) catalog.Transition {
-	return catalog.Transition{ID: id, Class: catalog.EventOwnedLocal, RuntimeExecution: runtime, Origin: catalog.TransitionOrigin{Kind: origin, ID: "fixture", Version: "1", ManifestFingerprint: "manifest"}}
+	owned := []model.StateFacet{model.StateFacetControl}
+	switch id {
+	case "installation.update":
+		owned = append(owned, model.StateFacetInstallation)
+	case "catalog.reconcile":
+		owned = append(owned, model.StateFacetProgram)
+	case "objective.bind":
+		owned = append(owned, model.StateFacetProduct)
+	}
+	return catalog.Transition{
+		ID: id, Class: catalog.EventOwnedLocal, RuntimeExecution: runtime,
+		Origin:      catalog.TransitionOrigin{Kind: origin, ID: "fixture", Version: "1", ManifestFingerprint: "manifest"},
+		OwnedFacets: owned, StateEffect: catalog.StateEffect{Kind: catalog.StateEffectAssignments},
+	}
 }
 
 func requireOwnedChange(t *testing.T, transition catalog.Transition, before, after durable.State, wantError bool) {
@@ -93,7 +106,7 @@ func TestRecoveryCannotReplayFacetOutsideInterruptedTransition(t *testing.T) {
 	after.Objective = model.Objective{ID: "invented", Kind: model.ObjectiveApprovedPlan, DeliveryID: "invented"}
 	prior, _ := durable.EncodeState(before)
 	target, _ := durable.EncodeState(after)
-	record := journalRecord{TransitionID: "installation.update", Mutations: []ports.ResourceMutation{{Path: "/controller/state.json", PriorExists: true, Prior: prior, Target: target, StateFacets: []model.StateFacet{model.StateFacetControl, model.StateFacetProduct}}}}
+	record := journalRecord{TransitionID: "installation.update", AllowedStateFacets: []model.StateFacet{model.StateFacetControl, model.StateFacetInstallation}, Mutations: []ports.ResourceMutation{{Path: "/controller/state.json", PriorExists: true, Prior: prior, Target: target, StateFacets: []model.StateFacet{model.StateFacetControl, model.StateFacetProduct}}}}
 	if _, err := recoveryStateFacets(record, "recovery.resume", model.InvocationContext{}, nil); err == nil || !strings.Contains(err.Error(), "FACET_OWNERSHIP_VIOLATION") {
 		t.Fatalf("recovery accepted product contamination: %v", err)
 	}
@@ -102,7 +115,7 @@ func TestRecoveryCannotReplayFacetOutsideInterruptedTransition(t *testing.T) {
 func TestRecoveryRefusesUnclassifiedDurableMutation(t *testing.T) {
 	state := ownershipState()
 	raw, _ := durable.EncodeState(state)
-	record := journalRecord{TransitionID: "installation.update", Mutations: []ports.ResourceMutation{{Path: "/controller/state.json", PriorExists: true, Prior: raw, Target: raw}}}
+	record := journalRecord{TransitionID: "installation.update", AllowedStateFacets: []model.StateFacet{model.StateFacetControl, model.StateFacetInstallation}, Mutations: []ports.ResourceMutation{{Path: "/controller/state.json", PriorExists: true, Prior: raw, Target: raw}}}
 	if _, err := recoveryStateFacets(record, "recovery.resume", model.InvocationContext{}, nil); err == nil || !strings.Contains(err.Error(), "STATE_FACET_UNCLASSIFIED") {
 		t.Fatalf("recovery accepted an unclassified state mutation: %v", err)
 	}
@@ -118,7 +131,7 @@ func TestRecoveryReportsActualStateDeltaInsteadOfInterruptedEnvelope(t *testing.
 	staged.UpdatedAt = time.Unix(101, 0).UTC()
 	prior, _ := durable.EncodeState(before)
 	target, _ := durable.EncodeState(staged)
-	record := journalRecord{TransitionID: "plan.create", Mutations: []ports.ResourceMutation{{
+	record := journalRecord{TransitionID: "plan.create", AllowedStateFacets: []model.StateFacet{model.StateFacetControl, model.StateFacetProduct}, Mutations: []ports.ResourceMutation{{
 		Path: "/controller/state.json", PriorExists: true, Prior: prior, Target: target,
 		StateFacets: []model.StateFacet{model.StateFacetControl, model.StateFacetProduct},
 	}}}

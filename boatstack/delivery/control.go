@@ -35,6 +35,12 @@ type ParameterSpec = catalog.ParameterSpec
 type InterruptionContract = catalog.InterruptionContract
 type PolicyContract = catalog.PolicyContract
 type Reversibility = catalog.Reversibility
+type StateEffect = catalog.StateEffect
+type StateEffectKind = catalog.StateEffectKind
+type StateAssignment = catalog.StateAssignment
+type StatePrecondition = catalog.StatePrecondition
+type StateValueReference = catalog.StateValueReference
+type StateFacet = model.StateFacet
 type ObjectiveKind = model.ObjectiveKind
 type ProtocolPhase = model.ProtocolPhase
 type FactStatus = model.FactStatus
@@ -87,11 +93,19 @@ const (
 	PhaseUnresolved = model.PhaseUnresolved
 	PhaseAbandoned  = model.PhaseAbandoned
 
-	FactKnown       = model.FactKnown
-	FactAbsent      = model.FactAbsent
-	FactUnknown     = model.FactUnknown
-	FactStale       = model.FactStale
-	FactConflicting = model.FactConflicting
+	FactKnown = model.FactKnown
+
+	StateEffectAssignments = catalog.StateEffectAssignments
+	StateEffectNative      = catalog.StateEffectNative
+
+	StateFacetInstallation = model.StateFacetInstallation
+	StateFacetProgram      = model.StateFacetProgram
+	StateFacetControl      = model.StateFacetControl
+	StateFacetProduct      = model.StateFacetProduct
+	FactAbsent             = model.FactAbsent
+	FactUnknown            = model.FactUnknown
+	FactStale              = model.FactStale
+	FactConflicting        = model.FactConflicting
 
 	Reversible      = catalog.Reversible
 	Compensatable   = catalog.Compensatable
@@ -118,7 +132,7 @@ const (
 	FacetObjective           = model.FacetObjective
 )
 
-const ProgramSchemaVersion = 3
+const ProgramSchemaVersion = 4
 
 func KernelEffectCapabilities(transition Transition) []Capability {
 	return catalog.KernelEffectCapabilities(transition)
@@ -583,7 +597,10 @@ func compileSupervisoryProgram(runtime ProgramRuntimeManifest, compatibility, do
 		for _, capability := range transition.RequiredCapabilities {
 			capabilities = append(capabilities, general.Capability(capability))
 		}
-		facets := append([]string(nil), transition.OwnedResources...)
+		facets := make([]string, 0, len(transition.OwnedFacets)+1)
+		for _, facet := range transition.OwnedFacets {
+			facets = append(facets, string(facet))
+		}
 		mutation := general.PreserveObjective
 		if transition.Policy.BindsRequestedObjective {
 			mutation = general.BindObjectiveMutation
@@ -1037,6 +1054,18 @@ func cloneTransition(value Transition) Transition {
 	value.DeclaredCapabilities = append([]Capability(nil), value.DeclaredCapabilities...)
 	value.RequiredEvidence = append([]string(nil), value.RequiredEvidence...)
 	value.OwnedResources = append([]string(nil), value.OwnedResources...)
+	value.OwnedFacets = append([]model.StateFacet(nil), value.OwnedFacets...)
+	value.StateEffect.Preconditions = append([]catalog.StatePrecondition(nil), value.StateEffect.Preconditions...)
+	for index := range value.StateEffect.Preconditions {
+		value.StateEffect.Preconditions[index].Values = append([]string(nil), value.StateEffect.Preconditions[index].Values...)
+	}
+	value.StateEffect.Assignments = append([]catalog.StateAssignment(nil), value.StateEffect.Assignments...)
+	for index := range value.StateEffect.Assignments {
+		if literal := value.StateEffect.Assignments[index].Value; literal != nil {
+			copy := *literal
+			value.StateEffect.Assignments[index].Value = &copy
+		}
+	}
 	value.LocalEffects = append([]catalog.EffectID(nil), value.LocalEffects...)
 	value.ExternalEffects = append([]catalog.EffectID(nil), value.ExternalEffects...)
 	value.Parameters = append([]catalog.ParameterSpec(nil), value.Parameters...)

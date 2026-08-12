@@ -185,7 +185,24 @@
     "policy": {
       "objective_scope": "bound-exact"
     },
-    "priority": 10
+    "priority": 10,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "phase",
+          "value": "OBSERVED"
+        },
+        {
+          "facet": "engagement",
+          "value": "command"
+        }
+      ]
+    }
   },
   {
     "id": "engagement.renew",
@@ -371,7 +388,24 @@
     "policy": {
       "objective_scope": "bound-exact"
     },
-    "priority": 70
+    "priority": 70,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "phase",
+          "value": "ACTIVE"
+        },
+        {
+          "facet": "engagement",
+          "value": "active"
+        }
+      ]
+    }
   },
   {
     "id": "engagement.release",
@@ -559,7 +593,24 @@
     "policy": {
       "objective_scope": "bound-exact"
     },
-    "priority": 95
+    "priority": 95,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "phase",
+          "value": "DORMANT"
+        },
+        {
+          "facet": "engagement",
+          "value": "dormant"
+        }
+      ]
+    }
   },
   {
     "id": "invocation.rebind",
@@ -713,7 +764,19 @@
       "objective_scope": "optional-preserve"
     },
     "priority": 15,
-    "allows_identity_rebind": true
+    "allows_identity_rebind": true,
+    "owned_facets": [
+      "control"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "phase",
+          "value": "OBSERVED"
+        }
+      ]
+    }
   },
   {
     "id": "repository.attach",
@@ -886,7 +949,20 @@
       "objective_scope": "optional-preserve"
     },
     "priority": 12,
-    "allows_identity_rebind": true
+    "allows_identity_rebind": true,
+    "owned_facets": [
+      "control",
+      "program"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "phase",
+          "value": "OBSERVED"
+        }
+      ]
+    }
   },
   {
     "id": "repository.detach",
@@ -1048,7 +1124,24 @@
       "objective_scope": "optional-preserve"
     },
     "priority": 96,
-    "allows_identity_rebind": true
+    "allows_identity_rebind": true,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "phase",
+          "value": "DORMANT"
+        },
+        {
+          "facet": "engagement",
+          "value": "dormant"
+        }
+      ]
+    }
   },
   {
     "id": "runtime.hydrate",
@@ -1233,7 +1326,15 @@
     "policy": {
       "objective_scope": "optional-preserve"
     },
-    "priority": 20
+    "priority": 20,
+    "owned_facets": [
+      "control",
+      "installation"
+    ],
+    "state_effect": {
+      "kind": "native",
+      "native_handler": "runtime-verified-settled"
+    }
   },
   {
     "id": "runtime.replace",
@@ -1417,7 +1518,15 @@
     "policy": {
       "objective_scope": "optional-preserve"
     },
-    "priority": 25
+    "priority": 25,
+    "owned_facets": [
+      "control",
+      "installation"
+    ],
+    "state_effect": {
+      "kind": "native",
+      "native_handler": "runtime-verified-settled"
+    }
   },
   {
     "id": "runtime.reconcile",
@@ -1576,7 +1685,15 @@
     "policy": {
       "objective_scope": "optional-preserve"
     },
-    "priority": 4
+    "priority": 4,
+    "owned_facets": [
+      "control",
+      "installation"
+    ],
+    "state_effect": {
+      "kind": "native",
+      "native_handler": "runtime-reconcile"
+    }
   },
   {
     "id": "configuration.initialize",
@@ -1751,7 +1868,14 @@
     "policy": {
       "objective_scope": "optional-preserve"
     },
-    "priority": 22
+    "priority": 22,
+    "owned_facets": [
+      "control"
+    ],
+    "state_effect": {
+      "kind": "native",
+      "native_handler": "configuration-verified-settled"
+    }
   },
   {
     "id": "configuration.mutate",
@@ -1959,7 +2083,14 @@
     "policy": {
       "objective_scope": "optional-preserve"
     },
-    "priority": 60
+    "priority": 60,
+    "owned_facets": [
+      "control"
+    ],
+    "state_effect": {
+      "kind": "native",
+      "native_handler": "configuration-verified-settled"
+    }
   },
   {
     "id": "configuration.reconcile",
@@ -2104,7 +2235,14 @@
     "policy": {
       "objective_scope": "optional-preserve"
     },
-    "priority": 3
+    "priority": 3,
+    "owned_facets": [
+      "control"
+    ],
+    "state_effect": {
+      "kind": "native",
+      "native_handler": "configuration-reconcile"
+    }
   },
   {
     "id": "installation.initialize",
@@ -2301,7 +2439,53 @@
     "policy": {
       "objective_scope": "optional-preserve"
     },
-    "priority": 11
+    "priority": 11,
+    "owned_facets": [
+      "control",
+      "installation",
+      "program"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "runtime",
+          "value": "verified"
+        },
+        {
+          "facet": "configuration",
+          "value": "verified"
+        },
+        {
+          "facet": "runtime_version",
+          "value_from": {
+            "parameter": "runtime_version"
+          }
+        },
+        {
+          "facet": "runtime_fingerprint",
+          "value_from": {
+            "parameter": "runtime_sha256"
+          }
+        },
+        {
+          "facet": "runtime_source",
+          "value_from": {
+            "parameter": "source_revision"
+          }
+        },
+        {
+          "facet": "config_fingerprint",
+          "value_from": {
+            "parameter": "config_sha256"
+          }
+        },
+        {
+          "facet": "phase",
+          "value": "OBSERVED"
+        }
+      ]
+    }
   },
   {
     "id": "installation.update",
@@ -2514,7 +2698,38 @@
     "policy": {
       "objective_scope": "optional-preserve"
     },
-    "priority": 65
+    "priority": 65,
+    "owned_facets": [
+      "control",
+      "installation"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "runtime",
+          "value": "verified"
+        },
+        {
+          "facet": "runtime_version",
+          "value_from": {
+            "parameter": "runtime_version"
+          }
+        },
+        {
+          "facet": "runtime_fingerprint",
+          "value_from": {
+            "parameter": "runtime_sha256"
+          }
+        },
+        {
+          "facet": "runtime_source",
+          "value_from": {
+            "parameter": "source_revision"
+          }
+        }
+      ]
+    }
   },
   {
     "id": "installation.reconcile-update",
@@ -2740,7 +2955,16 @@
       "reconciles_program": true,
       "objective_scope": "optional-preserve"
     },
-    "priority": 1
+    "priority": 1,
+    "owned_facets": [
+      "control",
+      "installation",
+      "program"
+    ],
+    "state_effect": {
+      "kind": "native",
+      "native_handler": "installation-reconcile-update"
+    }
   },
   {
     "id": "catalog.reconcile",
@@ -2926,7 +3150,15 @@
       "reconciles_program": true,
       "objective_scope": "optional-preserve"
     },
-    "priority": 1
+    "priority": 1,
+    "owned_facets": [
+      "control",
+      "program"
+    ],
+    "state_effect": {
+      "kind": "native",
+      "native_handler": "catalog-reconcile"
+    }
   },
   {
     "id": "objective.bind",
@@ -3070,7 +3302,15 @@
       "binds_requested_objective": true,
       "objective_scope": "none"
     },
-    "priority": 30
+    "priority": 30,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "native",
+      "native_handler": "objective-bind"
+    }
   },
   {
     "id": "recovery.resume",
@@ -3218,7 +3458,14 @@
     "policy": {
       "objective_scope": "optional-preserve"
     },
-    "priority": 2
+    "priority": 2,
+    "owned_facets": [
+      "control"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": []
+    }
   },
   {
     "id": "recovery.rollback",
@@ -3365,7 +3612,14 @@
     "policy": {
       "objective_scope": "optional-preserve"
     },
-    "priority": 3
+    "priority": 3,
+    "owned_facets": [
+      "control"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": []
+    }
   },
   {
     "id": "recovery.escalate",
@@ -3507,7 +3761,53 @@
     "policy": {
       "objective_scope": "optional-preserve"
     },
-    "priority": 5
+    "priority": 5,
+    "owned_facets": [
+      "control"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "recovery",
+          "value": "escalated"
+        },
+        {
+          "facet": "phase",
+          "value": "FRONTIER"
+        },
+        {
+          "facet": "transaction",
+          "value": "none"
+        },
+        {
+          "facet": "transaction_id",
+          "value_from": {
+            "parameter": "transaction_id"
+          }
+        },
+        {
+          "facet": "transaction_transition",
+          "value": "recovery.escalate"
+        },
+        {
+          "facet": "recovery_cause",
+          "value": "recovery requires explicit external resolution"
+        },
+        {
+          "facet": "recovery_source_phase",
+          "value": "RECOVERY"
+        },
+        {
+          "facet": "recovery_resumption",
+          "value": "FRONTIER"
+        },
+        {
+          "facet": "recovery_budget",
+          "value": "0"
+        }
+      ]
+    }
   },
   {
     "id": "external.files-changed",
