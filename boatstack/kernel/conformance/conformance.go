@@ -3,6 +3,7 @@ package conformance
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -335,18 +336,63 @@ func (suite KernelConformance) concurrentApplyCommitsOnce(t *testing.T) {
 
 func (suite KernelConformance) programReachesMarkedState(t *testing.T) {
 	fixture, runtime := suite.fresh(t, SetupUnbound)
-	transitions := append([]string{fixture.Scenario.BindTransition}, fixture.Scenario.AdvanceTransitions...)
-	for _, transition := range transitions {
-		receipt := resolveAndApply(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective)
+	receipts, err := runUntargetedToMarked(context.Background(), runtime, fixture.Scenario, len(fixture.Scenario.AdvanceTransitions)+1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, receipt := range receipts {
 		if receipt.Verification != "satisfied" || receipt.AttemptStateRevision != receipt.PriorStateRevision+1 || receipt.ResultStateRevision != receipt.AttemptStateRevision+1 {
 			t.Fatalf("control-law receipt-completeness: %#v", receipt)
 		}
 	}
-	resolution, err := runtime.Resolve(context.Background(), kernel.ResolveRequest{InstanceID: fixture.Scenario.InstanceID, Objective: &fixture.Scenario.Objective, Authority: fixture.Scenario.Authority})
 	after := fixture.Scenario.Snapshot()
-	if err != nil || resolution.Decision.Kind != kernel.Marked || !fixture.Program.Marked(after.State.Mode) || len(after.Receipts) != len(transitions) {
-		t.Fatalf("control-law marked-reachability: decision=%#v snapshot=%#v error=%v", resolution.Decision, after, err)
+	if !fixture.Program.Marked(after.State.Mode) || len(after.Receipts) != len(receipts) {
+		t.Fatalf("control-law marked-reachability: snapshot=%#v", after)
 	}
+}
+
+func runUntargetedToMarked(ctx context.Context, runtime kernel.Runtime, scenario Scenario, maxTransitions int) ([]kernel.Receipt, error) {
+	request := kernel.ResolveRequest{InstanceID: scenario.InstanceID, Objective: &scenario.Objective, Authority: scenario.Authority}
+	seen := map[string]bool{}
+	receipts := make([]kernel.Receipt, 0, maxTransitions)
+	for step := 0; ; step++ {
+		resolution, err := runtime.Resolve(ctx, request)
+		if err != nil {
+			return nil, fmt.Errorf("control-law marked-reachability: resolve step %d: %w", step, err)
+		}
+		if resolution.Decision.Kind == kernel.Marked {
+			return receipts, nil
+		}
+		if resolution.Decision.Kind != kernel.Prescribed || resolution.Prescription == nil {
+			return nil, fmt.Errorf("control-law marked-reachability: untargeted step %d returned %s: %s", step, resolution.Decision.Kind, resolution.Decision.Reason)
+		}
+		identity, err := progressIdentity(resolution)
+		if err != nil {
+			return nil, fmt.Errorf("control-law marked-reachability: identify step %d: %w", step, err)
+		}
+		if seen[identity] {
+			return nil, fmt.Errorf("control-law marked-reachability: untargeted resolution repeated control state before marked at step %d", step)
+		}
+		seen[identity] = true
+		if step == maxTransitions {
+			return nil, fmt.Errorf("control-law marked-reachability: untargeted resolution exceeded %d transitions before marked", maxTransitions)
+		}
+		receipt, err := runtime.Apply(ctx, kernel.ApplyRequest{ResolveRequest: request, Prescription: *resolution.Prescription})
+		if err != nil {
+			return nil, fmt.Errorf("control-law marked-reachability: apply %s: %w", resolution.Decision.Transition, err)
+		}
+		receipts = append(receipts, receipt)
+	}
+}
+
+func progressIdentity(resolution kernel.Resolution) (string, error) {
+	encoded, err := json.Marshal(struct {
+		Mode             string                   `json:"mode"`
+		ObjectiveBinding *kernel.ObjectiveBinding `json:"objective_binding,omitempty"`
+		Recovery         *kernel.RecoveryState    `json:"recovery,omitempty"`
+		Observation      string                   `json:"observation"`
+	}{resolution.State.Mode, resolution.State.ObjectiveBinding, resolution.State.Recovery, resolution.Observation.Fingerprint})
+	return string(encoded), err
 }
 
 func (suite KernelConformance) fresh(t *testing.T, setup Setup) (KernelConformance, kernel.Runtime) {
