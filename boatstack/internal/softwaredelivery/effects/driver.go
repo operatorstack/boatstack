@@ -106,6 +106,9 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 	if err := verifyWorkspaceBranchParameter(state, admission, transition.ID); err != nil {
 		return nil, err
 	}
+	if err := d.verifyClearedWorkspaceDestination(ctx, state, admission, transition); err != nil {
+		return nil, err
+	}
 	if err := verifyRuntimeParameters(admission, transition); err != nil {
 		return nil, err
 	}
@@ -328,6 +331,34 @@ func prepareConfigurationAuthorityTransfer(layout ports.ControllerLayout, admiss
 		return nil, err
 	}
 	return []ports.ResourceMutation{mutation}, nil
+}
+
+func (d Driver) verifyClearedWorkspaceDestination(ctx context.Context, state durable.State, admission protocol.Admission, transition catalog.Transition) error {
+	clearsWorkspace := false
+	for _, condition := range transition.TargetConditions {
+		if condition.Facet != model.FacetWorkspace {
+			continue
+		}
+		for _, value := range condition.Values {
+			if value == string(model.WorkspaceAbsent) {
+				clearsWorkspace = true
+				break
+			}
+		}
+	}
+	if !clearsWorkspace {
+		return nil
+	}
+	destination, err := d.resolver.ResolveInvocation(ctx, state.WorkspacePath, admission.Invocation.Host, admission.Invocation.Correlation)
+	if err != nil {
+		return fmt.Errorf("resolve workspace destination before clearing it: %w", err)
+	}
+	if destination.RepositoryID != admission.Invocation.RepositoryID || destination.GitCommonID != admission.Invocation.GitCommonID ||
+		destination.WorktreeID != admission.Invocation.WorktreeID || destination.Ref != admission.Invocation.Ref ||
+		destination.ControllerID != admission.Invocation.ControllerID || destination.Topology != admission.Invocation.Topology {
+		return fmt.Errorf("workspace destination identity changed; refusing workspace removal")
+	}
+	return nil
 }
 
 func verifyWorkspaceBranchParameter(state durable.State, admission protocol.Admission, id catalog.TransitionID) error {
