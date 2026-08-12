@@ -416,6 +416,14 @@ func verifyIntegerCommitted(program kernel.Program, before, after Snapshot, rece
 	if !ok {
 		return fmt.Errorf("unknown transition %q", receipt.TransitionID)
 	}
+	facet := "counter.value"
+	if transition.Operation == "objective.bind" {
+		facet = "supervisor.objective"
+	}
+	expectedFact := kernel.EffectFact{Facet: facet, Operation: transition.Operation, Fingerprint: fmt.Sprintf("value-%d", result.Value)}
+	if len(receipt.Effects) != 1 || receipt.Effects[0] != expectedFact {
+		return fmt.Errorf("receipt effect facts %#v differ from independent evidence %#v", receipt.Effects, expectedFact)
+	}
 	switch transition.Operation {
 	case "objective.bind":
 		if result.Value != prior.Value {

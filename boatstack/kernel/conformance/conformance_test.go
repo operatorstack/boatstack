@@ -231,6 +231,47 @@ func TestConcurrentApplyRejectsStoreWithoutCompareAndCommit(t *testing.T) {
 	}
 }
 
+func TestCommitCompareAndSwapRejectsBlindCommitStore(t *testing.T) {
+	fixture := newIntegerFixture(SetupBound)
+	fixture.Store = &blindCommitStore{MemoryStateStore: fixture.Store.(*MemoryStateStore)}
+	resolver := mustRuntime(t, fixture)
+	if err := commitCompareAndSwapError(fixture, resolver); err == nil {
+		t.Fatal("expected commit-CAS conformance to reject a blind CommitTransition")
+	}
+}
+
+func TestCommittedOutcomeRejectsFabricatedEffectFacts(t *testing.T) {
+	fixture := newIntegerFixture(SetupBound)
+	fixture.Operator = fabricatingOperator{Operator: fixture.Operator}
+	runtime := mustRuntime(t, fixture)
+	transition := fixture.Scenario.AdvanceTransitions[0]
+	request, prescription := resolve(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective, fixture.Scenario.Authority)
+	before := fixture.Scenario.Snapshot()
+	returned, err := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := committedOutcomeError(fixture.Program, fixture.Scenario, before, fixture.Scenario.Snapshot(), prescription, returned); err == nil || !strings.Contains(err.Error(), "receipt effect facts") {
+		t.Fatalf("expected fabricated effect fact rejection, got %v", err)
+	}
+}
+
+func TestConcurrentApplyTerminatesWhenOneLoadFails(t *testing.T) {
+	fixture := newIntegerFixture(SetupConcurrentSameBase)
+	resolver := mustRuntime(t, fixture)
+	fixture.Store = &failOneLoadStore{Store: fixture.Store}
+	result := make(chan error, 1)
+	go func() { result <- concurrentApplyError(fixture, resolver) }()
+	select {
+	case err := <-result:
+		if err == nil {
+			t.Fatal("expected asymmetric Load failure to reject conformance")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("concurrent conformance deadlocked after one Load failure")
+	}
+}
+
 func TestUnresolvedAttemptRejectsTornTargetMode(t *testing.T) {
 	fixture := newIntegerFixture(SetupBound)
 	base := fixture.Store.(*MemoryStateStore)
@@ -347,6 +388,44 @@ func (o noOpAdvanceOperator) Execute(_ context.Context, operation kernel.Operati
 }
 
 type noCASStore struct{ *MemoryStateStore }
+
+type blindCommitStore struct{ *MemoryStateStore }
+
+func (s *blindCommitStore) CommitTransition(_ context.Context, _ uint64, target kernel.ControlState, receipt kernel.Receipt) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state = cloneState(target)
+	s.commitCount++
+	s.receipts.append(receipt)
+	return nil
+}
+
+type fabricatingOperator struct{ kernel.Operator }
+
+func (o fabricatingOperator) Execute(ctx context.Context, operation kernel.Operation) (kernel.Effect, error) {
+	effect, err := o.Operator.Execute(ctx, operation)
+	if err == nil && len(effect.Facts) > 0 {
+		effect.Facts[0].Fingerprint = "fabricated"
+	}
+	return effect, err
+}
+
+type failOneLoadStore struct {
+	kernel.Store
+	mu     sync.Mutex
+	failed bool
+}
+
+func (s *failOneLoadStore) Load(ctx context.Context, instanceID string) (kernel.ControlState, error) {
+	s.mu.Lock()
+	if !s.failed {
+		s.failed = true
+		s.mu.Unlock()
+		return kernel.ControlState{}, fmt.Errorf("simulated asymmetric Load failure")
+	}
+	s.mu.Unlock()
+	return s.Store.Load(ctx, instanceID)
+}
 
 func (s *noCASStore) BeginEffect(_ context.Context, _ uint64, target kernel.ControlState) error {
 	s.mu.Lock()

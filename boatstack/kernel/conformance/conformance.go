@@ -96,6 +96,7 @@ func (suite KernelConformance) Run(t *testing.T) {
 	t.Run("failed_recovery_preserves_original_obligation", suite.failedRecoveryPreservesOriginalObligation)
 	t.Run("prescription_cannot_replay_across_instances", suite.prescriptionCannotReplayAcrossInstances)
 	t.Run("concurrent_apply_commits_once_before_loser_effect", suite.concurrentApplyCommitsOnce)
+	t.Run("commit_compare_and_swap_rejects_intervening_state", suite.commitCompareAndSwapRejectsIntervention)
 	t.Run("program_reaches_marked_state", suite.programReachesMarkedState)
 }
 
@@ -379,6 +380,53 @@ func (suite KernelConformance) concurrentApplyCommitsOnce(t *testing.T) {
 	}
 }
 
+func (suite KernelConformance) commitCompareAndSwapRejectsIntervention(t *testing.T) {
+	fixture, resolver := suite.fresh(t, SetupBound)
+	if err := commitCompareAndSwapError(fixture, resolver); err != nil {
+		t.Fatalf("control-law commit-cas: %v", err)
+	}
+}
+
+func commitCompareAndSwapError(fixture KernelConformance, resolver kernel.Runtime) error {
+	transition := fixture.Scenario.AdvanceTransitions[0]
+	request := kernel.ResolveRequest{InstanceID: fixture.Scenario.InstanceID, Objective: &fixture.Scenario.Objective, Authority: fixture.Scenario.Authority, Requested: transition}
+	resolution, err := resolveWithoutMutation(context.Background(), resolver, fixture.Scenario, request)
+	if err != nil || resolution.Decision.Kind != kernel.Prescribed || resolution.Prescription == nil {
+		return fmt.Errorf("resolve commit-CAS transition: decision=%#v error=%v", resolution.Decision, err)
+	}
+	operator := afterExecuteOperator{Operator: fixture.Operator, after: fixture.Scenario.BumpStateRevision}
+	runtime, err := kernel.NewRuntime(fixture.Program, fixture.Domain, operator, fixture.CapabilityClassifier, fixture.Store, fixture.Locker, fixture.Clock)
+	if err != nil {
+		return err
+	}
+	before := fixture.Scenario.Snapshot()
+	_, applyErr := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: *resolution.Prescription})
+	after := fixture.Scenario.Snapshot()
+	if !kernel.IsRecoveryRequired(applyErr) {
+		return fmt.Errorf("intervening state was not rejected at commit: %v", applyErr)
+	}
+	if after.CommitCount != before.CommitCount || !receiptHistoryEqual(after.Receipts, before.Receipts) || effectCount(after, transition) != effectCount(before, transition)+1 {
+		return fmt.Errorf("commit refusal changed committed history or effect evidence: before=%#v after=%#v", before, after)
+	}
+	if after.State.Mode != before.State.Mode || after.State.Recovery == nil || after.State.Revision != before.State.Revision+2 {
+		return fmt.Errorf("commit refusal did not preserve the intervening unresolved state: before=%#v after=%#v", before.State, after.State)
+	}
+	return nil
+}
+
+type afterExecuteOperator struct {
+	kernel.Operator
+	after func()
+}
+
+func (o afterExecuteOperator) Execute(ctx context.Context, operation kernel.Operation) (kernel.Effect, error) {
+	effect, err := o.Operator.Execute(ctx, operation)
+	if err == nil {
+		o.after()
+	}
+	return effect, err
+}
+
 func concurrentApplyError(fixture KernelConformance, resolver kernel.Runtime) error {
 	transition := fixture.Scenario.AdvanceTransitions[0]
 	request := kernel.ResolveRequest{InstanceID: fixture.Scenario.InstanceID, Objective: &fixture.Scenario.Objective, Authority: fixture.Scenario.Authority, Requested: transition}
@@ -388,8 +436,10 @@ func concurrentApplyError(fixture KernelConformance, resolver kernel.Runtime) er
 	}
 	prescription := *resolution.Prescription
 	before := fixture.Scenario.Snapshot()
-	store := &sameBaseLoadStore{Store: fixture.Store, barrier: newTwoPartyBarrier()}
-	domain := &sameBaseObservationDomain{Domain: fixture.Domain, barrier: newTwoPartyBarrier()}
+	storeBarrier := newTwoPartyBarrier()
+	domainBarrier := newTwoPartyBarrier()
+	store := &sameBaseLoadStore{Store: fixture.Store, barrier: storeBarrier}
+	domain := &sameBaseObservationDomain{Domain: fixture.Domain, barrier: domainBarrier}
 	runtimeA, err := kernel.NewRuntime(fixture.Program, domain, fixture.Operator, fixture.CapabilityClassifier, store, fixture.Scenario.IndependentLocker(), fixture.Clock)
 	if err != nil {
 		return err
@@ -408,8 +458,20 @@ func concurrentApplyError(fixture KernelConformance, resolver kernel.Runtime) er
 		runtime := runtime
 		go func() {
 			<-start
-			receipt, err := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
-			results <- applyResult{receipt: receipt, err: err}
+			result := applyResult{}
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					storeBarrier.cancel()
+					domainBarrier.cancel()
+					result.err = fmt.Errorf("concurrent Apply panicked: %v", recovered)
+				}
+				results <- result
+			}()
+			result.receipt, result.err = runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
+			if result.err != nil {
+				storeBarrier.cancel()
+				domainBarrier.cancel()
+			}
 		}()
 	}
 	close(start)
@@ -438,20 +500,41 @@ type twoPartyBarrier struct {
 	mu       sync.Mutex
 	arrivals int
 	ready    chan struct{}
+	canceled chan struct{}
+	once     sync.Once
 }
 
 func newTwoPartyBarrier() *twoPartyBarrier {
-	return &twoPartyBarrier{ready: make(chan struct{})}
+	return &twoPartyBarrier{ready: make(chan struct{}), canceled: make(chan struct{})}
 }
 
-func (b *twoPartyBarrier) wait() {
+func (b *twoPartyBarrier) wait() error {
 	b.mu.Lock()
 	b.arrivals++
 	if b.arrivals == 2 {
 		close(b.ready)
 	}
+	complete := b.arrivals >= 2
 	b.mu.Unlock()
-	<-b.ready
+	if complete {
+		return nil
+	}
+	select {
+	case <-b.ready:
+		return nil
+	case <-b.canceled:
+		b.mu.Lock()
+		complete = b.arrivals >= 2
+		b.mu.Unlock()
+		if complete {
+			return nil
+		}
+		return fmt.Errorf("concurrent admission was canceled")
+	}
+}
+
+func (b *twoPartyBarrier) cancel() {
+	b.once.Do(func() { close(b.canceled) })
 }
 
 type sameBaseLoadStore struct {
@@ -461,10 +544,13 @@ type sameBaseLoadStore struct {
 
 func (s *sameBaseLoadStore) Load(ctx context.Context, instanceID string) (kernel.ControlState, error) {
 	state, err := s.Store.Load(ctx, instanceID)
+	barrierErr := s.barrier.wait()
 	if err != nil {
 		return kernel.ControlState{}, err
 	}
-	s.barrier.wait()
+	if barrierErr != nil {
+		return kernel.ControlState{}, barrierErr
+	}
 	return state, nil
 }
 
@@ -475,10 +561,13 @@ type sameBaseObservationDomain struct {
 
 func (d *sameBaseObservationDomain) Observe(ctx context.Context, instanceID string) (kernel.Observation, error) {
 	observation, err := d.Domain.Observe(ctx, instanceID)
+	barrierErr := d.barrier.wait()
 	if err != nil {
 		return kernel.Observation{}, err
 	}
-	d.barrier.wait()
+	if barrierErr != nil {
+		return kernel.Observation{}, barrierErr
+	}
 	return observation, nil
 }
 
