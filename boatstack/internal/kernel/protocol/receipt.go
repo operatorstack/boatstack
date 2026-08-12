@@ -1,33 +1,102 @@
 package protocol
 
 import (
+	"encoding/hex"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 )
 
-const ReceiptSchemaVersion = 5
+const ReceiptSchemaVersion = 6
 
-type Outcome string
+type TransitionFactKind string
+
+const TransitionCommitted TransitionFactKind = "transition-committed"
+
+type ProgramIdentity struct {
+	ID          string `json:"id"`
+	Version     string `json:"version"`
+	Fingerprint string `json:"fingerprint"`
+}
+
+func (p ProgramIdentity) Validate() error {
+	if p.ID == "" || p.Version == "" || !validSHA256(p.Fingerprint) {
+		return fmt.Errorf("receipt requires exact program id, version, and fingerprint")
+	}
+	return nil
+}
+
+type EffectFactKind string
 
 const (
-	OutcomeSucceeded Outcome = "succeeded"
-	OutcomeRecovered Outcome = "recovered"
-	OutcomeRefused   Outcome = "refused"
-	OutcomeUnknown   Outcome = "external-outcome-unknown"
+	EffectResourceMutation EffectFactKind = "resource-mutation"
+	EffectBoundarySettled  EffectFactKind = "effect-boundary-settled"
 )
 
+type EffectFact struct {
+	Kind                 EffectFactKind   `json:"kind"`
+	EffectID             catalog.EffectID `json:"effect_id"`
+	Owner                string           `json:"owner"`
+	Resource             string           `json:"resource,omitempty"`
+	Target               string           `json:"target"`
+	Operation            string           `json:"operation"`
+	PriorFingerprint     string           `json:"prior_fingerprint"`
+	ResultingFingerprint string           `json:"resulting_fingerprint"`
+}
+
+func (f EffectFact) Validate() error {
+	if f.EffectID == "" || f.Owner == "" || f.Target == "" || f.Operation == "" || !validSHA256(f.PriorFingerprint) || !validSHA256(f.ResultingFingerprint) {
+		return fmt.Errorf("receipt effect fact has incomplete identity")
+	}
+	switch f.Kind {
+	case EffectResourceMutation:
+		if f.Resource == "" {
+			return fmt.Errorf("resource mutation fact requires a governed resource")
+		}
+	case EffectBoundarySettled:
+		if f.Resource != "" || f.Operation != "settled" {
+			return fmt.Errorf("settled boundary fact has invalid resource or operation")
+		}
+	default:
+		return fmt.Errorf("receipt effect fact has invalid kind %q", f.Kind)
+	}
+	return nil
+}
+
+type VerificationResult string
+
+const VerificationSatisfied VerificationResult = "satisfied"
+
+type VerificationFact struct {
+	Verifier              string             `json:"verifier"`
+	ExpectedPostcondition string             `json:"expected_postcondition"`
+	Result                VerificationResult `json:"result"`
+	EvidenceFingerprint   string             `json:"evidence_fingerprint"`
+	VerifiedAt            time.Time          `json:"verified_at"`
+}
+
+func (v VerificationFact) Validate() error {
+	if v.Verifier == "" || v.ExpectedPostcondition == "" || v.Result != VerificationSatisfied || !validSHA256(v.EvidenceFingerprint) || v.VerifiedAt.IsZero() {
+		return fmt.Errorf("receipt verification fact is incomplete or not satisfied")
+	}
+	return nil
+}
+
+// TransitionReceipt is the immutable fact for one committed transition. It is
+// not a request, prescription, admission, refusal, or recovery authorization.
 type TransitionReceipt struct {
 	SchemaVersion           int                  `json:"schema_version"`
+	Kind                    TransitionFactKind   `json:"kind"`
 	ID                      string               `json:"id"`
 	FlowID                  string               `json:"flow_id"`
 	Sequence                uint64               `json:"sequence"`
+	Program                 ProgramIdentity      `json:"program"`
 	TransitionID            catalog.TransitionID `json:"transition_id"`
 	TransitionVersion       int                  `json:"transition_version"`
-	ProgramFingerprint      string               `json:"program_fingerprint"`
 	PriorProgramFingerprint string               `json:"prior_program_fingerprint,omitempty"`
 	ProgramDeltaFingerprint string               `json:"program_delta_fingerprint,omitempty"`
 	ProgramChangeAccepted   bool                 `json:"program_change_accepted,omitempty"`
@@ -45,21 +114,19 @@ type TransitionReceipt struct {
 	GoalStatus              model.FactStatus     `json:"goal_status,omitempty"`
 	SourceFingerprint       string               `json:"source_fingerprint"`
 	TargetFingerprint       string               `json:"target_fingerprint"`
-	AuthorityClasses        []string             `json:"authority_classes"`
 	AuthorityFingerprint    string               `json:"authority_fingerprint"`
 	AuthoritySources        []AuthoritySource    `json:"authority_sources"`
 	RequiredCapabilities    []catalog.Capability `json:"required_capabilities"`
 	GrantedCapabilities     []catalog.Capability `json:"granted_capabilities"`
-	ExercisedCapabilities   []catalog.Capability `json:"exercised_capabilities"`
+	ExercisedCapabilities   []catalog.Capability `json:"exercised_capabilities,omitempty"`
+	CommittedEffects        []EffectFact         `json:"committed_effects"`
+	Verification            VerificationFact     `json:"verification"`
 	IdempotencyKey          string               `json:"idempotency_key"`
-	Verifier                string               `json:"verifier"`
-	Outcome                 Outcome              `json:"outcome"`
 	Recovery                catalog.TransitionID `json:"recovery,omitempty"`
 	Terminal                model.TerminalStatus `json:"terminal"`
 	StartedAt               time.Time            `json:"started_at"`
-	CompletedAt             time.Time            `json:"completed_at"`
+	CommittedAt             time.Time            `json:"committed_at"`
 	DurationNanoseconds     int64                `json:"duration_nanoseconds"`
-	FailureClass            string               `json:"failure_class,omitempty"`
 }
 
 type AuthoritySource struct {
@@ -69,42 +136,51 @@ type AuthoritySource struct {
 	Fingerprint string                 `json:"fingerprint"`
 }
 
-func NewReceipt(flowID string, sequence uint64, admission Admission, transition catalog.Transition, target model.Snapshot, startedAt, completedAt time.Time, outcome Outcome, failureClass string) (TransitionReceipt, error) {
+func NewReceipt(flowID string, sequence uint64, program ProgramIdentity, admission Admission, transition catalog.Transition, target model.Snapshot, effects []EffectFact, exercised []catalog.Capability, startedAt, committedAt time.Time) (TransitionReceipt, error) {
 	if flowID == "" || sequence == 0 || admission.ID == "" || target.Fingerprint == "" {
 		return TransitionReceipt{}, fmt.Errorf("receipt requires flow, sequence, admission, and target identity")
 	}
-	if completedAt.Before(startedAt) {
-		return TransitionReceipt{}, fmt.Errorf("receipt completion precedes start")
+	if err := program.Validate(); err != nil {
+		return TransitionReceipt{}, err
+	}
+	if program.Fingerprint != admission.ExpectedProgramFingerprint {
+		return TransitionReceipt{}, fmt.Errorf("receipt program identity differs from admitted program")
+	}
+	if committedAt.Before(startedAt) {
+		return TransitionReceipt{}, fmt.Errorf("receipt commit precedes effect start")
 	}
 	if admission.ExpectedStateRevision == ^uint64(0) || target.StateRevision != admission.ExpectedStateRevision+1 {
 		return TransitionReceipt{}, fmt.Errorf("receipt target revision must advance exactly once from the prescribed revision")
 	}
-	classes := make([]string, 0, len(admission.Authority.Receipts))
+	if len(effects) == 0 {
+		return TransitionReceipt{}, fmt.Errorf("committed transition requires kernel-observed effect facts")
+	}
 	sources := make([]AuthoritySource, 0, len(admission.Authority.Receipts))
 	for _, authority := range admission.Authority.Receipts {
-		classes = append(classes, string(authority.Class))
 		sources = append(sources, AuthoritySource{ID: authority.ID, Class: authority.Class, Subject: authority.Subject, Fingerprint: authority.Fingerprint})
 	}
 	terminal := model.TerminalUnknown
 	if target.Terminal.Status == model.FactKnown {
 		terminal = target.Terminal.Value
 	}
+	canonicalEffects := append([]EffectFact(nil), effects...)
+	sortEffectFacts(canonicalEffects)
 	receipt := TransitionReceipt{
-		SchemaVersion: ReceiptSchemaVersion, FlowID: flowID, Sequence: sequence, TransitionID: transition.ID,
-		TransitionVersion: transition.Version, ProgramFingerprint: admission.ExpectedProgramFingerprint,
+		SchemaVersion: ReceiptSchemaVersion, Kind: TransitionCommitted, FlowID: flowID, Sequence: sequence, Program: program,
+		TransitionID: transition.ID, TransitionVersion: transition.Version,
 		PrescriptionID: admission.PrescriptionID, AdmissionID: admission.ID,
 		PriorStateRevision: admission.ExpectedStateRevision, ResultingStateRevision: target.StateRevision,
 		GoalID: admission.Goal.ID, GoalKind: admission.Goal.Kind, DeliveryID: admission.Goal.DeliveryID,
 		GoalScope: admission.GoalScope, GoalStatus: admission.GoalStatus,
 		SourceFingerprint: admission.ExpectedSnapshotFingerprint, TargetFingerprint: target.Fingerprint,
-		AuthorityClasses: classes, IdempotencyKey: admission.IdempotencyKey, Verifier: transition.Verifier,
 		AuthorityFingerprint: admission.AuthorityFingerprint, AuthoritySources: sources,
 		RequiredCapabilities:  append([]catalog.Capability(nil), admission.RequiredCapabilities...),
 		GrantedCapabilities:   append([]catalog.Capability(nil), admission.GrantedCapabilities...),
-		ExercisedCapabilities: append([]catalog.Capability(nil), admission.EffectiveCapabilities...),
-		Outcome:               outcome, Recovery: transition.Interruption.Recovery, Terminal: terminal,
-		StartedAt: startedAt.UTC(), CompletedAt: completedAt.UTC(), DurationNanoseconds: completedAt.Sub(startedAt).Nanoseconds(),
-		FailureClass: failureClass,
+		ExercisedCapabilities: append([]catalog.Capability(nil), exercised...),
+		CommittedEffects:      canonicalEffects,
+		Verification:          VerificationFact{Verifier: transition.Verifier, ExpectedPostcondition: transition.TargetPredicate, Result: VerificationSatisfied, EvidenceFingerprint: target.Fingerprint, VerifiedAt: committedAt.UTC()},
+		IdempotencyKey:        admission.IdempotencyKey, Recovery: transition.Interruption.Recovery, Terminal: terminal,
+		StartedAt: startedAt.UTC(), CommittedAt: committedAt.UTC(), DurationNanoseconds: committedAt.Sub(startedAt).Nanoseconds(),
 	}
 	receipt.PriorProgramFingerprint = admission.PriorProgramFingerprint
 	receipt.ProgramDeltaFingerprint = admission.ProgramDeltaFingerprint
@@ -130,8 +206,11 @@ func NewReceipt(flowID string, sequence uint64, admission Admission, transition 
 }
 
 func (r TransitionReceipt) Validate() error {
-	if r.SchemaVersion != ReceiptSchemaVersion || r.ID == "" || r.FlowID == "" || r.Sequence == 0 || r.TransitionID == "" || r.TransitionVersion < 1 || len(r.ProgramFingerprint) != 64 || r.PrescriptionID == "" || r.AdmissionID == "" || r.PriorStateRevision == 0 || r.PriorStateRevision == ^uint64(0) || r.ResultingStateRevision == 0 || r.ResultingStateRevision != r.PriorStateRevision+1 || r.SourceFingerprint == "" || r.TargetFingerprint == "" || r.AuthorityFingerprint == "" || len(r.RequiredCapabilities) == 0 || len(r.ExercisedCapabilities) == 0 || r.IdempotencyKey == "" || r.Verifier == "" {
-		return fmt.Errorf("receipt has incomplete identity or evidence")
+	if r.SchemaVersion != ReceiptSchemaVersion || r.Kind != TransitionCommitted || r.ID == "" || r.FlowID == "" || r.Sequence == 0 || r.TransitionID == "" || r.TransitionVersion < 1 || r.PrescriptionID == "" || r.AdmissionID == "" || r.PriorStateRevision == 0 || r.PriorStateRevision == ^uint64(0) || r.ResultingStateRevision != r.PriorStateRevision+1 || !validSHA256(r.SourceFingerprint) || !validSHA256(r.TargetFingerprint) || r.AuthorityFingerprint == "" || len(r.RequiredCapabilities) == 0 || r.IdempotencyKey == "" || len(r.CommittedEffects) == 0 {
+		return fmt.Errorf("receipt has incomplete committed-transition identity or evidence")
+	}
+	if err := r.Program.Validate(); err != nil {
+		return err
 	}
 	if _, err := catalog.NormalizeCapabilities("receipt.required_capabilities", r.RequiredCapabilities); err != nil {
 		return err
@@ -139,17 +218,32 @@ func (r TransitionReceipt) Validate() error {
 	if _, err := catalog.NormalizeCapabilities("receipt.granted_capabilities", r.GrantedCapabilities); err != nil {
 		return err
 	}
-	if _, err := catalog.NormalizeCapabilities("receipt.exercised_capabilities", r.ExercisedCapabilities); err != nil {
-		return err
+	if missing := catalog.MissingCapability(r.RequiredCapabilities, catalog.NewCapabilitySet(r.GrantedCapabilities...)); missing != "" {
+		return fmt.Errorf("receipt required capability %q was not admitted", missing)
 	}
-	if missing := catalog.MissingCapability(r.ExercisedCapabilities, catalog.NewCapabilitySet(r.GrantedCapabilities...)); missing != "" {
-		return fmt.Errorf("receipt exercised ungranted capability %q", missing)
+	if len(r.ExercisedCapabilities) > 0 {
+		if _, err := catalog.NormalizeCapabilities("receipt.exercised_capabilities", r.ExercisedCapabilities); err != nil {
+			return err
+		}
+		if missing := catalog.MissingCapability(r.ExercisedCapabilities, catalog.NewCapabilitySet(r.RequiredCapabilities...)); missing != "" {
+			return fmt.Errorf("receipt exercised capability %q outside exact admission", missing)
+		}
 	}
-	if !sameCapabilities(r.RequiredCapabilities, r.ExercisedCapabilities) {
-		return fmt.Errorf("receipt exercised capabilities differ from exact admitted requirements")
+	if err := r.Verification.Validate(); err != nil || r.Verification.EvidenceFingerprint != r.TargetFingerprint {
+		return fmt.Errorf("receipt verification does not prove its target snapshot: %v", err)
 	}
-	if len(r.AuthoritySources) != len(r.AuthorityClasses) {
-		return fmt.Errorf("receipt authority provenance and class counts differ")
+	effects := append([]EffectFact(nil), r.CommittedEffects...)
+	sortEffectFacts(effects)
+	for index, effect := range effects {
+		if err := effect.Validate(); err != nil {
+			return err
+		}
+		if effect != r.CommittedEffects[index] {
+			return fmt.Errorf("receipt committed effects are not canonical")
+		}
+		if index > 0 && effect == effects[index-1] {
+			return fmt.Errorf("receipt duplicates a committed effect fact")
+		}
 	}
 	authoritySet := catalog.AuthoritySet{}
 	sources := append([]AuthoritySource(nil), r.AuthoritySources...)
@@ -161,7 +255,7 @@ func (r TransitionReceipt) Validate() error {
 		if index > 0 && sources[index-1].ID == source.ID {
 			return fmt.Errorf("receipt duplicates authority source %q", source.ID)
 		}
-		if source != r.AuthoritySources[index] || r.AuthorityClasses[index] != string(source.Class) {
+		if source != r.AuthoritySources[index] {
 			return fmt.Errorf("receipt authority provenance is not canonical")
 		}
 		authoritySet[source.Class] = true
@@ -192,13 +286,8 @@ func (r TransitionReceipt) Validate() error {
 	} else if r.GoalID == "" || !r.GoalKind.Valid() || r.DeliveryID == "" {
 		return fmt.Errorf("receipt has incomplete product-goal identity")
 	}
-	if r.StartedAt.IsZero() || r.CompletedAt.Before(r.StartedAt) || r.DurationNanoseconds != r.CompletedAt.Sub(r.StartedAt).Nanoseconds() {
+	if r.StartedAt.IsZero() || r.CommittedAt.Before(r.StartedAt) || r.DurationNanoseconds != r.CommittedAt.Sub(r.StartedAt).Nanoseconds() || r.Verification.VerifiedAt.After(r.CommittedAt) {
 		return fmt.Errorf("receipt has invalid timing evidence")
-	}
-	switch r.Outcome {
-	case OutcomeSucceeded, OutcomeRecovered, OutcomeRefused, OutcomeUnknown:
-	default:
-		return fmt.Errorf("receipt has invalid outcome %q", r.Outcome)
 	}
 	if (r.PriorProgramFingerprint == "") != (r.ProgramDeltaFingerprint == "") {
 		return fmt.Errorf("receipt has incomplete program delta identity")
@@ -207,7 +296,7 @@ func (r TransitionReceipt) Validate() error {
 		return fmt.Errorf("receipt has incomplete runtime version, digest, or source identity")
 	}
 	if r.PriorProgramFingerprint != "" {
-		delta, err := ProgramDeltaFingerprint(r.PriorProgramFingerprint, r.ProgramFingerprint)
+		delta, err := ProgramDeltaFingerprint(r.PriorProgramFingerprint, r.Program.Fingerprint)
 		if err != nil || delta != r.ProgramDeltaFingerprint {
 			return fmt.Errorf("receipt has invalid program delta identity")
 		}
@@ -229,4 +318,40 @@ func (r TransitionReceipt) Validate() error {
 		return fmt.Errorf("receipt %q failed content identity verification", r.ID)
 	}
 	return nil
+}
+
+func validSHA256(value string) bool {
+	if len(value) != 64 || strings.ToLower(value) != value {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
+func sortEffectFacts(facts []EffectFact) {
+	sort.Slice(facts, func(i, j int) bool {
+		left, right := facts[i], facts[j]
+		if left.Kind != right.Kind {
+			return left.Kind < right.Kind
+		}
+		if left.EffectID != right.EffectID {
+			return left.EffectID < right.EffectID
+		}
+		if left.Owner != right.Owner {
+			return left.Owner < right.Owner
+		}
+		if left.Resource != right.Resource {
+			return left.Resource < right.Resource
+		}
+		if left.Target != right.Target {
+			return left.Target < right.Target
+		}
+		if left.Operation != right.Operation {
+			return left.Operation < right.Operation
+		}
+		if left.PriorFingerprint != right.PriorFingerprint {
+			return left.PriorFingerprint < right.PriorFingerprint
+		}
+		return left.ResultingFingerprint < right.ResultingFingerprint
+	})
 }

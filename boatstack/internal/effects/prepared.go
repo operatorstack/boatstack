@@ -2,6 +2,7 @@ package effects
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -20,7 +21,9 @@ type preparedEffect struct {
 	boundary              boundaryCall
 	verifyInvocation      *model.InvocationContext
 	applied               []ports.ResourceMutation
-	externalSettled       bool
+	boundarySettled       bool
+	effectResult          ports.EffectResult
+	transition            catalog.Transition
 	requiredCapabilities  []catalog.Capability
 	effectiveCapabilities []catalog.Capability
 }
@@ -29,6 +32,58 @@ func (p *preparedEffect) Manifest() []ports.ResourceMutation {
 	result := make([]ports.ResourceMutation, len(p.mutations))
 	copy(result, p.mutations)
 	return result
+}
+
+func (p *preparedEffect) CommittedEffects() []protocol.EffectFact {
+	facts := make([]protocol.EffectFact, 0, len(p.applied)+1)
+	for _, mutation := range p.applied {
+		resource, owner := mutation.Resource, mutation.Owner
+		if resource == "" && len(p.transition.OwnedResources) > 0 {
+			resource = p.transition.OwnedResources[0]
+		}
+		if owner == "" {
+			owner = p.transition.Owner
+		}
+		operation := "update"
+		switch {
+		case mutation.Delete:
+			operation = "delete"
+		case mutation.TargetLink != "":
+			operation = "symlink"
+		case !mutation.PriorExists:
+			operation = "create"
+		}
+		facts = append(facts, protocol.EffectFact{
+			Kind: protocol.EffectResourceMutation, EffectID: p.transition.Effect, Owner: owner, Resource: resource,
+			Target: mutation.Path, Operation: operation,
+			PriorFingerprint:     mutationStateFingerprint(mutation.PriorExists, mutation.Prior, mutation.PriorLink, mutation.Mode),
+			ResultingFingerprint: mutationStateFingerprint(!mutation.Delete, mutation.Target, mutation.TargetLink, mutation.Mode),
+		})
+	}
+	if p.boundarySettled {
+		raw, _ := json.Marshal(p.effectResult)
+		facts = append(facts, protocol.EffectFact{
+			Kind: protocol.EffectBoundarySettled, EffectID: p.transition.Effect, Owner: p.transition.Owner,
+			Target: string(p.transition.ID), Operation: "settled",
+			PriorFingerprint: sha256Bytes([]byte("not-applicable")), ResultingFingerprint: sha256Bytes(raw),
+		})
+	}
+	return facts
+}
+
+func mutationStateFingerprint(exists bool, content []byte, link string, mode uint32) string {
+	value := struct {
+		Exists        bool   `json:"exists"`
+		ContentSHA256 string `json:"content_sha256,omitempty"`
+		Link          string `json:"link,omitempty"`
+		Mode          uint32 `json:"mode,omitempty"`
+	}{Exists: exists, Link: link}
+	if exists && link == "" {
+		value.ContentSHA256 = sha256Bytes(content)
+		value.Mode = mode
+	}
+	raw, _ := json.Marshal(value)
+	return sha256Bytes(raw)
 }
 
 func (p *preparedEffect) VerificationInvocation() (model.InvocationContext, bool) {
@@ -52,7 +107,8 @@ func (p *preparedEffect) Execute(ctx context.Context) (ports.EffectResult, error
 		if err != nil || result.Settlement == ports.EffectUnknown {
 			return result, err
 		}
-		p.externalSettled = true
+		p.boundarySettled = true
+		p.effectResult = result
 	}
 	ordered := append([]ports.ResourceMutation(nil), p.mutations...)
 	sort.SliceStable(ordered, func(i, j int) bool {
@@ -87,6 +143,7 @@ func bindPreparedCapabilities(effect *preparedEffect, admission protocol.Admissi
 	}
 	effect.requiredCapabilities = catalog.RequiredCapabilities(transition)
 	effect.effectiveCapabilities = append([]catalog.Capability(nil), admission.EffectiveCapabilities...)
+	effect.transition = transition
 	return nil
 }
 
@@ -107,7 +164,7 @@ func (p *preparedEffect) Rollback(context.Context) error {
 		}
 	}
 	p.applied = nil
-	if p.externalSettled {
+	if p.boundarySettled {
 		rollbackErrors = append(rollbackErrors, fmt.Errorf("external effect settled and requires reconciliation or compensation"))
 	}
 	return errors.Join(rollbackErrors...)

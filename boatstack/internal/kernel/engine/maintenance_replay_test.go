@@ -28,7 +28,7 @@ func TestMaintenanceReplayBindsDurableGoalState(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			test.receipt.FlowID = request.FlowID
-			test.receipt.ProgramFingerprint = syntheticProgramFingerprint
+			test.receipt.Program = syntheticProgram
 			if err := validateReplayRequest(test.receipt, request, syntheticProgramFingerprint); err != nil {
 				t.Fatalf("command goal affected maintenance replay identity: %v", err)
 			}

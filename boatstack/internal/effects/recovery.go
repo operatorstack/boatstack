@@ -262,6 +262,7 @@ func prepareJournalClosure(layout ports.ControllerLayout, transactionID, outcome
 func prepareJournalClosureFromRecord(pendingPath string, record journalRecord, outcome string, now time.Time) ([]ports.ResourceMutation, error) {
 	record.Status = "recovered"
 	record.Reason = strings.TrimSpace(outcome)
+	record.ReceiptID, record.Receipt = "", nil
 	record.UpdatedAt = now.UTC()
 	raw, err := encodeJSON(record)
 	if err != nil {

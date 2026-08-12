@@ -18,7 +18,7 @@ func TestReceiptRejectsRehashedAuthorityProvenanceTampering(t *testing.T) {
 	}
 	admission := Admission{
 		ID: "admission", PrescriptionID: "prescription", ExpectedStateRevision: 1,
-		ExpectedProgramFingerprint: strings.Repeat("a", 64), ExpectedSnapshotFingerprint: "source",
+		ExpectedProgramFingerprint: strings.Repeat("a", 64), ExpectedSnapshotFingerprint: strings.Repeat("b", 64),
 		Goal:      model.Goal{ID: "goal", Kind: model.GoalApprovedPlan, DeliveryID: "delivery"},
 		Authority: authority, AuthorityFingerprint: authorityFingerprint,
 		RequiredCapabilities:  []catalog.Capability{catalog.CapabilityRepositoryWrite},
@@ -26,8 +26,9 @@ func TestReceiptRejectsRehashedAuthorityProvenanceTampering(t *testing.T) {
 		EffectiveCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite},
 		IdempotencyKey:        "idempotency",
 	}
-	transition := catalog.Transition{ID: "program/write", Version: 1, Verifier: "program.written"}
-	receipt, err := NewReceipt("flow", 1, admission, transition, model.Snapshot{Observation: model.Observation{StateRevision: 2}, Fingerprint: "target"}, now, now.Add(time.Second), OutcomeSucceeded, "")
+	transition := catalog.Transition{ID: "program/write", Version: 1, Owner: "program", Effect: "program.write", TargetPredicate: "program.written", Verifier: "program.written"}
+	effects := []EffectFact{{Kind: EffectResourceMutation, EffectID: transition.Effect, Owner: transition.Owner, Resource: "program.state", Target: "/state", Operation: "update", PriorFingerprint: strings.Repeat("1", 64), ResultingFingerprint: strings.Repeat("2", 64)}}
+	receipt, err := NewReceipt("flow", 1, ProgramIdentity{ID: "program", Version: "1.0.0", Fingerprint: admission.ExpectedProgramFingerprint}, admission, transition, model.Snapshot{Observation: model.Observation{StateRevision: 2}, Fingerprint: strings.Repeat("c", 64)}, effects, nil, now, now.Add(time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}

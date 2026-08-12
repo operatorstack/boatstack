@@ -8,6 +8,7 @@ import (
 
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
 )
 
 func TestPreparedEffectNeverAcceptsMixedEpochAtWriteBoundary(t *testing.T) {
@@ -95,5 +96,48 @@ func TestPreparedEffectRefusesMissingKernelCapabilityBeforeAnyEffect(t *testing.
 	}
 	if _, err := os.Stat(target); !os.IsNotExist(err) {
 		t.Fatalf("denied effect mutated repository: %v", err)
+	}
+}
+
+func TestPreparedEffectReportsOnlyActuallyAppliedEffects(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "state.json")
+	transition := catalog.Transition{ID: "program/write", Effect: "program.write", Owner: "program", OwnedResources: []string{"program.state"}}
+	prepared := &preparedEffect{
+		transition: transition, requiredCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite}, effectiveCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite},
+		mutations: []ports.ResourceMutation{{Resource: "program.state", Owner: "program", Path: target, Target: []byte("committed"), Mode: 0o600}},
+	}
+	if facts := prepared.CommittedEffects(); len(facts) != 0 {
+		t.Fatalf("planned mutation escaped as committed evidence: %#v", facts)
+	}
+	if _, err := prepared.Execute(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	facts := prepared.CommittedEffects()
+	if len(facts) != 1 || facts[0].Kind != protocol.EffectResourceMutation || facts[0].EffectID != transition.Effect || facts[0].Target != target || facts[0].Operation != "create" {
+		t.Fatalf("applied mutation fact = %#v", facts)
+	}
+	if err := prepared.Rollback(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if facts := prepared.CommittedEffects(); len(facts) != 0 {
+		t.Fatalf("rolled-back mutation remained committed: %#v", facts)
+	}
+}
+
+func TestSettledEffectBoundaryProducesAStableKernelFact(t *testing.T) {
+	transition := catalog.Transition{ID: "publication.execute", Effect: "publication.execute", Owner: "product-delivery"}
+	prepared := &preparedEffect{
+		transition: transition, requiredCapabilities: []catalog.Capability{catalog.CapabilityPublicationPublish}, effectiveCapabilities: []catalog.Capability{catalog.CapabilityPublicationPublish},
+		boundary: func(context.Context) (ports.EffectResult, error) {
+			return ports.EffectResult{Settlement: ports.EffectSettled, Detail: "provider-adapter-settled"}, nil
+		},
+	}
+	if _, err := prepared.Execute(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	facts := prepared.CommittedEffects()
+	if len(facts) != 1 || facts[0].Kind != protocol.EffectBoundarySettled || facts[0].Target != string(transition.ID) || len(facts[0].ResultingFingerprint) != 64 {
+		t.Fatalf("settled boundary fact = %#v", facts)
 	}
 }

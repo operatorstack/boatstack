@@ -74,6 +74,20 @@ type Parameter = protocol.Parameter
 type Parameters = protocol.Parameters
 type Admission = protocol.Admission
 type TransitionReceipt = protocol.TransitionReceipt
+type TransitionFactKind = protocol.TransitionFactKind
+type ProgramIdentity = protocol.ProgramIdentity
+type EffectFactKind = protocol.EffectFactKind
+type EffectFact = protocol.EffectFact
+type VerificationResult = protocol.VerificationResult
+type VerificationFact = protocol.VerificationFact
+
+const (
+	TransitionCommitted    = protocol.TransitionCommitted
+	EffectResourceMutation = protocol.EffectResourceMutation
+	EffectBoundarySettled  = protocol.EffectBoundarySettled
+	VerificationSatisfied  = protocol.VerificationSatisfied
+)
+
 type Decision = supervisor.Decision
 type DecisionKind = supervisor.DecisionKind
 type GuardDecision = supervisor.GuardDecision

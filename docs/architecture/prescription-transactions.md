@@ -10,7 +10,10 @@ snapshot(state revision N, program fingerprint P)
   -> repository-scoped lock
   -> re-observe and compare the complete binding
   -> effect and durable state commit N+1
-  -> receipt(N, N+1, P, prescription, admission)
+  -> verify target postcondition
+  -> atomically committed fact(program ID/version/P, transition, N, N+1,
+       admission, committed effects, verification)
+  -> passive receipt/event projections
 ```
 
 The prescription is content-addressed and carries no authority. Apply and
@@ -43,3 +46,18 @@ without advancing the committed revision. Recovery of an interrupted journal is
 itself a prescribed transition and commits a new revision. An external effect
 whose settlement cannot be proven remains recovery-required and is never
 blindly retried.
+
+## Durable transition fact
+
+A successful `TransitionReceipt` is not created for a request, prescription,
+admission, refusal, rollback, or recovery-required transaction. The kernel
+constructs it only from the exact applied effect set and a fresh satisfied
+target observation. The complete receipt is part of the canonical committed
+journal record; JSONL and process events do not authorize replay and are not
+commit authority.
+
+If the process stops after state installation but before fact finalization, the
+pending journal keeps the transaction recovery-required and prevents duplicate
+execution. If it stops after journal finalization but before returning or
+projecting the receipt, idempotent retry discovers the canonical fact in the
+committed journal and returns it without executing the effect again.

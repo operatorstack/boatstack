@@ -3,6 +3,7 @@ package sdk_test
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/operatorstack/boatstack/boatstack/control"
@@ -32,6 +33,28 @@ func TestSDKPreservesCapabilityAdmissionProtocol(t *testing.T) {
 	}
 	if request.Prescription.AuthorityFingerprint != "auth-test" || len(request.Prescription.RequiredCapabilities) != 1 || request.Prescription.RequiredCapabilities[0] != sdk.CapabilityRepositoryWrite {
 		t.Fatalf("SDK lost capability admission: %#v", request.Prescription)
+	}
+}
+
+func TestSDKSerializesTheSameDurableTransitionFactAsTheSurface(t *testing.T) {
+	raw := []byte(`{"schema_version":4,"operation":"apply","receipt":{"schema_version":6,"kind":"transition-committed","id":"trc-fact","flow_id":"flow","sequence":1,"program":{"id":"product-delivery","version":"1.0.0","fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"transition_id":"product-delivery/build.begin","transition_version":1,"prescription_id":"prx","admission_id":"adm","prior_state_revision":41,"resulting_state_revision":42,"goal_id":"goal","goal_kind":"verified","delivery_id":"delivery","goal_scope":"required","source_fingerprint":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","target_fingerprint":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","authority_fingerprint":"auth","authority_sources":[],"required_capabilities":["repository.write"],"granted_capabilities":["repository.write"],"committed_effects":[{"kind":"resource-mutation","effect_id":"build.begin","owner":"product-delivery","resource":"state","target":"/state","operation":"update","prior_fingerprint":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","resulting_fingerprint":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}],"verification":{"verifier":"build-active","expected_postcondition":"active","result":"satisfied","evidence_fingerprint":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","verified_at":"2026-08-12T00:00:00Z"},"idempotency_key":"idem","terminal":"nonterminal","started_at":"2026-08-12T00:00:00Z","committed_at":"2026-08-12T00:00:01Z","duration_nanoseconds":1000000000}}`)
+	var response sdk.Response
+	if err := json.Unmarshal(raw, &response); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before, after map[string]any
+	if err := json.Unmarshal(raw, &before); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(encoded, &after); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before["receipt"], after["receipt"]) {
+		t.Fatalf("SDK changed receipt facts:\nbefore=%#v\nafter=%#v", before["receipt"], after["receipt"])
 	}
 }
 

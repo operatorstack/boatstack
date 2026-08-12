@@ -21,6 +21,8 @@ type fixedClock struct{ now time.Time }
 
 const syntheticProgramFingerprint = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
+var syntheticProgram = protocol.ProgramIdentity{ID: "test.synthetic", Version: "1.0.0", Fingerprint: syntheticProgramFingerprint}
+
 func syntheticGoalContracts(t *testing.T) catalog.GoalContracts {
 	t.Helper()
 	contracts, err := catalog.NewGoalContracts([]catalog.GoalContract{{
@@ -78,6 +80,7 @@ func (l fakeLocker) Acquire(context.Context, model.InvocationContext, []string) 
 type fakeJournal struct {
 	begun, committed, aborted, recovery int
 	failMark                            string
+	commitErr                           error
 }
 
 func (j *fakeJournal) Begin(context.Context, protocol.Admission, catalog.Transition) error {
@@ -92,6 +95,9 @@ func (j *fakeJournal) Mark(_ context.Context, _ string, status string) error {
 	return nil
 }
 func (j *fakeJournal) Commit(context.Context, protocol.TransitionReceipt) error {
+	if j.commitErr != nil {
+		return j.commitErr
+	}
 	j.committed++
 	return nil
 }
@@ -106,15 +112,23 @@ type fakeEffects struct {
 	result                ports.EffectResult
 	err                   error
 	prepareErr            error
+	transition            catalog.Transition
 }
 
-func (e *fakeEffects) Prepare(context.Context, protocol.Admission, catalog.Transition) (ports.PreparedEffect, error) {
+func (e *fakeEffects) Prepare(_ context.Context, _ protocol.Admission, transition catalog.Transition) (ports.PreparedEffect, error) {
 	if e.prepareErr != nil {
 		return nil, e.prepareErr
 	}
+	e.transition = transition
 	return e, nil
 }
 func (e *fakeEffects) Manifest() []ports.ResourceMutation { return nil }
+func (e *fakeEffects) CommittedEffects() []protocol.EffectFact {
+	return []protocol.EffectFact{{
+		Kind: protocol.EffectResourceMutation, EffectID: e.transition.Effect, Owner: e.transition.Owner, Resource: e.transition.OwnedResources[0],
+		Target: "/test/state.json", Operation: "update", PriorFingerprint: strings.Repeat("1", 64), ResultingFingerprint: strings.Repeat("2", 64),
+	}}
+}
 func (e *fakeEffects) VerificationInvocation() (model.InvocationContext, bool) {
 	return model.InvocationContext{}, false
 }
@@ -128,8 +142,9 @@ func (e *fakeEffects) Rollback(context.Context) error {
 }
 
 type memoryReceipts struct {
-	next   uint64
-	values []protocol.TransitionReceipt
+	next       uint64
+	values     []protocol.TransitionReceipt
+	projectErr error
 }
 
 func (s *memoryReceipts) Bind(context.Context, string, protocol.Admission) error { return nil }
@@ -147,7 +162,10 @@ func (s *memoryReceipts) FindByIdempotency(_ context.Context, _ model.Invocation
 	}
 	return protocol.TransitionReceipt{}, false, nil
 }
-func (s *memoryReceipts) Append(_ context.Context, receipt protocol.TransitionReceipt) error {
+func (s *memoryReceipts) Project(_ context.Context, receipt protocol.TransitionReceipt) error {
+	if s.projectErr != nil {
+		return s.projectErr
+	}
 	s.values = append(s.values, receipt)
 	return nil
 }
@@ -268,7 +286,7 @@ func TestRequiredObserverFailureReturnsTypedUnresolvedDecision(t *testing.T) {
 	now := time.Unix(30, 0).UTC()
 	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{}, &memoryReceipts{}, &fakeLock{}
 	kernel, err := New(
-		testRegistry(t), syntheticGoalContracts(t), syntheticProgramFingerprint,
+		testRegistry(t), syntheticGoalContracts(t), syntheticProgram,
 		failingObserver{err: errors.New("observer unavailable")}, fixedClock{now},
 		fakeLocker{lock}, journal, effects, receipts,
 	)
@@ -310,7 +328,7 @@ func TestResolutionDoesNotPrescribeBeforeRequiredParametersAreBound(t *testing.T
 		t.Fatal(err)
 	}
 	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source")}}
-	kernel, err := New(registry, syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{&fakeLock{}}, &fakeJournal{}, &fakeEffects{}, &memoryReceipts{})
+	kernel, err := New(registry, syntheticGoalContracts(t), syntheticProgram, observer, fixedClock{now}, fakeLocker{&fakeLock{}}, &fakeJournal{}, &fakeEffects{}, &memoryReceipts{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -340,7 +358,7 @@ func TestResolutionDoesNotPrescribeAnEffectThatDeterministicPreflightRejects(t *
 	effects := &fakeEffects{prepareErr: errors.New("malformed artifact")}
 	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source")}}
 	journal := &fakeJournal{}
-	kernel, err := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{&fakeLock{}}, journal, effects, &memoryReceipts{})
+	kernel, err := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgram, observer, fixedClock{now}, fakeLocker{&fakeLock{}}, journal, effects, &memoryReceipts{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,7 +379,7 @@ func TestApplyCrossesAdmissionEffectVerificationAndReceiptBoundary(t *testing.T)
 	now := time.Unix(30, 0).UTC()
 	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source"), observation(model.PhaseActive, "target"), observation(model.PhaseActive, "target")}}
 	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{result: ports.EffectResult{Settlement: ports.EffectSettled}}, &memoryReceipts{}, &fakeLock{}
-	kernel, err := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
+	kernel, err := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgram, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,6 +398,36 @@ func TestApplyCrossesAdmissionEffectVerificationAndReceiptBoundary(t *testing.T)
 	}
 	if !replayed.Replayed || replayed.Receipt.ID != result.Receipt.ID || effects.executions != 1 || journal.begun != 1 {
 		t.Fatalf("idempotent replay crossed effect boundary: replay=%+v effects=%d journals=%d", replayed, effects.executions, journal.begun)
+	}
+}
+
+func TestCommitFailureCannotProjectSuccessfulTransitionFact(t *testing.T) {
+	// control-law: canonical commit precedes every passive success projection
+	now := time.Unix(30, 0).UTC()
+	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source"), observation(model.PhaseActive, "target")}}
+	journal := &fakeJournal{commitErr: errors.New("injected canonical commit failure")}
+	effects, receipts := &fakeEffects{result: ports.EffectResult{Settlement: ports.EffectSettled}}, &memoryReceipts{}
+	kernel, _ := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgram, observer, fixedClock{now}, fakeLocker{&fakeLock{}}, journal, effects, receipts)
+	result, err := kernel.Apply(context.Background(), request(t, now))
+	if err == nil || !strings.Contains(err.Error(), "canonical commit failure") {
+		t.Fatalf("error=%v, want canonical commit failure", err)
+	}
+	if result.Receipt.ID != "" || len(receipts.values) != 0 || journal.recovery != 1 {
+		t.Fatalf("failed commit escaped as success: result=%#v projections=%d journal=%+v", result.Receipt, len(receipts.values), journal)
+	}
+}
+
+func TestProjectionFailureCannotUndoCanonicalTransitionFact(t *testing.T) {
+	// control-law: receipt JSONL and telemetry are projections, not commit authority
+	now := time.Unix(30, 0).UTC()
+	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source"), observation(model.PhaseActive, "target")}}
+	journal := &fakeJournal{}
+	effects := &fakeEffects{result: ports.EffectResult{Settlement: ports.EffectSettled}}
+	receipts := &memoryReceipts{projectErr: errors.New("projection unavailable")}
+	kernel, _ := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgram, observer, fixedClock{now}, fakeLocker{&fakeLock{}}, journal, effects, receipts)
+	result, err := kernel.Apply(context.Background(), request(t, now))
+	if err != nil || result.Receipt.ID == "" || journal.committed != 1 || journal.recovery != 0 || len(receipts.values) != 0 {
+		t.Fatalf("passive projection changed commit result: result=%#v err=%v journal=%+v", result.Receipt, err, journal)
 	}
 }
 
@@ -463,7 +511,7 @@ func TestIdempotencyReceiptCannotHideUncommittedRecoveryJournal(t *testing.T) {
 		recoveryObservation("recovery"),
 	}}
 	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{result: ports.EffectResult{Settlement: ports.EffectSettled}}, &memoryReceipts{}, &fakeLock{}
-	kernel, err := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
+	kernel, err := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgram, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -488,7 +536,7 @@ func TestApplyRejectsSnapshotDriftBeforeEffect(t *testing.T) {
 	now := time.Unix(30, 0).UTC()
 	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "drifted")}}
 	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{}, &memoryReceipts{}, &fakeLock{}
-	kernel, _ := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
+	kernel, _ := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgram, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
 	_, err := kernel.Apply(context.Background(), request(t, now))
 	var stale StalePrescriptionError
 	if !errors.As(err, &stale) {
@@ -506,7 +554,7 @@ func TestApplyRejectsHumanRevisionAdvanceBeforeEffect(t *testing.T) {
 	advanced.StateRevision = 2
 	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), advanced}}
 	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{}, &memoryReceipts{}, &fakeLock{}
-	kernel, _ := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
+	kernel, _ := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgram, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
 	_, err := kernel.Apply(context.Background(), request(t, now))
 	var stale StalePrescriptionError
 	if !errors.As(err, &stale) || stale.ExpectedStateRevision != 1 || stale.ObservedStateRevision != 2 {
@@ -522,7 +570,7 @@ func TestApplyRollsBackFailedPostconditionAndDoesNotReceipt(t *testing.T) {
 	now := time.Unix(30, 0).UTC()
 	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "unchanged")}}
 	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{result: ports.EffectResult{Settlement: ports.EffectSettled}}, &memoryReceipts{}, &fakeLock{}
-	kernel, _ := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
+	kernel, _ := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgram, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
 	_, err := kernel.Apply(context.Background(), request(t, now))
 	var postcondition PostconditionError
 	if !errors.As(err, &postcondition) {
@@ -539,7 +587,7 @@ func TestApplyRequiresRecoveryWhenJournalFailsAfterEffect(t *testing.T) {
 	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source")}}
 	journal := &fakeJournal{failMark: "verifying"}
 	effects, receipts, lock := &fakeEffects{result: ports.EffectResult{Settlement: ports.EffectSettled}}, &memoryReceipts{}, &fakeLock{}
-	kernel, _ := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
+	kernel, _ := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgram, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
 	_, err := kernel.Apply(context.Background(), request(t, now))
 	if err == nil || !strings.Contains(err.Error(), "injected journal mark failure") {
 		t.Fatalf("error=%v, want injected post-effect journal failure", err)
@@ -554,7 +602,7 @@ func TestApplyPreservesUnknownExternalOutcomeForReconciliation(t *testing.T) {
 	now := time.Unix(30, 0).UTC()
 	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "unchanged")}}
 	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{result: ports.EffectResult{Settlement: ports.EffectUnknown}}, &memoryReceipts{}, &fakeLock{}
-	kernel, _ := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
+	kernel, _ := New(testRegistry(t), syntheticGoalContracts(t), syntheticProgram, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
 	_, err := kernel.Apply(context.Background(), request(t, now))
 	var unknown ExternalOutcomeUnknownError
 	if !errors.As(err, &unknown) {
@@ -571,7 +619,7 @@ func TestOwnedExternalExecutionErrorRequiresRecoveryWithoutRollback(t *testing.T
 	registry := testRegistryWithAdvanceClass(t, catalog.EventOwnedExternal)
 	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source")}}
 	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{err: context.DeadlineExceeded}, &memoryReceipts{}, &fakeLock{}
-	kernel, err := New(registry, syntheticGoalContracts(t), syntheticProgramFingerprint, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
+	kernel, err := New(registry, syntheticGoalContracts(t), syntheticProgram, observer, fixedClock{now}, fakeLocker{lock}, journal, effects, receipts)
 	if err != nil {
 		t.Fatal(err)
 	}

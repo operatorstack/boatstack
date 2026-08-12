@@ -15,26 +15,26 @@ import (
 )
 
 type Engine struct {
-	registry           catalog.Registry
-	control            supervisor.Supervisor
-	programFingerprint string
-	observer           ports.Observer
-	clock              ports.Clock
-	locker             ports.Locker
-	journal            ports.Journal
-	effects            ports.EffectDriver
-	receipts           ports.ReceiptStore
+	registry catalog.Registry
+	control  supervisor.Supervisor
+	program  protocol.ProgramIdentity
+	observer ports.Observer
+	clock    ports.Clock
+	locker   ports.Locker
+	journal  ports.Journal
+	effects  ports.EffectDriver
+	receipts ports.ReceiptStore
 }
 
-func New(registry catalog.Registry, contracts catalog.GoalContracts, programFingerprint string, observer ports.Observer, clock ports.Clock, locker ports.Locker, journal ports.Journal, effects ports.EffectDriver, receipts ports.ReceiptStore) (Engine, error) {
-	if registry.Len() == 0 || len(contracts) == 0 || len(programFingerprint) != 64 || observer == nil || clock == nil || locker == nil || journal == nil || effects == nil || receipts == nil {
+func New(registry catalog.Registry, contracts catalog.GoalContracts, program protocol.ProgramIdentity, observer ports.Observer, clock ports.Clock, locker ports.Locker, journal ports.Journal, effects ports.EffectDriver, receipts ports.ReceiptStore) (Engine, error) {
+	if registry.Len() == 0 || len(contracts) == 0 || program.Validate() != nil || observer == nil || clock == nil || locker == nil || journal == nil || effects == nil || receipts == nil {
 		return Engine{}, fmt.Errorf("kernel engine requires registry, goal contracts, observer, clock, locker, journal, effects, and receipt store")
 	}
-	return Engine{registry: registry, control: supervisor.New(registry, contracts), programFingerprint: programFingerprint, observer: observer, clock: clock, locker: locker, journal: journal, effects: effects, receipts: receipts}, nil
+	return Engine{registry: registry, control: supervisor.New(registry, contracts), program: program, observer: observer, clock: clock, locker: locker, journal: journal, effects: effects, receipts: receipts}, nil
 }
 
 func (e Engine) canonicalize(observation model.Observation) (model.Snapshot, error) {
-	return model.CanonicalizeForProgram(observation, e.programFingerprint)
+	return model.CanonicalizeForProgram(observation, e.program.Fingerprint)
 }
 
 type ResolveRequest struct {
@@ -240,7 +240,7 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 			return result, fmt.Errorf("check supplied idempotency key: %w", err)
 		}
 		if ok {
-			if err := validateReplayRequest(prior, request, e.programFingerprint); err != nil {
+			if err := validateReplayRequest(prior, request, e.program.Fingerprint); err != nil {
 				return result, err
 			}
 			observation, observeErr := e.observer.Observe(ctx, ports.ObservationRequest{Invocation: request.Invocation, Capabilities: request.Authority.GrantedCapabilities(e.clock.Now())})
@@ -304,7 +304,7 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 			return result, fmt.Errorf("check idempotency: %w", err)
 		}
 		if ok {
-			if err := validateReplayRequest(prior, request, e.programFingerprint); err != nil {
+			if err := validateReplayRequest(prior, request, e.program.Fingerprint); err != nil {
 				return result, err
 			}
 			observation, observeErr := e.observer.Observe(ctx, ports.ObservationRequest{Invocation: request.Invocation, Capabilities: admission.GrantedCapabilities})
@@ -353,7 +353,7 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 			return result, fmt.Errorf("check locked idempotency: %w", findErr)
 		}
 		if ok {
-			if err := validateReplayRequest(prior, request, e.programFingerprint); err != nil {
+			if err := validateReplayRequest(prior, request, e.program.Fingerprint); err != nil {
 				return result, err
 			}
 			if err := validateReplayGoalState(prior, lockedSnapshot); err != nil {
@@ -455,16 +455,16 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 		return result, requireRecovery("sequence allocation failed after verified effect", err)
 	}
 	completedAt := e.clock.Now()
-	receipt, err := protocol.NewReceipt(request.FlowID, sequence, admission, transition, target, startedAt, completedAt, protocol.OutcomeSucceeded, "")
+	receipt, err := protocol.NewReceipt(request.FlowID, sequence, e.program, admission, transition, target, prepared.CommittedEffects(), nil, startedAt, completedAt)
 	if err != nil {
 		return result, requireRecovery("receipt construction failed after verified effect", err)
 	}
-	if err := e.receipts.Append(ctx, receipt); err != nil {
-		return result, requireRecovery("receipt append failed after verified effect", err)
-	}
 	if err := e.journal.Commit(ctx, receipt); err != nil {
-		return result, requireRecovery("journal commit failed after receipt", err)
+		return result, requireRecovery("transition fact commit failed after verified effect", err)
 	}
+	// Receipt and event streams are passive projections. The committed journal
+	// record above is the canonical idempotency and audit fact.
+	_ = e.receipts.Project(ctx, receipt)
 	result.Receipt = receipt
 	return result, nil
 }
@@ -489,7 +489,7 @@ func validatePrescriptionCurrent(prescription protocol.Prescription, snapshot mo
 }
 
 func validateReplayRequest(prior protocol.TransitionReceipt, request ApplyRequest, programFingerprint string) error {
-	if prior.ProgramFingerprint != programFingerprint {
+	if prior.Program.Fingerprint != programFingerprint {
 		return fmt.Errorf("idempotency receipt belongs to a different control program")
 	}
 	if prior.FlowID != request.FlowID {

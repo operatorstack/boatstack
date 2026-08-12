@@ -3,10 +3,12 @@ package effects
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -30,17 +32,18 @@ func NewJournal(resolver ports.InvocationResolver, clock ports.Clock) (*Journal,
 }
 
 type journalRecord struct {
-	SchemaVersion     int                      `json:"schema_version"`
-	Admission         protocol.Admission       `json:"admission"`
-	TransitionID      catalog.TransitionID     `json:"transition_id"`
-	TransitionClass   catalog.EventClass       `json:"transition_class"`
-	ReconcilesProgram bool                     `json:"reconciles_program,omitempty"`
-	Status            string                   `json:"status"`
-	Mutations         []ports.ResourceMutation `json:"mutations,omitempty"`
-	Reason            string                   `json:"reason,omitempty"`
-	ReceiptID         string                   `json:"receipt_id,omitempty"`
-	CreatedAt         time.Time                `json:"created_at"`
-	UpdatedAt         time.Time                `json:"updated_at"`
+	SchemaVersion     int                         `json:"schema_version"`
+	Admission         protocol.Admission          `json:"admission"`
+	TransitionID      catalog.TransitionID        `json:"transition_id"`
+	TransitionClass   catalog.EventClass          `json:"transition_class"`
+	ReconcilesProgram bool                        `json:"reconciles_program,omitempty"`
+	Status            string                      `json:"status"`
+	Mutations         []ports.ResourceMutation    `json:"mutations,omitempty"`
+	Reason            string                      `json:"reason,omitempty"`
+	ReceiptID         string                      `json:"receipt_id,omitempty"`
+	Receipt           *protocol.TransitionReceipt `json:"receipt,omitempty"`
+	CreatedAt         time.Time                   `json:"created_at"`
+	UpdatedAt         time.Time                   `json:"updated_at"`
 }
 
 func journalName(id, suffix string) (string, error) {
@@ -110,7 +113,70 @@ func readJournal(path string) (journalRecord, error) {
 	if err := record.Admission.ValidateIdentity(); err != nil || record.Admission.TransitionID != record.TransitionID {
 		return journalRecord{}, fmt.Errorf("invalid transaction admission in %s: %v", path, err)
 	}
+	if record.Receipt != nil {
+		if err := record.Receipt.Validate(); err != nil || record.Receipt.ID != record.ReceiptID || record.Receipt.AdmissionID != record.Admission.ID || record.Receipt.TransitionID != record.TransitionID {
+			return journalRecord{}, fmt.Errorf("invalid committed transition fact in %s: %v", path, err)
+		}
+		receipt := record.Receipt
+		admission := record.Admission
+		if receipt.PrescriptionID != admission.PrescriptionID || receipt.TransitionVersion != admission.TransitionVersion || receipt.Program.Fingerprint != admission.ExpectedProgramFingerprint ||
+			receipt.PriorStateRevision != admission.ExpectedStateRevision || receipt.SourceFingerprint != admission.ExpectedSnapshotFingerprint ||
+			receipt.AuthorityFingerprint != admission.AuthorityFingerprint || !slices.Equal(receipt.RequiredCapabilities, admission.RequiredCapabilities) ||
+			!slices.Equal(receipt.GrantedCapabilities, admission.GrantedCapabilities) || receipt.GoalID != admission.Goal.ID || receipt.GoalKind != admission.Goal.Kind ||
+			receipt.DeliveryID != admission.Goal.DeliveryID || receipt.GoalScope != admission.GoalScope || receipt.GoalStatus != admission.GoalStatus {
+			return journalRecord{}, fmt.Errorf("committed transition fact in %s does not match its exact admission", path)
+		}
+		if err := validateCommittedMutationFacts(record.TransitionClass, record.Mutations, receipt.CommittedEffects); err != nil {
+			return journalRecord{}, fmt.Errorf("committed transition fact in %s: %w", path, err)
+		}
+	}
+	if strings.HasSuffix(path, ".committed") && (record.Status != "committed" || record.Receipt == nil) {
+		return journalRecord{}, fmt.Errorf("committed transaction journal %s lacks its canonical transition fact", path)
+	}
 	return record, nil
+}
+
+func validateCommittedMutationFacts(class catalog.EventClass, mutations []ports.ResourceMutation, facts []protocol.EffectFact) error {
+	resourceFacts := make([]protocol.EffectFact, 0, len(facts))
+	boundarySettled := false
+	for _, fact := range facts {
+		if fact.Kind == protocol.EffectResourceMutation {
+			resourceFacts = append(resourceFacts, fact)
+		} else if fact.Kind == protocol.EffectBoundarySettled {
+			boundarySettled = true
+		}
+	}
+	if class == catalog.EventOwnedExternal && !boundarySettled {
+		return fmt.Errorf("owned external transaction lacks a settled boundary fact")
+	}
+	if len(resourceFacts) != len(mutations) {
+		return fmt.Errorf("resource fact count %d does not match staged mutation count %d", len(resourceFacts), len(mutations))
+	}
+	matched := make([]bool, len(resourceFacts))
+	for _, mutation := range mutations {
+		operation := "update"
+		switch {
+		case mutation.Delete:
+			operation = "delete"
+		case mutation.TargetLink != "":
+			operation = "symlink"
+		case !mutation.PriorExists:
+			operation = "create"
+		}
+		prior := mutationStateFingerprint(mutation.PriorExists, mutation.Prior, mutation.PriorLink, mutation.Mode)
+		result := mutationStateFingerprint(!mutation.Delete, mutation.Target, mutation.TargetLink, mutation.Mode)
+		found := false
+		for index, fact := range resourceFacts {
+			if !matched[index] && fact.Target == mutation.Path && fact.Operation == operation && fact.PriorFingerprint == prior && fact.ResultingFingerprint == result {
+				matched[index], found = true, true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("staged mutation %s has no exact committed effect fact", mutation.Path)
+		}
+	}
+	return nil
 }
 
 func (j *Journal) update(ctx context.Context, admissionID string, update func(*journalRecord)) error {
@@ -192,6 +258,10 @@ func (j *Journal) finalize(ctx context.Context, admissionID, suffix, status, rea
 		return err
 	}
 	record.Status, record.Reason, record.ReceiptID, record.UpdatedAt = status, reason, receiptID, j.clock.Now().UTC()
+	if status != "committed" {
+		record.ReceiptID = ""
+		record.Receipt = nil
+	}
 	raw, err := encodeJSON(record)
 	if err != nil {
 		return err
@@ -208,7 +278,54 @@ func (j *Journal) finalize(ctx context.Context, admissionID, suffix, status, rea
 }
 
 func (j *Journal) Commit(ctx context.Context, receipt protocol.TransitionReceipt) error {
-	return j.finalize(ctx, receipt.AdmissionID, ".committed", "committed", "", receipt.ID)
+	if err := receipt.Validate(); err != nil {
+		return err
+	}
+	name, err := journalName(receipt.AdmissionID, ".pending")
+	if err != nil {
+		return err
+	}
+	path, ok := j.activePath(name)
+	if !ok {
+		return fmt.Errorf("transaction journal path is not bound for %s", receipt.AdmissionID)
+	}
+	record, err := readJournal(path)
+	if err != nil {
+		return err
+	}
+	if record.Admission.ID != receipt.AdmissionID || record.TransitionID != receipt.TransitionID {
+		return fmt.Errorf("transition fact does not match its transaction journal")
+	}
+	record.Status, record.Reason, record.ReceiptID, record.UpdatedAt = "committed", "", receipt.ID, j.clock.Now().UTC()
+	receiptCopy := receipt
+	record.Receipt = &receiptCopy
+	raw, err := encodeJSON(record)
+	if err != nil {
+		return err
+	}
+	// Persist the complete fact into the pending record, then atomically rename
+	// that same record. A crash exposes either recovery-required pending work or
+	// one canonical committed fact, never a separate success that outruns it.
+	if err := atomicWrite(path, raw, 0o600); err != nil {
+		return err
+	}
+	finalPath := strings.TrimSuffix(path, ".pending") + ".committed"
+	if _, statErr := os.Stat(finalPath); statErr == nil {
+		return fmt.Errorf("committed transaction journal already exists for %s", receipt.AdmissionID)
+	} else if !os.IsNotExist(statErr) {
+		return statErr
+	}
+	if err := replaceFile(path, finalPath); err != nil {
+		return err
+	}
+	if err := syncDirectory(filepath.Dir(path)); err != nil {
+		if rollbackErr := replaceFile(finalPath, path); rollbackErr != nil {
+			return errors.Join(err, fmt.Errorf("restore pending journal after directory sync failure: %w", rollbackErr))
+		}
+		return err
+	}
+	j.unbind(name)
+	return nil
 }
 
 func (j *Journal) Abort(ctx context.Context, admissionID, reason string) error {
@@ -218,6 +335,7 @@ func (j *Journal) Abort(ctx context.Context, admissionID, reason string) error {
 func (j *Journal) RequireRecovery(ctx context.Context, admissionID, reason string) error {
 	return j.update(ctx, admissionID, func(record *journalRecord) {
 		record.Status, record.Reason = "recovery-required", reason
+		record.ReceiptID, record.Receipt = "", nil
 	})
 }
 

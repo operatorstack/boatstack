@@ -120,7 +120,7 @@ func TestConcurrentApplyConsumesOneRevisionExactlyOnce(t *testing.T) {
 		t.Fatalf("concurrent results: success=%d stale=%d one=%v two=%v three=%v", successes, stale, one.err, two.err, three.err)
 	}
 	if committed.Receipt == nil || committed.Receipt.PriorStateRevision != 1 || committed.Receipt.ResultingStateRevision != 2 ||
-		committed.Receipt.ProgramFingerprint != program.Fingerprint() || committed.Receipt.PrescriptionID != request.Prescription.ID {
+		committed.Receipt.Program.Fingerprint != program.Fingerprint() || committed.Receipt.PrescriptionID != request.Prescription.ID {
 		t.Fatalf("commit receipt does not prove the consumed revision/program pair: %#v", committed.Receipt)
 	}
 
@@ -135,6 +135,19 @@ func TestConcurrentApplyConsumesOneRevisionExactlyOnce(t *testing.T) {
 	receiptRaw, err := os.ReadFile(layout.ReceiptPath)
 	if err != nil || bytes.Count(receiptRaw, []byte("\n")) != 1 {
 		t.Fatalf("receipt stream contains more than one commit: %v %q", err, receiptRaw)
+	}
+	committedJournals, err := filepath.Glob(filepath.Join(layout.JournalRoot, "*.committed"))
+	if err != nil || len(committedJournals) != 1 {
+		t.Fatalf("canonical committed journal count=%d err=%v", len(committedJournals), err)
+	}
+	committedRaw, err := os.ReadFile(committedJournals[0])
+	if err != nil || !bytes.Contains(committedRaw, []byte(committed.Receipt.ID)) || !bytes.Contains(committedRaw, []byte("committed_effects")) {
+		t.Fatalf("committed journal lacks its complete transition fact: %v %q", err, committedRaw)
+	}
+	// Simulate a crash after canonical commit but before the passive receipt
+	// projection reaches its consumer. Replay must recover from the journal fact.
+	if err := os.Remove(layout.ReceiptPath); err != nil {
+		t.Fatal(err)
 	}
 
 	replayRequest := request

@@ -594,7 +594,11 @@ Local transitions follow one journaled protocol:
 8. install effects in declared order;
 9. install durable state revision `N+1` last;
 10. re-observe independently and verify the target predicate;
-11. append the immutable receipt, commit the journal, and release the lock.
+11. construct the immutable transition fact from applied effects and the
+    verified target;
+12. atomically finalize the journal with that complete fact;
+13. project the fact to receipt JSONL and passive process events, then release
+    the lock.
 
 Failure restores exact prior bytes where reversible. A mixed epoch is never an
 accepted snapshot. An irreversible or unknown external outcome produces a typed
@@ -622,16 +626,23 @@ fresh observation and evaluates the catalog's target predicate. Success requires
 both effect completion and postcondition truth. Otherwise the engine enters the
 declared rollback, compensation, or recovery path and returns non-success.
 
-`TransitionReceipt` is immutable and content-addressed. It binds schema, flow
-and sequence IDs, transition ID/version, prescription and admission IDs,
-executable program fingerprint, prior and resulting durable state revisions,
-goal ID, source and target fingerprints, authority classes, idempotency key,
-timestamps/duration, outcome, postcondition verifier, recovery/terminal
-classification, and a privacy-safe failure class. The admission ID transitively
-binds invocation, authority receipts, parameters, and expiry. A receipt never
-embeds arbitrary output, source, prompts, or secrets.
+`TransitionReceipt` is the immutable, content-addressed fact for one committed
+transition. It binds the exact Control Program ID/version/fingerprint,
+canonical transition ID/version, prescription and admission IDs, prior and
+resulting durable revisions, source and target fingerprints, admitted authority
+provenance and capabilities, kernel-observed committed effects, and the exact
+postcondition/verifier/evidence result. It contains no refusal, unknown outcome,
+requested effect, arbitrary output, source, prompt, credential, or secret.
 
-Receipts are the only accepted evidence that a managed transition occurred.
+The canonical fact is embedded in the atomically finalized `.committed`
+transaction journal. Receipt JSONL and process events are passive projections.
+A pending, aborted, rolled-back, or recovery-required journal is never a
+successful receipt, even if it contains staged mutations. Capability exercise
+is omitted unless an effect handler can prove it; admitted capability is not
+silently relabeled as exercised capability.
+
+Committed journal facts are the only accepted evidence that a managed
+transition occurred.
 Plan approvals, publication settlement, and terminal claims point to exact
 receipts. Idempotency replay validates the stored receipt identity, returns it
 with a fresh current snapshot, and never repeats the effect.
