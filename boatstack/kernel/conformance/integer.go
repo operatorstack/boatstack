@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -230,6 +231,18 @@ func (s *MemoryStateStore) retarget(instanceID string) {
 	s.state.InstanceID = instanceID
 }
 
+func (s *MemoryStateStore) bumpRevision() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.Revision++
+}
+
+func (s *MemoryStateStore) retargetProgram(program kernel.ProgramIdentity) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.Program = program
+}
+
 func (s *MemoryStateStore) rebind(objective kernel.Objective) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -303,6 +316,11 @@ func newIntegerFixture(setup Setup) KernelConformance {
 	if err != nil {
 		panic(err)
 	}
+	alternateProgram := program.Identity()
+	alternateProgram.Fingerprint = strings.Repeat("f", 64)
+	if alternateProgram.Fingerprint == program.Fingerprint {
+		alternateProgram.Fingerprint = strings.Repeat("e", 64)
+	}
 	state := kernel.ControlState{InstanceID: "counter-fixture", Program: program.Identity(), Mode: "unbound", Revision: 1}
 	value := 0
 	switch setup {
@@ -345,21 +363,29 @@ func newIntegerFixture(setup Setup) KernelConformance {
 		Objective:             objective,
 		RevisedObjective:      revised,
 		ConflictingObjective:  conflicting,
+		AlternateProgram:      alternateProgram,
 		Authority:             authority,
 		BindTransition:        "objective.bind",
 		AdvanceTransitions:    []string{"counter.increment-first", "counter.increment-second"},
 		MaintenanceTransition: "counter.reset",
 		RecoveryTransition:    "counter.recover",
+		RecoveryCapability:    "counter.reset",
 		ExtraCapability:       "counter.audit",
 		ChangeObservation:     domain.changeObservation,
 		RebindObjective:       store.rebind,
+		BumpStateRevision:     store.bumpRevision,
+		RetargetProgram:       store.retargetProgram,
 		InterruptNextOperator: domain.interruptNext,
 		PanicNextOperator:     domain.panicNext,
 		FailNextCommit:        store.failNextCommit,
 		RetargetInstance:      store.retarget,
 		Snapshot: func() Snapshot {
 			current, commits := store.snapshot()
-			return Snapshot{State: current, Effects: domain.effectCounts(), Receipts: receipts.snapshot(), CommitCount: commits}
+			observation, observeErr := domain.Observe(context.Background(), current.InstanceID)
+			if observeErr != nil {
+				panic(observeErr)
+			}
+			return Snapshot{State: current, Observation: observation, Effects: domain.effectCounts(), Receipts: receipts.snapshot(), CommitCount: commits}
 		},
 	}
 	fixture.New = func(_ testing.TB, requested Setup) KernelConformance {
@@ -370,13 +396,15 @@ func newIntegerFixture(setup Setup) KernelConformance {
 		if runtimeErr != nil {
 			panic(runtimeErr)
 		}
-		request := kernel.ResolveRequest{InstanceID: state.InstanceID, Objective: &objective, Authority: authority, Requested: fixture.Scenario.BindTransition}
-		resolution, resolveErr := runtime.Resolve(context.Background(), request)
-		if resolveErr != nil || resolution.Prescription == nil {
-			panic(fmt.Sprintf("seed bound fixture: decision=%#v error=%v", resolution.Decision, resolveErr))
-		}
-		if _, applyErr := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: *resolution.Prescription}); applyErr != nil {
-			panic(applyErr)
+		for _, transition := range []string{fixture.Scenario.BindTransition, fixture.Scenario.AdvanceTransitions[0], fixture.Scenario.MaintenanceTransition} {
+			request := kernel.ResolveRequest{InstanceID: state.InstanceID, Objective: &objective, Authority: authority, Requested: transition}
+			resolution, resolveErr := runtime.Resolve(context.Background(), request)
+			if resolveErr != nil || resolution.Prescription == nil {
+				panic(fmt.Sprintf("seed bound fixture %s: decision=%#v error=%v", transition, resolution.Decision, resolveErr))
+			}
+			if _, applyErr := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: *resolution.Prescription}); applyErr != nil {
+				panic(applyErr)
+			}
 		}
 	}
 	return fixture

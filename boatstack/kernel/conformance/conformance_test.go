@@ -32,8 +32,8 @@ func TestMarkedStateCheckRejectsUntargetedPriorityCycle(t *testing.T) {
 func TestIntegerBoundFixtureIncludesCommittedHistory(t *testing.T) {
 	fixture := newIntegerFixture(SetupBound)
 	snapshot := fixture.Scenario.Snapshot()
-	if snapshot.CommitCount != 1 || len(snapshot.Receipts) != 1 || snapshot.State.ObjectiveBinding == nil || !snapshot.State.ObjectiveBinding.Matches(fixture.Scenario.Objective) {
-		t.Fatalf("expected one committed objective-binding baseline, got %#v", snapshot)
+	if snapshot.CommitCount != 3 || len(snapshot.Receipts) != 3 || effectCount(snapshot, fixture.Scenario.AdvanceTransitions[0]) != 1 || snapshot.State.Mode != "zero" || snapshot.State.ObjectiveBinding == nil || !snapshot.State.ObjectiveBinding.Matches(fixture.Scenario.Objective) {
+		t.Fatalf("expected committed bind/advance/reset baseline, got %#v", snapshot)
 	}
 }
 
@@ -54,6 +54,44 @@ func TestCommittedOutcomeRejectsDurableReceiptSubstitution(t *testing.T) {
 	}
 	if err := committedOutcomeError(fixture.Program, before, fixture.Scenario.Snapshot(), returned); err == nil || !strings.Contains(err.Error(), "durable receipt differs") {
 		t.Fatalf("expected substituted durable receipt rejection, got %v", err)
+	}
+}
+
+func TestCommittedOutcomeRejectsPriorReceiptRewrite(t *testing.T) {
+	fixture := newIntegerFixture(SetupBound)
+	runtime := mustRuntime(t, fixture)
+	transition := fixture.Scenario.AdvanceTransitions[0]
+	request, prescription := resolve(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective, fixture.Scenario.Authority)
+	before := fixture.Scenario.Snapshot()
+	returned, err := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipts := fixture.Store.(*MemoryStateStore).receipts
+	receipts.mu.Lock()
+	receipts.values[0] = returned
+	receipts.mu.Unlock()
+	if err := committedOutcomeError(fixture.Program, before, fixture.Scenario.Snapshot(), returned); err == nil || !strings.Contains(err.Error(), "prior receipt history") {
+		t.Fatalf("expected prior receipt rewrite rejection, got %v", err)
+	}
+}
+
+func TestCommittedOutcomeRejectsUnrelatedEffect(t *testing.T) {
+	fixture := newIntegerFixture(SetupBound)
+	runtime := mustRuntime(t, fixture)
+	transition := fixture.Scenario.AdvanceTransitions[0]
+	request, prescription := resolve(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective, fixture.Scenario.Authority)
+	before := fixture.Scenario.Snapshot()
+	returned, err := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
+	if err != nil {
+		t.Fatal(err)
+	}
+	domain := fixture.Domain.(*IntegerDomain)
+	domain.mu.Lock()
+	domain.executions[fixture.Scenario.MaintenanceTransition]++
+	domain.mu.Unlock()
+	if err := committedOutcomeError(fixture.Program, before, fixture.Scenario.Snapshot(), returned); err == nil || !strings.Contains(err.Error(), "effect evidence") {
+		t.Fatalf("expected unrelated effect rejection, got %v", err)
 	}
 }
 
@@ -87,6 +125,23 @@ func TestCommittedOutcomeRejectsLosingApplyStateClobber(t *testing.T) {
 	}
 	if err := committedOutcomeError(fixture.Program, before, fixture.Scenario.Snapshot(), winner); err == nil || !strings.Contains(err.Error(), "durable state differs") {
 		t.Fatalf("expected losing Apply state clobber rejection, got %v", err)
+	}
+}
+
+func TestUnresolvedAttemptRejectsTornTargetMode(t *testing.T) {
+	fixture := newIntegerFixture(SetupBound)
+	base := fixture.Store.(*MemoryStateStore)
+	fixture.Store = tornCommitStore{MemoryStateStore: base}
+	runtime := mustRuntime(t, fixture)
+	transition := fixture.Scenario.AdvanceTransitions[0]
+	request, prescription := resolve(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective, fixture.Scenario.Authority)
+	before := fixture.Scenario.Snapshot()
+	_, err := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
+	if !kernel.IsRecoveryRequired(err) {
+		t.Fatalf("expected recovery-required commit failure, got %v", err)
+	}
+	if err := unresolvedAttemptError(before, fixture.Scenario.Snapshot(), prescription); err == nil || !strings.Contains(err.Error(), "pre-effect control state") {
+		t.Fatalf("expected torn target-mode rejection, got %v", err)
 	}
 }
 
@@ -124,6 +179,15 @@ func mustRuntime(t *testing.T, fixture KernelConformance) kernel.Runtime {
 type substitutingReceiptStore struct {
 	kernel.Store
 	Receipt kernel.Receipt
+}
+
+type tornCommitStore struct{ *MemoryStateStore }
+
+func (s tornCommitStore) CommitTransition(_ context.Context, _ uint64, target kernel.ControlState, _ kernel.Receipt) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.Mode = target.Mode
+	return fmt.Errorf("simulated torn commit")
 }
 
 func (s substitutingReceiptStore) CommitTransition(ctx context.Context, revision uint64, target kernel.ControlState, _ kernel.Receipt) error {
