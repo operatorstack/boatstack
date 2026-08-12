@@ -60,7 +60,12 @@ jobs:
       - name: Show toolchain
         run: go version
         working-directory: boatstack
+      - name: Test runtime with race detector
+        if: matrix.os == 'ubuntu-latest'
+        run: go test -race ./...
+        working-directory: boatstack
       - name: Test runtime
+        if: matrix.os == 'macos-latest'
         run: go test ./...
         working-directory: boatstack
       - name: Build helper
@@ -69,6 +74,19 @@ jobs:
       - name: Validate Bash installer
         shell: bash
         run: bash -n install.sh
+
+  race-critical:
+    name: race-critical
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: boatstack/go.mod
+          cache-dependency-path: boatstack/go.sum
+      - name: Test concurrency-bearing packages
+        working-directory: boatstack
+        run: go test -race ./kernel ./internal/softwaredelivery/effects
 
   # Windows `go test` is dominated by per-process spawn latency (each test spawns
   # several `git` processes; the suite is ~330 tests run serially), so the full

@@ -18,6 +18,29 @@ RUNTIME = REPO / "boatstack"
 CONFIG = REPO / "project.example.json"
 
 
+GO_IMPORT_DECLARATION = re.compile(
+    r"(?ms)^[ \t]*import[ \t]+(?:\((?P<block>.*?)^[ \t]*\)|(?P<single>[^\n]+))"
+)
+GO_IMPORT_SPEC = re.compile(
+    r"^[ \t]*(?:(?P<alias>[._A-Za-z][A-Za-z0-9_]*)[ \t]+)?"
+    r"(?P<path>\"(?:\\.|[^\"\\])*\"|`[^`]*`)"
+)
+
+
+def go_imports(path: Path) -> list[tuple[str | None, str]]:
+    imports: list[tuple[str | None, str]] = []
+    for declaration in GO_IMPORT_DECLARATION.finditer(path.read_text()):
+        body = declaration.group("block") or declaration.group("single") or ""
+        for line in body.splitlines():
+            match = GO_IMPORT_SPEC.match(line)
+            if match is None:
+                continue
+            literal = match.group("path")
+            import_path = literal[1:-1] if literal.startswith("`") else json.loads(literal)
+            imports.append((match.group("alias"), import_path))
+    return imports
+
+
 class RepositoryContract(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -387,12 +410,42 @@ class RepositoryContract(unittest.TestCase):
 
     def test_general_kernel_is_domain_neutral_and_owns_shared_control_laws(self) -> None:
         kernel = REPO / "boatstack" / "kernel"
-        source = "\n".join(path.read_text() for path in sorted(kernel.glob("*.go")))
+        kernel_files = sorted(kernel.glob("*.go"))
+        source = "\n".join(path.read_text() for path in kernel_files)
         for token in (
             "git", "repository", "worktree", "branch", "pull request",
             "coding agent", "publication",
         ):
             self.assertNotIn(token, source.lower(), token)
+
+        boatstack_packages = "github.com/operatorstack/boatstack/boatstack/"
+        kernel_package = boatstack_packages + "kernel"
+        for path in kernel_files:
+            invalid = [
+                import_path
+                for _, import_path in go_imports(path)
+                if import_path.startswith(boatstack_packages)
+                and import_path != kernel_package
+            ]
+            self.assertEqual([], invalid, f"kernel dependency direction: {path}")
+
+        kernel_tests = sorted(kernel.glob("*_test.go"))
+        test_source = "\n".join(path.read_text() for path in kernel_tests)
+        self.assertNotRegex(test_source, r'\bexec\.Command\(\s*"git"')
+        self.assertNotRegex(
+            test_source,
+            r'\bexec\.CommandContext\([^,\n]+,\s*"git"',
+        )
+        self.assertNotIn("testRepository", test_source)
+        self.assertNotIn("softwaredelivery", test_source.lower())
+        for path in kernel_tests:
+            self.assertFalse(
+                any(
+                    "/softwaredelivery" in import_path
+                    for _, import_path in go_imports(path)
+                ),
+                f"kernel test fixture imports software delivery: {path}",
+            )
 
         runtime = (kernel / "runtime.go").read_text()
         software_relation = (
@@ -431,6 +484,39 @@ class RepositoryContract(unittest.TestCase):
             "./internal/effects", "./internal/surfaces",
         ):
             self.assertNotIn(retired, component_ci)
+        self.assertIn("run: go test -race ./...", component_ci)
+        self.assertIn(
+            "run: go test -race ./kernel ./internal/softwaredelivery/effects",
+            component_ci,
+        )
+
+    @unittest.expectedFailure
+    def test_kernel_runtime_has_no_production_consumer_yet(self) -> None:
+        # Migration task T5 must replace this marker with a permanent positive
+        # production-reachability assertion when the generic runtime is adopted.
+        kernel_package = "github.com/operatorstack/boatstack/boatstack/kernel"
+        runtime_symbols = (
+            "NewRuntime", "Runtime", "Store", "Domain", "Operator", "Receipt",
+        )
+        consumers: list[str] = []
+        for path in sorted((REPO / "boatstack").rglob("*.go")):
+            if path.name.endswith("_test.go") or path.parent == REPO / "boatstack" / "kernel":
+                continue
+            source = path.read_text()
+            for alias, import_path in go_imports(path):
+                if import_path != kernel_package or alias == "_":
+                    continue
+                package_name = "kernel" if alias in (None, ".") else alias
+                if alias == ".":
+                    pattern = rf"\b(?:{'|'.join(runtime_symbols)})\b"
+                else:
+                    pattern = rf"\b{re.escape(package_name)}\.(?:{'|'.join(runtime_symbols)})\b"
+                if re.search(pattern, source):
+                    consumers.append(str(path.relative_to(REPO)))
+        self.assertTrue(
+            consumers,
+            "migration T5 has not connected the generic kernel runtime to production code",
+        )
 
     def test_documented_cli_verbs_are_registered_v2_surfaces(self) -> None:
         documents = [
