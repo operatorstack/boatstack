@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
 )
@@ -113,6 +114,12 @@ func readJournal(path string) (journalRecord, error) {
 	if err := record.Admission.ValidateIdentity(); err != nil || record.Admission.TransitionID != record.TransitionID {
 		return journalRecord{}, fmt.Errorf("invalid transaction admission in %s: %v", path, err)
 	}
+	for _, mutation := range record.Mutations {
+		facets, err := model.NormalizeStateFacets("journal mutation state facets", mutation.StateFacets)
+		if err != nil || !slices.Equal(facets, mutation.StateFacets) {
+			return journalRecord{}, fmt.Errorf("invalid transaction state facets in %s: %v", path, err)
+		}
+	}
 	if record.Receipt != nil {
 		if err := record.Receipt.Validate(); err != nil || record.Receipt.ID != record.ReceiptID || record.Receipt.AdmissionID != record.Admission.ID || record.Receipt.TransitionID != record.TransitionID {
 			return journalRecord{}, fmt.Errorf("invalid committed transition fact in %s: %v", path, err)
@@ -126,7 +133,7 @@ func readJournal(path string) (journalRecord, error) {
 			receipt.DeliveryID != admission.Goal.DeliveryID || receipt.GoalScope != admission.GoalScope || receipt.GoalStatus != admission.GoalStatus {
 			return journalRecord{}, fmt.Errorf("committed transition fact in %s does not match its exact admission", path)
 		}
-		if err := validateCommittedMutationFacts(record.TransitionClass, record.Mutations, receipt.CommittedEffects); err != nil {
+		if err := validateCommittedMutationFacts(record.TransitionClass, record.Mutations, receipt.ChangedStateFacets, receipt.CommittedEffects); err != nil {
 			return journalRecord{}, fmt.Errorf("committed transition fact in %s: %w", path, err)
 		}
 	}
@@ -136,7 +143,14 @@ func readJournal(path string) (journalRecord, error) {
 	return record, nil
 }
 
-func validateCommittedMutationFacts(class catalog.EventClass, mutations []ports.ResourceMutation, facts []protocol.EffectFact) error {
+func validateCommittedMutationFacts(class catalog.EventClass, mutations []ports.ResourceMutation, receiptFacets []model.StateFacet, facts []protocol.EffectFact) error {
+	var mutationFacets []model.StateFacet
+	for _, mutation := range mutations {
+		mutationFacets = model.UnionStateFacets(mutationFacets, mutation.StateFacets)
+	}
+	if !slices.Equal(mutationFacets, receiptFacets) {
+		return fmt.Errorf("receipt changed state facets %v do not match staged mutation facets %v", receiptFacets, mutationFacets)
+	}
 	resourceFacts := make([]protocol.EffectFact, 0, len(facts))
 	boundarySettled := false
 	for _, fact := range facts {

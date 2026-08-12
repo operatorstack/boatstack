@@ -66,7 +66,12 @@ func (d Driver) prepareRecoveryReplay(ctx context.Context, layout ports.Controll
 		return nil, err
 	}
 	mutations = append(mutations, closure...)
-	return &preparedEffect{mutations: mutations}, nil
+	changed, err := recoveryStateFacets(record, transition.ID)
+	if err != nil {
+		return nil, err
+	}
+	mutations = annotateStateFacetMutations(mutations, changed)
+	return &preparedEffect{mutations: mutations, changedStateFacets: changed}, nil
 }
 
 func (d Driver) prepareWorkspaceCutReconciliation(ctx context.Context, layout ports.ControllerLayout, admission protocol.Admission, record journalRecord, pendingPath string) (ports.PreparedEffect, error) {
@@ -129,7 +134,22 @@ func (d Driver) prepareWorkspaceCutReconciliation(ctx context.Context, layout po
 		return nil, err
 	}
 	mutations = append(mutations, closure...)
-	return &preparedEffect{mutations: mutations, verifyInvocation: verificationInvocation}, nil
+	changed, err := recoveryStateFacets(record, "workspace.reconcile")
+	if err != nil {
+		return nil, err
+	}
+	mutations = annotateStateFacetMutations(mutations, changed)
+	return &preparedEffect{mutations: mutations, verifyInvocation: verificationInvocation, changedStateFacets: changed}, nil
+}
+
+func recoveryStateFacets(record journalRecord, recovery catalog.TransitionID) ([]model.StateFacet, error) {
+	changed, err := journalStateFacets(record.Mutations)
+	if err != nil {
+		return nil, err
+	}
+	changed = model.UnionStateFacets(changed, []model.StateFacet{model.StateFacetControl})
+	allowed := model.UnionStateFacets(catalog.DurableStateWritesForRecovery(record.TransitionID), []model.StateFacet{model.StateFacetControl})
+	return validateAllowedStateFacets(recovery, changed, allowed)
 }
 
 func (d Driver) advanceRecoveredState(layout ports.ControllerLayout, admission protocol.Admission, transition catalog.TransitionID, mutations []ports.ResourceMutation) ([]ports.ResourceMutation, error) {

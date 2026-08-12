@@ -402,6 +402,9 @@ func validateTransition(t Transition) error {
 	if !t.Origin.Kind.Valid() || t.Origin.ID == "" || t.Origin.Version == "" || t.Origin.ManifestFingerprint == "" || t.Owner == "" {
 		return fmt.Errorf("%s: transition origin, owner, version, and manifest fingerprint are required", t.ID)
 	}
+	if _, err := DurableStateFacetPolicy(t); err != nil {
+		return err
+	}
 	if !t.SelectionClass.Valid() {
 		return fmt.Errorf("%s: invalid selection class %q", t.ID, t.SelectionClass)
 	}

@@ -3,6 +3,7 @@ package protocol
 import (
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -11,7 +12,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 )
 
-const ReceiptSchemaVersion = 6
+const ReceiptSchemaVersion = 7
 
 type TransitionFactKind string
 
@@ -120,6 +121,7 @@ type TransitionReceipt struct {
 	GrantedCapabilities     []catalog.Capability `json:"granted_capabilities"`
 	ExercisedCapabilities   []catalog.Capability `json:"exercised_capabilities,omitempty"`
 	CommittedEffects        []EffectFact         `json:"committed_effects"`
+	ChangedStateFacets      []model.StateFacet   `json:"changed_state_facets"`
 	Verification            VerificationFact     `json:"verification"`
 	IdempotencyKey          string               `json:"idempotency_key"`
 	Recovery                catalog.TransitionID `json:"recovery,omitempty"`
@@ -136,7 +138,7 @@ type AuthoritySource struct {
 	Fingerprint string                 `json:"fingerprint"`
 }
 
-func NewReceipt(flowID string, sequence uint64, program ProgramIdentity, admission Admission, transition catalog.Transition, target model.Snapshot, effects []EffectFact, exercised []catalog.Capability, startedAt, committedAt time.Time) (TransitionReceipt, error) {
+func NewReceipt(flowID string, sequence uint64, program ProgramIdentity, admission Admission, transition catalog.Transition, target model.Snapshot, changedStateFacets []model.StateFacet, effects []EffectFact, exercised []catalog.Capability, startedAt, committedAt time.Time) (TransitionReceipt, error) {
 	if flowID == "" || sequence == 0 || admission.ID == "" || target.Fingerprint == "" {
 		return TransitionReceipt{}, fmt.Errorf("receipt requires flow, sequence, admission, and target identity")
 	}
@@ -165,6 +167,10 @@ func NewReceipt(flowID string, sequence uint64, program ProgramIdentity, admissi
 	}
 	canonicalEffects := append([]EffectFact(nil), effects...)
 	sortEffectFacts(canonicalEffects)
+	canonicalFacets, err := model.NormalizeStateFacets("receipt.changed_state_facets", changedStateFacets)
+	if err != nil || len(canonicalFacets) == 0 {
+		return TransitionReceipt{}, fmt.Errorf("receipt requires canonical changed state facets: %v", err)
+	}
 	receipt := TransitionReceipt{
 		SchemaVersion: ReceiptSchemaVersion, Kind: TransitionCommitted, FlowID: flowID, Sequence: sequence, Program: program,
 		TransitionID: transition.ID, TransitionVersion: transition.Version,
@@ -178,6 +184,7 @@ func NewReceipt(flowID string, sequence uint64, program ProgramIdentity, admissi
 		GrantedCapabilities:   append([]catalog.Capability(nil), admission.GrantedCapabilities...),
 		ExercisedCapabilities: append([]catalog.Capability(nil), exercised...),
 		CommittedEffects:      canonicalEffects,
+		ChangedStateFacets:    canonicalFacets,
 		Verification:          VerificationFact{Verifier: transition.Verifier, ExpectedPostcondition: transition.TargetPredicate, Result: VerificationSatisfied, EvidenceFingerprint: target.Fingerprint, VerifiedAt: committedAt.UTC()},
 		IdempotencyKey:        admission.IdempotencyKey, Recovery: transition.Interruption.Recovery, Terminal: terminal,
 		StartedAt: startedAt.UTC(), CommittedAt: committedAt.UTC(), DurationNanoseconds: committedAt.Sub(startedAt).Nanoseconds(),
@@ -197,7 +204,6 @@ func NewReceipt(flowID string, sequence uint64, program ProgramIdentity, admissi
 	}
 	identity := receipt
 	identity.ID = ""
-	var err error
 	receipt.ID, err = contentID("trc-", identity)
 	if err != nil {
 		return TransitionReceipt{}, err
@@ -206,8 +212,12 @@ func NewReceipt(flowID string, sequence uint64, program ProgramIdentity, admissi
 }
 
 func (r TransitionReceipt) Validate() error {
-	if r.SchemaVersion != ReceiptSchemaVersion || r.Kind != TransitionCommitted || r.ID == "" || r.FlowID == "" || r.Sequence == 0 || r.TransitionID == "" || r.TransitionVersion < 1 || r.PrescriptionID == "" || r.AdmissionID == "" || r.PriorStateRevision == 0 || r.PriorStateRevision == ^uint64(0) || r.ResultingStateRevision != r.PriorStateRevision+1 || !validSHA256(r.SourceFingerprint) || !validSHA256(r.TargetFingerprint) || r.AuthorityFingerprint == "" || len(r.RequiredCapabilities) == 0 || r.IdempotencyKey == "" || len(r.CommittedEffects) == 0 {
+	if r.SchemaVersion != ReceiptSchemaVersion || r.Kind != TransitionCommitted || r.ID == "" || r.FlowID == "" || r.Sequence == 0 || r.TransitionID == "" || r.TransitionVersion < 1 || r.PrescriptionID == "" || r.AdmissionID == "" || r.PriorStateRevision == 0 || r.PriorStateRevision == ^uint64(0) || r.ResultingStateRevision != r.PriorStateRevision+1 || !validSHA256(r.SourceFingerprint) || !validSHA256(r.TargetFingerprint) || r.AuthorityFingerprint == "" || len(r.RequiredCapabilities) == 0 || r.IdempotencyKey == "" || len(r.CommittedEffects) == 0 || len(r.ChangedStateFacets) == 0 {
 		return fmt.Errorf("receipt has incomplete committed-transition identity or evidence")
+	}
+	canonicalFacets, err := model.NormalizeStateFacets("receipt.changed_state_facets", r.ChangedStateFacets)
+	if err != nil || !slices.Equal(canonicalFacets, r.ChangedStateFacets) {
+		return fmt.Errorf("receipt changed state facets are invalid or non-canonical: %v", err)
 	}
 	if err := r.Program.Validate(); err != nil {
 		return err

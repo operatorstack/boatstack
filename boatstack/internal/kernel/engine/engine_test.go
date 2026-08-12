@@ -123,6 +123,9 @@ func (e *fakeEffects) Prepare(_ context.Context, _ protocol.Admission, transitio
 	return e, nil
 }
 func (e *fakeEffects) Manifest() []ports.ResourceMutation { return nil }
+func (e *fakeEffects) ChangedStateFacets() []model.StateFacet {
+	return []model.StateFacet{model.StateFacetControl}
+}
 func (e *fakeEffects) CommittedEffects() []protocol.EffectFact {
 	return []protocol.EffectFact{{
 		Kind: protocol.EffectResourceMutation, EffectID: e.transition.Effect, Owner: e.transition.Owner, Resource: e.transition.OwnedResources[0],

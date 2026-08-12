@@ -28,7 +28,7 @@ func TestReceiptRejectsRehashedAuthorityProvenanceTampering(t *testing.T) {
 	}
 	transition := catalog.Transition{ID: "program/write", Version: 1, Owner: "program", Effect: "program.write", TargetPredicate: "program.written", Verifier: "program.written"}
 	effects := []EffectFact{{Kind: EffectResourceMutation, EffectID: transition.Effect, Owner: transition.Owner, Resource: "program.state", Target: "/state", Operation: "update", PriorFingerprint: strings.Repeat("1", 64), ResultingFingerprint: strings.Repeat("2", 64)}}
-	receipt, err := NewReceipt("flow", 1, ProgramIdentity{ID: "program", Version: "1.0.0", Fingerprint: admission.ExpectedProgramFingerprint}, admission, transition, model.Snapshot{Observation: model.Observation{StateRevision: 2}, Fingerprint: strings.Repeat("c", 64)}, effects, nil, now, now.Add(time.Second))
+	receipt, err := NewReceipt("flow", 1, ProgramIdentity{ID: "program", Version: "1.0.0", Fingerprint: admission.ExpectedProgramFingerprint}, admission, transition, model.Snapshot{Observation: model.Observation{StateRevision: 2}, Fingerprint: strings.Repeat("c", 64)}, []model.StateFacet{model.StateFacetControl}, effects, nil, now, now.Add(time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}

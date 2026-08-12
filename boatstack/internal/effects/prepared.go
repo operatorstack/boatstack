@@ -26,6 +26,11 @@ type preparedEffect struct {
 	transition            catalog.Transition
 	requiredCapabilities  []catalog.Capability
 	effectiveCapabilities []catalog.Capability
+	changedStateFacets    []model.StateFacet
+}
+
+func (p *preparedEffect) ChangedStateFacets() []model.StateFacet {
+	return append([]model.StateFacet(nil), p.changedStateFacets...)
 }
 
 func (p *preparedEffect) Manifest() []ports.ResourceMutation {

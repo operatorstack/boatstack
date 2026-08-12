@@ -159,6 +159,7 @@ type processEvent struct {
 	RequiredCapabilities   []catalog.Capability      `json:"required_capabilities"`
 	GrantedCapabilities    []catalog.Capability      `json:"granted_capabilities"`
 	CommittedEffects       []protocol.EffectFact     `json:"committed_effects"`
+	ChangedStateFacets     []model.StateFacet        `json:"changed_state_facets"`
 	Verification           protocol.VerificationFact `json:"verification"`
 	Recovery               string                    `json:"recovery,omitempty"`
 	Terminal               string                    `json:"terminal"`
@@ -199,7 +200,7 @@ func (s *ReceiptStore) Project(ctx context.Context, receipt protocol.TransitionR
 		return err
 	}
 	event := processEvent{
-		SchemaVersion: 4, FlowID: receipt.FlowID, Sequence: receipt.Sequence, Timestamp: s.clock.Now().UTC(), GoalID: receipt.GoalID,
+		SchemaVersion: 5, FlowID: receipt.FlowID, Sequence: receipt.Sequence, Timestamp: s.clock.Now().UTC(), GoalID: receipt.GoalID,
 		GoalScope: string(receipt.GoalScope), GoalStatus: string(receipt.GoalStatus),
 		TransitionID: string(receipt.TransitionID), ProgramID: receipt.Program.ID, ProgramVersion: receipt.Program.Version, ProgramFingerprint: receipt.Program.Fingerprint, PrescriptionID: receipt.PrescriptionID,
 		PriorStateRevision: receipt.PriorStateRevision, ResultingStateRevision: receipt.ResultingStateRevision,
@@ -210,6 +211,7 @@ func (s *ReceiptStore) Project(ctx context.Context, receipt protocol.TransitionR
 		RequiredCapabilities: append([]catalog.Capability(nil), receipt.RequiredCapabilities...),
 		GrantedCapabilities:  append([]catalog.Capability(nil), receipt.GrantedCapabilities...),
 		CommittedEffects:     append([]protocol.EffectFact(nil), receipt.CommittedEffects...),
+		ChangedStateFacets:   append([]model.StateFacet(nil), receipt.ChangedStateFacets...),
 		Verification:         receipt.Verification,
 	}
 	for _, source := range receipt.AuthoritySources {
