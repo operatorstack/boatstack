@@ -18,7 +18,7 @@
     "target_phases": [
       "ACTIVE"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -46,14 +46,14 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:plan",
       "facet:program",
       "facet:recovery",
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration",
       "facet:runtime"
     ],
@@ -143,7 +143,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -207,7 +207,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 35
   },
   {
@@ -230,7 +232,7 @@
       "ACTIVE",
       "FRONTIER"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -257,14 +259,14 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:plan",
       "facet:program",
       "facet:recovery",
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration",
       "facet:runtime"
     ],
@@ -340,7 +342,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -404,7 +406,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 40
   },
   {
@@ -427,7 +431,7 @@
       "ACTIVE",
       "TERMINAL"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -455,14 +459,14 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:plan",
       "facet:program",
       "facet:recovery",
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration",
       "facet:runtime",
       "facet:configuration-policy"
@@ -550,7 +554,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -616,12 +620,13 @@
       "resumption_predicate": "recovery-contract-for:plan.approve"
     },
     "reversibility": "reversible",
-    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "terminal_effect": "may-establish-configured-objective-after-fresh-observation",
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
     "policy": {
-      "authority_rule": "plan-approval"
+      "authority_rule": "plan-approval",
+      "objective_scope": "bound-exact"
     },
     "priority": 45
   },
@@ -644,7 +649,7 @@
     "target_phases": [
       "ACTIVE"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "verified-implementation",
       "open-or-updated-pr",
       "merged-delivery"
@@ -670,14 +675,14 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:plan",
       "facet:program",
       "facet:recovery",
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration",
       "facet:runtime"
     ],
@@ -752,7 +757,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -816,7 +821,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 50
   },
   {
@@ -838,7 +845,7 @@
     "target_phases": [
       "ACTIVE"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -866,14 +873,14 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:plan",
       "facet:program",
       "facet:recovery",
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration",
       "facet:runtime"
     ],
@@ -964,7 +971,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -1028,7 +1035,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 42
   },
   {
@@ -1050,7 +1059,7 @@
     "target_phases": [
       "ACTIVE"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -1078,14 +1087,14 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:plan",
       "facet:program",
       "facet:recovery",
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration",
       "facet:runtime",
       "facet:configuration-policy"
@@ -1173,7 +1182,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -1239,12 +1248,13 @@
       "resumption_predicate": "recovery-contract-for:plan.approve-amendment"
     },
     "reversibility": "reversible",
-    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "terminal_effect": "may-establish-configured-objective-after-fresh-observation",
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
     "policy": {
-      "authority_rule": "plan-approval"
+      "authority_rule": "plan-approval",
+      "objective_scope": "bound-exact"
     },
     "priority": 46
   },
@@ -1267,7 +1277,7 @@
     "target_phases": [
       "FRONTIER"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -1294,14 +1304,14 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:plan",
       "facet:program",
       "facet:recovery",
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal"
+      "facet:objective"
     ],
     "owned_resources": [
       "plan-evidence"
@@ -1379,7 +1389,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -1425,7 +1435,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 41
   },
   {
@@ -1448,7 +1460,7 @@
     "target_phases": [
       "ABANDONED"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "safely-abandoned"
     ],
     "required_identity": [
@@ -1471,12 +1483,12 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:delivery",
       "facet:program",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal"
+      "facet:objective"
     ],
     "owned_resources": [
       "plan"
@@ -1539,7 +1551,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -1603,7 +1615,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 90
   },
   {
@@ -1625,7 +1639,7 @@
     "target_phases": [
       "ACTIVE"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -1653,14 +1667,14 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:workspace",
       "facet:program",
       "facet:recovery",
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration",
       "facet:runtime"
     ],
@@ -1752,7 +1766,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -1816,7 +1830,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 52,
     "allows_worktree_transfer": true
   },
@@ -1839,7 +1855,7 @@
       "ACTIVE",
       "FRONTIER"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -1867,14 +1883,14 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:workspace",
       "facet:program",
       "facet:recovery",
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration",
       "facet:runtime"
     ],
@@ -1957,7 +1973,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -2021,7 +2037,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 58
   },
   {
@@ -2043,7 +2061,7 @@
     "target_phases": [
       "ACTIVE"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -2070,14 +2088,14 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:workspace",
       "facet:program",
       "facet:recovery",
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration",
       "facet:runtime"
     ],
@@ -2160,7 +2178,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -2224,7 +2242,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 53
   },
   {
@@ -2245,7 +2265,7 @@
     "target_phases": [
       "ACTIVE"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "open-or-updated-pr",
       "merged-delivery"
     ],
@@ -2269,14 +2289,14 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:workspace",
       "facet:program",
       "facet:recovery",
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration",
       "facet:runtime"
     ],
@@ -2358,7 +2378,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -2422,7 +2442,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 75
   },
   {
@@ -2448,7 +2470,7 @@
       "TERMINAL",
       "ABANDONED"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -2476,14 +2498,14 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:workspace",
       "facet:program",
       "facet:recovery",
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration",
       "facet:runtime"
     ],
@@ -2567,7 +2589,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -2627,14 +2649,15 @@
       "resumption_predicate": "recovery-contract-for:workspace.cleanup"
     },
     "reversibility": "reversible",
-    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "terminal_effect": "may-establish-configured-objective-after-fresh-observation",
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
     "policy": {
       "managed_operations": [
         "workspace.remove"
-      ]
+      ],
+      "objective_scope": "bound-exact"
     },
     "priority": 92,
     "allows_worktree_transfer": true
@@ -2661,7 +2684,7 @@
       "TERMINAL",
       "ABANDONED"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -2688,14 +2711,14 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:workspace",
       "facet:program",
       "facet:recovery",
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration",
       "facet:runtime"
     ],
@@ -2779,7 +2802,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -2839,11 +2862,13 @@
       "resumption_predicate": "recovery-contract-for:workspace.reap"
     },
     "reversibility": "reversible",
-    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "terminal_effect": "may-establish-configured-objective-after-fresh-observation",
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 98,
     "allows_worktree_transfer": true
   },
@@ -2866,7 +2891,7 @@
     "target_phases": [
       "ABANDONED"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "safely-abandoned"
     ],
     "required_identity": [
@@ -2889,12 +2914,12 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:workspace",
       "facet:program",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal"
+      "facet:objective"
     ],
     "owned_resources": [
       "workspace"
@@ -2959,7 +2984,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -3023,7 +3048,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 91
   },
   {
@@ -3050,7 +3077,7 @@
       "TERMINAL",
       "ABANDONED"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -3078,11 +3105,11 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:recovery-info",
       "facet:program",
       "facet:engagement",
-      "facet:goal"
+      "facet:objective"
     ],
     "owned_resources": [
       "workspace"
@@ -3132,7 +3159,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -3187,7 +3214,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 2,
     "allows_worktree_transfer": true
   },
@@ -3209,7 +3238,7 @@
     "target_phases": [
       "ACTIVE"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -3236,7 +3265,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:plan",
       "facet:delivery",
       "facet:program",
@@ -3244,7 +3273,7 @@
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration",
       "facet:runtime"
     ],
@@ -3347,7 +3376,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -3407,12 +3436,13 @@
       "resumption_predicate": "recovery-contract-for:gate.build.record"
     },
     "reversibility": "reversible",
-    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "terminal_effect": "may-establish-configured-objective-after-fresh-observation",
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
     "policy": {
-      "current_evidence_prefix": "gate-evidence:build:"
+      "current_evidence_prefix": "gate-evidence:build:",
+      "objective_scope": "bound-exact"
     },
     "priority": 61,
     "binds_source_revision": true
@@ -3436,7 +3466,7 @@
       "ACTIVE",
       "TERMINAL"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -3463,7 +3493,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:plan",
       "facet:delivery",
       "facet:program",
@@ -3471,7 +3501,7 @@
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration",
       "facet:runtime"
     ],
@@ -3574,7 +3604,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -3634,12 +3664,13 @@
       "resumption_predicate": "recovery-contract-for:gate.test.record"
     },
     "reversibility": "reversible",
-    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "terminal_effect": "may-establish-configured-objective-after-fresh-observation",
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
     "policy": {
-      "current_evidence_prefix": "gate-evidence:test:"
+      "current_evidence_prefix": "gate-evidence:test:",
+      "objective_scope": "bound-exact"
     },
     "priority": 62,
     "binds_source_revision": true
@@ -3663,7 +3694,7 @@
       "ACTIVE",
       "TERMINAL"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -3691,7 +3722,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:plan",
       "facet:delivery",
       "facet:program",
@@ -3699,7 +3730,7 @@
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration",
       "facet:runtime",
       "facet:configuration-policy"
@@ -3803,7 +3834,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -3869,13 +3900,14 @@
       "resumption_predicate": "recovery-contract-for:gate.review.record"
     },
     "reversibility": "reversible",
-    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "terminal_effect": "may-establish-configured-objective-after-fresh-observation",
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
     "policy": {
       "authority_rule": "independent-high-risk-review",
-      "current_evidence_prefix": "gate-evidence:review:"
+      "current_evidence_prefix": "gate-evidence:review:",
+      "objective_scope": "bound-exact"
     },
     "priority": 63,
     "binds_source_revision": true
@@ -3898,7 +3930,7 @@
     "target_phases": [
       "ACTIVE"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -3925,7 +3957,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:plan",
       "facet:delivery",
       "facet:program",
@@ -3933,7 +3965,7 @@
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration",
       "facet:runtime"
     ],
@@ -4036,7 +4068,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -4096,12 +4128,13 @@
       "resumption_predicate": "recovery-contract-for:gate.change.record"
     },
     "reversibility": "reversible",
-    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "terminal_effect": "may-establish-configured-objective-after-fresh-observation",
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
     "policy": {
-      "current_evidence_prefix": "gate-evidence:change:"
+      "current_evidence_prefix": "gate-evidence:change:",
+      "objective_scope": "bound-exact"
     },
     "priority": 64,
     "binds_source_revision": true
@@ -4124,7 +4157,7 @@
     "target_phases": [
       "ACTIVE"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -4151,7 +4184,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:plan",
       "facet:delivery",
       "facet:program",
@@ -4159,7 +4192,7 @@
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration",
       "facet:runtime"
     ],
@@ -4262,7 +4295,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -4322,12 +4355,13 @@
       "resumption_predicate": "recovery-contract-for:gate.journey.record"
     },
     "reversibility": "reversible",
-    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "terminal_effect": "may-establish-configured-objective-after-fresh-observation",
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
     "policy": {
-      "current_evidence_prefix": "gate-evidence:journey:"
+      "current_evidence_prefix": "gate-evidence:journey:",
+      "objective_scope": "bound-exact"
     },
     "priority": 64,
     "binds_source_revision": true
@@ -4351,7 +4385,7 @@
       "ACTIVE",
       "TERMINAL"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -4379,14 +4413,14 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:delivery",
       "facet:program",
       "facet:recovery",
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration",
       "facet:runtime",
       "facet:configuration-policy"
@@ -4482,7 +4516,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -4545,14 +4579,15 @@
       "resumption_predicate": "recovery-contract-for:evidence.visual.attach"
     },
     "reversibility": "reversible",
-    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "terminal_effect": "may-establish-configured-objective-after-fresh-observation",
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
     "policy": {
       "required_when": "visual-evidence-required",
       "availability_rule": "visual-evidence-enabled",
-      "current_evidence_prefix": "visual-evidence:"
+      "current_evidence_prefix": "visual-evidence:",
+      "objective_scope": "bound-exact"
     },
     "priority": 66,
     "binds_source_revision": true
@@ -4576,7 +4611,7 @@
     "target_phases": [
       "FRONTIER"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -4603,14 +4638,14 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:plan",
       "facet:program",
       "facet:recovery",
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal"
+      "facet:objective"
     ],
     "owned_resources": [
       "approval"
@@ -4684,7 +4719,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -4730,7 +4765,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 44
   },
   {
@@ -4752,7 +4789,7 @@
       "ACTIVE",
       "TERMINAL"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -4780,14 +4817,14 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:delivery",
       "facet:program",
       "facet:recovery",
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration",
       "facet:runtime"
     ],
@@ -4874,7 +4911,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -4938,7 +4975,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 68,
     "binds_source_revision": true
   },
@@ -4960,7 +4999,7 @@
     "target_phases": [
       "ACTIVE"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "open-or-updated-pr",
       "merged-delivery"
     ],
@@ -4984,7 +5023,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:plan",
       "facet:verification",
       "facet:workspace",
@@ -4993,7 +5032,7 @@
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration",
       "facet:runtime"
     ],
@@ -5104,7 +5143,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -5168,7 +5207,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 72
   },
   {
@@ -5190,7 +5231,7 @@
       "ACTIVE",
       "RECOVERY"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "open-or-updated-pr",
       "merged-delivery"
     ],
@@ -5218,7 +5259,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:publication",
       "facet:verification",
       "facet:workspace",
@@ -5227,7 +5268,7 @@
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration",
       "facet:runtime"
     ],
@@ -5328,7 +5369,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -5395,7 +5436,8 @@
       "managed_operations": [
         "publication.create",
         "publication.push"
-      ]
+      ],
+      "objective_scope": "bound-exact"
     },
     "priority": 76,
     "authority_fingerprint_parameter": "preview_fingerprint"
@@ -5424,7 +5466,7 @@
       "FRONTIER",
       "UNRESOLVED"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "open-or-updated-pr",
       "merged-delivery"
     ],
@@ -5448,14 +5490,14 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:publication",
       "facet:program",
       "facet:recovery",
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration",
       "facet:runtime"
     ],
@@ -5542,7 +5584,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -5606,12 +5648,13 @@
       "resumption_predicate": "recovery-contract-for:publication.observe"
     },
     "reversibility": "reversible",
-    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "terminal_effect": "may-establish-configured-objective-after-fresh-observation",
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
     "policy": {
-      "rechecks_external_state": true
+      "rechecks_external_state": true,
+      "objective_scope": "bound-exact"
     },
     "priority": 77
   },
@@ -5637,7 +5680,7 @@
       "FRONTIER",
       "UNRESOLVED"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "open-or-updated-pr",
       "merged-delivery"
     ],
@@ -5662,12 +5705,12 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:recovery-info",
       "facet:publication",
       "facet:program",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration",
       "facet:runtime"
     ],
@@ -5730,7 +5773,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -5803,11 +5846,13 @@
       "resumption_predicate": "recovery-contract-for:publication.reconcile"
     },
     "reversibility": "reversible",
-    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "terminal_effect": "may-establish-configured-objective-after-fresh-observation",
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 1,
     "authority_fingerprint_parameter": "publication_id"
   },
@@ -5832,7 +5877,7 @@
       "ACTIVE",
       "RECOVERY"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "open-or-updated-pr",
       "merged-delivery"
     ],
@@ -5860,7 +5905,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:publication",
       "facet:verification",
       "facet:program",
@@ -5868,7 +5913,7 @@
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration",
       "facet:runtime"
     ],
@@ -5971,7 +6016,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -6039,7 +6084,8 @@
         "publication.edit",
         "publication.ready",
         "publication.api-write"
-      ]
+      ],
+      "objective_scope": "bound-exact"
     },
     "priority": 80,
     "authority_fingerprint_parameter": "body_sha256"
@@ -6063,7 +6109,7 @@
     "target_phases": [
       "ABANDONED"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "safely-abandoned"
     ],
     "required_identity": [
@@ -6086,12 +6132,12 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:delivery",
       "facet:program",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal"
+      "facet:objective"
     ],
     "owned_resources": [
       "publication"
@@ -6154,7 +6200,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -6218,7 +6264,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 93
   }
 ]

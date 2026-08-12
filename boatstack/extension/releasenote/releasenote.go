@@ -1,5 +1,5 @@
 // Package releasenote is a deterministic reference extension that adds a
-// conservative release-note evidence obligation to PR and merged goals.
+// conservative release-note evidence obligation to PR and merged objectives.
 package releasenote
 
 import (
@@ -14,9 +14,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/operatorstack/boatstack/boatstack/control"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
+	"github.com/operatorstack/boatstack/boatstack/delivery"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 )
 
 const (
@@ -31,16 +31,16 @@ const (
 
 type Extension struct{}
 
-func Definition() control.RuntimeExtension { return Extension{} }
+func Definition() delivery.RuntimeExtension { return Extension{} }
 
-func (Extension) Runtime() control.ExtensionRuntime { return Extension{} }
+func (Extension) Runtime() delivery.ExtensionRuntime { return Extension{} }
 
-func (Extension) ExtensionManifest(context.Context) (control.ExtensionManifest, error) {
+func (Extension) ExtensionManifest(context.Context) (delivery.ExtensionManifest, error) {
 	transition := catalog.Transition{
-		ID: Transition, Version: 1, Class: catalog.EventOwnedLocal, SelectionClass: catalog.SelectionGoalRequired,
+		ID: Transition, Version: 1, Class: catalog.EventOwnedLocal, SelectionClass: catalog.SelectionObjectiveRequired,
 		SourcePhases: []model.ProtocolPhase{model.PhaseActive, model.PhaseTerminal}, TargetPhases: []model.ProtocolPhase{model.PhaseActive, model.PhaseTerminal},
-		GoalKinds: []model.GoalKind{model.GoalOpenPR, model.GoalMerged}, RequiredIdentity: []string{"repository-id", "git-common-id", "worktree-id", "controller-id", "topology", "host", "correlation-id"},
-		Authority: []catalog.AuthorityClass{catalog.AuthorityRepository}, RequiredEvidence: []string{"snapshot-fingerprint", "goal", "facet:" + FactID},
+		ObjectiveKinds: []model.ObjectiveKind{model.ObjectiveOpenPR, model.ObjectiveMerged}, RequiredIdentity: []string{"repository-id", "git-common-id", "worktree-id", "controller-id", "topology", "host", "correlation-id"},
+		Authority: []catalog.AuthorityClass{catalog.AuthorityRepository}, RequiredEvidence: []string{"snapshot-fingerprint", "objective", "facet:" + FactID},
 		OwnedResources: []string{Resource}, Effect: Effect, LocalEffects: []catalog.EffectID{Effect}, Idempotent: true,
 		Prescription:    catalog.Prescription{Operation: Transition, ExpectedPostcondition: "release-note evidence is verified"},
 		SourcePredicate: "reference-release-note-missing", AdmissionPredicate: "exact-extension-admission", TargetPredicate: "reference-release-note-verified", Verifier: Verifier,
@@ -56,56 +56,57 @@ func (Extension) ExtensionManifest(context.Context) (control.ExtensionManifest, 
 			Detection: "fresh extension observation", ResumeContract: "re-observe exact namespaced evidence", RollbackContract: "restore prior namespaced bytes",
 			CompensationContract: "not-required", Recovery: "recovery.escalate", RecoveryAuthority: "repository-policy", ResumptionPredicate: "program and extension evidence are current",
 		},
-		Reversibility: catalog.Reversible, TerminalEffect: "conjunctive-goal-obligation",
+		Reversibility: catalog.Reversible, TerminalEffect: "conjunctive-objective-obligation",
 		PrivacyClassification: "metadata-only", TelemetryClassification: "transition-receipt", CostClass: "local-verification",
+		Policy: catalog.PolicyContract{ObjectiveScope: catalog.ObjectiveScopeBoundExact},
 	}
 	transition.RequiredCapabilities = []catalog.Capability{catalog.CapabilityRepositoryWrite, catalog.CapabilityCommandExecute}
-	constraint := func(goal model.GoalKind) control.GoalConstraint {
-		return control.GoalConstraint{GoalKind: goal, Conditions: []catalog.FacetCondition{known(model.FacetName(FactID), "verified", "not-required")}}
+	constraint := func(objective model.ObjectiveKind) delivery.ObjectiveConstraint {
+		return delivery.ObjectiveConstraint{ObjectiveKind: objective, Conditions: []catalog.FacetCondition{known(model.FacetName(FactID), "verified", "not-required")}}
 	}
-	return control.ExtensionManifest{
-		ID: ID, Version: Version, ProtocolVersion: control.ExtensionProtocolVersion,
+	return delivery.ExtensionManifest{
+		ID: ID, Version: Version, ProtocolVersion: delivery.ExtensionProtocolVersion,
 		SettingsSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`),
-		Facts:          []string{FactID}, Transitions: []control.Transition{transition},
-		Capabilities:    []control.Capability{control.CapabilityRepositoryWrite, control.CapabilityCommandExecute},
-		GoalConstraints: []control.GoalConstraint{constraint(model.GoalOpenPR), constraint(model.GoalMerged)},
-		OwnedResources:  []string{Resource}, Effects: []string{Effect}, Verifiers: []string{Verifier},
+		Facts:          []string{FactID}, Transitions: []delivery.Transition{transition},
+		Capabilities:         []delivery.Capability{delivery.CapabilityRepositoryWrite, delivery.CapabilityCommandExecute},
+		ObjectiveConstraints: []delivery.ObjectiveConstraint{constraint(model.ObjectiveOpenPR), constraint(model.ObjectiveMerged)},
+		OwnedResources:       []string{Resource}, Effects: []string{Effect}, Verifiers: []string{Verifier},
 		PrivacyClassification: "metadata-only", TelemetryClassification: "transition-receipt",
 	}, nil
 }
 
-func (Extension) Invoke(_ context.Context, request control.ExtensionRequest) (control.ExtensionResponse, error) {
-	response := control.ExtensionResponse{
-		ProtocolVersion: control.ExtensionProtocolVersion, Operation: request.Operation,
+func (Extension) Invoke(_ context.Context, request delivery.ExtensionRequest) (delivery.ExtensionResponse, error) {
+	response := delivery.ExtensionResponse{
+		ProtocolVersion: delivery.ExtensionProtocolVersion, Operation: request.Operation,
 		ExtensionID: ID, ExtensionVersion: Version, CorrelationID: request.CorrelationID,
 	}
 	switch request.Operation {
-	case control.ExtensionObserveOperation:
+	case delivery.ExtensionObserveOperation:
 		fact, err := observe(request.RepositoryRoot, request.ProgramFingerprint)
 		if err != nil {
-			return control.ExtensionResponse{}, err
+			return delivery.ExtensionResponse{}, err
 		}
-		response.Facts = []control.ExtensionFact{fact}
-	case control.ExtensionPlanLocalEffectOperation:
+		response.Facts = []delivery.ExtensionFact{fact}
+	case delivery.ExtensionPlanLocalEffectOperation:
 		if request.TransitionID != Transition {
-			return control.ExtensionResponse{}, fmt.Errorf("release-note extension received an unknown transition")
+			return delivery.ExtensionResponse{}, fmt.Errorf("release-note extension received an unknown transition")
 		}
 		content, err := evidenceBytes(request.RepositoryRoot, request.ProgramFingerprint)
 		if err != nil {
-			return control.ExtensionResponse{}, err
+			return delivery.ExtensionResponse{}, err
 		}
-		response.Writes = []control.ResourceWrite{{
+		response.Writes = []delivery.ResourceWrite{{
 			Resource: Resource, Path: evidencePath(request.RepositoryRoot), Content: content, SHA256: digest(content), Mode: 0o600,
 		}}
-	case control.ExtensionVerifyOperation:
+	case delivery.ExtensionVerifyOperation:
 		fact, err := observe(request.RepositoryRoot, request.ProgramFingerprint)
 		if err != nil {
-			return control.ExtensionResponse{}, err
+			return delivery.ExtensionResponse{}, err
 		}
 		verified := fact.Status == model.FactKnown && fact.Value == "verified"
 		response.Verified = &verified
 	default:
-		return control.ExtensionResponse{}, fmt.Errorf("release-note extension does not support %q", request.Operation)
+		return delivery.ExtensionResponse{}, fmt.Errorf("release-note extension does not support %q", request.Operation)
 	}
 	return response, nil
 }
@@ -116,28 +117,28 @@ type evidence struct {
 	ProgramFingerprint string `json:"program_fingerprint"`
 }
 
-func observe(repository, programFingerprint string) (control.ExtensionFact, error) {
+func observe(repository, programFingerprint string) (delivery.ExtensionFact, error) {
 	releaseDigest, relevant, err := releaseNotesDigest(repository)
 	if err != nil {
-		return control.ExtensionFact{}, err
+		return delivery.ExtensionFact{}, err
 	}
 	if !relevant {
-		return control.ExtensionFact{ID: FactID, Status: model.FactKnown, Value: "not-required", Fingerprint: digest([]byte("not-required"))}, nil
+		return delivery.ExtensionFact{ID: FactID, Status: model.FactKnown, Value: "not-required", Fingerprint: digest([]byte("not-required"))}, nil
 	}
 	raw, err := os.ReadFile(evidencePath(repository))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return control.ExtensionFact{ID: FactID, Status: model.FactKnown, Value: "missing", Fingerprint: releaseDigest}, nil
+			return delivery.ExtensionFact{ID: FactID, Status: model.FactKnown, Value: "missing", Fingerprint: releaseDigest}, nil
 		}
-		return control.ExtensionFact{}, err
+		return delivery.ExtensionFact{}, err
 	}
 	var record evidence
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&record); err != nil || record.SchemaVersion != 1 || record.ReleaseNotesSHA256 != releaseDigest || record.ProgramFingerprint != programFingerprint {
-		return control.ExtensionFact{ID: FactID, Status: model.FactStale, Detail: "release-note evidence is stale", Fingerprint: digest(raw)}, nil
+		return delivery.ExtensionFact{ID: FactID, Status: model.FactStale, Detail: "release-note evidence is stale", Fingerprint: digest(raw)}, nil
 	}
-	return control.ExtensionFact{ID: FactID, Status: model.FactKnown, Value: "verified", Fingerprint: digest(raw)}, nil
+	return delivery.ExtensionFact{ID: FactID, Status: model.FactKnown, Value: "verified", Fingerprint: digest(raw)}, nil
 }
 
 func evidenceBytes(repository, programFingerprint string) ([]byte, error) {

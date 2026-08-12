@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/operatorstack/boatstack/boatstack/control"
+	"github.com/operatorstack/boatstack/boatstack/delivery"
 	"github.com/operatorstack/boatstack/boatstack/sdk"
 )
 
@@ -17,16 +17,16 @@ func TestPublicProtocolCanBeConstructedWithoutInternalPackages(t *testing.T) {
 		Repository:    t.TempDir(),
 		Host:          "mcp",
 		CorrelationID: "correlation",
-		Goal:          sdk.Goal{ID: "goal", Kind: sdk.GoalVerified, DeliveryID: "delivery"},
+		Objective:     sdk.Objective{ID: "objective", Kind: sdk.ObjectiveVerified, DeliveryID: "delivery"},
 	}
-	if request.Goal.Kind != sdk.GoalVerified || request.Operation != sdk.OperationResolve {
+	if request.Objective.Kind != sdk.ObjectiveVerified || request.Operation != sdk.OperationResolve {
 		t.Fatalf("public V2 aliases lost protocol identity: %#v", request)
 	}
 }
 
 func TestSDKPreservesCapabilityAdmissionProtocol(t *testing.T) {
 	// control-law: SDK and CLI consume the same versioned prescription fields
-	raw := []byte(`{"schema_version":4,"operation":"apply","repository":"/repo","host":"sdk","correlation_id":"correlation","flow_id":"flow","transition_id":"program/write","prescription":{"schema_version":2,"id":"prx-test","transition_id":"program/write","expected_state_revision":7,"expected_program_fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","expected_snapshot_fingerprint":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","authority_fingerprint":"auth-test","required_capabilities":["repository.write"],"effective_capabilities":["repository.write"]}}`)
+	raw := []byte(`{"schema_version":5,"operation":"apply","repository":"/repo","host":"sdk","correlation_id":"correlation","flow_id":"flow","transition_id":"program/write","prescription":{"schema_version":3,"id":"prx-test","transition_id":"program/write","expected_state_revision":7,"expected_program_fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","expected_snapshot_fingerprint":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","expected_objective_binding_fingerprint":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","authority_fingerprint":"auth-test","required_capabilities":["repository.write"],"effective_capabilities":["repository.write"]}}`)
 	var request sdk.Request
 	if err := json.Unmarshal(raw, &request); err != nil {
 		t.Fatal(err)
@@ -37,7 +37,7 @@ func TestSDKPreservesCapabilityAdmissionProtocol(t *testing.T) {
 }
 
 func TestSDKSerializesTheSameDurableTransitionFactAsTheSurface(t *testing.T) {
-	raw := []byte(`{"schema_version":4,"operation":"apply","receipt":{"schema_version":7,"kind":"transition-committed","id":"trc-fact","flow_id":"flow","sequence":1,"program":{"id":"product-delivery","version":"1.0.0","fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"transition_id":"product-delivery/build.begin","transition_version":1,"prescription_id":"prx","admission_id":"adm","prior_state_revision":41,"resulting_state_revision":42,"goal_id":"goal","goal_kind":"verified","delivery_id":"delivery","goal_scope":"required","source_fingerprint":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","target_fingerprint":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","authority_fingerprint":"auth","authority_sources":[],"required_capabilities":["repository.write"],"granted_capabilities":["repository.write"],"committed_effects":[{"kind":"resource-mutation","effect_id":"build.begin","owner":"product-delivery","resource":"state","target":"/state","operation":"update","prior_fingerprint":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","resulting_fingerprint":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}],"changed_state_facets":["control","product"],"verification":{"verifier":"build-active","expected_postcondition":"active","result":"satisfied","evidence_fingerprint":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","verified_at":"2026-08-12T00:00:00Z"},"idempotency_key":"idem","terminal":"nonterminal","started_at":"2026-08-12T00:00:00Z","committed_at":"2026-08-12T00:00:01Z","duration_nanoseconds":1000000000}}`)
+	raw := []byte(`{"schema_version":5,"operation":"apply","receipt":{"schema_version":8,"kind":"transition-committed","id":"trc-fact","flow_id":"flow","sequence":1,"program":{"id":"product-delivery","version":"1.0.0","fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"transition_id":"product-delivery/build.begin","transition_version":1,"prescription_id":"prx","admission_id":"adm","prior_state_revision":41,"resulting_state_revision":42,"objective_id":"objective","objective_kind":"verified","delivery_id":"delivery","objective_scope":"bound-exact","objective_binding_fingerprint":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","source_fingerprint":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","target_fingerprint":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","authority_fingerprint":"auth","authority_sources":[],"required_capabilities":["repository.write"],"granted_capabilities":["repository.write"],"committed_effects":[{"kind":"resource-mutation","effect_id":"build.begin","owner":"product-delivery","resource":"state","target":"/state","operation":"update","prior_fingerprint":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","resulting_fingerprint":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}],"changed_state_facets":["control","product"],"verification":{"verifier":"build-active","expected_postcondition":"active","result":"satisfied","evidence_fingerprint":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","verified_at":"2026-08-12T00:00:00Z"},"idempotency_key":"idem","terminal":"nonterminal","started_at":"2026-08-12T00:00:00Z","committed_at":"2026-08-12T00:00:01Z","duration_nanoseconds":1000000000}}`)
 	var response sdk.Response
 	if err := json.Unmarshal(raw, &response); err != nil {
 		t.Fatal(err)
@@ -63,14 +63,14 @@ func TestSDKSerializesTheSameDurableTransitionFactAsTheSurface(t *testing.T) {
 
 func TestLowLevelSDKRequiresAndAcceptsExactlyOneNonStandardProgramRuntime(t *testing.T) {
 	// control-law: low-level-sdk-never-inserts-or-multiplies-standard-flow
-	if _, err := sdk.NewKernel(""); err == nil {
+	if _, err := sdk.NewProgramClient(""); err == nil {
 		t.Fatal("low-level SDK accepted a missing ProgramRuntime")
 	}
 	flow := syntheticFlow{}
-	if _, err := sdk.NewKernel("", sdk.WithProgramRuntime(flow)); err != nil {
+	if _, err := sdk.NewProgramClient("", sdk.WithProgramRuntime(flow)); err != nil {
 		t.Fatalf("synthetic ProgramRuntime was rejected: %v", err)
 	}
-	if _, err := sdk.NewKernel("", sdk.WithProgramRuntime(flow), sdk.WithProgramRuntime(flow)); err == nil {
+	if _, err := sdk.NewProgramClient("", sdk.WithProgramRuntime(flow), sdk.WithProgramRuntime(flow)); err == nil {
 		t.Fatal("low-level SDK accepted two ProgramRuntimes")
 	}
 	if _, err := sdk.New("", sdk.WithProgramRuntime(flow)); err == nil {
@@ -80,45 +80,45 @@ func TestLowLevelSDKRequiresAndAcceptsExactlyOneNonStandardProgramRuntime(t *tes
 
 type syntheticFlow struct{}
 
-func (syntheticFlow) ProgramRuntime() control.ProgramRuntime { return syntheticRuntime{} }
+func (syntheticFlow) ProgramRuntime() delivery.ProgramRuntime { return syntheticRuntime{} }
 
-func (syntheticFlow) RuntimeManifest(context.Context) (control.ProgramRuntimeManifest, error) {
+func (syntheticFlow) RuntimeManifest(context.Context) (delivery.ProgramRuntimeManifest, error) {
 	const (
 		id       = "synthetic.lifecycle"
 		fact     = "synthetic.lifecycle.stage"
 		resource = "synthetic.lifecycle.state"
 	)
-	transition := func(id control.TransitionID, source, target string, priority int) control.Transition {
-		effect := control.EffectID(string(id) + "-effect")
+	transition := func(id delivery.TransitionID, source, target string, priority int) delivery.Transition {
+		effect := delivery.EffectID(string(id) + "-effect")
 		verifier := string(id) + "-verifier"
-		return control.Transition{
-			ID: id, Version: 1, SelectionClass: control.SelectionProgramProgress, Class: control.EventOwnedLocal,
-			SourcePhases: []control.ProtocolPhase{control.PhaseObserved, control.PhaseActive}, TargetPhases: []control.ProtocolPhase{control.PhaseObserved, control.PhaseActive},
-			GoalKinds: []control.GoalKind{control.GoalVerified}, RequiredIdentity: []string{"repository-id", "git-common-id", "worktree-id"},
-			Authority: []control.AuthorityClass{control.AuthorityRepository}, RequiredCapabilities: []control.Capability{control.CapabilityRepositoryWrite, control.CapabilityCommandExecute}, RequiredEvidence: []string{"snapshot", "goal", "facet:" + fact},
-			OwnedResources: []string{resource}, Effect: effect, LocalEffects: []control.EffectID{effect}, Idempotent: true,
-			Prescription:    control.Prescription{Operation: string(id), ExpectedPostcondition: target},
+		return delivery.Transition{
+			ID: id, Version: 1, SelectionClass: delivery.SelectionProgramProgress, Class: delivery.EventOwnedLocal,
+			SourcePhases: []delivery.ProtocolPhase{delivery.PhaseObserved, delivery.PhaseActive}, TargetPhases: []delivery.ProtocolPhase{delivery.PhaseObserved, delivery.PhaseActive},
+			ObjectiveKinds: []delivery.ObjectiveKind{delivery.ObjectiveVerified}, RequiredIdentity: []string{"repository-id", "git-common-id", "worktree-id"},
+			Authority: []delivery.AuthorityClass{delivery.AuthorityRepository}, RequiredCapabilities: []delivery.Capability{delivery.CapabilityRepositoryWrite, delivery.CapabilityCommandExecute}, RequiredEvidence: []string{"snapshot", "objective", "facet:" + fact},
+			OwnedResources: []string{resource}, Effect: effect, LocalEffects: []delivery.EffectID{effect}, Idempotent: true,
+			Prescription:    delivery.Prescription{Operation: string(id), ExpectedPostcondition: target},
 			SourcePredicate: "synthetic-source", AdmissionPredicate: "exact-admission", TargetPredicate: "synthetic-target",
-			SourceConditions: []control.FacetCondition{control.KnownCondition(control.FacetName(fact), source)},
-			TargetConditions: []control.FacetCondition{control.KnownCondition(control.FacetName(fact), target)}, Verifier: verifier,
-			Interruption: control.InterruptionContract{
+			SourceConditions: []delivery.FacetCondition{delivery.KnownCondition(delivery.FacetName(fact), source)},
+			TargetConditions: []delivery.FacetCondition{delivery.KnownCondition(delivery.FacetName(fact), target)}, Verifier: verifier,
+			Interruption: delivery.InterruptionContract{
 				Points: []string{"after-effect"}, PartialState: []string{"namespaced-flow-state"}, Detection: "fresh-flow-observation",
 				ResumeContract: "re-observe", RollbackContract: "restore-prior-bytes", CompensationContract: "not-required",
 				Recovery: "recovery.escalate", RecoveryAuthority: "repository-policy", ResumptionPredicate: "fresh-flow-fact",
 			},
-			Reversibility: control.Reversible, TerminalEffect: "compiled-goal-contract", PrivacyClassification: "metadata-only",
-			TelemetryClassification: "transition-receipt", CostClass: "synthetic", Priority: priority,
+			Reversibility: delivery.Reversible, TerminalEffect: "compiled-objective-contract", PrivacyClassification: "metadata-only",
+			TelemetryClassification: "transition-receipt", CostClass: "synthetic", Policy: delivery.PolicyContract{ObjectiveScope: delivery.ObjectiveScopeBoundExact}, Priority: priority,
 		}
 	}
 	verify := transition("synthetic.lifecycle.verify", "start", "verify", 1)
 	finish := transition("synthetic.lifecycle.finish", "verify", "terminal", 2)
-	return control.ProgramRuntimeManifest{
-		ID: id, Version: "1.0.0", ProtocolVersion: control.ProgramRuntimeProtocolVersion, RuntimeMode: control.ProgramRuntimeProtocol,
-		SupportedGoals: []control.GoalKind{control.GoalVerified},
-		GoalContracts:  []control.GoalContract{{GoalKind: control.GoalVerified, Conditions: []control.FacetCondition{control.KnownCondition(control.FacetName(fact), "terminal")}}},
-		Transitions:    []control.Transition{verify, finish}, Facts: []string{fact}, OwnedResources: []string{resource},
+	return delivery.ProgramRuntimeManifest{
+		ID: id, Version: "1.0.0", ProtocolVersion: delivery.ProgramRuntimeProtocolVersion, RuntimeMode: delivery.ProgramRuntimeProtocol,
+		SupportedObjectives: []delivery.ObjectiveKind{delivery.ObjectiveVerified},
+		ObjectiveContracts:  []delivery.ObjectiveContract{{ObjectiveKind: delivery.ObjectiveVerified, Conditions: []delivery.FacetCondition{delivery.KnownCondition(delivery.FacetName(fact), "terminal")}}},
+		Transitions:         []delivery.Transition{verify, finish}, Facts: []string{fact}, OwnedResources: []string{resource},
 		Effects: []string{string(verify.Effect), string(finish.Effect)}, Verifiers: []string{verify.Verifier, finish.Verifier},
-		Capabilities:          []control.Capability{control.CapabilityRepositoryWrite, control.CapabilityCommandExecute},
+		Capabilities:          []delivery.Capability{delivery.CapabilityRepositoryWrite, delivery.CapabilityCommandExecute},
 		ConfigurationSchema:   json.RawMessage(`{"type":"object"}`),
 		PrivacyClassification: "metadata-only", TelemetryClassification: "transition-receipt",
 	}, nil
@@ -126,9 +126,9 @@ func (syntheticFlow) RuntimeManifest(context.Context) (control.ProgramRuntimeMan
 
 type syntheticRuntime struct{}
 
-func (syntheticRuntime) InvokeProgram(_ context.Context, request control.ProgramRuntimeRequest) (control.ProgramRuntimeResponse, error) {
-	return control.ProgramRuntimeResponse{
-		ProtocolVersion: control.ProgramRuntimeProtocolVersion, Operation: request.Operation,
+func (syntheticRuntime) InvokeProgram(_ context.Context, request delivery.ProgramRuntimeRequest) (delivery.ProgramRuntimeResponse, error) {
+	return delivery.ProgramRuntimeResponse{
+		ProtocolVersion: delivery.ProgramRuntimeProtocolVersion, Operation: request.Operation,
 		ProgramID: request.ProgramID, ProgramVersion: request.ProgramVersion, CorrelationID: request.CorrelationID,
 	}, nil
 }

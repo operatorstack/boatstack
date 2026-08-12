@@ -9,7 +9,7 @@
       "manifest_fingerprint": ""
     },
     "owner": "",
-    "selection_class": "GOAL_REQUIRED",
+    "selection_class": "OBJECTIVE_REQUIRED",
     "class": "authority",
     "source_phases": [
       "DORMANT",
@@ -19,7 +19,7 @@
       "OBSERVED",
       "ACTIVE"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -46,9 +46,9 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:program",
       "facet:recovery",
       "facet:transaction",
@@ -81,7 +81,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -182,7 +182,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 10
   },
   {
@@ -203,7 +205,7 @@
     "target_phases": [
       "ACTIVE"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -231,9 +233,9 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:program",
       "facet:recovery",
       "facet:transaction",
@@ -265,7 +267,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -366,7 +368,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 70
   },
   {
@@ -388,7 +392,7 @@
     "target_phases": [
       "DORMANT"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -415,9 +419,9 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:program",
       "facet:recovery",
       "facet:transaction",
@@ -451,7 +455,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -552,7 +556,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 95
   },
   {
@@ -574,7 +580,7 @@
     "target_phases": [
       "OBSERVED"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -601,7 +607,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:topology",
       "facet:program",
       "facet:recovery",
@@ -703,7 +709,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {"goal_scope": "optional-preserve"},
+    "policy": {
+      "objective_scope": "optional-preserve"
+    },
     "priority": 15,
     "allows_identity_rebind": true
   },
@@ -726,7 +734,7 @@
     "target_phases": [
       "OBSERVED"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -753,7 +761,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:topology",
       "facet:program",
       "facet:recovery",
@@ -874,7 +882,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {"goal_scope": "optional-preserve"},
+    "policy": {
+      "objective_scope": "optional-preserve"
+    },
     "priority": 12,
     "allows_identity_rebind": true
   },
@@ -898,7 +908,7 @@
     "target_phases": [
       "DORMANT"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -925,7 +935,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:topology",
       "facet:program",
       "facet:recovery",
@@ -1034,7 +1044,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 96,
     "allows_identity_rebind": true
   },
@@ -1048,7 +1060,7 @@
       "manifest_fingerprint": ""
     },
     "owner": "",
-    "selection_class": "GOAL_REQUIRED",
+    "selection_class": "OBJECTIVE_REQUIRED",
     "class": "owned-local",
     "source_phases": [
       "OBSERVED",
@@ -1060,7 +1072,7 @@
       "ACTIVE",
       "TERMINAL"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -1087,7 +1099,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:runtime",
       "facet:program",
       "facet:recovery",
@@ -1214,11 +1226,13 @@
       "resumption_predicate": "recovery-contract-for:runtime.hydrate"
     },
     "reversibility": "reversible",
-    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "terminal_effect": "may-establish-configured-objective-after-fresh-observation",
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {"goal_scope": "optional-preserve"},
+    "policy": {
+      "objective_scope": "optional-preserve"
+    },
     "priority": 20
   },
   {
@@ -1241,7 +1255,7 @@
       "OBSERVED",
       "TERMINAL"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -1269,7 +1283,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:runtime",
       "facet:program",
       "facet:recovery",
@@ -1396,11 +1410,13 @@
       "resumption_predicate": "recovery-contract-for:runtime.replace"
     },
     "reversibility": "reversible",
-    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "terminal_effect": "may-establish-configured-objective-after-fresh-observation",
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {"goal_scope": "optional-preserve"},
+    "policy": {
+      "objective_scope": "optional-preserve"
+    },
     "priority": 25
   },
   {
@@ -1424,7 +1440,7 @@
       "FRONTIER",
       "TERMINAL"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -1451,7 +1467,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:recovery-info",
       "facet:program"
     ],
@@ -1553,11 +1569,13 @@
       "resumption_predicate": "recovery-contract-for:runtime.reconcile"
     },
     "reversibility": "reversible",
-    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "terminal_effect": "may-establish-configured-objective-after-fresh-observation",
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {"goal_scope": "optional-preserve"},
+    "policy": {
+      "objective_scope": "optional-preserve"
+    },
     "priority": 4
   },
   {
@@ -1570,7 +1588,7 @@
       "manifest_fingerprint": ""
     },
     "owner": "",
-    "selection_class": "GOAL_REQUIRED",
+    "selection_class": "OBJECTIVE_REQUIRED",
     "class": "owned-local",
     "source_phases": [
       "OBSERVED"
@@ -1579,7 +1597,7 @@
       "OBSERVED",
       "TERMINAL"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -1607,7 +1625,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:configuration",
       "facet:program",
       "facet:recovery",
@@ -1726,11 +1744,13 @@
       "resumption_predicate": "recovery-contract-for:configuration.initialize"
     },
     "reversibility": "reversible",
-    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "terminal_effect": "may-establish-configured-objective-after-fresh-observation",
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {"goal_scope": "optional-preserve"},
+    "policy": {
+      "objective_scope": "optional-preserve"
+    },
     "priority": 22
   },
   {
@@ -1756,7 +1776,7 @@
       "ACTIVE",
       "TERMINAL"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -1784,14 +1804,14 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:configuration",
       "facet:program",
       "facet:recovery",
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:runtime"
     ],
     "owned_resources": [
@@ -1881,7 +1901,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
@@ -1932,11 +1952,13 @@
       "resumption_predicate": "recovery-contract-for:configuration.mutate"
     },
     "reversibility": "reversible",
-    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "terminal_effect": "may-establish-configured-objective-after-fresh-observation",
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {"goal_scope": "optional-preserve"},
+    "policy": {
+      "objective_scope": "optional-preserve"
+    },
     "priority": 60
   },
   {
@@ -1960,7 +1982,7 @@
       "FRONTIER",
       "TERMINAL"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -1988,7 +2010,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:recovery-info",
       "facet:program"
     ],
@@ -2075,11 +2097,13 @@
       "resumption_predicate": "recovery-contract-for:configuration.reconcile"
     },
     "reversibility": "reversible",
-    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "terminal_effect": "may-establish-configured-objective-after-fresh-observation",
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {"goal_scope": "optional-preserve"},
+    "policy": {
+      "objective_scope": "optional-preserve"
+    },
     "priority": 3
   },
   {
@@ -2092,7 +2116,7 @@
       "manifest_fingerprint": ""
     },
     "owner": "",
-    "selection_class": "GOAL_REQUIRED",
+    "selection_class": "OBJECTIVE_REQUIRED",
     "class": "owned-local",
     "source_phases": [
       "DORMANT",
@@ -2101,7 +2125,7 @@
     "target_phases": [
       "OBSERVED"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -2128,7 +2152,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:runtime",
       "facet:program",
       "facet:recovery",
@@ -2274,7 +2298,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {"goal_scope": "optional-preserve"},
+    "policy": {
+      "objective_scope": "optional-preserve"
+    },
     "priority": 11
   },
   {
@@ -2305,7 +2331,7 @@
       "TERMINAL",
       "ABANDONED"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -2333,14 +2359,14 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:runtime",
       "facet:program",
       "facet:recovery",
       "facet:transaction",
       "facet:terminal",
       "facet:engagement",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration"
     ],
     "owned_resources": [
@@ -2429,7 +2455,7 @@
         ]
       },
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known",
           "absent"
@@ -2481,23 +2507,44 @@
       "resumption_predicate": "recovery-contract-for:installation.update"
     },
     "reversibility": "reversible",
-    "terminal_effect": "may-establish-configured-goal-after-fresh-observation",
+    "terminal_effect": "may-establish-configured-objective-after-fresh-observation",
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {"goal_scope": "optional-preserve"},
+    "policy": {
+      "objective_scope": "optional-preserve"
+    },
     "priority": 65
   },
   {
     "id": "installation.reconcile-update",
     "version": 1,
-    "origin": {"kind": "", "id": "", "version": "", "manifest_fingerprint": ""},
+    "origin": {
+      "kind": "",
+      "id": "",
+      "version": "",
+      "manifest_fingerprint": ""
+    },
     "owner": "",
     "selection_class": "EXPLICIT_ONLY",
     "class": "owned-local",
-    "source_phases": ["DORMANT", "OBSERVED", "ACTIVE", "FRONTIER", "TERMINAL", "ABANDONED"],
-    "target_phases": ["DORMANT", "OBSERVED", "ACTIVE", "FRONTIER", "TERMINAL", "ABANDONED"],
-    "goal_kinds": [
+    "source_phases": [
+      "DORMANT",
+      "OBSERVED",
+      "ACTIVE",
+      "FRONTIER",
+      "TERMINAL",
+      "ABANDONED"
+    ],
+    "target_phases": [
+      "DORMANT",
+      "OBSERVED",
+      "ACTIVE",
+      "FRONTIER",
+      "TERMINAL",
+      "ABANDONED"
+    ],
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -2518,28 +2565,50 @@
       "host",
       "correlation-id"
     ],
-    "authority": ["human"],
+    "authority": [
+      "human"
+    ],
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:runtime",
       "facet:program",
       "facet:recovery",
       "facet:transaction",
       "facet:terminal",
-      "facet:goal",
+      "facet:objective",
       "facet:configuration"
     ],
-    "owned_resources": ["installation"],
+    "owned_resources": [
+      "installation"
+    ],
     "effect": "installation.reconcile-update",
-    "local_effects": ["installation.reconcile-update"],
+    "local_effects": [
+      "installation.reconcile-update"
+    ],
     "idempotent": true,
     "parameters": [
-      {"name": "source_revision", "required": true, "secret": false},
-      {"name": "runtime_version", "required": true, "secret": false},
-      {"name": "runtime_sha256", "required": true, "secret": false},
-      {"name": "accept_obligation_change", "required": true, "secret": false}
+      {
+        "name": "source_revision",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "runtime_version",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "runtime_sha256",
+        "required": true,
+        "secret": false
+      },
+      {
+        "name": "accept_obligation_change",
+        "required": true,
+        "secret": false
+      }
     ],
     "prescription": {
       "operation": "installation.reconcile-update",
@@ -2550,26 +2619,110 @@
     "source_conditions": [
       {
         "facet": "runtime",
-        "statuses": ["known"],
-        "values": ["absent", "verified", "stale", "invalid", "conflicting", "wrong-source", "partially-published"]
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "absent",
+          "verified",
+          "stale",
+          "invalid",
+          "conflicting",
+          "wrong-source",
+          "partially-published"
+        ]
       },
-      {"facet": "program", "statuses": ["known"], "values": ["drift"]},
-      {"facet": "recovery", "statuses": ["known"], "values": ["none"]},
-      {"facet": "transaction", "statuses": ["known"], "values": ["none"]},
-      {"facet": "terminal", "statuses": ["known"], "values": ["nonterminal", "stale", "established"]},
-      {"facet": "goal", "statuses": ["known", "absent"]},
-      {"facet": "configuration", "statuses": ["known"], "values": ["verified"]}
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "drift"
+        ]
+      },
+      {
+        "facet": "recovery",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "transaction",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
+        "facet": "terminal",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "nonterminal",
+          "stale",
+          "established"
+        ]
+      },
+      {
+        "facet": "objective",
+        "statuses": [
+          "known",
+          "absent"
+        ]
+      },
+      {
+        "facet": "configuration",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      }
     ],
     "admission_predicate": "predicate:exact-admission:installation.reconcile-update",
     "target_predicate": "predicate:target-phase:installation.reconcile-update",
     "target_conditions": [
-      {"facet": "runtime", "statuses": ["known"], "values": ["verified"]},
-      {"facet": "program", "statuses": ["known"], "values": ["current"]}
+      {
+        "facet": "runtime",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "verified"
+        ]
+      },
+      {
+        "facet": "program",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "current"
+        ]
+      }
     ],
     "verifier": "verifier:fresh-observation:installation.reconcile-update",
     "interruption": {
-      "points": ["after-lock", "after-stage", "after-effect", "before-receipt"],
-      "partial_state": ["journal-begun", "effect-staged", "effect-possibly-installed", "postcondition-unreceipted"],
+      "points": [
+        "after-lock",
+        "after-stage",
+        "after-effect",
+        "before-receipt"
+      ],
+      "partial_state": [
+        "journal-begun",
+        "effect-staged",
+        "effect-possibly-installed",
+        "postcondition-unreceipted"
+      ],
       "detection": "pending-journal-plus-fresh-canonical-observation",
       "resume_contract": "never-activate-a-partial-program-update",
       "rollback_contract": "restore-runtime-launcher-program-state-and-generated-artifacts-together",
@@ -2583,7 +2736,10 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {"reconciles_program": true, "goal_scope": "optional-preserve"},
+    "policy": {
+      "reconciles_program": true,
+      "objective_scope": "optional-preserve"
+    },
     "priority": 1
   },
   {
@@ -2618,7 +2774,7 @@
       "TERMINAL",
       "ABANDONED"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -2645,7 +2801,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:program",
       "facet:program",
       "facet:recovery",
@@ -2768,12 +2924,12 @@
     "cost_class": "declared-neutral",
     "policy": {
       "reconciles_program": true,
-      "goal_scope": "optional-preserve"
+      "objective_scope": "optional-preserve"
     },
     "priority": 1
   },
   {
-    "id": "goal.configure",
+    "id": "objective.bind",
     "version": 1,
     "origin": {
       "kind": "",
@@ -2782,7 +2938,7 @@
       "manifest_fingerprint": ""
     },
     "owner": "",
-    "selection_class": "GOAL_REQUIRED",
+    "selection_class": "OBJECTIVE_REQUIRED",
     "class": "authority",
     "source_phases": [
       "OBSERVED",
@@ -2797,7 +2953,7 @@
       "ACTIVE",
       "FRONTIER"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -2825,21 +2981,21 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
-      "facet:goal",
+      "objective",
+      "facet:objective",
       "facet:program"
     ],
     "owned_resources": [
-      "goal"
+      "objective"
     ],
-    "effect": "goal.configure",
+    "effect": "objective.bind",
     "local_effects": [
-      "goal.configure"
+      "objective.bind"
     ],
     "idempotent": true,
     "parameters": [
       {
-        "name": "goal_kind",
+        "name": "objective_kind",
         "required": true,
         "secret": false
       },
@@ -2850,13 +3006,13 @@
       }
     ],
     "prescription": {
-      "operation": "goal.configure",
-      "expected_postcondition": "predicate:target-phase:goal.configure"
+      "operation": "objective.bind",
+      "expected_postcondition": "predicate:target-phase:objective.bind"
     },
-    "source_predicate": "predicate:source-phase:goal.configure",
+    "source_predicate": "predicate:source-phase:objective.bind",
     "source_conditions": [
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known",
           "absent"
@@ -2873,17 +3029,17 @@
         ]
       }
     ],
-    "admission_predicate": "predicate:exact-admission:goal.configure",
-    "target_predicate": "predicate:target-phase:goal.configure",
+    "admission_predicate": "predicate:exact-admission:objective.bind",
+    "target_predicate": "predicate:target-phase:objective.bind",
     "target_conditions": [
       {
-        "facet": "goal",
+        "facet": "objective",
         "statuses": [
           "known"
         ]
       }
     ],
-    "verifier": "verifier:fresh-observation:goal.configure",
+    "verifier": "verifier:fresh-observation:objective.bind",
     "interruption": {
       "points": [
         "after-lock",
@@ -2903,7 +3059,7 @@
       "compensation_contract": "not-required-for-owned-local-effects",
       "recovery": "recovery.resume",
       "recovery_authority": "declared-by:recovery.resume",
-      "resumption_predicate": "recovery-contract-for:goal.configure"
+      "resumption_predicate": "recovery-contract-for:objective.bind"
     },
     "reversibility": "reversible",
     "terminal_effect": "none",
@@ -2911,7 +3067,8 @@
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
     "policy": {
-      "binds_requested_goal": true
+      "binds_requested_objective": true,
+      "objective_scope": "none"
     },
     "priority": 30
   },
@@ -2938,7 +3095,7 @@
       "TERMINAL",
       "ABANDONED"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -2967,7 +3124,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:recovery-info",
       "facet:program"
     ],
@@ -3058,7 +3215,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {"goal_scope": "optional-preserve"},
+    "policy": {
+      "objective_scope": "optional-preserve"
+    },
     "priority": 2
   },
   {
@@ -3084,7 +3243,7 @@
       "TERMINAL",
       "ABANDONED"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -3112,7 +3271,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:recovery-info",
       "facet:program"
     ],
@@ -3203,7 +3362,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {"goal_scope": "optional-preserve"},
+    "policy": {
+      "objective_scope": "optional-preserve"
+    },
     "priority": 3
   },
   {
@@ -3225,7 +3386,7 @@
     "target_phases": [
       "FRONTIER"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -3252,7 +3413,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:recovery-info",
       "facet:program"
     ],
@@ -3343,7 +3504,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {"goal_scope": "optional-preserve"},
+    "policy": {
+      "objective_scope": "optional-preserve"
+    },
     "priority": 5
   },
   {
@@ -3369,7 +3532,7 @@
     "target_phases": [
       "OBSERVED"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -3396,7 +3559,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:verification"
     ],
     "idempotent": false,
@@ -3443,7 +3606,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 100
   },
   {
@@ -3469,7 +3634,7 @@
     "target_phases": [
       "OBSERVED"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -3496,7 +3661,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:verification"
     ],
     "idempotent": false,
@@ -3543,7 +3708,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 100
   },
   {
@@ -3569,7 +3736,7 @@
     "target_phases": [
       "OBSERVED"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -3596,7 +3763,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:workspace"
     ],
     "idempotent": false,
@@ -3643,7 +3810,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 100
   },
   {
@@ -3670,7 +3839,7 @@
       "OBSERVED",
       "RECOVERY"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -3697,7 +3866,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:runtime"
     ],
     "idempotent": false,
@@ -3752,7 +3921,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 100
   },
   {
@@ -3779,7 +3950,7 @@
       "OBSERVED",
       "UNRESOLVED"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -3806,7 +3977,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:configuration"
     ],
     "idempotent": false,
@@ -3861,7 +4032,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 100
   },
   {
@@ -3888,7 +4061,7 @@
       "DORMANT",
       "FRONTIER"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -3915,7 +4088,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:engagement"
     ],
     "idempotent": false,
@@ -3970,7 +4143,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 100
   },
   {
@@ -3996,7 +4171,7 @@
     "target_phases": [
       "RECOVERY"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -4023,7 +4198,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:transaction",
       "facet:transaction-info"
     ],
@@ -4083,7 +4258,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 100
   },
   {
@@ -4111,7 +4288,7 @@
       "ACTIVE",
       "TERMINAL"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -4138,7 +4315,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:verification"
     ],
     "idempotent": false,
@@ -4185,7 +4362,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 100
   },
   {
@@ -4213,7 +4392,7 @@
       "ACTIVE",
       "TERMINAL"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -4240,7 +4419,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:publication"
     ],
     "idempotent": false,
@@ -4290,7 +4469,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 100
   },
   {
@@ -4318,7 +4499,7 @@
       "ACTIVE",
       "TERMINAL"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -4345,7 +4526,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:publication"
     ],
     "idempotent": false,
@@ -4395,7 +4576,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 100
   },
   {
@@ -4423,7 +4606,7 @@
       "ACTIVE",
       "FRONTIER"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -4450,7 +4633,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:publication"
     ],
     "idempotent": false,
@@ -4501,7 +4684,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 100
   },
   {
@@ -4529,7 +4714,7 @@
       "ACTIVE",
       "TERMINAL"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -4556,7 +4741,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:publication"
     ],
     "idempotent": false,
@@ -4606,7 +4791,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 100
   },
   {
@@ -4633,7 +4820,7 @@
       "UNRESOLVED",
       "RECOVERY"
     ],
-    "goal_kinds": [
+    "objective_kinds": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -4660,7 +4847,7 @@
     "required_evidence": [
       "invocation-context",
       "snapshot-fingerprint",
-      "goal",
+      "objective",
       "facet:publication"
     ],
     "idempotent": false,
@@ -4710,7 +4897,9 @@
     "privacy_classification": "metadata-only",
     "telemetry_classification": "transition-receipt",
     "cost_class": "declared-neutral",
-    "policy": {},
+    "policy": {
+      "objective_scope": "bound-exact"
+    },
     "priority": 100
   }
 ]

@@ -8,7 +8,7 @@ publish, overwrite, approve, or advance.
 
 ## Exact admission
 
-Each managed effect binds the snapshot fingerprint, invocation, goal,
+Each managed effect binds the snapshot fingerprint, invocation, objective,
 transition, parameters, authority receipts, configuration evidence, and expiry.
 The engine re-observes under the effect lock. Drift rejects the admission before
 mutation.

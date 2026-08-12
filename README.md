@@ -12,10 +12,10 @@
   <strong>Alpha · active development · expect breaking changes</strong>
 </p>
 
-Boatstack turns software delivery into a controlled state-transition system.
-An agent can propose what happens next; a deterministic Kernel decides what is
-admissible, executes registered effects, verifies the result from fresh
-evidence, and records a durable receipt.
+Boatstack is a programmable supervisory runtime over state-changing operators.
+Software delivery is its first production domain: an agent can propose what
+happens next, while a deterministic kernel decides what is admissible, executes
+registered effects, verifies fresh evidence, and records a durable receipt.
 
 ```text
 agent intent
@@ -79,9 +79,10 @@ control graph. The complete list is generated from the registry in the
 
 | Surface | Shipped functionality |
 | --- | --- |
-| **Control Programs** | One immutable `ControlProgram` compiled from the CoreSystem, one Program Runtime, and optional conservative extensions. Canonical fingerprints bind executable semantics, goal contracts, resource ownership, and program-qualified transition IDs. |
-| **StandardFlow** | A first-party product-delivery Flow covering installation, repository attachment, configuration, goals, planning, worktrees, build/test/review evidence, publication, cleanup, and recovery. |
-| **Deterministic supervisor** | Targeted and untargeted resolution, explicit terminal goals, transition priorities, prerequisite selection, and typed `PRESCRIBED`, `CANDIDATE`, `FRONTIER`, `BLOCKED`, `REFUSED`, `UNRESOLVED`, and `TERMINAL` decisions. |
+| **General kernel** | Domain-neutral programs, control instances, objective bindings, observations, capabilities, operators, verification, recovery, marked states, and receipts. The kernel does not require Git or a coding agent. |
+| **Control Programs** | One immutable program fingerprint binds executable semantics, objective contracts, resource ownership, capabilities, and transition IDs. |
+| **StandardFlow** | A first-party product-delivery Flow covering installation, repository attachment, configuration, objectives, planning, worktrees, build/test/review evidence, publication, cleanup, and recovery. |
+| **Deterministic supervisor** | Targeted and untargeted resolution, explicit accepted objectives, transition priorities, prerequisite selection, and typed `PRESCRIBED`, `CANDIDATE`, `FRONTIER`, `BLOCKED`, `REFUSED`, `UNRESOLVED`, and `TERMINAL` decisions. |
 | **Authority and capabilities** | Separate human, autonomy, repository-policy, and external-provider receipts. Programs declare a maximum capability surface but cannot grant themselves authority. |
 | **Transactional effects** | Prescriptions bind the exact state revision, program fingerprint, snapshot fingerprint, transition, and correlation. Apply rechecks that compare-and-swap boundary under a repository lock before any managed effect. |
 | **Durable state ownership** | Installation, program, control, and product state are separate facets. A transition fails closed if it attempts to mutate a facet outside its Kernel-owned policy. |
@@ -102,7 +103,7 @@ The public protocol is deliberately small:
 ```sh
 # Observe or resolve. These commands do not mutate managed state.
 boatstack status --repo . --format json
-boatstack next --repo . --goal-id <goal> --goal-kind <kind> \
+boatstack next --repo . --objective-id <objective> --objective-kind <kind> \
   --delivery <delivery> --format json
 
 # Inspect the exact program and transition surface.
@@ -122,10 +123,10 @@ commands such as `plan-create`, `workspace-cut`, `record-test`, and `publish-pr`
 resolve and consume one exact prescription in the same invocation.
 
 Untargeted resolution selects
-only a transition that advances the configured goal. Maintenance, correction,
+only a transition that advances the configured objective. Maintenance, correction,
 abandonment, provider actions, and merge authority are never invented as a way
 around a frontier. After an operation is selected, generated host drivers keep
-one command-scoped goal, repository, worktree, flow, actor, and authority
+one command-scoped objective, repository, worktree, flow, actor, and authority
 context through every resolution, effect, recovery, and re-resolution.
 
 ## Internals
@@ -139,29 +140,33 @@ Boatstack separates inference, control, execution, and verification:
 └──────────────────────────────┬───────────────────────────────┘
                                │ versioned request
 ┌──────────────────────────────▼───────────────────────────────┐
-│ Kernel                                                      │
-│ observe → snapshot → supervise → admit → execute → verify   │
+│ General kernel                                              │
+│ observe → relate → prescribe → admit → execute → verify     │
 └───────────────┬──────────────────────────────┬───────────────┘
                 │                              │
 ┌───────────────▼──────────────┐  ┌────────────▼───────────────┐
-│ Control Program             │  │ Plant and effect boundary  │
-│ Core + Flow + extensions    │  │ Git · files · processes    │
-│ transitions · goals · laws  │  │ provider outcomes          │
+│ Control Program             │  │ Software-delivery domain   │
+│ transitions · objectives    │  │ Git · files · processes    │
+│ laws · marked states        │  │ plans · tests · PRs        │
 └──────────────────────────────┘  └────────────────────────────┘
 ```
 
-The Kernel owns mechanism. A Control Program owns delivery policy. The product
-calls a complete Control Program a **Flow**; the rules encoded by it are its
-**control law**.
+The kernel owns mechanism. A Control Program owns policy. The product calls a
+complete Control Program a **Flow**; the rules encoded by it are its **control
+law**. See the [general kernel boundary](docs/architecture/general-supervisory-kernel.md).
 
 The current authoring boundary already includes:
 
 - a strict JSON [Control Program ABI](docs/architecture/control-program-abi.md);
-- public Go contracts in `boatstack/control`;
-- `sdk.New(...)` for StandardFlow and `sdk.NewKernel(...)` for an explicit
+- the domain-neutral Go runtime in `boatstack/kernel`;
+- software-delivery contracts in `boatstack/delivery`;
+- `sdk.New(...)` for StandardFlow and `sdk.NewProgramClient(...)` for an explicit
   trusted Program Runtime;
 - canonical program identity and runtime compatibility checks;
-- program-qualified transitions, goal contracts, resource ownership,
+- one kernel Program fingerprint binding the complete software-domain ABI;
+- one transition relation and freshness envelope shared by the generic runtime
+  and the software-delivery adapter;
+- program-qualified transitions, objective contracts, resource ownership,
   capabilities, effects, verifiers, recovery, and context predicates;
 - a protocol execution boundary for repository-authored transitions.
 
@@ -192,12 +197,12 @@ for the exact contracts.
 ## Repository map
 
 ```text
-boatstack/control/          Control Program authoring and compilation
-boatstack/core/             Kernel-owned operational transitions
+boatstack/kernel/           Domain-neutral supervisory runtime
+boatstack/delivery/         Software-delivery program contracts
+boatstack/core/             Software-delivery operational transitions
 boatstack/flow/standard/    First-party StandardFlow
-boatstack/internal/kernel/  model, catalog, supervisor, admission, engine
-boatstack/internal/plant/   read-only repository observation
-boatstack/internal/effects/ transactional effects, receipts, and recovery
+boatstack/internal/softwaredelivery/
+                            repository model, observation, effects, and recovery
 boatstack/internal/runtime/ immutable runtime selection and dispatch
 boatstack/sdk/              public Go protocol client
 docs/architecture/          executable contracts and generated evidence

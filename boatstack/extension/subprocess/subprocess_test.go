@@ -13,17 +13,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/operatorstack/boatstack/boatstack/control"
 	"github.com/operatorstack/boatstack/boatstack/core"
+	"github.com/operatorstack/boatstack/boatstack/delivery"
 	"github.com/operatorstack/boatstack/boatstack/flow/standard"
 )
 
 func fixtureManifest(t *testing.T, id string) json.RawMessage {
 	t.Helper()
-	raw, err := json.Marshal(control.ExtensionManifest{
-		ID: id, Version: "1.0.0", ProtocolVersion: control.ExtensionProtocolVersion,
+	raw, err := json.Marshal(delivery.ExtensionManifest{
+		ID: id, Version: "1.0.0", ProtocolVersion: delivery.ExtensionProtocolVersion,
 		SettingsSchema: json.RawMessage(`{"type":"object"}`), Facts: []string{id + ".present"},
-		Capabilities:          []control.Capability{control.CapabilityCommandExecute},
+		Capabilities:          []delivery.Capability{delivery.CapabilityCommandExecute},
 		PrivacyClassification: "metadata-only", TelemetryClassification: "transition-receipt",
 	})
 	if err != nil {
@@ -52,7 +52,7 @@ func fixtureExtension(t *testing.T) *Extension {
 	extension, err := New(Config{
 		ID: "fixture.echo", Version: "1.0.0", Executable: path, SHA256: hex.EncodeToString(digest[:]),
 		Manifest: fixtureManifest(t, "fixture.echo"),
-		Limits:   control.SubprocessLimits{Deadline: 30 * time.Second},
+		Limits:   delivery.SubprocessLimits{Deadline: 30 * time.Second},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -60,12 +60,12 @@ func fixtureExtension(t *testing.T) *Extension {
 	return extension
 }
 
-func fixtureObserveRequest(correlationID string) control.ExtensionRequest {
-	return control.ExtensionRequest{
-		ProtocolVersion: control.ExtensionProtocolVersion,
-		Operation:       control.ExtensionObserveOperation,
+func fixtureObserveRequest(correlationID string) delivery.ExtensionRequest {
+	return delivery.ExtensionRequest{
+		ProtocolVersion: delivery.ExtensionProtocolVersion,
+		Operation:       delivery.ExtensionObserveOperation,
 		ExtensionID:     "fixture.echo", ExtensionVersion: "1.0.0", CorrelationID: correlationID,
-		Capabilities: []control.Capability{control.CapabilityCommandExecute},
+		Capabilities: []delivery.Capability{delivery.CapabilityCommandExecute},
 	}
 }
 
@@ -87,7 +87,7 @@ func pythonFixture(t *testing.T, mutate func(string) string) *Extension {
 	extension, err := New(Config{
 		ID: "fixture.echo", Version: "1.0.0", Executable: path, SHA256: hex.EncodeToString(digest[:]),
 		Manifest: fixtureManifest(t, "fixture.echo"),
-		Limits:   control.SubprocessLimits{Deadline: 30 * time.Second},
+		Limits:   delivery.SubprocessLimits{Deadline: 30 * time.Second},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -189,8 +189,8 @@ func TestDeclarativeManifestDoesNotStartExecutable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := control.Compile(context.Background(), control.CompileRequest{
-		KernelVersion: "test-kernel", Core: core.System(), Runtime: standard.Definition(), Extensions: []control.Extension{extension},
+	if _, err := delivery.Compile(context.Background(), delivery.CompileRequest{
+		KernelVersion: "test-kernel", Core: core.System(), Runtime: standard.Definition(), Extensions: []delivery.Extension{extension},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +251,7 @@ func TestDeadlineAndOutputBoundsFailClosed(t *testing.T) {
 				t.Fatal(err)
 			}
 			digest := sha256.Sum256([]byte(fixture.body))
-			extension, err := New(Config{ID: "fixture.echo", Version: "1.0.0", Executable: path, SHA256: hex.EncodeToString(digest[:]), Manifest: fixtureManifest(t, "fixture.echo"), Limits: control.SubprocessLimits{Deadline: fixture.deadline, StdoutBytes: fixture.stdout, StderrBytes: 64}})
+			extension, err := New(Config{ID: "fixture.echo", Version: "1.0.0", Executable: path, SHA256: hex.EncodeToString(digest[:]), Manifest: fixtureManifest(t, "fixture.echo"), Limits: delivery.SubprocessLimits{Deadline: fixture.deadline, StdoutBytes: fixture.stdout, StderrBytes: 64}})
 			if err != nil {
 				t.Fatal(err)
 			}

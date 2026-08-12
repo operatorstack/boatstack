@@ -2,7 +2,7 @@
 
 Boatstack V2 accepts only `.boatstack/project.json` schema version 2. The
 normative Go decoder is
-`internal/kernel/protocol.DecodeProjectConfig`; the public example is
+`internal/softwaredelivery/protocol.DecodeProjectConfig`; the public example is
 `project.example.json`.
 
 Top-level keys are `schema_version`, `project`, `policy`, `hosts`, and optional

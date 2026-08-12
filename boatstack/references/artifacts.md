@@ -14,4 +14,4 @@ evidence to commit. They are partitioned by repository, clone, and worktree
 identity.
 
 An artifact is data, not authority. The kernel checks its fingerprint, source
-snapshot, goal, transition, and authority receipt before use.
+snapshot, objective, transition, and authority receipt before use.

@@ -20,6 +20,8 @@ def prescription_cli_arguments(
         str(prescription["expected_program_fingerprint"]),
         "--expected-snapshot-fingerprint",
         str(prescription["expected_snapshot_fingerprint"]),
+        "--expected-objective-binding-fingerprint",
+        str(prescription["expected_objective_binding_fingerprint"]),
         "--authority-fingerprint",
         str(prescription["authority_fingerprint"]),
     ]

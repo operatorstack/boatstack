@@ -4,19 +4,19 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/operatorstack/boatstack/boatstack/control"
 	"github.com/operatorstack/boatstack/boatstack/core"
+	"github.com/operatorstack/boatstack/boatstack/delivery"
 	"github.com/operatorstack/boatstack/boatstack/extension/releasenote"
 	"github.com/operatorstack/boatstack/boatstack/flow/standard"
 	"github.com/operatorstack/boatstack/boatstack/sdk"
 )
 
 func Example_standardFlowWithReleaseNoteExtension() {
-	program, err := control.Compile(context.Background(), control.CompileRequest{
+	program, err := delivery.Compile(context.Background(), delivery.CompileRequest{
 		KernelVersion: "example-kernel",
 		Core:          core.System(),
 		Runtime:       standard.Definition(),
-		Extensions:    []control.Extension{releasenote.Definition()},
+		Extensions:    []delivery.Extension{releasenote.Definition()},
 	})
 	if err != nil {
 		panic(err)
@@ -28,7 +28,7 @@ func Example_standardFlowWithReleaseNoteExtension() {
 }
 
 func Example_sdkCustomKernel() {
-	_, err := sdk.NewKernel("",
+	_, err := sdk.NewProgramClient("",
 		sdk.WithProgramRuntime(standard.Definition()),
 		sdk.WithExtension(releasenote.Definition()),
 	)

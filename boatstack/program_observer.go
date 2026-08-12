@@ -5,16 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/operatorstack/boatstack/boatstack/control"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
+	"github.com/operatorstack/boatstack/boatstack/delivery"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/ports"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 )
 
 type programObserver struct {
 	base    ports.Observer
-	program control.ControlProgram
+	program delivery.ControlProgram
 }
 
 // ComponentRuntimeError preserves a bounded protocol error classification and
@@ -36,7 +36,7 @@ func (o programObserver) Observe(ctx context.Context, request ports.ObservationR
 		return model.Observation{}, err
 	}
 	flow := o.program.ProgramRuntime()
-	if flow.Manifest.RuntimeMode == control.ProgramRuntimeProtocol {
+	if flow.Manifest.RuntimeMode == delivery.ProgramRuntimeProtocol {
 		if flow.Runtime == nil {
 			return model.Observation{}, fmt.Errorf("program runtime %q observer is unavailable", flow.Identity.ID)
 		}
@@ -49,8 +49,8 @@ func (o programObserver) Observe(ctx context.Context, request ports.ObservationR
 		if encodeErr != nil {
 			return model.Observation{}, fmt.Errorf("encode bounded control-program observation: %w", encodeErr)
 		}
-		response, invokeErr := flow.Runtime.InvokeProgram(ctx, control.ProgramRuntimeRequest{
-			ProtocolVersion: control.ProgramRuntimeProtocolVersion, Operation: control.ProgramObserveOperation,
+		response, invokeErr := flow.Runtime.InvokeProgram(ctx, delivery.ProgramRuntimeRequest{
+			ProtocolVersion: delivery.ProgramRuntimeProtocolVersion, Operation: delivery.ProgramObserveOperation,
 			ProgramID: flow.Identity.ID, ProgramVersion: flow.Identity.Version,
 			ProgramFingerprint: o.program.Fingerprint(), CorrelationID: request.Invocation.Correlation,
 			RepositoryRoot: request.Invocation.InvokingPath, Snapshot: snapshot, Settings: flow.Manifest.Settings,
@@ -59,7 +59,7 @@ func (o programObserver) Observe(ctx context.Context, request ports.ObservationR
 		if invokeErr != nil {
 			return model.Observation{}, fmt.Errorf("program runtime %q observation failed: %w", flow.Identity.ID, invokeErr)
 		}
-		if err := validateProgramRuntimeResponse(flow, control.ProgramObserveOperation, request.Invocation.Correlation, response); err != nil {
+		if err := validateProgramRuntimeResponse(flow, delivery.ProgramObserveOperation, request.Invocation.Correlation, response); err != nil {
 			return model.Observation{}, err
 		}
 		declared := make(map[string]bool, len(flow.Manifest.Facts))
@@ -114,8 +114,8 @@ func (o programObserver) Observe(ctx context.Context, request ports.ObservationR
 		if err != nil {
 			return model.Observation{}, fmt.Errorf("encode bounded extension observation: %w", err)
 		}
-		response, err := extension.Runtime.Invoke(ctx, control.ExtensionRequest{
-			ProtocolVersion: control.ExtensionProtocolVersion, Operation: control.ExtensionObserveOperation,
+		response, err := extension.Runtime.Invoke(ctx, delivery.ExtensionRequest{
+			ProtocolVersion: delivery.ExtensionProtocolVersion, Operation: delivery.ExtensionObserveOperation,
 			ExtensionID: extension.Identity.ID, ExtensionVersion: extension.Identity.Version,
 			ProgramFingerprint: o.program.Fingerprint(), CorrelationID: request.Invocation.Correlation,
 			RepositoryRoot: request.Invocation.InvokingPath, Snapshot: snapshot, Settings: extension.Manifest.Settings,
@@ -124,7 +124,7 @@ func (o programObserver) Observe(ctx context.Context, request ports.ObservationR
 		if err != nil {
 			return model.Observation{}, fmt.Errorf("extension %q observation failed: %w", extension.Identity.ID, err)
 		}
-		if err := validateExtensionResponse(extension, control.ExtensionObserveOperation, request.Invocation.Correlation, response); err != nil {
+		if err := validateExtensionResponse(extension, delivery.ExtensionObserveOperation, request.Invocation.Correlation, response); err != nil {
 			return model.Observation{}, err
 		}
 		declared := make(map[string]bool, len(extension.Manifest.Facts))
@@ -156,7 +156,7 @@ func (o programObserver) Observe(ctx context.Context, request ports.ObservationR
 	}
 	if request.VerifyTransitionID != "" {
 		transition, ok := o.program.RuntimeRegistry().Lookup(request.VerifyTransitionID)
-		if ok && transition.Origin.Kind == catalog.OriginControlProgram && flow.Manifest.RuntimeMode == control.ProgramRuntimeProtocol {
+		if ok && transition.Origin.Kind == catalog.OriginControlProgram && flow.Manifest.RuntimeMode == delivery.ProgramRuntimeProtocol {
 			if err := requireComponentRuntimeCapabilities(request.Capabilities, flow.Manifest.Capabilities, flow.Identity.ID); err != nil {
 				return model.Observation{}, err
 			}
@@ -164,8 +164,8 @@ func (o programObserver) Observe(ctx context.Context, request ports.ObservationR
 			if encodeErr != nil {
 				return model.Observation{}, encodeErr
 			}
-			response, invokeErr := flow.Runtime.InvokeProgram(ctx, control.ProgramRuntimeRequest{
-				ProtocolVersion: control.ProgramRuntimeProtocolVersion, Operation: control.ProgramVerifyOperation,
+			response, invokeErr := flow.Runtime.InvokeProgram(ctx, delivery.ProgramRuntimeRequest{
+				ProtocolVersion: delivery.ProgramRuntimeProtocolVersion, Operation: delivery.ProgramVerifyOperation,
 				ProgramID: flow.Identity.ID, ProgramVersion: flow.Identity.Version,
 				ProgramFingerprint: o.program.Fingerprint(), CorrelationID: request.Invocation.Correlation,
 				RepositoryRoot: request.Invocation.InvokingPath, TransitionID: transition.ID, Snapshot: snapshot, Settings: flow.Manifest.Settings,
@@ -174,7 +174,7 @@ func (o programObserver) Observe(ctx context.Context, request ports.ObservationR
 			if invokeErr != nil {
 				return model.Observation{}, invokeErr
 			}
-			if err := validateProgramRuntimeResponse(flow, control.ProgramVerifyOperation, request.Invocation.Correlation, response); err != nil {
+			if err := validateProgramRuntimeResponse(flow, delivery.ProgramVerifyOperation, request.Invocation.Correlation, response); err != nil {
 				return model.Observation{}, err
 			}
 			if response.Verified == nil || !*response.Verified {
@@ -193,8 +193,8 @@ func (o programObserver) Observe(ctx context.Context, request ports.ObservationR
 			if err != nil {
 				return model.Observation{}, err
 			}
-			response, err := extension.Runtime.Invoke(ctx, control.ExtensionRequest{
-				ProtocolVersion: control.ExtensionProtocolVersion, Operation: control.ExtensionVerifyOperation,
+			response, err := extension.Runtime.Invoke(ctx, delivery.ExtensionRequest{
+				ProtocolVersion: delivery.ExtensionProtocolVersion, Operation: delivery.ExtensionVerifyOperation,
 				ExtensionID: extension.Identity.ID, ExtensionVersion: extension.Identity.Version,
 				ProgramFingerprint: o.program.Fingerprint(), CorrelationID: request.Invocation.Correlation,
 				RepositoryRoot: request.Invocation.InvokingPath, TransitionID: transition.ID, Snapshot: snapshot, Settings: extension.Manifest.Settings,
@@ -203,7 +203,7 @@ func (o programObserver) Observe(ctx context.Context, request ports.ObservationR
 			if err != nil {
 				return model.Observation{}, err
 			}
-			if err := validateExtensionResponse(extension, control.ExtensionVerifyOperation, request.Invocation.Correlation, response); err != nil {
+			if err := validateExtensionResponse(extension, delivery.ExtensionVerifyOperation, request.Invocation.Correlation, response); err != nil {
 				return model.Observation{}, err
 			}
 			if response.Verified == nil || !*response.Verified {
@@ -232,12 +232,12 @@ func boundedComponentCapabilities(granted, declared []catalog.Capability) []cata
 	return result.Sorted()
 }
 
-func validateProgramRuntimeResponse(flow control.CompiledProgramRuntime, operation control.ProgramRuntimeOperation, correlation string, response control.ProgramRuntimeResponse) error {
-	if response.ProtocolVersion != control.ProgramRuntimeProtocolVersion || response.Operation != operation ||
+func validateProgramRuntimeResponse(flow delivery.CompiledProgramRuntime, operation delivery.ProgramRuntimeOperation, correlation string, response delivery.ProgramRuntimeResponse) error {
+	if response.ProtocolVersion != delivery.ProgramRuntimeProtocolVersion || response.Operation != operation ||
 		response.ProgramID != flow.Identity.ID || response.ProgramVersion != flow.Identity.Version || response.CorrelationID != correlation {
 		return fmt.Errorf("program runtime %q returned a mismatched protocol response", flow.Identity.ID)
 	}
-	if err := control.ValidateProgramRuntimeOperationResponse(operation, response); err != nil {
+	if err := delivery.ValidateProgramRuntimeOperationResponse(operation, response); err != nil {
 		return fmt.Errorf("program runtime %q returned an invalid operation response: %w", flow.Identity.ID, err)
 	}
 	if response.ErrorClass != "" || response.Error != "" {
@@ -246,13 +246,13 @@ func validateProgramRuntimeResponse(flow control.CompiledProgramRuntime, operati
 	return nil
 }
 
-func validateExtensionResponse(extension control.CompiledExtension, operation control.ExtensionOperation, correlation string, response control.ExtensionResponse) error {
-	if response.ProtocolVersion != control.ExtensionProtocolVersion || response.Operation != operation ||
+func validateExtensionResponse(extension delivery.CompiledExtension, operation delivery.ExtensionOperation, correlation string, response delivery.ExtensionResponse) error {
+	if response.ProtocolVersion != delivery.ExtensionProtocolVersion || response.Operation != operation ||
 		response.ExtensionID != extension.Identity.ID || response.ExtensionVersion != extension.Identity.Version ||
 		response.CorrelationID != correlation {
 		return fmt.Errorf("extension %q returned a mismatched protocol response", extension.Identity.ID)
 	}
-	if err := control.ValidateExtensionOperationResponse(operation, response); err != nil {
+	if err := delivery.ValidateExtensionOperationResponse(operation, response); err != nil {
 		return fmt.Errorf("extension %q returned an invalid operation response: %w", extension.Identity.ID, err)
 	}
 	if response.ErrorClass != "" || response.Error != "" {

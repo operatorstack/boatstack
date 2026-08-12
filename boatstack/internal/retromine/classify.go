@@ -8,7 +8,7 @@ import "strings"
 //
 //	missing_observation — the operator keeps asking what the system could show
 //	missing_verb        — the operator keeps describing an action to take
-//	missing_setpoint    — the operator keeps restating a goal or condition to
+//	missing_setpoint    — the operator keeps restating a objective or condition to
 //	                      pursue ("until", "every time", "at least")
 //	missing_guard       — the operator keeps warning what must not happen
 //
@@ -85,7 +85,7 @@ func SuggestedShape(gapType string) string {
 	case GapVerb:
 		return "Add or prescribe a typed verb: a deterministic command the flow names at the right state."
 	case GapSetpoint:
-		return "Add a typed setpoint: a persisted goal or condition (like delivery.terminal) the flow pursues so this stops being restated."
+		return "Add a typed setpoint: a persisted objective or condition (like delivery.terminal) the flow pursues so this stops being restated."
 	case GapGuard:
 		return "Add a typed guard: an enforced precondition or denial (a gate or policy) instead of a remembered warning."
 	default:

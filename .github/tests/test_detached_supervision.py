@@ -116,16 +116,16 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         ).stdout.strip()
 
     @staticmethod
-    def goal_flags() -> tuple[str, ...]:
+    def objective_flags() -> tuple[str, ...]:
         return (
-            "--goal-id", "bootstrap", "--goal-kind", "approved-plan",
+            "--objective-id", "bootstrap", "--objective-kind", "approved-plan",
             "--delivery", "bootstrap",
         )
 
     def attach(self, repository: Path | None = None) -> dict:
         repository = repository or self.repo
         return self.helper_json(
-            "attach", "--repo", repository, *self.goal_flags(), "--human", "contract",
+            "attach", "--repo", repository, *self.objective_flags(), "--human", "contract",
             "--param", "topology=detached", "--param", "config_authority=repository",
             cwd=repository,
         )
@@ -142,7 +142,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         self.assertEqual(binding["topology"], "detached")
 
         detached = self.helper_json(
-            "detach", "--repo", self.repo, *self.goal_flags(), "--human", "contract"
+            "detach", "--repo", self.repo, *self.objective_flags(), "--human", "contract"
         )
         self.assertEqual(detached["snapshot"]["invocation"]["topology"], "embedded")
         self.assertEqual(detached["receipt"]["transition_id"], "repository.detach")
@@ -215,13 +215,13 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         )
 
         self.apply_prescribed(
-            "goal.configure", "--repo", self.repo,
-            *self.goal_flags(), "--human", "contract",
-            "--param", "goal_kind=approved-plan", "--param", "delivery_id=bootstrap",
+            "objective.bind", "--repo", self.repo,
+            *self.objective_flags(), "--human", "contract",
+            "--param", "objective_kind=approved-plan", "--param", "delivery_id=bootstrap",
         )
         self.apply_prescribed(
             "engagement.begin", "--repo", self.repo,
-            *self.goal_flags(), "--repository-authority",
+            *self.objective_flags(), "--repository-authority",
         )
         ordinary = self.helper_json(
             "guard", "--repo", self.repo, "--command", "go test ./..."
@@ -240,14 +240,14 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
 
     def test_authority_free_frontier_does_not_block_authorized_plan_creation(self) -> None:
         # control-law: codex-mode-authority-survives-observation-and-effects
-        goal = (
-            "--goal-id", "codex-driver-authority-triggers",
-            "--goal-kind", "open-or-updated-pr",
+        objective = (
+            "--objective-id", "codex-driver-authority-triggers",
+            "--objective-kind", "open-or-updated-pr",
             "--delivery", "codex-driver-authority-triggers",
         )
         flow = ("--flow", "flow-codex-driver-authority-triggers")
         self.helper_json(
-            "attach", "--repo", self.repo, *goal, *flow, "--human", "contract",
+            "attach", "--repo", self.repo, *objective, *flow, "--human", "contract",
             "--param", "topology=detached", "--param", "config_authority=repository",
         )
         config = Path(self.work.name) / "driver-project.json"
@@ -262,28 +262,28 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
             )
         )
         self.helper_json(
-            "init", "--repo", self.repo, *goal, *flow, "--human", "contract",
+            "init", "--repo", self.repo, *objective, *flow, "--human", "contract",
             "--param", f"config_path={config}",
         )
         self.apply_prescribed(
-            "goal.configure", "--repo", self.repo,
-            *goal, *flow, "--human", "contract",
-            "--param", "goal_kind=open-or-updated-pr",
+            "objective.bind", "--repo", self.repo,
+            *objective, *flow, "--human", "contract",
+            "--param", "objective_kind=open-or-updated-pr",
             "--param", "delivery_id=codex-driver-authority-triggers",
         )
         self.apply_prescribed(
             "engagement.begin", "--repo", self.repo,
-            *goal, *flow, "--repository-authority",
+            *objective, *flow, "--repository-authority",
         )
 
         before = self.porcelain()
-        diagnostic = self.helper_json("status", "--repo", self.repo, *goal, *flow)
+        diagnostic = self.helper_json("status", "--repo", self.repo, *objective, *flow)
         self.assertEqual(diagnostic["decision"]["kind"], "FRONTIER")
         self.assertIn("plan.create", diagnostic["decision"]["candidates"])
         self.assertEqual(self.porcelain(), before)
 
         progressing = self.helper_json(
-            "next", "--repo", self.repo, *goal, *flow,
+            "next", "--repo", self.repo, *objective, *flow,
             "--human", "contract", "--repository-authority",
         )
         self.assertEqual(progressing["decision"]["kind"], "CANDIDATE")
@@ -297,13 +297,13 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         )
         prescribed = self.helper_json(
             "next", "--repo", self.repo, "--transition", "plan.create",
-            *goal, *flow, "--human", "contract", *parameters,
+            *objective, *flow, "--human", "contract", *parameters,
         )
         self.assertEqual(prescribed["decision"]["kind"], "PRESCRIBED")
         self.assertEqual(prescribed["decision"]["transition"]["id"], "plan.create")
 
         applied_process = self.run_helper(
-            "plan-create", "--repo", self.repo, *goal, *flow,
+            "plan-create", "--repo", self.repo, *objective, *flow,
             "--human", "contract", *parameters,
         )
         applied = json.loads(applied_process.stdout)
@@ -323,27 +323,27 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
             self.assertIn(field, applied_process.stdout)
 
         resolved = self.helper_json(
-            "next", "--repo", self.repo, *goal, *flow, "--repository-authority",
+            "next", "--repo", self.repo, *objective, *flow, "--repository-authority",
         )
         self.assertEqual(resolved["decision"]["kind"], "PRESCRIBED")
         self.assertEqual(resolved["decision"]["transition"]["id"], "plan.validate")
 
     def test_one_delivery_context_rematerializes_repository_authority_after_initialization(self) -> None:
         # control-law: retained-repository-source-crosses-maintenance-receipt-once
-        goal = (
-            "--goal-id", "preserve-repository-authority-context",
-            "--goal-kind", "open-or-updated-pr",
+        objective = (
+            "--objective-id", "preserve-repository-authority-context",
+            "--objective-kind", "open-or-updated-pr",
             "--delivery", "preserve-repository-authority-context",
         )
         flow = ("--flow", "flow-preserve-repository-authority-context")
         actor = ("--human", "contract")
         self.helper_json(
-            "attach", "--repo", self.repo, *goal, *flow, *actor,
+            "attach", "--repo", self.repo, *objective, *flow, *actor,
             "--param", "topology=detached", "--param", "config_authority=repository",
         )
 
         prescribed = self.helper_json(
-            "next", "--repo", self.repo, *goal, *flow, *actor,
+            "next", "--repo", self.repo, *objective, *flow, *actor,
         )
         self.assertEqual(prescribed["decision"]["kind"], "CANDIDATE")
         self.assertEqual(
@@ -375,7 +375,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         ).hexdigest()
         bound_initialization = self.helper_json(
             "next", "--repo", self.repo,
-            "--transition", "installation.initialize", *goal, *flow, *actor,
+            "--transition", "installation.initialize", *objective, *flow, *actor,
             "--param", f"source_revision={self._git(self.repo, 'rev-parse', 'HEAD').stdout.strip()}",
             "--param", f"runtime_version={self.run_helper('version').stdout.strip()}",
             "--param", f"runtime_sha256={hashlib.sha256(self.binary.read_bytes()).hexdigest()}",
@@ -388,7 +388,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
             "installation.initialize",
         )
         initialized_process = self.run_helper(
-            "init", "--repo", self.repo, *goal, *flow, *actor,
+            "init", "--repo", self.repo, *objective, *flow, *actor,
             "--param", f"config_path={config}",
         )
         initialized = json.loads(initialized_process.stdout)
@@ -399,15 +399,15 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
             self.assertIn(field, initialized_process.stdout)
 
         configured = self.apply_prescribed(
-            "goal.configure", "--repo", self.repo,
-            *goal, *flow, *actor,
-            "--param", "goal_kind=open-or-updated-pr",
+            "objective.bind", "--repo", self.repo,
+            *objective, *flow, *actor,
+            "--param", "objective_kind=open-or-updated-pr",
             "--param", "delivery_id=preserve-repository-authority-context",
         )
-        self.assertEqual(configured["receipt"]["transition_id"], "goal.configure")
+        self.assertEqual(configured["receipt"]["transition_id"], "objective.bind")
 
         engagement = self.helper_json(
-            "next", "--repo", self.repo, *goal, *flow, *actor,
+            "next", "--repo", self.repo, *objective, *flow, *actor,
             "--repository-authority",
         )
         self.assertEqual(engagement["decision"]["kind"], "PRESCRIBED")
@@ -415,7 +415,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
 
         engaged = self.apply_prescribed(
             "engagement.begin", "--repo", self.repo,
-            *goal, *flow, *actor, "--repository-authority",
+            *objective, *flow, *actor, "--repository-authority",
         )
         self.assertEqual(engaged["receipt"]["transition_id"], "engagement.begin")
         self.assertEqual(engaged["receipt"]["flow_id"], flow[1])
@@ -428,7 +428,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
             self.assertIn(field, engaged_output)
 
         plan = self.helper_json(
-            "next", "--repo", self.repo, *goal, *flow, *actor,
+            "next", "--repo", self.repo, *objective, *flow, *actor,
             "--repository-authority",
         )
         self.assertEqual(plan["decision"]["kind"], "CANDIDATE")
@@ -438,7 +438,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         plan_source.write_text("# Retained authority\n\nContinue in one operation context.\n")
         bound = self.helper_json(
             "next", "--repo", self.repo, "--transition", "plan.create",
-            *goal, *flow, *actor, "--repository-authority",
+            *objective, *flow, *actor, "--repository-authority",
             "--param", f"source_path={plan_source}",
             "--param", "delivery_id=preserve-repository-authority-context",
         )
@@ -458,8 +458,8 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         before = self.porcelain(root)
         result = self.run_helper(
             "next", "--repo", root,
-            "--goal-id", "unverified-authority",
-            "--goal-kind", "open-or-updated-pr",
+            "--objective-id", "unverified-authority",
+            "--objective-kind", "open-or-updated-pr",
             "--delivery", "unverified-authority",
             "--flow", "flow-unverified-authority",
             "--human", "contract", "--repository-authority",

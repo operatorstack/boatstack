@@ -12,16 +12,16 @@ import (
 	"time"
 
 	boatstack "github.com/operatorstack/boatstack/boatstack"
-	"github.com/operatorstack/boatstack/boatstack/control"
 	"github.com/operatorstack/boatstack/boatstack/core"
+	"github.com/operatorstack/boatstack/boatstack/delivery"
 	"github.com/operatorstack/boatstack/boatstack/extension/subprocess"
 	"github.com/operatorstack/boatstack/boatstack/flow/standard"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
-	"github.com/operatorstack/boatstack/boatstack/internal/plant"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/plant"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 )
 
-func StandardProgram(ctx context.Context, extensions ...control.Extension) (control.ControlProgram, error) {
-	return control.Compile(ctx, control.CompileRequest{
+func StandardProgram(ctx context.Context, extensions ...delivery.Extension) (delivery.ControlProgram, error) {
+	return delivery.Compile(ctx, delivery.CompileRequest{
 		KernelVersion: boatstack.Version,
 		Core:          core.System(), Runtime: standard.Definition(), Extensions: extensions,
 		Settings: programSettings{},
@@ -43,7 +43,7 @@ type RepositoryProgramRequest struct {
 	ExternalStateRoot        string
 	Host                     string
 	CorrelationID            string
-	Extensions               []control.Extension
+	Extensions               []delivery.Extension
 	ConfigurationPath        string
 	ConfigurationFingerprint string
 }
@@ -52,14 +52,14 @@ type RepositoryProgramRequest struct {
 // checksum-verified subprocess extensions selected by the repository's strict
 // project configuration. A new value is returned per call, so concurrent
 // repositories never share mutable program state.
-func StandardProgramForRepository(ctx context.Context, request RepositoryProgramRequest) (control.ControlProgram, error) {
+func StandardProgramForRepository(ctx context.Context, request RepositoryProgramRequest) (delivery.ControlProgram, error) {
 	configured, settings, err := ConfiguredExtensions(ctx, request)
 	if err != nil {
-		return control.ControlProgram{}, err
+		return delivery.ControlProgram{}, err
 	}
-	extensions := append([]control.Extension(nil), request.Extensions...)
+	extensions := append([]delivery.Extension(nil), request.Extensions...)
 	extensions = append(extensions, configured...)
-	return control.Compile(ctx, control.CompileRequest{
+	return delivery.Compile(ctx, delivery.CompileRequest{
 		KernelVersion: boatstack.Version, Core: core.System(), Runtime: standard.Definition(),
 		Extensions: extensions, Settings: settings,
 	})
@@ -68,7 +68,7 @@ func StandardProgramForRepository(ctx context.Context, request RepositoryProgram
 // ConfiguredExtensions resolves only additive subprocess extensions. The
 // returned settings identity binds every repository policy byte that can
 // affect the compiled program.
-func ConfiguredExtensions(ctx context.Context, request RepositoryProgramRequest) ([]control.Extension, any, error) {
+func ConfiguredExtensions(ctx context.Context, request RepositoryProgramRequest) ([]delivery.Extension, any, error) {
 	if request.Repository == "" {
 		return nil, programSettings{}, nil
 	}
@@ -113,12 +113,12 @@ func ConfiguredExtensions(ctx context.Context, request RepositoryProgramRequest)
 	if request.ConfigurationFingerprint != "" && request.ConfigurationFingerprint != fingerprint {
 		return nil, nil, fmt.Errorf("candidate repository program configuration fingerprint mismatch")
 	}
-	configured := make([]control.Extension, 0, len(configuration.Extensions))
+	configured := make([]delivery.Extension, 0, len(configuration.Extensions))
 	for _, declaration := range configuration.Extensions {
 		extension, extensionErr := subprocess.New(subprocess.Config{
 			ID: declaration.ID, Version: declaration.Version, Executable: declaration.Executable, SHA256: declaration.SHA256,
 			Manifest: declaration.Manifest, Settings: declaration.Settings,
-			Limits: control.SubprocessLimits{Deadline: time.Duration(declaration.DeadlineMillis) * time.Millisecond, StdoutBytes: declaration.StdoutBytes, StderrBytes: declaration.StderrBytes},
+			Limits: delivery.SubprocessLimits{Deadline: time.Duration(declaration.DeadlineMillis) * time.Millisecond, StdoutBytes: declaration.StdoutBytes, StderrBytes: declaration.StderrBytes},
 		})
 		if extensionErr != nil {
 			return nil, nil, fmt.Errorf("verify configured subprocess extension %q: %w", declaration.ID, extensionErr)

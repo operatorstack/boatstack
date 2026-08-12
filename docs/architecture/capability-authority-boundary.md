@@ -29,7 +29,7 @@ a partial intersection.
 | --- | --- |
 | `repository.write` | Install or remove Boatstack-managed repository and controller resources. |
 | `command.execute` | Invoke a configured command or component runtime. |
-| `product.mutate` | Change goal, plan, workspace, gate, evidence, delivery, or publication state. |
+| `product.mutate` | Change objective, plan, workspace, gate, evidence, delivery, or publication state. |
 | `publication.prepare` | Create a publication preview artifact. |
 | `publication.publish` | Perform or correct an external publication. |
 | `human.approve` | Cross an admission policy that requires human approval. |

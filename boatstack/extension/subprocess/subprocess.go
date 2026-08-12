@@ -17,8 +17,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/operatorstack/boatstack/boatstack/control"
-	"github.com/operatorstack/boatstack/boatstack/internal/effects"
+	"github.com/operatorstack/boatstack/boatstack/delivery"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
 )
 
 const maxRequestBytes = 1 << 20
@@ -30,7 +30,7 @@ type Config struct {
 	SHA256     string
 	Manifest   json.RawMessage
 	Settings   json.RawMessage
-	Limits     control.SubprocessLimits
+	Limits     delivery.SubprocessLimits
 }
 
 type Extension struct {
@@ -70,7 +70,7 @@ func New(config Config) (*Extension, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode declarative subprocess extension manifest: %w", err)
 	}
-	if manifest.ID != config.ID || manifest.Version != config.Version || manifest.ProtocolVersion != control.ExtensionProtocolVersion {
+	if manifest.ID != config.ID || manifest.Version != config.Version || manifest.ProtocolVersion != delivery.ExtensionProtocolVersion {
 		return nil, fmt.Errorf("subprocess extension manifest identity mismatch")
 	}
 	if manifest.ExecutableSHA256 != "" && manifest.ExecutableSHA256 != config.SHA256 {
@@ -89,29 +89,29 @@ func New(config Config) (*Extension, error) {
 	return extension, nil
 }
 
-func (e *Extension) Runtime() control.ExtensionRuntime { return e }
+func (e *Extension) Runtime() delivery.ExtensionRuntime { return e }
 
-func (e *Extension) ExtensionManifest(context.Context) (control.ExtensionManifest, error) {
+func (e *Extension) ExtensionManifest(context.Context) (delivery.ExtensionManifest, error) {
 	return decodeManifest(e.manifestRaw)
 }
 
-func (e *Extension) Invoke(ctx context.Context, request control.ExtensionRequest) (control.ExtensionResponse, error) {
-	if request.ProtocolVersion != control.ExtensionProtocolVersion || request.ExtensionID != e.config.ID || request.ExtensionVersion != e.config.Version || request.CorrelationID == "" {
-		return control.ExtensionResponse{}, fmt.Errorf("subprocess extension request identity mismatch")
+func (e *Extension) Invoke(ctx context.Context, request delivery.ExtensionRequest) (delivery.ExtensionResponse, error) {
+	if request.ProtocolVersion != delivery.ExtensionProtocolVersion || request.ExtensionID != e.config.ID || request.ExtensionVersion != e.config.Version || request.CorrelationID == "" {
+		return delivery.ExtensionResponse{}, fmt.Errorf("subprocess extension request identity mismatch")
 	}
 	switch request.Operation {
-	case control.ExtensionManifestOperation, control.ExtensionObserveOperation, control.ExtensionPlanLocalEffectOperation,
-		control.ExtensionExecuteExternalOperation, control.ExtensionVerifyOperation, control.ExtensionRecoverOperation:
+	case delivery.ExtensionManifestOperation, delivery.ExtensionObserveOperation, delivery.ExtensionPlanLocalEffectOperation,
+		delivery.ExtensionExecuteExternalOperation, delivery.ExtensionVerifyOperation, delivery.ExtensionRecoverOperation:
 	default:
-		return control.ExtensionResponse{}, fmt.Errorf("unsupported subprocess extension operation %q", request.Operation)
+		return delivery.ExtensionResponse{}, fmt.Errorf("unsupported subprocess extension operation %q", request.Operation)
 	}
 	executable, err := e.verifiedExecutable()
 	if err != nil {
-		return control.ExtensionResponse{}, err
+		return delivery.ExtensionResponse{}, err
 	}
 	stagedPath, cleanup, err := effects.StageVerifiedExecutable(e.config.Executable, executable)
 	if err != nil {
-		return control.ExtensionResponse{}, err
+		return delivery.ExtensionResponse{}, err
 	}
 	defer cleanup()
 	if e.beforeStart != nil {
@@ -119,10 +119,10 @@ func (e *Extension) Invoke(ctx context.Context, request control.ExtensionRequest
 	}
 	raw, err := json.Marshal(request)
 	if err != nil {
-		return control.ExtensionResponse{}, err
+		return delivery.ExtensionResponse{}, err
 	}
 	if len(raw) > maxRequestBytes {
-		return control.ExtensionResponse{}, fmt.Errorf("subprocess extension request exceeds 1 MiB")
+		return delivery.ExtensionResponse{}, fmt.Errorf("subprocess extension request exceeds 1 MiB")
 	}
 	deadlineContext, cancel := context.WithTimeout(ctx, e.config.Limits.Deadline)
 	defer cancel()
@@ -134,32 +134,32 @@ func (e *Extension) Invoke(ctx context.Context, request control.ExtensionRequest
 	command.Stdout, command.Stderr = stdout, stderr
 	if err := command.Run(); err != nil {
 		if stdout.exceeded || stderr.exceeded {
-			return control.ExtensionResponse{}, fmt.Errorf("subprocess extension output exceeded its bound")
+			return delivery.ExtensionResponse{}, fmt.Errorf("subprocess extension output exceeded its bound")
 		}
 		if errors.Is(deadlineContext.Err(), context.DeadlineExceeded) {
-			return control.ExtensionResponse{}, fmt.Errorf("subprocess extension deadline exceeded")
+			return delivery.ExtensionResponse{}, fmt.Errorf("subprocess extension deadline exceeded")
 		}
-		return control.ExtensionResponse{}, fmt.Errorf("subprocess extension process failed")
+		return delivery.ExtensionResponse{}, fmt.Errorf("subprocess extension process failed")
 	}
 	if stdout.exceeded || stderr.exceeded {
-		return control.ExtensionResponse{}, fmt.Errorf("subprocess extension output exceeded its bound")
+		return delivery.ExtensionResponse{}, fmt.Errorf("subprocess extension output exceeded its bound")
 	}
-	var response control.ExtensionResponse
+	var response delivery.ExtensionResponse
 	decoder := json.NewDecoder(bytes.NewReader(stdout.Bytes()))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&response); err != nil {
-		return control.ExtensionResponse{}, fmt.Errorf("decode subprocess extension response: %w", err)
+		return delivery.ExtensionResponse{}, fmt.Errorf("decode subprocess extension response: %w", err)
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); err != io.EOF {
-		return control.ExtensionResponse{}, fmt.Errorf("subprocess extension response contains trailing JSON")
+		return delivery.ExtensionResponse{}, fmt.Errorf("subprocess extension response contains trailing JSON")
 	}
-	if response.ProtocolVersion != control.ExtensionProtocolVersion || response.Operation != request.Operation ||
+	if response.ProtocolVersion != delivery.ExtensionProtocolVersion || response.Operation != request.Operation ||
 		response.ExtensionID != e.config.ID || response.ExtensionVersion != e.config.Version || response.CorrelationID != request.CorrelationID {
-		return control.ExtensionResponse{}, fmt.Errorf("subprocess extension response identity mismatch")
+		return delivery.ExtensionResponse{}, fmt.Errorf("subprocess extension response identity mismatch")
 	}
-	if err := control.ValidateExtensionOperationResponse(request.Operation, response); err != nil {
-		return control.ExtensionResponse{}, err
+	if err := delivery.ValidateExtensionOperationResponse(request.Operation, response); err != nil {
+		return delivery.ExtensionResponse{}, err
 	}
 	return response, nil
 }
@@ -193,16 +193,16 @@ func (e *Extension) verifiedExecutable() ([]byte, error) {
 	return raw, nil
 }
 
-func decodeManifest(raw json.RawMessage) (control.ExtensionManifest, error) {
-	var manifest control.ExtensionManifest
+func decodeManifest(raw json.RawMessage) (delivery.ExtensionManifest, error) {
+	var manifest delivery.ExtensionManifest
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&manifest); err != nil {
-		return control.ExtensionManifest{}, err
+		return delivery.ExtensionManifest{}, err
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); err != io.EOF {
-		return control.ExtensionManifest{}, fmt.Errorf("manifest contains trailing JSON")
+		return delivery.ExtensionManifest{}, fmt.Errorf("manifest contains trailing JSON")
 	}
 	return manifest, nil
 }

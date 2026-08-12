@@ -13,8 +13,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/operatorstack/boatstack/boatstack/control"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
+	"github.com/operatorstack/boatstack/boatstack/delivery"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 )
 
 func TestRepositoryScopedProgramsAreIndependentUnderConcurrency(t *testing.T) {
@@ -44,10 +44,10 @@ func TestRepositoryScopedProgramsAreIndependentUnderConcurrency(t *testing.T) {
 			t.Fatal(err)
 		}
 		digest := sha256.Sum256(content)
-		manifest, err := json.Marshal(control.ExtensionManifest{
-			ID: id, Version: "1.0.0", ProtocolVersion: control.ExtensionProtocolVersion,
+		manifest, err := json.Marshal(delivery.ExtensionManifest{
+			ID: id, Version: "1.0.0", ProtocolVersion: delivery.ExtensionProtocolVersion,
 			SettingsSchema: json.RawMessage(`{"type":"object"}`), Facts: []string{id + ".present"},
-			Capabilities:          []control.Capability{control.CapabilityCommandExecute},
+			Capabilities:          []delivery.Capability{delivery.CapabilityCommandExecute},
 			PrivacyClassification: "metadata-only", TelemetryClassification: "transition-receipt",
 		})
 		if err != nil {

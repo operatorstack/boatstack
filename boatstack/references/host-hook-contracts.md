@@ -12,7 +12,7 @@ Example read request:
   "repository": "/absolute/worktree",
   "host": "codex",
   "correlation_id": "host-123",
-  "goal": {
+  "objective": {
     "id": "search-timeout",
     "kind": "verified-implementation",
     "delivery_id": "search-timeout"
@@ -26,7 +26,7 @@ classifies raw text once, returns `guard.allowed`, and never writes the command
 to receipts or events.
 
 Hosts may render commands differently. They may not change the transition ID,
-goal, source predicate, authority clauses, parameters, or expected
+objective, source predicate, authority clauses, parameters, or expected
 postcondition. CLI, Cursor, Codex, Claude, Gemini, and MCP are capability labels,
 not controllers.
 

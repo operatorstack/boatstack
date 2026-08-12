@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/operatorstack/boatstack/boatstack/control"
+	"github.com/operatorstack/boatstack/boatstack/delivery"
 )
 
 const (
@@ -23,25 +23,25 @@ type system struct{}
 //go:embed transitions.json
 var transitionDeclarations []byte
 
-func System() control.CoreSystemDefinition { return system{} }
+func System() delivery.CoreSystemDefinition { return system{} }
 
-func (system) CoreManifest(context.Context) (control.CoreSystemManifest, error) {
+func (system) CoreManifest(context.Context) (delivery.CoreSystemManifest, error) {
 	transitions, err := decodeTransitions()
 	if err != nil {
-		return control.CoreSystemManifest{}, err
+		return delivery.CoreSystemManifest{}, err
 	}
-	var capabilities []control.Capability
+	var capabilities []delivery.Capability
 	for index := range transitions {
-		transitions[index].RequiredCapabilities = control.KernelEffectCapabilities(transitions[index])
-		capabilities = control.UnionCapabilities(capabilities, transitions[index].RequiredCapabilities)
+		transitions[index].RequiredCapabilities = delivery.KernelEffectCapabilities(transitions[index])
+		capabilities = delivery.UnionCapabilities(capabilities, transitions[index].RequiredCapabilities)
 	}
-	return control.CoreSystemManifest{ID: ID, Version: Version, Capabilities: capabilities, Transitions: transitions}, nil
+	return delivery.CoreSystemManifest{ID: ID, Version: Version, Capabilities: capabilities, Transitions: transitions}, nil
 }
 
-func decodeTransitions() ([]control.Transition, error) {
+func decodeTransitions() ([]delivery.Transition, error) {
 	decoder := json.NewDecoder(bytes.NewReader(transitionDeclarations))
 	decoder.DisallowUnknownFields()
-	var transitions []control.Transition
+	var transitions []delivery.Transition
 	if err := decoder.Decode(&transitions); err != nil {
 		return nil, fmt.Errorf("decode CoreSystem transitions: %w", err)
 	}

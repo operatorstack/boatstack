@@ -19,7 +19,7 @@ func TestManifestOwnsOnlyOperationalCapabilities(t *testing.T) {
 	}
 	for _, transition := range manifest.Transitions {
 		id := string(transition.ID)
-		if !hasPrefix(id, "engagement.", "invocation.", "repository.", "runtime.", "configuration.", "installation.", "catalog.", "goal.", "recovery.", "external.") {
+		if !hasPrefix(id, "engagement.", "invocation.", "repository.", "runtime.", "configuration.", "installation.", "catalog.", "objective.", "recovery.", "external.") {
 			t.Errorf("CoreSystem owns delivery-flow transition %s", id)
 		}
 	}
