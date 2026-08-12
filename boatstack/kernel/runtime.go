@@ -375,7 +375,7 @@ func (r Receipt) Validate() error {
 	if err != nil || want != "rcp-"+got {
 		return fmt.Errorf("receipt content identity is invalid")
 	}
-	if r.SchemaVersion != ReceiptSchemaVersion || !semanticID.MatchString(r.InstanceID) || r.PrescriptionID == "" || !semanticID.MatchString(r.TransitionID) || r.PriorStateRevision == 0 || r.AttemptStateRevision != r.PriorStateRevision+1 || r.ResultStateRevision != r.AttemptStateRevision+1 || r.AuthorityFingerprint == "" || len(r.PriorObservation) != 64 || len(r.ResultObservation) != 64 || r.Verification != "satisfied" || r.CommittedAt.IsZero() {
+	if r.SchemaVersion != ReceiptSchemaVersion || !semanticID.MatchString(r.InstanceID) || r.PrescriptionID == "" || !qualifiedSemanticID.MatchString(r.TransitionID) || r.PriorStateRevision == 0 || r.AttemptStateRevision != r.PriorStateRevision+1 || r.ResultStateRevision != r.AttemptStateRevision+1 || r.AuthorityFingerprint == "" || len(r.PriorObservation) != 64 || len(r.ResultObservation) != 64 || r.Verification != "satisfied" || r.CommittedAt.IsZero() {
 		return fmt.Errorf("receipt is missing exact instance, transition, revision, observation, authority, or verification facts")
 	}
 	if err := r.Program.Validate(); err != nil {
@@ -498,7 +498,7 @@ func validateEffects(transition Transition, effect Effect) error {
 		owned[facet] = true
 	}
 	for _, fact := range effect.Facts {
-		if !owned[fact.Facet] || !semanticID.MatchString(fact.Operation) || fact.Fingerprint == "" {
+		if !owned[fact.Facet] || !qualifiedSemanticID.MatchString(fact.Operation) || fact.Fingerprint == "" {
 			return fmt.Errorf("effect fact escapes transition-owned facets or is incomplete")
 		}
 	}

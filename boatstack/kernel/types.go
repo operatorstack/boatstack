@@ -20,7 +20,10 @@ const (
 	ReceiptSchemaVersion      = 3
 )
 
-var semanticID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+var (
+	semanticID          = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+	qualifiedSemanticID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*$`)
+)
 
 // Objective is an external reference. It is not supervisory state.
 type Objective struct {
@@ -131,7 +134,7 @@ func (s ControlState) Validate() error {
 			return err
 		}
 	}
-	if s.Recovery != nil && (s.Recovery.PrescriptionID == "" || !semanticID.MatchString(s.Recovery.TransitionID) || s.Recovery.Reason == "") {
+	if s.Recovery != nil && (s.Recovery.PrescriptionID == "" || !qualifiedSemanticID.MatchString(s.Recovery.TransitionID) || s.Recovery.Reason == "") {
 		return fmt.Errorf("recovery state is incomplete")
 	}
 	return nil

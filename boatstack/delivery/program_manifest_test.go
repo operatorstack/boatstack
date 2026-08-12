@@ -44,6 +44,12 @@ func TestProgramManifestCanonicalFingerprintContract(t *testing.T) {
 	if one.Fingerprint() != three.Fingerprint() {
 		t.Fatal("whitespace changed executable fingerprint")
 	}
+	if err := three.SupervisoryProgram().Validate(); err != nil {
+		t.Fatalf("validated manifest exposed an invalid supervisory program: %v", err)
+	}
+	if three.SupervisoryProgram().Fingerprint != three.Fingerprint() {
+		t.Fatal("manifest and supervisory program fingerprints diverged")
+	}
 	reordered := reorderTopLevelObject(t, raw)
 	four, err := delivery.LoadProgram(bytes.NewReader(reordered), runtimeFixture())
 	if err != nil {
@@ -237,7 +243,7 @@ func programFixture() delivery.ProgramManifest {
 		SourceConditions: []delivery.FacetCondition{delivery.KnownCondition(delivery.FacetRecovery, "required")}, AdmissionPredicate: "exact-admission",
 		TargetPredicate: "active", TargetConditions: []delivery.FacetCondition{delivery.KnownCondition(delivery.FacetProgram, "current")}, Verifier: "program.current",
 		Interruption: interruption("recover"), Reversibility: delivery.Reversible, TerminalEffect: "none",
-		PrivacyClassification: "metadata-only", TelemetryClassification: "transition-receipt", CostClass: "local", Policy: delivery.PolicyContract{ObjectiveScope: delivery.ObjectiveScopeBoundExact}, Priority: 1,
+		PrivacyClassification: "metadata-only", TelemetryClassification: "transition-receipt", CostClass: "local", Policy: delivery.PolicyContract{ObjectiveScope: delivery.ObjectiveScopeOptionalPreserve}, Priority: 1,
 	}
 	advance := recovery
 	advance.ID = "advance"
@@ -255,6 +261,7 @@ func programFixture() delivery.ProgramManifest {
 	advance.TargetPredicate = "terminal"
 	advance.TargetConditions = []delivery.FacetCondition{delivery.KnownCondition(delivery.FacetDelivery, "terminal")}
 	advance.Verifier = "program.terminal"
+	advance.Policy.ObjectiveScope = delivery.ObjectiveScopeBoundExact
 	return delivery.ProgramManifest{
 		SchemaVersion: delivery.ProgramSchemaVersion, ProgramID: "test-program", ProgramVersion: "1", RequiresRuntime: ">=1.0.0",
 		Capabilities: delivery.ProgramCapabilities{

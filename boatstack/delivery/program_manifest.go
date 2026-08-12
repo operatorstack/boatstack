@@ -16,9 +16,11 @@ import (
 type ProgramErrorCode string
 
 const (
-	ProgramInvalid           ProgramErrorCode = "PROGRAM_INVALID"
-	ProgramSchemaUnsupported ProgramErrorCode = "PROGRAM_SCHEMA_UNSUPPORTED"
-	RuntimeTooOld            ProgramErrorCode = "RUNTIME_TOO_OLD"
+	ProgramInvalid              ProgramErrorCode = "PROGRAM_INVALID"
+	ProgramSchemaUnsupported    ProgramErrorCode = "PROGRAM_SCHEMA_UNSUPPORTED"
+	RuntimeTooOld               ProgramErrorCode = "RUNTIME_TOO_OLD"
+	manifestProgramVersion                       = "manifest"
+	manifestKernelCompatibility                  = "general-kernel"
 )
 
 type ProgramError struct {
@@ -291,12 +293,22 @@ func ValidateProgram(manifest ProgramManifest, runtime RuntimeCompatibility) (Co
 		ObjectiveContracts []ObjectiveContract
 		Transitions        []Transition
 	}{manifest.ProgramID, ProgramCapabilities{Effects: effects, Verifiers: verifiers, CapabilitySurface: declaredCapabilities}, resources, objectiveContracts.All(), canonicalTransitions}
-	fingerprint, err := fingerprint(canonical)
+	domainContractFingerprint, err := fingerprint(canonical)
 	if err != nil {
 		return ControlProgram{}, invalidProgram("", "fingerprint canonical program: "+err.Error())
 	}
+	supervisoryProgram, err := compileSupervisoryProgram(
+		ProgramRuntimeManifest{ID: manifest.ProgramID, Version: manifestProgramVersion},
+		manifestKernelCompatibility,
+		domainContractFingerprint,
+		normalized,
+	)
+	if err != nil {
+		return ControlProgram{}, invalidProgram("transitions", "compile supervisory program: "+err.Error())
+	}
+	programFingerprint := supervisoryProgram.Fingerprint
 	for index := range normalized {
-		normalized[index].Origin.ManifestFingerprint = fingerprint
+		normalized[index].Origin.ManifestFingerprint = programFingerprint
 	}
 	registry, err := catalog.New(normalized)
 	if err != nil {
@@ -306,14 +318,14 @@ func ValidateProgram(manifest ProgramManifest, runtime RuntimeCompatibility) (Co
 	for _, resource := range resources {
 		ownership[resource] = manifest.ProgramID
 	}
-	identity := ComponentIdentity{ID: manifest.ProgramID, Version: manifest.ProgramVersion, Fingerprint: fingerprint}
+	identity := ComponentIdentity{ID: manifest.ProgramID, Version: manifest.ProgramVersion, Fingerprint: programFingerprint}
 	return ControlProgram{
 		summary: ProgramSummary{
 			SchemaVersion: ProgramSchemaVersion, KernelVersion: runtime.Version,
 			ProgramID: manifest.ProgramID, ProgramVersion: manifest.ProgramVersion, RequiresRuntime: manifest.RequiresRuntime,
-			Runtime: identity, RuntimeTransitionCount: registry.Len(), TotalTransitionCount: registry.Len(), ProgramFingerprint: fingerprint,
+			Runtime: identity, RuntimeTransitionCount: registry.Len(), TotalTransitionCount: registry.Len(), ProgramFingerprint: programFingerprint,
 		},
-		registry: registry, objectiveContracts: objectiveContracts, resourceOwnership: ownership,
+		supervisoryProgram: supervisoryProgram, registry: registry, objectiveContracts: objectiveContracts, resourceOwnership: ownership,
 		programRuntime: compiledProgramRuntime{identity: identity},
 	}, nil
 }

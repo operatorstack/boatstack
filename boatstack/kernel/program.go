@@ -31,7 +31,7 @@ func (m ObjectiveMutation) valid() bool {
 }
 
 func (t Transition) validate() error {
-	if !semanticID.MatchString(t.ID) || len(t.SourceModes) == 0 || t.TargetMode == "" || !t.ObjectiveScope.Valid() || !t.ObjectiveMutation.valid() || !semanticID.MatchString(t.Operation) || t.Priority < 1 {
+	if !qualifiedSemanticID.MatchString(t.ID) || len(t.SourceModes) == 0 || t.TargetMode == "" || !t.ObjectiveScope.Valid() || !t.ObjectiveMutation.valid() || !qualifiedSemanticID.MatchString(t.Operation) || t.Priority < 1 {
 		return fmt.Errorf("transition %q has incomplete identity, modes, objective scope, operation, or priority", t.ID)
 	}
 	if len(t.RequiredCapabilities) == 0 || len(t.OwnedFacets) == 0 {
@@ -51,7 +51,7 @@ func (t Transition) validate() error {
 		return fmt.Errorf("transition %q objective mutation requires NONE scope, supervisor.objective ownership, and objective.bind capability", t.ID)
 	}
 	for _, recovered := range t.Recovers {
-		if !semanticID.MatchString(recovered) {
+		if !qualifiedSemanticID.MatchString(recovered) {
 			return fmt.Errorf("transition %q has invalid recovery target %q", t.ID, recovered)
 		}
 	}
@@ -70,7 +70,7 @@ func (t Transition) canonical() (Transition, error) {
 	if copy.OwnedFacets, err = canonicalIDs(copy.OwnedFacets, "owned facet"); err != nil {
 		return Transition{}, fmt.Errorf("transition %q: %w", copy.ID, err)
 	}
-	if copy.Recovers, err = canonicalIDs(copy.Recovers, "recovery target"); err != nil {
+	if copy.Recovers, err = canonicalQualifiedIDs(copy.Recovers, "recovery target"); err != nil {
 		return Transition{}, fmt.Errorf("transition %q: %w", copy.ID, err)
 	}
 	return copy, nil
@@ -185,6 +185,20 @@ func canonicalIDs(values []string, label string) ([]string, error) {
 	for index, value := range result {
 		if !semanticID.MatchString(value) {
 			return nil, fmt.Errorf("%s %q is not a semantic identifier", label, value)
+		}
+		if index > 0 && value == result[index-1] {
+			return nil, fmt.Errorf("%s %q is duplicated", label, value)
+		}
+	}
+	return result, nil
+}
+
+func canonicalQualifiedIDs(values []string, label string) ([]string, error) {
+	result := append([]string(nil), values...)
+	sort.Strings(result)
+	for index, value := range result {
+		if !qualifiedSemanticID.MatchString(value) {
+			return nil, fmt.Errorf("%s %q is not a qualified semantic identifier", label, value)
 		}
 		if index > 0 && value == result[index-1] {
 			return nil, fmt.Errorf("%s %q is duplicated", label, value)

@@ -66,3 +66,19 @@ func TestProgramRejectsTransitionWithoutDeclaredRecovery(t *testing.T) {
 		t.Fatalf("compile error = %v", err)
 	}
 }
+
+func TestProgramAcceptsQualifiedTransitionIdentities(t *testing.T) {
+	program, err := CompileProgram("qualified", "1", "kernel-v1", "idle", []string{"done"}, []Transition{
+		{ID: "example-program/advance", SourceModes: []string{"idle"}, TargetMode: "done", ObjectiveScope: ObjectiveBoundExact, ObjectiveMutation: PreserveObjective, RequiredCapabilities: []Capability{"counter.increment"}, OwnedFacets: []string{"counter.value"}, Operation: "example-program/advance", Priority: 1},
+		{ID: "example-program/recover", SourceModes: []string{"idle"}, TargetMode: "idle", ObjectiveScope: ObjectiveOptionalPreserve, ObjectiveMutation: PreserveObjective, RequiredCapabilities: []Capability{"counter.reset"}, OwnedFacets: []string{"counter.value"}, Operation: "example-program/recover", Priority: 2, Recovers: []string{"example-program/advance", "example-program/recover"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := program.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := program.Transition("example-program/advance"); !ok {
+		t.Fatal("qualified transition identity was not retained")
+	}
+}
