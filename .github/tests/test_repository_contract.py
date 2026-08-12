@@ -167,7 +167,10 @@ class RepositoryContract(unittest.TestCase):
         location = finding["properties"]["code_location"]
         self.assertIn("side", location["required"])
         self.assertEqual(location["properties"]["side"]["enum"], ["LEFT", "RIGHT"])
-        self.assertIn("side: .code_location.side", workflow)
+        self.assertIn("build_codex_github_review.py", workflow)
+        publisher = (REPO / ".github" / "scripts" / "build_codex_github_review.py").read_text()
+        self.assertIn('"side": side', publisher)
+        self.assertIn("Findings without inline diff anchors", publisher)
         self.assertFalse((REPO / "UPSTREAM.json").exists())
 
     def test_release_builds_six_checksum_bound_v2_runtimes(self) -> None:

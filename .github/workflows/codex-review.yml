@@ -131,28 +131,23 @@ jobs:
             (.overall_confidence_score >= 0 and .overall_confidence_score <= 1)
           ' "$RUNNER_TEMP/codex-review-output.json" >/dev/null
 
+      - name: Build GitHub review payload
+        if: steps.configuration.outputs.enabled == 'true' && steps.policy.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          python3 .github/scripts/build_codex_github_review.py \
+            --input "$RUNNER_TEMP/codex-review-output.json" \
+            --output "$RUNNER_TEMP/codex-github-review.json" \
+            --workspace "$GITHUB_WORKSPACE" \
+            --base "$BASE_SHA" \
+            --head "$HEAD_SHA"
+
       - name: Publish GitHub review
         if: steps.configuration.outputs.enabled == 'true' && steps.policy.outputs.enabled == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          jq \
-            --arg commit "$HEAD_SHA" \
-            --arg workspace "$GITHUB_WORKSPACE" \
-            '{
-              commit_id: $commit,
-              event: "COMMENT",
-              body: ("Codex automated review\n\nVerdict: " + .overall_correctness + "\nConfidence: " + (.overall_confidence_score | tostring) + "\n\n" + .overall_explanation),
-              comments: [.findings[] | {
-                path: (.code_location.absolute_file_path | ltrimstr($workspace + "/") | ltrimstr("./")),
-                line: .code_location.line_range.end,
-                side: .code_location.side,
-                start_line: (if .code_location.line_range.start == .code_location.line_range.end then null else .code_location.line_range.start end),
-                start_side: (if .code_location.line_range.start == .code_location.line_range.end then null else .code_location.side end),
-                body: ("[P" + (.priority | tostring) + "] " + .title + "\n\n" + .body + "\n\nConfidence: " + (.confidence_score | tostring))
-              } | with_entries(select(.value != null))]
-            }' "$RUNNER_TEMP/codex-review-output.json" > "$RUNNER_TEMP/codex-github-review.json"
           jq -e 'all(.comments[];
             ((.path | length) > 0) and
             (((.path | startswith("/")) or (.path | startswith("../")) or (.path | contains("/../"))) | not) and
