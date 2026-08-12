@@ -32,6 +32,10 @@
                 "type": "string",
                 "minLength": 1
               },
+              "side": {
+                "type": "string",
+                "enum": ["LEFT", "RIGHT"]
+              },
               "line_range": {
                 "type": "object",
                 "properties": {
@@ -48,7 +52,7 @@
                 "additionalProperties": false
               }
             },
-            "required": ["absolute_file_path", "line_range"],
+            "required": ["absolute_file_path", "side", "line_range"],
             "additionalProperties": false
           }
         },

@@ -58,15 +58,33 @@ jobs:
           git cat-file -e "$BASE_SHA^{commit}"
           test "$(git rev-parse refs/remotes/origin/codex-review-head)" = "$HEAD_SHA"
 
-      - name: Build review prompt
+      - name: Load admitted review policy
         if: steps.configuration.outputs.enabled == 'true'
-        id: prompt
+        id: policy
         shell: bash
         run: |
           prompt="$RUNNER_TEMP/codex-review-prompt.md"
+          schema="$RUNNER_TEMP/codex-review-output-schema.json"
+          if ! git cat-file -e "$BASE_SHA:.github/codex/review-prompt.md" || \
+             ! git cat-file -e "$BASE_SHA:.github/codex/review-output-schema.json"; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Automated review is skipped because the base revision has no admitted review policy." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git show "$BASE_SHA:.github/codex/review-prompt.md" > "$prompt"
+          git show "$BASE_SHA:.github/codex/review-output-schema.json" > "$schema"
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+          echo "path=$prompt" >> "$GITHUB_OUTPUT"
+          echo "schema=$schema" >> "$GITHUB_OUTPUT"
+
+      - name: Build review prompt
+        if: steps.configuration.outputs.enabled == 'true' && steps.policy.outputs.enabled == 'true'
+        id: prompt
+        shell: bash
+        run: |
+          prompt="${{ steps.policy.outputs.path }}"
           merge_base="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
           changed_count="$(git diff --name-only "$merge_base" "$HEAD_SHA" | wc -l | tr -d ' ')"
-          cp .github/codex/review-prompt.md "$prompt"
           {
             echo
             echo "Repository: $REPOSITORY"
@@ -88,13 +106,13 @@ jobs:
           echo "path=$prompt" >> "$GITHUB_OUTPUT"
 
       - name: Run structured Codex review
-        if: steps.configuration.outputs.enabled == 'true'
+        if: steps.configuration.outputs.enabled == 'true' && steps.policy.outputs.enabled == 'true'
         id: codex
         uses: openai/codex-action@dd78cb653811af44014baa08fe954e28d32c1bf9 # main, 2026-08-12
         with:
           openai-api-key: ${{ secrets.CODEX_REVIEWER_API }}
           prompt-file: ${{ steps.prompt.outputs.path }}
-          output-schema-file: .github/codex/review-output-schema.json
+          output-schema-file: ${{ steps.policy.outputs.schema }}
           output-file: ${{ runner.temp }}/codex-review-output.json
           permission-profile: ":read-only"
           safety-strategy: drop-sudo
@@ -103,7 +121,7 @@ jobs:
           effort: ${{ vars.CODEX_REVIEW_EFFORT || 'high' }}
 
       - name: Validate structured review
-        if: steps.configuration.outputs.enabled == 'true'
+        if: steps.configuration.outputs.enabled == 'true' && steps.policy.outputs.enabled == 'true'
         shell: bash
         run: |
           test -s "$RUNNER_TEMP/codex-review-output.json"
@@ -114,7 +132,7 @@ jobs:
           ' "$RUNNER_TEMP/codex-review-output.json" >/dev/null
 
       - name: Publish GitHub review
-        if: steps.configuration.outputs.enabled == 'true'
+        if: steps.configuration.outputs.enabled == 'true' && steps.policy.outputs.enabled == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -129,9 +147,9 @@ jobs:
               comments: [.findings[] | {
                 path: (.code_location.absolute_file_path | ltrimstr($workspace + "/") | ltrimstr("./")),
                 line: .code_location.line_range.end,
-                side: "RIGHT",
+                side: .code_location.side,
                 start_line: (if .code_location.line_range.start == .code_location.line_range.end then null else .code_location.line_range.start end),
-                start_side: (if .code_location.line_range.start == .code_location.line_range.end then null else "RIGHT" end),
+                start_side: (if .code_location.line_range.start == .code_location.line_range.end then null else .code_location.side end),
                 body: ("[P" + (.priority | tostring) + "] " + .title + "\n\n" + .body + "\n\nConfidence: " + (.confidence_score | tostring))
               } | with_entries(select(.value != null))]
             }' "$RUNNER_TEMP/codex-review-output.json" > "$RUNNER_TEMP/codex-github-review.json"

@@ -135,6 +135,11 @@ class RepositoryContract(unittest.TestCase):
         self.assertIn("not configured", workflow)
         self.assertIn("persist-credentials: false", workflow)
         self.assertIn('git merge-base "$BASE_SHA" "$HEAD_SHA"', workflow)
+        self.assertIn('git show "$BASE_SHA:.github/codex/review-prompt.md"', workflow)
+        self.assertIn('git show "$BASE_SHA:.github/codex/review-output-schema.json"', workflow)
+        self.assertIn("output-schema-file: ${{ steps.policy.outputs.schema }}", workflow)
+        self.assertNotIn("cp .github/codex/review-prompt.md", workflow)
+        self.assertIn("base revision has no admitted review policy", workflow)
         self.assertIn("first 200 shown", workflow)
         self.assertNotIn('diff --unified=5 "$BASE_SHA" "$HEAD_SHA"', workflow)
         self.assertIn("permission-profile: \":read-only\"", workflow)
@@ -145,7 +150,7 @@ class RepositoryContract(unittest.TestCase):
         self.assertIn("gpt-5.6-sol", workflow)
         self.assertIn("CODEX_REVIEW_EFFORT || 'high'", workflow)
         self.assertIn("untrusted data", prompt)
-        self.assertIn("right side of the diff", prompt)
+        self.assertIn("`LEFT` for deleted lines", prompt)
         self.assertIn("Resolver / apply agreement", prompt)
         self.assertIn("Receipts as facts", prompt)
         self.assertIn("Questions for model-level verification", prompt)
@@ -159,6 +164,10 @@ class RepositoryContract(unittest.TestCase):
             set(finding["required"]),
             {"title", "body", "confidence_score", "priority", "code_location"},
         )
+        location = finding["properties"]["code_location"]
+        self.assertIn("side", location["required"])
+        self.assertEqual(location["properties"]["side"]["enum"], ["LEFT", "RIGHT"])
+        self.assertIn("side: .code_location.side", workflow)
         self.assertFalse((REPO / "UPSTREAM.json").exists())
 
     def test_release_builds_six_checksum_bound_v2_runtimes(self) -> None:

@@ -289,7 +289,7 @@ For every finding:
   * P2: normal actionable correctness/reliability defect
   * P3: low-severity but concrete developer/runtime defect
 * cite the exact repository-relative file path;
-* cite the smallest relevant line range on the right side of the diff;
+* cite the smallest relevant line range and its side of the diff: `RIGHT` for added or unchanged lines and `LEFT` for deleted lines;
 * state the violated invariant in one sentence;
 * give the minimal concrete failure sequence;
 * explain why the failure is introduced by this patch;
