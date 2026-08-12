@@ -28,6 +28,7 @@ DOMAIN_NEUTRAL_ROOTS = (
 )
 DOMAIN_NEUTRAL_PHRASE = re.compile(r"\b(?:pull\s+request|coding\s+agent)\b", re.IGNORECASE)
 GO_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+GO_IDENTIFIER_PART = re.compile(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|[0-9]+")
 
 
 def go_source_metadata(paths: list[Path]) -> list[dict[str, object]]:
@@ -48,18 +49,45 @@ def go_source_metadata(paths: list[Path]) -> list[dict[str, object]]:
     return json.loads(result.stdout)
 
 
+def identifier_domain_token(identifier: str) -> str | None:
+    for component in identifier.split("_"):
+        for part in GO_IDENTIFIER_PART.findall(component):
+            normalized = part.lower()
+            for root, token in DOMAIN_NEUTRAL_ROOTS:
+                if normalized == root or normalized.startswith(root):
+                    return token
+    return None
+
+
+def import_domain_token(import_path: str) -> str | None:
+    components = import_path.split("/")
+    if components and components[0] == "github.com":
+        components = components[1:]
+    for component in components:
+        for identifier in re.split(r"[.-]", component):
+            token = identifier_domain_token(identifier)
+            if token is not None:
+                return token
+    return None
+
+
 def domain_vocabulary_hits(paths: list[Path]) -> list[tuple[Path, str]]:
     hits: list[tuple[Path, str]] = []
     for path, metadata in zip(paths, go_source_metadata(paths), strict=True):
+        for import_path in metadata["imports"]:
+            token = import_domain_token(import_path)
+            if token is not None:
+                hits.append((path, token))
         for source in metadata["vocabulary"]:
-            for match in DOMAIN_NEUTRAL_PHRASE.finditer(source):
-                hits.append((path, match.group(0).lower()))
+            phrase = DOMAIN_NEUTRAL_PHRASE.search(source)
+            if phrase is not None:
+                hits.append((path, phrase.group(0).lower()))
+                continue
             for identifier in GO_IDENTIFIER.findall(source):
-                compact = identifier.lower().replace("_", "")
-                for root, token in DOMAIN_NEUTRAL_ROOTS:
-                    if root in compact:
-                        hits.append((path, token))
-                        break
+                token = identifier_domain_token(identifier)
+                if token is not None:
+                    hits.append((path, token))
+                    break
     return hits
 
 
@@ -453,8 +481,6 @@ class RepositoryContract(unittest.TestCase):
                 ('package kernel\nconst provider = "github"\n', "github"),
                 ("package kernel\ntype githubClient struct{}\n", "github"),
                 ("package kernel\ntype gitclient struct{}\n", "git"),
-                ("package kernel\ntype mygitclient struct{}\n", "git"),
-                ("package kernel\ntype clientgit struct{}\n", "git"),
                 ("package kernel\ntype repositoryclient struct{}\n", "repository"),
                 ("package kernel\ntype worktreemanager struct{}\n", "worktree"),
                 ("package kernel\ntype branchmanager struct{}\n", "branch"),
@@ -466,6 +492,12 @@ class RepositoryContract(unittest.TestCase):
                     fixture.write_text(source)
                     self.assertEqual([(fixture, token)], domain_vocabulary_hits([fixture]))
             fixture.write_text('package kernel\nimport "github.com/example/provider"\n')
+            self.assertEqual([], domain_vocabulary_hits([fixture]))
+            fixture.write_text(
+                'package kernel\nimport vcs "github.com/go-git/go-git/v5"\nvar _ = vcs.PlainClone\n'
+            )
+            self.assertEqual([(fixture, "git")], domain_vocabulary_hits([fixture]))
+            fixture.write_text("package kernel\nfunc TestDigitalSignature() {}\n")
             self.assertEqual([], domain_vocabulary_hits([fixture]))
 
         boatstack_packages = "github.com/operatorstack/boatstack/boatstack/"
