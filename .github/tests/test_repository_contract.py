@@ -192,6 +192,7 @@ class RepositoryContract(unittest.TestCase):
         self.assertFalse((REPO / "UPSTREAM.json").exists())
 
     def test_release_builds_six_checksum_bound_v2_runtimes(self) -> None:
+        ci = (REPO / ".github" / "workflows" / "ci.yml").read_text()
         release = (REPO / ".github" / "workflows" / "release.yml").read_text()
         automatic = (REPO / ".github" / "workflows" / "auto-release.yml").read_text()
         for asset in (
@@ -207,7 +208,10 @@ class RepositoryContract(unittest.TestCase):
             self.assertIn(symbol, release)
         self.assertIn('source_commit="$(git rev-parse HEAD)"', release)
         self.assertIn("sha256sum", release)
-        self.assertIn('workflows: ["Verify Boatstack distribution"]', automatic)
+        ci_name = re.search(r"(?m)^name:\s*(.+?)\s*$", ci)
+        self.assertIsNotNone(ci_name)
+        self.assertEqual(ci_name.group(1), "CI")
+        self.assertIn(f'workflows: ["{ci_name.group(1)}"]', automatic)
 
     def test_manual_release_is_prerelease_only_and_exact_source_bound(self) -> None:
         # control-law: branch-prerelease-publishes-only-an-exact-new-rc-source
