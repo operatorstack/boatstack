@@ -784,6 +784,9 @@ func validateStateEffect(t Transition) error {
 		if assignment.Value != nil && !ValidDeclaredStateLiteral(assignment.Facet, *assignment.Value) {
 			return fmt.Errorf("%s: state-effect assignment %q has invalid literal %q", t.ID, assignment.Facet, *assignment.Value)
 		}
+		if err := validateDeterministicAssignment(t, assignment); err != nil {
+			return err
+		}
 		if !stateAssignmentMatchesTarget(t, assignment) {
 			return fmt.Errorf("%s: state-effect assignment %q is not compatible with resolver target conditions", t.ID, assignment.Facet)
 		}
