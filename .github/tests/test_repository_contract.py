@@ -18,79 +18,22 @@ RUNTIME = REPO / "boatstack"
 CONFIG = REPO / "project.example.json"
 
 
-GO_IMPORT_DECLARATION = re.compile(
-    r"(?ms)^[ \t]*import[ \t]+(?:\((?P<block>.*?)^[ \t]*\)|(?P<single>[^\n]+))"
-)
-GO_IMPORT_SPEC = re.compile(
-    r"^[ \t]*(?:(?P<alias>[._A-Za-z][A-Za-z0-9_]*)[ \t]+)?"
-    r"(?P<path>\"(?:\\.|[^\"\\])*\"|`[^`]*`)"
-)
-
-
-def strip_go_comments(source: str) -> str:
-    result: list[str] = []
-    index = 0
-    state = "code"
-    while index < len(source):
-        current = source[index]
-        following = source[index + 1] if index + 1 < len(source) else ""
-        if state == "code":
-            if current == "/" and following == "/":
-                result.extend("  ")
-                index += 2
-                state = "line-comment"
-                continue
-            if current == "/" and following == "*":
-                result.extend("  ")
-                index += 2
-                state = "block-comment"
-                continue
-            if current in ('"', "'", "`"):
-                state = {"\"": "string", "'": "rune", "`": "raw"}[current]
-            result.append(current)
-            index += 1
-            continue
-        if state == "line-comment":
-            result.append("\n" if current == "\n" else " ")
-            index += 1
-            if current == "\n":
-                state = "code"
-            continue
-        if state == "block-comment":
-            if current == "*" and following == "/":
-                result.extend("  ")
-                index += 2
-                state = "code"
-                continue
-            result.append("\n" if current == "\n" else " ")
-            index += 1
-            continue
-        result.append(current)
-        index += 1
-        if state in ("string", "rune") and current == "\\" and index < len(source):
-            result.append(source[index])
-            index += 1
-            continue
-        if (state == "string" and current == '"') or (
-            state == "rune" and current == "'"
-        ) or (state == "raw" and current == "`"):
-            state = "code"
-    return "".join(result)
-
-
-def go_imports(path: Path) -> list[tuple[str | None, str]]:
-    imports: list[tuple[str | None, str]] = []
-    source = strip_go_comments(path.read_text())
-    for declaration in GO_IMPORT_DECLARATION.finditer(source):
-        body = declaration.group("block") or declaration.group("single") or ""
-        for line in body.splitlines():
-            match = GO_IMPORT_SPEC.match(line)
-            if match is None:
-                continue
-            literal = match.group("path")
-            import_path = literal[1:-1] if literal.startswith("`") else json.loads(literal)
-            imports.append((match.group("alias"), import_path))
-    return imports
+def go_source_metadata(paths: list[Path]) -> list[dict[str, object]]:
+    result = subprocess.run(
+        [
+            "go",
+            "run",
+            str(REPO / ".github" / "tests" / "go_source_metadata.go"),
+            "--",
+            *map(str, paths),
+        ],
+        cwd=REPO,
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stdout + result.stderr)
+    return json.loads(result.stdout)
 
 
 class RepositoryContract(unittest.TestCase):
@@ -472,10 +415,11 @@ class RepositoryContract(unittest.TestCase):
 
         boatstack_packages = "github.com/operatorstack/boatstack/boatstack/"
         kernel_package = boatstack_packages + "kernel"
-        for path in kernel_files:
+        kernel_metadata = go_source_metadata(kernel_files)
+        for path, metadata in zip(kernel_files, kernel_metadata, strict=True):
             invalid = [
                 import_path
-                for _, import_path in go_imports(path)
+                for import_path in metadata["imports"]
                 if import_path.startswith(boatstack_packages)
                 and import_path != kernel_package
             ]
@@ -490,11 +434,12 @@ class RepositoryContract(unittest.TestCase):
         )
         self.assertNotIn("testRepository", test_source)
         self.assertNotIn("softwaredelivery", test_source.lower())
-        for path in kernel_tests:
+        test_metadata = go_source_metadata(kernel_tests)
+        for path, metadata in zip(kernel_tests, test_metadata, strict=True):
             self.assertFalse(
                 any(
                     "/softwaredelivery" in import_path
-                    for _, import_path in go_imports(path)
+                    for import_path in metadata["imports"]
                 ),
                 f"kernel test fixture imports software delivery: {path}",
             )
@@ -542,46 +487,48 @@ class RepositoryContract(unittest.TestCase):
             component_ci,
         )
 
-    def test_go_import_parser_accepts_commented_imports(self) -> None:
+    def test_go_import_parser_accepts_legal_import_forms(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            fixture = Path(directory) / "consumer.go"
-            fixture.write_text(
+            commented = Path(directory) / "commented.go"
+            commented.write_text(
                 'package consumer\n\nimport /* migration T5 */ '
                 '"github.com/operatorstack/boatstack/boatstack/kernel"\n'
             )
+            line_broken = Path(directory) / "line_broken.go"
+            line_broken.write_text(
+                'package consumer\n\nimport\n b "\\u0067ithub.com/operatorstack/'
+                'boatstack/boatstack/internal/buildinfo"\n'
+            )
             self.assertEqual(
                 [
-                    (
-                        None,
-                        "github.com/operatorstack/boatstack/boatstack/kernel",
-                    )
+                    "github.com/operatorstack/boatstack/boatstack/kernel",
+                    "github.com/operatorstack/boatstack/boatstack/internal/buildinfo",
                 ],
-                go_imports(fixture),
+                [
+                    metadata["imports"][0]
+                    for metadata in go_source_metadata([commented, line_broken])
+                ],
             )
 
     @unittest.expectedFailure
     def test_kernel_runtime_has_no_production_consumer_yet(self) -> None:
         # Migration task T5 must replace this marker with a permanent positive
         # production-reachability assertion when the generic runtime is adopted.
-        kernel_package = "github.com/operatorstack/boatstack/boatstack/kernel"
-        runtime_symbols = (
-            "NewRuntime", "Runtime", "Store", "Domain", "Operator", "Receipt",
-        )
-        consumers: list[str] = []
-        for path in sorted((REPO / "boatstack").rglob("*.go")):
-            if path.name.endswith("_test.go") or path.parent == REPO / "boatstack" / "kernel":
-                continue
-            source = path.read_text()
-            for alias, import_path in go_imports(path):
-                if import_path != kernel_package or alias == "_":
-                    continue
-                package_name = "kernel" if alias in (None, ".") else alias
-                if alias == ".":
-                    pattern = rf"\b(?:{'|'.join(runtime_symbols)})\b"
-                else:
-                    pattern = rf"\b{re.escape(package_name)}\.(?:{'|'.join(runtime_symbols)})\b"
-                if re.search(pattern, source):
-                    consumers.append(str(path.relative_to(REPO)))
+        production_files = [
+            path
+            for path in sorted((REPO / "boatstack").rglob("*.go"))
+            if not path.name.endswith("_test.go")
+            and path.parent != REPO / "boatstack" / "kernel"
+        ]
+        consumers = [
+            str(path.relative_to(REPO))
+            for path, metadata in zip(
+                production_files,
+                go_source_metadata(production_files),
+                strict=True,
+            )
+            if metadata["runtime_consumers"]
+        ]
         self.assertTrue(
             consumers,
             "migration T5 has not connected the generic kernel runtime to production code",

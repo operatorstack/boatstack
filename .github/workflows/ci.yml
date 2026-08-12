@@ -1,5 +1,5 @@
 # Boatstack-owned control plane.
-name: Verify Boatstack distribution
+name: CI
 
 on:
   pull_request:
