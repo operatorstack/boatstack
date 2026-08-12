@@ -27,9 +27,61 @@ GO_IMPORT_SPEC = re.compile(
 )
 
 
+def strip_go_comments(source: str) -> str:
+    result: list[str] = []
+    index = 0
+    state = "code"
+    while index < len(source):
+        current = source[index]
+        following = source[index + 1] if index + 1 < len(source) else ""
+        if state == "code":
+            if current == "/" and following == "/":
+                result.extend("  ")
+                index += 2
+                state = "line-comment"
+                continue
+            if current == "/" and following == "*":
+                result.extend("  ")
+                index += 2
+                state = "block-comment"
+                continue
+            if current in ('"', "'", "`"):
+                state = {"\"": "string", "'": "rune", "`": "raw"}[current]
+            result.append(current)
+            index += 1
+            continue
+        if state == "line-comment":
+            result.append("\n" if current == "\n" else " ")
+            index += 1
+            if current == "\n":
+                state = "code"
+            continue
+        if state == "block-comment":
+            if current == "*" and following == "/":
+                result.extend("  ")
+                index += 2
+                state = "code"
+                continue
+            result.append("\n" if current == "\n" else " ")
+            index += 1
+            continue
+        result.append(current)
+        index += 1
+        if state in ("string", "rune") and current == "\\" and index < len(source):
+            result.append(source[index])
+            index += 1
+            continue
+        if (state == "string" and current == '"') or (
+            state == "rune" and current == "'"
+        ) or (state == "raw" and current == "`"):
+            state = "code"
+    return "".join(result)
+
+
 def go_imports(path: Path) -> list[tuple[str | None, str]]:
     imports: list[tuple[str | None, str]] = []
-    for declaration in GO_IMPORT_DECLARATION.finditer(path.read_text()):
+    source = strip_go_comments(path.read_text())
+    for declaration in GO_IMPORT_DECLARATION.finditer(source):
         body = declaration.group("block") or declaration.group("single") or ""
         for line in body.splitlines():
             match = GO_IMPORT_SPEC.match(line)
@@ -489,6 +541,23 @@ class RepositoryContract(unittest.TestCase):
             "run: go test -race ./kernel ./internal/softwaredelivery/effects",
             component_ci,
         )
+
+    def test_go_import_parser_accepts_commented_imports(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Path(directory) / "consumer.go"
+            fixture.write_text(
+                'package consumer\n\nimport /* migration T5 */ '
+                '"github.com/operatorstack/boatstack/boatstack/kernel"\n'
+            )
+            self.assertEqual(
+                [
+                    (
+                        None,
+                        "github.com/operatorstack/boatstack/boatstack/kernel",
+                    )
+                ],
+                go_imports(fixture),
+            )
 
     @unittest.expectedFailure
     def test_kernel_runtime_has_no_production_consumer_yet(self) -> None:
