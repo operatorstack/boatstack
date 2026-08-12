@@ -36,6 +36,7 @@ type Snapshot struct {
 type Scenario struct {
 	InstanceID            string
 	Objective             kernel.Objective
+	RevisedObjective      kernel.Objective
 	ConflictingObjective  kernel.Objective
 	Authority             kernel.Authority
 	BindTransition        string
@@ -126,11 +127,11 @@ func (suite KernelConformance) objectiveRevisionInvalidatesPrescription(t *testi
 	transition := fixture.Scenario.AdvanceTransitions[0]
 	request, prescription := resolve(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective, fixture.Scenario.Authority)
 	before := fixture.Scenario.Snapshot()
-	fixture.Scenario.RebindObjective(fixture.Scenario.ConflictingObjective)
-	request.Objective = &fixture.Scenario.ConflictingObjective
+	fixture.Scenario.RebindObjective(fixture.Scenario.RevisedObjective)
+	request.Objective = &fixture.Scenario.RevisedObjective
 	_, err := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
 	after := fixture.Scenario.Snapshot()
-	if !kernel.IsStale(err) || effectCount(after, transition) != effectCount(before, transition) || after.CommitCount != before.CommitCount {
+	if !kernel.IsStale(err) || effectCount(after, transition) != effectCount(before, transition) || after.CommitCount != before.CommitCount || len(after.Receipts) != len(before.Receipts) {
 		t.Fatalf("control-law objective-revision-freshness: error=%v before=%#v after=%#v", err, before, after)
 	}
 }
@@ -427,6 +428,9 @@ func (suite KernelConformance) fixture(t testing.TB, setup Setup) KernelConforma
 	fixture := suite.New(t, setup)
 	if fixture.Domain == nil || fixture.Operator == nil || fixture.CapabilityClassifier == nil || fixture.Store == nil || fixture.Locker == nil || fixture.Clock == nil || fixture.Scenario.Snapshot == nil || fixture.Scenario.ChangeObservation == nil || fixture.Scenario.RebindObjective == nil || fixture.Scenario.InterruptNextOperator == nil || fixture.Scenario.PanicNextOperator == nil || fixture.Scenario.FailNextCommit == nil || fixture.Scenario.RetargetInstance == nil || fixture.Scenario.InstanceID == "" || fixture.Scenario.BindTransition == "" || len(fixture.Scenario.AdvanceTransitions) == 0 || fixture.Scenario.MaintenanceTransition == "" || fixture.Scenario.RecoveryTransition == "" || fixture.Scenario.ExtraCapability.Validate() != nil {
 		t.Fatal("kernel conformance fixture is incomplete")
+	}
+	if fixture.Scenario.RevisedObjective.Validate() != nil || fixture.Scenario.RevisedObjective.ID != fixture.Scenario.Objective.ID || fixture.Scenario.RevisedObjective.Revision <= fixture.Scenario.Objective.Revision || fixture.Scenario.RevisedObjective.Fingerprint == fixture.Scenario.Objective.Fingerprint {
+		t.Fatal("kernel conformance revised objective must preserve identity while increasing revision and changing fingerprint")
 	}
 	return fixture
 }

@@ -295,6 +295,10 @@ func newIntegerFixture(setup Setup) KernelConformance {
 	if err != nil {
 		panic(err)
 	}
+	revised, err := kernel.NewObjective("reach-two", 2, map[string]int{"value": 3})
+	if err != nil {
+		panic(err)
+	}
 	conflicting, err := kernel.NewObjective("other", 1, map[string]int{"value": 0})
 	if err != nil {
 		panic(err)
@@ -339,6 +343,7 @@ func newIntegerFixture(setup Setup) KernelConformance {
 	fixture.Scenario = Scenario{
 		InstanceID:            state.InstanceID,
 		Objective:             objective,
+		RevisedObjective:      revised,
 		ConflictingObjective:  conflicting,
 		Authority:             authority,
 		BindTransition:        "objective.bind",
