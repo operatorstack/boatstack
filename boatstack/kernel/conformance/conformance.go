@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -90,7 +91,7 @@ func (suite KernelConformance) Run(t *testing.T) {
 func (suite KernelConformance) objectiveBinding(t *testing.T) {
 	fixture, runtime := suite.fresh(t, SetupUnbound)
 	before := fixture.Scenario.Snapshot()
-	receipt := resolveAndApply(t, runtime, fixture.Scenario, fixture.Scenario.BindTransition, &fixture.Scenario.Objective)
+	receipt := resolveAndApply(t, runtime, fixture.Program, fixture.Scenario, fixture.Scenario.BindTransition, &fixture.Scenario.Objective)
 	after := fixture.Scenario.Snapshot()
 	if after.State.ObjectiveBinding == nil || !after.State.ObjectiveBinding.Matches(fixture.Scenario.Objective) {
 		t.Fatal("control-law objective-binding: apply did not bind the exact objective")
@@ -103,7 +104,7 @@ func (suite KernelConformance) objectiveBinding(t *testing.T) {
 func (suite KernelConformance) objectiveAbsence(t *testing.T) {
 	fixture, runtime := suite.fresh(t, SetupMaintenanceAbsent)
 	before := fixture.Scenario.Snapshot()
-	resolveAndApply(t, runtime, fixture.Scenario, fixture.Scenario.MaintenanceTransition, &fixture.Scenario.ConflictingObjective)
+	resolveAndApply(t, runtime, fixture.Program, fixture.Scenario, fixture.Scenario.MaintenanceTransition, &fixture.Scenario.ConflictingObjective)
 	after := fixture.Scenario.Snapshot()
 	if before.State.ObjectiveBinding != nil || after.State.ObjectiveBinding != nil {
 		t.Fatal("control-law objective-absence: maintenance synthesized an objective binding")
@@ -113,7 +114,7 @@ func (suite KernelConformance) objectiveAbsence(t *testing.T) {
 func (suite KernelConformance) maintenancePreservesExactBinding(t *testing.T) {
 	fixture, runtime := suite.fresh(t, SetupMaintenanceBound)
 	before := fixture.Scenario.Snapshot()
-	resolveAndApply(t, runtime, fixture.Scenario, fixture.Scenario.MaintenanceTransition, &fixture.Scenario.ConflictingObjective)
+	resolveAndApply(t, runtime, fixture.Program, fixture.Scenario, fixture.Scenario.MaintenanceTransition, &fixture.Scenario.ConflictingObjective)
 	after := fixture.Scenario.Snapshot()
 	if before.State.ObjectiveBinding == nil || after.State.ObjectiveBinding == nil || *after.State.ObjectiveBinding != *before.State.ObjectiveBinding {
 		t.Fatal("control-law objective-preservation: maintenance changed the exact binding")
@@ -208,9 +209,7 @@ func (suite KernelConformance) targetedAndUntargetedShareRelation(t *testing.T) 
 	if err != nil || targeted.Decision.Kind != kernel.Prescribed || targeted.Prescription == nil || targeted.Prescription.ID != untargeted.Prescription.ID {
 		t.Fatalf("control-law canonical-relation: targeted=%#v error=%v", targeted.Decision, err)
 	}
-	if _, err := runtime.Apply(ctx, kernel.ApplyRequest{ResolveRequest: targetedRequest, Prescription: *targeted.Prescription}); err != nil {
-		t.Fatalf("control-law prescription-soundness: %v", err)
-	}
+	applyAndRequireCommit(t, runtime, fixture.Program, fixture.Scenario, targetedRequest, *targeted.Prescription)
 }
 
 func (suite KernelConformance) interruptedOperatorRequiresExplicitRecovery(t *testing.T) {
@@ -223,7 +222,7 @@ func (suite KernelConformance) interruptedOperatorRequiresExplicitRecovery(t *te
 	if !kernel.IsRecoveryRequired(err) || interrupted.State.Recovery == nil || interrupted.State.Recovery.TransitionID != transition || effectCount(interrupted, transition) != 1 {
 		t.Fatalf("control-law explicit-recovery: state=%#v error=%v", interrupted, err)
 	}
-	recovery := resolveAndApply(t, runtime, fixture.Scenario, fixture.Scenario.RecoveryTransition, &fixture.Scenario.Objective)
+	recovery := resolveAndApply(t, runtime, fixture.Program, fixture.Scenario, fixture.Scenario.RecoveryTransition, &fixture.Scenario.Objective)
 	after := fixture.Scenario.Snapshot()
 	if after.State.Recovery != nil || recovery.TransitionID != fixture.Scenario.RecoveryTransition {
 		t.Fatalf("control-law explicit-recovery: recovery did not settle: %#v", after.State)
@@ -284,7 +283,7 @@ func (suite KernelConformance) failedRecoveryPreservesOriginalObligation(t *test
 	if !kernel.IsRecoveryRequired(err) || failed.State.Recovery == nil || *failed.State.Recovery != original || effectCount(failed, transition) != 1 {
 		t.Fatalf("control-law recovery-obligation-preservation: state=%#v error=%v", failed.State, err)
 	}
-	resolveAndApply(t, runtime, fixture.Scenario, fixture.Scenario.RecoveryTransition, &fixture.Scenario.Objective)
+	resolveAndApply(t, runtime, fixture.Program, fixture.Scenario, fixture.Scenario.RecoveryTransition, &fixture.Scenario.Objective)
 	settled := fixture.Scenario.Snapshot()
 	if settled.State.Recovery != nil || effectCount(settled, transition) != 1 {
 		t.Fatalf("control-law recovery-retry: state=%#v", settled.State)
@@ -310,20 +309,28 @@ func (suite KernelConformance) concurrentApplyCommitsOnce(t *testing.T) {
 	fixture, runtime := suite.fresh(t, SetupConcurrentSameBase)
 	transition := fixture.Scenario.AdvanceTransitions[0]
 	request, prescription := resolve(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective, fixture.Scenario.Authority)
+	before := fixture.Scenario.Snapshot()
 	start := make(chan struct{})
-	results := make(chan error, 2)
+	type applyResult struct {
+		receipt kernel.Receipt
+		err     error
+	}
+	results := make(chan applyResult, 2)
 	for range 2 {
 		go func() {
 			<-start
-			_, err := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
-			results <- err
+			receipt, err := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
+			results <- applyResult{receipt: receipt, err: err}
 		}()
 	}
 	close(start)
 	successes, refusals := 0, 0
+	var winner kernel.Receipt
 	for range 2 {
-		if err := <-results; err == nil {
+		result := <-results
+		if result.err == nil {
 			successes++
+			winner = result.receipt
 		} else {
 			refusals++
 		}
@@ -332,11 +339,14 @@ func (suite KernelConformance) concurrentApplyCommitsOnce(t *testing.T) {
 	if successes != 1 || refusals != 1 || after.CommitCount != 1 || len(after.Receipts) != 1 || effectCount(after, transition) != 1 {
 		t.Fatalf("control-law concurrent-cas: success/refusal=%d/%d snapshot=%#v", successes, refusals, after)
 	}
+	if err := committedOutcomeError(fixture.Program, before, after, winner); err != nil {
+		t.Fatalf("control-law concurrent-cas durable outcome: %v", err)
+	}
 }
 
 func (suite KernelConformance) programReachesMarkedState(t *testing.T) {
 	fixture, runtime := suite.fresh(t, SetupUnbound)
-	receipts, err := runUntargetedToMarked(context.Background(), runtime, fixture.Scenario, len(fixture.Scenario.AdvanceTransitions)+1)
+	receipts, err := runUntargetedToMarked(context.Background(), runtime, fixture.Program, fixture.Scenario, len(fixture.Scenario.AdvanceTransitions)+1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +361,7 @@ func (suite KernelConformance) programReachesMarkedState(t *testing.T) {
 	}
 }
 
-func runUntargetedToMarked(ctx context.Context, runtime kernel.Runtime, scenario Scenario, maxTransitions int) ([]kernel.Receipt, error) {
+func runUntargetedToMarked(ctx context.Context, runtime kernel.Runtime, program kernel.Program, scenario Scenario, maxTransitions int) ([]kernel.Receipt, error) {
 	request := kernel.ResolveRequest{InstanceID: scenario.InstanceID, Objective: &scenario.Objective, Authority: scenario.Authority}
 	seen := map[string]bool{}
 	receipts := make([]kernel.Receipt, 0, maxTransitions)
@@ -377,8 +387,12 @@ func runUntargetedToMarked(ctx context.Context, runtime kernel.Runtime, scenario
 		if step == maxTransitions {
 			return nil, fmt.Errorf("control-law marked-reachability: untargeted resolution exceeded %d transitions before marked", maxTransitions)
 		}
+		before := scenario.Snapshot()
 		receipt, err := runtime.Apply(ctx, kernel.ApplyRequest{ResolveRequest: request, Prescription: *resolution.Prescription})
 		if err != nil {
+			return nil, fmt.Errorf("control-law marked-reachability: apply %s: %w", resolution.Decision.Transition, err)
+		}
+		if err := committedOutcomeError(program, before, scenario.Snapshot(), receipt); err != nil {
 			return nil, fmt.Errorf("control-law marked-reachability: apply %s: %w", resolution.Decision.Transition, err)
 		}
 		receipts = append(receipts, receipt)
@@ -427,14 +441,47 @@ func resolve(t testing.TB, runtime kernel.Runtime, scenario Scenario, transition
 	return request, *resolution.Prescription
 }
 
-func resolveAndApply(t testing.TB, runtime kernel.Runtime, scenario Scenario, transition string, objective *kernel.Objective) kernel.Receipt {
+func resolveAndApply(t testing.TB, runtime kernel.Runtime, program kernel.Program, scenario Scenario, transition string, objective *kernel.Objective) kernel.Receipt {
 	t.Helper()
 	request, prescription := resolve(t, runtime, scenario, transition, objective, scenario.Authority)
+	return applyAndRequireCommit(t, runtime, program, scenario, request, prescription)
+}
+
+func applyAndRequireCommit(t testing.TB, runtime kernel.Runtime, program kernel.Program, scenario Scenario, request kernel.ResolveRequest, prescription kernel.Prescription) kernel.Receipt {
+	t.Helper()
+	before := scenario.Snapshot()
 	receipt, err := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
 	if err != nil {
-		t.Fatalf("apply %s: %v", transition, err)
+		t.Fatalf("apply %s: %v", prescription.TransitionID, err)
+	}
+	if err := committedOutcomeError(program, before, scenario.Snapshot(), receipt); err != nil {
+		t.Fatalf("apply %s durable outcome: %v", prescription.TransitionID, err)
 	}
 	return receipt
+}
+
+func committedOutcomeError(program kernel.Program, before, after Snapshot, returned kernel.Receipt) error {
+	if err := returned.Validate(); err != nil {
+		return fmt.Errorf("returned receipt is invalid: %w", err)
+	}
+	if after.CommitCount != before.CommitCount+1 || len(after.Receipts) != len(before.Receipts)+1 {
+		return fmt.Errorf("commit or durable receipt count did not advance exactly once")
+	}
+	durable := after.Receipts[len(after.Receipts)-1]
+	if err := durable.Validate(); err != nil {
+		return fmt.Errorf("durable receipt is invalid: %w", err)
+	}
+	if !reflect.DeepEqual(durable, returned) {
+		return fmt.Errorf("durable receipt differs from returned receipt")
+	}
+	transition, ok := program.Transition(returned.TransitionID)
+	if !ok {
+		return fmt.Errorf("returned receipt transition is absent from program")
+	}
+	if after.State.InstanceID != returned.InstanceID || after.State.Program != returned.Program || after.State.Revision != returned.ResultStateRevision || after.State.Mode != transition.TargetMode || after.State.Recovery != nil || !reflect.DeepEqual(after.State.ObjectiveBinding, returned.ObjectiveBinding) {
+		return fmt.Errorf("durable state differs from winning receipt outcome")
+	}
+	return nil
 }
 
 func effectCount(snapshot Snapshot, transition string) int {
