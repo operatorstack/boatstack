@@ -33,18 +33,21 @@ func NewJournal(resolver ports.InvocationResolver, clock ports.Clock) (*Journal,
 }
 
 type journalRecord struct {
-	SchemaVersion     int                         `json:"schema_version"`
-	Admission         protocol.Admission          `json:"admission"`
-	TransitionID      catalog.TransitionID        `json:"transition_id"`
-	TransitionClass   catalog.EventClass          `json:"transition_class"`
-	ReconcilesProgram bool                        `json:"reconciles_program,omitempty"`
-	Status            string                      `json:"status"`
-	Mutations         []ports.ResourceMutation    `json:"mutations,omitempty"`
-	Reason            string                      `json:"reason,omitempty"`
-	ReceiptID         string                      `json:"receipt_id,omitempty"`
-	Receipt           *protocol.TransitionReceipt `json:"receipt,omitempty"`
-	CreatedAt         time.Time                   `json:"created_at"`
-	UpdatedAt         time.Time                   `json:"updated_at"`
+	SchemaVersion   int                  `json:"schema_version"`
+	Admission       protocol.Admission   `json:"admission"`
+	TransitionID    catalog.TransitionID `json:"transition_id"`
+	TransitionClass catalog.EventClass   `json:"transition_class"`
+	// AllowedStateFacets preserves the current schema-8 record shape. Recovery
+	// authority is reconstructed from Admission.RequiredCapabilities instead.
+	AllowedStateFacets []model.StateFacet          `json:"allowed_state_facets"`
+	ReconcilesProgram  bool                        `json:"reconciles_program,omitempty"`
+	Status             string                      `json:"status"`
+	Mutations          []ports.ResourceMutation    `json:"mutations,omitempty"`
+	Reason             string                      `json:"reason,omitempty"`
+	ReceiptID          string                      `json:"receipt_id,omitempty"`
+	Receipt            *protocol.TransitionReceipt `json:"receipt,omitempty"`
+	CreatedAt          time.Time                   `json:"created_at"`
+	UpdatedAt          time.Time                   `json:"updated_at"`
 }
 
 func journalName(id, suffix string) (string, error) {
@@ -77,7 +80,11 @@ func (j *Journal) Begin(ctx context.Context, admission protocol.Admission, trans
 		return statErr
 	}
 	now := j.clock.Now().UTC()
-	record := journalRecord{SchemaVersion: protocol.JournalSchemaVersion, Admission: admission, TransitionID: transition.ID, TransitionClass: transition.Class, ReconcilesProgram: transition.Policy.ReconcilesProgram, Status: "begun", CreatedAt: now, UpdatedAt: now}
+	policy, err := catalog.DurableStateFacetPolicy(transition)
+	if err != nil {
+		return err
+	}
+	record := journalRecord{SchemaVersion: protocol.JournalSchemaVersion, Admission: admission, TransitionID: transition.ID, TransitionClass: transition.Class, AllowedStateFacets: policy.Writes, ReconcilesProgram: transition.Policy.ReconcilesProgram, Status: "begun", CreatedAt: now, UpdatedAt: now}
 	raw, err := encodeJSON(record)
 	if err != nil {
 		return err
@@ -113,6 +120,10 @@ func readJournal(path string) (journalRecord, error) {
 	}
 	if err := record.Admission.ValidateIdentity(); err != nil || record.Admission.TransitionID != record.TransitionID {
 		return journalRecord{}, fmt.Errorf("invalid transaction admission in %s: %v", path, err)
+	}
+	allowed, err := model.NormalizeStateFacets("journal allowed state facets", record.AllowedStateFacets)
+	if err != nil || len(allowed) == 0 || !slices.Equal(allowed, record.AllowedStateFacets) {
+		return journalRecord{}, fmt.Errorf("invalid allowed state facets in %s: %v", path, err)
 	}
 	for _, mutation := range record.Mutations {
 		facets, err := model.NormalizeStateFacets("journal mutation state facets", mutation.StateFacets)
