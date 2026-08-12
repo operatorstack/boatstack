@@ -79,6 +79,33 @@ class RepositoryContract(unittest.TestCase):
             self.helper, *args, env=env, stdin=stdin, expected=expected
         )
 
+    def apply_prescribed(
+        self,
+        binary: Path,
+        transition: str,
+        *args: object,
+        cwd: Path | None = None,
+        env: dict[str, str] | None = None,
+    ) -> dict:
+        resolved = json.loads(
+            self.run_command(
+                binary, "next", "--transition", transition, *args,
+                cwd=cwd, env=env,
+            ).stdout
+        )
+        prescription = resolved["prescription"]
+        correlation = resolved["snapshot"]["invocation"]["correlation_id"]
+        applied = self.run_command(
+            binary, "apply", "--transition", transition, *args,
+            "--correlation", correlation,
+            "--prescription-id", prescription["id"],
+            "--expected-state-revision", prescription["expected_state_revision"],
+            "--expected-program-fingerprint", prescription["expected_program_fingerprint"],
+            "--expected-snapshot-fingerprint", prescription["expected_snapshot_fingerprint"],
+            cwd=cwd, env=env,
+        )
+        return json.loads(applied.stdout)
+
     def init_repository(self, root: Path) -> None:
         self.run_command("git", "init", "-b", "main", cwd=root)
         self.run_command("git", "config", "user.name", "Boatstack Test", cwd=root)
@@ -494,15 +521,13 @@ class RepositoryContract(unittest.TestCase):
                 "--goal-id", "bootstrap", "--goal-kind", "approved-plan",
                 "--delivery", "bootstrap",
             )
-            self.run_command(
-                launcher, "apply", "--repo", repository,
-                "--transition", "goal.configure", *goal,
+            self.apply_prescribed(
+                launcher, "goal.configure", "--repo", repository, *goal,
                 "--human", "contract", "--param", "goal_kind=approved-plan",
                 "--param", "delivery_id=bootstrap", env=env,
             )
-            self.run_command(
-                launcher, "apply", "--repo", repository,
-                "--transition", "engagement.begin", *goal,
+            self.apply_prescribed(
+                launcher, "engagement.begin", "--repo", repository, *goal,
                 "--repository-authority", env=env,
             )
             ordinary = json.loads(
@@ -594,7 +619,7 @@ class RepositoryContract(unittest.TestCase):
             prior_program = candidate_status["snapshot"]["recorded_program_fingerprint"]
             split_reconciliation = self.run_command(
                 self.helper,
-                "apply",
+                "next",
                 "--repo",
                 repository,
                 "--transition",
@@ -612,7 +637,6 @@ class RepositoryContract(unittest.TestCase):
                 "--param",
                 "accept_obligation_change=true",
                 env=env,
-                expected=1,
             )
             self.assertIn(
                 "catalog reconciliation cannot activate a different runtime",

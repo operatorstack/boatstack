@@ -26,7 +26,10 @@ func lockFile(file *os.File) error {
 		1, 0, uintptr(unsafe.Pointer(&overlapped)),
 	)
 	if result == 0 {
-		return fmt.Errorf("kernel lock is held: %w", callErr)
+		if callErr == syscall.Errno(33) {
+			return fmt.Errorf("%w: %v", errLockHeld, callErr)
+		}
+		return callErr
 	}
 	return nil
 }

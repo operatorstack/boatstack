@@ -29,9 +29,9 @@ func snapshotFor(t *testing.T, phase model.ProtocolPhase, terminal model.Termina
 	t.Helper()
 	e := model.Evidence{Source: "fixture", Fingerprint: "fixture", ObservedAt: time.Unix(10, 0).UTC()}
 	o := model.Observation{
-		SchemaVersion: model.SnapshotSchemaVersion,
-		Invocation:    model.InvocationContext{RepositoryID: "repo", GitCommonID: "git", WorktreeID: "wt", Ref: "refs/heads/f", ControllerID: "ctl", InvokingPath: filepath.Join(t.TempDir(), "repo"), RuntimeVersion: "runtime-version", RuntimePath: filepath.Join(t.TempDir(), "runtime"), RuntimeFingerprint: "runtime", Topology: model.TopologyEmbedded, Host: "cli", Correlation: "c"},
-		Phase:         model.Known(phase, e), Engagement: model.Known(model.EngagementActive, e), Delivery: model.Known(model.DeliveryActive, e),
+		SchemaVersion: model.SnapshotSchemaVersion, StateRevision: 1,
+		Invocation: model.InvocationContext{RepositoryID: "repo", GitCommonID: "git", WorktreeID: "wt", Ref: "refs/heads/f", ControllerID: "ctl", InvokingPath: filepath.Join(t.TempDir(), "repo"), RuntimeVersion: "runtime-version", RuntimePath: filepath.Join(t.TempDir(), "runtime"), RuntimeFingerprint: "runtime", Topology: model.TopologyEmbedded, Host: "cli", Correlation: "c"},
+		Phase:      model.Known(phase, e), Engagement: model.Known(model.EngagementActive, e), Delivery: model.Known(model.DeliveryActive, e),
 		Workspace: model.Known(model.WorkspaceActive, e), Plan: model.Known(model.PlanValid, e),
 		Configuration: model.Known(model.ConfigurationVerified, e), Runtime: model.Known(model.RuntimeVerified, e),
 		ConfigurationPolicy: model.Known(model.ConfigurationPolicy{PlanApproval: "human", VisualEvidence: "optional", ExternalEffectAuthority: "human-or-autonomy-plus-provider", Hosts: []string{"cli"}}, e),

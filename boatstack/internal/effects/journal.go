@@ -73,7 +73,7 @@ func (j *Journal) Begin(ctx context.Context, admission protocol.Admission, trans
 		return statErr
 	}
 	now := j.clock.Now().UTC()
-	record := journalRecord{SchemaVersion: 2, Admission: admission, TransitionID: transition.ID, TransitionClass: transition.Class, ReconcilesProgram: transition.Policy.ReconcilesProgram, Status: "begun", CreatedAt: now, UpdatedAt: now}
+	record := journalRecord{SchemaVersion: protocol.JournalSchemaVersion, Admission: admission, TransitionID: transition.ID, TransitionClass: transition.Class, ReconcilesProgram: transition.Policy.ReconcilesProgram, Status: "begun", CreatedAt: now, UpdatedAt: now}
 	raw, err := encodeJSON(record)
 	if err != nil {
 		return err
@@ -104,7 +104,7 @@ func readJournal(path string) (journalRecord, error) {
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return journalRecord{}, fmt.Errorf("transaction journal %s contains trailing JSON", path)
 	}
-	if record.SchemaVersion != 2 || record.Admission.ID == "" || record.TransitionID == "" || !record.TransitionClass.Valid() || !record.TransitionClass.Controllable() || record.Status == "" {
+	if record.SchemaVersion != protocol.JournalSchemaVersion || record.Admission.ID == "" || record.TransitionID == "" || !record.TransitionClass.Valid() || !record.TransitionClass.Controllable() || record.Status == "" {
 		return journalRecord{}, fmt.Errorf("invalid transaction journal %s", path)
 	}
 	if err := record.Admission.ValidateIdentity(); err != nil || record.Admission.TransitionID != record.TransitionID {

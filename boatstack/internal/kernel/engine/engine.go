@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
@@ -45,9 +46,11 @@ type ResolveRequest struct {
 }
 
 type Resolution struct {
-	Snapshot model.Snapshot
-	Goal     model.Goal
-	Decision supervisor.Decision
+	Snapshot     model.Snapshot
+	Goal         model.Goal
+	Decision     supervisor.Decision
+	Prescription protocol.Prescription
+	Admission    protocol.Admission
 }
 
 func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution, error) {
@@ -105,7 +108,14 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 				decision.Transition = nil
 			}
 		} else {
-			admission, admissionErr := protocol.NewAdmission(snapshot, goal, *decision.Transition, request.Authority, request.Parameters, now, 2*time.Minute)
+			prescription, prescriptionErr := protocol.NewPrescription(snapshot, *decision.Transition)
+			if prescriptionErr != nil {
+				decision.Kind = supervisor.DecisionUnresolved
+				decision.Reason = prescriptionErr.Error()
+				decision.Transition = nil
+				return Resolution{Snapshot: snapshot, Goal: goal, Decision: decision}, nil
+			}
+			admission, admissionErr := protocol.NewAdmission(snapshot, goal, *decision.Transition, prescription, request.Authority, request.Parameters, now, 2*time.Minute)
 			if admissionErr != nil {
 				decision.Kind = supervisor.DecisionUnresolved
 				decision.Reason = admissionErr.Error()
@@ -114,6 +124,8 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 				decision.Kind = supervisor.DecisionUnresolved
 				decision.Reason = fmt.Sprintf("transition %q failed deterministic effect preflight: %v", admission.TransitionID, preflightErr)
 				decision.Transition = nil
+			} else {
+				return Resolution{Snapshot: snapshot, Goal: goal, Decision: decision, Prescription: prescription, Admission: admission}, nil
 			}
 		}
 	}
@@ -127,6 +139,7 @@ func unresolvedResolution(goal model.Goal, reason string) Resolution {
 type ApplyRequest struct {
 	ResolveRequest
 	FlowID            string
+	Prescription      protocol.Prescription
 	Parameters        protocol.Parameters
 	IdempotencyKey    string
 	AdmissionLifetime time.Duration
@@ -152,6 +165,29 @@ type StaleAdmissionError struct{ Err error }
 
 func (e StaleAdmissionError) Error() string { return "stale admission: " + e.Err.Error() }
 func (e StaleAdmissionError) Unwrap() error { return e.Err }
+
+type StalePrescriptionError struct {
+	PrescriptionID             string
+	ExpectedStateRevision      uint64
+	ObservedStateRevision      uint64
+	ExpectedProgramFingerprint string
+	ObservedProgramFingerprint string
+	SnapshotChanged            bool
+}
+
+func (e StalePrescriptionError) Error() string {
+	facets := make([]string, 0, 3)
+	if e.ExpectedStateRevision != e.ObservedStateRevision {
+		facets = append(facets, fmt.Sprintf("state revision %d != %d", e.ExpectedStateRevision, e.ObservedStateRevision))
+	}
+	if e.ExpectedProgramFingerprint != e.ObservedProgramFingerprint {
+		facets = append(facets, "control program changed")
+	}
+	if e.SnapshotChanged {
+		facets = append(facets, "admission-relevant snapshot changed")
+	}
+	return fmt.Sprintf("STALE_PRESCRIPTION %q: %s; re-resolve before apply", e.PrescriptionID, strings.Join(facets, ", "))
+}
 
 type PostconditionError struct {
 	Transition catalog.TransitionID
@@ -180,6 +216,12 @@ func (e ExternalOutcomeUnknownError) Error() string {
 func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyResult, returnErr error) {
 	if request.FlowID == "" {
 		return result, fmt.Errorf("kernel apply requires flow identity")
+	}
+	if err := request.Prescription.Validate(); err != nil {
+		return result, err
+	}
+	if request.Requested != request.Prescription.TransitionID {
+		return result, fmt.Errorf("apply transition does not match prescription")
 	}
 	if request.IdempotencyKey != "" {
 		prior, ok, err := e.receipts.FindByIdempotency(ctx, request.Invocation, request.IdempotencyKey)
@@ -220,13 +262,16 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 	if err != nil {
 		return result, err
 	}
+	if err := validatePrescriptionCurrent(request.Prescription, resolution.Snapshot); err != nil {
+		return result, err
+	}
 	request.Goal = resolution.Goal
 	if resolution.Decision.Kind != supervisor.DecisionPrescribed || resolution.Decision.Transition == nil {
 		return result, DecisionError{Decision: resolution.Decision}
 	}
 	transition := *resolution.Decision.Transition
 	now := e.clock.Now()
-	admission, err := protocol.NewAdmission(resolution.Snapshot, request.Goal, transition, request.Authority, request.Parameters, now, request.AdmissionLifetime)
+	admission, err := protocol.NewAdmission(resolution.Snapshot, request.Goal, transition, request.Prescription, request.Authority, request.Parameters, now, request.AdmissionLifetime)
 	if err != nil {
 		return result, err
 	}
@@ -234,32 +279,32 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 	if request.IdempotencyKey != "" && request.IdempotencyKey != admission.IdempotencyKey {
 		return result, fmt.Errorf("supplied idempotency key does not match the exact admitted request")
 	}
-	if err := e.receipts.Bind(ctx, request.FlowID, admission); err != nil {
-		return result, err
-	}
-	defer e.receipts.Unbind(request.FlowID)
-	if prior, ok, err := e.receipts.FindByIdempotency(ctx, request.Invocation, admission.IdempotencyKey); err != nil {
-		return result, fmt.Errorf("check idempotency: %w", err)
-	} else if ok {
-		if err := validateReplayRequest(prior, request, e.programFingerprint); err != nil {
-			return result, err
+	if request.IdempotencyKey != "" {
+		prior, ok, err := e.receipts.FindByIdempotency(ctx, request.Invocation, admission.IdempotencyKey)
+		if err != nil {
+			return result, fmt.Errorf("check idempotency: %w", err)
 		}
-		observation, observeErr := e.observer.Observe(ctx, ports.ObservationRequest{Invocation: request.Invocation})
-		if observeErr != nil {
-			return result, observeErr
+		if ok {
+			if err := validateReplayRequest(prior, request, e.programFingerprint); err != nil {
+				return result, err
+			}
+			observation, observeErr := e.observer.Observe(ctx, ports.ObservationRequest{Invocation: request.Invocation})
+			if observeErr != nil {
+				return result, observeErr
+			}
+			current, canonicalErr := e.canonicalize(observation)
+			if canonicalErr != nil {
+				return result, canonicalErr
+			}
+			if err := validateReplayGoalState(prior, current); err != nil {
+				return result, err
+			}
+			if !replayStateSettled(current) {
+				return result, ReplayRecoveryError{ReceiptID: prior.ID}
+			}
+			result.Target, result.Receipt, result.Replayed = current, prior, true
+			return result, nil
 		}
-		current, canonicalErr := e.canonicalize(observation)
-		if canonicalErr != nil {
-			return result, canonicalErr
-		}
-		if err := validateReplayGoalState(prior, current); err != nil {
-			return result, err
-		}
-		if !replayStateSettled(current) {
-			return result, ReplayRecoveryError{ReceiptID: prior.ID}
-		}
-		result.Target, result.Receipt, result.Replayed = current, prior, true
-		return result, nil
 	}
 
 	lock, err := e.locker.Acquire(ctx, request.Invocation, transition.OwnedResources)
@@ -280,24 +325,35 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 	if err != nil {
 		return result, err
 	}
-	if prior, ok, findErr := e.receipts.FindByIdempotency(ctx, request.Invocation, admission.IdempotencyKey); findErr != nil {
-		return result, fmt.Errorf("check locked idempotency: %w", findErr)
-	} else if ok {
-		if err := validateReplayRequest(prior, request, e.programFingerprint); err != nil {
-			return result, err
+	if err := validatePrescriptionCurrent(request.Prescription, lockedSnapshot); err != nil {
+		return result, err
+	}
+	if request.IdempotencyKey != "" {
+		prior, ok, findErr := e.receipts.FindByIdempotency(ctx, request.Invocation, admission.IdempotencyKey)
+		if findErr != nil {
+			return result, fmt.Errorf("check locked idempotency: %w", findErr)
 		}
-		if err := validateReplayGoalState(prior, lockedSnapshot); err != nil {
-			return result, err
+		if ok {
+			if err := validateReplayRequest(prior, request, e.programFingerprint); err != nil {
+				return result, err
+			}
+			if err := validateReplayGoalState(prior, lockedSnapshot); err != nil {
+				return result, err
+			}
+			if !replayStateSettled(lockedSnapshot) {
+				return result, ReplayRecoveryError{ReceiptID: prior.ID}
+			}
+			result.Target, result.Receipt, result.Replayed = lockedSnapshot, prior, true
+			return result, nil
 		}
-		if !replayStateSettled(lockedSnapshot) {
-			return result, ReplayRecoveryError{ReceiptID: prior.ID}
-		}
-		result.Target, result.Receipt, result.Replayed = lockedSnapshot, prior, true
-		return result, nil
 	}
 	if err := admission.ValidateCurrent(lockedSnapshot, request.Goal, transition, e.clock.Now()); err != nil {
 		return result, StaleAdmissionError{Err: err}
 	}
+	if err := e.receipts.Bind(ctx, request.FlowID, admission); err != nil {
+		return result, err
+	}
+	defer e.receipts.Unbind(request.FlowID)
 	if err := e.journal.Begin(ctx, admission, transition); err != nil {
 		return result, fmt.Errorf("begin transaction journal: %w", err)
 	}
@@ -388,12 +444,34 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 	return result, nil
 }
 
+func validatePrescriptionCurrent(prescription protocol.Prescription, snapshot model.Snapshot) error {
+	if err := prescription.Validate(); err != nil {
+		return err
+	}
+	snapshotChanged := prescription.ExpectedSnapshotFingerprint != snapshot.Fingerprint
+	if prescription.ExpectedStateRevision == snapshot.StateRevision &&
+		prescription.ExpectedProgramFingerprint == snapshot.ProgramFingerprint && !snapshotChanged {
+		return nil
+	}
+	return StalePrescriptionError{
+		PrescriptionID:             prescription.ID,
+		ExpectedStateRevision:      prescription.ExpectedStateRevision,
+		ObservedStateRevision:      snapshot.StateRevision,
+		ExpectedProgramFingerprint: prescription.ExpectedProgramFingerprint,
+		ObservedProgramFingerprint: snapshot.ProgramFingerprint,
+		SnapshotChanged:            snapshotChanged,
+	}
+}
+
 func validateReplayRequest(prior protocol.TransitionReceipt, request ApplyRequest, programFingerprint string) error {
 	if prior.ProgramFingerprint != programFingerprint {
 		return fmt.Errorf("idempotency receipt belongs to a different control program")
 	}
 	if prior.FlowID != request.FlowID {
 		return fmt.Errorf("idempotency receipt belongs to flow %q, not %q", prior.FlowID, request.FlowID)
+	}
+	if prior.PrescriptionID != request.Prescription.ID {
+		return fmt.Errorf("idempotency receipt belongs to a different prescription")
 	}
 	if prior.GoalScope != catalog.GoalScopeOptionalPreserve && request.Goal.Validate() == nil {
 		if prior.GoalID != request.Goal.ID || prior.GoalKind != request.Goal.Kind || prior.DeliveryID != request.Goal.DeliveryID {

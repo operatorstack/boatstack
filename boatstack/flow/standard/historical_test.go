@@ -79,7 +79,7 @@ func snapshotFromFixture(t *testing.T, fixture historicalFixture) model.Snapshot
 		InvokingPath: filepath.Join(t.TempDir(), "fixture", "repository"), Topology: model.Topology(facts["topology"]), Host: "corpus", Correlation: "correlation-" + fixture.Name,
 	}
 	observation := model.Observation{
-		SchemaVersion: model.SnapshotSchemaVersion, Invocation: invocation,
+		SchemaVersion: model.SnapshotSchemaVersion, StateRevision: 1, Invocation: invocation,
 		Phase: model.Known(model.ProtocolPhase(facts["phase"]), evidence), Engagement: model.Known(model.EngagementState(facts["engagement"]), evidence),
 		Delivery: model.Known(model.DeliveryState(facts["delivery"]), evidence), Workspace: model.Known(model.WorkspaceState(facts["workspace"]), evidence),
 		Plan: model.Known(model.PlanState(facts["plan"]), evidence), Configuration: model.Known(model.ConfigurationState(facts["configuration"]), evidence),

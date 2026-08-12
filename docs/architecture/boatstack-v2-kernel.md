@@ -555,10 +555,12 @@ or recovery refusals therefore cannot first appear at apply.
 ## 9. Admission and authority model
 
 Knowledge, precondition evidence, authority, and proof of effect are four
-separate objects. `Admission` binds the exact transition ID/version, snapshot
-fingerprint, invocation identity, goal and plan lock, observation/configuration
-fingerprints, source revision, branch/worktree, authority receipt, provider
-preview, idempotency key, and expiry.
+separate objects. A content-addressed `Prescription` binds the exact transition,
+durable state revision, executable program fingerprint, and snapshot fingerprint.
+`Admission` binds that prescription plus transition ID/version, invocation
+identity, goal and plan lock, observation/configuration fingerprints, source
+revision, branch/worktree, authority receipt, provider preview, idempotency key,
+and expiry.
 
 `admission.Admit` re-observes or compares current controlling fingerprints before
 any writer runs. A stale prescription fails without mutation. Human approval,
@@ -582,17 +584,17 @@ validation, path resolution, and safety classification are read-only.
 
 Local transitions follow one journaled protocol:
 
-1. validate admission against the exact source snapshot;
-2. acquire a partition-scoped lock keyed by repository/worktree/resources;
-3. capture exact prior bytes and external preconditions;
-4. stage all local writes;
-5. verify staged representations;
-6. install effects in declared order;
-7. install the authoritative binding/state last;
-8. re-observe independently;
-9. verify the target predicate;
-10. append the immutable receipt and commit journal;
-11. release the lock.
+1. validate the prescription against the observed source snapshot;
+2. acquire the repository/worktree/resource lock;
+3. re-observe and compare the exact state revision, program, and snapshot;
+4. validate admission against that locked snapshot;
+5. capture exact prior bytes and external preconditions;
+6. stage all local writes;
+7. verify staged representations;
+8. install effects in declared order;
+9. install durable state revision `N+1` last;
+10. re-observe independently and verify the target predicate;
+11. append the immutable receipt, commit the journal, and release the lock.
 
 Failure restores exact prior bytes where reversible. A mixed epoch is never an
 accepted snapshot. An irreversible or unknown external outcome produces a typed
@@ -621,12 +623,13 @@ both effect completion and postcondition truth. Otherwise the engine enters the
 declared rollback, compensation, or recovery path and returns non-success.
 
 `TransitionReceipt` is immutable and content-addressed. It binds schema, flow
-and sequence IDs, transition ID/version, admission and goal IDs, source and
-target fingerprints, authority classes, idempotency key, timestamps/duration,
-outcome, postcondition verifier, recovery/terminal classification, and a
-privacy-safe failure class. The admission ID transitively binds invocation,
-authority receipts, parameters, and expiry. A receipt never embeds arbitrary
-output, source, prompts, or secrets.
+and sequence IDs, transition ID/version, prescription and admission IDs,
+executable program fingerprint, prior and resulting durable state revisions,
+goal ID, source and target fingerprints, authority classes, idempotency key,
+timestamps/duration, outcome, postcondition verifier, recovery/terminal
+classification, and a privacy-safe failure class. The admission ID transitively
+binds invocation, authority receipts, parameters, and expiry. A receipt never
+embeds arbitrary output, source, prompts, or secrets.
 
 Receipts are the only accepted evidence that a managed transition occurred.
 Plan approvals, publication settlement, and terminal claims point to exact
@@ -763,8 +766,9 @@ Receipts are the factual source. The facade exposes a passive JSONL reader,
 Telemetry is consumer-neutral and privacy-safe.
 
 Allowlisted fields are schema version, flow ID, sequence, timestamp, goal ID,
-transition ID, source/target fingerprints, outcome, duration, recovery and
-authority classifications, terminal status, and controlled failure class.
+transition ID, program and prescription identity, prior/resulting state
+revisions, source/target fingerprints, outcome, duration, recovery and authority
+classifications, terminal status, and controlled failure class.
 Prompts, reasoning, source code, diffs, arbitrary command output, secrets,
 environment variables, and user documents are prohibited.
 

@@ -36,6 +36,9 @@ the complete contract and the historical failure synthesis.
 The [Control Program ABI](docs/architecture/control-program-abi.md) defines the
 strict repository source, canonical fingerprint, compatibility gate, and
 program-qualified transition identity used by complete user-facing Flows.
+The [prescription transaction boundary](docs/architecture/prescription-transactions.md)
+defines the exact durable-state and executable-program compare-and-swap contract
+between resolution and effects.
 
 ## Install
 
@@ -72,12 +75,17 @@ See [Getting started](docs/getting-started.md) and
 ```sh
 boatstack status --repo . --format json
 boatstack catalog --format json
-boatstack apply --repo . --transition <stable-id> --format json
+boatstack next --repo . --goal-id <goal> --goal-kind <kind> --delivery <delivery> --format json
+boatstack apply --repo . --transition <stable-id> --flow <flow> \
+  --prescription-id <id> --expected-state-revision <revision> \
+  --expected-program-fingerprint <sha256> \
+  --expected-snapshot-fingerprint <sha256> --format json
 ```
 
 - `status`, `next`, `doctor`, `catalog`, and `events` are read-only.
-- `apply` and `recover` request stable transition IDs from the 63-event
-  executable catalog.
+- `apply` and `recover` consume a stable transition ID plus the exact
+  prescription returned by `next`; stale state or program identity causes zero
+  effects and requires re-resolution.
 - Friendly aliases such as `plan-create`, `plan-approve`,
   `workspace-cut`, `record-test`, and `publish-pr` map to those IDs.
 - `guard` is the shared safety-hook query. It blocks high-confidence

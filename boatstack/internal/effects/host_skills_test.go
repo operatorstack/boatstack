@@ -52,6 +52,8 @@ func TestHostSkillProjectionPreservesAuthorityBoundaries(t *testing.T) {
 			"requested authority sources separately from currently\nmaterialized authority receipts",
 			"complete apply response and stderr", "authority-bearing `FRONTIER`", "Never synthesize missing\nauthority", "`CANDIDATE`", "immediately preceding `PRESCRIBED`",
 			"every requested authority source is materialized\nor conclusively rejected against the post-receipt state",
+			"prescription ID, expected state revision", "expected program fingerprint, expected snapshot fingerprint", "correlation\nunchanged",
+			"`STALE_PRESCRIPTION`", "discard the prescription, and re-resolve once",
 		} {
 			if !strings.Contains(value, contract) {
 				t.Fatalf("%s is missing authority contract %q", path, contract)

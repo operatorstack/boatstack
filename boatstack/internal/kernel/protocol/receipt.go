@@ -8,7 +8,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 )
 
-const ReceiptSchemaVersion = 3
+const ReceiptSchemaVersion = 4
 
 type Outcome string
 
@@ -33,7 +33,10 @@ type TransitionReceipt struct {
 	RuntimeVersion          string               `json:"runtime_version,omitempty"`
 	RuntimeFingerprint      string               `json:"runtime_fingerprint,omitempty"`
 	RuntimeSourceRevision   string               `json:"runtime_source_revision,omitempty"`
+	PrescriptionID          string               `json:"prescription_id"`
 	AdmissionID             string               `json:"admission_id"`
+	PriorStateRevision      uint64               `json:"prior_state_revision"`
+	ResultingStateRevision  uint64               `json:"resulting_state_revision"`
 	GoalID                  string               `json:"goal_id"`
 	GoalKind                model.GoalKind       `json:"goal_kind"`
 	DeliveryID              string               `json:"delivery_id"`
@@ -60,6 +63,9 @@ func NewReceipt(flowID string, sequence uint64, admission Admission, transition 
 	if completedAt.Before(startedAt) {
 		return TransitionReceipt{}, fmt.Errorf("receipt completion precedes start")
 	}
+	if admission.ExpectedStateRevision == ^uint64(0) || target.StateRevision != admission.ExpectedStateRevision+1 {
+		return TransitionReceipt{}, fmt.Errorf("receipt target revision must advance exactly once from the prescribed revision")
+	}
 	classes := make([]string, 0, len(admission.Authority.Receipts))
 	for _, authority := range admission.Authority.Receipts {
 		classes = append(classes, string(authority.Class))
@@ -70,9 +76,12 @@ func NewReceipt(flowID string, sequence uint64, admission Admission, transition 
 	}
 	receipt := TransitionReceipt{
 		SchemaVersion: ReceiptSchemaVersion, FlowID: flowID, Sequence: sequence, TransitionID: transition.ID,
-		TransitionVersion: transition.Version, ProgramFingerprint: admission.ProgramFingerprint, AdmissionID: admission.ID, GoalID: admission.Goal.ID, GoalKind: admission.Goal.Kind, DeliveryID: admission.Goal.DeliveryID,
+		TransitionVersion: transition.Version, ProgramFingerprint: admission.ExpectedProgramFingerprint,
+		PrescriptionID: admission.PrescriptionID, AdmissionID: admission.ID,
+		PriorStateRevision: admission.ExpectedStateRevision, ResultingStateRevision: target.StateRevision,
+		GoalID: admission.Goal.ID, GoalKind: admission.Goal.Kind, DeliveryID: admission.Goal.DeliveryID,
 		GoalScope: admission.GoalScope, GoalStatus: admission.GoalStatus,
-		SourceFingerprint: admission.SnapshotFingerprint, TargetFingerprint: target.Fingerprint,
+		SourceFingerprint: admission.ExpectedSnapshotFingerprint, TargetFingerprint: target.Fingerprint,
 		AuthorityClasses: classes, IdempotencyKey: admission.IdempotencyKey, Verifier: transition.Verifier,
 		Outcome: outcome, Recovery: transition.Interruption.Recovery, Terminal: terminal,
 		StartedAt: startedAt.UTC(), CompletedAt: completedAt.UTC(), DurationNanoseconds: completedAt.Sub(startedAt).Nanoseconds(),
@@ -102,7 +111,7 @@ func NewReceipt(flowID string, sequence uint64, admission Admission, transition 
 }
 
 func (r TransitionReceipt) Validate() error {
-	if r.SchemaVersion != ReceiptSchemaVersion || r.ID == "" || r.FlowID == "" || r.Sequence == 0 || r.TransitionID == "" || r.TransitionVersion < 1 || len(r.ProgramFingerprint) != 64 || r.AdmissionID == "" || r.SourceFingerprint == "" || r.TargetFingerprint == "" || r.IdempotencyKey == "" || r.Verifier == "" {
+	if r.SchemaVersion != ReceiptSchemaVersion || r.ID == "" || r.FlowID == "" || r.Sequence == 0 || r.TransitionID == "" || r.TransitionVersion < 1 || len(r.ProgramFingerprint) != 64 || r.PrescriptionID == "" || r.AdmissionID == "" || r.PriorStateRevision == 0 || r.PriorStateRevision == ^uint64(0) || r.ResultingStateRevision == 0 || r.ResultingStateRevision != r.PriorStateRevision+1 || r.SourceFingerprint == "" || r.TargetFingerprint == "" || r.IdempotencyKey == "" || r.Verifier == "" {
 		return fmt.Errorf("receipt has incomplete identity or evidence")
 	}
 	if !r.GoalScope.Valid() {

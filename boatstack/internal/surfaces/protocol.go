@@ -11,7 +11,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/supervisor"
 )
 
-const SchemaVersion = 2
+const SchemaVersion = 3
 
 type Operation string
 
@@ -43,6 +43,7 @@ type Request struct {
 	FlowID              string                   `json:"flow_id,omitempty"`
 	Goal                model.Goal               `json:"goal,omitempty"`
 	TransitionID        catalog.TransitionID     `json:"transition_id,omitempty"`
+	Prescription        protocol.Prescription    `json:"prescription,omitempty"`
 	Authority           protocol.AuthorityBundle `json:"authority,omitempty"`
 	RepositoryAuthority bool                     `json:"repository_authority,omitempty"`
 	Parameters          protocol.Parameters      `json:"parameters,omitempty"`
@@ -72,6 +73,12 @@ func (r Request) Validate(now time.Time) error {
 	if r.Operation == OperationApply || r.Operation == OperationRecover {
 		if r.FlowID == "" || r.TransitionID == "" {
 			return fmt.Errorf("apply/recover request requires flow and transition identity")
+		}
+		if err := r.Prescription.Validate(); err != nil {
+			return fmt.Errorf("apply/recover request requires an exact resolution prescription: %w", err)
+		}
+		if r.Prescription.TransitionID != r.TransitionID {
+			return fmt.Errorf("apply/recover transition does not match prescription")
 		}
 	}
 	if r.Operation == OperationGuard && (strings.TrimSpace(r.Command) == "" || len(r.Command) > 1<<20) {
@@ -121,6 +128,7 @@ type Response struct {
 	Goal          model.Goal                  `json:"goal,omitempty"`
 	Snapshot      *model.Snapshot             `json:"snapshot,omitempty"`
 	Decision      *supervisor.Decision        `json:"decision,omitempty"`
+	Prescription  *protocol.Prescription      `json:"prescription,omitempty"`
 	Admission     *protocol.Admission         `json:"admission,omitempty"`
 	Receipt       *protocol.TransitionReceipt `json:"receipt,omitempty"`
 	Replayed      bool                        `json:"replayed,omitempty"`

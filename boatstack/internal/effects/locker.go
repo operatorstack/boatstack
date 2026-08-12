@@ -2,17 +2,21 @@ package effects
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
 )
 
 type Locker struct{ resolver ports.InvocationResolver }
+
+var errLockHeld = errors.New("kernel lock is held")
 
 func NewLocker(resolver ports.InvocationResolver) (Locker, error) {
 	if resolver == nil {
@@ -75,10 +79,23 @@ func (l Locker) Acquire(ctx context.Context, invocation model.InvocationContext,
 			_ = held.Release()
 			return nil, fmt.Errorf("open lock %s: %w", path, openErr)
 		}
-		if lockErr := lockFile(file); lockErr != nil {
-			_ = file.Close()
-			_ = held.Release()
-			return nil, fmt.Errorf("acquire lock %s: %w", path, lockErr)
+		for {
+			lockErr := lockFile(file)
+			if lockErr == nil {
+				break
+			}
+			if !errors.Is(lockErr, errLockHeld) {
+				_ = file.Close()
+				_ = held.Release()
+				return nil, fmt.Errorf("acquire lock %s: %w", path, lockErr)
+			}
+			select {
+			case <-ctx.Done():
+				_ = file.Close()
+				_ = held.Release()
+				return nil, fmt.Errorf("acquire lock %s: %w", path, ctx.Err())
+			case <-time.After(10 * time.Millisecond):
+			}
 		}
 		if truncateErr := file.Truncate(0); truncateErr != nil {
 			_ = unlockFile(file)

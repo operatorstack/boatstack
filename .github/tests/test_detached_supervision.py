@@ -90,6 +90,24 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
     def helper_json(self, *args: object, cwd: Path | None = None) -> dict:
         return json.loads(self.run_helper(*args, cwd=cwd).stdout)
 
+    def apply_prescribed(
+        self, transition: str, *args: object, cwd: Path | None = None
+    ) -> dict:
+        resolved = self.helper_json(
+            "next", "--transition", transition, *args, cwd=cwd
+        )
+        prescription = resolved["prescription"]
+        correlation = resolved["snapshot"]["invocation"]["correlation_id"]
+        return self.helper_json(
+            "apply", "--transition", transition, *args,
+            "--correlation", correlation,
+            "--prescription-id", prescription["id"],
+            "--expected-state-revision", prescription["expected_state_revision"],
+            "--expected-program-fingerprint", prescription["expected_program_fingerprint"],
+            "--expected-snapshot-fingerprint", prescription["expected_snapshot_fingerprint"],
+            cwd=cwd,
+        )
+
     def porcelain(self, repository: Path | None = None) -> str:
         repository = repository or self.repo
         return subprocess.run(
@@ -198,13 +216,13 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
             ),
         )
 
-        self.helper_json(
-            "apply", "--repo", self.repo, "--transition", "goal.configure",
+        self.apply_prescribed(
+            "goal.configure", "--repo", self.repo,
             *self.goal_flags(), "--human", "contract",
             "--param", "goal_kind=approved-plan", "--param", "delivery_id=bootstrap",
         )
-        self.helper_json(
-            "apply", "--repo", self.repo, "--transition", "engagement.begin",
+        self.apply_prescribed(
+            "engagement.begin", "--repo", self.repo,
             *self.goal_flags(), "--repository-authority",
         )
         ordinary = self.helper_json(
@@ -249,14 +267,14 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
             "init", "--repo", self.repo, *goal, *flow, "--human", "contract",
             "--param", f"config_path={config}",
         )
-        self.helper_json(
-            "apply", "--repo", self.repo, "--transition", "goal.configure",
+        self.apply_prescribed(
+            "goal.configure", "--repo", self.repo,
             *goal, *flow, "--human", "contract",
             "--param", "goal_kind=open-or-updated-pr",
             "--param", "delivery_id=codex-driver-authority-triggers",
         )
-        self.helper_json(
-            "apply", "--repo", self.repo, "--transition", "engagement.begin",
+        self.apply_prescribed(
+            "engagement.begin", "--repo", self.repo,
             *goal, *flow, "--repository-authority",
         )
 
@@ -377,8 +395,8 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         for field in ('"admission"', '"receipt"', '"snapshot"', '"target_fingerprint"', '"recovery"'):
             self.assertIn(field, initialized_process.stdout)
 
-        configured = self.helper_json(
-            "apply", "--repo", self.repo, "--transition", "goal.configure",
+        configured = self.apply_prescribed(
+            "goal.configure", "--repo", self.repo,
             *goal, *flow, *actor,
             "--param", "goal_kind=open-or-updated-pr",
             "--param", "delivery_id=preserve-repository-authority-context",
@@ -392,19 +410,19 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         self.assertEqual(engagement["decision"]["kind"], "PRESCRIBED")
         self.assertEqual(engagement["decision"]["transition"]["id"], "engagement.begin")
 
-        engaged_process = self.run_helper(
-            "apply", "--repo", self.repo, "--transition", "engagement.begin",
+        engaged = self.apply_prescribed(
+            "engagement.begin", "--repo", self.repo,
             *goal, *flow, *actor, "--repository-authority",
         )
-        engaged = json.loads(engaged_process.stdout)
         self.assertEqual(engaged["receipt"]["transition_id"], "engagement.begin")
         self.assertEqual(engaged["receipt"]["flow_id"], flow[1])
         self.assertEqual(
             {receipt["class"] for receipt in engaged["admission"]["authority"]["receipts"]},
             {"human", "repository-policy"},
         )
+        engaged_output = json.dumps(engaged)
         for field in ('"admission"', '"receipt"', '"snapshot"', '"target_fingerprint"', '"recovery"'):
-            self.assertIn(field, engaged_process.stdout)
+            self.assertIn(field, engaged_output)
 
         plan = self.helper_json(
             "next", "--repo", self.repo, *goal, *flow, *actor,

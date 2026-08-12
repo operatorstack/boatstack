@@ -13,6 +13,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 )
 
@@ -283,16 +284,16 @@ func TestRecoveryAttemptsExhaustToEscalationOnly(t *testing.T) {
 	root := t.TempDir()
 	originalID := "adm-interrupted"
 	pending := map[string]any{
-		"schema_version":   2,
+		"schema_version":   protocol.JournalSchemaVersion,
 		"transition_id":    "plan.create",
 		"transition_class": "owned-local",
 		"status":           "recovery-required",
 		"reason":           "simulated interruption",
 		"admission": map[string]any{
-			"id":                  originalID,
-			"program_fingerprint": strings.Repeat("a", 64),
-			"source_phase":        "ACTIVE",
-			"invocation":          map[string]any{"correlation_id": "prior-process"},
+			"id":                           originalID,
+			"expected_program_fingerprint": strings.Repeat("a", 64),
+			"source_phase":                 "ACTIVE",
+			"invocation":                   map[string]any{"correlation_id": "prior-process"},
 		},
 	}
 	writeJSON := func(name string, value any) {
@@ -308,7 +309,7 @@ func TestRecoveryAttemptsExhaustToEscalationOnly(t *testing.T) {
 	writeJSON(originalID+".pending", pending)
 	for attempt := 1; attempt <= 3; attempt++ {
 		aborted := map[string]any{
-			"schema_version":   2,
+			"schema_version":   protocol.JournalSchemaVersion,
 			"transition_id":    "recovery.rollback",
 			"transition_class": "recovery",
 			"status":           "aborted",
@@ -365,13 +366,13 @@ func TestInterruptedRecoveryAttemptCollapsesToEscalatableTransactionGroup(t *tes
 	}
 	originalID := "adm-original"
 	write(originalID+".pending", map[string]any{
-		"schema_version": 2, "transition_id": "plan.create", "transition_class": "owned-local", "status": "recovery-required",
-		"admission": map[string]any{"id": originalID, "program_fingerprint": strings.Repeat("a", 64), "source_phase": "ACTIVE", "invocation": map[string]any{"correlation_id": "old-process"}},
+		"schema_version": protocol.JournalSchemaVersion, "transition_id": "plan.create", "transition_class": "owned-local", "status": "recovery-required",
+		"admission": map[string]any{"id": originalID, "expected_program_fingerprint": strings.Repeat("a", 64), "source_phase": "ACTIVE", "invocation": map[string]any{"correlation_id": "old-process"}},
 	})
 	write("adm-nested.pending", map[string]any{
-		"schema_version": 2, "transition_id": "recovery.rollback", "transition_class": "recovery", "status": "verifying",
+		"schema_version": protocol.JournalSchemaVersion, "transition_id": "recovery.rollback", "transition_class": "recovery", "status": "verifying",
 		"admission": map[string]any{
-			"id": "adm-nested", "program_fingerprint": strings.Repeat("a", 64), "source_phase": "RECOVERY", "invocation": map[string]any{"correlation_id": "old-process"},
+			"id": "adm-nested", "expected_program_fingerprint": strings.Repeat("a", 64), "source_phase": "RECOVERY", "invocation": map[string]any{"correlation_id": "old-process"},
 			"parameters": []map[string]string{{"name": "transaction_id", "value": originalID}},
 		},
 	})

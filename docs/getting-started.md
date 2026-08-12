@@ -31,10 +31,23 @@ the current, independently hashed `.boatstack/project.json`.
 ## Enter managed scope
 
 ```sh
-boatstack apply --repo . --transition engagement.begin \
+boatstack next --repo . --transition engagement.begin \
   --goal-id search-timeout --goal-kind verified-implementation \
-  --delivery search-timeout --repository-authority
+  --delivery search-timeout --repository-authority --format json
+
+boatstack apply --repo . --transition engagement.begin --flow search-timeout \
+  --goal-id search-timeout --goal-kind verified-implementation \
+  --delivery search-timeout --repository-authority \
+  --correlation <correlation> --prescription-id <prescription-id> \
+  --expected-state-revision <revision> \
+  --expected-program-fingerprint <program-sha256> \
+  --expected-snapshot-fingerprint <snapshot-sha256>
 ```
+
+Friendly transition commands resolve and consume one exact prescription in the
+same invocation. Integrations that call raw `apply` or `recover` must forward
+the prescription ID, state revision, program fingerprint, snapshot fingerprint,
+and correlation returned by `next` without modification.
 
 A saved plan alone never engages Boatstack. Use `status` or `next` at any
 time; both are read-only.

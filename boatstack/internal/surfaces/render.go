@@ -2,6 +2,7 @@ package surfaces
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
@@ -24,8 +25,12 @@ type CommandAST struct {
 	Arguments  []string
 }
 
-func PrescriptionCommand(transition catalog.Transition, repository string, goal model.Goal, flowID string, parameters protocol.Parameters) CommandAST {
-	arguments := []string{"apply", "--repo", repository, "--transition", string(transition.ID), "--flow", flowID}
+func PrescriptionCommand(transition catalog.Transition, prescription protocol.Prescription, correlation, repository string, goal model.Goal, flowID string, parameters protocol.Parameters) CommandAST {
+	arguments := []string{"apply", "--repo", repository, "--transition", string(transition.ID), "--flow", flowID,
+		"--correlation", correlation, "--prescription-id", prescription.ID,
+		"--expected-state-revision", strconv.FormatUint(prescription.ExpectedStateRevision, 10),
+		"--expected-program-fingerprint", prescription.ExpectedProgramFingerprint,
+		"--expected-snapshot-fingerprint", prescription.ExpectedSnapshotFingerprint}
 	if goal.Validate() == nil {
 		arguments = append(arguments, "--goal-kind", string(goal.Kind), "--delivery", goal.DeliveryID, "--goal-id", goal.ID)
 	}
@@ -63,7 +68,7 @@ type HostPrescription struct {
 
 // ProjectHostPrescription changes host capability metadata only. Every host
 // consumes the same semantic command, authority prompt, and postcondition.
-func ProjectHostPrescription(host string, transition catalog.Transition, repository string, goal model.Goal, flowID string, parameters protocol.Parameters) (HostPrescription, error) {
+func ProjectHostPrescription(host string, transition catalog.Transition, prescription protocol.Prescription, correlation, repository string, goal model.Goal, flowID string, parameters protocol.Parameters) (HostPrescription, error) {
 	known := false
 	for _, candidate := range CanonicalHostNames() {
 		if host == candidate {
@@ -75,7 +80,7 @@ func ProjectHostPrescription(host string, transition catalog.Transition, reposit
 		return HostPrescription{}, fmt.Errorf("unsupported host %q", host)
 	}
 	return HostPrescription{
-		Host: host, TransitionID: string(transition.ID), Command: PrescriptionCommand(transition, repository, goal, flowID, parameters),
+		Host: host, TransitionID: string(transition.ID), Command: PrescriptionCommand(transition, prescription, correlation, repository, goal, flowID, parameters),
 		AuthorityPrompt: transition.Prescription.AuthorityPrompt, ExpectedPostcondition: transition.Prescription.ExpectedPostcondition,
 	}, nil
 }

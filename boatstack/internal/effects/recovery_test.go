@@ -11,6 +11,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/flow/standard"
 	"github.com/operatorstack/boatstack/boatstack/internal/buildinfo"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/engine"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
@@ -65,7 +66,7 @@ func recoveryRepository(t *testing.T) string {
 	return repository
 }
 
-func TestRestartRecoveryRollsBackExactPriorBytesAndArchivesJournal(t *testing.T) {
+func TestRestartRecoveryRestoresPriorStateAndCommitsRecoveryRevision(t *testing.T) {
 	// control-law: interrupted-local-effect-has-restart-safe-exact-rollback
 	ctx := context.Background()
 	clock := recoveryClock{value: time.Unix(3000, 0).UTC()}
@@ -116,7 +117,11 @@ func TestRestartRecoveryRollsBackExactPriorBytesAndArchivesJournal(t *testing.T)
 		{Name: "source_revision", Value: "recovery-fixture"}, {Name: "runtime_version", Value: runtimeIdentity.Version}, {Name: "runtime_sha256", Value: sha256Bytes(runtimeRaw)},
 		{Name: "config_path", Value: configPath}, {Name: "config_sha256", Value: configFingerprint},
 	}
-	admission, err := protocol.NewAdmission(initial, goal, transition, authority, parameters, clock.Now(), time.Minute)
+	prescription, err := protocol.NewPrescription(initial, transition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admission, err := protocol.NewAdmission(initial, goal, transition, prescription, authority, parameters, clock.Now(), time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,12 +170,24 @@ func TestRestartRecoveryRollsBackExactPriorBytesAndArchivesJournal(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := restartedEngine.Apply(ctx, engine.ApplyRequest{
+	recoveryRequest := engine.ApplyRequest{
 		ResolveRequest: engine.ResolveRequest{Invocation: restartedInvocation, Goal: goal, Authority: authority, Requested: "recovery.rollback"},
 		FlowID:         "flow-recovery", Parameters: protocol.Parameters{{Name: "transaction_id", Value: admission.ID}}, AdmissionLifetime: time.Minute,
-	})
+	}
+	recoveryResolve := recoveryRequest.ResolveRequest
+	recoveryResolve.Parameters = recoveryRequest.Parameters
+	resolvedRecovery, err := restartedEngine.Resolve(ctx, recoveryResolve)
 	if err != nil {
 		t.Fatal(err)
+	}
+	recoveryRequest.Prescription = resolvedRecovery.Prescription
+	result, err := restartedEngine.Apply(ctx, recoveryRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Receipt.PriorStateRevision != resolvedRecovery.Prescription.ExpectedStateRevision ||
+		result.Receipt.ResultingStateRevision != resolvedRecovery.Prescription.ExpectedStateRevision+1 {
+		t.Fatalf("recovery receipt did not advance exactly once: %#v", result.Receipt)
 	}
 	if result.Target.Phase.Value != model.PhaseDormant || result.Target.Recovery.Value != model.RecoveryNone || result.Target.Goal.Status != model.FactAbsent ||
 		result.Receipt.ID == "" || result.Receipt.GoalStatus != model.FactAbsent || result.Receipt.GoalID != "" {
@@ -185,8 +202,16 @@ func TestRestartRecoveryRollsBackExactPriorBytesAndArchivesJournal(t *testing.T)
 	if _, err := os.Stat(recovered); err != nil {
 		t.Fatalf("recovered journal missing: %v", err)
 	}
-	if _, err := os.Stat(layout.StatePath); !os.IsNotExist(err) {
-		t.Fatalf("rollback did not restore absent state file: %v", err)
+	stateRaw, err := os.ReadFile(layout.StatePath)
+	if err != nil {
+		t.Fatalf("rollback did not commit its recovery revision: %v", err)
+	}
+	recoveredState, err := durable.DecodeState(stateRaw)
+	if err != nil || recoveredState.Revision != result.Receipt.ResultingStateRevision {
+		t.Fatalf("rollback state revision is not receipt-bound: state=%#v err=%v receipt=%#v", recoveredState, err, result.Receipt)
+	}
+	if recoveredState.Goal.Validate() == nil || recoveredState.Runtime != model.RuntimeAbsent || recoveredState.Configuration != model.ConfigurationUnsupported {
+		t.Fatalf("rollback created product intent or retained initialized state: %#v", recoveredState)
 	}
 	if _, err := os.Stat(boatstackruntime.PinPath(repository)); !os.IsNotExist(err) {
 		t.Fatalf("rollback did not restore the absent repository runtime pin: %v", err)

@@ -82,6 +82,16 @@ func Default(invocation model.InvocationContext, now time.Time) State {
 	}
 }
 
+func NextRevision(current uint64) (uint64, error) {
+	if current == 0 {
+		return 0, fmt.Errorf("durable state revision is absent")
+	}
+	if current == ^uint64(0) {
+		return 0, fmt.Errorf("durable state revision overflow")
+	}
+	return current + 1, nil
+}
+
 func (s State) Validate() error {
 	if s.SchemaVersion != StateSchemaVersion {
 		return fmt.Errorf("durable state schema %d, want %d", s.SchemaVersion, StateSchemaVersion)

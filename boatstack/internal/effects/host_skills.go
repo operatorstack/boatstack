@@ -107,7 +107,12 @@ Begin each cycle with an untargeted authority-bearing `+"`next`"+`. A `+"`CANDID
 identifies the next transition but is not permission to apply it: bind only its
 declared parameters and re-resolve that exact transition. Apply only the stable
 transition ID from the immediately preceding `+"`PRESCRIBED`"+` result and only its
-declared parameters. Preserve the complete apply response and stderr, including
+declared parameters. Carry that result's prescription ID, expected state revision,
+expected program fingerprint, expected snapshot fingerprint, and correlation
+unchanged into `+"`apply`"+` or `+"`recover`"+`. Never construct, reuse, or omit those
+bindings. If the Kernel returns `+"`STALE_PRESCRIPTION`"+`, preserve its complete
+diagnostic, perform no effect, discard the prescription, and re-resolve once from
+the same command context. Preserve the complete apply response and stderr, including
 admission, receipt, postcondition, error, recovery, and transaction fields.
 Re-resolve with the same context after every complete receipt.
 
