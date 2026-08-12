@@ -144,7 +144,7 @@ func (suite KernelConformance) stalePrescriptionPrecedesEffects(t *testing.T) {
 	fixture.Scenario.ChangeObservation()
 	_, err := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
 	after := fixture.Scenario.Snapshot()
-	if !kernel.IsStale(err) || effectCount(after, transition) != effectCount(before, transition) || after.CommitCount != before.CommitCount {
+	if !kernel.IsStale(err) || effectCount(after, transition) != effectCount(before, transition) || after.CommitCount != before.CommitCount || len(after.Receipts) != len(before.Receipts) {
 		t.Fatalf("control-law prescription-freshness: error=%v before=%#v after=%#v", err, before, after)
 	}
 }
@@ -161,7 +161,7 @@ func (suite KernelConformance) authorityDenialFailsClosed(t *testing.T) {
 	request.Authority = kernel.Authority{}
 	_, err = runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
 	after := fixture.Scenario.Snapshot()
-	if !kernel.IsStale(err) || effectCount(after, transition) != effectCount(before, transition) || after.CommitCount != before.CommitCount {
+	if !kernel.IsStale(err) || effectCount(after, transition) != effectCount(before, transition) || after.CommitCount != before.CommitCount || len(after.Receipts) != len(before.Receipts) {
 		t.Fatalf("control-law authority-denial: apply error=%v before=%#v after=%#v", err, before, after)
 	}
 }
@@ -175,7 +175,7 @@ func (suite KernelConformance) futureAuthorityFailsClosed(t *testing.T) {
 	before := fixture.Scenario.Snapshot()
 	resolution, err := runtime.Resolve(context.Background(), kernel.ResolveRequest{InstanceID: fixture.Scenario.InstanceID, Objective: &fixture.Scenario.Objective, Authority: authority, Requested: transition})
 	after := fixture.Scenario.Snapshot()
-	if err != nil || resolution.Decision.Kind != kernel.Refused || effectCount(after, transition) != effectCount(before, transition) || after.CommitCount != before.CommitCount {
+	if err != nil || resolution.Decision.Kind != kernel.Refused || effectCount(after, transition) != effectCount(before, transition) || after.CommitCount != before.CommitCount || len(after.Receipts) != len(before.Receipts) {
 		t.Fatalf("control-law authority-time-validity: decision=%#v error=%v", resolution.Decision, err)
 	}
 }
@@ -191,7 +191,7 @@ func (suite KernelConformance) capabilityClassifierCannotBeWeakened(t *testing.T
 	before := fixture.Scenario.Snapshot()
 	resolution, err := runtime.Resolve(context.Background(), kernel.ResolveRequest{InstanceID: fixture.Scenario.InstanceID, Objective: &fixture.Scenario.Objective, Authority: fixture.Scenario.Authority, Requested: transition})
 	after := fixture.Scenario.Snapshot()
-	if err != nil || resolution.Decision.Kind != kernel.Frontier || effectCount(after, transition) != effectCount(before, transition) {
+	if err != nil || resolution.Decision.Kind != kernel.Frontier || effectCount(after, transition) != effectCount(before, transition) || after.CommitCount != before.CommitCount || len(after.Receipts) != len(before.Receipts) {
 		t.Fatalf("control-law capability-non-weakening: decision=%#v error=%v", resolution.Decision, err)
 	}
 }
@@ -218,9 +218,10 @@ func (suite KernelConformance) interruptedOperatorRequiresExplicitRecovery(t *te
 	transition := fixture.Scenario.AdvanceTransitions[0]
 	fixture.Scenario.InterruptNextOperator()
 	request, prescription := resolve(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective, fixture.Scenario.Authority)
+	before := fixture.Scenario.Snapshot()
 	_, err := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
 	interrupted := fixture.Scenario.Snapshot()
-	if !kernel.IsRecoveryRequired(err) || interrupted.State.Recovery == nil || interrupted.State.Recovery.TransitionID != transition || effectCount(interrupted, transition) != 1 {
+	if !kernel.IsRecoveryRequired(err) || interrupted.State.Recovery == nil || interrupted.State.Recovery.TransitionID != transition || effectCount(interrupted, transition) != effectCount(before, transition)+1 || interrupted.CommitCount != before.CommitCount || len(interrupted.Receipts) != len(before.Receipts) {
 		t.Fatalf("control-law explicit-recovery: state=%#v error=%v", interrupted, err)
 	}
 	recovery := resolveAndApply(t, runtime, fixture.Program, fixture.Scenario, fixture.Scenario.RecoveryTransition, &fixture.Scenario.Objective)
@@ -235,17 +236,18 @@ func (suite KernelConformance) processPanicRequiresExplicitRecovery(t *testing.T
 	transition := fixture.Scenario.AdvanceTransitions[0]
 	fixture.Scenario.PanicNextOperator()
 	request, prescription := resolve(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective, fixture.Scenario.Authority)
+	before := fixture.Scenario.Snapshot()
 	var recovered any
 	func() {
 		defer func() { recovered = recover() }()
 		_, _ = runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
 	}()
 	after := fixture.Scenario.Snapshot()
-	if recovered == nil || after.State.Recovery == nil || after.State.Recovery.TransitionID != transition || effectCount(after, transition) != 1 {
+	if recovered == nil || after.State.Recovery == nil || after.State.Recovery.TransitionID != transition || effectCount(after, transition) != effectCount(before, transition)+1 || after.CommitCount != before.CommitCount || len(after.Receipts) != len(before.Receipts) {
 		t.Fatalf("control-law panic-recovery: panic=%v snapshot=%#v", recovered, after)
 	}
 	resolution, err := runtime.Resolve(context.Background(), kernel.ResolveRequest{InstanceID: fixture.Scenario.InstanceID, Objective: &fixture.Scenario.Objective, Authority: fixture.Scenario.Authority})
-	if err != nil || resolution.Decision.Kind != kernel.Prescribed || resolution.Decision.Transition != fixture.Scenario.RecoveryTransition || effectCount(fixture.Scenario.Snapshot(), transition) != 1 {
+	if err != nil || resolution.Decision.Kind != kernel.Prescribed || resolution.Decision.Transition != fixture.Scenario.RecoveryTransition || effectCount(fixture.Scenario.Snapshot(), transition) != effectCount(before, transition)+1 {
 		t.Fatalf("control-law panic-no-replay: decision=%#v error=%v", resolution.Decision, err)
 	}
 }
@@ -255,13 +257,14 @@ func (suite KernelConformance) atomicCommitFailureRequiresRecovery(t *testing.T)
 	transition := fixture.Scenario.AdvanceTransitions[0]
 	fixture.Scenario.FailNextCommit()
 	request, prescription := resolve(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective, fixture.Scenario.Authority)
+	before := fixture.Scenario.Snapshot()
 	_, err := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
 	after := fixture.Scenario.Snapshot()
-	if !kernel.IsRecoveryRequired(err) || after.State.Recovery == nil || after.CommitCount != 0 || len(after.Receipts) != 0 || effectCount(after, transition) != 1 {
+	if !kernel.IsRecoveryRequired(err) || after.State.Recovery == nil || after.CommitCount != before.CommitCount || len(after.Receipts) != len(before.Receipts) || effectCount(after, transition) != effectCount(before, transition)+1 {
 		t.Fatalf("control-law atomic-commit-recovery: snapshot=%#v error=%v", after, err)
 	}
 	resolution, resolveErr := runtime.Resolve(context.Background(), kernel.ResolveRequest{InstanceID: fixture.Scenario.InstanceID, Objective: &fixture.Scenario.Objective, Authority: fixture.Scenario.Authority})
-	if resolveErr != nil || resolution.Decision.Kind != kernel.Prescribed || resolution.Decision.Transition != fixture.Scenario.RecoveryTransition || effectCount(fixture.Scenario.Snapshot(), transition) != 1 {
+	if resolveErr != nil || resolution.Decision.Kind != kernel.Prescribed || resolution.Decision.Transition != fixture.Scenario.RecoveryTransition || effectCount(fixture.Scenario.Snapshot(), transition) != effectCount(before, transition)+1 {
 		t.Fatalf("control-law no-duplicate-effect: decision=%#v error=%v", resolution.Decision, resolveErr)
 	}
 }
@@ -271,9 +274,10 @@ func (suite KernelConformance) failedRecoveryPreservesOriginalObligation(t *test
 	transition := fixture.Scenario.AdvanceTransitions[0]
 	fixture.Scenario.InterruptNextOperator()
 	request, prescription := resolve(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective, fixture.Scenario.Authority)
+	before := fixture.Scenario.Snapshot()
 	_, err := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
 	interrupted := fixture.Scenario.Snapshot()
-	if !kernel.IsRecoveryRequired(err) || interrupted.State.Recovery == nil {
+	if !kernel.IsRecoveryRequired(err) || interrupted.State.Recovery == nil || effectCount(interrupted, transition) != effectCount(before, transition)+1 || interrupted.CommitCount != before.CommitCount || len(interrupted.Receipts) != len(before.Receipts) {
 		t.Fatalf("control-law recovery-retry: initial state=%#v error=%v", interrupted.State, err)
 	}
 	original := *interrupted.State.Recovery
@@ -281,12 +285,12 @@ func (suite KernelConformance) failedRecoveryPreservesOriginalObligation(t *test
 	fixture.Scenario.FailNextCommit()
 	_, err = runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: recoveryRequest, Prescription: recoveryPrescription})
 	failed := fixture.Scenario.Snapshot()
-	if !kernel.IsRecoveryRequired(err) || failed.State.Recovery == nil || *failed.State.Recovery != original || effectCount(failed, transition) != 1 {
+	if !kernel.IsRecoveryRequired(err) || failed.State.Recovery == nil || *failed.State.Recovery != original || effectCount(failed, transition) != effectCount(interrupted, transition) || failed.CommitCount != interrupted.CommitCount || len(failed.Receipts) != len(interrupted.Receipts) {
 		t.Fatalf("control-law recovery-obligation-preservation: state=%#v error=%v", failed.State, err)
 	}
 	resolveAndApply(t, runtime, fixture.Program, fixture.Scenario, fixture.Scenario.RecoveryTransition, &fixture.Scenario.Objective)
 	settled := fixture.Scenario.Snapshot()
-	if settled.State.Recovery != nil || effectCount(settled, transition) != 1 {
+	if settled.State.Recovery != nil || effectCount(settled, transition) != effectCount(interrupted, transition) {
 		t.Fatalf("control-law recovery-retry: state=%#v", settled.State)
 	}
 }
@@ -301,7 +305,7 @@ func (suite KernelConformance) prescriptionCannotReplayAcrossInstances(t *testin
 	request.InstanceID = other
 	_, err := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
 	after := fixture.Scenario.Snapshot()
-	if !kernel.IsStale(err) || effectCount(after, transition) != effectCount(before, transition) || after.CommitCount != before.CommitCount {
+	if !kernel.IsStale(err) || effectCount(after, transition) != effectCount(before, transition) || after.CommitCount != before.CommitCount || len(after.Receipts) != len(before.Receipts) {
 		t.Fatalf("control-law prescription-instance-binding: error=%v snapshot=%#v", err, after)
 	}
 }
@@ -337,7 +341,7 @@ func (suite KernelConformance) concurrentApplyCommitsOnce(t *testing.T) {
 		}
 	}
 	after := fixture.Scenario.Snapshot()
-	if successes != 1 || refusals != 1 || after.CommitCount != 1 || len(after.Receipts) != 1 || effectCount(after, transition) != 1 {
+	if successes != 1 || refusals != 1 || after.CommitCount != before.CommitCount+1 || len(after.Receipts) != len(before.Receipts)+1 || effectCount(after, transition) != effectCount(before, transition)+1 {
 		t.Fatalf("control-law concurrent-cas: success/refusal=%d/%d snapshot=%#v", successes, refusals, after)
 	}
 	if err := committedOutcomeError(fixture.Program, before, after, winner); err != nil {
@@ -347,6 +351,7 @@ func (suite KernelConformance) concurrentApplyCommitsOnce(t *testing.T) {
 
 func (suite KernelConformance) programReachesMarkedState(t *testing.T) {
 	fixture, runtime := suite.fresh(t, SetupUnbound)
+	before := fixture.Scenario.Snapshot()
 	receipts, err := runUntargetedToMarked(context.Background(), runtime, fixture.Program, fixture.Scenario, len(fixture.Scenario.AdvanceTransitions)+1)
 	if err != nil {
 		t.Fatal(err)
@@ -357,7 +362,7 @@ func (suite KernelConformance) programReachesMarkedState(t *testing.T) {
 		}
 	}
 	after := fixture.Scenario.Snapshot()
-	if !fixture.Program.Marked(after.State.Mode) || len(after.Receipts) != len(receipts) {
+	if !fixture.Program.Marked(after.State.Mode) || len(after.Receipts) != len(before.Receipts)+len(receipts) {
 		t.Fatalf("control-law marked-reachability: snapshot=%#v", after)
 	}
 }

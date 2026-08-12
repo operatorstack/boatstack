@@ -306,7 +306,7 @@ func newIntegerFixture(setup Setup) KernelConformance {
 	state := kernel.ControlState{InstanceID: "counter-fixture", Program: program.Identity(), Mode: "unbound", Revision: 1}
 	value := 0
 	switch setup {
-	case SetupBound, SetupConcurrentSameBase:
+	case SetupConcurrentSameBase:
 		binding, bindErr := kernel.BindObjective(objective)
 		if bindErr != nil {
 			panic(bindErr)
@@ -364,6 +364,20 @@ func newIntegerFixture(setup Setup) KernelConformance {
 	}
 	fixture.New = func(_ testing.TB, requested Setup) KernelConformance {
 		return newIntegerFixture(requested)
+	}
+	if setup == SetupBound {
+		runtime, runtimeErr := kernel.NewRuntime(program, fixture.Domain, fixture.Operator, fixture.CapabilityClassifier, fixture.Store, fixture.Locker, fixture.Clock)
+		if runtimeErr != nil {
+			panic(runtimeErr)
+		}
+		request := kernel.ResolveRequest{InstanceID: state.InstanceID, Objective: &objective, Authority: authority, Requested: fixture.Scenario.BindTransition}
+		resolution, resolveErr := runtime.Resolve(context.Background(), request)
+		if resolveErr != nil || resolution.Prescription == nil {
+			panic(fmt.Sprintf("seed bound fixture: decision=%#v error=%v", resolution.Decision, resolveErr))
+		}
+		if _, applyErr := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: *resolution.Prescription}); applyErr != nil {
+			panic(applyErr)
+		}
 	}
 	return fixture
 }

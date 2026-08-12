@@ -29,6 +29,14 @@ func TestMarkedStateCheckRejectsUntargetedPriorityCycle(t *testing.T) {
 	}
 }
 
+func TestIntegerBoundFixtureIncludesCommittedHistory(t *testing.T) {
+	fixture := newIntegerFixture(SetupBound)
+	snapshot := fixture.Scenario.Snapshot()
+	if snapshot.CommitCount != 1 || len(snapshot.Receipts) != 1 || snapshot.State.ObjectiveBinding == nil || !snapshot.State.ObjectiveBinding.Matches(fixture.Scenario.Objective) {
+		t.Fatalf("expected one committed objective-binding baseline, got %#v", snapshot)
+	}
+}
+
 func TestCommittedOutcomeRejectsDurableReceiptSubstitution(t *testing.T) {
 	fixture := newIntegerFixture(SetupUnbound)
 	runtime := mustRuntime(t, fixture)
