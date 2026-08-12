@@ -67,6 +67,9 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 		if predicateErr != nil {
 			return delivery.ProgramRuntimeManifest{}, fmt.Errorf("transition %q target does not strengthen the trusted binding: %w", declaration.ID, predicateErr)
 		}
+		if targetErr := requireImpliedTarget(transition.TargetConditions, target); targetErr != nil {
+			return delivery.ProgramRuntimeManifest{}, fmt.Errorf("transition %q target exceeds the trusted binding: %w", declaration.ID, targetErr)
+		}
 		transition.SourceConditions = append(transition.SourceConditions, guard...)
 		transition.TargetConditions = append(transition.TargetConditions, target...)
 		transition.Priority = declaration.Priority
@@ -184,6 +187,48 @@ func canonicalConditions(values []delivery.FacetCondition) []byte {
 	})
 	encoded, _ := json.Marshal(copy)
 	return encoded
+}
+
+func requireImpliedTarget(trusted, repository []delivery.FacetCondition) error {
+	for _, candidate := range repository {
+		implied := false
+		for _, established := range trusted {
+			if established.Facet == candidate.Facet && conditionImplies(established, candidate) {
+				implied = true
+				break
+			}
+		}
+		if !implied {
+			return fmt.Errorf("facet %q is not established by the trusted operator", candidate.Facet)
+		}
+	}
+	return nil
+}
+
+func conditionImplies(established, candidate delivery.FacetCondition) bool {
+	if !containsAll(candidate.Statuses, established.Statuses) {
+		return false
+	}
+	if len(candidate.Values) == 0 {
+		return true
+	}
+	return len(established.Values) != 0 && containsAll(candidate.Values, established.Values)
+}
+
+func containsAll[T comparable](superset, subset []T) bool {
+	for _, value := range subset {
+		found := false
+		for _, candidate := range superset {
+			if value == candidate {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 func declarations(transitions []delivery.Transition) ([]string, []string, []string, []delivery.TransitionID) {

@@ -117,7 +117,7 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 	if err != nil {
 		return err
 	}
-	retiredSkills, err := retiredGeneratedSkills(options.repository, artifactPath, artifact.GeneratedSkills)
+	obsoleteSkills, err := obsoleteGeneratedSkills(options.repository, artifactPath, artifact.GeneratedSkills)
 	if err != nil {
 		return err
 	}
@@ -126,27 +126,22 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
+	writes := make([]boatstackruntime.ProjectionWrite, 0, len(paths)+1)
 	for _, path := range paths {
 		absolute, pathErr := exactRepositoryPath(options.repository, path)
 		if pathErr != nil {
 			return pathErr
 		}
-		if err := boatstackruntime.AtomicWrite(absolute, skills[path], 0o644); err != nil {
-			return err
-		}
+		writes = append(writes, boatstackruntime.ProjectionWrite{Path: absolute, Content: skills[path], Mode: 0o644})
 	}
-	for _, path := range retiredSkills {
-		if err := boatstackruntime.RemoveGeneratedFile(path); err != nil {
-			return fmt.Errorf("remove retired generated skill: %w", err)
-		}
-	}
-	if err := boatstackruntime.AtomicWrite(artifactPath, artifactRaw, 0o644); err != nil {
+	writes = append(writes, boatstackruntime.ProjectionWrite{Path: artifactPath, Content: artifactRaw, Mode: 0o644})
+	if err := boatstackruntime.ApplyFlowProjection(options.repository, writes, obsoleteSkills); err != nil {
 		return err
 	}
 	return renderFlowResult("compiled", artifactPath, artifact)
 }
 
-func retiredGeneratedSkills(repository, artifactPath string, next map[string]string) ([]string, error) {
+func obsoleteGeneratedSkills(repository, artifactPath string, next map[string]string) ([]string, error) {
 	info, err := os.Lstat(artifactPath)
 	if os.IsNotExist(err) {
 		return nil, nil

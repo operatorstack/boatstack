@@ -171,6 +171,10 @@ func runRPC() error {
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return fmt.Errorf("V2 RPC request contains trailing JSON")
 	}
+	request, err := bindRPCFlowEntry(context.Background(), request)
+	if err != nil {
+		return err
+	}
 	kernel, err := standardKernel(context.Background(), request)
 	if err != nil {
 		return err

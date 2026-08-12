@@ -10,6 +10,8 @@ import (
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
 )
 
 func flowRepository(t *testing.T) string {
@@ -102,6 +104,42 @@ func TestFlowEntryRejectsPlanCardinalityBeforeManagedState(t *testing.T) {
 	}
 }
 
+func TestRPCFlowEntryRejectsUnknownEntryAndInvalidInboxBeforeManagedState(t *testing.T) {
+	// control-law: every-surface-binds-the-repository-entry-before-resolution-or-effects
+	for name, entry := range map[string]string{"unknown-entry": "missing", "empty-inbox": "run"} {
+		t.Run(name, func(t *testing.T) {
+			repository := flowRepository(t)
+			_, err := bindRPCFlowEntry(context.Background(), surfaces.Request{
+				SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationResolve, Repository: repository,
+				Host: "claude", CorrelationID: "rpc-binding", ProgramID: "product-delivery", EntryID: entry, FlowID: "run-caller-supplied",
+			})
+			if err == nil {
+				t.Fatal("unbound RPC Flow entry was accepted")
+			}
+			if _, statErr := os.Stat(filepath.Join(repository, ".boatstack", "state.json")); !os.IsNotExist(statErr) {
+				t.Fatalf("RPC entry refusal created managed state: %v", statErr)
+			}
+		})
+	}
+}
+
+func TestRPCFlowEntryPreservesObjectiveEvidenceAndStopContext(t *testing.T) {
+	// control-law: entry-binding-preserves-nonidentity-objective-context
+	repository := flowRepository(t)
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
+	bound, err := bindRPCFlowEntry(context.Background(), surfaces.Request{
+		SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationResolve, Repository: repository,
+		Host: "claude", CorrelationID: "rpc-context", ProgramID: "product-delivery", EntryID: "run",
+		Objective: model.Objective{EvidenceFingerprint: strings.Repeat("a", 64), FrontierIsStop: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bound.Objective.EvidenceFingerprint != strings.Repeat("a", 64) || !bound.Objective.FrontierIsStop {
+		t.Fatalf("RPC binding dropped objective context: %#v", bound.Objective)
+	}
+}
+
 func TestFlowEntryBindsStableRunAndResumesManagedPlan(t *testing.T) {
 	// control-law: questions-and-restarts-preserve-the-exact-plan-worktree-and-run
 	repository := flowRepository(t)
@@ -175,7 +213,7 @@ func TestFlowCompileRetiresOnlyUnmodifiedPriorGeneratedSkills(t *testing.T) {
 	}
 	artifactPath := filepath.Join(repository, ".boatstack", "flows", "program.flow.ir.json")
 	writeFixture(t, repository, ".boatstack/flows/program.flow.ir.json", raw)
-	paths, err := retiredGeneratedSkills(repository, artifactPath, map[string]string{retainedPath: fileDigest(retained)})
+	paths, err := obsoleteGeneratedSkills(repository, artifactPath, map[string]string{retainedPath: fileDigest(retained)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +221,7 @@ func TestFlowCompileRetiresOnlyUnmodifiedPriorGeneratedSkills(t *testing.T) {
 		t.Fatalf("retired paths = %v", paths)
 	}
 	writeFixture(t, repository, retiredPath, []byte("user changed"))
-	if _, err := retiredGeneratedSkills(repository, artifactPath, map[string]string{retainedPath: fileDigest(retained)}); err == nil || !strings.Contains(err.Error(), "was modified") {
+	if _, err := obsoleteGeneratedSkills(repository, artifactPath, map[string]string{retainedPath: fileDigest(retained)}); err == nil || !strings.Contains(err.Error(), "was modified") {
 		t.Fatalf("modified retired projection was not protected: %v", err)
 	}
 }

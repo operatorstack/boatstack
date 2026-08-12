@@ -95,6 +95,24 @@ func TestRepositoryGuardCanOnlyStrengthenTrustedBinding(t *testing.T) {
 	}
 }
 
+func TestRepositoryTargetMustBeImpliedByTrustedPostcondition(t *testing.T) {
+	truth := true
+	compiled, resolver := compiledFlow(t, controlprogram.Predicate{True: &truth})
+	tampered := compiled.Document
+	tampered.Transitions[0].Target = fact("configuration", "unverified")
+	unsafe, err := controlprogram.Compile(tampered, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, err := softwareflow.NewDefinition(unsafe, resolver)
+	if err == nil {
+		_, err = definition.RuntimeManifest(context.Background())
+	}
+	if err == nil || !strings.Contains(err.Error(), "target exceeds the trusted binding") {
+		t.Fatalf("unestablishable repository target result = %v", err)
+	}
+}
+
 func TestCompiledBindingDriftFailsClosed(t *testing.T) {
 	truth := true
 	compiled, resolver := compiledFlow(t, controlprogram.Predicate{True: &truth})

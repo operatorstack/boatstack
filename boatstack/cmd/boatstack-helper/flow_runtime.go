@@ -16,6 +16,8 @@ import (
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
 )
 
 var flowSegment = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
@@ -111,6 +113,35 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		}
 	}
 	return options, nil
+}
+
+func bindRPCFlowEntry(ctx context.Context, request surfaces.Request) (surfaces.Request, error) {
+	if request.ProgramID == "" && request.EntryID == "" {
+		return request, nil
+	}
+	parameterFlags := make([]string, 0, len(request.Parameters))
+	for _, parameter := range request.Parameters {
+		parameterFlags = append(parameterFlags, parameter.Name+"="+parameter.Value)
+	}
+	bound, err := bindFlowEntry(ctx, commandOptions{
+		repository: request.Repository, host: request.Host, programID: request.ProgramID, entryID: request.EntryID,
+		runID: request.FlowID, objectiveID: request.Objective.ID, objectiveKind: string(request.Objective.Kind), deliveryID: request.Objective.DeliveryID,
+		transitionID: string(request.TransitionID), parameters: parameterFlags,
+	})
+	if err != nil {
+		return surfaces.Request{}, err
+	}
+	parameters, err := parseParameters(bound.parameters)
+	if err != nil {
+		return surfaces.Request{}, err
+	}
+	request.Repository = bound.repository
+	request.FlowID = bound.runID
+	request.Objective.ID = bound.objectiveID
+	request.Objective.Kind = model.ObjectiveKind(bound.objectiveKind)
+	request.Objective.DeliveryID = bound.deliveryID
+	request.Parameters = parameters
+	return request, nil
 }
 
 func resolveBoundPlan(repository string, entry controlprogram.Entry, options commandOptions) (string, string, error) {

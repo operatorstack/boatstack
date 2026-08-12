@@ -178,10 +178,10 @@ func TestFlowCompilerMutationSitesMapToFlowCompileEvent(t *testing.T) {
 	root := sourceRoot(t)
 	expected := map[string]map[string]int{
 		"cmd/boatstack-helper/flow_command.go": {
-			"runtime.AtomicWrite": 2, "runtime.RemoveGeneratedFile": 1,
+			"runtime.ApplyFlowProjection": 1,
 		},
 		"internal/runtime/flow_files.go": {
-			"os.MkdirAll": 1, "os.CreateTemp": 1, "os.Remove": 2, "os.Rename": 1,
+			"os.MkdirAll": 1, "os.CreateTemp": 1, "os.Remove": 5, "os.Rename": 2,
 		},
 	}
 	for relative, wanted := range expected {
@@ -213,7 +213,7 @@ func TestFlowCompilerMutationSitesMapToFlowCompileEvent(t *testing.T) {
 			switch {
 			case importPath == "os" && writerCallsForInventory(selector.Sel.Name):
 				observed["os."+selector.Sel.Name]++
-			case strings.HasSuffix(importPath, "/internal/runtime") && (selector.Sel.Name == "AtomicWrite" || selector.Sel.Name == "RemoveGeneratedFile"):
+			case strings.HasSuffix(importPath, "/internal/runtime") && selector.Sel.Name == "ApplyFlowProjection":
 				observed["runtime."+selector.Sel.Name]++
 			}
 			return true
