@@ -276,6 +276,56 @@ Boatstack kernel
 
 A repository control program must not be able to reach around the declared program interface and mutate kernel semantics directly.
 
+## Review to closure before reporting findings
+
+Do not return as soon as you find the first valid counterexample.
+
+For every behavioral surface changed by the pull request, first derive its smallest explicit contract:
+
+PRE-STATE
++ EVENT / OPERATION
++ PROGRAM / AUTHORITY / CONTEXT
+→ EXPECTED POST-STATE
++ EXPECTED DURABLE FACTS
++ ALLOWED EFFECTS
+
+Also identify forbidden post-states, state that must remain unchanged, observations that establish success, and the path production actually uses.
+
+When you find a counterexample:
+
+1. State the violated invariant.
+2. Derive the general failure class rather than treating the witness as the whole defect.
+3. Search adjacent cases along every dimension connected to the changed surface.
+
+For Boatstack control changes, consider:
+
+* identity: same ID with a different revision, different ID, changed program fingerprint, and the same transition name under another program;
+* selection: targeted and untargeted resolution, priority, prerequisite shadowing, and marked-state progress through the production path;
+* history: empty state, valid pre-populated history, prior receipts/commits, and absent versus known state;
+* persistence: returned versus durable values and receipts, candidate versus committed state, and final state versus winning receipt facts;
+* freshness: state revision, program, objective ID/revision, observation, and authority changes;
+* concurrency: same-base resolutions, winner commit, loser with zero effects, no loser state mutation, and exact winner facts;
+* failure and recovery: failure before/after effects, commit failure, interruption, recovery failure, ambiguous retry, and duplicate-effect prevention;
+* authority: declared versus granted capabilities, partial grants, recovery authority, and privileged helper paths;
+* state facets: exact changed facets and exact unchanged facets.
+
+Do not manufacture irrelevant combinations. Continue until a second pass over the relevant dimensions produces no new concrete patch-introduced counterexample.
+
+When the patch adds a verifier, conformance suite, regression framework, parser, validator, or CI invariant, review the verifier in both directions:
+
+* soundness: construct invalid implementations or states that the verifier must reject;
+* completeness: construct valid implementations or states with realistic variation that the verifier must accept.
+
+Prefer the language's standard parser when a check claims to understand syntax. When a durable or external identity is renamed, enumerate every producer and consumer and reject mixed-version edges.
+
+Group sibling witnesses under their shared root cause. A complete finding should provide:
+
+FAILURE CLASS
+→ EXACT STATE / TRANSITION CONTRACT
+→ COUNTEREXAMPLE WITNESSES
+→ CLOSURE OBLIGATIONS
+→ REGRESSION ORACLE
+
 ## Finding requirements
 
 Report only actionable defects introduced by this pull request.
