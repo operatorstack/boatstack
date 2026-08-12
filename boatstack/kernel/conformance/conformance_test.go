@@ -91,7 +91,7 @@ func TestCommittedOutcomeRejectsDurableReceiptSubstitution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := committedOutcomeError(fixture.Program, before, fixture.Scenario.Snapshot(), prescription, returned); err == nil || !strings.Contains(err.Error(), "durable receipt differs") {
+	if err := committedOutcomeError(fixture.Program, fixture.Scenario, before, fixture.Scenario.Snapshot(), prescription, returned); err == nil || !strings.Contains(err.Error(), "durable receipt differs") {
 		t.Fatalf("expected substituted durable receipt rejection, got %v", err)
 	}
 }
@@ -110,7 +110,7 @@ func TestCommittedOutcomeRejectsPriorReceiptRewrite(t *testing.T) {
 	receipts.mu.Lock()
 	receipts.values[0] = returned
 	receipts.mu.Unlock()
-	if err := committedOutcomeError(fixture.Program, before, fixture.Scenario.Snapshot(), prescription, returned); err == nil || !strings.Contains(err.Error(), "prior receipt history") {
+	if err := committedOutcomeError(fixture.Program, fixture.Scenario, before, fixture.Scenario.Snapshot(), prescription, returned); err == nil || !strings.Contains(err.Error(), "prior receipt history") {
 		t.Fatalf("expected prior receipt rewrite rejection, got %v", err)
 	}
 }
@@ -129,7 +129,7 @@ func TestCommittedOutcomeRejectsUnrelatedEffect(t *testing.T) {
 	domain.mu.Lock()
 	domain.executions[fixture.Scenario.MaintenanceTransition]++
 	domain.mu.Unlock()
-	if err := committedOutcomeError(fixture.Program, before, fixture.Scenario.Snapshot(), prescription, returned); err == nil || !strings.Contains(err.Error(), "effect evidence") {
+	if err := committedOutcomeError(fixture.Program, fixture.Scenario, before, fixture.Scenario.Snapshot(), prescription, returned); err == nil || !strings.Contains(err.Error(), "effect evidence") {
 		t.Fatalf("expected unrelated effect rejection, got %v", err)
 	}
 }
@@ -137,19 +137,27 @@ func TestCommittedOutcomeRejectsUnrelatedEffect(t *testing.T) {
 func TestCommittedOutcomeRejectsLosingApplyStateClobber(t *testing.T) {
 	fixture := newIntegerFixture(SetupConcurrentSameBase)
 	base := fixture.Store.(*MemoryStateStore)
-	base.beginBarrier = nil
 	clobber := newClobberAfterCommitStore(base)
 	fixture.Store = clobber
-	runtime := mustRuntime(t, fixture)
+	resolver := mustRuntime(t, fixture)
 	transition := fixture.Scenario.AdvanceTransitions[0]
-	request, prescription := resolve(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective, fixture.Scenario.Authority)
+	request, prescription := resolve(t, resolver, fixture.Scenario, transition, &fixture.Scenario.Objective, fixture.Scenario.Authority)
+	runtimeA, err := kernel.NewRuntime(fixture.Program, fixture.Domain, fixture.Operator, fixture.CapabilityClassifier, fixture.Store, fixture.Scenario.IndependentLocker(), fixture.Clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeB, err := kernel.NewRuntime(fixture.Program, fixture.Domain, fixture.Operator, fixture.CapabilityClassifier, fixture.Store, fixture.Scenario.IndependentLocker(), fixture.Clock)
+	if err != nil {
+		t.Fatal(err)
+	}
 	before := fixture.Scenario.Snapshot()
 	type result struct {
 		receipt kernel.Receipt
 		err     error
 	}
 	results := make(chan result, 2)
-	for range 2 {
+	for _, runtime := range []kernel.Runtime{runtimeA, runtimeB} {
+		runtime := runtime
 		go func() {
 			receipt, err := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
 			results <- result{receipt: receipt, err: err}
@@ -162,7 +170,7 @@ func TestCommittedOutcomeRejectsLosingApplyStateClobber(t *testing.T) {
 			winner = result.receipt
 		}
 	}
-	if err := committedOutcomeError(fixture.Program, before, fixture.Scenario.Snapshot(), prescription, winner); err == nil || !strings.Contains(err.Error(), "durable state differs") {
+	if err := committedOutcomeError(fixture.Program, fixture.Scenario, before, fixture.Scenario.Snapshot(), prescription, winner); err == nil || !strings.Contains(err.Error(), "durable state differs") {
 		t.Fatalf("expected losing Apply state clobber rejection, got %v", err)
 	}
 }
@@ -191,8 +199,35 @@ func TestCommittedOutcomeRejectsFalsePriorObservation(t *testing.T) {
 	receipts.mu.Lock()
 	receipts.values[len(receipts.values)-1] = returned
 	receipts.mu.Unlock()
-	if err := committedOutcomeError(fixture.Program, before, fixture.Scenario.Snapshot(), prescription, returned); err == nil || !strings.Contains(err.Error(), "prior observation") {
+	if err := committedOutcomeError(fixture.Program, fixture.Scenario, before, fixture.Scenario.Snapshot(), prescription, returned); err == nil || !strings.Contains(err.Error(), "prior observation") {
 		t.Fatalf("expected false prior observation rejection, got %v", err)
+	}
+}
+
+func TestCommittedOutcomeRejectsNoOpAcceptedByDomainVerifier(t *testing.T) {
+	fixture := newIntegerFixture(SetupBound)
+	domain := fixture.Domain.(*IntegerDomain)
+	fixture.Domain = acceptingDomain{Domain: domain}
+	fixture.Operator = noOpAdvanceOperator{Domain: domain}
+	runtime := mustRuntime(t, fixture)
+	transition := fixture.Scenario.AdvanceTransitions[0]
+	request, prescription := resolve(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective, fixture.Scenario.Authority)
+	before := fixture.Scenario.Snapshot()
+	returned, err := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := committedOutcomeError(fixture.Program, fixture.Scenario, before, fixture.Scenario.Snapshot(), prescription, returned); err == nil || !strings.Contains(err.Error(), "independent domain outcome verification failed") {
+		t.Fatalf("expected independent no-op rejection, got %v", err)
+	}
+}
+
+func TestConcurrentApplyRejectsStoreWithoutCompareAndCommit(t *testing.T) {
+	fixture := newIntegerFixture(SetupConcurrentSameBase)
+	fixture.Store = &noCASStore{MemoryStateStore: fixture.Store.(*MemoryStateStore)}
+	resolver := mustRuntime(t, fixture)
+	if err := concurrentApplyError(fixture, resolver); err == nil {
+		t.Fatal("expected concurrent conformance to reject a store without revision compare-and-commit")
 	}
 }
 
@@ -295,6 +330,39 @@ func (s effectfulLoadStore) Load(ctx context.Context, instanceID string) (kernel
 }
 
 type tornCommitStore struct{ *MemoryStateStore }
+
+type acceptingDomain struct{ kernel.Domain }
+
+func (acceptingDomain) Verify(context.Context, kernel.Evaluation, kernel.Effect, kernel.Observation) error {
+	return nil
+}
+
+type noOpAdvanceOperator struct{ Domain *IntegerDomain }
+
+func (o noOpAdvanceOperator) Execute(_ context.Context, operation kernel.Operation) (kernel.Effect, error) {
+	o.Domain.mu.Lock()
+	defer o.Domain.mu.Unlock()
+	o.Domain.executions[operation.Transition.ID]++
+	return kernel.Effect{Facts: []kernel.EffectFact{{Facet: "counter.value", Operation: operation.Transition.Operation, Fingerprint: fmt.Sprintf("value-%d", o.Domain.value)}}}, nil
+}
+
+type noCASStore struct{ *MemoryStateStore }
+
+func (s *noCASStore) BeginEffect(_ context.Context, _ uint64, target kernel.ControlState) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state = cloneState(target)
+	return nil
+}
+
+func (s *noCASStore) CommitTransition(_ context.Context, _ uint64, target kernel.ControlState, receipt kernel.Receipt) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state = cloneState(target)
+	s.commitCount++
+	s.receipts.append(receipt)
+	return nil
+}
 
 func (s tornCommitStore) CommitTransition(_ context.Context, _ uint64, target kernel.ControlState, _ kernel.Receipt) error {
 	s.mu.Lock()

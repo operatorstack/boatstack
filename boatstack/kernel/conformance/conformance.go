@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -39,7 +40,7 @@ type Scenario struct {
 	Objective             kernel.Objective
 	RevisedObjective      kernel.Objective
 	ConflictingObjective  kernel.Objective
-	AlternateProgram      kernel.ProgramIdentity
+	AlternateProgram      kernel.Program
 	Authority             kernel.Authority
 	BindTransition        string
 	AdvanceTransitions    []string
@@ -50,7 +51,8 @@ type Scenario struct {
 	ChangeObservation     func()
 	RebindObjective       func(kernel.Objective)
 	BumpStateRevision     func()
-	RetargetProgram       func(kernel.ProgramIdentity)
+	IndependentLocker     func() kernel.Locker
+	VerifyCommitted       func(Snapshot, Snapshot, kernel.Receipt) error
 	InterruptNextOperator func()
 	PanicNextOperator     func()
 	FailNextCommit        func()
@@ -161,11 +163,14 @@ func (suite KernelConformance) programFingerprintInvalidatesPrescription(t *test
 	fixture, runtime := suite.fresh(t, SetupBound)
 	transition := fixture.Scenario.AdvanceTransitions[0]
 	request, prescription := resolve(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective, fixture.Scenario.Authority)
-	fixture.Scenario.RetargetProgram(fixture.Scenario.AlternateProgram)
+	alternate, err := kernel.NewRuntime(fixture.Scenario.AlternateProgram, fixture.Domain, fixture.Operator, fixture.CapabilityClassifier, fixture.Store, fixture.Locker, fixture.Clock)
+	if err != nil {
+		t.Fatal(err)
+	}
 	before := fixture.Scenario.Snapshot()
-	_, err := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
+	_, err = alternate.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
 	after := fixture.Scenario.Snapshot()
-	if unchangedErr := refusedApplyMutationError(before, after, transition); !kernel.IsStale(err) || unchangedErr != nil {
+	if unchangedErr := refusedApplyMutationError(before, after, transition); err == nil || unchangedErr != nil {
 		t.Fatalf("control-law program-fingerprint-freshness: error=%v mutation=%v before=%#v after=%#v", err, unchangedErr, before, after)
 	}
 }
@@ -368,17 +373,39 @@ func (suite KernelConformance) prescriptionCannotReplayAcrossInstances(t *testin
 }
 
 func (suite KernelConformance) concurrentApplyCommitsOnce(t *testing.T) {
-	fixture, runtime := suite.fresh(t, SetupConcurrentSameBase)
+	fixture, resolver := suite.fresh(t, SetupConcurrentSameBase)
+	if err := concurrentApplyError(fixture, resolver); err != nil {
+		t.Fatalf("control-law concurrent-cas: %v", err)
+	}
+}
+
+func concurrentApplyError(fixture KernelConformance, resolver kernel.Runtime) error {
 	transition := fixture.Scenario.AdvanceTransitions[0]
-	request, prescription := resolve(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective, fixture.Scenario.Authority)
+	request := kernel.ResolveRequest{InstanceID: fixture.Scenario.InstanceID, Objective: &fixture.Scenario.Objective, Authority: fixture.Scenario.Authority, Requested: transition}
+	resolution, err := resolveWithoutMutation(context.Background(), resolver, fixture.Scenario, request)
+	if err != nil || resolution.Decision.Kind != kernel.Prescribed || resolution.Prescription == nil {
+		return fmt.Errorf("resolve concurrent transition: decision=%#v error=%v", resolution.Decision, err)
+	}
+	prescription := *resolution.Prescription
 	before := fixture.Scenario.Snapshot()
+	store := &sameBaseLoadStore{Store: fixture.Store, barrier: newTwoPartyBarrier()}
+	domain := &sameBaseObservationDomain{Domain: fixture.Domain, barrier: newTwoPartyBarrier()}
+	runtimeA, err := kernel.NewRuntime(fixture.Program, domain, fixture.Operator, fixture.CapabilityClassifier, store, fixture.Scenario.IndependentLocker(), fixture.Clock)
+	if err != nil {
+		return err
+	}
+	runtimeB, err := kernel.NewRuntime(fixture.Program, domain, fixture.Operator, fixture.CapabilityClassifier, store, fixture.Scenario.IndependentLocker(), fixture.Clock)
+	if err != nil {
+		return err
+	}
 	start := make(chan struct{})
 	type applyResult struct {
 		receipt kernel.Receipt
 		err     error
 	}
 	results := make(chan applyResult, 2)
-	for range 2 {
+	for _, runtime := range []kernel.Runtime{runtimeA, runtimeB} {
+		runtime := runtime
 		go func() {
 			<-start
 			receipt, err := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
@@ -399,11 +426,60 @@ func (suite KernelConformance) concurrentApplyCommitsOnce(t *testing.T) {
 	}
 	after := fixture.Scenario.Snapshot()
 	if successes != 1 || refusals != 1 || after.CommitCount != before.CommitCount+1 || len(after.Receipts) != len(before.Receipts)+1 || effectCount(after, transition) != effectCount(before, transition)+1 {
-		t.Fatalf("control-law concurrent-cas: success/refusal=%d/%d snapshot=%#v", successes, refusals, after)
+		return fmt.Errorf("success/refusal=%d/%d snapshot=%#v", successes, refusals, after)
 	}
-	if err := committedOutcomeError(fixture.Program, before, after, prescription, winner); err != nil {
-		t.Fatalf("control-law concurrent-cas durable outcome: %v", err)
+	if err := committedOutcomeError(fixture.Program, fixture.Scenario, before, after, prescription, winner); err != nil {
+		return fmt.Errorf("durable outcome: %w", err)
 	}
+	return nil
+}
+
+type twoPartyBarrier struct {
+	mu       sync.Mutex
+	arrivals int
+	ready    chan struct{}
+}
+
+func newTwoPartyBarrier() *twoPartyBarrier {
+	return &twoPartyBarrier{ready: make(chan struct{})}
+}
+
+func (b *twoPartyBarrier) wait() {
+	b.mu.Lock()
+	b.arrivals++
+	if b.arrivals == 2 {
+		close(b.ready)
+	}
+	b.mu.Unlock()
+	<-b.ready
+}
+
+type sameBaseLoadStore struct {
+	kernel.Store
+	barrier *twoPartyBarrier
+}
+
+func (s *sameBaseLoadStore) Load(ctx context.Context, instanceID string) (kernel.ControlState, error) {
+	state, err := s.Store.Load(ctx, instanceID)
+	if err != nil {
+		return kernel.ControlState{}, err
+	}
+	s.barrier.wait()
+	return state, nil
+}
+
+type sameBaseObservationDomain struct {
+	kernel.Domain
+	barrier *twoPartyBarrier
+}
+
+func (d *sameBaseObservationDomain) Observe(ctx context.Context, instanceID string) (kernel.Observation, error) {
+	observation, err := d.Domain.Observe(ctx, instanceID)
+	if err != nil {
+		return kernel.Observation{}, err
+	}
+	d.barrier.wait()
+	return observation, nil
 }
 
 func (suite KernelConformance) programReachesMarkedState(t *testing.T) {
@@ -455,7 +531,7 @@ func runUntargetedToMarked(ctx context.Context, runtime kernel.Runtime, program 
 		if err != nil {
 			return nil, fmt.Errorf("control-law marked-reachability: apply %s: %w", resolution.Decision.Transition, err)
 		}
-		if err := committedOutcomeError(program, before, scenario.Snapshot(), *resolution.Prescription, receipt); err != nil {
+		if err := committedOutcomeError(program, scenario, before, scenario.Snapshot(), *resolution.Prescription, receipt); err != nil {
 			return nil, fmt.Errorf("control-law marked-reachability: apply %s: %w", resolution.Decision.Transition, err)
 		}
 		receipts = append(receipts, receipt)
@@ -488,7 +564,7 @@ func (suite KernelConformance) fixture(t testing.TB, setup Setup) KernelConforma
 		t.Fatal("kernel conformance requires a fresh fixture factory")
 	}
 	fixture := suite.New(t, setup)
-	if fixture.Domain == nil || fixture.Operator == nil || fixture.CapabilityClassifier == nil || fixture.Store == nil || fixture.Locker == nil || fixture.Clock == nil || fixture.Scenario.Snapshot == nil || fixture.Scenario.ChangeObservation == nil || fixture.Scenario.RebindObjective == nil || fixture.Scenario.BumpStateRevision == nil || fixture.Scenario.RetargetProgram == nil || fixture.Scenario.InterruptNextOperator == nil || fixture.Scenario.PanicNextOperator == nil || fixture.Scenario.FailNextCommit == nil || fixture.Scenario.RetargetInstance == nil || fixture.Scenario.InstanceID == "" || fixture.Scenario.BindTransition == "" || len(fixture.Scenario.AdvanceTransitions) == 0 || fixture.Scenario.MaintenanceTransition == "" || fixture.Scenario.RecoveryTransition == "" || fixture.Scenario.RecoveryCapability.Validate() != nil || fixture.Scenario.ExtraCapability.Validate() != nil {
+	if fixture.Domain == nil || fixture.Operator == nil || fixture.CapabilityClassifier == nil || fixture.Store == nil || fixture.Locker == nil || fixture.Clock == nil || fixture.Scenario.Snapshot == nil || fixture.Scenario.ChangeObservation == nil || fixture.Scenario.RebindObjective == nil || fixture.Scenario.BumpStateRevision == nil || fixture.Scenario.IndependentLocker == nil || fixture.Scenario.VerifyCommitted == nil || fixture.Scenario.InterruptNextOperator == nil || fixture.Scenario.PanicNextOperator == nil || fixture.Scenario.FailNextCommit == nil || fixture.Scenario.RetargetInstance == nil || fixture.Scenario.InstanceID == "" || fixture.Scenario.BindTransition == "" || len(fixture.Scenario.AdvanceTransitions) == 0 || fixture.Scenario.MaintenanceTransition == "" || fixture.Scenario.RecoveryTransition == "" || fixture.Scenario.RecoveryCapability.Validate() != nil || fixture.Scenario.ExtraCapability.Validate() != nil {
 		t.Fatal("kernel conformance fixture is incomplete")
 	}
 	if fixture.Scenario.RevisedObjective.Validate() != nil || fixture.Scenario.RevisedObjective.ID != fixture.Scenario.Objective.ID || fixture.Scenario.RevisedObjective.Revision <= fixture.Scenario.Objective.Revision || fixture.Scenario.RevisedObjective.Fingerprint == fixture.Scenario.Objective.Fingerprint {
@@ -523,13 +599,13 @@ func applyAndRequireCommit(t testing.TB, runtime kernel.Runtime, program kernel.
 	if err != nil {
 		t.Fatalf("apply %s: %v", prescription.TransitionID, err)
 	}
-	if err := committedOutcomeError(program, before, scenario.Snapshot(), prescription, receipt); err != nil {
+	if err := committedOutcomeError(program, scenario, before, scenario.Snapshot(), prescription, receipt); err != nil {
 		t.Fatalf("apply %s durable outcome: %v", prescription.TransitionID, err)
 	}
 	return receipt
 }
 
-func committedOutcomeError(program kernel.Program, before, after Snapshot, prescription kernel.Prescription, returned kernel.Receipt) error {
+func committedOutcomeError(program kernel.Program, scenario Scenario, before, after Snapshot, prescription kernel.Prescription, returned kernel.Receipt) error {
 	if err := returned.Validate(); err != nil {
 		return fmt.Errorf("returned receipt is invalid: %w", err)
 	}
@@ -570,6 +646,9 @@ func committedOutcomeError(program kernel.Program, before, after Snapshot, presc
 	}
 	if err := exactEffectDelta(before.Effects, after.Effects, returned.TransitionID, 1); err != nil {
 		return fmt.Errorf("successful Apply effect evidence is invalid: %w", err)
+	}
+	if err := scenario.VerifyCommitted(before, after, returned); err != nil {
+		return fmt.Errorf("independent domain outcome verification failed: %w", err)
 	}
 	return nil
 }

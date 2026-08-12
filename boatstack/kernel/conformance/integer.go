@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -175,7 +174,6 @@ type MemoryStateStore struct {
 	receipts       *MemoryReceipts
 	commitFailures int
 	commitCount    int
-	beginBarrier   *twoPartyBarrier
 }
 
 func (s *MemoryStateStore) Load(context.Context, string) (kernel.ControlState, error) {
@@ -185,9 +183,6 @@ func (s *MemoryStateStore) Load(context.Context, string) (kernel.ControlState, e
 }
 
 func (s *MemoryStateStore) BeginEffect(_ context.Context, revision uint64, target kernel.ControlState) error {
-	if s.beginBarrier != nil {
-		s.beginBarrier.wait()
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.state.Revision != revision {
@@ -268,12 +263,6 @@ func (l memoryLock) Unlock() error {
 	return nil
 }
 
-type noOpLocker struct{}
-type noOpLock struct{}
-
-func (noOpLocker) Acquire(context.Context, string) (kernel.Lock, error) { return noOpLock{}, nil }
-func (noOpLock) Unlock() error                                          { return nil }
-
 // FixedClock returns one deterministic time.
 type FixedClock struct{ Time time.Time }
 
@@ -316,10 +305,15 @@ func newIntegerFixture(setup Setup) KernelConformance {
 	if err != nil {
 		panic(err)
 	}
-	alternateProgram := program.Identity()
-	alternateProgram.Fingerprint = strings.Repeat("f", 64)
-	if alternateProgram.Fingerprint == program.Fingerprint {
-		alternateProgram.Fingerprint = strings.Repeat("e", 64)
+	alternateTransitions := append([]kernel.Transition(nil), program.Transitions...)
+	for index := range alternateTransitions {
+		if alternateTransitions[index].ID == "counter.increment-first" {
+			alternateTransitions[index].TargetMode = "two"
+		}
+	}
+	alternateProgram, err := kernel.CompileProgram(program.ID, program.Version, program.RuntimeCompatibility, program.InitialMode, program.MarkedModes, alternateTransitions)
+	if err != nil {
+		panic(err)
 	}
 	state := kernel.ControlState{InstanceID: "counter-fixture", Program: program.Identity(), Mode: "unbound", Revision: 1}
 	value := 0
@@ -344,17 +338,12 @@ func newIntegerFixture(setup Setup) KernelConformance {
 	domain := &IntegerDomain{value: value, executions: map[string]int{}}
 	receipts := &MemoryReceipts{}
 	store := &MemoryStateStore{state: state, receipts: receipts}
-	var locker kernel.Locker = &MemoryLocker{}
-	if setup == SetupConcurrentSameBase {
-		store.beginBarrier = newTwoPartyBarrier()
-		locker = noOpLocker{}
-	}
 	fixture := KernelConformance{
 		Domain:               domain,
 		Operator:             IntegerOperator{Domain: domain},
 		CapabilityClassifier: IntegerCapabilities{},
 		Store:                store,
-		Locker:               locker,
+		Locker:               &MemoryLocker{},
 		Clock:                FixedClock{Time: now},
 		Program:              program,
 	}
@@ -374,7 +363,10 @@ func newIntegerFixture(setup Setup) KernelConformance {
 		ChangeObservation:     domain.changeObservation,
 		RebindObjective:       store.rebind,
 		BumpStateRevision:     store.bumpRevision,
-		RetargetProgram:       store.retargetProgram,
+		IndependentLocker:     func() kernel.Locker { return &MemoryLocker{} },
+		VerifyCommitted: func(before, after Snapshot, receipt kernel.Receipt) error {
+			return verifyIntegerCommitted(program, before, after, receipt)
+		},
 		InterruptNextOperator: domain.interruptNext,
 		PanicNextOperator:     domain.panicNext,
 		FailNextCommit:        store.failNextCommit,
@@ -410,24 +402,37 @@ func newIntegerFixture(setup Setup) KernelConformance {
 	return fixture
 }
 
-type twoPartyBarrier struct {
-	mu       sync.Mutex
-	arrivals int
-	ready    chan struct{}
-}
-
-func newTwoPartyBarrier() *twoPartyBarrier {
-	return &twoPartyBarrier{ready: make(chan struct{})}
-}
-
-func (b *twoPartyBarrier) wait() {
-	b.mu.Lock()
-	b.arrivals++
-	if b.arrivals == 2 {
-		close(b.ready)
+func verifyIntegerCommitted(program kernel.Program, before, after Snapshot, receipt kernel.Receipt) error {
+	var prior, result struct {
+		Value int `json:"value"`
 	}
-	b.mu.Unlock()
-	<-b.ready
+	if err := json.Unmarshal(before.Observation.Value, &prior); err != nil {
+		return err
+	}
+	if err := json.Unmarshal(after.Observation.Value, &result); err != nil {
+		return err
+	}
+	transition, ok := program.Transition(receipt.TransitionID)
+	if !ok {
+		return fmt.Errorf("unknown transition %q", receipt.TransitionID)
+	}
+	switch transition.Operation {
+	case "objective.bind":
+		if result.Value != prior.Value {
+			return fmt.Errorf("objective binding changed value from %d to %d", prior.Value, result.Value)
+		}
+	case "counter.increment":
+		if result.Value != prior.Value+1 {
+			return fmt.Errorf("increment changed value from %d to %d", prior.Value, result.Value)
+		}
+	case "counter.reset":
+		if result.Value != 0 {
+			return fmt.Errorf("reset left value at %d", result.Value)
+		}
+	default:
+		return fmt.Errorf("unsupported operation %q", transition.Operation)
+	}
+	return nil
 }
 
 func cloneState(state kernel.ControlState) kernel.ControlState {
