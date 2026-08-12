@@ -858,20 +858,33 @@ func stateAssignmentMatchesTarget(t Transition, assignment StateAssignment) bool
 		if target.Facet != facet {
 			continue
 		}
-		if len(target.Statuses) != 1 || target.Statuses[0] != model.FactKnown {
+		if !containsFactStatus(target.Statuses, model.FactKnown) {
 			return false
 		}
 		if len(target.Values) == 0 {
-			return true
+			continue
 		}
+		matched := false
 		for _, value := range target.Values {
 			if value == *assignment.Value {
-				return true
+				matched = true
+				break
 			}
 		}
-		return false
+		if !matched {
+			return false
+		}
 	}
 	return true
+}
+
+func containsFactStatus(values []model.FactStatus, wanted model.FactStatus) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func cloneConditions(values []FacetCondition) []FacetCondition {

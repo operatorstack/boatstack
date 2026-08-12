@@ -90,7 +90,7 @@ func (protocolStateRuntime) RuntimeManifest(context.Context) (delivery.ProgramRu
 		SourcePhases: []delivery.ProtocolPhase{delivery.PhaseActive}, TargetPhases: []delivery.ProtocolPhase{delivery.PhaseActive},
 		ObjectiveKinds: []delivery.ObjectiveKind{delivery.ObjectiveVerified}, RequiredIdentity: []string{"repository-id", "git-common-id", "worktree-id"},
 		Authority:            []delivery.AuthorityClass{delivery.AuthorityHuman, delivery.AuthorityRepository},
-		RequiredCapabilities: []delivery.Capability{delivery.CapabilityRepositoryWrite, delivery.CapabilityCommandExecute}, RequiredEvidence: []string{"snapshot", "objective"},
+		RequiredCapabilities: []delivery.Capability{delivery.CapabilityRepositoryWrite, delivery.CapabilityCommandExecute, delivery.CapabilityProductMutate}, RequiredEvidence: []string{"snapshot", "objective"},
 		OwnedResources: []string{resource}, OwnedFacets: []delivery.StateFacet{delivery.StateFacetControl, delivery.StateFacetProduct},
 		StateEffect: delivery.StateEffect{Kind: delivery.StateEffectAssignments, Assignments: []delivery.StateAssignment{{Facet: "delivery", Value: &published}}},
 		Effect:      publishEffect, LocalEffects: []delivery.EffectID{publishEffect}, Idempotent: true,
@@ -109,7 +109,7 @@ func (protocolStateRuntime) RuntimeManifest(context.Context) (delivery.ProgramRu
 		ObjectiveContracts:  []delivery.ObjectiveContract{{ObjectiveKind: delivery.ObjectiveVerified, Conditions: []delivery.FacetCondition{delivery.KnownCondition(delivery.FacetDelivery, string(model.DeliveryPublished))}}},
 		Transitions:         []delivery.Transition{publish, recover}, OwnedResources: []string{resource},
 		Effects: []string{string(publishEffect), string(recoverEffect)}, Verifiers: []string{"fixture.state.published", "fixture.state.recovered"},
-		Capabilities:        []delivery.Capability{delivery.CapabilityRepositoryWrite, delivery.CapabilityCommandExecute},
+		Capabilities:        []delivery.Capability{delivery.CapabilityRepositoryWrite, delivery.CapabilityCommandExecute, delivery.CapabilityProductMutate},
 		ConfigurationSchema: json.RawMessage(`{"type":"object"}`), PrivacyClassification: "metadata-only", TelemetryClassification: "transition-receipt",
 	}, nil
 }

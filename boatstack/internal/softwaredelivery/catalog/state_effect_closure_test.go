@@ -126,6 +126,19 @@ func TestDeclarativeAssignmentsRejectApplyTimeOnlyValueConstraints(t *testing.T)
 	}
 }
 
+func TestStateAssignmentMustSatisfyEveryTargetCondition(t *testing.T) {
+	assignment := literalAssignment("delivery", string(model.DeliveryPublished))
+	transition := Transition{
+		TargetConditions: []FacetCondition{
+			{Facet: model.FacetDelivery, Statuses: []model.FactStatus{model.FactKnown}, Values: []string{string(model.DeliveryPublished)}},
+			{Facet: model.FacetDelivery, Statuses: []model.FactStatus{model.FactKnown}, Values: []string{string(model.DeliveryTerminal)}},
+		},
+	}
+	if stateAssignmentMatchesTarget(transition, assignment) {
+		t.Fatal("assignment matched only the first of two target conditions")
+	}
+}
+
 func closureTransition(source FacetCondition, assignments ...StateAssignment) Transition {
 	transition := Transition{
 		ID: "test.transition", SourcePhases: []model.ProtocolPhase{model.PhaseActive}, TargetPhases: []model.ProtocolPhase{model.PhaseActive},
