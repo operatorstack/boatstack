@@ -76,6 +76,38 @@ func journalStateFacets(mutations []ports.ResourceMutation) ([]model.StateFacet,
 	return changed, nil
 }
 
+// mutationStateFacets derives the semantic delta that the prepared mutation
+// will actually commit. Recovery receipts must describe this delta, not the
+// interrupted transition's wider staged envelope.
+func mutationStateFacets(invocation model.InvocationContext, mutations []ports.ResourceMutation) ([]model.StateFacet, error) {
+	var changed []model.StateFacet
+	for _, mutation := range mutations {
+		if filepath.Base(mutation.Path) != "state.json" || mutation.Delete || mutation.TargetLink != "" {
+			continue
+		}
+		after, err := durable.DecodeState(mutation.Target)
+		if err != nil {
+			continue
+		}
+		before := durable.Default(invocation, after.UpdatedAt)
+		if mutation.PriorExists {
+			before, err = durable.DecodeState(mutation.Prior)
+			if err != nil {
+				return nil, fmt.Errorf("STATE_FACET_UNCLASSIFIED: prepared durable state mutation %s has invalid prior state: %w", mutation.Path, err)
+			}
+		}
+		facets, err := durable.ChangedFacets(before, after)
+		if err != nil {
+			return nil, err
+		}
+		changed = model.UnionStateFacets(changed, facets)
+	}
+	if len(changed) == 0 {
+		return nil, fmt.Errorf("STATE_FACET_UNCLASSIFIED: prepared effect has no durable state delta")
+	}
+	return changed, nil
+}
+
 func annotateStateFacetMutations(mutations []ports.ResourceMutation, facets []model.StateFacet) []ports.ResourceMutation {
 	for index := range mutations {
 		mutation := &mutations[index]

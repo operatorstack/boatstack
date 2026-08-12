@@ -1,6 +1,7 @@
 package effects
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -93,7 +94,7 @@ func TestRecoveryCannotReplayFacetOutsideInterruptedTransition(t *testing.T) {
 	prior, _ := durable.EncodeState(before)
 	target, _ := durable.EncodeState(after)
 	record := journalRecord{TransitionID: "installation.update", Mutations: []ports.ResourceMutation{{Path: "/controller/state.json", PriorExists: true, Prior: prior, Target: target, StateFacets: []model.StateFacet{model.StateFacetControl, model.StateFacetProduct}}}}
-	if _, err := recoveryStateFacets(record, "recovery.resume"); err == nil || !strings.Contains(err.Error(), "FACET_OWNERSHIP_VIOLATION") {
+	if _, err := recoveryStateFacets(record, "recovery.resume", model.InvocationContext{}, nil); err == nil || !strings.Contains(err.Error(), "FACET_OWNERSHIP_VIOLATION") {
 		t.Fatalf("recovery accepted product contamination: %v", err)
 	}
 }
@@ -102,8 +103,38 @@ func TestRecoveryRefusesUnclassifiedDurableMutation(t *testing.T) {
 	state := ownershipState()
 	raw, _ := durable.EncodeState(state)
 	record := journalRecord{TransitionID: "installation.update", Mutations: []ports.ResourceMutation{{Path: "/controller/state.json", PriorExists: true, Prior: raw, Target: raw}}}
-	if _, err := recoveryStateFacets(record, "recovery.resume"); err == nil || !strings.Contains(err.Error(), "STATE_FACET_UNCLASSIFIED") {
+	if _, err := recoveryStateFacets(record, "recovery.resume", model.InvocationContext{}, nil); err == nil || !strings.Contains(err.Error(), "STATE_FACET_UNCLASSIFIED") {
 		t.Fatalf("recovery accepted an unclassified state mutation: %v", err)
+	}
+}
+
+func TestRecoveryReportsActualStateDeltaInsteadOfInterruptedEnvelope(t *testing.T) {
+	invocation := model.InvocationContext{RepositoryID: "repo", GitCommonID: "git", WorktreeID: "worktree"}
+	before := durable.Default(invocation, time.Unix(100, 0).UTC())
+	staged := before
+	staged.Plan = model.PlanDraft
+	staged.Revision++
+	staged.LastTransition = "plan.create"
+	staged.UpdatedAt = time.Unix(101, 0).UTC()
+	prior, _ := durable.EncodeState(before)
+	target, _ := durable.EncodeState(staged)
+	record := journalRecord{TransitionID: "plan.create", Mutations: []ports.ResourceMutation{{
+		Path: "/controller/state.json", PriorExists: true, Prior: prior, Target: target,
+		StateFacets: []model.StateFacet{model.StateFacetControl, model.StateFacetProduct},
+	}}}
+
+	recovered := before
+	recovered.Revision++
+	recovered.LastTransition = "recovery.rollback"
+	recovered.UpdatedAt = time.Unix(102, 0).UTC()
+	recoveredRaw, _ := durable.EncodeState(recovered)
+	mutations := []ports.ResourceMutation{{Path: "/controller/state.json", PriorExists: true, Prior: prior, Target: recoveredRaw}}
+	changed, err := recoveryStateFacets(record, "recovery.rollback", invocation, mutations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(changed, []model.StateFacet{model.StateFacetControl}) {
+		t.Fatalf("recovery facets = %v, want actual control-only delta", changed)
 	}
 }
 
