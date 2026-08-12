@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/kernel"
 )
@@ -32,8 +33,46 @@ func TestMarkedStateCheckRejectsUntargetedPriorityCycle(t *testing.T) {
 func TestIntegerBoundFixtureIncludesCommittedHistory(t *testing.T) {
 	fixture := newIntegerFixture(SetupBound)
 	snapshot := fixture.Scenario.Snapshot()
-	if snapshot.CommitCount != 3 || len(snapshot.Receipts) != 3 || effectCount(snapshot, fixture.Scenario.AdvanceTransitions[0]) != 1 || snapshot.State.Mode != "zero" || snapshot.State.ObjectiveBinding == nil || !snapshot.State.ObjectiveBinding.Matches(fixture.Scenario.Objective) {
+	if snapshot.CommitCount != 3 || len(snapshot.Receipts) != 3 || effectCount(snapshot, fixture.Scenario.AdvanceTransitions[0]) != 1 || snapshot.State.Mode != "zero" || snapshot.State.ObjectiveBinding == nil || !snapshot.State.ObjectiveBinding.Matches(fixture.Scenario.Objective) || !authorityHasCapability(fixture.Scenario.Authority, fixture.Scenario.ExtraCapability) {
 		t.Fatalf("expected committed bind/advance/reset baseline, got %#v", snapshot)
+	}
+}
+
+func TestResolveWithoutMutationRejectsEffectfulLoad(t *testing.T) {
+	fixture := newIntegerFixture(SetupBound)
+	base := fixture.Store.(*MemoryStateStore)
+	domain := fixture.Domain.(*IntegerDomain)
+	fixture.Store = effectfulLoadStore{Store: base, mutate: func() {
+		domain.mu.Lock()
+		defer domain.mu.Unlock()
+		domain.executions[fixture.Scenario.MaintenanceTransition]++
+	}}
+	runtime := mustRuntime(t, fixture)
+	authority := fixture.Scenario.Authority
+	authority.Receipts = append([]kernel.AuthorityReceipt(nil), authority.Receipts...)
+	authority.Receipts[0].IssuedAt = fixture.Clock.Now().Add(time.Second)
+	_, err := resolveWithoutMutation(context.Background(), runtime, fixture.Scenario, kernel.ResolveRequest{InstanceID: fixture.Scenario.InstanceID, Objective: &fixture.Scenario.Objective, Authority: authority, Requested: fixture.Scenario.AdvanceTransitions[0]})
+	if err == nil || !strings.Contains(err.Error(), "Resolve mutated") {
+		t.Fatalf("expected effectful authority refusal rejection, got %v", err)
+	}
+}
+
+func TestUntargetedRecoveryRejectsPriorityCycle(t *testing.T) {
+	fixture := integerRecoveryCycleFixture()
+	runtime := mustRuntime(t, fixture)
+	transition := fixture.Scenario.AdvanceTransitions[0]
+	fixture.Scenario.InterruptNextOperator()
+	request, prescription := resolve(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective, fixture.Scenario.Authority)
+	if _, err := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription}); !kernel.IsRecoveryRequired(err) {
+		t.Fatalf("expected initial recovery obligation, got %v", err)
+	}
+	recoveryRequest, recoveryPrescription := resolve(t, runtime, fixture.Scenario, fixture.Scenario.RecoveryTransition, &fixture.Scenario.Objective, fixture.Scenario.Authority)
+	fixture.Scenario.FailNextCommit()
+	if _, err := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: recoveryRequest, Prescription: recoveryPrescription}); !kernel.IsRecoveryRequired(err) {
+		t.Fatalf("expected failed recovery obligation, got %v", err)
+	}
+	if _, _, err := resolveUntargetedRecovery(context.Background(), runtime, fixture.Scenario); err == nil || !strings.Contains(err.Error(), "counter.recover-cycle") {
+		t.Fatalf("expected untargeted recovery cycle rejection, got %v", err)
 	}
 }
 
@@ -52,7 +91,7 @@ func TestCommittedOutcomeRejectsDurableReceiptSubstitution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := committedOutcomeError(fixture.Program, before, fixture.Scenario.Snapshot(), returned); err == nil || !strings.Contains(err.Error(), "durable receipt differs") {
+	if err := committedOutcomeError(fixture.Program, before, fixture.Scenario.Snapshot(), prescription, returned); err == nil || !strings.Contains(err.Error(), "durable receipt differs") {
 		t.Fatalf("expected substituted durable receipt rejection, got %v", err)
 	}
 }
@@ -71,7 +110,7 @@ func TestCommittedOutcomeRejectsPriorReceiptRewrite(t *testing.T) {
 	receipts.mu.Lock()
 	receipts.values[0] = returned
 	receipts.mu.Unlock()
-	if err := committedOutcomeError(fixture.Program, before, fixture.Scenario.Snapshot(), returned); err == nil || !strings.Contains(err.Error(), "prior receipt history") {
+	if err := committedOutcomeError(fixture.Program, before, fixture.Scenario.Snapshot(), prescription, returned); err == nil || !strings.Contains(err.Error(), "prior receipt history") {
 		t.Fatalf("expected prior receipt rewrite rejection, got %v", err)
 	}
 }
@@ -90,7 +129,7 @@ func TestCommittedOutcomeRejectsUnrelatedEffect(t *testing.T) {
 	domain.mu.Lock()
 	domain.executions[fixture.Scenario.MaintenanceTransition]++
 	domain.mu.Unlock()
-	if err := committedOutcomeError(fixture.Program, before, fixture.Scenario.Snapshot(), returned); err == nil || !strings.Contains(err.Error(), "effect evidence") {
+	if err := committedOutcomeError(fixture.Program, before, fixture.Scenario.Snapshot(), prescription, returned); err == nil || !strings.Contains(err.Error(), "effect evidence") {
 		t.Fatalf("expected unrelated effect rejection, got %v", err)
 	}
 }
@@ -123,8 +162,37 @@ func TestCommittedOutcomeRejectsLosingApplyStateClobber(t *testing.T) {
 			winner = result.receipt
 		}
 	}
-	if err := committedOutcomeError(fixture.Program, before, fixture.Scenario.Snapshot(), winner); err == nil || !strings.Contains(err.Error(), "durable state differs") {
+	if err := committedOutcomeError(fixture.Program, before, fixture.Scenario.Snapshot(), prescription, winner); err == nil || !strings.Contains(err.Error(), "durable state differs") {
 		t.Fatalf("expected losing Apply state clobber rejection, got %v", err)
+	}
+}
+
+func TestCommittedOutcomeRejectsFalsePriorObservation(t *testing.T) {
+	fixture := newIntegerFixture(SetupBound)
+	runtime := mustRuntime(t, fixture)
+	transition := fixture.Scenario.AdvanceTransitions[0]
+	request, prescription := resolve(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective, fixture.Scenario.Authority)
+	before := fixture.Scenario.Snapshot()
+	returned, err := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
+	if err != nil {
+		t.Fatal(err)
+	}
+	returned.PriorObservation = strings.Repeat("f", 64)
+	if returned.PriorObservation == before.Observation.Fingerprint {
+		returned.PriorObservation = strings.Repeat("e", 64)
+	}
+	returned.ID = ""
+	identity, err := kernel.Fingerprint(returned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	returned.ID = "rcp-" + identity
+	receipts := fixture.Store.(*MemoryStateStore).receipts
+	receipts.mu.Lock()
+	receipts.values[len(receipts.values)-1] = returned
+	receipts.mu.Unlock()
+	if err := committedOutcomeError(fixture.Program, before, fixture.Scenario.Snapshot(), prescription, returned); err == nil || !strings.Contains(err.Error(), "prior observation") {
+		t.Fatalf("expected false prior observation rejection, got %v", err)
 	}
 }
 
@@ -167,6 +235,41 @@ func integerPriorityCycleFixture() KernelConformance {
 	return fixture
 }
 
+func integerRecoveryCycleFixture() KernelConformance {
+	fixture := newIntegerFixture(SetupBound)
+	base := fixture.Program
+	transitions := append([]kernel.Transition(nil), base.Transitions...)
+	for index := range transitions {
+		if transitions[index].ID == fixture.Scenario.RecoveryTransition {
+			transitions[index].Priority = 2
+		}
+	}
+	transitions = append(transitions, kernel.Transition{
+		ID: "counter.recover-cycle", SourceModes: []string{"zero", "one", "two"}, TargetMode: "zero",
+		ObjectiveScope: kernel.ObjectiveOptionalPreserve, ObjectiveMutation: kernel.PreserveObjective,
+		RequiredCapabilities: []kernel.Capability{"counter.reset"}, OwnedFacets: []string{"counter.value"},
+		Operation: "counter.reset", Priority: 1, Recovers: []string{"counter.increment-first", "counter.increment-second", "counter.reset"},
+	})
+	program, err := kernel.CompileProgram(base.ID, base.Version, base.RuntimeCompatibility, base.InitialMode, base.MarkedModes, transitions)
+	if err != nil {
+		panic(err)
+	}
+	fixture.Program = program
+	fixture.Store.(*MemoryStateStore).retargetProgram(program.Identity())
+	return fixture
+}
+
+func authorityHasCapability(authority kernel.Authority, wanted kernel.Capability) bool {
+	for _, receipt := range authority.Receipts {
+		for _, capability := range receipt.Capabilities {
+			if capability == wanted {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func mustRuntime(t *testing.T, fixture KernelConformance) kernel.Runtime {
 	t.Helper()
 	runtime, err := kernel.NewRuntime(fixture.Program, fixture.Domain, fixture.Operator, fixture.CapabilityClassifier, fixture.Store, fixture.Locker, fixture.Clock)
@@ -179,6 +282,16 @@ func mustRuntime(t *testing.T, fixture KernelConformance) kernel.Runtime {
 type substitutingReceiptStore struct {
 	kernel.Store
 	Receipt kernel.Receipt
+}
+
+type effectfulLoadStore struct {
+	kernel.Store
+	mutate func()
+}
+
+func (s effectfulLoadStore) Load(ctx context.Context, instanceID string) (kernel.ControlState, error) {
+	s.mutate()
+	return s.Store.Load(ctx, instanceID)
 }
 
 type tornCommitStore struct{ *MemoryStateStore }
