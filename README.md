@@ -33,6 +33,11 @@ language models, or coding-agent semantics.
 > ABI, configuration schema, generated skills, and state format may change
 > without a compatibility path. Audit it before using it on important work.
 
+During alpha development, Boatstack does not preserve backward compatibility.
+Breaking architecture changes update all in-tree consumers together instead of
+adding compatibility shims. Existing local installations may need to be reset
+or regenerated.
+
 ## Try it
 
 Boatstack installs into an existing Git repository. The repository must have an
@@ -107,6 +112,7 @@ control graph. The complete list is generated from the registry in the
 | **Transactions** | Prescriptions bind the exact control instance, state revision, program, objective binding, observation, transition, and authority. Apply rechecks that boundary before execution. |
 | **Verification and receipts** | Fresh postcondition verification, atomic state-and-receipt commits, and immutable transition facts. |
 | **Recovery** | A durable effect attempt precedes execution. Interrupted or uncertain outcomes enter explicit recovery instead of blindly repeating an effect. |
+| **Conformance** | A reusable, domain-neutral suite verifies objective handling, authority, freshness, recovery, atomic commit, replay isolation, concurrency, and marked-state reachability against any explicitly mapped domain fixture. |
 
 ### Software delivery
 
