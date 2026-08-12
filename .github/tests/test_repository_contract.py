@@ -400,6 +400,20 @@ class RepositoryContract(unittest.TestCase):
         ):
             self.assertNotIn(retired, implementation)
 
+        component_ci = (REPO / ".github" / "workflows" / "ci.yml").read_text()
+        for current in (
+            "./kernel", "./delivery", "./internal/softwaredelivery/protocol",
+            "./internal/softwaredelivery/surfaces",
+            "./internal/softwaredelivery/plant",
+            "./internal/softwaredelivery/effects",
+        ):
+            self.assertIn(current, component_ci)
+        for retired in (
+            "./control", "./internal/kernel", "./internal/plant",
+            "./internal/effects", "./internal/surfaces",
+        ):
+            self.assertNotIn(retired, component_ci)
+
     def test_documented_cli_verbs_are_registered_v2_surfaces(self) -> None:
         documents = [
             REPO / "README.md",

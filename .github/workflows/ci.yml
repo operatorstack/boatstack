@@ -21,17 +21,17 @@ jobs:
       matrix:
         include:
           - name: kernel-mechanism
-            packages: ./internal/kernel/model ./internal/kernel/catalog ./internal/kernel/supervisor ./internal/kernel/engine
+            packages: ./kernel
           - name: control-program-compiler
-            packages: ./control ./core
+            packages: ./delivery ./core
           - name: standard-flow
-            packages: ./flow/standard ./internal/kernel/protocol
+            packages: ./flow/standard ./internal/softwaredelivery/protocol
           - name: extension-conformance
             packages: ./extension/... ./distribution
           - name: surface-parity
-            packages: ./internal/surfaces ./sdk ./cmd/boatstack-helper
+            packages: ./internal/softwaredelivery/surfaces ./sdk ./cmd/boatstack-helper
           - name: plant-integration
-            packages: ./internal/plant ./internal/effects
+            packages: ./internal/softwaredelivery/plant ./internal/softwaredelivery/effects ./internal/softwaredelivery/engine
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
