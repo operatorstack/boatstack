@@ -131,7 +131,7 @@ func TestRecoveryReportsActualStateDeltaInsteadOfInterruptedEnvelope(t *testing.
 	staged.UpdatedAt = time.Unix(101, 0).UTC()
 	prior, _ := durable.EncodeState(before)
 	target, _ := durable.EncodeState(staged)
-	record := journalRecord{TransitionID: "plan.create", AllowedStateFacets: []model.StateFacet{model.StateFacetControl, model.StateFacetProduct}, Mutations: []ports.ResourceMutation{{
+	record := journalRecord{TransitionID: "plan.create", AllowedStateFacets: []model.StateFacet{model.StateFacetControl, model.StateFacetProduct}, Admission: protocol.Admission{RequiredCapabilities: []catalog.Capability{catalog.CapabilityProductMutate}}, Mutations: []ports.ResourceMutation{{
 		Path: "/controller/state.json", PriorExists: true, Prior: prior, Target: target,
 		StateFacets: []model.StateFacet{model.StateFacetControl, model.StateFacetProduct},
 	}}}
@@ -148,6 +148,28 @@ func TestRecoveryReportsActualStateDeltaInsteadOfInterruptedEnvelope(t *testing.
 	}
 	if !slices.Equal(changed, []model.StateFacet{model.StateFacetControl}) {
 		t.Fatalf("recovery facets = %v, want actual control-only delta", changed)
+	}
+}
+
+func TestRecoveryCannotWidenFacetsOutsideAdmissionCapabilities(t *testing.T) {
+	before := ownershipState()
+	after := before
+	after.Plan = model.PlanApproved
+	prior, _ := durable.EncodeState(before)
+	target, _ := durable.EncodeState(after)
+	record := journalRecord{
+		TransitionID:       "repository-program/advance",
+		AllowedStateFacets: []model.StateFacet{model.StateFacetControl, model.StateFacetProduct},
+		Admission: protocol.Admission{RequiredCapabilities: []catalog.Capability{
+			catalog.CapabilityRepositoryWrite,
+		}},
+		Mutations: []ports.ResourceMutation{{
+			Path: "/controller/state.json", PriorExists: true, Prior: prior, Target: target,
+			StateFacets: []model.StateFacet{model.StateFacetProduct},
+		}},
+	}
+	if _, err := recoveryStateFacets(record, "recovery.resume", model.InvocationContext{}, nil); err == nil || !strings.Contains(err.Error(), "FACET_OWNERSHIP_VIOLATION") {
+		t.Fatalf("recovery widened admission-bound facets: %v", err)
 	}
 }
 

@@ -316,6 +316,7 @@ func programFixture() delivery.ProgramManifest {
 	advance.TargetPhases = []delivery.ProtocolPhase{delivery.PhaseTerminal}
 	advance.ObjectiveKinds = []delivery.ObjectiveKind{delivery.ObjectiveVerified}
 	advance.Authority = []delivery.AuthorityClass{delivery.AuthorityHuman, delivery.AuthorityRepository}
+	advance.RequiredCapabilities = []delivery.Capability{delivery.CapabilityRepositoryWrite, delivery.CapabilityProductMutate}
 	advance.Effect = "program.advance"
 	advance.LocalEffects = []delivery.EffectID{"program.advance"}
 	advance.Prescription = delivery.Prescription{Operation: "advance", Arguments: []string{"--exact"}, ExpectedPostcondition: "terminal"}
@@ -331,7 +332,7 @@ func programFixture() delivery.ProgramManifest {
 		SchemaVersion: delivery.ProgramSchemaVersion, ProgramID: "test-program", ProgramVersion: "1", RequiresRuntime: ">=1.0.0",
 		Capabilities: delivery.ProgramCapabilities{
 			Effects: []string{"program.advance", "program.recover"}, Verifiers: []string{"program.current", "program.terminal"},
-			CapabilitySurface: []delivery.Capability{delivery.CapabilityRepositoryWrite, delivery.CapabilityCommandExecute},
+			CapabilitySurface: []delivery.Capability{delivery.CapabilityRepositoryWrite, delivery.CapabilityCommandExecute, delivery.CapabilityProductMutate},
 		},
 		OwnedResources: []string{"program.state"}, ObjectiveContracts: []delivery.ObjectiveContract{{ObjectiveKind: delivery.ObjectiveVerified, Conditions: []delivery.FacetCondition{delivery.KnownCondition(delivery.FacetDelivery, "terminal")}}},
 		Transitions: []delivery.ProgramTransition{advance, recovery},
@@ -339,7 +340,7 @@ func programFixture() delivery.ProgramManifest {
 }
 
 func runtimeFixture() delivery.RuntimeCompatibility {
-	return delivery.RuntimeCompatibility{Version: "v1.2.3", Effects: []string{"program.advance", "program.recover", "alternate.effect"}, Verifiers: []string{"program.current", "program.terminal", "alternate.verifier"}, Capabilities: []delivery.Capability{delivery.CapabilityRepositoryWrite, delivery.CapabilityCommandExecute, delivery.CapabilityHumanApprove}}
+	return delivery.RuntimeCompatibility{Version: "v1.2.3", Effects: []string{"program.advance", "program.recover", "alternate.effect"}, Verifiers: []string{"program.current", "program.terminal", "alternate.verifier"}, Capabilities: []delivery.Capability{delivery.CapabilityRepositoryWrite, delivery.CapabilityCommandExecute, delivery.CapabilityProductMutate, delivery.CapabilityHumanApprove}}
 }
 
 func loadManifest(t *testing.T, manifest delivery.ProgramManifest) delivery.ControlProgram {
