@@ -25,6 +25,8 @@ type recoveryClock struct{ value time.Time }
 
 const testProgramFingerprint = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
+var testProgramIdentity = protocol.ProgramIdentity{ID: "standard", Version: "test", Fingerprint: testProgramFingerprint}
+
 func testGoalContracts() catalog.GoalContracts {
 	manifest, err := standard.Definition().RuntimeManifest(context.Background())
 	if err != nil {
@@ -170,7 +172,7 @@ func TestRestartRecoveryRestoresPriorStateAndCommitsRecoveryRevision(t *testing.
 	locker, _ := NewLocker(resolver)
 	journalAfterRestart, _ := NewJournal(resolver, clock)
 	receipts, _ := NewReceiptStore(resolver, clock)
-	restartedEngine, err := engine.New(testprogram.StandardRegistry(), testGoalContracts(), testProgramFingerprint, observer, clock, locker, journalAfterRestart, driver, receipts)
+	restartedEngine, err := engine.New(testprogram.StandardRegistry(), testGoalContracts(), testProgramIdentity, observer, clock, locker, journalAfterRestart, driver, receipts)
 	if err != nil {
 		t.Fatal(err)
 	}

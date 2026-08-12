@@ -71,7 +71,8 @@ func NewKernel(externalStateRoot string, program control.ControlProgram) (Kernel
 	}
 	driver := programEffectDriver{base: baseDriver, program: program, resolver: resolver, clock: clock}
 	registry := program.RuntimeRegistry()
-	runtimeEngine, err := engine.New(registry, program.RuntimeGoalContracts(), program.Fingerprint(), observer, clock, locker, journal, driver, receipts)
+	summary := program.Summary()
+	runtimeEngine, err := engine.New(registry, program.RuntimeGoalContracts(), protocol.ProgramIdentity{ID: summary.ProgramID, Version: summary.ProgramVersion, Fingerprint: summary.ProgramFingerprint}, observer, clock, locker, journal, driver, receipts)
 	if err != nil {
 		return Kernel{}, err
 	}

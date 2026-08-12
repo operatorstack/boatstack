@@ -89,6 +89,7 @@ type ResourceMutation struct {
 
 type PreparedEffect interface {
 	Manifest() []ResourceMutation
+	CommittedEffects() []protocol.EffectFact
 	VerificationInvocation() (model.InvocationContext, bool)
 	Execute(context.Context) (EffectResult, error)
 	Rollback(context.Context) error
@@ -105,5 +106,5 @@ type ReceiptStore interface {
 	Unbind(string)
 	NextSequence(context.Context, string) (uint64, error)
 	FindByIdempotency(context.Context, model.InvocationContext, string) (protocol.TransitionReceipt, bool, error)
-	Append(context.Context, protocol.TransitionReceipt) error
+	Project(context.Context, protocol.TransitionReceipt) error
 }

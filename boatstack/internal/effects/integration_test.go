@@ -35,6 +35,8 @@ type fixedClock struct{ value time.Time }
 
 const testProgramFingerprint = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
+var testProgramIdentity = protocol.ProgramIdentity{ID: "standard", Version: "test", Fingerprint: testProgramFingerprint}
+
 func testGoalContracts() catalog.GoalContracts {
 	manifest, err := standard.Definition().RuntimeManifest(context.Background())
 	if err != nil {
@@ -158,7 +160,7 @@ func TestConcreteBoundaryAppliesAndReceiptsOneTransition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	kernel, err := engine.New(testprogram.StandardRegistry(), testGoalContracts(), testProgramFingerprint, observer, clock, locker, journal, driver, receipts)
+	kernel, err := engine.New(testprogram.StandardRegistry(), testGoalContracts(), testProgramIdentity, observer, clock, locker, journal, driver, receipts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,7 +322,7 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if initialized.Receipt == nil || initialized.Receipt.ProgramFingerprint != oldProgram.Fingerprint() {
+	if initialized.Receipt == nil || initialized.Receipt.Program.Fingerprint != oldProgram.Fingerprint() {
 		t.Fatalf("initial receipt did not freeze old program: %#v", initialized.Receipt)
 	}
 	if initialized.Snapshot == nil || initialized.Snapshot.Goal.Status != model.FactAbsent || initialized.Receipt.GoalStatus != model.FactAbsent || initialized.Receipt.GoalID != "" {
@@ -390,7 +392,7 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reconciled.Receipt == nil || reconciled.Receipt.ProgramFingerprint != newProgram.Fingerprint() ||
+	if reconciled.Receipt == nil || reconciled.Receipt.Program.Fingerprint != newProgram.Fingerprint() ||
 		reconciled.Receipt.PriorProgramFingerprint != oldProgram.Fingerprint() || reconciled.Receipt.ProgramDeltaFingerprint == "" ||
 		!reconciled.Receipt.ProgramChangeAccepted || reconciled.Receipt.RuntimeFingerprint != digestBytes(runtimeRaw) ||
 		reconciled.Receipt.RuntimeSourceRevision != "program-new" || reconciled.Snapshot == nil ||
@@ -506,7 +508,7 @@ func TestReferenceExtensionUsesKernelAdmissionVerificationAndReceiptPath(t *test
 		{Name: "source_revision", Value: "extension-fixture"}, {Name: "runtime_version", Value: runtimeVersion}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
 		{Name: "config_path", Value: configPath}, {Name: "config_sha256", Value: configFingerprint(t, configRaw)},
 	})
-	if initialized.Receipt == nil || initialized.Receipt.AuthorityFingerprint == "" || len(initialized.Receipt.AuthoritySources) != 1 || len(initialized.Receipt.RequiredCapabilities) == 0 || len(initialized.Receipt.GrantedCapabilities) == 0 || len(initialized.Receipt.ExercisedCapabilities) == 0 {
+	if initialized.Receipt == nil || initialized.Receipt.AuthorityFingerprint == "" || len(initialized.Receipt.AuthoritySources) != 1 || len(initialized.Receipt.RequiredCapabilities) == 0 || len(initialized.Receipt.GrantedCapabilities) == 0 || len(initialized.Receipt.ExercisedCapabilities) != 0 || len(initialized.Receipt.CommittedEffects) == 0 || initialized.Receipt.Verification.Result != protocol.VerificationSatisfied {
 		t.Fatalf("receipt lost capability or authority provenance: %#v", initialized.Receipt)
 	}
 	apply("goal.configure", authority(catalog.AuthorityHuman), protocol.Parameters{{Name: "goal_kind", Value: string(goal.Kind)}, {Name: "delivery_id", Value: goal.DeliveryID}})
@@ -549,7 +551,7 @@ func TestReferenceExtensionUsesKernelAdmissionVerificationAndReceiptPath(t *test
 		t.Fatalf("unmet extension obligation decision = %#v", next.Decision)
 	}
 	completed := apply(releasenote.Transition, authority(catalog.AuthorityRepository), nil)
-	if completed.Receipt == nil || completed.Receipt.TransitionID != releasenote.Transition || completed.Receipt.ProgramFingerprint != program.Fingerprint() ||
+	if completed.Receipt == nil || completed.Receipt.TransitionID != releasenote.Transition || completed.Receipt.Program.Fingerprint != program.Fingerprint() ||
 		completed.Snapshot == nil || completed.Snapshot.ExtensionFacts[releasenote.FactID].Value != "verified" {
 		t.Fatalf("extension did not traverse verified receipt path: %#v", completed)
 	}
@@ -588,7 +590,7 @@ func TestConcreteWorkflowPreservesConfigurationProofAndGoalTerminals(t *testing.
 	journal, _ := effects.NewJournal(resolver, clock)
 	receipts, _ := effects.NewReceiptStore(resolver, clock)
 	driver, _ := effects.NewDriver(resolver, clock, effects.NewNativeBoundary())
-	kernel, err := engine.New(testprogram.StandardRegistry(), testGoalContracts(), testProgramFingerprint, observer, clock, locker, journal, driver, receipts)
+	kernel, err := engine.New(testprogram.StandardRegistry(), testGoalContracts(), testProgramIdentity, observer, clock, locker, journal, driver, receipts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -734,7 +736,7 @@ func TestWorkspaceCutTransfersAuthorityToExactDestinationWorktree(t *testing.T) 
 	journal, _ := effects.NewJournal(resolver, clock)
 	receipts, _ := effects.NewReceiptStore(resolver, clock)
 	driver, _ := effects.NewDriver(resolver, clock, effects.NewNativeBoundary())
-	kernel, err := engine.New(testprogram.StandardRegistry(), testGoalContracts(), testProgramFingerprint, observer, clock, locker, journal, driver, receipts)
+	kernel, err := engine.New(testprogram.StandardRegistry(), testGoalContracts(), testProgramIdentity, observer, clock, locker, journal, driver, receipts)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -573,7 +573,9 @@ class RepositoryContract(unittest.TestCase):
                 self.assertTrue(event["authority_fingerprint"])
                 self.assertTrue(event["required_capabilities"])
                 self.assertTrue(event["granted_capabilities"])
-                self.assertTrue(event["exercised_capabilities"])
+                self.assertNotIn("exercised_capabilities", event)
+                self.assertTrue(event["committed_effects"])
+                self.assertEqual(event["verification"]["result"], "satisfied")
 
     def test_program_changing_update_is_explicit_atomic_and_dormant_safe(self) -> None:
         # control-law: accepted-program-delta-atomically-pins-runtime-and-program
@@ -692,9 +694,14 @@ class RepositoryContract(unittest.TestCase):
                 if receipt["transition_id"] == "installation.reconcile-update"
             )
             self.assertTrue(update["program_change_accepted"])
+            self.assertEqual(update["kind"], "transition-committed")
             self.assertRegex(update["prior_program_fingerprint"], r"^[0-9a-f]{64}$")
-            self.assertRegex(update["program_fingerprint"], r"^[0-9a-f]{64}$")
+            self.assertTrue(update["program"]["id"])
+            self.assertTrue(update["program"]["version"])
+            self.assertRegex(update["program"]["fingerprint"], r"^[0-9a-f]{64}$")
             self.assertRegex(update["program_delta_fingerprint"], r"^[0-9a-f]{64}$")
+            self.assertTrue(update["committed_effects"])
+            self.assertEqual(update["verification"]["result"], "satisfied")
             self.assertEqual(
                 update["runtime_fingerprint"], hashlib.sha256(self.helper.read_bytes()).hexdigest()
             )

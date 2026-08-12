@@ -1,12 +1,13 @@
 package effects
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
@@ -71,31 +72,31 @@ func (s *ReceiptStore) layoutForFlow(_ context.Context, flowID string) (ports.Co
 	return binding.layout, nil
 }
 
-func scanReceipts(path string, visit func(protocol.TransitionReceipt) error) error {
-	file, err := os.Open(path)
+func scanCommittedReceipts(layout ports.ControllerLayout, visit func(protocol.TransitionReceipt) error) error {
+	entries, err := os.ReadDir(layout.JournalRoot)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
 		return err
 	}
-	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	buffer := make([]byte, 64*1024)
-	scanner.Buffer(buffer, 4*1024*1024)
-	for scanner.Scan() {
-		var receipt protocol.TransitionReceipt
-		if err := json.Unmarshal(scanner.Bytes(), &receipt); err != nil {
-			return fmt.Errorf("decode receipt stream: %w", err)
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".committed") {
+			continue
 		}
-		if err := receipt.Validate(); err != nil {
-			return fmt.Errorf("verify receipt stream: %w", err)
+		record, err := readJournal(filepath.Join(layout.JournalRoot, entry.Name()))
+		if err != nil {
+			return err
 		}
-		if err := visit(receipt); err != nil {
+		if record.Receipt == nil {
+			return fmt.Errorf("committed transaction %s lacks a transition fact", entry.Name())
+		}
+		if err := visit(*record.Receipt); err != nil {
 			return err
 		}
 	}
-	return scanner.Err()
+	return nil
 }
 
 func (s *ReceiptStore) NextSequence(ctx context.Context, flowID string) (uint64, error) {
@@ -104,7 +105,7 @@ func (s *ReceiptStore) NextSequence(ctx context.Context, flowID string) (uint64,
 		return 0, err
 	}
 	var maximum uint64
-	err = scanReceipts(layout.ReceiptPath, func(receipt protocol.TransitionReceipt) error {
+	err = scanCommittedReceipts(layout, func(receipt protocol.TransitionReceipt) error {
 		if receipt.FlowID == flowID && receipt.Sequence > maximum {
 			maximum = receipt.Sequence
 		}
@@ -122,8 +123,11 @@ func (s *ReceiptStore) FindByIdempotency(ctx context.Context, invocation model.I
 		return protocol.TransitionReceipt{}, false, err
 	}
 	var found protocol.TransitionReceipt
-	err = scanReceipts(layout.ReceiptPath, func(receipt protocol.TransitionReceipt) error {
+	err = scanCommittedReceipts(layout, func(receipt protocol.TransitionReceipt) error {
 		if receipt.IdempotencyKey == key {
+			if found.ID != "" && found.ID != receipt.ID {
+				return fmt.Errorf("idempotency key %q identifies multiple committed transition facts", key)
+			}
 			found = receipt
 		}
 		return nil
@@ -132,30 +136,32 @@ func (s *ReceiptStore) FindByIdempotency(ctx context.Context, invocation model.I
 }
 
 type processEvent struct {
-	SchemaVersion          int                  `json:"schema_version"`
-	FlowID                 string               `json:"flow_id"`
-	Sequence               uint64               `json:"sequence"`
-	Timestamp              time.Time            `json:"timestamp"`
-	GoalID                 string               `json:"goal_id"`
-	GoalScope              string               `json:"goal_scope,omitempty"`
-	GoalStatus             string               `json:"goal_status,omitempty"`
-	TransitionID           string               `json:"transition_id"`
-	ProgramFingerprint     string               `json:"program_fingerprint"`
-	PrescriptionID         string               `json:"prescription_id"`
-	PriorStateRevision     uint64               `json:"prior_state_revision"`
-	ResultingStateRevision uint64               `json:"resulting_state_revision"`
-	SourceFingerprint      string               `json:"source_fingerprint"`
-	TargetFingerprint      string               `json:"target_fingerprint"`
-	Outcome                string               `json:"outcome"`
-	DurationNanoseconds    int64                `json:"duration_nanoseconds"`
-	AuthorityClasses       []string             `json:"authority_classes,omitempty"`
-	AuthorityFingerprint   string               `json:"authority_fingerprint"`
-	RequiredCapabilities   []catalog.Capability `json:"required_capabilities"`
-	GrantedCapabilities    []catalog.Capability `json:"granted_capabilities"`
-	ExercisedCapabilities  []catalog.Capability `json:"exercised_capabilities"`
-	Recovery               string               `json:"recovery,omitempty"`
-	Terminal               string               `json:"terminal"`
-	FailureClass           string               `json:"failure_class,omitempty"`
+	SchemaVersion          int                       `json:"schema_version"`
+	FlowID                 string                    `json:"flow_id"`
+	Sequence               uint64                    `json:"sequence"`
+	Timestamp              time.Time                 `json:"timestamp"`
+	GoalID                 string                    `json:"goal_id"`
+	GoalScope              string                    `json:"goal_scope,omitempty"`
+	GoalStatus             string                    `json:"goal_status,omitempty"`
+	TransitionID           string                    `json:"transition_id"`
+	ProgramID              string                    `json:"program_id"`
+	ProgramVersion         string                    `json:"program_version"`
+	ProgramFingerprint     string                    `json:"program_fingerprint"`
+	PrescriptionID         string                    `json:"prescription_id"`
+	PriorStateRevision     uint64                    `json:"prior_state_revision"`
+	ResultingStateRevision uint64                    `json:"resulting_state_revision"`
+	SourceFingerprint      string                    `json:"source_fingerprint"`
+	TargetFingerprint      string                    `json:"target_fingerprint"`
+	FactKind               string                    `json:"fact_kind"`
+	DurationNanoseconds    int64                     `json:"duration_nanoseconds"`
+	AuthorityClasses       []string                  `json:"authority_classes,omitempty"`
+	AuthorityFingerprint   string                    `json:"authority_fingerprint"`
+	RequiredCapabilities   []catalog.Capability      `json:"required_capabilities"`
+	GrantedCapabilities    []catalog.Capability      `json:"granted_capabilities"`
+	CommittedEffects       []protocol.EffectFact     `json:"committed_effects"`
+	Verification           protocol.VerificationFact `json:"verification"`
+	Recovery               string                    `json:"recovery,omitempty"`
+	Terminal               string                    `json:"terminal"`
 }
 
 func appendLine(path string, value any, mode os.FileMode) error {
@@ -181,7 +187,10 @@ func appendLine(path string, value any, mode os.FileMode) error {
 	return file.Close()
 }
 
-func (s *ReceiptStore) Append(ctx context.Context, receipt protocol.TransitionReceipt) error {
+func (s *ReceiptStore) Project(ctx context.Context, receipt protocol.TransitionReceipt) error {
+	if err := receipt.Validate(); err != nil {
+		return err
+	}
 	layout, err := s.layoutForFlow(ctx, receipt.FlowID)
 	if err != nil {
 		return err
@@ -190,17 +199,21 @@ func (s *ReceiptStore) Append(ctx context.Context, receipt protocol.TransitionRe
 		return err
 	}
 	event := processEvent{
-		SchemaVersion: 3, FlowID: receipt.FlowID, Sequence: receipt.Sequence, Timestamp: s.clock.Now().UTC(), GoalID: receipt.GoalID,
+		SchemaVersion: 4, FlowID: receipt.FlowID, Sequence: receipt.Sequence, Timestamp: s.clock.Now().UTC(), GoalID: receipt.GoalID,
 		GoalScope: string(receipt.GoalScope), GoalStatus: string(receipt.GoalStatus),
-		TransitionID: string(receipt.TransitionID), ProgramFingerprint: receipt.ProgramFingerprint, PrescriptionID: receipt.PrescriptionID,
+		TransitionID: string(receipt.TransitionID), ProgramID: receipt.Program.ID, ProgramVersion: receipt.Program.Version, ProgramFingerprint: receipt.Program.Fingerprint, PrescriptionID: receipt.PrescriptionID,
 		PriorStateRevision: receipt.PriorStateRevision, ResultingStateRevision: receipt.ResultingStateRevision,
 		SourceFingerprint: receipt.SourceFingerprint, TargetFingerprint: receipt.TargetFingerprint,
-		Outcome: string(receipt.Outcome), DurationNanoseconds: receipt.DurationNanoseconds,
-		AuthorityClasses: append([]string(nil), receipt.AuthorityClasses...), Recovery: string(receipt.Recovery), Terminal: string(receipt.Terminal), FailureClass: receipt.FailureClass,
-		AuthorityFingerprint:  receipt.AuthorityFingerprint,
-		RequiredCapabilities:  append([]catalog.Capability(nil), receipt.RequiredCapabilities...),
-		GrantedCapabilities:   append([]catalog.Capability(nil), receipt.GrantedCapabilities...),
-		ExercisedCapabilities: append([]catalog.Capability(nil), receipt.ExercisedCapabilities...),
+		FactKind: string(receipt.Kind), DurationNanoseconds: receipt.DurationNanoseconds,
+		Recovery: string(receipt.Recovery), Terminal: string(receipt.Terminal),
+		AuthorityFingerprint: receipt.AuthorityFingerprint,
+		RequiredCapabilities: append([]catalog.Capability(nil), receipt.RequiredCapabilities...),
+		GrantedCapabilities:  append([]catalog.Capability(nil), receipt.GrantedCapabilities...),
+		CommittedEffects:     append([]protocol.EffectFact(nil), receipt.CommittedEffects...),
+		Verification:         receipt.Verification,
+	}
+	for _, source := range receipt.AuthoritySources {
+		event.AuthorityClasses = append(event.AuthorityClasses, string(source.Class))
 	}
 	// Telemetry is passive and never changes transition success.
 	_ = appendLine(layout.EventPath, event, 0o600)
