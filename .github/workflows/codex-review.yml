@@ -46,6 +46,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          persist-credentials: false
           ref: refs/pull/${{ github.event.pull_request.number }}/merge
 
       - name: Fetch exact base and head revisions
@@ -63,6 +64,8 @@ jobs:
         shell: bash
         run: |
           prompt="$RUNNER_TEMP/codex-review-prompt.md"
+          merge_base="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
+          changed_count="$(git diff --name-only "$merge_base" "$HEAD_SHA" | wc -l | tr -d ' ')"
           cp .github/codex/review-prompt.md "$prompt"
           {
             echo
@@ -70,12 +73,17 @@ jobs:
             echo "Pull request: $PR_NUMBER"
             echo "Base revision: $BASE_SHA"
             echo "Head revision: $HEAD_SHA"
+            echo "Merge base: $merge_base"
             echo
-            echo "Changed files:"
-            git --no-pager diff --name-status "$BASE_SHA" "$HEAD_SHA"
+            echo "Changed files: $changed_count total (first 200 shown)"
+            git --no-pager diff --name-status "$merge_base" "$HEAD_SHA" | sed -n '1,200p'
             echo
-            echo "Unified diff (context=5):"
-            git --no-pager diff --unified=5 "$BASE_SHA" "$HEAD_SHA"
+            echo "Diff summary:"
+            git --no-pager diff --shortstat "$merge_base" "$HEAD_SHA"
+            echo
+            echo "Inspect the exact pull request change with:"
+            echo "git --no-pager diff --unified=5 $merge_base $HEAD_SHA"
+            echo "Read only the relevant portions needed to review the change."
           } >> "$prompt"
           echo "path=$prompt" >> "$GITHUB_OUTPUT"
 

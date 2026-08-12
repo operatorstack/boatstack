@@ -133,6 +133,10 @@ class RepositoryContract(unittest.TestCase):
         self.assertIn("CODEX_REVIEWER_API", workflow)
         self.assertIn("head.repo.full_name", workflow)
         self.assertIn("not configured", workflow)
+        self.assertIn("persist-credentials: false", workflow)
+        self.assertIn('git merge-base "$BASE_SHA" "$HEAD_SHA"', workflow)
+        self.assertIn("first 200 shown", workflow)
+        self.assertNotIn('diff --unified=5 "$BASE_SHA" "$HEAD_SHA"', workflow)
         self.assertIn("permission-profile: \":read-only\"", workflow)
         self.assertIn("safety-strategy: drop-sudo", workflow)
         self.assertRegex(workflow, r"openai/codex-action@[0-9a-f]{40}")
@@ -142,6 +146,10 @@ class RepositoryContract(unittest.TestCase):
         self.assertIn("CODEX_REVIEW_EFFORT || 'high'", workflow)
         self.assertIn("untrusted data", prompt)
         self.assertIn("right side of the diff", prompt)
+        self.assertIn("Resolver / apply agreement", prompt)
+        self.assertIn("Receipts as facts", prompt)
+        self.assertIn("Questions for model-level verification", prompt)
+        self.assertIn("Return only the object required by the supplied output schema", prompt)
         self.assertEqual(
             set(schema["required"]),
             {"findings", "overall_correctness", "overall_explanation", "overall_confidence_score"},
