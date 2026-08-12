@@ -122,6 +122,35 @@ class RepositoryContract(unittest.TestCase):
             self.assertNotIn("operatorstack/intelligence-flow", value, workflow)
             self.assertNotIn("sync/intelligence-flow-", value, workflow)
             self.assertNotIn("UPSTREAM.json", value, workflow)
+
+    def test_codex_review_is_secret_scoped_read_only_and_structured(self) -> None:
+        workflow = (REPO / ".github" / "workflows" / "codex-review.yml").read_text()
+        prompt = (REPO / ".github" / "codex" / "review-prompt.md").read_text()
+        schema = json.loads((REPO / ".github" / "codex" / "review-output-schema.json").read_text())
+
+        self.assertIn("pull_request:", workflow)
+        self.assertNotIn("pull_request_target", workflow)
+        self.assertIn("CODEX_REVIEWER_API", workflow)
+        self.assertIn("head.repo.full_name", workflow)
+        self.assertIn("not configured", workflow)
+        self.assertIn("permission-profile: \":read-only\"", workflow)
+        self.assertIn("safety-strategy: drop-sudo", workflow)
+        self.assertRegex(workflow, r"openai/codex-action@[0-9a-f]{40}")
+        self.assertIn("pull-requests: write", workflow)
+        self.assertIn("contents: read", workflow)
+        self.assertIn("gpt-5.6-sol", workflow)
+        self.assertIn("CODEX_REVIEW_EFFORT || 'high'", workflow)
+        self.assertIn("untrusted data", prompt)
+        self.assertIn("right side of the diff", prompt)
+        self.assertEqual(
+            set(schema["required"]),
+            {"findings", "overall_correctness", "overall_explanation", "overall_confidence_score"},
+        )
+        finding = schema["properties"]["findings"]["items"]
+        self.assertEqual(
+            set(finding["required"]),
+            {"title", "body", "confidence_score", "priority", "code_location"},
+        )
         self.assertFalse((REPO / "UPSTREAM.json").exists())
 
     def test_release_builds_six_checksum_bound_v2_runtimes(self) -> None:
