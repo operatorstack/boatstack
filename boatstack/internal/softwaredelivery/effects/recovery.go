@@ -147,7 +147,7 @@ func recoveryStateFacets(record journalRecord, recovery catalog.TransitionID, in
 	if err != nil {
 		return nil, err
 	}
-	allowed := model.UnionStateFacets(catalog.DurableStateWritesForRecovery(record.TransitionID), []model.StateFacet{model.StateFacetControl})
+	allowed := model.UnionStateFacets(record.AllowedStateFacets, []model.StateFacet{model.StateFacetControl})
 	if _, err := validateAllowedStateFacets(recovery, staged, allowed); err != nil {
 		return nil, err
 	}

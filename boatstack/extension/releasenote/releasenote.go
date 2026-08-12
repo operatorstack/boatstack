@@ -42,6 +42,7 @@ func (Extension) ExtensionManifest(context.Context) (delivery.ExtensionManifest,
 		ObjectiveKinds: []model.ObjectiveKind{model.ObjectiveOpenPR, model.ObjectiveMerged}, RequiredIdentity: []string{"repository-id", "git-common-id", "worktree-id", "controller-id", "topology", "host", "correlation-id"},
 		Authority: []catalog.AuthorityClass{catalog.AuthorityRepository}, RequiredEvidence: []string{"snapshot-fingerprint", "objective", "facet:" + FactID},
 		OwnedResources: []string{Resource}, Effect: Effect, LocalEffects: []catalog.EffectID{Effect}, Idempotent: true,
+		OwnedFacets: []model.StateFacet{model.StateFacetControl}, StateEffect: catalog.StateEffect{Kind: catalog.StateEffectAssignments},
 		Prescription:    catalog.Prescription{Operation: Transition, ExpectedPostcondition: "release-note evidence is verified"},
 		SourcePredicate: "reference-release-note-missing", AdmissionPredicate: "exact-extension-admission", TargetPredicate: "reference-release-note-verified", Verifier: Verifier,
 		SourceConditions: []catalog.FacetCondition{

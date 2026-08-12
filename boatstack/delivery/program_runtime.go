@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-const ProgramRuntimeProtocolVersion = 2
+const ProgramRuntimeProtocolVersion = 3
 
 type ProgramRuntimeMode string
 

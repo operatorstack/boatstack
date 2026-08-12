@@ -19,7 +19,7 @@ func TestKernelOwnsDurableStateFacetPolicies(t *testing.T) {
 		{"recovery.escalate", []model.StateFacet{model.StateFacetControl}},
 	}
 	for _, fixture := range fixtures {
-		policy, err := DurableStateFacetPolicy(Transition{ID: fixture.id, Class: EventOwnedLocal, Origin: TransitionOrigin{Kind: OriginCoreSystem}})
+		policy, err := DurableStateFacetPolicy(Transition{ID: fixture.id, Class: EventOwnedLocal, Origin: TransitionOrigin{Kind: OriginCoreSystem}, OwnedFacets: fixture.writes})
 		if err != nil {
 			t.Fatalf("%s: %v", fixture.id, err)
 		}
@@ -35,13 +35,21 @@ func TestKernelOwnsDurableStateFacetPolicies(t *testing.T) {
 func TestRepositoryProgramCannotSelfGrantInstallationFacet(t *testing.T) {
 	transition := Transition{
 		ID: "repository-program/advance", Class: EventOwnedLocal, RuntimeExecution: true,
-		Origin: TransitionOrigin{Kind: OriginControlProgram, ID: "repository-program", Version: "1", ManifestFingerprint: "manifest"},
+		Origin:      TransitionOrigin{Kind: OriginControlProgram, ID: "repository-program", Version: "1", ManifestFingerprint: "manifest"},
+		OwnedFacets: []model.StateFacet{model.StateFacetInstallation},
 	}
-	policy, err := DurableStateFacetPolicy(transition)
-	if err != nil {
-		t.Fatal(err)
+	if policy, err := DurableStateFacetPolicy(transition); err == nil || slices.Contains(policy.Writes, model.StateFacetInstallation) {
+		t.Fatalf("repository program received installation ownership: %v / %v", policy.Writes, err)
 	}
-	if !slices.Equal(policy.Writes, []model.StateFacet{model.StateFacetControl}) || slices.Contains(policy.Writes, model.StateFacetInstallation) {
-		t.Fatalf("repository program received installation ownership: %v", policy.Writes)
+}
+
+func TestControllableTransitionCannotOmitControlFacet(t *testing.T) {
+	transition := Transition{
+		ID: "repository-program/advance", Class: EventOwnedLocal,
+		Origin:      TransitionOrigin{Kind: OriginControlProgram, ID: "repository-program", Version: "1", ManifestFingerprint: "manifest"},
+		OwnedFacets: []model.StateFacet{model.StateFacetProduct},
+	}
+	if policy, err := DurableStateFacetPolicy(transition); err == nil || len(policy.Writes) != 0 {
+		t.Fatalf("product-only transition received a writable state envelope: %v / %v", policy.Writes, err)
 	}
 }

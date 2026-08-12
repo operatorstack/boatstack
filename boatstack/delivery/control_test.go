@@ -104,6 +104,8 @@ func TestProgramFingerprintBindsCompositionAndPolicyInputs(t *testing.T) {
 	recoveryTransition.SelectionClass = delivery.SelectionExtensionRecovery
 	recoveryTransition.SourcePhases = []delivery.ProtocolPhase{delivery.PhaseRecovery}
 	recoveryTransition.TargetPhases = []delivery.ProtocolPhase{delivery.PhaseActive}
+	activePhase := string(delivery.PhaseActive)
+	recoveryTransition.StateEffect.Assignments = []delivery.StateAssignment{{Facet: "phase", Value: &activePhase}}
 	recoveryTransition.Effect = "boatstack.release-note.recover-effect"
 	recoveryTransition.LocalEffects = []delivery.EffectID{recoveryTransition.Effect}
 	recoveryTransition.Verifier = "boatstack.release-note.recover-verifier"

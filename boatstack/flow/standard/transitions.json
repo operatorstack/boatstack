@@ -210,7 +210,32 @@
     "policy": {
       "objective_scope": "bound-exact"
     },
-    "priority": 35
+    "priority": 35,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "plan",
+          "value": "draft"
+        },
+        {
+          "facet": "delivery",
+          "value": "planning"
+        },
+        {
+          "facet": "phase",
+          "value": "ACTIVE"
+        },
+        {
+          "facet": "terminal",
+          "value": "nonterminal"
+        }
+      ]
+    }
   },
   {
     "id": "plan.validate",
@@ -409,7 +434,28 @@
     "policy": {
       "objective_scope": "bound-exact"
     },
-    "priority": 40
+    "priority": 40,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "plan",
+          "value": "valid"
+        },
+        {
+          "facet": "phase",
+          "value": "ACTIVE"
+        },
+        {
+          "facet": "terminal",
+          "value": "nonterminal"
+        }
+      ]
+    }
   },
   {
     "id": "plan.approve",
@@ -628,7 +674,15 @@
       "authority_rule": "plan-approval",
       "objective_scope": "bound-exact"
     },
-    "priority": 45
+    "priority": 45,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "native",
+      "native_handler": "plan-approve"
+    }
   },
   {
     "id": "plan.activate",
@@ -824,7 +878,28 @@
     "policy": {
       "objective_scope": "bound-exact"
     },
-    "priority": 50
+    "priority": 50,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "plan",
+          "value": "locked"
+        },
+        {
+          "facet": "delivery",
+          "value": "active"
+        },
+        {
+          "facet": "phase",
+          "value": "ACTIVE"
+        }
+      ]
+    }
   },
   {
     "id": "plan.amend",
@@ -1038,7 +1113,32 @@
     "policy": {
       "objective_scope": "bound-exact"
     },
-    "priority": 42
+    "priority": 42,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "plan",
+          "value": "amendment-required"
+        },
+        {
+          "facet": "delivery",
+          "value": "amendment"
+        },
+        {
+          "facet": "phase",
+          "value": "ACTIVE"
+        },
+        {
+          "facet": "terminal",
+          "value": "nonterminal"
+        }
+      ]
+    }
   },
   {
     "id": "plan.approve-amendment",
@@ -1256,7 +1356,28 @@
       "authority_rule": "plan-approval",
       "objective_scope": "bound-exact"
     },
-    "priority": 46
+    "priority": 46,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "plan",
+          "value": "approved"
+        },
+        {
+          "facet": "delivery",
+          "value": "approved"
+        },
+        {
+          "facet": "phase",
+          "value": "ACTIVE"
+        }
+      ]
+    }
   },
   {
     "id": "plan.invalidate",
@@ -1438,7 +1559,32 @@
     "policy": {
       "objective_scope": "bound-exact"
     },
-    "priority": 41
+    "priority": 41,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "plan",
+          "value": "invalid"
+        },
+        {
+          "facet": "delivery",
+          "value": "invalid"
+        },
+        {
+          "facet": "phase",
+          "value": "FRONTIER"
+        },
+        {
+          "facet": "terminal",
+          "value": "nonterminal"
+        }
+      ]
+    }
   },
   {
     "id": "plan.abandon",
@@ -1618,7 +1764,15 @@
     "policy": {
       "objective_scope": "bound-exact"
     },
-    "priority": 90
+    "priority": 90,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "native",
+      "native_handler": "abandon-delivery"
+    }
   },
   {
     "id": "workspace.cut",
@@ -1834,7 +1988,60 @@
       "objective_scope": "bound-exact"
     },
     "priority": 52,
-    "allows_worktree_transfer": true
+    "allows_worktree_transfer": true,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "workspace",
+          "value": "cut"
+        },
+        {
+          "facet": "phase",
+          "value": "ACTIVE"
+        },
+        {
+          "facet": "workspace_branch",
+          "value_from": {
+            "parameter": "branch"
+          }
+        },
+        {
+          "facet": "workspace_base_ref",
+          "value_from": {
+            "parameter": "base_ref"
+          }
+        },
+        {
+          "facet": "workspace_path",
+          "value_from": {
+            "parameter": "destination"
+          }
+        },
+        {
+          "facet": "workspace_source_path",
+          "value_from": {
+            "invocation": "invoking_path"
+          }
+        },
+        {
+          "facet": "workspace_source_id",
+          "value_from": {
+            "invocation": "worktree_id"
+          }
+        },
+        {
+          "facet": "workspace_source_ref",
+          "value_from": {
+            "invocation": "ref"
+          }
+        }
+      ]
+    }
   },
   {
     "id": "workspace.sync",
@@ -2040,7 +2247,24 @@
     "policy": {
       "objective_scope": "bound-exact"
     },
-    "priority": 58
+    "priority": 58,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "workspace",
+          "value": "active"
+        },
+        {
+          "facet": "phase",
+          "value": "ACTIVE"
+        }
+      ]
+    }
   },
   {
     "id": "workspace.activate",
@@ -2245,7 +2469,24 @@
     "policy": {
       "objective_scope": "bound-exact"
     },
-    "priority": 53
+    "priority": 53,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "workspace",
+          "value": "active"
+        },
+        {
+          "facet": "phase",
+          "value": "ACTIVE"
+        }
+      ]
+    }
   },
   {
     "id": "workspace.publish",
@@ -2445,7 +2686,24 @@
     "policy": {
       "objective_scope": "bound-exact"
     },
-    "priority": 75
+    "priority": 75,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "workspace",
+          "value": "published"
+        },
+        {
+          "facet": "phase",
+          "value": "ACTIVE"
+        }
+      ]
+    }
   },
   {
     "id": "workspace.cleanup",
@@ -2660,7 +2918,15 @@
       "objective_scope": "bound-exact"
     },
     "priority": 92,
-    "allows_worktree_transfer": true
+    "allows_worktree_transfer": true,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "native",
+      "native_handler": "workspace-cleanup"
+    }
   },
   {
     "id": "workspace.reap",
@@ -2870,7 +3136,15 @@
       "objective_scope": "bound-exact"
     },
     "priority": 98,
-    "allows_worktree_transfer": true
+    "allows_worktree_transfer": true,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "native",
+      "native_handler": "workspace-reap"
+    }
   },
   {
     "id": "workspace.abandon",
@@ -3051,7 +3325,64 @@
     "policy": {
       "objective_scope": "bound-exact"
     },
-    "priority": 91
+    "priority": 91,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "delivery",
+          "value": "discarded"
+        },
+        {
+          "facet": "workspace",
+          "value": "abandoned"
+        },
+        {
+          "facet": "recovery",
+          "value": "none"
+        },
+        {
+          "facet": "transaction",
+          "value": "none"
+        },
+        {
+          "facet": "transaction_id",
+          "value": ""
+        },
+        {
+          "facet": "transaction_transition",
+          "value": ""
+        },
+        {
+          "facet": "recovery_cause",
+          "value": ""
+        },
+        {
+          "facet": "recovery_source_phase",
+          "value": ""
+        },
+        {
+          "facet": "recovery_resumption",
+          "value": ""
+        },
+        {
+          "facet": "recovery_budget",
+          "value": "0"
+        },
+        {
+          "facet": "terminal",
+          "value": "established"
+        },
+        {
+          "facet": "phase",
+          "value": "ABANDONED"
+        }
+      ]
+    }
   },
   {
     "id": "workspace.reconcile",
@@ -3218,7 +3549,15 @@
       "objective_scope": "optional-preserve"
     },
     "priority": 2,
-    "allows_worktree_transfer": true
+    "allows_worktree_transfer": true,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "native",
+      "native_handler": "workspace-reconcile"
+    }
   },
   {
     "id": "gate.build.record",
@@ -3445,7 +3784,15 @@
       "objective_scope": "bound-exact"
     },
     "priority": 61,
-    "binds_source_revision": true
+    "binds_source_revision": true,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "native",
+      "native_handler": "gate-build-record"
+    }
   },
   {
     "id": "gate.test.record",
@@ -3673,7 +4020,15 @@
       "objective_scope": "bound-exact"
     },
     "priority": 62,
-    "binds_source_revision": true
+    "binds_source_revision": true,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "native",
+      "native_handler": "gate-test-record"
+    }
   },
   {
     "id": "gate.review.record",
@@ -3910,7 +4265,15 @@
       "objective_scope": "bound-exact"
     },
     "priority": 63,
-    "binds_source_revision": true
+    "binds_source_revision": true,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "native",
+      "native_handler": "gate-review-record"
+    }
   },
   {
     "id": "gate.change.record",
@@ -4137,7 +4500,15 @@
       "objective_scope": "bound-exact"
     },
     "priority": 64,
-    "binds_source_revision": true
+    "binds_source_revision": true,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "native",
+      "native_handler": "gate-change-record"
+    }
   },
   {
     "id": "gate.journey.record",
@@ -4364,7 +4735,15 @@
       "objective_scope": "bound-exact"
     },
     "priority": 64,
-    "binds_source_revision": true
+    "binds_source_revision": true,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "native",
+      "native_handler": "gate-journey-record"
+    }
   },
   {
     "id": "evidence.visual.attach",
@@ -4590,7 +4969,15 @@
       "objective_scope": "bound-exact"
     },
     "priority": 66,
-    "binds_source_revision": true
+    "binds_source_revision": true,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "native",
+      "native_handler": "visual-evidence-attach"
+    }
   },
   {
     "id": "evidence.approval.revoke",
@@ -4768,7 +5155,28 @@
     "policy": {
       "objective_scope": "bound-exact"
     },
-    "priority": 44
+    "priority": 44,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "plan",
+          "value": "valid"
+        },
+        {
+          "facet": "phase",
+          "value": "FRONTIER"
+        },
+        {
+          "facet": "terminal",
+          "value": "nonterminal"
+        }
+      ]
+    }
   },
   {
     "id": "delivery.slice.advance",
@@ -4979,7 +5387,36 @@
       "objective_scope": "bound-exact"
     },
     "priority": 68,
-    "binds_source_revision": true
+    "binds_source_revision": true,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "delivery",
+          "value": "active"
+        },
+        {
+          "facet": "phase",
+          "value": "ACTIVE"
+        },
+        {
+          "facet": "source_revision",
+          "value_from": {
+            "admission": "source_revision"
+          }
+        },
+        {
+          "facet": "worktree_fingerprint",
+          "value_from": {
+            "admission": "worktree_fingerprint"
+          }
+        }
+      ]
+    }
   },
   {
     "id": "publication.preview",
@@ -5210,7 +5647,24 @@
     "policy": {
       "objective_scope": "bound-exact"
     },
-    "priority": 72
+    "priority": 72,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "publication",
+          "value": "candidate"
+        },
+        {
+          "facet": "phase",
+          "value": "ACTIVE"
+        }
+      ]
+    }
   },
   {
     "id": "publication.execute",
@@ -5440,7 +5894,32 @@
       "objective_scope": "bound-exact"
     },
     "priority": 76,
-    "authority_fingerprint_parameter": "preview_fingerprint"
+    "authority_fingerprint_parameter": "preview_fingerprint",
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "publication",
+          "value": "published-not-landed"
+        },
+        {
+          "facet": "workspace",
+          "value": "published"
+        },
+        {
+          "facet": "delivery",
+          "value": "published"
+        },
+        {
+          "facet": "phase",
+          "value": "ACTIVE"
+        }
+      ]
+    }
   },
   {
     "id": "publication.observe",
@@ -5656,7 +6135,15 @@
       "rechecks_external_state": true,
       "objective_scope": "bound-exact"
     },
-    "priority": 77
+    "priority": 77,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "native",
+      "native_handler": "publication-observe"
+    }
   },
   {
     "id": "publication.reconcile",
@@ -5854,7 +6341,15 @@
       "objective_scope": "optional-preserve"
     },
     "priority": 1,
-    "authority_fingerprint_parameter": "publication_id"
+    "authority_fingerprint_parameter": "publication_id",
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "native",
+      "native_handler": "publication-observe"
+    }
   },
   {
     "id": "publication.correct",
@@ -6088,7 +6583,32 @@
       "objective_scope": "bound-exact"
     },
     "priority": 80,
-    "authority_fingerprint_parameter": "body_sha256"
+    "authority_fingerprint_parameter": "body_sha256",
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "assignments",
+      "assignments": [
+        {
+          "facet": "publication",
+          "value": "published-not-landed"
+        },
+        {
+          "facet": "delivery",
+          "value": "published"
+        },
+        {
+          "facet": "terminal",
+          "value": "nonterminal"
+        },
+        {
+          "facet": "phase",
+          "value": "ACTIVE"
+        }
+      ]
+    }
   },
   {
     "id": "publication.abandon",
@@ -6267,6 +6787,14 @@
     "policy": {
       "objective_scope": "bound-exact"
     },
-    "priority": 93
+    "priority": 93,
+    "owned_facets": [
+      "control",
+      "product"
+    ],
+    "state_effect": {
+      "kind": "native",
+      "native_handler": "abandon-delivery"
+    }
   }
 ]

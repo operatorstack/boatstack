@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const ExtensionProtocolVersion = 2
+const ExtensionProtocolVersion = 3
 
 type ExtensionOperation string
 

@@ -66,6 +66,8 @@ func TestProgramManifestCanonicalFingerprintContract(t *testing.T) {
 		},
 		"target-phase": func(value *delivery.ProgramManifest) {
 			value.Transitions[0].TargetPhases = []delivery.ProtocolPhase{delivery.PhaseFrontier}
+			phase := string(delivery.PhaseFrontier)
+			value.Transitions[0].StateEffect.Assignments[0].Value = &phase
 		},
 		"authority": func(value *delivery.ProgramManifest) {
 			value.Transitions[0].Authority = []delivery.AuthorityClass{delivery.AuthorityHuman}
@@ -83,12 +85,23 @@ func TestProgramManifestCanonicalFingerprintContract(t *testing.T) {
 			value.Transitions[0].Verifier = "alternate.verifier"
 		},
 		"postcondition": func(value *delivery.ProgramManifest) {
-			value.Transitions[0].TargetConditions[0].Values = []string{"alternate"}
+			value.Transitions[0].TargetConditions[0].Values = []string{"published"}
+			published := "published"
+			value.Transitions[0].StateEffect.Assignments[1].Value = &published
 		},
 		"recovery": func(value *delivery.ProgramManifest) {
 			value.Transitions[0].Interruption.Recovery = "alternate.recover"
 		},
 		"priority": func(value *delivery.ProgramManifest) { value.Transitions[0].Priority++ },
+		"owned-facets": func(value *delivery.ProgramManifest) {
+			value.Transitions[0].OwnedFacets = []delivery.StateFacet{delivery.StateFacetControl}
+			value.Transitions[0].StateEffect.Assignments = value.Transitions[0].StateEffect.Assignments[:1]
+			value.Transitions[0].TargetConditions = []delivery.FacetCondition{delivery.KnownCondition(delivery.FacetProgram, "current")}
+		},
+		"state-effect": func(value *delivery.ProgramManifest) {
+			nonterminal := "nonterminal"
+			value.Transitions[0].StateEffect.Assignments = append(value.Transitions[0].StateEffect.Assignments, delivery.StateAssignment{Facet: "terminal", Value: &nonterminal})
+		},
 	}
 	for name, mutate := range mutations {
 		t.Run(name, func(t *testing.T) {
@@ -105,6 +118,37 @@ func TestProgramManifestCanonicalFingerprintContract(t *testing.T) {
 				t.Fatalf("%s semantic change did not change fingerprint", name)
 			}
 		})
+	}
+}
+
+func TestProgramManifestCanonicalizesStateEffectSets(t *testing.T) {
+	fixture := func() delivery.ProgramManifest {
+		manifest := programFixture()
+		transition := &manifest.Transitions[0]
+		transition.SourcePhases = []delivery.ProtocolPhase{delivery.PhaseActive, delivery.PhaseObserved}
+		transition.SourceConditions = append(transition.SourceConditions, delivery.KnownCondition(delivery.FacetTerminal, "nonterminal"))
+		transition.TargetConditions = append(transition.TargetConditions, delivery.KnownCondition(delivery.FacetTerminal, "established"))
+		phase, terminal, deliveryState := string(delivery.PhaseTerminal), "established", "terminal"
+		transition.StateEffect = delivery.StateEffect{
+			Kind: delivery.StateEffectAssignments,
+			Preconditions: []delivery.StatePrecondition{
+				{Facet: "phase", Values: []string{string(delivery.PhaseActive), string(delivery.PhaseObserved)}},
+				{Facet: "terminal", Values: []string{"nonterminal"}},
+			},
+			Assignments: []delivery.StateAssignment{{Facet: "phase", Value: &phase}, {Facet: "terminal", Value: &terminal}, {Facet: "delivery", Value: &deliveryState}},
+		}
+		return manifest
+	}
+
+	oneManifest := fixture()
+	one := loadManifest(t, oneManifest)
+	twoManifest := fixture()
+	reverse(twoManifest.Transitions[0].StateEffect.Preconditions)
+	reverse(twoManifest.Transitions[0].StateEffect.Preconditions[1].Values)
+	reverse(twoManifest.Transitions[0].StateEffect.Assignments)
+	two := loadManifest(t, twoManifest)
+	if one.Fingerprint() != two.Fingerprint() {
+		t.Fatalf("state-effect set ordering changed executable identity: %s != %s", one.Fingerprint(), two.Fingerprint())
 	}
 }
 
@@ -151,6 +195,22 @@ func TestProgramManifestNamespaceAndCompatibilityBoundary(t *testing.T) {
 		}, runtimeFixture(), delivery.ProgramInvalid},
 		{"under-declared-kernel-effect", func(value *delivery.ProgramManifest) {
 			value.Capabilities.CapabilitySurface = []delivery.Capability{delivery.CapabilityRepositoryWrite}
+		}, runtimeFixture(), delivery.ProgramInvalid},
+		{"host-native-state-handler", func(value *delivery.ProgramManifest) {
+			value.Transitions[0].StateEffect = delivery.StateEffect{Kind: delivery.StateEffectNative, NativeHandler: "abandon-delivery"}
+		}, runtimeFixture(), delivery.ProgramInvalid},
+		{"product-only-owned-facets", func(value *delivery.ProgramManifest) {
+			value.Transitions[0].OwnedFacets = []delivery.StateFacet{delivery.StateFacetProduct}
+		}, runtimeFixture(), delivery.ProgramInvalid},
+		{"unclosed-verified-configuration", func(value *delivery.ProgramManifest) {
+			verified := "verified"
+			value.Transitions[0].SourceConditions = append(value.Transitions[0].SourceConditions, delivery.KnownCondition(delivery.FacetConfiguration, "unsupported"))
+			value.Transitions[0].TargetConditions = append(value.Transitions[0].TargetConditions, delivery.KnownCondition(delivery.FacetConfiguration, verified))
+			value.Transitions[0].StateEffect.Assignments = []delivery.StateAssignment{{Facet: "configuration", Value: &verified}}
+		}, runtimeFixture(), delivery.ProgramInvalid},
+		{"optional-assignment-parameter", func(value *delivery.ProgramManifest) {
+			value.Transitions[0].Parameters = append(value.Transitions[0].Parameters, delivery.ParameterSpec{Name: "optional_state"})
+			value.Transitions[0].StateEffect.Assignments = []delivery.StateAssignment{{Facet: "phase", ValueFrom: delivery.StateValueReference{Parameter: "optional_state"}}}
 		}, runtimeFixture(), delivery.ProgramInvalid},
 		{"duplicate-condition", func(value *delivery.ProgramManifest) {
 			value.Transitions[0].SourceConditions = append(value.Transitions[0].SourceConditions, value.Transitions[0].SourceConditions[0])
@@ -234,18 +294,21 @@ func TestValidatedProgramIsTheKernelRegistry(t *testing.T) {
 }
 
 func programFixture() delivery.ProgramManifest {
+	activePhase := string(delivery.PhaseActive)
 	recovery := delivery.ProgramTransition{
 		ID: "recover", Version: 1, SelectionClass: delivery.SelectionProgramRecovery, Class: delivery.EventRecovery,
 		SourcePhases: []delivery.ProtocolPhase{delivery.PhaseRecovery}, TargetPhases: []delivery.ProtocolPhase{delivery.PhaseActive},
 		RequiredIdentity: []string{"repository-id"}, Authority: []delivery.AuthorityClass{delivery.AuthorityRepository}, RequiredCapabilities: []delivery.Capability{delivery.CapabilityRepositoryWrite}, RequiredEvidence: []string{"snapshot"},
-		OwnedResources: []string{"program.state"}, Effect: "program.recover", LocalEffects: []delivery.EffectID{"program.recover"}, Idempotent: true,
+		OwnedResources: []string{"program.state"}, OwnedFacets: []delivery.StateFacet{delivery.StateFacetControl}, StateEffect: delivery.StateEffect{Kind: delivery.StateEffectAssignments, Assignments: []delivery.StateAssignment{{Facet: "phase", Value: &activePhase}}},
+		Effect: "program.recover", LocalEffects: []delivery.EffectID{"program.recover"}, Idempotent: true,
 		Prescription: delivery.Prescription{Operation: "recover", ExpectedPostcondition: "active"}, SourcePredicate: "recovery-required",
-		SourceConditions: []delivery.FacetCondition{delivery.KnownCondition(delivery.FacetRecovery, "required")}, AdmissionPredicate: "exact-admission",
+		SourceConditions: []delivery.FacetCondition{delivery.KnownCondition(delivery.FacetRecovery, "required"), delivery.KnownCondition(delivery.FacetProgram, "current")}, AdmissionPredicate: "exact-admission",
 		TargetPredicate: "active", TargetConditions: []delivery.FacetCondition{delivery.KnownCondition(delivery.FacetProgram, "current")}, Verifier: "program.current",
 		Interruption: interruption("recover"), Reversibility: delivery.Reversible, TerminalEffect: "none",
 		PrivacyClassification: "metadata-only", TelemetryClassification: "transition-receipt", CostClass: "local", Policy: delivery.PolicyContract{ObjectiveScope: delivery.ObjectiveScopeOptionalPreserve}, Priority: 1,
 	}
 	advance := recovery
+	terminalPhase, terminalDelivery := string(delivery.PhaseTerminal), "terminal"
 	advance.ID = "advance"
 	advance.SelectionClass = delivery.SelectionProgramProgress
 	advance.Class = delivery.EventOwnedLocal
@@ -260,6 +323,8 @@ func programFixture() delivery.ProgramManifest {
 	advance.SourceConditions = []delivery.FacetCondition{delivery.KnownCondition(delivery.FacetProgram, "current"), delivery.KnownCondition(delivery.FacetDelivery, "active")}
 	advance.TargetPredicate = "terminal"
 	advance.TargetConditions = []delivery.FacetCondition{delivery.KnownCondition(delivery.FacetDelivery, "terminal")}
+	advance.OwnedFacets = []delivery.StateFacet{delivery.StateFacetControl, delivery.StateFacetProduct}
+	advance.StateEffect.Assignments = []delivery.StateAssignment{{Facet: "phase", Value: &terminalPhase}, {Facet: "delivery", Value: &terminalDelivery}}
 	advance.Verifier = "program.terminal"
 	advance.Policy.ObjectiveScope = delivery.ObjectiveScopeBoundExact
 	return delivery.ProgramManifest{
