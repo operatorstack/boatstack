@@ -20,11 +20,12 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/analysis"
 	"github.com/operatorstack/boatstack/boatstack/distribution"
 	"github.com/operatorstack/boatstack/boatstack/internal/buildinfo"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
-	"github.com/operatorstack/boatstack/boatstack/internal/surfaces"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
+	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
 type stringList []string
@@ -36,30 +37,32 @@ func (s *stringList) Set(value string) error {
 }
 
 type commandOptions struct {
-	repository                  string
-	format                      string
-	goalID                      string
-	goalKind                    string
-	deliveryID                  string
-	flowID                      string
-	transitionID                string
-	correlationID               string
-	prescriptionID              string
-	expectedStateRevision       uint64
-	expectedProgramFingerprint  string
-	expectedSnapshotFingerprint string
-	authorityFingerprint        string
-	requiredCapabilities        stringList
-	effectiveCapabilities       stringList
-	idempotencyKey              string
-	humanActor                  string
-	repositoryPolicy            bool
-	acceptProgramChange         bool
-	parameters                  stringList
-	authorityReceipts           stringList
-	follow                      bool
-	host                        string
-	command                     string
+	repository                          string
+	format                              string
+	objectiveID                         string
+	objectiveKind                       string
+	deliveryID                          string
+	flowID                              string
+	transitionID                        string
+	correlationID                       string
+	prescriptionID                      string
+	expectedInstanceID                  string
+	expectedStateRevision               uint64
+	expectedProgramFingerprint          string
+	expectedSnapshotFingerprint         string
+	expectedObjectiveBindingFingerprint string
+	authorityFingerprint                string
+	requiredCapabilities                stringList
+	effectiveCapabilities               stringList
+	idempotencyKey                      string
+	humanActor                          string
+	repositoryPolicy                    bool
+	acceptProgramChange                 bool
+	parameters                          stringList
+	authorityReceipts                   stringList
+	follow                              bool
+	host                                string
+	command                             string
 }
 
 func main() {
@@ -207,7 +210,7 @@ func runRetrospective(arguments []string) error {
 func classifyCommand(command string) (surfaces.Operation, catalog.TransitionID, map[string]string, error) {
 	aliases := map[string]catalog.TransitionID{
 		"init": "installation.initialize", "update": "installation.update", "reconcile-update": "installation.reconcile-update", "attach": "repository.attach", "detach": "repository.detach",
-		"hydrate-runtime": "runtime.hydrate", "configure": "configuration.mutate", "goal-configure": "goal.configure",
+		"hydrate-runtime": "runtime.hydrate", "configure": "configuration.mutate", "objective-bind": "objective.bind",
 		"plan-create": "plan.create", "plan-validate": "plan.validate", "plan-approve": "plan.approve", "plan-activate": "plan.activate", "plan-amend": "plan.amend",
 		"workspace-cut": "workspace.cut", "workspace-sync": "workspace.sync", "workspace-cleanup": "workspace.cleanup", "workspace-reap": "workspace.reap",
 		"record-build": "gate.build.record", "record-test": "gate.test.record", "record-review": "gate.review.record", "record-change": "gate.change.record", "record-journey": "gate.journey.record",
@@ -241,20 +244,22 @@ func parseOptions(command string, arguments []string, transition catalog.Transit
 	flags.SetOutput(os.Stderr)
 	options := commandOptions{format: "json", transitionID: string(transition), host: "cli"}
 	if defaults != nil {
-		options.goalKind, options.deliveryID, options.goalID = defaults["goal-kind"], defaults["delivery"], defaults["goal-id"]
+		options.objectiveKind, options.deliveryID, options.objectiveID = defaults["objective-kind"], defaults["delivery"], defaults["objective-id"]
 	}
 	flags.StringVar(&options.repository, "repo", ".", "explicit invoking repository or worktree")
 	flags.StringVar(&options.format, "format", options.format, "json, text, or jsonl")
-	flags.StringVar(&options.goalID, "goal-id", options.goalID, "configured goal identity")
-	flags.StringVar(&options.goalKind, "goal-kind", options.goalKind, "approved-plan, verified-implementation, open-or-updated-pr, merged-delivery, or safely-abandoned")
+	flags.StringVar(&options.objectiveID, "objective-id", options.objectiveID, "configured objective identity")
+	flags.StringVar(&options.objectiveKind, "objective-kind", options.objectiveKind, "approved-plan, verified-implementation, open-or-updated-pr, merged-delivery, or safely-abandoned")
 	flags.StringVar(&options.deliveryID, "delivery", options.deliveryID, "delivery identity")
 	flags.StringVar(&options.flowID, "flow", "", "flow identity")
 	flags.StringVar(&options.transitionID, "transition", options.transitionID, "stable semantic transition id")
 	flags.StringVar(&options.correlationID, "correlation", "", "command-scoped correlation identity from resolution")
 	flags.StringVar(&options.prescriptionID, "prescription-id", "", "exact prescription identity from resolution")
+	flags.StringVar(&options.expectedInstanceID, "expected-instance-id", "", "exact control instance identity observed during resolution")
 	flags.Uint64Var(&options.expectedStateRevision, "expected-state-revision", 0, "exact durable state revision observed during resolution")
 	flags.StringVar(&options.expectedProgramFingerprint, "expected-program-fingerprint", "", "exact executable control-program fingerprint observed during resolution")
 	flags.StringVar(&options.expectedSnapshotFingerprint, "expected-snapshot-fingerprint", "", "exact admission-relevant snapshot fingerprint observed during resolution")
+	flags.StringVar(&options.expectedObjectiveBindingFingerprint, "expected-objective-binding-fingerprint", "", "exact objective binding fingerprint observed during resolution")
 	flags.StringVar(&options.authorityFingerprint, "authority-fingerprint", "", "exact authority projection fingerprint from resolution")
 	flags.Var(&options.requiredCapabilities, "required-capability", "required capability from resolution (repeatable)")
 	flags.Var(&options.effectiveCapabilities, "effective-capability", "effective capability from resolution (repeatable)")
@@ -297,7 +302,7 @@ func parseOptions(command string, arguments []string, transition catalog.Transit
 	return options, nil
 }
 
-func standardKernel(ctx context.Context, request surfaces.Request) (boatstack.Kernel, error) {
+func standardKernel(ctx context.Context, request surfaces.Request) (boatstack.DeliveryController, error) {
 	programRequest := distribution.RepositoryProgramRequest{
 		Repository: request.Repository, Host: request.Host, CorrelationID: request.CorrelationID,
 	}
@@ -307,12 +312,12 @@ func standardKernel(ctx context.Context, request surfaces.Request) (boatstack.Ke
 	}
 	program, err := distribution.StandardProgramForRepository(ctx, programRequest)
 	if err != nil {
-		return boatstack.Kernel{}, err
+		return boatstack.DeliveryController{}, err
 	}
-	return boatstack.NewKernel("", program)
+	return boatstack.NewDeliveryController("", program)
 }
 
-func followEvents(kernel boatstack.Kernel, request surfaces.Request) error {
+func followEvents(kernel boatstack.DeliveryController, request surfaces.Request) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	encoder := json.NewEncoder(os.Stdout)
@@ -439,10 +444,10 @@ func buildRequest(operation surfaces.Operation, options commandOptions) (surface
 	if correlation == "" {
 		correlation = fmt.Sprintf("cli-%d-%d", os.Getpid(), now.UnixNano())
 	}
-	goal := model.Goal{}
-	if options.goalKind != "" || options.goalID != "" || options.deliveryID != "" {
-		goal = model.Goal{ID: options.goalID, Kind: model.GoalKind(options.goalKind), DeliveryID: options.deliveryID}
-		if err := goal.Validate(); err != nil {
+	objective := model.Objective{}
+	if options.objectiveKind != "" || options.objectiveID != "" || options.deliveryID != "" {
+		objective = model.Objective{ID: options.objectiveID, Kind: model.ObjectiveKind(options.objectiveKind), DeliveryID: options.deliveryID}
+		if err := objective.Validate(); err != nil {
 			return surfaces.Request{}, err
 		}
 	}
@@ -450,7 +455,7 @@ func buildRequest(operation surfaces.Operation, options commandOptions) (surface
 	if err != nil {
 		return surfaces.Request{}, err
 	}
-	authority, err := loadAuthority(options, correlation, goal, now)
+	authority, err := loadAuthority(options, correlation, objective, now)
 	if err != nil {
 		return surfaces.Request{}, err
 	}
@@ -463,19 +468,21 @@ func buildRequest(operation surfaces.Operation, options commandOptions) (surface
 		return surfaces.Request{}, err
 	}
 	flowID := options.flowID
-	if flowID == "" && goal.ID != "" {
-		flowID = "flow-" + goal.ID
+	if flowID == "" && objective.ID != "" {
+		flowID = "flow-" + objective.ID
 	}
 	if flowID == "" && (operation == surfaces.OperationApply || operation == surfaces.OperationRecover) {
 		flowID = "flow-" + correlation
 	}
 	return surfaces.Request{
 		SchemaVersion: surfaces.SchemaVersion, Operation: operation, Repository: options.repository, Host: options.host, CorrelationID: correlation,
-		FlowID: flowID, Goal: goal, TransitionID: catalog.TransitionID(options.transitionID), Authority: authority, Parameters: parameters,
+		FlowID: flowID, Objective: objective, TransitionID: catalog.TransitionID(options.transitionID), Authority: authority, Parameters: parameters,
 		Prescription: protocol.Prescription{SchemaVersion: protocol.PrescriptionSchemaVersion, ID: options.prescriptionID,
-			TransitionID: catalog.TransitionID(options.transitionID), ExpectedStateRevision: options.expectedStateRevision,
-			ExpectedProgramFingerprint: options.expectedProgramFingerprint, ExpectedSnapshotFingerprint: options.expectedSnapshotFingerprint,
-			AuthorityFingerprint: options.authorityFingerprint, RequiredCapabilities: requiredCapabilities, EffectiveCapabilities: effectiveCapabilities},
+			TransitionID: catalog.TransitionID(options.transitionID), Freshness: general.Freshness{
+				ExpectedInstanceID: options.expectedInstanceID, ExpectedStateRevision: options.expectedStateRevision, ExpectedProgramFingerprint: options.expectedProgramFingerprint,
+				ExpectedSnapshotFingerprint: options.expectedSnapshotFingerprint, ExpectedObjectiveBindingFingerprint: options.expectedObjectiveBindingFingerprint,
+				AuthorityFingerprint: options.authorityFingerprint,
+			}, RequiredCapabilities: requiredCapabilities, EffectiveCapabilities: effectiveCapabilities},
 		RepositoryAuthority: options.repositoryPolicy, IdempotencyKey: options.idempotencyKey, Command: options.command,
 	}, nil
 }
@@ -528,7 +535,7 @@ func isPathParameter(name string) bool {
 	}
 }
 
-func loadAuthority(options commandOptions, correlation string, goal model.Goal, now time.Time) (protocol.AuthorityBundle, error) {
+func loadAuthority(options commandOptions, correlation string, objective model.Objective, now time.Time) (protocol.AuthorityBundle, error) {
 	bundle := protocol.AuthorityBundle{}
 	for _, path := range options.authorityReceipts {
 		raw, err := os.ReadFile(path)
@@ -548,7 +555,7 @@ func loadAuthority(options commandOptions, correlation string, goal model.Goal, 
 		bundle.Receipts = append(bundle.Receipts, receipt)
 	}
 	if options.humanActor != "" {
-		fingerprint := hash([]byte(strings.Join([]string{correlation, goal.ID, options.transitionID, options.humanActor}, "\x00")))
+		fingerprint := hash([]byte(strings.Join([]string{correlation, objective.ID, options.transitionID, options.humanActor}, "\x00")))
 		bundle.Receipts = append(bundle.Receipts, protocol.AuthorityReceipt{
 			ID: "human-" + fingerprint[:16], Class: catalog.AuthorityHuman, Subject: options.humanActor, Fingerprint: fingerprint,
 			IssuedAt: now, ExpiresAt: now.Add(5 * time.Minute),

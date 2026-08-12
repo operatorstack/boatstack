@@ -4,7 +4,7 @@
   "subject": "Finite stable-phase abstraction generated from the compiled Boatstack ControlProgram registry. It contains one event for every runtime entry and expands each declared source and target phase set. The 18-facet predicates, operating-system behavior, and external-provider truth remain executable evidence obligations rather than theorem assumptions.",
   "evidence": [
     {
-      "path": "boatstack/control/control.go",
+      "path": "boatstack/delivery/delivery.go",
       "note": "Compiler combines exact CoreSystem, ProgramRuntime, extension, contract, and ownership declarations into one immutable runtime registry."
     },
     {
@@ -12,15 +12,15 @@
       "note": "Generated readable projection from the same runtime registry."
     },
     {
-      "path": "boatstack/internal/kernel/protocol/admission.go",
+      "path": "boatstack/internal/softwaredelivery/protocol/admission.go",
       "note": "Exact admission, authority, parameter, source-revision, provider-request, expiry, and stale-snapshot checks."
     },
     {
-      "path": "boatstack/internal/kernel/engine/engine.go",
+      "path": "boatstack/internal/softwaredelivery/engine/engine.go",
       "note": "Single apply path across lock, journal, effect, fresh observation, target predicate, receipt, and recovery."
     },
     {
-      "path": "boatstack/internal/effects/state_reducer.go",
+      "path": "boatstack/internal/softwaredelivery/effects/state_reducer.go",
       "note": "Admitted native effects reduce every controllable Standard distribution transition through one state adapter."
     },
     {
@@ -28,11 +28,11 @@
       "note": "Runtime facet/event classification, writer-boundary inventory, and reducer-completeness refusing tests."
     },
     {
-      "path": "boatstack/internal/kernel/engine/engine_test.go",
+      "path": "boatstack/internal/softwaredelivery/engine/engine_test.go",
       "note": "Exact-admission, stale-snapshot, postcondition, interruption, idempotency, and unknown-outcome tests."
     },
     {
-      "path": "boatstack/internal/effects/prepared.go",
+      "path": "boatstack/internal/softwaredelivery/effects/prepared.go",
       "note": "Staged effect ordering, atomic resource application, rollback, and external settlement boundary."
     },
     {
@@ -239,12 +239,6 @@
       "basis": "observed"
     },
     {
-      "id": "goal.configure",
-      "controllable": true,
-      "observable": true,
-      "basis": "observed"
-    },
-    {
       "id": "installation.initialize",
       "controllable": true,
       "observable": true,
@@ -264,6 +258,12 @@
     },
     {
       "id": "invocation.rebind",
+      "controllable": true,
+      "observable": true,
+      "basis": "observed"
+    },
+    {
+      "id": "objective.bind",
       "controllable": true,
       "observable": true,
       "basis": "observed"
@@ -3377,204 +3377,6 @@
       "basis": "inferred"
     },
     {
-      "from": "OBSERVED",
-      "event": "goal.configure",
-      "to": "OBSERVED",
-      "evidence": [
-        0,
-        1,
-        4
-      ],
-      "basis": "inferred"
-    },
-    {
-      "from": "OBSERVED",
-      "event": "goal.configure",
-      "to": "ACTIVE",
-      "evidence": [
-        0,
-        1,
-        4
-      ],
-      "basis": "inferred"
-    },
-    {
-      "from": "OBSERVED",
-      "event": "goal.configure",
-      "to": "FRONTIER",
-      "evidence": [
-        0,
-        1,
-        4
-      ],
-      "basis": "inferred"
-    },
-    {
-      "from": "DORMANT",
-      "event": "goal.configure",
-      "to": "OBSERVED",
-      "evidence": [
-        0,
-        1,
-        4
-      ],
-      "basis": "inferred"
-    },
-    {
-      "from": "DORMANT",
-      "event": "goal.configure",
-      "to": "ACTIVE",
-      "evidence": [
-        0,
-        1,
-        4
-      ],
-      "basis": "inferred"
-    },
-    {
-      "from": "DORMANT",
-      "event": "goal.configure",
-      "to": "FRONTIER",
-      "evidence": [
-        0,
-        1,
-        4
-      ],
-      "basis": "inferred"
-    },
-    {
-      "from": "ACTIVE",
-      "event": "goal.configure",
-      "to": "OBSERVED",
-      "evidence": [
-        0,
-        1,
-        4
-      ],
-      "basis": "inferred"
-    },
-    {
-      "from": "ACTIVE",
-      "event": "goal.configure",
-      "to": "ACTIVE",
-      "evidence": [
-        0,
-        1,
-        4
-      ],
-      "basis": "inferred"
-    },
-    {
-      "from": "ACTIVE",
-      "event": "goal.configure",
-      "to": "FRONTIER",
-      "evidence": [
-        0,
-        1,
-        4
-      ],
-      "basis": "inferred"
-    },
-    {
-      "from": "FRONTIER",
-      "event": "goal.configure",
-      "to": "OBSERVED",
-      "evidence": [
-        0,
-        1,
-        4
-      ],
-      "basis": "inferred"
-    },
-    {
-      "from": "FRONTIER",
-      "event": "goal.configure",
-      "to": "ACTIVE",
-      "evidence": [
-        0,
-        1,
-        4
-      ],
-      "basis": "inferred"
-    },
-    {
-      "from": "FRONTIER",
-      "event": "goal.configure",
-      "to": "FRONTIER",
-      "evidence": [
-        0,
-        1,
-        4
-      ],
-      "basis": "inferred"
-    },
-    {
-      "from": "TERMINAL",
-      "event": "goal.configure",
-      "to": "OBSERVED",
-      "evidence": [
-        0,
-        1,
-        4
-      ],
-      "basis": "inferred"
-    },
-    {
-      "from": "TERMINAL",
-      "event": "goal.configure",
-      "to": "ACTIVE",
-      "evidence": [
-        0,
-        1,
-        4
-      ],
-      "basis": "inferred"
-    },
-    {
-      "from": "TERMINAL",
-      "event": "goal.configure",
-      "to": "FRONTIER",
-      "evidence": [
-        0,
-        1,
-        4
-      ],
-      "basis": "inferred"
-    },
-    {
-      "from": "ABANDONED",
-      "event": "goal.configure",
-      "to": "OBSERVED",
-      "evidence": [
-        0,
-        1,
-        4
-      ],
-      "basis": "inferred"
-    },
-    {
-      "from": "ABANDONED",
-      "event": "goal.configure",
-      "to": "ACTIVE",
-      "evidence": [
-        0,
-        1,
-        4
-      ],
-      "basis": "inferred"
-    },
-    {
-      "from": "ABANDONED",
-      "event": "goal.configure",
-      "to": "FRONTIER",
-      "evidence": [
-        0,
-        1,
-        4
-      ],
-      "basis": "inferred"
-    },
-    {
       "from": "DORMANT",
       "event": "installation.initialize",
       "to": "OBSERVED",
@@ -4403,6 +4205,204 @@
       "from": "UNRESOLVED",
       "event": "invocation.rebind",
       "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "objective.bind",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "objective.bind",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "OBSERVED",
+      "event": "objective.bind",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "objective.bind",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "objective.bind",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "DORMANT",
+      "event": "objective.bind",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "objective.bind",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "objective.bind",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ACTIVE",
+      "event": "objective.bind",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "objective.bind",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "objective.bind",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "FRONTIER",
+      "event": "objective.bind",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "objective.bind",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "objective.bind",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "TERMINAL",
+      "event": "objective.bind",
+      "to": "FRONTIER",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "objective.bind",
+      "to": "OBSERVED",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "objective.bind",
+      "to": "ACTIVE",
+      "evidence": [
+        0,
+        1,
+        4
+      ],
+      "basis": "inferred"
+    },
+    {
+      "from": "ABANDONED",
+      "event": "objective.bind",
+      "to": "FRONTIER",
       "evidence": [
         0,
         1,

@@ -167,7 +167,10 @@ class RepositoryContract(unittest.TestCase):
         location = finding["properties"]["code_location"]
         self.assertIn("side", location["required"])
         self.assertEqual(location["properties"]["side"]["enum"], ["LEFT", "RIGHT"])
-        self.assertIn("side: .code_location.side", workflow)
+        self.assertIn("build_codex_github_review.py", workflow)
+        publisher = (REPO / ".github" / "scripts" / "build_codex_github_review.py").read_text()
+        self.assertIn('"side": side', publisher)
+        self.assertIn("Findings without inline diff anchors", publisher)
         self.assertFalse((REPO / "UPSTREAM.json").exists())
 
     def test_release_builds_six_checksum_bound_v2_runtimes(self) -> None:
@@ -279,7 +282,7 @@ class RepositoryContract(unittest.TestCase):
             "carry the same human authority\nthrough that rollback",
         ):
             self.assertIn(contract, update)
-        self.assertIn("Untargeted resolution selects\nonly a transition that advances the configured goal", readme)
+        self.assertIn("Untargeted resolution selects\nonly a transition that advances the configured objective", readme)
         self.assertIn("exactly three operation skills", readme)
 
     def test_document_links_claims_and_assets_are_valid(self) -> None:
@@ -367,6 +370,53 @@ class RepositoryContract(unittest.TestCase):
             for token in deprecated:
                 self.assertNotIn(token, value, document)
 
+    def test_general_kernel_is_domain_neutral_and_owns_shared_control_laws(self) -> None:
+        kernel = REPO / "boatstack" / "kernel"
+        source = "\n".join(path.read_text() for path in sorted(kernel.glob("*.go")))
+        for token in (
+            "git", "repository", "worktree", "branch", "pull request",
+            "coding agent", "publication",
+        ):
+            self.assertNotIn(token, source.lower(), token)
+
+        runtime = (kernel / "runtime.go").read_text()
+        software_relation = (
+            REPO / "boatstack" / "internal" / "softwaredelivery" /
+            "supervisor" / "supervisor.go"
+        ).read_text()
+        software_prescription = (
+            REPO / "boatstack" / "internal" / "softwaredelivery" /
+            "protocol" / "prescription.go"
+        ).read_text()
+        self.assertIn("Relate(RelationInput", runtime)
+        self.assertIn("general.Relate(general.RelationInput", software_relation)
+        self.assertIn("general.Freshness", software_prescription)
+        self.assertIn("general.NewFreshness", software_prescription)
+
+        implementation = "\n".join(
+            path.read_text() for path in sorted((REPO / "boatstack").rglob("*.go"))
+        )
+        for retired in (
+            "boatstack/control", "internal/kernel", "internal/effects",
+            "internal/plant", "internal/surfaces", "goal.configure",
+            "GOAL_REQUIRED", 'json:"goal',
+        ):
+            self.assertNotIn(retired, implementation)
+
+        component_ci = (REPO / ".github" / "workflows" / "ci.yml").read_text()
+        for current in (
+            "./kernel", "./delivery", "./internal/softwaredelivery/protocol",
+            "./internal/softwaredelivery/surfaces",
+            "./internal/softwaredelivery/plant",
+            "./internal/softwaredelivery/effects",
+        ):
+            self.assertIn(current, component_ci)
+        for retired in (
+            "./control", "./internal/kernel", "./internal/plant",
+            "./internal/effects", "./internal/surfaces",
+        ):
+            self.assertNotIn(retired, component_ci)
+
     def test_documented_cli_verbs_are_registered_v2_surfaces(self) -> None:
         documents = [
             REPO / "README.md",
@@ -379,7 +429,7 @@ class RepositoryContract(unittest.TestCase):
             "events", "catalog", "guard", "rpc", "retro", "version", "init",
             "update", "attach", "detach", "hydrate-runtime", "configure",
             "reconcile-update",
-            "goal-configure", "plan-create", "plan-validate", "plan-approve",
+            "objective-bind", "plan-create", "plan-validate", "plan-approve",
             "plan-activate", "plan-amend", "workspace-cut", "workspace-sync",
             "workspace-cleanup", "workspace-reap", "record-build", "record-test",
             "record-review", "record-change", "record-journey",
@@ -561,17 +611,17 @@ class RepositoryContract(unittest.TestCase):
             self.assertEqual(doctor["doctor"]["transition_count"], 63)
             self.assertEqual(doctor["snapshot"]["runtime"]["value"], "verified")
 
-            goal = (
-                "--goal-id", "bootstrap", "--goal-kind", "approved-plan",
+            objective = (
+                "--objective-id", "bootstrap", "--objective-kind", "approved-plan",
                 "--delivery", "bootstrap",
             )
             self.apply_prescribed(
-                launcher, "goal.configure", "--repo", repository, *goal,
-                "--human", "contract", "--param", "goal_kind=approved-plan",
+                launcher, "objective.bind", "--repo", repository, *objective,
+                "--human", "contract", "--param", "objective_kind=approved-plan",
                 "--param", "delivery_id=bootstrap", env=env,
             )
             self.apply_prescribed(
-                launcher, "engagement.begin", "--repo", repository, *goal,
+                launcher, "engagement.begin", "--repo", repository, *objective,
                 "--repository-authority", env=env,
             )
             ordinary = json.loads(
@@ -677,9 +727,9 @@ class RepositoryContract(unittest.TestCase):
                 "catalog.reconcile",
                 "--human",
                 "contract",
-                "--goal-id",
+                "--objective-id",
                 "bootstrap",
-                "--goal-kind",
+                "--objective-kind",
                 "approved-plan",
                 "--delivery",
                 "bootstrap",

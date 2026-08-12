@@ -7,14 +7,14 @@ import (
 	"fmt"
 
 	boatstack "github.com/operatorstack/boatstack/boatstack"
-	"github.com/operatorstack/boatstack/boatstack/control"
 	"github.com/operatorstack/boatstack/boatstack/core"
+	"github.com/operatorstack/boatstack/boatstack/delivery"
 	"github.com/operatorstack/boatstack/boatstack/distribution"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/supervisor"
-	"github.com/operatorstack/boatstack/boatstack/internal/surfaces"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
 )
 
 const SchemaVersion = surfaces.SchemaVersion
@@ -35,16 +35,16 @@ type Request = surfaces.Request
 type Response = surfaces.Response
 type DoctorReport = surfaces.DoctorReport
 type ProgramChange = surfaces.ProgramChange
-type Goal = model.Goal
-type GoalKind = model.GoalKind
+type Objective = model.Objective
+type ObjectiveKind = model.ObjectiveKind
 type StateFacet = model.StateFacet
 
 const (
-	GoalApprovedPlan = model.GoalApprovedPlan
-	GoalVerified     = model.GoalVerified
-	GoalOpenPR       = model.GoalOpenPR
-	GoalMerged       = model.GoalMerged
-	GoalAbandoned    = model.GoalAbandoned
+	ObjectiveApprovedPlan = model.ObjectiveApprovedPlan
+	ObjectiveVerified     = model.ObjectiveVerified
+	ObjectiveOpenPR       = model.ObjectiveOpenPR
+	ObjectiveMerged       = model.ObjectiveMerged
+	ObjectiveAbandoned    = model.ObjectiveAbandoned
 
 	StateFacetInstallation = model.StateFacetInstallation
 	StateFacetProgram      = model.StateFacetProgram
@@ -54,12 +54,14 @@ const (
 
 type TransitionID = catalog.TransitionID
 type Transition = catalog.Transition
-type GoalScope = catalog.GoalScope
+type ObjectiveScope = catalog.ObjectiveScope
 type AuthorityClass = catalog.AuthorityClass
 type Capability = catalog.Capability
 
 const (
-	GoalScopeOptionalPreserve = catalog.GoalScopeOptionalPreserve
+	ObjectiveScopeNone             = catalog.ObjectiveScopeNone
+	ObjectiveScopeOptionalPreserve = catalog.ObjectiveScopeOptionalPreserve
+	ObjectiveScopeBoundExact       = catalog.ObjectiveScopeBoundExact
 
 	AuthorityRepository = catalog.AuthorityRepository
 	AuthorityHuman      = catalog.AuthorityHuman
@@ -110,13 +112,13 @@ const (
 const HostIdentity = "sdk"
 
 type options struct {
-	runtime    control.ProgramRuntimeDefinition
-	extensions []control.Extension
+	runtime    delivery.ProgramRuntimeDefinition
+	extensions []delivery.Extension
 }
 
 type Option func(*options) error
 
-func WithProgramRuntime(runtime control.ProgramRuntimeDefinition) Option {
+func WithProgramRuntime(runtime delivery.ProgramRuntimeDefinition) Option {
 	return func(configuration *options) error {
 		if runtime == nil {
 			return fmt.Errorf("SDK program runtime cannot be nil")
@@ -129,7 +131,7 @@ func WithProgramRuntime(runtime control.ProgramRuntimeDefinition) Option {
 	}
 }
 
-func WithExtension(extension control.Extension) Option {
+func WithExtension(extension delivery.Extension) Option {
 	return func(configuration *options) error {
 		if extension == nil {
 			return fmt.Errorf("SDK extension cannot be nil")
@@ -145,8 +147,8 @@ func WithExtension(extension control.Extension) Option {
 type Client struct {
 	externalStateRoot string
 	standard          bool
-	runtime           control.ProgramRuntimeDefinition
-	extensions        []control.Extension
+	runtime           delivery.ProgramRuntimeDefinition
+	extensions        []delivery.Extension
 }
 
 // New assembles the standard Boatstack distribution. Options may add
@@ -157,31 +159,31 @@ func New(externalStateRoot string, supplied ...Option) (Client, error) {
 		return Client{}, err
 	}
 	if configuration.runtime != nil {
-		return Client{}, fmt.Errorf("sdk.New always uses StandardFlow; use sdk.NewKernel for an explicit flow")
+		return Client{}, fmt.Errorf("sdk.New always uses StandardFlow; use sdk.NewProgramClient for an explicit flow")
 	}
 	if _, err := distribution.StandardProgram(context.Background(), configuration.extensions...); err != nil {
 		return Client{}, err
 	}
-	return Client{externalStateRoot: externalStateRoot, standard: true, extensions: append([]control.Extension(nil), configuration.extensions...)}, nil
+	return Client{externalStateRoot: externalStateRoot, standard: true, extensions: append([]delivery.Extension(nil), configuration.extensions...)}, nil
 }
 
-// NewKernel is the low-level composition API. It never inserts StandardFlow;
+// NewProgramClient is the low-level composition API. It never inserts StandardFlow;
 // callers must supply exactly one WithProgramRuntime option.
-func NewKernel(externalStateRoot string, supplied ...Option) (Client, error) {
+func NewProgramClient(externalStateRoot string, supplied ...Option) (Client, error) {
 	configuration, err := applyOptions(supplied)
 	if err != nil {
 		return Client{}, err
 	}
 	if configuration.runtime == nil {
-		return Client{}, fmt.Errorf("sdk.NewKernel requires an explicit ProgramRuntime")
+		return Client{}, fmt.Errorf("sdk.NewProgramClient requires an explicit ProgramRuntime")
 	}
-	if _, err := control.Compile(context.Background(), control.CompileRequest{
+	if _, err := delivery.Compile(context.Background(), delivery.CompileRequest{
 		KernelVersion: boatstack.Version, Core: core.System(), Runtime: configuration.runtime,
 		Extensions: configuration.extensions,
 	}); err != nil {
 		return Client{}, err
 	}
-	return Client{externalStateRoot: externalStateRoot, runtime: configuration.runtime, extensions: append([]control.Extension(nil), configuration.extensions...)}, nil
+	return Client{externalStateRoot: externalStateRoot, runtime: configuration.runtime, extensions: append([]delivery.Extension(nil), configuration.extensions...)}, nil
 }
 
 func applyOptions(supplied []Option) (options, error) {
@@ -209,18 +211,18 @@ func (c Client) Do(ctx context.Context, request Request) (Response, error) {
 		repositoryRequest.ConfigurationPath, _ = request.Parameters.Get("config_path")
 		repositoryRequest.ConfigurationFingerprint, _ = request.Parameters.Get("config_sha256")
 	}
-	var program control.ControlProgram
+	var program delivery.ControlProgram
 	var err error
 	if c.standard {
 		program, err = distribution.StandardProgramForRepository(ctx, repositoryRequest)
 	} else {
-		var configured []control.Extension
+		var configured []delivery.Extension
 		var settings any
 		configured, settings, err = distribution.ConfiguredExtensions(ctx, repositoryRequest)
 		if err == nil {
-			extensions := append([]control.Extension(nil), c.extensions...)
+			extensions := append([]delivery.Extension(nil), c.extensions...)
 			extensions = append(extensions, configured...)
-			program, err = control.Compile(ctx, control.CompileRequest{
+			program, err = delivery.Compile(ctx, delivery.CompileRequest{
 				KernelVersion: boatstack.Version, Core: core.System(), Runtime: c.runtime,
 				Extensions: extensions, Settings: settings,
 			})
@@ -229,7 +231,7 @@ func (c Client) Do(ctx context.Context, request Request) (Response, error) {
 	if err != nil {
 		return Response{}, err
 	}
-	kernel, err := boatstack.NewKernel(c.externalStateRoot, program)
+	kernel, err := boatstack.NewDeliveryController(c.externalStateRoot, program)
 	if err != nil {
 		return Response{}, err
 	}

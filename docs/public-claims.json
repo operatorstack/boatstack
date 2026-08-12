@@ -12,13 +12,13 @@
       "status": "verified",
       "readable_evidence": "architecture/boatstack-v2-kernel.md#14-package-and-dependency-architecture",
       "implementation": [
-        "../boatstack/internal/kernel/engine/engine.go",
-        "../boatstack/control/control.go",
-        "../boatstack/kernel.go"
+        "../boatstack/internal/softwaredelivery/engine/engine.go",
+        "../boatstack/delivery/control.go",
+        "../boatstack/delivery_controller.go"
       ],
       "verification": [
         "../boatstack/flow/standard/completeness_test.go",
-        "../boatstack/internal/kernel/engine/engine_test.go"
+        "../boatstack/internal/softwaredelivery/engine/engine_test.go"
       ],
       "last_verified_version": "v2.0.0"
     },
@@ -28,12 +28,12 @@
       "status": "verified",
       "readable_evidence": "generated-files.md#machine-local-controller-state",
       "implementation": [
-        "../boatstack/internal/plant/resolver.go",
-        "../boatstack/internal/effects/driver.go",
-        "../boatstack/internal/effects/command_boundary.go"
+        "../boatstack/internal/softwaredelivery/plant/resolver.go",
+        "../boatstack/internal/softwaredelivery/effects/driver.go",
+        "../boatstack/internal/softwaredelivery/effects/command_boundary.go"
       ],
       "verification": [
-        "../boatstack/internal/effects/integration_test.go"
+        "../boatstack/internal/softwaredelivery/effects/integration_test.go"
       ],
       "last_verified_version": "v2.0.0"
     },
@@ -43,13 +43,13 @@
       "status": "verified",
       "readable_evidence": "safety.md#transaction-boundary",
       "implementation": [
-        "../boatstack/internal/effects/prepared.go",
-        "../boatstack/internal/effects/journal.go",
-        "../boatstack/internal/effects/recovery.go"
+        "../boatstack/internal/softwaredelivery/effects/prepared.go",
+        "../boatstack/internal/softwaredelivery/effects/journal.go",
+        "../boatstack/internal/softwaredelivery/effects/recovery.go"
       ],
       "verification": [
-        "../boatstack/internal/effects/prepared_test.go",
-        "../boatstack/internal/effects/recovery_test.go"
+        "../boatstack/internal/softwaredelivery/effects/prepared_test.go",
+        "../boatstack/internal/softwaredelivery/effects/recovery_test.go"
       ],
       "last_verified_version": "v2.0.0"
     },
@@ -59,12 +59,12 @@
       "status": "verified",
       "readable_evidence": "architecture/boatstack-v2-kernel.md#15-cli-hook-sdk-mcp-and-host-adapter-contracts",
       "implementation": [
-        "../boatstack/internal/surfaces/protocol.go",
-        "../boatstack/internal/surfaces/render.go",
+        "../boatstack/internal/softwaredelivery/surfaces/protocol.go",
+        "../boatstack/internal/softwaredelivery/surfaces/render.go",
         "../boatstack/sdk/sdk.go"
       ],
       "verification": [
-        "../boatstack/internal/surfaces/render_test.go",
+        "../boatstack/internal/softwaredelivery/surfaces/render_test.go",
         "../boatstack/sdk/sdk_test.go"
       ],
       "last_verified_version": "v2.0.0"
@@ -75,13 +75,13 @@
       "status": "verified",
       "readable_evidence": "safety.md#hook-guard",
       "implementation": [
-        "../boatstack/internal/kernel/supervisor/guard.go",
-        "../boatstack/internal/kernel/supervisor/classify.go",
-        "../boatstack/internal/surfaces/guard.go"
+        "../boatstack/internal/softwaredelivery/supervisor/guard.go",
+        "../boatstack/internal/softwaredelivery/supervisor/classify.go",
+        "../boatstack/internal/softwaredelivery/surfaces/guard.go"
       ],
       "verification": [
         "../boatstack/flow/standard/supervisor_parity_test.go",
-        "../boatstack/internal/surfaces/render_test.go"
+        "../boatstack/internal/softwaredelivery/surfaces/render_test.go"
       ],
       "last_verified_version": "v2.0.0"
     },
@@ -91,15 +91,15 @@
       "status": "verified",
       "readable_evidence": "architecture/boatstack-v2-kernel.md#11-verification-and-receipt-model",
       "implementation": [
-        "../boatstack/internal/kernel/protocol/admission.go",
-        "../boatstack/internal/effects/artifacts.go",
-        "../boatstack/internal/effects/command_boundary.go",
-        "../boatstack/internal/plant/observer.go"
+        "../boatstack/internal/softwaredelivery/protocol/admission.go",
+        "../boatstack/internal/softwaredelivery/effects/artifacts.go",
+        "../boatstack/internal/softwaredelivery/effects/command_boundary.go",
+        "../boatstack/internal/softwaredelivery/plant/observer.go"
       ],
       "verification": [
-        "../boatstack/internal/effects/command_boundary_test.go",
-        "../boatstack/internal/effects/integration_test.go",
-        "../boatstack/internal/plant/observer_test.go"
+        "../boatstack/internal/softwaredelivery/effects/command_boundary_test.go",
+        "../boatstack/internal/softwaredelivery/effects/integration_test.go",
+        "../boatstack/internal/softwaredelivery/plant/observer_test.go"
       ],
       "last_verified_version": "v2.0.0"
     },
@@ -109,11 +109,11 @@
       "status": "verified",
       "readable_evidence": "architecture/boatstack-v2-kernel.md#16-process-telemetry-contract",
       "implementation": [
-        "../boatstack/internal/effects/receipts.go",
-        "../boatstack/kernel.go"
+        "../boatstack/internal/softwaredelivery/effects/receipts.go",
+        "../boatstack/delivery_controller.go"
       ],
       "verification": [
-        "../boatstack/internal/effects/integration_test.go"
+        "../boatstack/internal/softwaredelivery/effects/integration_test.go"
       ],
       "last_verified_version": "v2.0.0"
     },
@@ -123,16 +123,16 @@
       "status": "verified",
       "readable_evidence": "configuration.md#required-values",
       "implementation": [
-        "../boatstack/internal/kernel/model/state.go",
-        "../boatstack/internal/kernel/supervisor/supervisor.go",
-        "../boatstack/internal/effects/state_reducer.go"
+        "../boatstack/internal/softwaredelivery/model/state.go",
+        "../boatstack/internal/softwaredelivery/supervisor/supervisor.go",
+        "../boatstack/internal/softwaredelivery/effects/state_reducer.go"
       ],
       "verification": [
         "../boatstack/flow/standard/supervisor_parity_test.go",
-        "../boatstack/internal/kernel/protocol/policy_test.go",
-        "../boatstack/internal/plant/observer_test.go",
-        "../boatstack/internal/effects/state_reducer_test.go",
-        "../boatstack/internal/effects/integration_test.go"
+        "../boatstack/internal/softwaredelivery/protocol/policy_test.go",
+        "../boatstack/internal/softwaredelivery/plant/observer_test.go",
+        "../boatstack/internal/softwaredelivery/effects/state_reducer_test.go",
+        "../boatstack/internal/softwaredelivery/effects/integration_test.go"
       ],
       "last_verified_version": "v2.0.0"
     },
@@ -145,16 +145,16 @@
         "architecture/boatstack-v2-transition-catalog.md",
         "architecture/boatstack-v2-locus-safety.json",
         "architecture/boatstack-v2-locus-liveness.json",
-        "../boatstack/control/control.go",
+        "../boatstack/delivery/control.go",
         "../boatstack/core/transitions.json",
         "../boatstack/flow/standard/transitions.json"
       ],
       "verification": [
         "../boatstack/flow/standard/completeness_test.go",
         "../boatstack/flow/standard/historical_test.go",
-        "../boatstack/internal/surfaces/render_test.go",
-        "../boatstack/internal/kernel/engine/engine_test.go",
-        "../boatstack/internal/effects/integration_test.go"
+        "../boatstack/internal/softwaredelivery/surfaces/render_test.go",
+        "../boatstack/internal/softwaredelivery/engine/engine_test.go",
+        "../boatstack/internal/softwaredelivery/effects/integration_test.go"
       ],
       "last_verified_version": "v2.0.0"
     }

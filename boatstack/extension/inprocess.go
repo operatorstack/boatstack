@@ -6,23 +6,23 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/operatorstack/boatstack/boatstack/control"
+	"github.com/operatorstack/boatstack/boatstack/delivery"
 )
 
 type InProcess struct {
-	manifest control.ExtensionManifest
-	runtime  control.ExtensionRuntime
+	manifest delivery.ExtensionManifest
+	runtime  delivery.ExtensionRuntime
 }
 
-func NewInProcess(manifest control.ExtensionManifest, runtime control.ExtensionRuntime) (*InProcess, error) {
+func NewInProcess(manifest delivery.ExtensionManifest, runtime delivery.ExtensionRuntime) (*InProcess, error) {
 	if runtime == nil {
 		return nil, fmt.Errorf("in-process extension requires a runtime")
 	}
 	return &InProcess{manifest: manifest, runtime: runtime}, nil
 }
 
-func (e *InProcess) ExtensionManifest(context.Context) (control.ExtensionManifest, error) {
+func (e *InProcess) ExtensionManifest(context.Context) (delivery.ExtensionManifest, error) {
 	return e.manifest, nil
 }
 
-func (e *InProcess) Runtime() control.ExtensionRuntime { return e.runtime }
+func (e *InProcess) Runtime() delivery.ExtensionRuntime { return e.runtime }

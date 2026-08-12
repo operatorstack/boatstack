@@ -13,18 +13,18 @@ import (
 	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/flow/standard"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/supervisor"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
 	"github.com/operatorstack/boatstack/boatstack/internal/testprogram"
 )
 
-func historicalGoalContracts() catalog.GoalContracts {
+func historicalObjectiveContracts() catalog.ObjectiveContracts {
 	manifest, err := standard.Definition().RuntimeManifest(context.Background())
 	if err != nil {
 		panic(err)
 	}
-	contracts, err := catalog.NewGoalContracts(manifest.GoalContracts, nil)
+	contracts, err := catalog.NewObjectiveContracts(manifest.ObjectiveContracts, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -41,7 +41,7 @@ type historicalFixture struct {
 	Name                       string                   `json:"name"`
 	InitialPlantFacts          map[string]string        `json:"initial_plant_facts"`
 	CanonicalObservation       map[string]string        `json:"canonical_observation"`
-	RequestedGoal              model.Goal               `json:"requested_goal"`
+	RequestedObjective         model.Objective          `json:"requested_objective"`
 	Event                      catalog.TransitionID     `json:"event"`
 	Authority                  []catalog.AuthorityClass `json:"authority"`
 	ExpectedDecision           supervisor.DecisionKind  `json:"expected_decision"`
@@ -87,7 +87,7 @@ func snapshotFromFixture(t *testing.T, fixture historicalFixture) model.Snapshot
 		Runtime:             model.Known(model.RuntimeState(facts["runtime"]), evidence), Publication: model.Known(model.PublicationState(facts["publication"]), evidence),
 		Verification: model.Known(model.VerificationState(facts["verification"]), evidence), Recovery: model.Known(model.RecoveryState(facts["recovery"]), evidence),
 		Transaction: model.Known(model.TransactionState(facts["transaction"]), evidence), Terminal: model.Known(model.TerminalStatus(facts["terminal"]), evidence),
-		Goal: model.Known(fixture.RequestedGoal, evidence), RecoveryInfo: model.Absent[model.RecoveryContext]("none", evidence),
+		Objective: model.Known(fixture.RequestedObjective, evidence), RecoveryInfo: model.Absent[model.RecoveryContext]("none", evidence),
 		TransactionInfo: model.Absent[model.TransactionContext]("none", evidence), ObservedAt: time.Unix(100, 0).UTC(),
 	}
 	if observation.Phase.Value == model.PhaseRecovery {
@@ -116,7 +116,7 @@ func TestHistoricalFailureCorpusUsesTheRuntimeControlLaw(t *testing.T) {
 	// control-law: historical failures bind to executable catalog predicates
 	corpus := loadHistoricalCorpus(t)
 	registry := testprogram.StandardRegistry()
-	control := supervisor.New(registry, historicalGoalContracts())
+	control := supervisor.New(registry, historicalObjectiveContracts())
 	seenNames := map[string]bool{}
 	for _, fixture := range corpus.Fixtures {
 		fixture := fixture
@@ -136,8 +136,8 @@ func TestHistoricalFailureCorpusUsesTheRuntimeControlLaw(t *testing.T) {
 				return
 			}
 			snapshot := snapshotFromFixture(t, fixture)
-			one := control.Resolve(snapshot, fixture.RequestedGoal, authoritySet(fixture.Authority), fixture.Event)
-			two := control.Resolve(snapshot, fixture.RequestedGoal, authoritySet(fixture.Authority), fixture.Event)
+			one := control.Resolve(snapshot, fixture.RequestedObjective, authoritySet(fixture.Authority), fixture.Event)
+			two := control.Resolve(snapshot, fixture.RequestedObjective, authoritySet(fixture.Authority), fixture.Event)
 			if !reflect.DeepEqual(one, two) {
 				t.Fatalf("resolution is nondeterministic: %#v != %#v", one, two)
 			}

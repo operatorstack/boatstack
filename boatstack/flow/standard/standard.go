@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/operatorstack/boatstack/boatstack/control"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
+	"github.com/operatorstack/boatstack/boatstack/delivery"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 )
 
 const (
@@ -24,43 +24,43 @@ type definition struct{}
 //go:embed transitions.json
 var transitionDeclarations []byte
 
-func Definition() control.ProgramRuntimeDefinition { return definition{} }
+func Definition() delivery.ProgramRuntimeDefinition { return definition{} }
 
-func (definition) RuntimeManifest(context.Context) (control.ProgramRuntimeManifest, error) {
+func (definition) RuntimeManifest(context.Context) (delivery.ProgramRuntimeManifest, error) {
 	transitions, err := decodeTransitions()
 	if err != nil {
-		return control.ProgramRuntimeManifest{}, err
+		return delivery.ProgramRuntimeManifest{}, err
 	}
 	resources, effects, verifiers, recoveries := declarations(transitions)
-	capabilities := []control.Capability{control.CapabilityHumanApprove}
+	capabilities := []delivery.Capability{delivery.CapabilityHumanApprove}
 	for index := range transitions {
-		transitions[index].RequiredCapabilities = control.KernelEffectCapabilities(transitions[index])
-		capabilities = control.UnionCapabilities(capabilities, transitions[index].RequiredCapabilities)
+		transitions[index].RequiredCapabilities = delivery.KernelEffectCapabilities(transitions[index])
+		capabilities = delivery.UnionCapabilities(capabilities, transitions[index].RequiredCapabilities)
 	}
-	return control.ProgramRuntimeManifest{
-		ID: ID, Version: Version, ProtocolVersion: control.ProgramRuntimeProtocolVersion, RuntimeMode: control.ProgramRuntimeNative,
-		SupportedGoals: []control.GoalKind{
-			model.GoalApprovedPlan, model.GoalVerified, model.GoalOpenPR,
-			model.GoalMerged, model.GoalAbandoned,
+	return delivery.ProgramRuntimeManifest{
+		ID: ID, Version: Version, ProtocolVersion: delivery.ProgramRuntimeProtocolVersion, RuntimeMode: delivery.ProgramRuntimeNative,
+		SupportedObjectives: []delivery.ObjectiveKind{
+			model.ObjectiveApprovedPlan, model.ObjectiveVerified, model.ObjectiveOpenPR,
+			model.ObjectiveMerged, model.ObjectiveAbandoned,
 		},
-		GoalContracts: []control.GoalContract{
-			contract(model.GoalApprovedPlan,
+		ObjectiveContracts: []delivery.ObjectiveContract{
+			contract(model.ObjectiveApprovedPlan,
 				known(model.FacetPlan, string(model.PlanApproved))),
-			contract(model.GoalVerified,
+			contract(model.ObjectiveVerified,
 				known(model.FacetVerification, string(model.VerificationCurrent)),
 				known(model.FacetConfiguration, string(model.ConfigurationVerified)),
 				known(model.FacetRuntime, string(model.RuntimeVerified)),
 				known(model.FacetDelivery, string(model.DeliveryTerminal))),
-			contract(model.GoalOpenPR,
+			contract(model.ObjectiveOpenPR,
 				known(model.FacetVerification, string(model.VerificationCurrent)),
 				known(model.FacetConfiguration, string(model.ConfigurationVerified)),
 				known(model.FacetRuntime, string(model.RuntimeVerified)),
 				known(model.FacetPublication, string(model.PublicationOpen))),
-			contract(model.GoalMerged,
+			contract(model.ObjectiveMerged,
 				known(model.FacetPublication, string(model.PublicationMerged)),
 				known(model.FacetDelivery, string(model.DeliveryTerminal)),
 				known(model.FacetWorkspace, string(model.WorkspaceLanded), string(model.WorkspaceAbsent))),
-			contract(model.GoalAbandoned,
+			contract(model.ObjectiveAbandoned,
 				known(model.FacetDelivery, string(model.DeliveryDiscarded)),
 				known(model.FacetWorkspace, string(model.WorkspaceAbandoned), string(model.WorkspaceAbsent))),
 		},
@@ -71,10 +71,10 @@ func (definition) RuntimeManifest(context.Context) (control.ProgramRuntimeManife
 	}, nil
 }
 
-func decodeTransitions() ([]control.Transition, error) {
+func decodeTransitions() ([]delivery.Transition, error) {
 	decoder := json.NewDecoder(bytes.NewReader(transitionDeclarations))
 	decoder.DisallowUnknownFields()
-	var transitions []control.Transition
+	var transitions []delivery.Transition
 	if err := decoder.Decode(&transitions); err != nil {
 		return nil, fmt.Errorf("decode StandardFlow transitions: %w", err)
 	}
@@ -85,10 +85,10 @@ func decodeTransitions() ([]control.Transition, error) {
 	return transitions, nil
 }
 
-func declarations(transitions []control.Transition) ([]string, []string, []string, []control.TransitionID) {
+func declarations(transitions []delivery.Transition) ([]string, []string, []string, []delivery.TransitionID) {
 	var resources, effects, verifiers []string
-	var recoveries []control.TransitionID
-	seenResources, seenEffects, seenVerifiers, seenRecoveries := map[string]bool{}, map[string]bool{}, map[string]bool{}, map[control.TransitionID]bool{}
+	var recoveries []delivery.TransitionID
+	seenResources, seenEffects, seenVerifiers, seenRecoveries := map[string]bool{}, map[string]bool{}, map[string]bool{}, map[delivery.TransitionID]bool{}
 	for _, transition := range transitions {
 		for _, resource := range transition.OwnedResources {
 			if !seenResources[resource] {
@@ -101,17 +101,17 @@ func declarations(transitions []control.Transition) ([]string, []string, []strin
 		if transition.Verifier != "" && !seenVerifiers[transition.Verifier] {
 			seenVerifiers[transition.Verifier], verifiers = true, append(verifiers, transition.Verifier)
 		}
-		if transition.Class == control.EventRecovery && !seenRecoveries[transition.ID] {
+		if transition.Class == delivery.EventRecovery && !seenRecoveries[transition.ID] {
 			seenRecoveries[transition.ID], recoveries = true, append(recoveries, transition.ID)
 		}
 	}
 	return resources, effects, verifiers, recoveries
 }
 
-func contract(goal model.GoalKind, conditions ...control.FacetCondition) control.GoalContract {
-	return control.GoalContract{GoalKind: goal, Conditions: conditions}
+func contract(objective model.ObjectiveKind, conditions ...delivery.FacetCondition) delivery.ObjectiveContract {
+	return delivery.ObjectiveContract{ObjectiveKind: objective, Conditions: conditions}
 }
 
-func known(facet model.FacetName, values ...string) control.FacetCondition {
-	return control.FacetCondition{Facet: facet, Statuses: []model.FactStatus{model.FactKnown}, Values: values}
+func known(facet model.FacetName, values ...string) delivery.FacetCondition {
+	return delivery.FacetCondition{Facet: facet, Statuses: []model.FactStatus{model.FactKnown}, Values: values}
 }

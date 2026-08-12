@@ -10,7 +10,7 @@ Event families:
 
 - invocation and engagement;
 - installation, runtime, and configuration;
-- goal and plan;
+- objective and plan;
 - workspace;
 - delivery gates and evidence;
 - publication;
@@ -30,7 +30,7 @@ A normal verified-delivery path is:
 
 ```text
 installation.initialize
-goal.configure
+objective.bind
 engagement.begin
 plan.create -> plan.validate -> plan.approve -> plan.activate
 gate.build.record -> gate.test.record -> gate.review.record
@@ -45,5 +45,5 @@ the exact workspace to become `landed`.
 parse a plan, persist a slice cursor, define PR cardinality, or advance a
 publication sequence.
 
-Recovery outranks ordinary progress. Goal reconfiguration is explicit and may
+Recovery outranks ordinary progress. Objective reconfiguration is explicit and may
 change an active delivery only with human or autonomy authority.

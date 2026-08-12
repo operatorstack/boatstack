@@ -21,14 +21,14 @@ V1 counts to the implemented V2 evidence.
 The existing implementation is projected into two minimal, jointly shipped
 slices. They are logical ownership boundaries, not rollout phases.
 
-| Slice | Domain | Structure | Goal | Operator | Immediate value |
+| Slice | Domain | Structure | Objective | Operator | Immediate value |
 | --- | --- | --- | --- | --- | --- |
 | 1. Compiled control law | Repository-local delivery control | CoreSystem plus one ProgramRuntime and zero or more conservative Extensions compiled into one immutable ControlProgram | Every managed state has a safe path to progress, recovery, authority frontier, or terminal | Compile, observe, resolve, admit, execute, verify, record, recover | Delivery policy can evolve without changing the mechanism that protects authority and effects |
 | 2. Product surfaces | Shipped CLI, hooks, SDK/MCP, hosts, and renderers | One adapter protocol projected from Kernel decisions and prescriptions | Every consumer observes and requests the same compiled semantics | Assemble, decode, invoke, render | Hosts stop acting as independent controllers while useful workflows remain available |
 
 Canonical form for slice 1: one domain, the `ControlProgram` and `Snapshot`
-schemas, the configured `Goal`, and the `Kernel.Handle` operator. Canonical form for slice 2: one domain,
-the `SurfaceRequest`/`SurfaceResponse` schema, the same goal, and the adapter
+schemas, the configured `Objective`, and the `Kernel.Handle` operator. Canonical form for slice 2: one domain,
+the `SurfaceRequest`/`SurfaceResponse` schema, the same objective, and the adapter
 projection operator.
 
 Known constraints are the flag-day cutover, explicit effectful identity,
@@ -90,10 +90,10 @@ CoreSystem + ProgramRuntime + Extensions + RepositoryPolicy
   program runtime, extension implementation, CLI, SDK wrapper, or host renderer.
 - **CoreSystem** declares Boatstack operational capabilities: invocation and
   repository identity, engagement, runtime, configuration, installation,
-  generic goal identity, transactions, recovery, process events, and external
+  generic objective identity, transactions, recovery, process events, and external
   observations.
 - **ProgramRuntime** is one trusted in-process execution binding. It declares
-  goal contracts, facts, transitions, resources, effects, verifiers, recovery,
+  objective contracts, facts, transitions, resources, effects, verifiers, recovery,
   policy projection, and telemetry. The application selects it; repository
   configuration cannot select an arbitrary executable flow.
 - **StandardFlow** is the first-party complete Control Program preserving the familiar
@@ -103,8 +103,8 @@ CoreSystem + ProgramRuntime + Extensions + RepositoryPolicy
   capabilities constrained by the compiler. Subprocess extensions are trusted
   executable boundaries using a strict bounded JSON protocol; they are not OS
   sandboxes. Extensions may add namespaced facts, resources, transitions,
-  recovery, and conjunctive goal obligations, but may not replace the flow,
-  weaken a goal contract, or mutate another owner's state.
+  recovery, and conjunctive objective obligations, but may not replace the flow,
+  weaken a objective contract, or mutate another owner's state.
 - **Surfaces** assemble or invoke a program and render typed results. They do
   not decide lifecycle, terminal state, authority, or recovery.
 
@@ -114,10 +114,10 @@ CoreSystem + ProgramRuntime + Extensions + RepositoryPolicy
 zero or more extension manifests, and canonical program-affecting settings. It
 rejects missing or multiple flows, ID collisions, unnamespaced extension IDs,
 overlapping mutable-resource ownership, undeclared effects or verifiers,
-missing recovery contracts, dependency cycles, and goal constraints that are
+missing recovery contracts, dependency cycles, and objective constraints that are
 not conservative.
 
-The result is immutable and contains one transition registry, one goal-contract
+The result is immutable and contains one transition registry, one objective-contract
 set, one resource-ownership map, compiled handlers, origin metadata, and one
 content fingerprint. The registry is the only runtime graph. There is no core,
 flow, extension, terminal, or verification shadow graph.
@@ -145,13 +145,13 @@ and identity, version, correlation, error classification, and operation type
 are checked at the Kernel boundary.
 
 `sdk.New(...)` assembles CoreSystem plus StandardFlow and repository-scoped
-extensions. `sdk.NewKernel(..., sdk.WithProgramRuntime(runtime), sdk.WithExtension(...))`
+extensions. `sdk.NewProgramClient(..., sdk.WithProgramRuntime(runtime), sdk.WithExtension(...))`
 requires exactly one explicit program runtime and never inserts StandardFlow.
 
 The fingerprint covers the Kernel version; CoreSystem ID, version, manifest,
-and transitions; ProgramRuntime ID, version, manifest, goal contracts, and
+and transitions; ProgramRuntime ID, version, manifest, objective contracts, and
 transitions; extension manifests, versions, executable SHA-256 values,
-settings, goal constraints, and transitions; the compiled transition registry;
+settings, objective constraints, and transitions; the compiled transition registry;
 resource ownership; verifier and recovery declarations; and canonical
 program-affecting repository policy. In this version that repository projection
 is exactly the checksum-bound extension composition; approval, host, visual,
@@ -168,7 +168,7 @@ component declarations:
 
 | Owner | Families | Count |
 | --- | --- | ---: |
-| CoreSystem | `engagement.*`, `invocation.*`, `repository.*`, `runtime.*`, `configuration.*`, `installation.*`, `catalog.*`, `goal.*`, `recovery.*`, `external.*` | 33 |
+| CoreSystem | `engagement.*`, `invocation.*`, `repository.*`, `runtime.*`, `configuration.*`, `installation.*`, `catalog.*`, `objective.*`, `recovery.*`, `external.*` | 33 |
 | StandardFlow | `plan.*`, `workspace.*`, `gate.*`, `evidence.*`, `delivery.*`, `publication.*` | 30 |
 | Extensions in the default distribution | none | 0 |
 | **Compiled total** | one registry | **63** |
@@ -181,7 +181,7 @@ verification facts without taking ownership of that boundary.
 
 Every transition records its origin, owner, manifest fingerprint, and bounded
 selection class: `SYSTEM_RECOVERY`, `PROGRAM_RECOVERY`, `EXTENSION_RECOVERY`,
-`GOAL_REQUIRED`, `PROGRAM_PROGRESS`, `EXPLICIT_ONLY`, or `OBSERVED_EXTERNAL`. Third-party
+`OBJECTIVE_REQUIRED`, `PROGRAM_PROGRESS`, `EXPLICIT_ONLY`, or `OBSERVED_EXTERNAL`. Third-party
 extensions cannot supply raw numeric priority. An extension becomes implicitly
 selectable only to discharge an active unmet extension obligation or its own
 recovery contract.
@@ -199,7 +199,7 @@ semantic managed operation, and the compiled registry maps that operation to a
 transition through `PolicyContract.ManagedOperations`. A custom program that
 does not claim an operation does not inherit StandardFlow transition IDs.
 
-The five software-delivery goal kinds remain closed. The ProgramRuntime supplies
+The five software-delivery objective kinds remain closed. The ProgramRuntime supplies
 the base terminal contract. Extension obligations are conjoined with that
 contract, so for the same base state:
 
@@ -241,7 +241,7 @@ forking Kernel and without parsing CLI output.
 
 ```go
 standardClient, err := sdk.New(stateRoot, sdk.WithExtension(extension))
-customClient, err := sdk.NewKernel(
+customClient, err := sdk.NewProgramClient(
     stateRoot,
     sdk.WithProgramRuntime(programRuntime),
     sdk.WithExtension(extension),
@@ -265,7 +265,7 @@ humans and coding agents. The agent writes software. Boatstack deterministically
 observes the delivery plant, retains explicit identity, establishes engagement,
 resolves legal managed events, binds authority, owns transactional effects,
 verifies postconditions, records receipts, recovers from interruption, and
-establishes whether the configured goal is terminal.
+establishes whether the configured objective is terminal.
 
 The repository owns policy and committed evidence. The kernel owns delivery
 decisions. CLI, hooks, Cursor, Codex, Claude Code, Gemini CLI, SDK, MCP, and future
@@ -277,7 +277,7 @@ Observable behavior is classified only as follows:
 - **PRESERVE:** installation, initialization, update, doctor, embedded/detached/
   hybrid operation, deterministic runtime hydration, explicit repository and
   worktree identity, planning and approval, autonomy, workspaces, build/test/
-  review/change/journey gates, goal-driven run, interruption and resume,
+  review/change/journey gates, objective-driven run, interruption and resume,
   amendments, invalid-plan recovery, publication and correction, merged
   terminals, visual evidence, safety hooks, configuration, cleanup/reap,
   abandonment, portable host guidance, evidence, receipts, and passive
@@ -321,7 +321,7 @@ structural classes carried into V2 are:
 - split transition, identity, configuration, and completion authority;
 - non-injective repository/worktree reverse lookup;
 - ambient engagement and saved-plan leakage;
-- workspace, publication, Git ancestry, and goal-terminal conflation;
+- workspace, publication, Git ancestry, and objective-terminal conflation;
 - stale or self-invalidating runtime/configuration mutation;
 - non-atomic multi-resource and externally uncertain effects;
 - surface, shell, and host prescription divergence;
@@ -353,7 +353,7 @@ x_t = (
 The read-only observer produces `o_t = H(x_t, evidence_t)`. Canonicalization
 produces the control-sufficient `z_t = P(o_t)`. Events are partitioned into
 controllable Boatstack events `Sigma_c` and uncontrollable observed plant events
-`Sigma_u`. For goal `g` and authority set `a`, the supervisor returns the
+`Sigma_u`. For objective `g` and authority set `a`, the supervisor returns the
 admissible set `S(z_t, g, a) subseteq Sigma_c`; deterministic policy selects at
 most one prescribed event. Execution is accepted only as:
 
@@ -379,11 +379,11 @@ Normative properties within declared managed scope:
 1. Safety: forbidden states and events are unreachable.
 2. Inertness: ordinary repository work outside active managed scope is not
    blocked or mutated.
-3. Coreachability: every reachable nonterminal managed state can reach the goal,
+3. Coreachability: every reachable nonterminal managed state can reach the objective,
    a typed recovery path, an authority frontier, or safe abandonment/refusal.
 4. Projection fidelity: `P(x1) = P(x2)` implies equal admissible controllable
    event sets. A distinguishing legal action requires a distinguishing facet.
-5. Determinism: identical snapshot, goal, authority, and request yield identical
+5. Determinism: identical snapshot, objective, authority, and request yield identical
    decisions and typed prescriptions.
 6. Resource preservation: missing, stale, ambiguous, conflicting, or unknown
    evidence never grants delete, publish, overwrite, or advance authority.
@@ -419,7 +419,7 @@ The executable catalog declares exactly 17 controlling facets:
 | Recovery info | exact transaction, cause, source phase, permitted exits, budget, resumption target |
 | Transaction info | exact transition, status, resource digests, external possibility |
 | Terminal | nonterminal, established, stale, unknown, conflicting |
-| Goal | target kind, subject delivery, evidence predicate, frontier policy |
+| Objective | target kind, subject delivery, evidence predicate, frontier policy |
 
 Every controlling fact is a `Fact[T]` containing value/status, evidence source,
 revision or fingerprint, observation time when freshness matters, and explicit
@@ -462,7 +462,7 @@ activation, safety, publication, and adapters consume this snapshot rather than
 recomputing lifecycle subsets.
 
 The snapshot fingerprint covers every fact used by source predicates, authority,
-admission, effects, postconditions, and goal termination. Display-only facts are
+admission, effects, postconditions, and objective termination. Display-only facts are
 explicitly excluded and may not become controlling without a schema change.
 
 ## 6. Event vocabulary
@@ -498,7 +498,7 @@ synchronized with this table.
 | Invocation and engagement | 6 | `engagement.begin`, `engagement.renew`, `engagement.release`, `invocation.rebind`, `repository.attach`, `repository.detach` |
 | Installation, runtime, configuration | 9 | `runtime.hydrate`, `runtime.replace`, `runtime.reconcile`, `configuration.initialize`, `configuration.mutate`, `configuration.reconcile`, `installation.initialize`, `installation.update`, `installation.reconcile-update` |
 | Catalog identity | 1 | `catalog.reconcile` |
-| Goal and plan | 9 | `goal.configure`, `plan.create`, `plan.validate`, `plan.approve`, `plan.activate`, `plan.amend`, `plan.approve-amendment`, `plan.invalidate`, `plan.abandon` |
+| Objective and plan | 9 | `objective.bind`, `plan.create`, `plan.validate`, `plan.approve`, `plan.activate`, `plan.amend`, `plan.approve-amendment`, `plan.invalidate`, `plan.abandon` |
 | Workspace | 8 | `workspace.cut`, `workspace.sync`, `workspace.activate`, `workspace.publish`, `workspace.cleanup`, `workspace.reap`, `workspace.abandon`, `workspace.reconcile` |
 | Delivery gates and evidence | 8 | `gate.build.record`, `gate.test.record`, `gate.review.record`, `gate.change.record`, `gate.journey.record`, `evidence.visual.attach`, `evidence.approval.revoke`, `delivery.slice.advance` |
 | Publication | 6 | `publication.preview`, `publication.execute`, `publication.observe`, `publication.reconcile`, `publication.correct`, `publication.abandon` |
@@ -506,7 +506,7 @@ synchronized with this table.
 | Observed external | 13 | `external.files-changed`, `external.head-changed`, `external.branch-changed`, `external.runtime-disappeared`, `external.configuration-drifted`, `external.lease-expired`, `external.host-interrupted`, `external.ci-completed`, `external.pr-opened`, `external.pr-updated`, `external.pr-closed`, `external.pr-merged`, `external.provider-unavailable` |
 
 Every `Transition` declaration contains: ID and schema version; source predicate;
-event class and controllability; goal relevance; required identity, authority,
+event class and controllability; objective relevance; required identity, authority,
 evidence, and fingerprints; admission predicate; owned resources; local/external
 effects; idempotency binding; typed prescription; expected target predicate;
 independent verifier; interruption points; rollback/compensation; reversibility;
@@ -528,12 +528,12 @@ it is not an independently maintained graph.
 
 ## 8. Supervisory control law
 
-`supervisor.Resolve(snapshot, goal, authority, optionalObservedEvent)` is pure and
+`supervisor.Resolve(snapshot, objective, authority, optionalObservedEvent)` is pure and
 deterministic. It evaluates the executable registry and returns exactly one:
 
 - `CANDIDATE`: one deterministic next transition still needs declared parameters;
 - `PRESCRIBED`: one exact next transition and prescription;
-- `TERMINAL`: goal predicate established by current terminal evidence;
+- `TERMINAL`: objective predicate established by current terminal evidence;
 - `FRONTIER`: a genuine human/reasoning authority decision is required;
 - `BLOCKED`: a known recoverable condition plus its registered recovery event;
 - `REFUSED`: the request is outside admissible managed behavior;
@@ -558,7 +558,7 @@ Knowledge, precondition evidence, authority, and proof of effect are four
 separate objects. A content-addressed `Prescription` binds the exact transition,
 durable state revision, executable program fingerprint, and snapshot fingerprint.
 `Admission` binds that prescription plus transition ID/version, invocation
-identity, goal and plan lock, observation/configuration fingerprints, source
+identity, objective and plan lock, observation/configuration fingerprints, source
 revision, branch/worktree, authority receipt, provider preview, idempotency key,
 and expiry.
 
@@ -677,9 +677,9 @@ decisions name the controlling reason and registered recovery or termination
 path. Repair budgets are monotonic and bounded; exhaustion produces `FRONTIER`
 or safe abandonment rather than an infinite retry loop.
 
-## 13. Goal and terminal semantics
+## 13. Objective and terminal semantics
 
-`Goal` is configured before managed execution and identifies the subject delivery
+`Objective` is configured before managed execution and identifies the subject delivery
 and one terminal predicate: approved plan, verified implementation, open/updated
 PR, merged delivery, or safely abandoned delivery. It also declares required
 evidence freshness and whether a frontier is acceptable as a stopped outcome.
@@ -694,9 +694,9 @@ Terminal is evidence, not a local phase label. Examples:
 - abandonment requires explicit authority and a receipt proving resource policy.
 
 Local green tests, ancestry equality, workspace cleanup eligibility, saved plan
-presence, or an agent's completion assertion cannot establish a goal. External
+presence, or an agent's completion assertion cannot establish a objective. External
 unknown never establishes terminal. Once terminal, unrelated local projections
-cannot resume the flow without a new goal or registered correction transition.
+cannot resume the flow without a new objective or registered correction transition.
 
 ## 14. Package and dependency architecture
 
@@ -706,20 +706,20 @@ Dependencies point downward in this table and are acyclic.
 
 | Package | Owns | Public boundary and verifier | Allowed dependencies | Forbidden dependencies |
 | --- | --- | --- | --- | --- |
-| `internal/kernel/model` | typed facts, identity, snapshot, goal, fingerprints | constructors/canonical encoding; schema and invariant tests | standard library | plant, effects, surfaces, facade |
+| `internal/softwaredelivery/model` | typed facts, identity, snapshot, objective, fingerprints | constructors/canonical encoding; schema and invariant tests | standard library | plant, effects, surfaces, facade |
 | `control` | stable CoreSystem, ProgramRuntime, Extension, and immutable ControlProgram compiler contracts | strict manifests, conservative extension compilation, fingerprints, ownership map | kernel contracts | concrete distribution or surfaces |
 | `core` | 32 operational-capability transition declarations | embedded strict declaration bytes through `CoreManifest` | control contracts | StandardFlow, extensions, surfaces |
-| `flow/standard` | 30 first-party delivery transitions and five base goal contracts | `standard.Definition()` plus default-flow parity, historical, ownership, and completeness tests | control contracts and model vocabulary | Kernel mechanism, CLI, host rendering, SDK |
+| `flow/standard` | 30 first-party delivery transitions and five base objective contracts | `standard.Definition()` plus default-flow parity, historical, ownership, and completeness tests | control contracts and model vocabulary | Kernel mechanism, CLI, host rendering, SDK |
 | `extension/*` | additive in-process and checksum-bound subprocess capabilities | strict extension manifests and bounded runtime protocol | control contracts | Kernel state, admissions, receipts, foreign resources |
-| `internal/kernel/catalog` | transition, registry, and goal-contract mechanism and invariants | read-only registry; uniqueness and recovery-reference validation | model | CoreSystem or StandardFlow declarations, effects, surfaces |
-| `internal/kernel/supervisor` | admissible-set and deterministic outcome law | pure `Resolve`; synthetic mechanism tests through the engine, with StandardFlow parity outside Kernel packages | model, catalog | I/O, effects, surfaces |
-| `internal/kernel/protocol` | prescriptions, admission, receipts, recovery records | typed codecs and content identity verifier | model, catalog | concrete I/O and surfaces |
-| `internal/kernel/durable` | strict machine-state and detached-binding codecs | canonical encode/decode and invariant validation | model, catalog | observation, effects, surfaces |
-| `internal/kernel/ports` | observer, clock, lock, journal, local/external effect ports | compile-time narrow interfaces and fakes | model, protocol | concrete adapters |
-| `internal/kernel/engine` | observe-resolve-admit-execute-reobserve-verify-record orchestration | `Resolve`, `Apply`, `Recover`; protocol/conformance tests | model, catalog, supervisor, protocol, ports | concrete surfaces and host logic |
-| `internal/plant` | Git/worktree identity, layout, configuration, runtime, durable-state and journal observation | one read-only composite observer; fact/fingerprint fixtures | model, protocol, ports, durable codecs | engine decisions, mutating effects, surfaces |
-| `internal/effects` | transactions, local/external effect drivers, trusted StandardFlow native state adapters, and recovery | port implementations; exhaustive admitted-reducer coverage; fault-injection/postcondition tests | model, catalog, durable, protocol, ports, shared supervisor command classifier | surfaces and any decision graph independent of the compiled registry |
-| `internal/surfaces` | request decoding and decision/prescription rendering | CLI/hook/host/SDK/MCP adapter protocol; golden parity tests | model, protocol, engine facade interfaces | plant/effect implementations, lifecycle logic |
+| `internal/softwaredelivery/catalog` | transition, registry, and objective-contract mechanism and invariants | read-only registry; uniqueness and recovery-reference validation | model | CoreSystem or StandardFlow declarations, effects, surfaces |
+| `internal/softwaredelivery/supervisor` | admissible-set and deterministic outcome law | pure `Resolve`; synthetic mechanism tests through the engine, with StandardFlow parity outside Kernel packages | model, catalog | I/O, effects, surfaces |
+| `internal/softwaredelivery/protocol` | prescriptions, admission, receipts, recovery records | typed codecs and content identity verifier | model, catalog | concrete I/O and surfaces |
+| `internal/softwaredelivery/durable` | strict machine-state and detached-binding codecs | canonical encode/decode and invariant validation | model, catalog | observation, effects, surfaces |
+| `internal/softwaredelivery/ports` | observer, clock, lock, journal, local/external effect ports | compile-time narrow interfaces and fakes | model, protocol | concrete adapters |
+| `internal/softwaredelivery/engine` | observe-resolve-admit-execute-reobserve-verify-record orchestration | `Resolve`, `Apply`, `Recover`; protocol/conformance tests | model, catalog, supervisor, protocol, ports | concrete surfaces and host logic |
+| `internal/softwaredelivery/plant` | Git/worktree identity, layout, configuration, runtime, durable-state and journal observation | one read-only composite observer; fact/fingerprint fixtures | model, protocol, ports, durable codecs | engine decisions, mutating effects, surfaces |
+| `internal/softwaredelivery/effects` | transactions, local/external effect drivers, trusted StandardFlow native state adapters, and recovery | port implementations; exhaustive admitted-reducer coverage; fault-injection/postcondition tests | model, catalog, durable, protocol, ports, shared supervisor command classifier | surfaces and any decision graph independent of the compiled registry |
+| `internal/softwaredelivery/surfaces` | request decoding and decision/prescription rendering | CLI/hook/host/SDK/MCP adapter protocol; golden parity tests | model, protocol, engine facade interfaces | plant/effect implementations, lifecycle logic |
 | top-level `boatstack` | stable Kernel facade over one explicit ControlProgram | dependency injection and public operations; end-to-end tests | control, engine, plant, effects, surfaces | StandardFlow, distribution assembly, independent durable state or alternate decisions |
 | `distribution` | Standard distribution composition and repository-scoped extension assembly | `StandardProgram` and `StandardProgramForRepository` | CoreSystem, StandardFlow, verified extensions, control | mutable global program state |
 | `cmd/boatstack-helper` | process startup and command parsing | parse -> facade request -> render; command tests | top-level facade/surfaces | direct plant writes or workflow decisions |
@@ -739,12 +739,12 @@ All surfaces use the same versioned protocol:
 ```text
 SurfaceRequest {
   schema_version, operation(resolve|apply|recover|doctor|catalog|events|guard),
-  repository, host, correlation_id, flow_id?, goal?, transition_id?,
+  repository, host, correlation_id, flow_id?, objective?, transition_id?,
   authority?, parameters?, idempotency_key?, command?
 }
 
 SurfaceResponse {
-  schema_version, operation, goal?, snapshot?, decision?, admission?, receipt?,
+  schema_version, operation, objective?, snapshot?, decision?, admission?, receipt?,
   replayed?, catalog?, events?, doctor?, program_change?, guard?, error?
 }
 ```
@@ -756,7 +756,7 @@ never inspect state files to reconstruct policy.
 
 SDK and MCP expose the protocol, not internal Go packages. The facade resolves
 explicit repository/worktree and executing-runtime identity before observation;
-hosts supply the repository, host, correlation, goal, transition, authority, and
+hosts supply the repository, host, correlation, objective, transition, authority, and
 typed parameters. Cursor, Codex, Claude, Gemini, CLI, and MCP prescriptions are
 projections of one command AST plus host capability data. Host capability can
 affect rendering, never admissibility or target semantics.
@@ -776,7 +776,7 @@ Receipts are the factual source. The facade exposes a passive JSONL reader,
 `boatstack events [--follow] --format jsonl`, over committed receipt projections.
 Telemetry is consumer-neutral and privacy-safe.
 
-Allowlisted fields are schema version, flow ID, sequence, timestamp, goal ID,
+Allowlisted fields are schema version, flow ID, sequence, timestamp, objective ID,
 transition ID, program and prescription identity, prior/resulting state
 revisions, source/target fingerprints, outcome, duration, recovery and authority
 classifications, terminal status, and controlled failure class.
@@ -948,7 +948,7 @@ product operation needs an adapter, it targets the new facade/protocol directly.
 V2 is complete only when all criteria are evidenced at the exact final head.
 
 Architecture: one runtime kernel, catalog, observer, explicit identity,
-admission path, receipt model, recovery model, and goal model own their respective
+admission path, receipt model, recovery model, and objective model own their respective
 laws. The package graph is acyclic and the facade owns no independent durable
 state.
 
@@ -979,7 +979,7 @@ merged.
 
 ## Appendix A. Historical control-law episodes and regression corpus
 
-Each fixture contains initial plant facts, canonical observation, goal, event,
+Each fixture contains initial plant facts, canonical observation, objective, event,
 expected admitted transition, expected postcondition, forbidden transition,
 source provenance, and failure class. Rows may share a stronger class fixture,
 but every cited PR has an explicit provenance edge.
@@ -991,21 +991,21 @@ but every cited PR has an explicit provenance edge.
 | Hooks and malformed host events, PRs #42-#46 | Host-specific inputs diverged or bypassed policy | Hooks/hosts vs native controller | Typed surface request and one admission path | Malformed and replayed host request; remove host decisions |
 | Workspace/config foundation, PRs #51-#52 | Workspace and config projections lost topology/authority distinctions | Workspace lifecycle vs config writer | Composite facts with evidence and one observer | Detached/embedded/hybrid configuration fixtures |
 | Approval/grounding/worktrees, PRs #56-#59 | Authority or worktree identity was inferred from insufficient context | Approval artifacts and path lookup | Exact authority and `InvocationContext` binding | Ambiguous worktree/approval fingerprint fixtures |
-| Deterministic plan and multi-delivery, PRs #61-#64 | One local slice or artifact could choose the wrong delivery | Plan/safety/workflow resolvers | Goal-scoped snapshot and deterministic supervisor | Two deliveries sharing artifacts; remove first-match selection |
+| Deterministic plan and multi-delivery, PRs #61-#64 | One local slice or artifact could choose the wrong delivery | Plan/safety/workflow resolvers | Objective-scoped snapshot and deterministic supervisor | Two deliveries sharing artifacts; remove first-match selection |
 | Publication/config corrections, PRs #68-#78 | Publication, mutation, update, or correction could invalidate its own proof | External provider/config writers vs lifecycle | Preview/admit/execute/observe/reconcile and postcondition receipts | Unknown publication; post-publication correction; remove accepted unverified success |
 | Dual layout and state ledger, PRs #79, #89-#100 | Embedded/detached layouts and stale ledgers produced incompatible answers | Layout/path state vs delivery authority | Topology facts plus authoritative observation/canonicalization | Same logical plant in all topologies; remove path-as-authority |
 | Shadow flow model, PRs #101-#106 | Useful graph/oracle/trajectory existed but was not runtime authority | `internal/deliverycontrol` vs production functions | Executable catalog is runtime and formal model | Generated reachability parity; delete shadow graph |
 | Concurrency/worktree runtime, PRs #111-#123 | Stale runtime/worktree selection and destructive guards raced | Runtime launcher, worktree, cleanup, safety | Exact identity, source fingerprint, scoped lock, preservation on uncertainty | Stale runtime, shared aliases, branch/worktree combinations |
 | Recovery/denial/owners, PRs #124-#138 | Recovery or denial could be overridden or fail to name a path | Local status slices vs repair/ownership policy | Recovery precedence and typed denial with registered correction | Budget exhaustion and contradictory owner evidence |
-| PR state and terminal, PRs #145-#150 | Open/closed/merged and ancestry were collapsed | GitHub projection vs Git graph vs goal | Multi-state publication and goal-specific terminal verifier | Open, closed-unmerged, merged, unavailable, published-not-landed |
+| PR state and terminal, PRs #145-#150 | Open/closed/merged and ancestry were collapsed | GitHub projection vs Git graph vs objective | Multi-state publication and objective-specific terminal verifier | Open, closed-unmerged, merged, unavailable, published-not-landed |
 | Retro/readiness/visuals/insights, PRs #151-#159 | Ancillary evidence could leak into authority or lack freshness | Evidence services vs lifecycle | Separate services; managed writes cross effects, facts retain freshness | Stale evidence and privacy allowlist; remove evidence-presence authority |
-| Update recovery and explicit goal, PRs #161-#163 | Update postconditions or local lifecycle ignored the requested terminal | Update writer/local phase vs goal | Independent verification and goal-first supervisor precedence | Configured PR vs merged terminals; self-invalidating update |
+| Update recovery and explicit objective, PRs #161-#163 | Update postconditions or local lifecycle ignored the requested terminal | Update writer/local phase vs objective | Independent verification and objective-first supervisor precedence | Configured PR vs merged terminals; self-invalidating update |
 | Detached controller/privacy/cloud, PRs #164-#167 | Shared controller paths and external config/cloud facts were non-injective or sensitive | Detached registry/adapters vs repository identity | Explicit invocation plus evidence-source and privacy classifications | Two repos sharing controller alias; unknown external config |
 | Operation/shell/readiness, PRs #168-#170 | Operation drivers and shell guidance could encode different control decisions | Native code vs POSIX/PowerShell/host text | Typed prescription rendered per environment | Semantic shell/host parity; remove hand-authored workflow logic |
 | PR #172, deterministic worktree runtime launcher | Active worktree could select stale/wrong runtime | Launcher lookup vs worktree identity | Bind runtime source/version to explicit invocation | `stale-worktree-runtime-selection` |
 | PR #173, detached launcher hydration | Detached bootstrap lacked a verified runtime and could dead-end | Bootstrap vs detached runtime owner | `runtime.hydrate` recovery before managed execution | `detached-bootstrap-hydration` |
 | PR #174, workspace transition deadlock | Valid workspace states had no next transition | Workspace slice vs delivery resolver | Catalog coreachability and explicit recovery | `workspace-transition-deadlock` |
-| PR #175-#176, cleanup/public lifecycle | Cleanup could act on weak completion/publication signals | Cleanup policy vs publication evidence | Cleanup requires goal/lifecycle predicate and explicit authority | `cleanup-before-publication`; remove cleanup-as-proof |
+| PR #175-#176, cleanup/public lifecycle | Cleanup could act on weak completion/publication signals | Cleanup policy vs publication evidence | Cleanup requires objective/lifecycle predicate and explicit authority | `cleanup-before-publication`; remove cleanup-as-proof |
 | PR #177, saved plans are not active authority | Mere plan presence activated ambient restrictions | Filesystem presence vs engagement | Engagement fact/lease and command scope | `saved-plan-ambient-restriction` |
 | PR #178, detached command admission | Native and detached surfaces disagreed on command permission | Detached launcher vs controller admission | One surface request and admission protocol | `detached-command-admission-mismatch` |
 | PR #179, planning bootstrap authority | Bootstrap commands independently reconstructed planning authority | Helper command vs lifecycle | Map command to catalog ID; kernel resolves | `split-bootstrap-command-authority` |
@@ -1014,7 +1014,7 @@ but every cited PR has an explicit provenance edge.
 | PR #182, explicit engagement | Dormant repositories were affected by ambient Boatstack state | Repository presence/plan vs engagement | Dormant/command/active/conflict facet | `dormant-repository-interference` |
 | PR #183, verified configuration mutation | Successful mutation could invalidate verification | Config writer vs verifier/runtime binding | Binding last, re-observe, independent target check | `configuration-mutation-self-invalidation` |
 | PR #184, test sharding | Large test topology exposed implicit shared assumptions | Test partitions vs hidden global state | Isolated catalog/plant/effect fixtures and deterministic seeds | Cross-shard/race parity; remove test-order authority |
-| PR #185, preserve active workspaces | Branch equal to main or incomplete publication could be read as landed and cleaned | Git ancestry, publication, workspace, active delivery, configured goal | Durable publication evidence, active-delivery precedence, preserve on ambiguity | `unpublished-equal-main-not-landed`, `closed-unmerged-not-cleanup-eligible`, `configured-merged-terminal`, `active-workspace-preserved` |
+| PR #185, preserve active workspaces | Branch equal to main or incomplete publication could be read as landed and cleaned | Git ancestry, publication, workspace, active delivery, configured objective | Durable publication evidence, active-delivery precedence, preserve on ambiguity | `unpublished-equal-main-not-landed`, `closed-unmerged-not-cleanup-eligible`, `configured-merged-terminal`, `active-workspace-preserved` |
 
 Additional class fixtures required even when covered by stronger rows are:
 activation from the wrong worktree identity; ambiguous detached controller alias;

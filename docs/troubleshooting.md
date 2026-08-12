@@ -35,7 +35,7 @@ authority is mandatory in addition to human/autonomy for external publication.
 
 ## A transition is REFUSED
 
-The requested transition does not match the current source predicate or goal.
+The requested transition does not match the current source predicate or objective.
 Run `status --format json` and `next --format json`. Do not edit state files or
 retry through another host.
 

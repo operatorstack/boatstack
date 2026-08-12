@@ -33,7 +33,7 @@ rewrite deletes:
 
 The conservative removed V1 managed-effect surface is therefore 120 sites.
 V2's static source inventory fails if an `os` writer exists outside
-`internal/effects`, if a command boundary exists outside the exact plant/effect
+`internal/softwaredelivery/effects`, if a command boundary exists outside the exact plant/effect
 allowlist, if a production file is unclassified, or if the deleted shadow
 controller is imported or recreated.
 
@@ -70,7 +70,7 @@ required-visual terminal until revision-bound evidence exists.
 
 The historical corpus contains 22 typed fixtures. It covers every PR from #172
 through #185 and the additional ambiguity, interruption, stale-runtime,
-publication, workspace, configuration, and goal-terminal failure classes named
+publication, workspace, configuration, and objective-terminal failure classes named
 in the V2 specification.
 
 Live integration tests exercise embedded and detached installation, attach and

@@ -7,16 +7,16 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/operatorstack/boatstack/boatstack/control"
-	"github.com/operatorstack/boatstack/boatstack/internal/effects"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
+	"github.com/operatorstack/boatstack/boatstack/delivery"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/ports"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 )
 
 type programEffectDriver struct {
 	base     ports.EffectDriver
-	program  control.ControlProgram
+	program  delivery.ControlProgram
 	resolver ports.InvocationResolver
 	clock    ports.Clock
 }
@@ -35,7 +35,7 @@ func (d programEffectDriver) Prepare(ctx context.Context, admission protocol.Adm
 	}
 	if transition.Origin.Kind == catalog.OriginControlProgram {
 		flow := d.program.ProgramRuntime()
-		if flow.Manifest.RuntimeMode == control.ProgramRuntimeNative {
+		if flow.Manifest.RuntimeMode == delivery.ProgramRuntimeNative {
 			return d.base.Prepare(ctx, admission, transition)
 		}
 		if flow.Runtime == nil {
@@ -45,15 +45,15 @@ func (d programEffectDriver) Prepare(ctx context.Context, admission protocol.Adm
 		if err != nil {
 			return nil, err
 		}
-		request := control.ProgramRuntimeRequest{
-			ProtocolVersion: control.ProgramRuntimeProtocolVersion, ProgramID: flow.Identity.ID, ProgramVersion: flow.Identity.Version,
+		request := delivery.ProgramRuntimeRequest{
+			ProtocolVersion: delivery.ProgramRuntimeProtocolVersion, ProgramID: flow.Identity.ID, ProgramVersion: flow.Identity.Version,
 			ProgramFingerprint: admission.ExpectedProgramFingerprint, CorrelationID: admission.Invocation.Correlation,
 			RepositoryRoot: admission.Invocation.InvokingPath, TransitionID: transition.ID, Parameters: parameters, Settings: flow.Manifest.Settings,
-			Capabilities: append([]control.Capability(nil), admission.EffectiveCapabilities...),
+			Capabilities: append([]delivery.Capability(nil), admission.EffectiveCapabilities...),
 		}
 		if transition.Class == catalog.EventOwnedExternal {
 			prepared, err := effects.NewExtensionExternalPrepared(func(executionContext context.Context) (ports.EffectResult, error) {
-				request.Operation = control.ProgramExecuteExternalOperation
+				request.Operation = delivery.ProgramExecuteExternalOperation
 				response, invokeErr := flow.Runtime.InvokeProgram(executionContext, request)
 				if invokeErr != nil {
 					return ports.EffectResult{}, invokeErr
@@ -68,9 +68,9 @@ func (d programEffectDriver) Prepare(ctx context.Context, admission protocol.Adm
 			}
 			return effects.BindStateRevision(ctx, prepared, d.resolver, d.clock, admission, transition)
 		}
-		operation := control.ProgramPlanLocalEffectOperation
+		operation := delivery.ProgramPlanLocalEffectOperation
 		if transition.Class == catalog.EventRecovery {
-			operation = control.ProgramRecoverOperation
+			operation = delivery.ProgramRecoverOperation
 		}
 		request.Operation = operation
 		response, invokeErr := flow.Runtime.InvokeProgram(ctx, request)
@@ -97,16 +97,16 @@ func (d programEffectDriver) Prepare(ctx context.Context, admission protocol.Adm
 	if err != nil {
 		return nil, err
 	}
-	baseRequest := control.ExtensionRequest{
-		ProtocolVersion: control.ExtensionProtocolVersion, ExtensionID: extension.Identity.ID, ExtensionVersion: extension.Identity.Version,
+	baseRequest := delivery.ExtensionRequest{
+		ProtocolVersion: delivery.ExtensionProtocolVersion, ExtensionID: extension.Identity.ID, ExtensionVersion: extension.Identity.Version,
 		ProgramFingerprint: admission.ExpectedProgramFingerprint, CorrelationID: admission.Invocation.Correlation,
 		RepositoryRoot: admission.Invocation.InvokingPath, TransitionID: transition.ID, Parameters: parameters, Settings: extension.Manifest.Settings,
-		Capabilities: append([]control.Capability(nil), admission.EffectiveCapabilities...),
+		Capabilities: append([]delivery.Capability(nil), admission.EffectiveCapabilities...),
 	}
 	if transition.Class == catalog.EventOwnedExternal {
 		prepared, err := effects.NewExtensionExternalPrepared(func(executionContext context.Context) (ports.EffectResult, error) {
 			request := baseRequest
-			request.Operation = control.ExtensionExecuteExternalOperation
+			request.Operation = delivery.ExtensionExecuteExternalOperation
 			response, invokeErr := extension.Runtime.Invoke(executionContext, request)
 			if invokeErr != nil {
 				return ports.EffectResult{}, invokeErr
@@ -121,9 +121,9 @@ func (d programEffectDriver) Prepare(ctx context.Context, admission protocol.Adm
 		}
 		return effects.BindStateRevision(ctx, prepared, d.resolver, d.clock, admission, transition)
 	}
-	operation := control.ExtensionPlanLocalEffectOperation
+	operation := delivery.ExtensionPlanLocalEffectOperation
 	if transition.Class == catalog.EventRecovery {
-		operation = control.ExtensionRecoverOperation
+		operation = delivery.ExtensionRecoverOperation
 	}
 	baseRequest.Operation = operation
 	response, err := extension.Runtime.Invoke(ctx, baseRequest)
@@ -143,7 +143,7 @@ func (d programEffectDriver) Prepare(ctx context.Context, admission protocol.Adm
 	return effects.BindStateRevision(ctx, prepared, d.resolver, d.clock, admission, transition)
 }
 
-func validateProgramWrites(program control.ControlProgram, transition catalog.Transition, owner string, writes []control.ResourceWrite) error {
+func validateProgramWrites(program delivery.ControlProgram, transition catalog.Transition, owner string, writes []delivery.ResourceWrite) error {
 	allowed := map[string]bool{}
 	for _, resource := range transition.OwnedResources {
 		allowed[resource] = true

@@ -122,7 +122,7 @@ configuration source by first-match path discovery.
 
 ```sh
 boatstack attach --repo . --human alice \
-  --goal-id bootstrap --goal-kind approved-plan --delivery bootstrap \
+  --objective-id bootstrap --objective-kind approved-plan --delivery bootstrap \
   --param topology=detached --param config_authority=external
 ```
 

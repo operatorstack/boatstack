@@ -7,16 +7,16 @@ import (
 	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/buildinfo"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
-	"github.com/operatorstack/boatstack/boatstack/internal/surfaces"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
 	"github.com/operatorstack/boatstack/boatstack/internal/testprogram"
 )
 
 func TestEveryFriendlyMutationAliasMapsToOneRegistryTransition(t *testing.T) {
 	// control-law: cli-verbs-are-adapters-not-transition-authority
 	registry := testprogram.StandardRegistry()
-	commands := []string{"init", "update", "attach", "detach", "hydrate-runtime", "configure", "goal-configure", "plan-create", "plan-validate", "plan-approve", "plan-activate", "plan-amend", "workspace-cut", "workspace-sync", "workspace-cleanup", "workspace-reap", "record-build", "record-test", "record-review", "record-change", "record-journey", "publication-preview", "publish-pr", "observe-pr", "correct-pr", "abandon"}
+	commands := []string{"init", "update", "attach", "detach", "hydrate-runtime", "configure", "objective-bind", "plan-create", "plan-validate", "plan-approve", "plan-activate", "plan-amend", "workspace-cut", "workspace-sync", "workspace-cleanup", "workspace-reap", "record-build", "record-test", "record-review", "record-change", "record-journey", "publication-preview", "publish-pr", "observe-pr", "correct-pr", "abandon"}
 	for _, command := range commands {
 		operation, transitionID, _, err := classifyCommand(command)
 		if err != nil {
@@ -38,13 +38,13 @@ func TestParametersRejectMissingEquals(t *testing.T) {
 	}
 }
 
-func TestApplyWithoutRestatedGoalGetsCommandScopedFlowIdentity(t *testing.T) {
+func TestApplyWithoutRestatedObjectiveGetsCommandScopedFlowIdentity(t *testing.T) {
 	request, err := buildRequest(surfaces.OperationApply, commandOptions{transitionID: "installation.update", host: "cli", repository: "."})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if request.FlowID == "" || request.Goal.ID != "" {
-		t.Fatalf("request did not preserve configured-goal lookup with a generated flow: %#v", request)
+	if request.FlowID == "" || request.Objective.ID != "" {
+		t.Fatalf("request did not preserve configured-objective lookup with a generated flow: %#v", request)
 	}
 }
 
@@ -83,7 +83,7 @@ func TestTransitionReceiptCannotBeLoadedAsAuthority(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"schema_version":5,"id":"trc-old"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := loadAuthority(commandOptions{authorityReceipts: stringList{path}}, "correlation", model.Goal{}, time.Now().UTC())
+	_, err := loadAuthority(commandOptions{authorityReceipts: stringList{path}}, "correlation", model.Objective{}, time.Now().UTC())
 	if err == nil {
 		t.Fatal("transition receipt was accepted as authority")
 	}

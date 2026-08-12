@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/operatorstack/boatstack/boatstack/control"
+	"github.com/operatorstack/boatstack/boatstack/delivery"
 	"github.com/operatorstack/boatstack/boatstack/flow/standard"
 )
 
@@ -24,16 +24,16 @@ func TestManifestOwnsOnlyStandardDeliverySemantics(t *testing.T) {
 			t.Errorf("StandardFlow owns non-delivery transition %s", id)
 		}
 	}
-	if len(manifest.GoalContracts) != 5 {
-		t.Fatalf("goal contracts = %d, want 5", len(manifest.GoalContracts))
+	if len(manifest.ObjectiveContracts) != 5 {
+		t.Fatalf("objective contracts = %d, want 5", len(manifest.ObjectiveContracts))
 	}
-	for _, goal := range []control.GoalKind{control.GoalApprovedPlan, control.GoalVerified, control.GoalOpenPR, control.GoalMerged, control.GoalAbandoned} {
+	for _, objective := range []delivery.ObjectiveKind{delivery.ObjectiveApprovedPlan, delivery.ObjectiveVerified, delivery.ObjectiveOpenPR, delivery.ObjectiveMerged, delivery.ObjectiveAbandoned} {
 		found := false
-		for _, contract := range manifest.GoalContracts {
-			found = found || contract.GoalKind == goal
+		for _, contract := range manifest.ObjectiveContracts {
+			found = found || contract.ObjectiveKind == objective
 		}
 		if !found {
-			t.Errorf("missing goal contract %s", goal)
+			t.Errorf("missing objective contract %s", objective)
 		}
 	}
 }

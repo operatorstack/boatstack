@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
-	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/testprogram"
 )
 
@@ -49,7 +49,7 @@ func TestEveryControllingFacetAndEventIsClassifiedByTheRuntimeCatalog(t *testing
 			t.Errorf("controlling facet %s is absent from executable predicates", facet)
 		}
 	}
-	want := map[string]int{"invocation-engagement": 6, "installation-runtime-configuration": 9, "catalog": 1, "goal-plan": 9, "workspace": 8, "gate-evidence-delivery": 8, "publication": 6, "recovery": 3, "external": 13}
+	want := map[string]int{"invocation-engagement": 6, "installation-runtime-configuration": 9, "catalog": 1, "objective-plan": 9, "workspace": 8, "gate-evidence-delivery": 8, "publication": 6, "recovery": 3, "external": 13}
 	for family, count := range want {
 		if families[family] != count {
 			t.Errorf("family %s=%d, want %d", family, families[family], count)
@@ -75,8 +75,8 @@ func familyFor(id catalog.TransitionID) string {
 		return "installation-runtime-configuration"
 	case strings.HasPrefix(value, "catalog."):
 		return "catalog"
-	case strings.HasPrefix(value, "goal."), strings.HasPrefix(value, "plan."):
-		return "goal-plan"
+	case strings.HasPrefix(value, "objective."), strings.HasPrefix(value, "plan."):
+		return "objective-plan"
 	case strings.HasPrefix(value, "workspace."):
 		return "workspace"
 	case strings.HasPrefix(value, "gate."), strings.HasPrefix(value, "evidence."), strings.HasPrefix(value, "delivery."):
@@ -142,17 +142,17 @@ func TestSourceInventoryHasNoWriterOrLifecycleAuthorityOutsideOwnedPackages(t *t
 				return true
 			}
 			importPath := imports[owner.Name]
-			if importPath == "os" && writerCalls[selector.Sel.Name] && !strings.HasPrefix(relative, "internal/effects/") && !strings.HasPrefix(relative, "internal/runtime/") {
+			if importPath == "os" && writerCalls[selector.Sel.Name] && !strings.HasPrefix(relative, "internal/softwaredelivery/effects/") && !strings.HasPrefix(relative, "internal/runtime/") {
 				t.Errorf("managed writer os.%s escaped effects package in %s", selector.Sel.Name, relative)
 			}
 			if importPath == "os/exec" && (selector.Sel.Name == "Command" || selector.Sel.Name == "CommandContext") {
-				if relative != "internal/effects/command_boundary.go" && relative != "internal/plant/resolver.go" && relative != "extension/subprocess/subprocess.go" && relative != "internal/runtime/exec_windows.go" {
+				if relative != "internal/softwaredelivery/effects/command_boundary.go" && relative != "internal/softwaredelivery/plant/resolver.go" && relative != "extension/subprocess/subprocess.go" && relative != "internal/runtime/exec_windows.go" {
 					t.Errorf("unclassified command boundary in %s", relative)
 				}
 			}
-			if strings.HasSuffix(importPath, "/internal/kernel/model") && lifecycleSelector(selector.Sel.Name) &&
-				!strings.HasPrefix(relative, "internal/kernel/") && !strings.HasPrefix(relative, "internal/effects/") && !strings.HasPrefix(relative, "internal/plant/") &&
-				!strings.HasPrefix(relative, "control/") && !strings.HasPrefix(relative, "flow/") && !strings.HasPrefix(relative, "extension/") {
+			if strings.HasSuffix(importPath, "/internal/softwaredelivery/model") && lifecycleSelector(selector.Sel.Name) &&
+				!strings.HasPrefix(relative, "internal/softwaredelivery/") && !strings.HasPrefix(relative, "internal/softwaredelivery/effects/") && !strings.HasPrefix(relative, "internal/softwaredelivery/plant/") &&
+				!strings.HasPrefix(relative, "delivery/") && !strings.HasPrefix(relative, "flow/") && !strings.HasPrefix(relative, "extension/") {
 				t.Errorf("lifecycle selector model.%s escaped kernel/plant/effects in %s", selector.Sel.Name, relative)
 			}
 			return true
@@ -174,7 +174,7 @@ func TestSourceInventoryHasNoWriterOrLifecycleAuthorityOutsideOwnedPackages(t *t
 
 func TestEveryControllableRuntimeEventHasAnExecutableStateReducer(t *testing.T) {
 	// control-law: registry-entry-cannot-exist-without-runtime-effect-reduction
-	path := filepath.Join(sourceRoot(t), "internal", "effects", "state_reducer.go")
+	path := filepath.Join(sourceRoot(t), "internal", "softwaredelivery", "effects", "state_reducer.go")
 	parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -216,10 +216,10 @@ func TestEveryControllableRuntimeEventHasAnExecutableStateReducer(t *testing.T) 
 }
 
 func TestPackageImportsPreserveControlProgramDependencyDirection(t *testing.T) {
-	// control-law: kernel-mechanism-cannot-depend-on-standard-flow-or-product-surfaces
+	// control-law: general-kernel-cannot-depend-on-software-delivery
 	root := sourceRoot(t)
-	forbiddenKernel := []string{"/flow/standard", "/distribution", "/sdk", "/cmd/boatstack-helper"}
-	forbiddenFlow := []string{"/distribution", "/sdk", "/cmd/boatstack-helper", "/internal/surfaces"}
+	forbiddenKernel := []string{"/internal/softwaredelivery", "/flow/standard", "/distribution", "/sdk", "/cmd/boatstack-helper"}
+	forbiddenFlow := []string{"/distribution", "/sdk", "/cmd/boatstack-helper", "/internal/softwaredelivery/surfaces"}
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -232,7 +232,7 @@ func TestPackageImportsPreserveControlProgramDependencyDirection(t *testing.T) {
 			return err
 		}
 		relative = filepath.ToSlash(relative)
-		kernelOwned := relative == "kernel.go" || relative == "program_effects.go" || relative == "program_observer.go" || strings.HasPrefix(relative, "internal/kernel/")
+		kernelOwned := strings.HasPrefix(relative, "kernel/")
 		flowOwned := strings.HasPrefix(relative, "flow/")
 		if !kernelOwned && !flowOwned {
 			return nil
@@ -262,13 +262,12 @@ func TestPackageImportsPreserveControlProgramDependencyDirection(t *testing.T) {
 }
 
 func classifiedProductionFile(relative string) bool {
-	return relative == "kernel.go" || relative == "program_effects.go" || relative == "program_observer.go" || strings.HasPrefix(relative, "cmd/boatstack-helper/") ||
-		strings.HasPrefix(relative, "control/") || strings.HasPrefix(relative, "core/") ||
+	return relative == "delivery_controller.go" || relative == "program_effects.go" || relative == "program_observer.go" || strings.HasPrefix(relative, "cmd/boatstack-helper/") ||
+		strings.HasPrefix(relative, "delivery/") || strings.HasPrefix(relative, "core/") ||
 		strings.HasPrefix(relative, "flow/") || strings.HasPrefix(relative, "distribution/") || strings.HasPrefix(relative, "extension/") ||
-		strings.HasPrefix(relative, "internal/kernel/") || strings.HasPrefix(relative, "internal/plant/") ||
-		strings.HasPrefix(relative, "internal/effects/") || strings.HasPrefix(relative, "internal/surfaces/") ||
+		strings.HasPrefix(relative, "internal/softwaredelivery/") ||
 		strings.HasPrefix(relative, "internal/buildinfo/") || strings.HasPrefix(relative, "internal/runtime/") ||
-		strings.HasPrefix(relative, "internal/retromine/") || strings.HasPrefix(relative, "internal/testprogram/") || strings.HasPrefix(relative, "sdk/") ||
+		strings.HasPrefix(relative, "internal/retromine/") || strings.HasPrefix(relative, "internal/testprogram/") || strings.HasPrefix(relative, "kernel/") || strings.HasPrefix(relative, "sdk/") ||
 		strings.HasPrefix(relative, "analysis/")
 }
 

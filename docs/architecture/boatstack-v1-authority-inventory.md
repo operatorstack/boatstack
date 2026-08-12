@@ -26,7 +26,7 @@ boatstack/decision.go:49:func ResolvePlanDecision(input PlanDecisionInput) Decis
 boatstack/delivery_terminal.go:23:func normalizeDeliveryTerminal(value string) (DeliveryTerminal, bool) {
 boatstack/delivery_terminal.go:38:func configuredDeliveryTerminal(repo string) DeliveryTerminal {
 boatstack/delivery_terminal.go:51:func resolveDeliveryTerminal(repo, feature string) DeliveryTerminal {
-boatstack/delivery_terminal.go:66:func deliveryGoalSnapshot(repo string) string {
+boatstack/delivery_terminal.go:66:func deliveryObjectiveSnapshot(repo string) string {
 boatstack/engagement.go:57:func engagementLeasePath(repo string) (string, error) {
 boatstack/engagement.go:65:func dormantEngagement(reason string) EngagementStatus {
 boatstack/engagement.go:73:func ResolveEngagement(repoPath string, request EngagementRequest) EngagementStatus {
