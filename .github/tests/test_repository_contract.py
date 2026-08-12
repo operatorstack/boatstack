@@ -122,6 +122,52 @@ class RepositoryContract(unittest.TestCase):
             self.assertNotIn("operatorstack/intelligence-flow", value, workflow)
             self.assertNotIn("sync/intelligence-flow-", value, workflow)
             self.assertNotIn("UPSTREAM.json", value, workflow)
+
+    def test_codex_review_is_secret_scoped_read_only_and_structured(self) -> None:
+        workflow = (REPO / ".github" / "workflows" / "codex-review.yml").read_text()
+        prompt = (REPO / ".github" / "codex" / "review-prompt.md").read_text()
+        schema = json.loads((REPO / ".github" / "codex" / "review-output-schema.json").read_text())
+
+        self.assertIn("pull_request:", workflow)
+        self.assertNotIn("pull_request_target", workflow)
+        self.assertIn("CODEX_REVIEWER_API", workflow)
+        self.assertIn("head.repo.full_name", workflow)
+        self.assertIn("not configured", workflow)
+        self.assertIn("persist-credentials: false", workflow)
+        self.assertIn('git merge-base "$BASE_SHA" "$HEAD_SHA"', workflow)
+        self.assertIn('git show "$BASE_SHA:.github/codex/review-prompt.md"', workflow)
+        self.assertIn('git show "$BASE_SHA:.github/codex/review-output-schema.json"', workflow)
+        self.assertIn("output-schema-file: ${{ steps.policy.outputs.schema }}", workflow)
+        self.assertNotIn("cp .github/codex/review-prompt.md", workflow)
+        self.assertIn("base revision has no admitted review policy", workflow)
+        self.assertIn("first 200 shown", workflow)
+        self.assertNotIn('diff --unified=5 "$BASE_SHA" "$HEAD_SHA"', workflow)
+        self.assertIn("permission-profile: \":read-only\"", workflow)
+        self.assertIn("safety-strategy: drop-sudo", workflow)
+        self.assertRegex(workflow, r"openai/codex-action@[0-9a-f]{40}")
+        self.assertIn("pull-requests: write", workflow)
+        self.assertIn("contents: read", workflow)
+        self.assertIn("gpt-5.6-sol", workflow)
+        self.assertIn("CODEX_REVIEW_EFFORT || 'high'", workflow)
+        self.assertIn("untrusted data", prompt)
+        self.assertIn("`LEFT` for deleted lines", prompt)
+        self.assertIn("Resolver / apply agreement", prompt)
+        self.assertIn("Receipts as facts", prompt)
+        self.assertIn("Questions for model-level verification", prompt)
+        self.assertIn("Return only the object required by the supplied output schema", prompt)
+        self.assertEqual(
+            set(schema["required"]),
+            {"findings", "overall_correctness", "overall_explanation", "overall_confidence_score"},
+        )
+        finding = schema["properties"]["findings"]["items"]
+        self.assertEqual(
+            set(finding["required"]),
+            {"title", "body", "confidence_score", "priority", "code_location"},
+        )
+        location = finding["properties"]["code_location"]
+        self.assertIn("side", location["required"])
+        self.assertEqual(location["properties"]["side"]["enum"], ["LEFT", "RIGHT"])
+        self.assertIn("side: .code_location.side", workflow)
         self.assertFalse((REPO / "UPSTREAM.json").exists())
 
     def test_release_builds_six_checksum_bound_v2_runtimes(self) -> None:

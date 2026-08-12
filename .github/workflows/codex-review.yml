@@ -1,0 +1,165 @@
+# Boatstack-owned advisory review plane.
+name: Codex code review
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: codex-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: codex-review
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Check reviewer configuration
+        id: configuration
+        env:
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          REVIEWER_API_KEY: ${{ secrets.CODEX_REVIEWER_API }}
+        shell: bash
+        run: |
+          if [[ "$HEAD_REPOSITORY" != "$REPOSITORY" ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Codex review is disabled for fork pull requests." >> "$GITHUB_STEP_SUMMARY"
+          elif [[ -z "$REVIEWER_API_KEY" ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Codex review is ready but CODEX_REVIEWER_API is not configured." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout pull request merge commit
+        if: steps.configuration.outputs.enabled == 'true'
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+
+      - name: Fetch exact base and head revisions
+        if: steps.configuration.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          git fetch --no-tags origin \
+            "+refs/pull/${PR_NUMBER}/head:refs/remotes/origin/codex-review-head"
+          git cat-file -e "$BASE_SHA^{commit}"
+          test "$(git rev-parse refs/remotes/origin/codex-review-head)" = "$HEAD_SHA"
+
+      - name: Load admitted review policy
+        if: steps.configuration.outputs.enabled == 'true'
+        id: policy
+        shell: bash
+        run: |
+          prompt="$RUNNER_TEMP/codex-review-prompt.md"
+          schema="$RUNNER_TEMP/codex-review-output-schema.json"
+          if ! git cat-file -e "$BASE_SHA:.github/codex/review-prompt.md" || \
+             ! git cat-file -e "$BASE_SHA:.github/codex/review-output-schema.json"; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Automated review is skipped because the base revision has no admitted review policy." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git show "$BASE_SHA:.github/codex/review-prompt.md" > "$prompt"
+          git show "$BASE_SHA:.github/codex/review-output-schema.json" > "$schema"
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+          echo "path=$prompt" >> "$GITHUB_OUTPUT"
+          echo "schema=$schema" >> "$GITHUB_OUTPUT"
+
+      - name: Build review prompt
+        if: steps.configuration.outputs.enabled == 'true' && steps.policy.outputs.enabled == 'true'
+        id: prompt
+        shell: bash
+        run: |
+          prompt="${{ steps.policy.outputs.path }}"
+          merge_base="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
+          changed_count="$(git diff --name-only "$merge_base" "$HEAD_SHA" | wc -l | tr -d ' ')"
+          {
+            echo
+            echo "Repository: $REPOSITORY"
+            echo "Pull request: $PR_NUMBER"
+            echo "Base revision: $BASE_SHA"
+            echo "Head revision: $HEAD_SHA"
+            echo "Merge base: $merge_base"
+            echo
+            echo "Changed files: $changed_count total (first 200 shown)"
+            git --no-pager diff --name-status "$merge_base" "$HEAD_SHA" | sed -n '1,200p'
+            echo
+            echo "Diff summary:"
+            git --no-pager diff --shortstat "$merge_base" "$HEAD_SHA"
+            echo
+            echo "Inspect the exact pull request change with:"
+            echo "git --no-pager diff --unified=5 $merge_base $HEAD_SHA"
+            echo "Read only the relevant portions needed to review the change."
+          } >> "$prompt"
+          echo "path=$prompt" >> "$GITHUB_OUTPUT"
+
+      - name: Run structured Codex review
+        if: steps.configuration.outputs.enabled == 'true' && steps.policy.outputs.enabled == 'true'
+        id: codex
+        uses: openai/codex-action@dd78cb653811af44014baa08fe954e28d32c1bf9 # main, 2026-08-12
+        with:
+          openai-api-key: ${{ secrets.CODEX_REVIEWER_API }}
+          prompt-file: ${{ steps.prompt.outputs.path }}
+          output-schema-file: ${{ steps.policy.outputs.schema }}
+          output-file: ${{ runner.temp }}/codex-review-output.json
+          permission-profile: ":read-only"
+          safety-strategy: drop-sudo
+          codex-version: "0.147.0"
+          model: ${{ vars.CODEX_REVIEW_MODEL || 'gpt-5.6-sol' }}
+          effort: ${{ vars.CODEX_REVIEW_EFFORT || 'high' }}
+
+      - name: Validate structured review
+        if: steps.configuration.outputs.enabled == 'true' && steps.policy.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          test -s "$RUNNER_TEMP/codex-review-output.json"
+          jq -e '
+            (.findings | type == "array") and
+            (.overall_correctness == "patch is correct" or .overall_correctness == "patch is incorrect") and
+            (.overall_confidence_score >= 0 and .overall_confidence_score <= 1)
+          ' "$RUNNER_TEMP/codex-review-output.json" >/dev/null
+
+      - name: Publish GitHub review
+        if: steps.configuration.outputs.enabled == 'true' && steps.policy.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          jq \
+            --arg commit "$HEAD_SHA" \
+            --arg workspace "$GITHUB_WORKSPACE" \
+            '{
+              commit_id: $commit,
+              event: "COMMENT",
+              body: ("Codex automated review\n\nVerdict: " + .overall_correctness + "\nConfidence: " + (.overall_confidence_score | tostring) + "\n\n" + .overall_explanation),
+              comments: [.findings[] | {
+                path: (.code_location.absolute_file_path | ltrimstr($workspace + "/") | ltrimstr("./")),
+                line: .code_location.line_range.end,
+                side: .code_location.side,
+                start_line: (if .code_location.line_range.start == .code_location.line_range.end then null else .code_location.line_range.start end),
+                start_side: (if .code_location.line_range.start == .code_location.line_range.end then null else .code_location.side end),
+                body: ("[P" + (.priority | tostring) + "] " + .title + "\n\n" + .body + "\n\nConfidence: " + (.confidence_score | tostring))
+              } | with_entries(select(.value != null))]
+            }' "$RUNNER_TEMP/codex-review-output.json" > "$RUNNER_TEMP/codex-github-review.json"
+          jq -e 'all(.comments[];
+            ((.path | length) > 0) and
+            (((.path | startswith("/")) or (.path | startswith("../")) or (.path | contains("/../"))) | not) and
+            ((.start_line // .line) <= .line)
+          )' \
+            "$RUNNER_TEMP/codex-github-review.json" >/dev/null
+          gh api \
+            --method POST \
+            "repos/$REPOSITORY/pulls/$PR_NUMBER/reviews" \
+            --input "$RUNNER_TEMP/codex-github-review.json"
