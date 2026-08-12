@@ -51,6 +51,8 @@ type Scenario struct {
 	ChangeObservation     func()
 	RebindObjective       func(kernel.Objective)
 	BumpStateRevision     func()
+	RetargetProgram       func(kernel.ProgramIdentity)
+	AdvanceClock          func(time.Duration)
 	IndependentLocker     func() kernel.Locker
 	VerifyCommitted       func(Snapshot, Snapshot, kernel.Receipt) error
 	InterruptNextOperator func()
@@ -87,6 +89,8 @@ func (suite KernelConformance) Run(t *testing.T) {
 	t.Run("stale_prescription_precedes_effects", suite.stalePrescriptionPrecedesEffects)
 	t.Run("authority_denial_fails_closed", suite.authorityDenialFailsClosed)
 	t.Run("future_authority_fails_closed", suite.futureAuthorityFailsClosed)
+	t.Run("expired_authority_fails_closed", suite.expiredAuthorityFailsClosed)
+	t.Run("authority_expiry_invalidates_prescription_before_effects", suite.authorityExpiryInvalidatesPrescription)
 	t.Run("capability_classifier_cannot_be_weakened", suite.capabilityClassifierCannotBeWeakened)
 	t.Run("targeted_and_untargeted_share_one_relation", suite.targetedAndUntargetedShareRelation)
 	t.Run("interrupted_operator_requires_explicit_recovery", suite.interruptedOperatorRequiresExplicitRecovery)
@@ -161,19 +165,37 @@ func (suite KernelConformance) stateRevisionInvalidatesPrescription(t *testing.T
 }
 
 func (suite KernelConformance) programFingerprintInvalidatesPrescription(t *testing.T) {
-	fixture, runtime := suite.fresh(t, SetupBound)
-	transition := fixture.Scenario.AdvanceTransitions[0]
-	request, prescription := resolve(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective, fixture.Scenario.Authority)
-	alternate, err := kernel.NewRuntime(fixture.Scenario.AlternateProgram, fixture.Domain, fixture.Operator, fixture.CapabilityClassifier, fixture.Store, fixture.Locker, fixture.Clock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	before := fixture.Scenario.Snapshot()
-	_, err = alternate.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
-	after := fixture.Scenario.Snapshot()
-	if unchangedErr := refusedApplyMutationError(before, after, transition); err == nil || unchangedErr != nil {
-		t.Fatalf("control-law program-fingerprint-freshness: error=%v mutation=%v before=%#v after=%#v", err, unchangedErr, before, after)
-	}
+	t.Run("executable_mismatch", func(t *testing.T) {
+		fixture, runtime := suite.fresh(t, SetupBound)
+		transition := fixture.Scenario.AdvanceTransitions[0]
+		request, prescription := resolve(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective, fixture.Scenario.Authority)
+		alternate, err := kernel.NewRuntime(fixture.Scenario.AlternateProgram, fixture.Domain, fixture.Operator, fixture.CapabilityClassifier, fixture.Store, fixture.Locker, fixture.Clock)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before := fixture.Scenario.Snapshot()
+		_, err = alternate.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
+		after := fixture.Scenario.Snapshot()
+		if unchangedErr := refusedApplyMutationError(before, after, transition); err == nil || unchangedErr != nil {
+			t.Fatalf("control-law executable-program-freshness: error=%v mutation=%v before=%#v after=%#v", err, unchangedErr, before, after)
+		}
+	})
+	t.Run("prescription_fingerprint", func(t *testing.T) {
+		fixture, runtime := suite.fresh(t, SetupBound)
+		transition := fixture.Scenario.AdvanceTransitions[0]
+		request, prescription := resolve(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective, fixture.Scenario.Authority)
+		fixture.Scenario.RetargetProgram(fixture.Scenario.AlternateProgram.Identity())
+		alternate, err := kernel.NewRuntime(fixture.Scenario.AlternateProgram, fixture.Domain, fixture.Operator, fixture.CapabilityClassifier, fixture.Store, fixture.Locker, fixture.Clock)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before := fixture.Scenario.Snapshot()
+		_, err = alternate.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
+		after := fixture.Scenario.Snapshot()
+		if unchangedErr := refusedApplyMutationError(before, after, transition); !kernel.IsStale(err) || unchangedErr != nil {
+			t.Fatalf("control-law prescription-program-freshness: error=%v mutation=%v before=%#v after=%#v", err, unchangedErr, before, after)
+		}
+	})
 }
 
 func (suite KernelConformance) stalePrescriptionPrecedesEffects(t *testing.T) {
@@ -216,6 +238,31 @@ func (suite KernelConformance) futureAuthorityFailsClosed(t *testing.T) {
 	resolution, err := resolveWithoutMutation(context.Background(), runtime, fixture.Scenario, kernel.ResolveRequest{InstanceID: fixture.Scenario.InstanceID, Objective: &fixture.Scenario.Objective, Authority: authority, Requested: transition})
 	if err != nil || resolution.Decision.Kind != kernel.Refused {
 		t.Fatalf("control-law authority-time-validity: decision=%#v error=%v", resolution.Decision, err)
+	}
+}
+
+func (suite KernelConformance) expiredAuthorityFailsClosed(t *testing.T) {
+	fixture, runtime := suite.fresh(t, SetupBound)
+	transition := fixture.Scenario.AdvanceTransitions[0]
+	authority := fixture.Scenario.Authority
+	authority.Receipts = append([]kernel.AuthorityReceipt(nil), authority.Receipts...)
+	authority.Receipts[0].ExpiresAt = fixture.Clock.Now()
+	resolution, err := resolveWithoutMutation(context.Background(), runtime, fixture.Scenario, kernel.ResolveRequest{InstanceID: fixture.Scenario.InstanceID, Objective: &fixture.Scenario.Objective, Authority: authority, Requested: transition})
+	if err != nil || resolution.Decision.Kind != kernel.Refused {
+		t.Fatalf("control-law expired-authority: decision=%#v error=%v", resolution.Decision, err)
+	}
+}
+
+func (suite KernelConformance) authorityExpiryInvalidatesPrescription(t *testing.T) {
+	fixture, runtime := suite.fresh(t, SetupBound)
+	transition := fixture.Scenario.AdvanceTransitions[0]
+	request, prescription := resolve(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective, fixture.Scenario.Authority)
+	fixture.Scenario.AdvanceClock(2 * time.Hour)
+	before := fixture.Scenario.Snapshot()
+	_, err := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
+	after := fixture.Scenario.Snapshot()
+	if unchangedErr := refusedApplyMutationError(before, after, transition); err == nil || unchangedErr != nil {
+		t.Fatalf("control-law apply-time-authority-expiry: error=%v mutation=%v before=%#v after=%#v", err, unchangedErr, before, after)
 	}
 }
 
@@ -653,7 +700,7 @@ func (suite KernelConformance) fixture(t testing.TB, setup Setup) KernelConforma
 		t.Fatal("kernel conformance requires a fresh fixture factory")
 	}
 	fixture := suite.New(t, setup)
-	if fixture.Domain == nil || fixture.Operator == nil || fixture.CapabilityClassifier == nil || fixture.Store == nil || fixture.Locker == nil || fixture.Clock == nil || fixture.Scenario.Snapshot == nil || fixture.Scenario.ChangeObservation == nil || fixture.Scenario.RebindObjective == nil || fixture.Scenario.BumpStateRevision == nil || fixture.Scenario.IndependentLocker == nil || fixture.Scenario.VerifyCommitted == nil || fixture.Scenario.InterruptNextOperator == nil || fixture.Scenario.PanicNextOperator == nil || fixture.Scenario.FailNextCommit == nil || fixture.Scenario.RetargetInstance == nil || fixture.Scenario.InstanceID == "" || fixture.Scenario.BindTransition == "" || len(fixture.Scenario.AdvanceTransitions) == 0 || fixture.Scenario.MaintenanceTransition == "" || fixture.Scenario.RecoveryTransition == "" || fixture.Scenario.RecoveryCapability.Validate() != nil || fixture.Scenario.ExtraCapability.Validate() != nil {
+	if fixture.Domain == nil || fixture.Operator == nil || fixture.CapabilityClassifier == nil || fixture.Store == nil || fixture.Locker == nil || fixture.Clock == nil || fixture.Scenario.Snapshot == nil || fixture.Scenario.ChangeObservation == nil || fixture.Scenario.RebindObjective == nil || fixture.Scenario.BumpStateRevision == nil || fixture.Scenario.RetargetProgram == nil || fixture.Scenario.AdvanceClock == nil || fixture.Scenario.IndependentLocker == nil || fixture.Scenario.VerifyCommitted == nil || fixture.Scenario.InterruptNextOperator == nil || fixture.Scenario.PanicNextOperator == nil || fixture.Scenario.FailNextCommit == nil || fixture.Scenario.RetargetInstance == nil || fixture.Scenario.InstanceID == "" || fixture.Scenario.BindTransition == "" || len(fixture.Scenario.AdvanceTransitions) == 0 || fixture.Scenario.MaintenanceTransition == "" || fixture.Scenario.RecoveryTransition == "" || fixture.Scenario.RecoveryCapability.Validate() != nil || fixture.Scenario.ExtraCapability.Validate() != nil {
 		t.Fatal("kernel conformance fixture is incomplete")
 	}
 	if fixture.Scenario.RevisedObjective.Validate() != nil || fixture.Scenario.RevisedObjective.ID != fixture.Scenario.Objective.ID || fixture.Scenario.RevisedObjective.Revision <= fixture.Scenario.Objective.Revision || fixture.Scenario.RevisedObjective.Fingerprint == fixture.Scenario.Objective.Fingerprint {

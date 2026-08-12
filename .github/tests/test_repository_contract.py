@@ -16,6 +16,10 @@ from boatstack_test_support import prescription_cli_arguments
 REPO = Path(__file__).resolve().parents[2]
 RUNTIME = REPO / "boatstack"
 CONFIG = REPO / "project.example.json"
+DOMAIN_NEUTRAL_PATTERN = re.compile(
+    r"\b(?:git|repository|worktree|branch|pull request|coding agent|publication)\b",
+    re.IGNORECASE,
+)
 
 
 def go_source_metadata(paths: list[Path]) -> list[dict[str, object]]:
@@ -34,6 +38,14 @@ def go_source_metadata(paths: list[Path]) -> list[dict[str, object]]:
     if result.returncode != 0:
         raise RuntimeError(result.stdout + result.stderr)
     return json.loads(result.stdout)
+
+
+def domain_vocabulary_hits(paths: list[Path]) -> list[tuple[Path, str]]:
+    hits: list[tuple[Path, str]] = []
+    for path in paths:
+        for match in DOMAIN_NEUTRAL_PATTERN.finditer(path.read_text()):
+            hits.append((path, match.group(0).lower()))
+    return hits
 
 
 class RepositoryContract(unittest.TestCase):
@@ -415,15 +427,11 @@ class RepositoryContract(unittest.TestCase):
     def test_general_kernel_is_domain_neutral_and_owns_shared_control_laws(self) -> None:
         kernel = REPO / "boatstack" / "kernel"
         kernel_files = sorted(kernel.glob("*.go"))
-        production_files = [
-            path for path in kernel_files if not path.name.endswith("_test.go")
-        ]
-        source = "\n".join(path.read_text() for path in production_files)
-        for token in (
-            "git", "repository", "worktree", "branch", "pull request",
-            "coding agent", "publication",
-        ):
-            self.assertNotIn(token, source.lower(), token)
+        self.assertEqual([], domain_vocabulary_hits(kernel_files))
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = Path(temporary) / "domain_leak_test.go"
+            fixture.write_text('package kernel\nconst fixtureDomain = "pull request"\n')
+            self.assertEqual([(fixture, "pull request")], domain_vocabulary_hits([fixture]))
 
         boatstack_packages = "github.com/operatorstack/boatstack/boatstack/"
         kernel_package = boatstack_packages + "kernel"

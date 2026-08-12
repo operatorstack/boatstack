@@ -263,10 +263,23 @@ func (l memoryLock) Unlock() error {
 	return nil
 }
 
-// FixedClock returns one deterministic time.
-type FixedClock struct{ Time time.Time }
+// FixedClock returns one deterministic, test-controlled time.
+type FixedClock struct {
+	mu   sync.Mutex
+	Time time.Time
+}
 
-func (c FixedClock) Now() time.Time { return c.Time }
+func (c *FixedClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Time
+}
+
+func (c *FixedClock) advance(duration time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.Time = c.Time.Add(duration)
+}
 
 // IntegerProgram compiles the reference control program.
 func IntegerProgram() (kernel.Program, error) {
@@ -338,13 +351,14 @@ func newIntegerFixture(setup Setup) KernelConformance {
 	domain := &IntegerDomain{value: value, executions: map[string]int{}}
 	receipts := &MemoryReceipts{}
 	store := &MemoryStateStore{state: state, receipts: receipts}
+	clock := &FixedClock{Time: now}
 	fixture := KernelConformance{
 		Domain:               domain,
 		Operator:             IntegerOperator{Domain: domain},
 		CapabilityClassifier: IntegerCapabilities{},
 		Store:                store,
 		Locker:               &MemoryLocker{},
-		Clock:                FixedClock{Time: now},
+		Clock:                clock,
 		Program:              program,
 	}
 	fixture.Scenario = Scenario{
@@ -363,6 +377,8 @@ func newIntegerFixture(setup Setup) KernelConformance {
 		ChangeObservation:     domain.changeObservation,
 		RebindObjective:       store.rebind,
 		BumpStateRevision:     store.bumpRevision,
+		RetargetProgram:       store.retargetProgram,
+		AdvanceClock:          clock.advance,
 		IndependentLocker:     func() kernel.Locker { return &MemoryLocker{} },
 		VerifyCommitted: func(before, after Snapshot, receipt kernel.Receipt) error {
 			return verifyIntegerCommitted(program, before, after, receipt)
