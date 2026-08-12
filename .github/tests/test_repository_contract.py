@@ -10,6 +10,8 @@ import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from boatstack_test_support import prescription_cli_arguments
+
 
 REPO = Path(__file__).resolve().parents[2]
 RUNTIME = REPO / "boatstack"
@@ -97,11 +99,7 @@ class RepositoryContract(unittest.TestCase):
         correlation = resolved["snapshot"]["invocation"]["correlation_id"]
         applied = self.run_command(
             binary, "apply", "--transition", transition, *args,
-            "--correlation", correlation,
-            "--prescription-id", prescription["id"],
-            "--expected-state-revision", prescription["expected_state_revision"],
-            "--expected-program-fingerprint", prescription["expected_program_fingerprint"],
-            "--expected-snapshot-fingerprint", prescription["expected_snapshot_fingerprint"],
+            *prescription_cli_arguments(prescription, correlation),
             cwd=cwd, env=env,
         )
         return json.loads(applied.stdout)
@@ -566,11 +564,16 @@ class RepositoryContract(unittest.TestCase):
             self.assertEqual(pin["version"], "v0.7.contract-new")
             self.assertEqual(pin["sha256"], hashlib.sha256(self.helper.read_bytes()).hexdigest())
             self.assertNotIn("path", pin)
-            events = self.run_command(
+            events = [json.loads(line) for line in self.run_command(
                 launcher, "events", "--repo", repository, "--format", "jsonl", env=env
-            ).stdout.splitlines()
-            transitions = {json.loads(line)["transition_id"] for line in events}
+            ).stdout.splitlines()]
+            transitions = {event["transition_id"] for event in events}
             self.assertTrue({"installation.initialize", "engagement.begin", "installation.reconcile-update"}.issubset(transitions))
+            for event in events:
+                self.assertTrue(event["authority_fingerprint"])
+                self.assertTrue(event["required_capabilities"])
+                self.assertTrue(event["granted_capabilities"])
+                self.assertTrue(event["exercised_capabilities"])
 
     def test_program_changing_update_is_explicit_atomic_and_dormant_safe(self) -> None:
         # control-law: accepted-program-delta-atomically-pins-runtime-and-program

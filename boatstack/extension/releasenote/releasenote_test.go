@@ -9,6 +9,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/control"
 	"github.com/operatorstack/boatstack/boatstack/internal/effects"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
 )
 
 const testProgram = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -26,6 +27,7 @@ func TestReferenceExtensionPlansVerifiesAndInvalidatesNamespacedEvidence(t *test
 	request := control.ExtensionRequest{
 		ProtocolVersion: control.ExtensionProtocolVersion, ExtensionID: ID, ExtensionVersion: Version,
 		ProgramFingerprint: testProgram, CorrelationID: "reference", RepositoryRoot: repository,
+		Capabilities: []control.Capability{control.CapabilityRepositoryWrite, control.CapabilityCommandExecute},
 	}
 	request.Operation = control.ExtensionObserveOperation
 	observed, err := runtime.Invoke(context.Background(), request)
@@ -40,7 +42,12 @@ func TestReferenceExtensionPlansVerifiesAndInvalidatesNamespacedEvidence(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	prepared, err := effects.NewExtensionLocalPrepared(repository, ID, planned.Writes)
+	manifest, err := runtime.ExtensionManifest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	admission := protocol.Admission{EffectiveCapabilities: append([]control.Capability(nil), request.Capabilities...)}
+	prepared, err := effects.NewExtensionLocalPrepared(repository, ID, planned.Writes, admission, manifest.Transitions[0])
 	if err != nil {
 		t.Fatal(err)
 	}

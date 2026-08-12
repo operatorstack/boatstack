@@ -30,7 +30,12 @@ func (system) CoreManifest(context.Context) (control.CoreSystemManifest, error) 
 	if err != nil {
 		return control.CoreSystemManifest{}, err
 	}
-	return control.CoreSystemManifest{ID: ID, Version: Version, Transitions: transitions}, nil
+	var capabilities []control.Capability
+	for index := range transitions {
+		transitions[index].RequiredCapabilities = control.KernelEffectCapabilities(transitions[index])
+		capabilities = control.UnionCapabilities(capabilities, transitions[index].RequiredCapabilities)
+	}
+	return control.CoreSystemManifest{ID: ID, Version: Version, Capabilities: capabilities, Transitions: transitions}, nil
 }
 
 func decodeTransitions() ([]control.Transition, error) {

@@ -23,6 +23,7 @@ func TestProgramManifestCanonicalFingerprintContract(t *testing.T) {
 	equivalent.RequiresRuntime = ">=0.9.0"
 	reverse(equivalent.Capabilities.Effects)
 	reverse(equivalent.Capabilities.Verifiers)
+	reverse(equivalent.Capabilities.CapabilitySurface)
 	reverse(equivalent.OwnedResources)
 	reverse(equivalent.Transitions)
 	reverse(equivalent.Transitions[0].RequiredIdentity)
@@ -62,6 +63,9 @@ func TestProgramManifestCanonicalFingerprintContract(t *testing.T) {
 		},
 		"authority": func(value *control.ProgramManifest) {
 			value.Transitions[0].Authority = []control.AuthorityClass{control.AuthorityHuman}
+		},
+		"capability-surface": func(value *control.ProgramManifest) {
+			value.Capabilities.CapabilitySurface = append(value.Capabilities.CapabilitySurface, control.CapabilityHumanApprove)
 		},
 		"effect": func(value *control.ProgramManifest) {
 			value.Capabilities.Effects[0] = "alternate.effect"
@@ -111,6 +115,9 @@ func TestProgramManifestNamespaceAndCompatibilityBoundary(t *testing.T) {
 		if !strings.HasPrefix(string(transition.ID), "first-program/") {
 			t.Fatalf("transition is not program-qualified: %s", transition.ID)
 		}
+		if !transition.RuntimeExecution {
+			t.Fatalf("repository-authored transition %s escaped protocol-runtime classification", transition.ID)
+		}
 	}
 
 	cases := []struct {
@@ -119,7 +126,7 @@ func TestProgramManifestNamespaceAndCompatibilityBoundary(t *testing.T) {
 		runtime control.RuntimeCompatibility
 		code    control.ProgramErrorCode
 	}{
-		{"unsupported-schema", func(value *control.ProgramManifest) { value.SchemaVersion = 2 }, runtimeFixture(), control.ProgramSchemaUnsupported},
+		{"unsupported-schema", func(value *control.ProgramManifest) { value.SchemaVersion = control.ProgramSchemaVersion + 1 }, runtimeFixture(), control.ProgramSchemaUnsupported},
 		{"invalid-schema", func(value *control.ProgramManifest) { value.SchemaVersion = 0 }, runtimeFixture(), control.ProgramInvalid},
 		{"runtime-too-old", func(value *control.ProgramManifest) { value.RequiresRuntime = ">=2.0.0" }, runtimeFixture(), control.RuntimeTooOld},
 		{"malformed-runtime", func(value *control.ProgramManifest) { value.RequiresRuntime = "^1" }, runtimeFixture(), control.ProgramInvalid},
@@ -130,6 +137,12 @@ func TestProgramManifestNamespaceAndCompatibilityBoundary(t *testing.T) {
 		}, runtimeFixture(), control.ProgramInvalid},
 		{"duplicate-capability", func(value *control.ProgramManifest) {
 			value.Capabilities.Effects = append(value.Capabilities.Effects, value.Capabilities.Effects[0])
+		}, runtimeFixture(), control.ProgramInvalid},
+		{"unknown-authority-capability", func(value *control.ProgramManifest) {
+			value.Capabilities.CapabilitySurface = []control.Capability{"production.nuke"}
+		}, runtimeFixture(), control.ProgramInvalid},
+		{"under-declared-kernel-effect", func(value *control.ProgramManifest) {
+			value.Capabilities.CapabilitySurface = []control.Capability{control.CapabilityRepositoryWrite}
 		}, runtimeFixture(), control.ProgramInvalid},
 		{"duplicate-condition", func(value *control.ProgramManifest) {
 			value.Transitions[0].SourceConditions = append(value.Transitions[0].SourceConditions, value.Transitions[0].SourceConditions[0])
@@ -216,7 +229,7 @@ func programFixture() control.ProgramManifest {
 	recovery := control.ProgramTransition{
 		ID: "recover", Version: 1, SelectionClass: control.SelectionProgramRecovery, Class: control.EventRecovery,
 		SourcePhases: []control.ProtocolPhase{control.PhaseRecovery}, TargetPhases: []control.ProtocolPhase{control.PhaseActive},
-		RequiredIdentity: []string{"repository-id"}, Authority: []control.AuthorityClass{control.AuthorityRepository}, RequiredEvidence: []string{"snapshot"},
+		RequiredIdentity: []string{"repository-id"}, Authority: []control.AuthorityClass{control.AuthorityRepository}, RequiredCapabilities: []control.Capability{control.CapabilityRepositoryWrite}, RequiredEvidence: []string{"snapshot"},
 		OwnedResources: []string{"program.state"}, Effect: "program.recover", LocalEffects: []control.EffectID{"program.recover"}, Idempotent: true,
 		Prescription: control.Prescription{Operation: "recover", ExpectedPostcondition: "active"}, SourcePredicate: "recovery-required",
 		SourceConditions: []control.FacetCondition{control.KnownCondition(control.FacetRecovery, "required")}, AdmissionPredicate: "exact-admission",
@@ -242,14 +255,17 @@ func programFixture() control.ProgramManifest {
 	advance.Verifier = "program.terminal"
 	return control.ProgramManifest{
 		SchemaVersion: control.ProgramSchemaVersion, ProgramID: "test-program", ProgramVersion: "1", RequiresRuntime: ">=1.0.0",
-		Capabilities:   control.ProgramCapabilities{Effects: []string{"program.advance", "program.recover"}, Verifiers: []string{"program.current", "program.terminal"}},
+		Capabilities: control.ProgramCapabilities{
+			Effects: []string{"program.advance", "program.recover"}, Verifiers: []string{"program.current", "program.terminal"},
+			CapabilitySurface: []control.Capability{control.CapabilityRepositoryWrite, control.CapabilityCommandExecute},
+		},
 		OwnedResources: []string{"program.state"}, GoalContracts: []control.GoalContract{{GoalKind: control.GoalVerified, Conditions: []control.FacetCondition{control.KnownCondition(control.FacetDelivery, "terminal")}}},
 		Transitions: []control.ProgramTransition{advance, recovery},
 	}
 }
 
 func runtimeFixture() control.RuntimeCompatibility {
-	return control.RuntimeCompatibility{Version: "v1.2.3", Effects: []string{"program.advance", "program.recover", "alternate.effect"}, Verifiers: []string{"program.current", "program.terminal", "alternate.verifier"}}
+	return control.RuntimeCompatibility{Version: "v1.2.3", Effects: []string{"program.advance", "program.recover", "alternate.effect"}, Verifiers: []string{"program.current", "program.terminal", "alternate.verifier"}, Capabilities: []control.Capability{control.CapabilityRepositoryWrite, control.CapabilityCommandExecute, control.CapabilityHumanApprove}}
 }
 
 func loadManifest(t *testing.T, manifest control.ProgramManifest) control.ControlProgram {

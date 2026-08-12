@@ -47,6 +47,7 @@ func TestRepositoryScopedProgramsAreIndependentUnderConcurrency(t *testing.T) {
 		manifest, err := json.Marshal(control.ExtensionManifest{
 			ID: id, Version: "1.0.0", ProtocolVersion: control.ExtensionProtocolVersion,
 			SettingsSchema: json.RawMessage(`{"type":"object"}`), Facts: []string{id + ".present"},
+			Capabilities:          []control.Capability{control.CapabilityCommandExecute},
 			PrivacyClassification: "metadata-only", TelemetryClassification: "transition-receipt",
 		})
 		if err != nil {

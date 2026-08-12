@@ -30,7 +30,14 @@ func PrescriptionCommand(transition catalog.Transition, prescription protocol.Pr
 		"--correlation", correlation, "--prescription-id", prescription.ID,
 		"--expected-state-revision", strconv.FormatUint(prescription.ExpectedStateRevision, 10),
 		"--expected-program-fingerprint", prescription.ExpectedProgramFingerprint,
-		"--expected-snapshot-fingerprint", prescription.ExpectedSnapshotFingerprint}
+		"--expected-snapshot-fingerprint", prescription.ExpectedSnapshotFingerprint,
+		"--authority-fingerprint", prescription.AuthorityFingerprint}
+	for _, capability := range prescription.RequiredCapabilities {
+		arguments = append(arguments, "--required-capability", string(capability))
+	}
+	for _, capability := range prescription.EffectiveCapabilities {
+		arguments = append(arguments, "--effective-capability", string(capability))
+	}
 	if goal.Validate() == nil {
 		arguments = append(arguments, "--goal-kind", string(goal.Kind), "--delivery", goal.DeliveryID, "--goal-id", goal.ID)
 	}

@@ -30,7 +30,8 @@ func TestRecoverSurfaceConsumesCompiledRegistryInsteadOfFixedProgramIDs(t *testi
 		FlowID: "flow", TransitionID: "plan.create",
 	}
 	prescriptionSnapshot := model.Snapshot{Observation: model.Observation{StateRevision: 1, ProgramFingerprint: program.Fingerprint()}, Fingerprint: strings.Repeat("a", 64)}
-	request.Prescription, err = protocol.NewPrescription(prescriptionSnapshot, catalog.Transition{ID: request.TransitionID})
+	projection := protocol.CapabilityProjection{AuthorityFingerprint: "auth-test", Required: []catalog.Capability{catalog.CapabilityRepositoryWrite}, Effective: []catalog.Capability{catalog.CapabilityRepositoryWrite}}
+	request.Prescription, err = protocol.NewPrescription(prescriptionSnapshot, catalog.Transition{ID: request.TransitionID}, projection)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +41,7 @@ func TestRecoverSurfaceConsumesCompiledRegistryInsteadOfFixedProgramIDs(t *testi
 	}
 
 	request.TransitionID = "example.extension.recover"
-	request.Prescription, err = protocol.NewPrescription(prescriptionSnapshot, catalog.Transition{ID: request.TransitionID})
+	request.Prescription, err = protocol.NewPrescription(prescriptionSnapshot, catalog.Transition{ID: request.TransitionID}, projection)
 	if err != nil {
 		t.Fatal(err)
 	}

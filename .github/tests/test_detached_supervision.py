@@ -11,6 +11,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from boatstack_test_support import prescription_cli_arguments
+
 
 REPO = Path(__file__).resolve().parents[2]
 RUNTIME = REPO / "boatstack"
@@ -100,11 +102,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         correlation = resolved["snapshot"]["invocation"]["correlation_id"]
         return self.helper_json(
             "apply", "--transition", transition, *args,
-            "--correlation", correlation,
-            "--prescription-id", prescription["id"],
-            "--expected-state-revision", prescription["expected_state_revision"],
-            "--expected-program-fingerprint", prescription["expected_program_fingerprint"],
-            "--expected-snapshot-fingerprint", prescription["expected_snapshot_fingerprint"],
+            *prescription_cli_arguments(prescription, correlation),
             cwd=cwd,
         )
 

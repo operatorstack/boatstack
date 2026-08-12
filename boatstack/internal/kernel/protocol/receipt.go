@@ -2,13 +2,14 @@ package protocol
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 )
 
-const ReceiptSchemaVersion = 4
+const ReceiptSchemaVersion = 5
 
 type Outcome string
 
@@ -45,6 +46,11 @@ type TransitionReceipt struct {
 	SourceFingerprint       string               `json:"source_fingerprint"`
 	TargetFingerprint       string               `json:"target_fingerprint"`
 	AuthorityClasses        []string             `json:"authority_classes"`
+	AuthorityFingerprint    string               `json:"authority_fingerprint"`
+	AuthoritySources        []AuthoritySource    `json:"authority_sources"`
+	RequiredCapabilities    []catalog.Capability `json:"required_capabilities"`
+	GrantedCapabilities     []catalog.Capability `json:"granted_capabilities"`
+	ExercisedCapabilities   []catalog.Capability `json:"exercised_capabilities"`
 	IdempotencyKey          string               `json:"idempotency_key"`
 	Verifier                string               `json:"verifier"`
 	Outcome                 Outcome              `json:"outcome"`
@@ -54,6 +60,13 @@ type TransitionReceipt struct {
 	CompletedAt             time.Time            `json:"completed_at"`
 	DurationNanoseconds     int64                `json:"duration_nanoseconds"`
 	FailureClass            string               `json:"failure_class,omitempty"`
+}
+
+type AuthoritySource struct {
+	ID          string                 `json:"id"`
+	Class       catalog.AuthorityClass `json:"class"`
+	Subject     string                 `json:"subject"`
+	Fingerprint string                 `json:"fingerprint"`
 }
 
 func NewReceipt(flowID string, sequence uint64, admission Admission, transition catalog.Transition, target model.Snapshot, startedAt, completedAt time.Time, outcome Outcome, failureClass string) (TransitionReceipt, error) {
@@ -67,8 +80,10 @@ func NewReceipt(flowID string, sequence uint64, admission Admission, transition 
 		return TransitionReceipt{}, fmt.Errorf("receipt target revision must advance exactly once from the prescribed revision")
 	}
 	classes := make([]string, 0, len(admission.Authority.Receipts))
+	sources := make([]AuthoritySource, 0, len(admission.Authority.Receipts))
 	for _, authority := range admission.Authority.Receipts {
 		classes = append(classes, string(authority.Class))
+		sources = append(sources, AuthoritySource{ID: authority.ID, Class: authority.Class, Subject: authority.Subject, Fingerprint: authority.Fingerprint})
 	}
 	terminal := model.TerminalUnknown
 	if target.Terminal.Status == model.FactKnown {
@@ -83,7 +98,11 @@ func NewReceipt(flowID string, sequence uint64, admission Admission, transition 
 		GoalScope: admission.GoalScope, GoalStatus: admission.GoalStatus,
 		SourceFingerprint: admission.ExpectedSnapshotFingerprint, TargetFingerprint: target.Fingerprint,
 		AuthorityClasses: classes, IdempotencyKey: admission.IdempotencyKey, Verifier: transition.Verifier,
-		Outcome: outcome, Recovery: transition.Interruption.Recovery, Terminal: terminal,
+		AuthorityFingerprint: admission.AuthorityFingerprint, AuthoritySources: sources,
+		RequiredCapabilities:  append([]catalog.Capability(nil), admission.RequiredCapabilities...),
+		GrantedCapabilities:   append([]catalog.Capability(nil), admission.GrantedCapabilities...),
+		ExercisedCapabilities: append([]catalog.Capability(nil), admission.EffectiveCapabilities...),
+		Outcome:               outcome, Recovery: transition.Interruption.Recovery, Terminal: terminal,
 		StartedAt: startedAt.UTC(), CompletedAt: completedAt.UTC(), DurationNanoseconds: completedAt.Sub(startedAt).Nanoseconds(),
 		FailureClass: failureClass,
 	}
@@ -111,8 +130,48 @@ func NewReceipt(flowID string, sequence uint64, admission Admission, transition 
 }
 
 func (r TransitionReceipt) Validate() error {
-	if r.SchemaVersion != ReceiptSchemaVersion || r.ID == "" || r.FlowID == "" || r.Sequence == 0 || r.TransitionID == "" || r.TransitionVersion < 1 || len(r.ProgramFingerprint) != 64 || r.PrescriptionID == "" || r.AdmissionID == "" || r.PriorStateRevision == 0 || r.PriorStateRevision == ^uint64(0) || r.ResultingStateRevision == 0 || r.ResultingStateRevision != r.PriorStateRevision+1 || r.SourceFingerprint == "" || r.TargetFingerprint == "" || r.IdempotencyKey == "" || r.Verifier == "" {
+	if r.SchemaVersion != ReceiptSchemaVersion || r.ID == "" || r.FlowID == "" || r.Sequence == 0 || r.TransitionID == "" || r.TransitionVersion < 1 || len(r.ProgramFingerprint) != 64 || r.PrescriptionID == "" || r.AdmissionID == "" || r.PriorStateRevision == 0 || r.PriorStateRevision == ^uint64(0) || r.ResultingStateRevision == 0 || r.ResultingStateRevision != r.PriorStateRevision+1 || r.SourceFingerprint == "" || r.TargetFingerprint == "" || r.AuthorityFingerprint == "" || len(r.RequiredCapabilities) == 0 || len(r.ExercisedCapabilities) == 0 || r.IdempotencyKey == "" || r.Verifier == "" {
 		return fmt.Errorf("receipt has incomplete identity or evidence")
+	}
+	if _, err := catalog.NormalizeCapabilities("receipt.required_capabilities", r.RequiredCapabilities); err != nil {
+		return err
+	}
+	if _, err := catalog.NormalizeCapabilities("receipt.granted_capabilities", r.GrantedCapabilities); err != nil {
+		return err
+	}
+	if _, err := catalog.NormalizeCapabilities("receipt.exercised_capabilities", r.ExercisedCapabilities); err != nil {
+		return err
+	}
+	if missing := catalog.MissingCapability(r.ExercisedCapabilities, catalog.NewCapabilitySet(r.GrantedCapabilities...)); missing != "" {
+		return fmt.Errorf("receipt exercised ungranted capability %q", missing)
+	}
+	if !sameCapabilities(r.RequiredCapabilities, r.ExercisedCapabilities) {
+		return fmt.Errorf("receipt exercised capabilities differ from exact admitted requirements")
+	}
+	if len(r.AuthoritySources) != len(r.AuthorityClasses) {
+		return fmt.Errorf("receipt authority provenance and class counts differ")
+	}
+	authoritySet := catalog.AuthoritySet{}
+	sources := append([]AuthoritySource(nil), r.AuthoritySources...)
+	sort.Slice(sources, func(i, j int) bool { return sources[i].ID < sources[j].ID })
+	for index, source := range sources {
+		if source.ID == "" || !source.Class.Valid() || source.Class == catalog.AuthorityNone || source.Subject == "" || source.Fingerprint == "" {
+			return fmt.Errorf("receipt has invalid authority provenance")
+		}
+		if index > 0 && sources[index-1].ID == source.ID {
+			return fmt.Errorf("receipt duplicates authority source %q", source.ID)
+		}
+		if source != r.AuthoritySources[index] || r.AuthorityClasses[index] != string(source.Class) {
+			return fmt.Errorf("receipt authority provenance is not canonical")
+		}
+		authoritySet[source.Class] = true
+	}
+	fingerprint, err := contentID("auth-", sources)
+	if err != nil || fingerprint != r.AuthorityFingerprint {
+		return fmt.Errorf("receipt authority fingerprint does not match its provenance")
+	}
+	if !sameCapabilities(r.GrantedCapabilities, catalog.AuthorityCapabilities(authoritySet).Sorted()) {
+		return fmt.Errorf("receipt granted capabilities do not match authority provenance")
 	}
 	if !r.GoalScope.Valid() {
 		return fmt.Errorf("receipt has invalid product-goal scope %q", r.GoalScope)

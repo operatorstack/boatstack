@@ -166,7 +166,7 @@ func (k Kernel) Handle(ctx context.Context, request surfaces.Request) (surfaces.
 			ExtensionTransitionCount: summary.ExtensionTransitionCount, TransitionCount: summary.TotalTransitionCount,
 			EnabledExtensions: extensionIDs, ProgramFingerprint: summary.ProgramFingerprint,
 		}
-		observation, observeErr := k.observer.Observe(ctx, ports.ObservationRequest{Invocation: invocation})
+		observation, observeErr := k.observer.Observe(ctx, ports.ObservationRequest{Invocation: invocation, Capabilities: request.Authority.GrantedCapabilities(k.clock.Now())})
 		if observeErr != nil {
 			report.Healthy, report.Detail = false, observeErr.Error()
 			response.Doctor = &report
@@ -218,7 +218,7 @@ func (k Kernel) Handle(ctx context.Context, request surfaces.Request) (surfaces.
 		response.Events = events
 		return response, nil
 	case surfaces.OperationGuard:
-		observation, observeErr := k.observer.Observe(ctx, ports.ObservationRequest{Invocation: invocation})
+		observation, observeErr := k.observer.Observe(ctx, ports.ObservationRequest{Invocation: invocation, Capabilities: request.Authority.GrantedCapabilities(k.clock.Now())})
 		if observeErr != nil {
 			response.Error = observeErr.Error()
 			return response, observeErr
@@ -257,7 +257,7 @@ func (k Kernel) deriveRepositoryAuthority(ctx context.Context, invocation model.
 			return protocol.AuthorityBundle{}, fmt.Errorf("repository authority must be derived once by Kernel")
 		}
 	}
-	observation, err := k.observer.Observe(ctx, ports.ObservationRequest{Invocation: invocation})
+	observation, err := k.observer.Observe(ctx, ports.ObservationRequest{Invocation: invocation, Capabilities: bundle.GrantedCapabilities(k.clock.Now())})
 	if err != nil {
 		return protocol.AuthorityBundle{}, err
 	}

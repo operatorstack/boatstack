@@ -502,10 +502,13 @@ func TestReferenceExtensionUsesKernelAdmissionVerificationAndReceiptPath(t *test
 	if err := os.WriteFile(configPath, configRaw, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	apply("installation.initialize", authority(catalog.AuthorityHuman), protocol.Parameters{
+	initialized := apply("installation.initialize", authority(catalog.AuthorityHuman), protocol.Parameters{
 		{Name: "source_revision", Value: "extension-fixture"}, {Name: "runtime_version", Value: runtimeVersion}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
 		{Name: "config_path", Value: configPath}, {Name: "config_sha256", Value: configFingerprint(t, configRaw)},
 	})
+	if initialized.Receipt == nil || initialized.Receipt.AuthorityFingerprint == "" || len(initialized.Receipt.AuthoritySources) != 1 || len(initialized.Receipt.RequiredCapabilities) == 0 || len(initialized.Receipt.GrantedCapabilities) == 0 || len(initialized.Receipt.ExercisedCapabilities) == 0 {
+		t.Fatalf("receipt lost capability or authority provenance: %#v", initialized.Receipt)
+	}
 	apply("goal.configure", authority(catalog.AuthorityHuman), protocol.Parameters{{Name: "goal_kind", Value: string(goal.Kind)}, {Name: "delivery_id", Value: goal.DeliveryID}})
 	apply("engagement.begin", authority(catalog.AuthorityRepository), nil)
 	planPath := filepath.Join(t.TempDir(), "plan.md")

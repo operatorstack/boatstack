@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
@@ -51,6 +52,11 @@ func writeBoundaryConfig(t *testing.T, command string) ports.ControllerLayout {
 	return ports.ControllerLayout{RepositoryRoot: repository, ConfigPath: path}
 }
 
+func boundaryAdmission(transition catalog.Transition) protocol.Admission {
+	required := catalog.RequiredCapabilities(transition)
+	return protocol.Admission{RequiredCapabilities: required, EffectiveCapabilities: required}
+}
+
 func TestConfiguredBuildCommandMustPassBeforeGateInstallation(t *testing.T) {
 	runner := &boundaryRunner{err: errors.New("exit status 1")}
 	boundary, err := NewNativeBoundaryWithRunner(runner)
@@ -58,7 +64,7 @@ func TestConfiguredBuildCommandMustPassBeforeGateInstallation(t *testing.T) {
 		t.Fatal(err)
 	}
 	transition, _ := testprogram.StandardRegistry().Lookup("gate.build.record")
-	_, err = boundary.Execute(context.Background(), protocol.Admission{}, transition, writeBoundaryConfig(t, "go test ./..."), durable.State{})
+	_, err = boundary.Execute(context.Background(), boundaryAdmission(transition), transition, writeBoundaryConfig(t, "go test ./..."), durable.State{})
 	if err == nil || runner.calls != 1 {
 		t.Fatalf("failed configured command result: err=%v calls=%d", err, runner.calls)
 	}
@@ -74,7 +80,7 @@ func TestConfiguredBuildCommandCannotCrossConstitutionalGuard(t *testing.T) {
 		t.Fatal(err)
 	}
 	transition, _ := testprogram.StandardRegistry().Lookup("gate.build.record")
-	_, err = boundary.Execute(context.Background(), protocol.Admission{}, transition, writeBoundaryConfig(t, "git reset --hard HEAD~1"), durable.State{})
+	_, err = boundary.Execute(context.Background(), boundaryAdmission(transition), transition, writeBoundaryConfig(t, "git reset --hard HEAD~1"), durable.State{})
 	if err == nil || runner.calls != 0 {
 		t.Fatalf("protected configured command result: err=%v calls=%d", err, runner.calls)
 	}
@@ -91,6 +97,8 @@ func TestPublicationObservationTerminatesOptionsBeforeIdentifier(t *testing.T) {
 		Invocation: model.InvocationContext{Ref: "refs/heads/feature"}, SourceRevision: "revision",
 		Parameters: protocol.Parameters{{Name: "publication_id", Value: "-dangerous"}},
 	}
+	admission.RequiredCapabilities = catalog.RequiredCapabilities(transition)
+	admission.EffectiveCapabilities = admission.RequiredCapabilities
 	state := durable.State{}
 	layout := writeBoundaryConfig(t, "go test ./...")
 	if err := boundary.PrepareObservation(context.Background(), admission, transition, layout, &state); err != nil {
@@ -113,6 +121,8 @@ func TestPublicationObservationRejectsUnrelatedProviderIdentity(t *testing.T) {
 		Invocation: model.InvocationContext{Ref: "refs/heads/feature"}, SourceRevision: "revision",
 		Parameters: protocol.Parameters{{Name: "publication_id", Value: "8"}},
 	}
+	admission.RequiredCapabilities = catalog.RequiredCapabilities(transition)
+	admission.EffectiveCapabilities = admission.RequiredCapabilities
 	state := durable.State{}
 	if err := boundary.PrepareObservation(context.Background(), admission, transition, writeBoundaryConfig(t, "go test ./..."), &state); err != nil {
 		t.Fatal(err)
@@ -169,6 +179,8 @@ func TestPublicationCorrectionRejectsBodyDriftBeforeProviderCall(t *testing.T) {
 			{Name: "body_sha256", Value: sha256Bytes([]byte("reviewed"))},
 		},
 	}
+	admission.RequiredCapabilities = catalog.RequiredCapabilities(transition)
+	admission.EffectiveCapabilities = admission.RequiredCapabilities
 	state := durable.State{PublicationID: "7"}
 	if _, err := boundary.Execute(context.Background(), admission, transition, layout, state); err == nil {
 		t.Fatal("publication correction accepted drifted body bytes")

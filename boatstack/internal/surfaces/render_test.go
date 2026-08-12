@@ -21,10 +21,14 @@ func TestShellRenderersConsumeOneCommandAST(t *testing.T) {
 	}
 	goal := model.Goal{ID: "goal", Kind: model.GoalVerified, DeliveryID: "delivery"}
 	parameters := protocol.Parameters{{Name: "source_path", Value: "/tmp/O'Brien plan.md"}, {Name: "delivery_id", Value: "delivery"}}
-	prescription := protocol.Prescription{ID: "prx-fixture", ExpectedStateRevision: 41, ExpectedProgramFingerprint: strings.Repeat("a", 64), ExpectedSnapshotFingerprint: strings.Repeat("b", 64)}
+	prescription := protocol.Prescription{
+		ID: "prx-fixture", ExpectedStateRevision: 41, ExpectedProgramFingerprint: strings.Repeat("a", 64), ExpectedSnapshotFingerprint: strings.Repeat("b", 64),
+		AuthorityFingerprint: "auth-fixture", RequiredCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite, catalog.CapabilityCommandExecute},
+		EffectiveCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite, catalog.CapabilityCommandExecute},
+	}
 	command := PrescriptionCommand(transition, prescription, "corr-1", "/repo with space", goal, "flow", parameters)
 	joined := strings.Join(command.Arguments, " ")
-	for _, binding := range []string{"--correlation corr-1", "--prescription-id prx-fixture", "--expected-state-revision 41", "--expected-program-fingerprint", "--expected-snapshot-fingerprint"} {
+	for _, binding := range []string{"--correlation corr-1", "--prescription-id prx-fixture", "--expected-state-revision 41", "--expected-program-fingerprint", "--expected-snapshot-fingerprint", "--authority-fingerprint auth-fixture", "--required-capability repository.write", "--required-capability command.execute", "--effective-capability repository.write", "--effective-capability command.execute"} {
 		if !strings.Contains(joined, binding) {
 			t.Fatalf("prescription command omitted CAS binding %q: %s", binding, joined)
 		}
@@ -56,6 +60,9 @@ func TestShellRenderersConsumeOneCommandAST(t *testing.T) {
 func TestCatalogArtifactsAreGeneratedFromEveryRuntimeTransition(t *testing.T) {
 	registry := testprogram.StandardRegistry()
 	markdown := RenderCatalogMarkdown(registry.All())
+	if !strings.Contains(markdown, "| Required capabilities |") || !strings.Contains(markdown, "`repository.write`") {
+		t.Fatal("catalog markdown omitted kernel-classified capability requirements")
+	}
 	mermaid := RenderCatalogMermaid(registry.All())
 	for _, transition := range registry.All() {
 		rowPrefix := "\n| `" + string(transition.ID) + "` | " + string(transition.Origin.Kind) + ":"

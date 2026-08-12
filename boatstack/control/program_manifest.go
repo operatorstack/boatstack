@@ -35,8 +35,9 @@ func (e ProgramError) Error() string {
 }
 
 type ProgramCapabilities struct {
-	Effects   []string `json:"effects"`
-	Verifiers []string `json:"verifiers"`
+	Effects           []string     `json:"effects"`
+	Verifiers         []string     `json:"verifiers"`
+	CapabilitySurface []Capability `json:"capability_surface"`
 }
 
 // ProgramTransition contains only author-controlled executable semantics.
@@ -52,6 +53,7 @@ type ProgramTransition struct {
 	RequiredIdentity              []string             `json:"required_identity"`
 	Authority                     []AuthorityClass     `json:"authority"`
 	AuthorityAll                  []AuthorityClass     `json:"authority_all,omitempty"`
+	RequiredCapabilities          []Capability         `json:"required_capabilities"`
 	RequiredEvidence              []string             `json:"required_evidence"`
 	OwnedResources                []string             `json:"owned_resources,omitempty"`
 	Effect                        EffectID             `json:"effect,omitempty"`
@@ -96,9 +98,10 @@ type ProgramManifest struct {
 // RuntimeCompatibility is verified runtime evidence. Declaring a capability
 // does not grant transition authority.
 type RuntimeCompatibility struct {
-	Version   string
-	Effects   []string
-	Verifiers []string
+	Version      string
+	Effects      []string
+	Verifiers    []string
+	Capabilities []Capability
 }
 
 var (
@@ -179,6 +182,20 @@ func ValidateProgram(manifest ProgramManifest, runtime RuntimeCompatibility) (Co
 	if missing := missingCapability(verifiers, runtime.Verifiers); missing != "" {
 		return ControlProgram{}, invalidProgram("capabilities.verifiers", fmt.Sprintf("runtime does not provide %q", missing))
 	}
+	declaredCapabilities, err := catalog.NormalizeCapabilities("capabilities.capability_surface", manifest.Capabilities.CapabilitySurface)
+	if err != nil || len(declaredCapabilities) == 0 {
+		if err != nil {
+			return ControlProgram{}, invalidProgram("capabilities.capability_surface", err.Error())
+		}
+		return ControlProgram{}, invalidProgram("capabilities.capability_surface", "must declare a non-empty capability surface")
+	}
+	runtimeCapabilities, err := catalog.NormalizeCapabilities("runtime.capabilities", runtime.Capabilities)
+	if err != nil {
+		return ControlProgram{}, invalidProgram("runtime.capabilities", err.Error())
+	}
+	if missing := catalog.MissingCapability(declaredCapabilities, catalog.NewCapabilitySet(runtimeCapabilities...)); missing != "" {
+		return ControlProgram{}, invalidProgram("capabilities.capability_surface", fmt.Sprintf("runtime does not provide %q", missing))
+	}
 
 	normalized := make([]Transition, len(manifest.Transitions))
 	seen := map[TransitionID]bool{}
@@ -187,6 +204,13 @@ func ValidateProgram(manifest ProgramManifest, runtime RuntimeCompatibility) (Co
 	usedResources := map[string]bool{}
 	for index, declared := range manifest.Transitions {
 		source := declared.runtimeTransition()
+		// Repository-authored programs execute through the protocol runtime.
+		// This is compiler-owned and cannot be disabled by program input.
+		source.RuntimeExecution = true
+		source.DeclaredCapabilities = append([]Capability(nil), declaredCapabilities...)
+		if source.Controllable() && len(source.RequiredCapabilities) == 0 {
+			return ControlProgram{}, invalidProgram(fmt.Sprintf("transitions[%d].required_capabilities", index), "must not be empty")
+		}
 		local := source.ID
 		if !programSemanticID.MatchString(string(local)) || strings.Contains(string(local), "/") {
 			return ControlProgram{}, invalidProgram(fmt.Sprintf("transitions[%d].id", index), "must be a local semantic identifier without '/'")
@@ -209,6 +233,9 @@ func ValidateProgram(manifest ProgramManifest, runtime RuntimeCompatibility) (Co
 		}
 		if source.Controllable() && !containsDeclaration(effects, string(source.Effect)) {
 			return ControlProgram{}, invalidProgram(fmt.Sprintf("transitions[%d].effect", index), "effect is not declared by the program")
+		}
+		if missing := catalog.MissingCapability(catalog.RequiredCapabilities(source), catalog.NewCapabilitySet(declaredCapabilities...)); missing != "" {
+			return ControlProgram{}, invalidProgram(fmt.Sprintf("transitions[%d].required_capabilities", index), fmt.Sprintf("CAPABILITY_NOT_DECLARED %q", missing))
 		}
 		if source.Controllable() {
 			usedEffects[string(source.Effect)] = true
@@ -263,7 +290,7 @@ func ValidateProgram(manifest ProgramManifest, runtime RuntimeCompatibility) (Co
 		OwnedResources []string
 		GoalContracts  []GoalContract
 		Transitions    []Transition
-	}{manifest.ProgramID, ProgramCapabilities{Effects: effects, Verifiers: verifiers}, resources, goalContracts.All(), canonicalTransitions}
+	}{manifest.ProgramID, ProgramCapabilities{Effects: effects, Verifiers: verifiers, CapabilitySurface: declaredCapabilities}, resources, goalContracts.All(), canonicalTransitions}
 	fingerprint, err := fingerprint(canonical)
 	if err != nil {
 		return ControlProgram{}, invalidProgram("", "fingerprint canonical program: "+err.Error())
@@ -296,7 +323,8 @@ func (value ProgramTransition) runtimeTransition() Transition {
 		ID: value.ID, Version: value.Version, SelectionClass: value.SelectionClass, Class: value.Class,
 		SourcePhases: value.SourcePhases, TargetPhases: value.TargetPhases, GoalKinds: value.GoalKinds,
 		RequiredIdentity: value.RequiredIdentity, Authority: value.Authority, AuthorityAll: value.AuthorityAll,
-		RequiredEvidence: value.RequiredEvidence, OwnedResources: value.OwnedResources, Effect: value.Effect,
+		RequiredCapabilities: value.RequiredCapabilities,
+		RequiredEvidence:     value.RequiredEvidence, OwnedResources: value.OwnedResources, Effect: value.Effect,
 		LocalEffects: value.LocalEffects, ExternalEffects: value.ExternalEffects, Idempotent: value.Idempotent,
 		Parameters: value.Parameters, Prescription: value.Prescription, SourcePredicate: value.SourcePredicate,
 		SourceConditions: value.SourceConditions, AdmissionPredicate: value.AdmissionPredicate,

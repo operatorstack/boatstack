@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -22,6 +23,7 @@ func fixtureManifest(t *testing.T, id string) json.RawMessage {
 	raw, err := json.Marshal(control.ExtensionManifest{
 		ID: id, Version: "1.0.0", ProtocolVersion: control.ExtensionProtocolVersion,
 		SettingsSchema: json.RawMessage(`{"type":"object"}`), Facts: []string{id + ".present"},
+		Capabilities:          []control.Capability{control.CapabilityCommandExecute},
 		PrivacyClassification: "metadata-only", TelemetryClassification: "transition-receipt",
 	})
 	if err != nil {
@@ -56,6 +58,15 @@ func fixtureExtension(t *testing.T) *Extension {
 		t.Fatal(err)
 	}
 	return extension
+}
+
+func fixtureObserveRequest(correlationID string) control.ExtensionRequest {
+	return control.ExtensionRequest{
+		ProtocolVersion: control.ExtensionProtocolVersion,
+		Operation:       control.ExtensionObserveOperation,
+		ExtensionID:     "fixture.echo", ExtensionVersion: "1.0.0", CorrelationID: correlationID,
+		Capabilities: []control.Capability{control.CapabilityCommandExecute},
+	}
 }
 
 func pythonFixture(t *testing.T, mutate func(string) string) *Extension {
@@ -104,9 +115,7 @@ func TestPythonFixtureImplementsStrictLanguageNeutralProtocol(t *testing.T) {
 	if manifest.ID != "fixture.echo" || manifest.ExecutableSHA256 == "" || len(manifest.Facts) != 1 {
 		t.Fatalf("manifest = %#v", manifest)
 	}
-	response, err := extension.Invoke(context.Background(), control.ExtensionRequest{
-		ProtocolVersion: 1, Operation: control.ExtensionObserveOperation, ExtensionID: "fixture.echo", ExtensionVersion: "1.0.0", CorrelationID: "observe-fixture",
-	})
+	response, err := extension.Invoke(context.Background(), fixtureObserveRequest("observe-fixture"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +141,7 @@ func TestExecutableDriftFailsBeforeInvocation(t *testing.T) {
 	if err := os.WriteFile(path, append(source, []byte("\n# drift\n")...), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	_, err = extension.Invoke(context.Background(), control.ExtensionRequest{ProtocolVersion: 1, Operation: control.ExtensionObserveOperation, ExtensionID: "fixture.echo", ExtensionVersion: "1.0.0", CorrelationID: "drift"})
+	_, err = extension.Invoke(context.Background(), fixtureObserveRequest("drift"))
 	if err == nil || !strings.Contains(err.Error(), "fingerprint drifted") {
 		t.Fatalf("drift error = %v", err)
 	}
@@ -154,9 +163,7 @@ func TestInvocationExecutesTheExactVerifiedBytesAfterPathReplacement(t *testing.
 			t.Fatal(err)
 		}
 	}
-	response, err := extension.Invoke(context.Background(), control.ExtensionRequest{
-		ProtocolVersion: 1, Operation: control.ExtensionObserveOperation, ExtensionID: "fixture.echo", ExtensionVersion: "1.0.0", CorrelationID: "atomic-replacement",
-	})
+	response, err := extension.Invoke(context.Background(), fixtureObserveRequest("atomic-replacement"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +227,7 @@ func TestExecutableCannotBecomeASymlinkAfterConstruction(t *testing.T) {
 	if err := os.Symlink(replacement, path); err != nil {
 		t.Fatal(err)
 	}
-	_, err = extension.Invoke(context.Background(), control.ExtensionRequest{ProtocolVersion: 1, Operation: control.ExtensionObserveOperation, ExtensionID: "fixture.echo", ExtensionVersion: "1.0.0", CorrelationID: "symlink-drift"})
+	_, err = extension.Invoke(context.Background(), fixtureObserveRequest("symlink-drift"))
 	if err == nil || !strings.Contains(err.Error(), "drifted to a symlink") {
 		t.Fatalf("symlink drift error = %v", err)
 	}
@@ -248,7 +255,7 @@ func TestDeadlineAndOutputBoundsFailClosed(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = extension.Invoke(context.Background(), control.ExtensionRequest{ProtocolVersion: 1, Operation: control.ExtensionObserveOperation, ExtensionID: "fixture.echo", ExtensionVersion: "1.0.0", CorrelationID: fixture.name})
+			_, err = extension.Invoke(context.Background(), fixtureObserveRequest(fixture.name))
 			if err == nil || !strings.Contains(err.Error(), fixture.want) {
 				t.Fatalf("error = %v, want %q", err, fixture.want)
 			}
@@ -292,12 +299,25 @@ func TestStrictJSONRejectsUnknownTrailingAndWrongOperationPayloads(t *testing.T)
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
 			extension := pythonFixture(t, mutate)
-			_, err := extension.Invoke(context.Background(), control.ExtensionRequest{
-				ProtocolVersion: 1, Operation: control.ExtensionObserveOperation, ExtensionID: "fixture.echo", ExtensionVersion: "1.0.0", CorrelationID: name,
-			})
+			_, err := extension.Invoke(context.Background(), fixtureObserveRequest(name))
 			if err == nil {
 				t.Fatalf("%s response was accepted", name)
 			}
 		})
+	}
+}
+
+func TestCommandExecuteDocumentsArbitraryProcessFrontier(t *testing.T) {
+	// frontier: command.execute permits arbitrary host effects; finer kernel
+	// capabilities govern only brokered Boatstack effects, not subprocess code.
+	marker := filepath.Join(exactPath(t, t.TempDir()), "ambient-write")
+	extension := pythonFixture(t, func(source string) string {
+		return strings.Replace(source, "request = json.load(sys.stdin)", "open("+strconv.Quote(marker)+", \"w\").write(\"ambient\")\nrequest = json.load(sys.stdin)", 1)
+	})
+	if _, err := extension.Invoke(context.Background(), fixtureObserveRequest("command-frontier")); err != nil {
+		t.Fatal(err)
+	}
+	if raw, err := os.ReadFile(marker); err != nil || string(raw) != "ambient" {
+		t.Fatalf("arbitrary process frontier was not exercised: value=%q error=%v", raw, err)
 	}
 }

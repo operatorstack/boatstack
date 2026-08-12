@@ -11,7 +11,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/supervisor"
 )
 
-const SchemaVersion = 3
+const SchemaVersion = 4
 
 type Operation string
 

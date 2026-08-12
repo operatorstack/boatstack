@@ -9,6 +9,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
 )
 
 type programObserver struct {
@@ -39,6 +40,9 @@ func (o programObserver) Observe(ctx context.Context, request ports.ObservationR
 		if flow.Runtime == nil {
 			return model.Observation{}, fmt.Errorf("program runtime %q observer is unavailable", flow.Identity.ID)
 		}
+		if err := requireComponentRuntimeCapabilities(request.Capabilities, flow.Manifest.Capabilities, flow.Identity.ID); err != nil {
+			return model.Observation{}, err
+		}
 		projection := observation
 		projection.ProgramFingerprint = o.program.Fingerprint()
 		snapshot, encodeErr := json.Marshal(projection)
@@ -50,6 +54,7 @@ func (o programObserver) Observe(ctx context.Context, request ports.ObservationR
 			ProgramID: flow.Identity.ID, ProgramVersion: flow.Identity.Version,
 			ProgramFingerprint: o.program.Fingerprint(), CorrelationID: request.Invocation.Correlation,
 			RepositoryRoot: request.Invocation.InvokingPath, Snapshot: snapshot, Settings: flow.Manifest.Settings,
+			Capabilities: boundedComponentCapabilities(request.Capabilities, flow.Manifest.Capabilities),
 		})
 		if invokeErr != nil {
 			return model.Observation{}, fmt.Errorf("program runtime %q observation failed: %w", flow.Identity.ID, invokeErr)
@@ -97,6 +102,9 @@ func (o programObserver) Observe(ctx context.Context, request ports.ObservationR
 		if extension.Manifest.ExecutableSHA256 != "" && !observation.ExecutableRuntimeAdmitted(o.program.Fingerprint()) {
 			continue
 		}
+		if requireComponentRuntimeCapabilities(request.Capabilities, extension.Manifest.Capabilities, extension.Identity.ID) != nil {
+			continue
+		}
 		if extension.Runtime == nil {
 			return model.Observation{}, fmt.Errorf("extension %q observer is unavailable", extension.Identity.ID)
 		}
@@ -111,6 +119,7 @@ func (o programObserver) Observe(ctx context.Context, request ports.ObservationR
 			ExtensionID: extension.Identity.ID, ExtensionVersion: extension.Identity.Version,
 			ProgramFingerprint: o.program.Fingerprint(), CorrelationID: request.Invocation.Correlation,
 			RepositoryRoot: request.Invocation.InvokingPath, Snapshot: snapshot, Settings: extension.Manifest.Settings,
+			Capabilities: boundedComponentCapabilities(request.Capabilities, extension.Manifest.Capabilities),
 		})
 		if err != nil {
 			return model.Observation{}, fmt.Errorf("extension %q observation failed: %w", extension.Identity.ID, err)
@@ -148,6 +157,9 @@ func (o programObserver) Observe(ctx context.Context, request ports.ObservationR
 	if request.VerifyTransitionID != "" {
 		transition, ok := o.program.RuntimeRegistry().Lookup(request.VerifyTransitionID)
 		if ok && transition.Origin.Kind == catalog.OriginControlProgram && flow.Manifest.RuntimeMode == control.ProgramRuntimeProtocol {
+			if err := requireComponentRuntimeCapabilities(request.Capabilities, flow.Manifest.Capabilities, flow.Identity.ID); err != nil {
+				return model.Observation{}, err
+			}
 			snapshot, encodeErr := json.Marshal(observation)
 			if encodeErr != nil {
 				return model.Observation{}, encodeErr
@@ -157,6 +169,7 @@ func (o programObserver) Observe(ctx context.Context, request ports.ObservationR
 				ProgramID: flow.Identity.ID, ProgramVersion: flow.Identity.Version,
 				ProgramFingerprint: o.program.Fingerprint(), CorrelationID: request.Invocation.Correlation,
 				RepositoryRoot: request.Invocation.InvokingPath, TransitionID: transition.ID, Snapshot: snapshot, Settings: flow.Manifest.Settings,
+				Capabilities: boundedComponentCapabilities(request.Capabilities, flow.Manifest.Capabilities),
 			})
 			if invokeErr != nil {
 				return model.Observation{}, invokeErr
@@ -173,6 +186,9 @@ func (o programObserver) Observe(ctx context.Context, request ports.ObservationR
 			if !exists || extension.Runtime == nil {
 				return model.Observation{}, fmt.Errorf("extension verifier %q is unavailable", transition.Verifier)
 			}
+			if err := requireComponentRuntimeCapabilities(request.Capabilities, extension.Manifest.Capabilities, extension.Identity.ID); err != nil {
+				return model.Observation{}, err
+			}
 			snapshot, err := json.Marshal(observation)
 			if err != nil {
 				return model.Observation{}, err
@@ -182,6 +198,7 @@ func (o programObserver) Observe(ctx context.Context, request ports.ObservationR
 				ExtensionID: extension.Identity.ID, ExtensionVersion: extension.Identity.Version,
 				ProgramFingerprint: o.program.Fingerprint(), CorrelationID: request.Invocation.Correlation,
 				RepositoryRoot: request.Invocation.InvokingPath, TransitionID: transition.ID, Snapshot: snapshot, Settings: extension.Manifest.Settings,
+				Capabilities: boundedComponentCapabilities(request.Capabilities, extension.Manifest.Capabilities),
 			})
 			if err != nil {
 				return model.Observation{}, err
@@ -195,6 +212,24 @@ func (o programObserver) Observe(ctx context.Context, request ports.ObservationR
 		}
 	}
 	return observation, nil
+}
+
+func requireComponentRuntimeCapabilities(granted, declared []catalog.Capability, component string) error {
+	if !catalog.NewCapabilitySet(declared...)[catalog.CapabilityCommandExecute] {
+		return fmt.Errorf("component %q does not declare command.execute", component)
+	}
+	return protocol.RequireCapability(granted, catalog.CapabilityCommandExecute, "component runtime "+component)
+}
+
+func boundedComponentCapabilities(granted, declared []catalog.Capability) []catalog.Capability {
+	grantedSet := catalog.NewCapabilitySet(granted...)
+	result := catalog.CapabilitySet{}
+	for _, capability := range declared {
+		if grantedSet[capability] {
+			result[capability] = true
+		}
+	}
+	return result.Sorted()
 }
 
 func validateProgramRuntimeResponse(flow control.CompiledProgramRuntime, operation control.ProgramRuntimeOperation, correlation string, response control.ProgramRuntimeResponse) error {

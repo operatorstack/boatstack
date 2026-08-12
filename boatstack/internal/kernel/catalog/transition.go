@@ -243,6 +243,9 @@ type Transition struct {
 	RequiredIdentity              []string              `json:"required_identity"`
 	Authority                     []AuthorityClass      `json:"authority"`
 	AuthorityAll                  []AuthorityClass      `json:"authority_all,omitempty"`
+	RequiredCapabilities          []Capability          `json:"required_capabilities,omitempty"`
+	DeclaredCapabilities          []Capability          `json:"-"`
+	RuntimeExecution              bool                  `json:"-"`
 	RequiredEvidence              []string              `json:"required_evidence"`
 	OwnedResources                []string              `json:"owned_resources,omitempty"`
 	Effect                        EffectID              `json:"effect,omitempty"`
@@ -434,6 +437,20 @@ func validateTransition(t Transition) error {
 			return fmt.Errorf("%s: invalid authority class %q", t.ID, authority)
 		}
 	}
+	required, err := NormalizeCapabilities(string(t.ID)+".required_capabilities", t.RequiredCapabilities)
+	if err != nil {
+		return err
+	}
+	declared, err := NormalizeCapabilities(string(t.ID)+".declared_capabilities", t.DeclaredCapabilities)
+	if err != nil {
+		return err
+	}
+	if t.Controllable() {
+		allRequired := UnionCapabilities(required, KernelEffectCapabilities(t))
+		if missing := MissingCapability(allRequired, NewCapabilitySet(declared...)); missing != "" {
+			return fmt.Errorf("%s: CAPABILITY_NOT_DECLARED %q", t.ID, missing)
+		}
+	}
 	if t.Controllable() && t.Effect == "" {
 		return fmt.Errorf("%s: controllable transition has no owned effect", t.ID)
 	}
@@ -607,6 +624,8 @@ func cloneTransition(value Transition) Transition {
 	value.RequiredIdentity = append([]string(nil), value.RequiredIdentity...)
 	value.Authority = append([]AuthorityClass(nil), value.Authority...)
 	value.AuthorityAll = append([]AuthorityClass(nil), value.AuthorityAll...)
+	value.RequiredCapabilities = append([]Capability(nil), value.RequiredCapabilities...)
+	value.DeclaredCapabilities = append([]Capability(nil), value.DeclaredCapabilities...)
 	value.RequiredEvidence = append([]string(nil), value.RequiredEvidence...)
 	value.OwnedResources = append([]string(nil), value.OwnedResources...)
 	value.LocalEffects = append([]EffectID(nil), value.LocalEffects...)

@@ -23,7 +23,7 @@ repository source
 | `program_id` | identity | Lowercase semantic ID without `/`; included because it qualifies every transition ID. |
 | `program_version` | descriptive author identity | Non-empty deterministic token; excluded because changing it alone does not change executable semantics. |
 | `requires_runtime` | compatibility | Exact `>=MAJOR.MINOR.PATCH` minimum; checked before registry construction and excluded from the executable fingerprint. |
-| `capabilities` | executable semantics | Exact, duplicate-free sets of used effect and verifier IDs; sorted canonically. Declaration does not grant authority. |
+| `capabilities` | executable semantics | Exact, duplicate-free `effects`, `verifiers`, and `capability_surface` sets. The capability surface is the program's maximum intended effect surface; declaration does not grant authority. |
 | `owned_resources` | executable semantics | Exact, duplicate-free set of resources written by transitions; sorted canonically. |
 | `goal_contracts` | executable semantics | Sorted by goal; conjunctive conditions and their set-valued members are sorted. |
 | `transitions` | executable semantics | Local declarations are normalized, program-qualified, validated, and sorted by complete ID for hashing. |
@@ -69,3 +69,16 @@ normalized transition graph, exact goal contracts, capability bindings,
 resource ownership, and program-qualified identity. Thus representation-only
 changes remain stable while every kernel-observable control-law change changes
 the fingerprint.
+
+## Capability boundary
+
+Each controllable transition declares `required_capabilities`. Validation
+requires that set, plus the kernel-owned minimum for its concrete effect, to be
+inside the program capability surface. Admission then requires all of those
+capabilities from external authority. Missing or unknown capabilities fail
+closed; intersection never produces a partially admitted transition.
+
+Prescriptions bind the authority source identity and exact required/effective
+capability set. Admissions also retain the broader granted set. Effects receive
+only the exact effective set and recheck the kernel minimum before execution.
+See [Capability and authority boundary](capability-authority-boundary.md).

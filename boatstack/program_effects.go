@@ -22,6 +22,14 @@ type programEffectDriver struct {
 }
 
 func (d programEffectDriver) Prepare(ctx context.Context, admission protocol.Admission, transition catalog.Transition) (ports.PreparedEffect, error) {
+	if err := protocol.ValidateEffectCapabilities(admission, transition); err != nil {
+		return nil, err
+	}
+	if transition.RuntimeExecution {
+		if err := protocol.RequireCapability(admission.EffectiveCapabilities, catalog.CapabilityCommandExecute, "component runtime "+transition.Origin.ID); err != nil {
+			return nil, err
+		}
+	}
 	if transition.Origin.Kind == catalog.OriginCoreSystem {
 		return d.base.Prepare(ctx, admission, transition)
 	}
@@ -41,6 +49,7 @@ func (d programEffectDriver) Prepare(ctx context.Context, admission protocol.Adm
 			ProtocolVersion: control.ProgramRuntimeProtocolVersion, ProgramID: flow.Identity.ID, ProgramVersion: flow.Identity.Version,
 			ProgramFingerprint: admission.ExpectedProgramFingerprint, CorrelationID: admission.Invocation.Correlation,
 			RepositoryRoot: admission.Invocation.InvokingPath, TransitionID: transition.ID, Parameters: parameters, Settings: flow.Manifest.Settings,
+			Capabilities: append([]control.Capability(nil), admission.EffectiveCapabilities...),
 		}
 		if transition.Class == catalog.EventOwnedExternal {
 			prepared, err := effects.NewExtensionExternalPrepared(func(executionContext context.Context) (ports.EffectResult, error) {
@@ -53,7 +62,7 @@ func (d programEffectDriver) Prepare(ctx context.Context, admission protocol.Adm
 					return ports.EffectResult{}, err
 				}
 				return decodeExtensionSettlement(flow.Identity.ID, response.ExternalResult)
-			})
+			}, admission, transition)
 			if err != nil {
 				return nil, err
 			}
@@ -74,7 +83,7 @@ func (d programEffectDriver) Prepare(ctx context.Context, admission protocol.Adm
 		if err := validateProgramWrites(d.program, transition, flow.Identity.ID, response.Writes); err != nil {
 			return nil, err
 		}
-		prepared, err := effects.NewFlowLocalPrepared(admission.Invocation.InvokingPath, flow.Identity.ID, response.Writes)
+		prepared, err := effects.NewFlowLocalPrepared(admission.Invocation.InvokingPath, flow.Identity.ID, response.Writes, admission, transition)
 		if err != nil {
 			return nil, err
 		}
@@ -92,6 +101,7 @@ func (d programEffectDriver) Prepare(ctx context.Context, admission protocol.Adm
 		ProtocolVersion: control.ExtensionProtocolVersion, ExtensionID: extension.Identity.ID, ExtensionVersion: extension.Identity.Version,
 		ProgramFingerprint: admission.ExpectedProgramFingerprint, CorrelationID: admission.Invocation.Correlation,
 		RepositoryRoot: admission.Invocation.InvokingPath, TransitionID: transition.ID, Parameters: parameters, Settings: extension.Manifest.Settings,
+		Capabilities: append([]control.Capability(nil), admission.EffectiveCapabilities...),
 	}
 	if transition.Class == catalog.EventOwnedExternal {
 		prepared, err := effects.NewExtensionExternalPrepared(func(executionContext context.Context) (ports.EffectResult, error) {
@@ -105,7 +115,7 @@ func (d programEffectDriver) Prepare(ctx context.Context, admission protocol.Adm
 				return ports.EffectResult{}, err
 			}
 			return decodeExtensionSettlement(extension.Identity.ID, response.ExternalResult)
-		})
+		}, admission, transition)
 		if err != nil {
 			return nil, err
 		}
@@ -126,7 +136,7 @@ func (d programEffectDriver) Prepare(ctx context.Context, admission protocol.Adm
 	if err := validateProgramWrites(d.program, transition, extension.Identity.ID, response.Writes); err != nil {
 		return nil, err
 	}
-	prepared, err := effects.NewExtensionLocalPrepared(admission.Invocation.InvokingPath, extension.Identity.ID, response.Writes)
+	prepared, err := effects.NewExtensionLocalPrepared(admission.Invocation.InvokingPath, extension.Identity.ID, response.Writes, admission, transition)
 	if err != nil {
 		return nil, err
 	}

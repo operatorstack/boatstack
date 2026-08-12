@@ -9,7 +9,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 )
 
-const AdmissionSchemaVersion = 3
+const AdmissionSchemaVersion = 4
 
 type Admission struct {
 	SchemaVersion               int                     `json:"schema_version"`
@@ -30,6 +30,10 @@ type Admission struct {
 	GoalScope                   catalog.GoalScope       `json:"goal_scope,omitempty"`
 	GoalStatus                  model.FactStatus        `json:"goal_status,omitempty"`
 	Authority                   AuthorityBundle         `json:"authority"`
+	AuthorityFingerprint        string                  `json:"authority_fingerprint"`
+	RequiredCapabilities        []catalog.Capability    `json:"required_capabilities"`
+	GrantedCapabilities         []catalog.Capability    `json:"granted_capabilities"`
+	EffectiveCapabilities       []catalog.Capability    `json:"effective_capabilities"`
 	Parameters                  Parameters              `json:"parameters,omitempty"`
 	Evidence                    []string                `json:"evidence"`
 	IdempotencyKey              string                  `json:"idempotency_key"`
@@ -46,10 +50,14 @@ func NewAdmission(snapshot model.Snapshot, goal model.Goal, transition catalog.T
 	if err := ValidateApplicability(snapshot, goal, transition, authority, parameters, now); err != nil {
 		return Admission{}, err
 	}
+	capabilities, err := ProjectCapabilities(snapshot, transition, authority, now)
+	if err != nil {
+		return Admission{}, err
+	}
 	if lifetime <= 0 {
 		return Admission{}, fmt.Errorf("admission lifetime must be positive")
 	}
-	if err := prescription.ValidateCurrent(snapshot, transition); err != nil {
+	if err := prescription.ValidateCurrent(snapshot, transition, capabilities); err != nil {
 		return Admission{}, err
 	}
 	sourceRevision, worktreeFingerprint := gitBinding(snapshot)
@@ -58,6 +66,8 @@ func NewAdmission(snapshot model.Snapshot, goal model.Goal, transition catalog.T
 		ExpectedStateRevision: prescription.ExpectedStateRevision, ExpectedProgramFingerprint: prescription.ExpectedProgramFingerprint,
 		ExpectedSnapshotFingerprint: prescription.ExpectedSnapshotFingerprint, SourceRevision: sourceRevision, WorktreeFingerprint: worktreeFingerprint,
 		SourcePhase: snapshot.Phase.Value, Invocation: snapshot.Invocation, Goal: goal, GoalScope: transition.Policy.GoalScope, Authority: authority.canonical(),
+		AuthorityFingerprint: capabilities.AuthorityFingerprint, RequiredCapabilities: capabilities.Required,
+		GrantedCapabilities: capabilities.Granted, EffectiveCapabilities: capabilities.Effective,
 		Evidence: append([]string(nil), transition.RequiredEvidence...), Parameters: parameters.Canonical(), IssuedAt: now.UTC(), ExpiresAt: now.Add(lifetime).UTC(),
 	}
 	if transition.Policy.GoalScope == catalog.GoalScopeOptionalPreserve {
@@ -215,6 +225,16 @@ func (a Admission) ValidateCurrent(snapshot model.Snapshot, goal model.Goal, tra
 	if err := a.Authority.Validate(now); err != nil {
 		return err
 	}
+	capabilities, err := ProjectCapabilities(snapshot, transition, a.Authority, now)
+	if err != nil {
+		return err
+	}
+	if a.AuthorityFingerprint != capabilities.AuthorityFingerprint ||
+		!sameCapabilities(a.RequiredCapabilities, capabilities.Required) ||
+		!sameCapabilities(a.GrantedCapabilities, capabilities.Granted) ||
+		!sameCapabilities(a.EffectiveCapabilities, capabilities.Effective) {
+		return fmt.Errorf("admission %q authority or capability binding changed", a.ID)
+	}
 	if err := validateAuthorityEvidence(snapshot, a.Authority); err != nil {
 		return err
 	}
@@ -344,8 +364,27 @@ func validateAuthorityEvidence(snapshot model.Snapshot, authority AuthorityBundl
 }
 
 func (a Admission) ValidateIdentity() error {
-	if a.SchemaVersion != AdmissionSchemaVersion || a.ID == "" || a.PrescriptionID == "" || a.TransitionID == "" || a.TransitionVersion < 1 || a.ExpectedStateRevision == 0 || len(a.ExpectedProgramFingerprint) != 64 || len(a.ExpectedSnapshotFingerprint) != 64 || !a.SourcePhase.Valid() || a.IdempotencyKey == "" || a.IssuedAt.IsZero() || a.ExpiresAt.Before(a.IssuedAt) {
+	if a.SchemaVersion != AdmissionSchemaVersion || a.ID == "" || a.PrescriptionID == "" || a.TransitionID == "" || a.TransitionVersion < 1 || a.ExpectedStateRevision == 0 || len(a.ExpectedProgramFingerprint) != 64 || len(a.ExpectedSnapshotFingerprint) != 64 || a.AuthorityFingerprint == "" || len(a.RequiredCapabilities) == 0 || len(a.EffectiveCapabilities) == 0 || !a.SourcePhase.Valid() || a.IdempotencyKey == "" || a.IssuedAt.IsZero() || a.ExpiresAt.Before(a.IssuedAt) {
 		return fmt.Errorf("admission: invalid schema, identity, source, or lifetime")
+	}
+	fingerprint, err := a.Authority.Fingerprint()
+	if err != nil || fingerprint != a.AuthorityFingerprint {
+		return fmt.Errorf("admission has invalid authority identity")
+	}
+	for field, values := range map[string][]catalog.Capability{
+		"required_capabilities":  a.RequiredCapabilities,
+		"granted_capabilities":   a.GrantedCapabilities,
+		"effective_capabilities": a.EffectiveCapabilities,
+	} {
+		if _, err := catalog.NormalizeCapabilities("admission."+field, values); err != nil {
+			return err
+		}
+	}
+	if !sameCapabilities(a.RequiredCapabilities, a.EffectiveCapabilities) {
+		return fmt.Errorf("admission effective capabilities do not equal exact requirements")
+	}
+	if missing := catalog.MissingCapability(a.EffectiveCapabilities, catalog.NewCapabilitySet(a.GrantedCapabilities...)); missing != "" {
+		return fmt.Errorf("admission effective capability %q was not granted", missing)
 	}
 	if (a.PriorProgramFingerprint == "") != (a.ProgramDeltaFingerprint == "") {
 		return fmt.Errorf("admission has incomplete program delta identity")
@@ -395,4 +434,16 @@ func (a Admission) ValidateIdentity() error {
 		return fmt.Errorf("admission %q failed content identity verification", a.ID)
 	}
 	return nil
+}
+
+func sameCapabilities(left, right []catalog.Capability) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
