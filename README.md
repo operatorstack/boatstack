@@ -103,7 +103,7 @@ control graph. The complete list is generated from the registry in the
 | Surface | Shipped functionality |
 | --- | --- |
 | **Programs and relation** | Domain-neutral programs, control instances, objective bindings, observations, operators, marked states, targeted and untargeted resolution, priorities, and prerequisite selection. One immutable fingerprint binds each program's executable semantics. |
-| **Admission and authority** | Typed capabilities and separate human, autonomy, repository-policy, and external-provider receipts. Programs declare their maximum capability surface but cannot grant themselves authority. |
+| **Admission and authority** | Capability-bearing authority receipts are fingerprinted, time-valid, and projected into admission. Required capabilities combine program declarations with a trusted mechanism classifier. |
 | **Transactions** | Prescriptions bind the exact control instance, state revision, program, objective binding, observation, transition, and authority. Apply rechecks that boundary before execution. |
 | **Verification and receipts** | Fresh postcondition verification, atomic state-and-receipt commits, and immutable transition facts. |
 | **Recovery** | A durable effect attempt precedes execution. Interrupted or uncertain outcomes enter explicit recovery instead of blindly repeating an effect. |
@@ -113,6 +113,7 @@ control graph. The complete list is generated from the registry in the
 | Surface | Shipped functionality |
 | --- | --- |
 | **StandardFlow** | A first-party product-delivery Flow covering installation, repository attachment, configuration, objectives, planning, worktrees, build/test/review evidence, publication, cleanup, and recovery. |
+| **Delivery authority** | Separate human, autonomy, repository-policy, and external-provider receipts. Delivery programs declare a maximum capability surface but cannot grant themselves authority. |
 | **Delivery transactions** | Idempotent replay of committed transition receipts, with recovery required when the transaction state is not settled. |
 | **Repository topology** | Embedded, detached, and linked-worktree identity; verified state transfer when a workspace is cut; cleanup only after proved landing or explicit abandonment. |
 | **Publication** | Preview, provider-authorized execution, observation, correction, and reconciliation. Boatstack does not infer provider authority from `gh` authentication and never grants merge authority. |
