@@ -347,7 +347,7 @@ func newIntegerFixture(setup Setup) KernelConformance {
 		state.Mode, state.ObjectiveBinding, value = "one", &binding, 1
 	}
 	now := time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC)
-	authority := kernel.Authority{Receipts: []kernel.AuthorityReceipt{{ID: "human-counter", Subject: "fixture", Fingerprint: "fixture-authority", Capabilities: []kernel.Capability{"counter.audit", "counter.increment", "counter.reset", "objective.bind"}, IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)}}}
+	authority := kernel.Authority{Receipts: []kernel.AuthorityReceipt{{ID: "human-counter", Subject: "fixture", Fingerprint: "fixture-authority", Capabilities: []kernel.Capability{"counter.audit", "counter.increment", "counter.reset", "objective.bind"}, IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(24 * time.Hour)}}}
 	domain := &IntegerDomain{value: value, executions: map[string]int{}}
 	receipts := &MemoryReceipts{}
 	store := &MemoryStateStore{state: state, receipts: receipts}

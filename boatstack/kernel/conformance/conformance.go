@@ -256,7 +256,10 @@ func (suite KernelConformance) expiredAuthorityFailsClosed(t *testing.T) {
 func (suite KernelConformance) authorityExpiryInvalidatesPrescription(t *testing.T) {
 	fixture, runtime := suite.fresh(t, SetupBound)
 	transition := fixture.Scenario.AdvanceTransitions[0]
-	request, prescription := resolve(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective, fixture.Scenario.Authority)
+	authority := fixture.Scenario.Authority
+	authority.Receipts = append([]kernel.AuthorityReceipt(nil), authority.Receipts...)
+	authority.Receipts[0].ExpiresAt = fixture.Clock.Now().Add(time.Hour)
+	request, prescription := resolve(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective, authority)
 	fixture.Scenario.AdvanceClock(2 * time.Hour)
 	before := fixture.Scenario.Snapshot()
 	_, err := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
