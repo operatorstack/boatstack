@@ -1,6 +1,7 @@
 package effects
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"os/exec"
@@ -151,6 +152,17 @@ func TestRestartRecoveryRestoresPriorStateAndCommitsRecoveryRevision(t *testing.
 	}
 	if err := journalBeforeRestart.RequireRecovery(ctx, admission.ID, "simulated process loss after effect"); err != nil {
 		t.Fatal(err)
+	}
+	basePendingPath, err := journalBeforeRestart.pendingPath(ctx, admission)
+	if err != nil {
+		t.Fatal(err)
+	}
+	basePending, err := os.ReadFile(basePendingPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(basePending, []byte(`"schema_version": 8`)) || !bytes.Contains(basePending, []byte(`"allowed_state_facets"`)) {
+		t.Fatalf("pending update journal is not current-main schema 8: %s", basePending)
 	}
 
 	restartedInvocation, err := resolver.ResolveInvocation(ctx, repository, "cli", "after-restart")

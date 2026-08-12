@@ -157,6 +157,26 @@ func DurableStateFacetPolicy(transition Transition) (StateFacetPolicy, error) {
 	return StateFacetPolicy{Reads: append([]model.StateFacet(nil), allStateFacets...), Writes: writes}, nil
 }
 
+// RecoveryStateFacets reconstructs the interrupted transition's write envelope
+// from admission-bound capability identity. Privileged core facets remain
+// closed over the fixed transition IDs that own them; repository-authored
+// programs can recover only control and admitted product mutations.
+func RecoveryStateFacets(id TransitionID, required []Capability) []model.StateFacet {
+	switch id {
+	case "runtime.hydrate", "runtime.replace", "runtime.reconcile", "installation.update":
+		return []model.StateFacet{model.StateFacetControl, model.StateFacetInstallation}
+	case "installation.initialize", "installation.reconcile-update":
+		return []model.StateFacet{model.StateFacetControl, model.StateFacetInstallation, model.StateFacetProgram}
+	case "repository.attach", "catalog.reconcile":
+		return []model.StateFacet{model.StateFacetControl, model.StateFacetProgram}
+	}
+	writes := []model.StateFacet{model.StateFacetControl}
+	if NewCapabilitySet(required...).ContainsAll([]Capability{CapabilityProductMutate}) {
+		writes = append(writes, model.StateFacetProduct)
+	}
+	return writes
+}
+
 func containsStateFacet(values []model.StateFacet, wanted model.StateFacet) bool {
 	for _, value := range values {
 		if value == wanted {

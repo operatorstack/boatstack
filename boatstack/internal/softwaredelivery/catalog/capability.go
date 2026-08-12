@@ -3,7 +3,8 @@ package catalog
 import (
 	"fmt"
 	"sort"
-	"strings"
+
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 )
 
 // Capability names a kernel-enforced class of effect. A declaration narrows
@@ -131,16 +132,16 @@ func KernelEffectCapabilities(transition Transition) []Capability {
 	if transition.RuntimeExecution {
 		required[CapabilityCommandExecute] = true
 	}
+	for _, facet := range transition.OwnedFacets {
+		if facet == model.StateFacetProduct {
+			required[CapabilityProductMutate] = true
+		}
+	}
 	id := string(transition.Effect)
 	switch id {
 	case "gate.build.record", "gate.test.record", "workspace.cut", "workspace.sync", "workspace.cleanup", "workspace.reap",
 		"publication.observe", "publication.reconcile", "publication.execute", "publication.correct":
 		required[CapabilityCommandExecute] = true
-	}
-	if strings.HasPrefix(id, "objective.") || strings.HasPrefix(id, "plan.") || strings.HasPrefix(id, "workspace.") ||
-		strings.HasPrefix(id, "gate.") || strings.HasPrefix(id, "evidence.") || strings.HasPrefix(id, "delivery.") ||
-		strings.HasPrefix(id, "publication.") {
-		required[CapabilityProductMutate] = true
 	}
 	if id == "publication.preview" {
 		required[CapabilityPublicationPrepare] = true

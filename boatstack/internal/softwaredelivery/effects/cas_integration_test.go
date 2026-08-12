@@ -141,7 +141,8 @@ func TestConcurrentApplyConsumesOneRevisionExactlyOnce(t *testing.T) {
 		t.Fatalf("canonical committed journal count=%d err=%v", len(committedJournals), err)
 	}
 	committedRaw, err := os.ReadFile(committedJournals[0])
-	if err != nil || !bytes.Contains(committedRaw, []byte(committed.Receipt.ID)) || !bytes.Contains(committedRaw, []byte("committed_effects")) {
+	if err != nil || !bytes.Contains(committedRaw, []byte(committed.Receipt.ID)) || !bytes.Contains(committedRaw, []byte("committed_effects")) ||
+		!bytes.Contains(committedRaw, []byte(`"schema_version": 8`)) || !bytes.Contains(committedRaw, []byte(`"allowed_state_facets"`)) {
 		t.Fatalf("committed journal lacks its complete transition fact: %v %q", err, committedRaw)
 	}
 	// Simulate a crash after canonical commit but before the passive receipt
