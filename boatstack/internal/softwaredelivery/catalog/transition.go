@@ -727,6 +727,9 @@ func validateStateEffect(t Transition) error {
 		if t.RuntimeExecution {
 			return fmt.Errorf("%s: component runtime transition cannot invoke a host-native state handler", t.ID)
 		}
+		if err := validateNativeStateHandler(t); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("%s: controllable transition requires a declared state effect", t.ID)
 	}
@@ -799,6 +802,9 @@ func validateStateEffect(t Transition) error {
 		if source := assignment.ValueFrom.Invocation; source != "" && source != "invoking_path" && source != "worktree_id" && source != "ref" {
 			return fmt.Errorf("%s: state-effect assignment %q references unknown invocation value %q", t.ID, assignment.Facet, source)
 		}
+	}
+	if err := validateDeclarativeStateClosure(t, assignments); err != nil {
+		return err
 	}
 	return nil
 }

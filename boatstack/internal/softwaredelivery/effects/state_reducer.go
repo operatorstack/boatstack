@@ -80,6 +80,7 @@ var nativeStateHandlers = map[string]nativeStateHandler{
 	"runtime-reconcile":              applyRuntimeReconcile,
 	"configuration-verified-settled": applyConfigurationVerifiedSettled,
 	"configuration-reconcile":        applyConfigurationReconcile,
+	"installation-initialize":        applyInstallationInitialize,
 	"installation-reconcile-update":  applyInstallationReconcileUpdate,
 	"catalog-reconcile":              applyCatalogReconcile,
 	"objective-bind":                 applyObjectiveBind,
@@ -305,6 +306,17 @@ func applyConfigurationReconcile(state *durable.State, _ protocol.Admission, _ c
 	state.Configuration, state.Recovery, state.Transaction = model.ConfigurationVerified, model.RecoveryNone, model.TransactionNone
 	clearRecoveryContext(state)
 	state.Phase = settledPhase(*state)
+	return nil
+}
+
+func applyInstallationInitialize(state *durable.State, admission protocol.Admission, _ catalog.Transition) error {
+	state.Runtime = model.RuntimeVerified
+	state.RuntimeVersion, _ = admission.Parameters.Get("runtime_version")
+	state.RuntimeFingerprint, _ = admission.Parameters.Get("runtime_sha256")
+	state.RuntimeSource, _ = admission.Parameters.Get("source_revision")
+	state.Configuration = model.ConfigurationVerified
+	state.ConfigFingerprint, _ = admission.Parameters.Get("config_sha256")
+	state.Phase = model.PhaseObserved
 	return nil
 }
 

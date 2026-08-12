@@ -234,6 +234,90 @@ func TestMalformedDeclaredStateEffectsFailClosedAtCatalogBoundary(t *testing.T) 
 	}
 }
 
+func TestNativeStateHandlersAreBoundToAuthorizedSemantics(t *testing.T) {
+	// control-law: a named native handler cannot grant semantics beyond its component, effect, facets, or objective policy
+	cases := []struct {
+		name       string
+		transition catalog.TransitionID
+		mutate     func(*catalog.Transition)
+	}{
+		{"unknown-handler", "plan.approve", func(value *catalog.Transition) { value.StateEffect.NativeHandler = "unknown-handler" }},
+		{"untrusted-component", "plan.approve", func(value *catalog.Transition) { value.Origin.ID = "repository-program" }},
+		{"mismatched-effect", "plan.approve", func(value *catalog.Transition) { value.Effect = "plan.create" }},
+		{"mismatched-facets", "plan.approve", func(value *catalog.Transition) { value.OwnedFacets = []model.StateFacet{model.StateFacetControl} }},
+		{"objective-bind-policy", "objective.bind", func(value *catalog.Transition) {
+			value.Policy.BindsRequestedObjective = false
+			value.Policy.ObjectiveScope = catalog.ObjectiveScopeBoundExact
+		}},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			transitions := testprogram.StandardRegistry().All()
+			for index := range transitions {
+				if transitions[index].ID == test.transition {
+					test.mutate(&transitions[index])
+					break
+				}
+			}
+			if _, err := catalog.New(transitions); err == nil {
+				t.Fatal("invalid native handler contract reached the runtime registry")
+			}
+		})
+	}
+}
+
+func TestDeclarativeAssignmentsCloseDurableStateInvariants(t *testing.T) {
+	// control-law: every accepted assignment set preserves durable-state validity for every resolver-matching source
+	cases := []struct {
+		name       string
+		transition catalog.TransitionID
+		mutate     func(*catalog.Transition)
+	}{
+		{"verified-runtime-without-source", "installation.update", func(value *catalog.Transition) {
+			value.StateEffect.Assignments = removeAssignment(value.StateEffect.Assignments, "runtime_source")
+		}},
+		{"managed-workspace-without-source-identity", "workspace.cut", func(value *catalog.Transition) {
+			value.StateEffect.Assignments = removeAssignment(value.StateEffect.Assignments, "workspace_source_ref")
+		}},
+		{"recovery-without-cause", "recovery.escalate", func(value *catalog.Transition) {
+			value.StateEffect.Assignments = removeAssignment(value.StateEffect.Assignments, "recovery_cause")
+		}},
+		{"terminal-with-active-phase", "workspace.abandon", func(value *catalog.Transition) {
+			active := string(model.PhaseActive)
+			value.TargetPhases = []model.ProtocolPhase{model.PhaseActive}
+			for index := range value.StateEffect.Assignments {
+				if value.StateEffect.Assignments[index].Facet == "phase" {
+					value.StateEffect.Assignments[index].Value = &active
+				}
+			}
+		}},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			transitions := testprogram.StandardRegistry().All()
+			for index := range transitions {
+				if transitions[index].ID == test.transition {
+					test.mutate(&transitions[index])
+					break
+				}
+			}
+			if _, err := catalog.New(transitions); err == nil {
+				t.Fatal("durably incomplete assignment set reached the runtime registry")
+			}
+		})
+	}
+}
+
+func removeAssignment(values []catalog.StateAssignment, facet string) []catalog.StateAssignment {
+	result := make([]catalog.StateAssignment, 0, len(values))
+	for _, value := range values {
+		if value.Facet != facet {
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
 func TestPackageImportsPreserveControlProgramDependencyDirection(t *testing.T) {
 	// control-law: general-kernel-cannot-depend-on-software-delivery
 	root := sourceRoot(t)

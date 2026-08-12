@@ -115,6 +115,38 @@ func TestProgramManifestCanonicalFingerprintContract(t *testing.T) {
 	}
 }
 
+func TestProgramManifestCanonicalizesStateEffectSets(t *testing.T) {
+	fixture := func() delivery.ProgramManifest {
+		manifest := programFixture()
+		transition := &manifest.Transitions[0]
+		transition.SourcePhases = []delivery.ProtocolPhase{delivery.PhaseActive, delivery.PhaseObserved}
+		transition.SourceConditions = append(transition.SourceConditions, delivery.KnownCondition(delivery.FacetTerminal, "nonterminal"))
+		transition.TargetConditions = append(transition.TargetConditions, delivery.KnownCondition(delivery.FacetTerminal, "established"))
+		transition.OwnedFacets = append(transition.OwnedFacets, delivery.StateFacetProduct)
+		phase, terminal := string(delivery.PhaseTerminal), "established"
+		transition.StateEffect = delivery.StateEffect{
+			Kind: delivery.StateEffectAssignments,
+			Preconditions: []delivery.StatePrecondition{
+				{Facet: "phase", Values: []string{string(delivery.PhaseActive), string(delivery.PhaseObserved)}},
+				{Facet: "terminal", Values: []string{"nonterminal"}},
+			},
+			Assignments: []delivery.StateAssignment{{Facet: "phase", Value: &phase}, {Facet: "terminal", Value: &terminal}},
+		}
+		return manifest
+	}
+
+	oneManifest := fixture()
+	one := loadManifest(t, oneManifest)
+	twoManifest := fixture()
+	reverse(twoManifest.Transitions[0].StateEffect.Preconditions)
+	reverse(twoManifest.Transitions[0].StateEffect.Preconditions[1].Values)
+	reverse(twoManifest.Transitions[0].StateEffect.Assignments)
+	two := loadManifest(t, twoManifest)
+	if one.Fingerprint() != two.Fingerprint() {
+		t.Fatalf("state-effect set ordering changed executable identity: %s != %s", one.Fingerprint(), two.Fingerprint())
+	}
+}
+
 func TestProgramManifestNamespaceAndCompatibilityBoundary(t *testing.T) {
 	// control-law: only-compatible-validated-programs-reach-the-runtime-registry
 	first := programFixture()
@@ -161,6 +193,15 @@ func TestProgramManifestNamespaceAndCompatibilityBoundary(t *testing.T) {
 		}, runtimeFixture(), delivery.ProgramInvalid},
 		{"host-native-state-handler", func(value *delivery.ProgramManifest) {
 			value.Transitions[0].StateEffect = delivery.StateEffect{Kind: delivery.StateEffectNative, NativeHandler: "abandon-delivery"}
+		}, runtimeFixture(), delivery.ProgramInvalid},
+		{"product-only-owned-facets", func(value *delivery.ProgramManifest) {
+			value.Transitions[0].OwnedFacets = []delivery.StateFacet{delivery.StateFacetProduct}
+		}, runtimeFixture(), delivery.ProgramInvalid},
+		{"unclosed-verified-configuration", func(value *delivery.ProgramManifest) {
+			verified := "verified"
+			value.Transitions[0].SourceConditions = append(value.Transitions[0].SourceConditions, delivery.KnownCondition(delivery.FacetConfiguration, "unsupported"))
+			value.Transitions[0].TargetConditions = append(value.Transitions[0].TargetConditions, delivery.KnownCondition(delivery.FacetConfiguration, verified))
+			value.Transitions[0].StateEffect.Assignments = []delivery.StateAssignment{{Facet: "configuration", Value: &verified}}
 		}, runtimeFixture(), delivery.ProgramInvalid},
 		{"optional-assignment-parameter", func(value *delivery.ProgramManifest) {
 			value.Transitions[0].Parameters = append(value.Transitions[0].Parameters, delivery.ParameterSpec{Name: "optional_state"})

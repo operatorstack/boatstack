@@ -134,6 +134,9 @@ func DurableStateFacetPolicy(transition Transition) (StateFacetPolicy, error) {
 	if err != nil || len(writes) == 0 {
 		return StateFacetPolicy{}, fmt.Errorf("%s: controllable transition requires valid owned facets: %v", transition.ID, err)
 	}
+	if !containsStateFacet(writes, model.StateFacetControl) {
+		return StateFacetPolicy{}, fmt.Errorf("%s: controllable transition must own %q durable state", transition.ID, model.StateFacetControl)
+	}
 	switch transition.Origin.Kind {
 	case OriginControlProgram:
 		for _, facet := range writes {
@@ -152,4 +155,13 @@ func DurableStateFacetPolicy(transition Transition) (StateFacetPolicy, error) {
 		return StateFacetPolicy{}, fmt.Errorf("transition %q has no valid durable state facet policy origin", transition.ID)
 	}
 	return StateFacetPolicy{Reads: append([]model.StateFacet(nil), allStateFacets...), Writes: writes}, nil
+}
+
+func containsStateFacet(values []model.StateFacet, wanted model.StateFacet) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
 }

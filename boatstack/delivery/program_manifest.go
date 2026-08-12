@@ -476,6 +476,20 @@ func normalizeProgramTransition(value Transition) (Transition, error) {
 	if err != nil {
 		return Transition{}, err
 	}
+	for index := range value.StateEffect.Preconditions {
+		value.StateEffect.Preconditions[index].Values, err = uniqueSorted(value.StateEffect.Preconditions[index].Values, func(v string) string { return v })
+		if err != nil {
+			return Transition{}, err
+		}
+	}
+	value.StateEffect.Preconditions, err = uniqueSorted(value.StateEffect.Preconditions, func(v StatePrecondition) string { return v.Facet })
+	if err != nil {
+		return Transition{}, err
+	}
+	value.StateEffect.Assignments, err = uniqueSorted(value.StateEffect.Assignments, func(v StateAssignment) string { return v.Facet })
+	if err != nil {
+		return Transition{}, err
+	}
 	value.LocalEffects, err = uniqueSorted(value.LocalEffects, func(v EffectID) string { return string(v) })
 	if err != nil {
 		return Transition{}, err

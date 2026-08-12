@@ -42,3 +42,14 @@ func TestRepositoryProgramCannotSelfGrantInstallationFacet(t *testing.T) {
 		t.Fatalf("repository program received installation ownership: %v / %v", policy.Writes, err)
 	}
 }
+
+func TestControllableTransitionCannotOmitControlFacet(t *testing.T) {
+	transition := Transition{
+		ID: "repository-program/advance", Class: EventOwnedLocal,
+		Origin:      TransitionOrigin{Kind: OriginControlProgram, ID: "repository-program", Version: "1", ManifestFingerprint: "manifest"},
+		OwnedFacets: []model.StateFacet{model.StateFacetProduct},
+	}
+	if policy, err := DurableStateFacetPolicy(transition); err == nil || len(policy.Writes) != 0 {
+		t.Fatalf("product-only transition received a writable state envelope: %v / %v", policy.Writes, err)
+	}
+}

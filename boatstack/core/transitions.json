@@ -2446,45 +2446,8 @@
       "program"
     ],
     "state_effect": {
-      "kind": "assignments",
-      "assignments": [
-        {
-          "facet": "runtime",
-          "value": "verified"
-        },
-        {
-          "facet": "configuration",
-          "value": "verified"
-        },
-        {
-          "facet": "runtime_version",
-          "value_from": {
-            "parameter": "runtime_version"
-          }
-        },
-        {
-          "facet": "runtime_fingerprint",
-          "value_from": {
-            "parameter": "runtime_sha256"
-          }
-        },
-        {
-          "facet": "runtime_source",
-          "value_from": {
-            "parameter": "source_revision"
-          }
-        },
-        {
-          "facet": "config_fingerprint",
-          "value_from": {
-            "parameter": "config_sha256"
-          }
-        },
-        {
-          "facet": "phase",
-          "value": "OBSERVED"
-        }
-      ]
+      "kind": "native",
+      "native_handler": "installation-initialize"
     }
   },
   {
