@@ -1,0 +1,305 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"sort"
+	"strings"
+
+	"github.com/operatorstack/boatstack/boatstack/controlprogram"
+	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
+	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
+)
+
+const flowCompilerVersion = "control-program/v1.compiler.1"
+
+type flowCommandOptions struct {
+	repository string
+	source     string
+	artifact   string
+	lock       string
+	frontend   string
+}
+
+func runFlowCommand(arguments []string) error {
+	if len(arguments) == 0 {
+		return fmt.Errorf("usage: boatstack flow <compile|check> [flags]")
+	}
+	action := arguments[0]
+	flags := flag.NewFlagSet("flow "+action, flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	options := flowCommandOptions{}
+	flags.StringVar(&options.repository, "repo", ".", "repository containing .boatstack/flows")
+	flags.StringVar(&options.source, "source", "", "Flow TypeScript source path")
+	flags.StringVar(&options.artifact, "artifact", "", "compiled Flow artifact path")
+	flags.StringVar(&options.lock, "lock", "package-lock.json", "frontend dependency lock path")
+	flags.StringVar(&options.frontend, "frontend", "", "exact boatstack-flow-frontend executable path")
+	if err := flags.Parse(arguments[1:]); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("unexpected flow arguments: %s", strings.Join(flags.Args(), " "))
+	}
+	repository, err := filepath.Abs(options.repository)
+	if err != nil {
+		return err
+	}
+	repository, err = filepath.EvalSymlinks(repository)
+	if err != nil {
+		return err
+	}
+	options.repository = repository
+	switch action {
+	case "compile":
+		return compileFlow(context.Background(), options)
+	case "check":
+		return checkFlow(context.Background(), options)
+	default:
+		return fmt.Errorf("unknown flow action %q", action)
+	}
+}
+
+func compileFlow(ctx context.Context, options flowCommandOptions) error {
+	source, err := resolveFlowSource(options.repository, options.source)
+	if err != nil {
+		return err
+	}
+	artifactPath, err := resolveArtifactPath(options.repository, options.artifact, source)
+	if err != nil {
+		return err
+	}
+	lockPath, err := exactRepositoryPath(options.repository, options.lock)
+	if err != nil {
+		return err
+	}
+	frontend, err := resolveFrontend(options.repository, options.frontend)
+	if err != nil {
+		return err
+	}
+	rawIR, err := boatstackruntime.RunFlowFrontend(ctx, frontend, source)
+	if err != nil {
+		return err
+	}
+	resolver, err := softwareflow.NewResolver(ctx)
+	if err != nil {
+		return err
+	}
+	compiled, err := controlprogram.Load(bytes.NewReader(rawIR), resolver)
+	if err != nil {
+		return err
+	}
+	skills, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
+	if err != nil {
+		return err
+	}
+	sourceRaw, err := os.ReadFile(source)
+	if err != nil {
+		return err
+	}
+	lockRaw, err := os.ReadFile(lockPath)
+	if err != nil {
+		return err
+	}
+	sourceRelative, _ := filepath.Rel(options.repository, source)
+	lockRelative, _ := filepath.Rel(options.repository, lockPath)
+	artifact, artifactRaw, err := controlprogram.NewArtifact(compiled, controlprogram.ArtifactInput{
+		CompilerVersion: flowCompilerVersion, SourcePath: filepath.ToSlash(sourceRelative), Source: sourceRaw,
+		DependencyLockPath: filepath.ToSlash(lockRelative), DependencyLock: lockRaw, GeneratedSkills: skills,
+	})
+	if err != nil {
+		return err
+	}
+	retiredSkills, err := retiredGeneratedSkills(options.repository, artifactPath, artifact.GeneratedSkills)
+	if err != nil {
+		return err
+	}
+	paths := make([]string, 0, len(skills))
+	for path := range skills {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		absolute, pathErr := exactRepositoryPath(options.repository, path)
+		if pathErr != nil {
+			return pathErr
+		}
+		if err := boatstackruntime.AtomicWrite(absolute, skills[path], 0o644); err != nil {
+			return err
+		}
+	}
+	for _, path := range retiredSkills {
+		if err := boatstackruntime.RemoveGeneratedFile(path); err != nil {
+			return fmt.Errorf("remove retired generated skill: %w", err)
+		}
+	}
+	if err := boatstackruntime.AtomicWrite(artifactPath, artifactRaw, 0o644); err != nil {
+		return err
+	}
+	return renderFlowResult("compiled", artifactPath, artifact)
+}
+
+func retiredGeneratedSkills(repository, artifactPath string, next map[string]string) ([]string, error) {
+	info, err := os.Lstat(artifactPath)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("CONTROL_PROGRAM_STALE: existing artifact is not a regular file")
+	}
+	raw, err := os.ReadFile(artifactPath)
+	if err != nil {
+		return nil, err
+	}
+	prior, err := controlprogram.LoadArtifact(bytes.NewReader(raw))
+	if err != nil {
+		return nil, fmt.Errorf("CONTROL_PROGRAM_STALE: existing artifact cannot authorize projection replacement: %w", err)
+	}
+	retired := make([]string, 0)
+	for relative, expected := range prior.GeneratedSkills {
+		if _, retained := next[relative]; retained {
+			continue
+		}
+		path, pathErr := exactRepositoryPath(repository, relative)
+		if pathErr != nil {
+			return nil, pathErr
+		}
+		fileInfo, statErr := os.Lstat(path)
+		if statErr != nil || fileInfo.Mode()&os.ModeSymlink != 0 || !fileInfo.Mode().IsRegular() {
+			return nil, fmt.Errorf("CONTROL_PROGRAM_STALE: retired generated skill %s is missing or not regular", relative)
+		}
+		content, readErr := os.ReadFile(path)
+		if readErr != nil || fileDigest(content) != expected {
+			return nil, fmt.Errorf("CONTROL_PROGRAM_STALE: retired generated skill %s was modified", relative)
+		}
+		retired = append(retired, path)
+	}
+	sort.Strings(retired)
+	return retired, nil
+}
+
+func fileDigest(value []byte) string {
+	sum := sha256.Sum256(value)
+	return hex.EncodeToString(sum[:])
+}
+
+func checkFlow(ctx context.Context, options flowCommandOptions) error {
+	artifactPath, err := resolveCheckArtifact(options.repository, options.artifact)
+	if err != nil {
+		return err
+	}
+	raw, err := os.ReadFile(artifactPath)
+	if err != nil {
+		return err
+	}
+	artifact, err := controlprogram.LoadArtifact(bytes.NewReader(raw))
+	if err != nil {
+		return err
+	}
+	resolver, err := softwareflow.NewResolver(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err := controlprogram.CheckArtifact(options.repository, artifact, flowCompilerVersion, resolver); err != nil {
+		return err
+	}
+	return renderFlowResult("valid", artifactPath, artifact)
+}
+
+func resolveFlowSource(repository, requested string) (string, error) {
+	if requested != "" {
+		return exactRepositoryPath(repository, requested)
+	}
+	matches, err := filepath.Glob(filepath.Join(repository, ".boatstack", "flows", "*.flow.ts"))
+	if err != nil {
+		return "", err
+	}
+	if len(matches) != 1 {
+		return "", fmt.Errorf("FLOW_SOURCE_SELECTION_REQUIRED: found %d Flow sources", len(matches))
+	}
+	return filepath.Clean(matches[0]), nil
+}
+
+func resolveArtifactPath(repository, requested, source string) (string, error) {
+	if requested != "" {
+		return exactRepositoryPath(repository, requested)
+	}
+	if !strings.HasSuffix(source, ".flow.ts") {
+		return "", fmt.Errorf("Flow source must end with .flow.ts")
+	}
+	return strings.TrimSuffix(source, ".ts") + ".ir.json", nil
+}
+
+func resolveCheckArtifact(repository, requested string) (string, error) {
+	if requested != "" {
+		return exactRepositoryPath(repository, requested)
+	}
+	matches, err := filepath.Glob(filepath.Join(repository, ".boatstack", "flows", "*.flow.ir.json"))
+	if err != nil {
+		return "", err
+	}
+	if len(matches) != 1 {
+		return "", fmt.Errorf("FLOW_ARTIFACT_SELECTION_REQUIRED: found %d Flow artifacts", len(matches))
+	}
+	return filepath.Clean(matches[0]), nil
+}
+
+func resolveFrontend(repository, requested string) (string, error) {
+	if requested != "" {
+		if !filepath.IsAbs(requested) {
+			return "", fmt.Errorf("--frontend must be exact and absolute")
+		}
+		return filepath.Clean(requested), nil
+	}
+	name := "boatstack-flow-frontend"
+	if runtime.GOOS == "windows" {
+		name += ".cmd"
+	}
+	candidate := filepath.Join(repository, "node_modules", ".bin", name)
+	if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+		return filepath.Clean(candidate), nil
+	}
+	return "", fmt.Errorf("FLOW_FRONTEND_REQUIRED: install @operatorstack/boatstack or pass --frontend")
+}
+
+func exactRepositoryPath(repository, relative string) (string, error) {
+	if relative == "" || filepath.IsAbs(relative) {
+		return "", fmt.Errorf("repository path must be non-empty and relative")
+	}
+	clean := filepath.Clean(relative)
+	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("repository path escapes the repository")
+	}
+	absolute := filepath.Join(repository, clean)
+	rel, err := filepath.Rel(repository, absolute)
+	if err != nil || rel != clean {
+		return "", fmt.Errorf("repository path is not canonical")
+	}
+	return absolute, nil
+}
+
+func renderFlowResult(status, artifactPath string, artifact controlprogram.Artifact) error {
+	return json.NewEncoder(os.Stdout).Encode(map[string]any{
+		"status": status, "program_id": artifact.Program.Program.ID, "program_fingerprint": artifact.ProgramFingerprint,
+		"artifact": artifactPath, "entries": entryIDs(artifact.Program.Entries),
+	})
+}
+
+func entryIDs(entries []controlprogram.Entry) []string {
+	result := make([]string, len(entries))
+	for index, entry := range entries {
+		result[index] = entry.ID
+	}
+	sort.Strings(result)
+	return result
+}

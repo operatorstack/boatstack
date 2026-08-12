@@ -1,0 +1,21 @@
+{
+  "name": "@operatorstack/boatstack",
+  "version": "0.0.0-development",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "boatstack-flow-frontend": "./bin/boatstack-flow-frontend.mjs"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "dependencies": {
+    "tsx": "4.20.6"
+  }
+}

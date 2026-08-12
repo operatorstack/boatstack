@@ -14,6 +14,19 @@ Windows users run `install.ps1` in PowerShell. The kernel creates
 
 ## Configure one exact objective
 
+Repositories with a compiled Flow normally select a named entry instead:
+
+```sh
+boatstack flow check --repo .
+boatstack next --repo . --flow product-delivery --entry run --format json
+```
+
+The first response returns an opaque run ID. Preserve the program, entry, run
+ID, objective, delivery, authority, and prescription through every subsequent
+`next`, `apply`, question, and recovery call.
+
+## Configure one exact objective manually
+
 Every managed delivery has a stable objective ID, delivery ID, and terminal kind.
 This example targets a verified implementation:
 
@@ -35,7 +48,7 @@ boatstack next --repo . --transition engagement.begin \
   --objective-id search-timeout --objective-kind verified-implementation \
   --delivery search-timeout --repository-authority --format json
 
-boatstack apply --repo . --transition engagement.begin --flow search-timeout \
+boatstack apply --repo . --transition engagement.begin --run-id search-timeout \
   --objective-id search-timeout --objective-kind verified-implementation \
   --delivery search-timeout --repository-authority \
   --correlation <correlation> --prescription-id <prescription-id> \

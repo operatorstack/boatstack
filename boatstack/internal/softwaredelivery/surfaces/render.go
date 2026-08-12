@@ -25,8 +25,8 @@ type CommandAST struct {
 	Arguments  []string
 }
 
-func PrescriptionCommand(transition catalog.Transition, prescription protocol.Prescription, correlation, repository string, objective model.Objective, flowID string, parameters protocol.Parameters) CommandAST {
-	arguments := []string{"apply", "--repo", repository, "--transition", string(transition.ID), "--flow", flowID,
+func PrescriptionCommand(transition catalog.Transition, prescription protocol.Prescription, correlation, repository string, objective model.Objective, runID, programID, entryID string, parameters protocol.Parameters) CommandAST {
+	arguments := []string{"apply", "--repo", repository, "--transition", string(transition.ID), "--run-id", runID,
 		"--correlation", correlation, "--prescription-id", prescription.ID,
 		"--expected-instance-id", prescription.ExpectedInstanceID,
 		"--expected-state-revision", strconv.FormatUint(prescription.ExpectedStateRevision, 10),
@@ -34,6 +34,9 @@ func PrescriptionCommand(transition catalog.Transition, prescription protocol.Pr
 		"--expected-snapshot-fingerprint", prescription.ExpectedSnapshotFingerprint,
 		"--expected-objective-binding-fingerprint", prescription.ExpectedObjectiveBindingFingerprint,
 		"--authority-fingerprint", prescription.AuthorityFingerprint}
+	if programID != "" && entryID != "" {
+		arguments = append(arguments, "--flow", programID, "--entry", entryID)
+	}
 	for _, capability := range prescription.RequiredCapabilities {
 		arguments = append(arguments, "--required-capability", string(capability))
 	}
@@ -77,7 +80,7 @@ type HostPrescription struct {
 
 // ProjectHostPrescription changes host capability metadata only. Every host
 // consumes the same semantic command, authority prompt, and postcondition.
-func ProjectHostPrescription(host string, transition catalog.Transition, prescription protocol.Prescription, correlation, repository string, objective model.Objective, flowID string, parameters protocol.Parameters) (HostPrescription, error) {
+func ProjectHostPrescription(host string, transition catalog.Transition, prescription protocol.Prescription, correlation, repository string, objective model.Objective, runID, programID, entryID string, parameters protocol.Parameters) (HostPrescription, error) {
 	known := false
 	for _, candidate := range CanonicalHostNames() {
 		if host == candidate {
@@ -89,7 +92,7 @@ func ProjectHostPrescription(host string, transition catalog.Transition, prescri
 		return HostPrescription{}, fmt.Errorf("unsupported host %q", host)
 	}
 	return HostPrescription{
-		Host: host, TransitionID: string(transition.ID), Command: PrescriptionCommand(transition, prescription, correlation, repository, objective, flowID, parameters),
+		Host: host, TransitionID: string(transition.ID), Command: PrescriptionCommand(transition, prescription, correlation, repository, objective, runID, programID, entryID, parameters),
 		AuthorityPrompt: transition.Prescription.AuthorityPrompt, ExpectedPostcondition: transition.Prescription.ExpectedPostcondition,
 	}, nil
 }

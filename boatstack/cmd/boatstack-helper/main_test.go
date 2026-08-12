@@ -3,12 +3,14 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/buildinfo"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
 	"github.com/operatorstack/boatstack/boatstack/internal/testprogram"
 )
@@ -83,9 +85,27 @@ func TestTransitionReceiptCannotBeLoadedAsAuthority(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"schema_version":5,"id":"trc-old"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := loadAuthority(commandOptions{authorityReceipts: stringList{path}}, "correlation", model.Objective{}, time.Now().UTC())
+	_, err := loadAuthority(commandOptions{authorityReceipts: stringList{path}}, "correlation", model.Objective{}, nil, time.Now().UTC())
 	if err == nil {
 		t.Fatal("transition receipt was accepted as authority")
+	}
+}
+
+func TestHumanPublicationConfirmationBindsExactPreviewFingerprint(t *testing.T) {
+	// control-law: publication-authority-confirms-exact-preview-bytes
+	now := time.Now().UTC()
+	options := commandOptions{humanActor: "reviewer", transitionID: "publication.execute"}
+	objective := model.Objective{ID: "publish", Kind: model.ObjectiveOpenPR, DeliveryID: "delivery"}
+	one, err := loadAuthority(options, "correlation", objective, protocol.Parameters{{Name: "preview_fingerprint", Value: strings.Repeat("a", 64)}}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	two, err := loadAuthority(options, "correlation", objective, protocol.Parameters{{Name: "preview_fingerprint", Value: strings.Repeat("b", 64)}}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(one.Receipts) != 1 || len(two.Receipts) != 1 || one.Receipts[0].Fingerprint == two.Receipts[0].Fingerprint {
+		t.Fatal("different preview fingerprints reused one human confirmation")
 	}
 }
 

@@ -15,6 +15,22 @@ Boatstack may create these reviewable paths through registered effects:
 These files are evidence inputs. Their presence alone never establishes
 engagement, authority, completion, or publication.
 
+## Repository Flow artifacts
+
+`boatstack flow compile` projects a repository-owned `.flow.ts` source into
+committed runtime inputs:
+
+| Path | Owner | Meaning |
+|---|---|---|
+| `.boatstack/flows/<program>.flow.ir.json` | Flow compiler | canonical IR plus source, lock, binding, and generated-file hashes |
+| `.agents/skills/<program>-<entry>/SKILL.md` | Flow compiler | Codex entry projection |
+| `.agents/skills/<program>-<entry>/agents/openai.yaml` | Flow compiler | Codex skill metadata |
+| `.claude/skills/<program>-<entry>/SKILL.md` | Flow compiler | Claude entry projection |
+
+`boatstack flow check` rejects stale sources, dependency locks, trusted
+bindings, program fingerprints, or skills. Runtime commands load only the
+checked IR artifact; they do not execute the TypeScript source.
+
 ## Machine-local controller state
 
 Embedded worktree state is partitioned under the Git common directory.

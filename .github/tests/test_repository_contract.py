@@ -289,8 +289,8 @@ class RepositoryContract(unittest.TestCase):
         self.assertIn("VERSION: ${{ inputs.prerelease_tag || github.ref_name }}", release)
         self.assertIn('RELEASE_SOURCE: ${{ github.sha }}', release)
 
-    def test_operation_skills_are_three_distinct_authority_preserving_surfaces(self) -> None:
-        # control-law: operation-skill-discovery-preserves-authority-and-exact-cardinality
+    def test_kernel_skill_is_maintenance_only_and_delivery_entries_are_repository_owned(self) -> None:
+        # control-law: kernel-skill-discovery-cannot-invent-domain-entry-authority
         skills = {
             path.parent.name: path.read_text()
             for path in sorted((REPO / ".agents" / "skills").glob("boatstack-*/SKILL.md"))
@@ -301,7 +301,7 @@ class RepositoryContract(unittest.TestCase):
         }
         readme = (REPO / "README.md").read_text()
 
-        self.assertEqual(set(skills), {"boatstack-autoplan", "boatstack-run", "boatstack-update"})
+        self.assertEqual(set(skills), {"boatstack-update"})
         self.assertEqual(set(prompts), set(skills))
         for host_root in (REPO / ".claude" / "skills", REPO / ".gemini" / "skills"):
             projected = {
@@ -315,11 +315,7 @@ class RepositoryContract(unittest.TestCase):
         }
         self.assertEqual(cursor, skills)
         self.assertFalse((REPO / "boatstack" / "SKILL.md").exists())
-        mappings = {
-            "boatstack-autoplan": "`approved-plan` terminal",
-            "boatstack-run": "`open-or-updated-pr` terminal",
-            "boatstack-update": "`installation.reconcile-update`",
-        }
+        mappings = {"boatstack-update": "`installation.reconcile-update`"}
         for name, mapping in mappings.items():
             self.assertIn(f"name: {name}", skills[name])
             self.assertIn(mapping, skills[name])
@@ -337,17 +333,6 @@ class RepositoryContract(unittest.TestCase):
         ):
             for name, skill in skills.items():
                 self.assertIn(contract, skill, name)
-        self.assertIn("never grants merge authority", skills["boatstack-run"])
-        for name in ("boatstack-autoplan", "boatstack-run"):
-            for contract in (
-                "request human and repository-policy authority sources",
-                "repository-policy source remains requested",
-                "do not pass `--repository-authority`\nuntil the current configuration has exact verified fingerprint evidence",
-                "one bounded attempt for that receipt",
-                "The kernel must derive the\nreceipt from that exact verified fingerprint",
-                "do not retry it\nagain for the same receipt",
-            ):
-                self.assertIn(contract, skills[name], name)
         update = skills["boatstack-update"]
         self.assertIn("request only checksum-verified installation authority", update)
         self.assertIn(
@@ -365,7 +350,9 @@ class RepositoryContract(unittest.TestCase):
         ):
             self.assertIn(contract, update)
         self.assertIn("Untargeted resolution selects\nonly a transition that advances the configured objective", readme)
-        self.assertIn("exactly three operation skills", readme)
+        self.assertIn("installer generates the maintenance skill", readme)
+        self.assertIn("A repository Flow declares its own entries", readme)
+        self.assertIn("does\nnot interpret the word `run`", readme)
 
         _, kernel_and_later = readme.split("### Kernel", 1)
         kernel_section, delivery_and_later = kernel_and_later.split("### Software delivery", 1)
@@ -584,7 +571,7 @@ class RepositoryContract(unittest.TestCase):
             path.read_text() for path in sorted((REPO / "boatstack").rglob("*.go"))
         )
         for retired in (
-            "boatstack/control", "internal/kernel", "internal/effects",
+            "boatstack/control\"", "internal/kernel", "internal/effects",
             "internal/plant", "internal/surfaces", "goal.configure",
             "GOAL_REQUIRED", 'json:"goal',
         ):
@@ -592,17 +579,18 @@ class RepositoryContract(unittest.TestCase):
 
         component_ci = (REPO / ".github" / "workflows" / "ci.yml").read_text()
         for current in (
-            "./kernel", "./delivery", "./internal/softwaredelivery/protocol",
+            "./kernel", "./controlprogram", "./delivery", "./internal/softwaredelivery/protocol",
             "./internal/softwaredelivery/surfaces",
             "./internal/softwaredelivery/plant",
             "./internal/softwaredelivery/effects",
         ):
             self.assertIn(current, component_ci)
         for retired in (
-            "./control", "./internal/kernel", "./internal/plant",
+            "./internal/kernel", "./internal/plant",
             "./internal/effects", "./internal/surfaces",
         ):
             self.assertNotIn(retired, component_ci)
+        self.assertNotIn("packages: ./control\n", component_ci)
         self.assertIn("run: go test -race ./...", component_ci)
         self.assertIn(
             "run: go test -race ./kernel ./internal/softwaredelivery/effects",
@@ -673,7 +661,7 @@ class RepositoryContract(unittest.TestCase):
             "workspace-cleanup", "workspace-reap", "record-build", "record-test",
             "record-review", "record-change", "record-journey",
             "publication-preview", "publish-pr", "observe-pr", "correct-pr",
-            "abandon",
+            "abandon", "flow",
         }
         pattern = re.compile(
             r"(?m)^[ \t]*(?:\$[A-Za-z_][A-Za-z0-9_]*/)?"

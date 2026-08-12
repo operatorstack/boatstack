@@ -11,8 +11,8 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/ports"
 )
 
-func TestHostSkillProjectionExposesExactlyThreeOperationsPerInteractiveHost(t *testing.T) {
-	// control-law: enabled-hosts-receive-exactly-three-canonical-operation-skills
+func TestHostSkillProjectionExposesOnlyKernelMaintenance(t *testing.T) {
+	// control-law: repository-flow-entries-not-kernel-modes
 	files := desiredHostSkillFiles([]string{"cli", "cursor", "codex", "claude", "gemini", "mcp"})
 	counts := map[string]int{}
 	for path, raw := range files {
@@ -35,8 +35,8 @@ func TestHostSkillProjectionExposesExactlyThreeOperationsPerInteractiveHost(t *t
 		}
 	}
 	for _, host := range []string{"codex", "claude", "gemini", "cursor"} {
-		if counts[host] != 3 {
-			t.Fatalf("%s discovered %d operation skills, want exactly 3", host, counts[host])
+		if counts[host] != 1 {
+			t.Fatalf("%s discovered %d kernel operation skills, want exactly 1", host, counts[host])
 		}
 	}
 }
@@ -63,44 +63,29 @@ func TestHostSkillProjectionPreservesAuthorityBoundaries(t *testing.T) {
 	}
 }
 
-func TestHostSkillProjectionPreservesDeferredRepositoryAuthority(t *testing.T) {
-	// control-law: retained-repository-source-rematerializes-once-after-verification
+func TestHostSkillProjectionDoesNotClaimDeliveryEntries(t *testing.T) {
+	// control-law: kernel-skill-projection-cannot-invent-repository-flow-entries
 	files := desiredHostSkillFiles([]string{"cursor", "codex", "claude", "gemini"})
 	for path, raw := range files {
 		if strings.HasSuffix(path, "openai.yaml") {
 			continue
 		}
 		value := string(raw)
-		isDelivery := strings.Contains(path, "boatstack-autoplan") || strings.Contains(path, "boatstack-run")
-		for _, contract := range []string{
-			"request human and repository-policy authority sources",
-			"repository-policy source remains requested",
-			"do not pass `--repository-authority`\nuntil the current configuration has exact verified fingerprint evidence",
-			"one bounded attempt for that receipt",
-			"The kernel must derive the\nreceipt from that exact verified fingerprint",
-			"do not retry it\nagain for the same receipt",
-		} {
-			if isDelivery && !strings.Contains(value, contract) {
-				t.Fatalf("%s is missing deferred authority contract %q", path, contract)
-			}
-			if !isDelivery && strings.Contains(value, contract) {
-				t.Fatalf("%s improperly gains delivery authority contract %q", path, contract)
-			}
+		if strings.Contains(value, "boatstack-autoplan") || strings.Contains(value, "boatstack-run") {
+			t.Fatalf("%s contains a hard-coded delivery entry", path)
 		}
-		if !isDelivery {
-			for _, contract := range []string{
-				"request only checksum-verified installation authority",
-				"Do not\nrequest or materialize repository, provider, publication, product-delivery, or\nmerge authority",
-				"preserve the healthy admitted\nruntime",
-				"program-delta fingerprint",
-				"Do not accept the delta implicitly",
-				"`--accept-program-change`",
-				"single atomic\n`installation.reconcile-update` boundary",
-				"carry the same human authority\nthrough that rollback",
-			} {
-				if !strings.Contains(value, contract) {
-					t.Fatalf("%s is missing update authority boundary %q", path, contract)
-				}
+		for _, contract := range []string{
+			"request only checksum-verified installation authority",
+			"Do not\nrequest or materialize repository, provider, publication, product-delivery, or\nmerge authority",
+			"preserve the healthy admitted\nruntime",
+			"program-delta fingerprint",
+			"Do not accept the delta implicitly",
+			"`--accept-program-change`",
+			"single atomic\n`installation.reconcile-update` boundary",
+			"carry the same human authority\nthrough that rollback",
+		} {
+			if !strings.Contains(value, contract) {
+				t.Fatalf("%s is missing update authority boundary %q", path, contract)
 			}
 		}
 	}
@@ -126,7 +111,7 @@ func TestHostSkillProjectionInventoriesEveryDriverPath(t *testing.T) {
 func TestHostSkillProjectionFailsClosedOnUnmanagedCollision(t *testing.T) {
 	// control-law: unmanaged-host-file-cannot-be-overwritten-by-installation
 	repository := t.TempDir()
-	path := filepath.Join(repository, ".agents", "skills", "boatstack-run", "SKILL.md")
+	path := filepath.Join(repository, ".agents", "skills", "boatstack-update", "SKILL.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +134,7 @@ func TestHostSkillProjectionRejectsManagedDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 	applyMutationsForTest(t, mutations)
-	gemini := filepath.Join(repository, ".gemini", "skills", "boatstack-run", "SKILL.md")
+	gemini := filepath.Join(repository, ".gemini", "skills", "boatstack-update", "SKILL.md")
 	if err := os.WriteFile(gemini, []byte("drift\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -178,10 +163,10 @@ func TestHostSkillProjectionRemovesOnlyManagedDisabledHosts(t *testing.T) {
 		t.Fatal(err)
 	}
 	applyMutationsForTest(t, mutations)
-	if _, err := os.Stat(filepath.Join(repository, ".gemini", "skills", "boatstack-run", "SKILL.md")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(repository, ".gemini", "skills", "boatstack-update", "SKILL.md")); !os.IsNotExist(err) {
 		t.Fatalf("disabled managed Gemini skill still exists: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(repository, ".agents", "skills", "boatstack-run", "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(repository, ".agents", "skills", "boatstack-update", "SKILL.md")); err != nil {
 		t.Fatalf("enabled Codex skill was removed: %v", err)
 	}
 	if raw, err := os.ReadFile(unmanaged); err != nil || string(raw) != "unrelated\n" {

@@ -192,23 +192,13 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
             self.porcelain(),
             "\n".join(
                 [
-                    "?? .agents/skills/boatstack-autoplan/SKILL.md",
-                    "?? .agents/skills/boatstack-autoplan/agents/openai.yaml",
-                    "?? .agents/skills/boatstack-run/SKILL.md",
-                    "?? .agents/skills/boatstack-run/agents/openai.yaml",
                     "?? .agents/skills/boatstack-update/SKILL.md",
                     "?? .agents/skills/boatstack-update/agents/openai.yaml",
                     "?? .boatstack/host-skills.json",
                     "?? .boatstack/project.json",
                     "?? .boatstack/runtime.json",
-                    "?? .claude/skills/boatstack-autoplan/SKILL.md",
-                    "?? .claude/skills/boatstack-run/SKILL.md",
                     "?? .claude/skills/boatstack-update/SKILL.md",
-                    "?? .cursor/commands/boatstack-autoplan.md",
-                    "?? .cursor/commands/boatstack-run.md",
                     "?? .cursor/commands/boatstack-update.md",
-                    "?? .gemini/skills/boatstack-autoplan/SKILL.md",
-                    "?? .gemini/skills/boatstack-run/SKILL.md",
                     "?? .gemini/skills/boatstack-update/SKILL.md",
                 ]
             ),
@@ -245,7 +235,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
             "--objective-kind", "open-or-updated-pr",
             "--delivery", "codex-driver-authority-triggers",
         )
-        flow = ("--flow", "flow-codex-driver-authority-triggers")
+        flow = ("--run-id", "flow-codex-driver-authority-triggers")
         self.helper_json(
             "attach", "--repo", self.repo, *objective, *flow, "--human", "contract",
             "--param", "topology=detached", "--param", "config_authority=repository",
@@ -335,7 +325,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
             "--objective-kind", "open-or-updated-pr",
             "--delivery", "preserve-repository-authority-context",
         )
-        flow = ("--flow", "flow-preserve-repository-authority-context")
+        flow = ("--run-id", "flow-preserve-repository-authority-context")
         actor = ("--human", "contract")
         self.helper_json(
             "attach", "--repo", self.repo, *objective, *flow, *actor,
@@ -461,7 +451,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
             "--objective-id", "unverified-authority",
             "--objective-kind", "open-or-updated-pr",
             "--delivery", "unverified-authority",
-            "--flow", "flow-unverified-authority",
+            "--run-id", "flow-unverified-authority",
             "--human", "contract", "--repository-authority",
             cwd=root, expected=1,
         )

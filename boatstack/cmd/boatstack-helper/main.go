@@ -18,6 +18,7 @@ import (
 
 	boatstack "github.com/operatorstack/boatstack/boatstack"
 	"github.com/operatorstack/boatstack/boatstack/analysis"
+	"github.com/operatorstack/boatstack/boatstack/delivery"
 	"github.com/operatorstack/boatstack/boatstack/distribution"
 	"github.com/operatorstack/boatstack/boatstack/internal/buildinfo"
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
@@ -42,7 +43,9 @@ type commandOptions struct {
 	objectiveID                         string
 	objectiveKind                       string
 	deliveryID                          string
-	flowID                              string
+	programID                           string
+	entryID                             string
+	runID                               string
 	transitionID                        string
 	correlationID                       string
 	prescriptionID                      string
@@ -95,11 +98,18 @@ func run(arguments []string) error {
 	if command == "retro" {
 		return runRetrospective(arguments[1:])
 	}
+	if command == "flow" {
+		return runFlowCommand(arguments[1:])
+	}
 	operation, transition, defaults, err := classifyCommand(command)
 	if err != nil {
 		return err
 	}
 	options, err := parseOptions(command, arguments[1:], transition, defaults)
+	if err != nil {
+		return err
+	}
+	options, err = bindFlowEntry(context.Background(), options)
 	if err != nil {
 		return err
 	}
@@ -114,7 +124,9 @@ func run(arguments []string) error {
 	if (operation == surfaces.OperationApply || operation == surfaces.OperationRecover) && request.Prescription.ID == "" && command != "apply" && command != "recover" {
 		resolveRequest := request
 		resolveRequest.Operation = surfaces.OperationResolve
-		resolveRequest.FlowID = ""
+		if resolveRequest.ProgramID == "" {
+			resolveRequest.FlowID = ""
+		}
 		resolveRequest.Prescription = protocol.Prescription{}
 		resolved, resolveErr := kernel.Handle(context.Background(), resolveRequest)
 		if resolveErr != nil || resolved.Prescription == nil {
@@ -145,7 +157,7 @@ func run(arguments []string) error {
 }
 
 func usageError() error {
-	return errors.New("usage: boatstack <status|apply|recover|doctor|events|catalog|guard|rpc|retro|init|attach|detach|version> [flags]")
+	return errors.New("usage: boatstack <status|next|apply|recover|doctor|events|catalog|guard|flow|rpc|retro|init|attach|detach|version> [flags]")
 }
 
 func runRPC() error {
@@ -251,7 +263,9 @@ func parseOptions(command string, arguments []string, transition catalog.Transit
 	flags.StringVar(&options.objectiveID, "objective-id", options.objectiveID, "configured objective identity")
 	flags.StringVar(&options.objectiveKind, "objective-kind", options.objectiveKind, "approved-plan, verified-implementation, open-or-updated-pr, merged-delivery, or safely-abandoned")
 	flags.StringVar(&options.deliveryID, "delivery", options.deliveryID, "delivery identity")
-	flags.StringVar(&options.flowID, "flow", "", "flow identity")
+	flags.StringVar(&options.programID, "flow", "", "repository Control Program identity")
+	flags.StringVar(&options.entryID, "entry", "", "named Flow entry")
+	flags.StringVar(&options.runID, "run-id", "", "opaque active run identity")
 	flags.StringVar(&options.transitionID, "transition", options.transitionID, "stable semantic transition id")
 	flags.StringVar(&options.correlationID, "correlation", "", "command-scoped correlation identity from resolution")
 	flags.StringVar(&options.prescriptionID, "prescription-id", "", "exact prescription identity from resolution")
@@ -310,7 +324,17 @@ func standardKernel(ctx context.Context, request surfaces.Request) (boatstack.De
 		programRequest.ConfigurationPath, _ = request.Parameters.Get("config_path")
 		programRequest.ConfigurationFingerprint, _ = request.Parameters.Get("config_sha256")
 	}
-	program, err := distribution.StandardProgramForRepository(ctx, programRequest)
+	var program delivery.ControlProgram
+	var err error
+	if request.ProgramID != "" {
+		definition, definitionErr := loadFlowDefinition(ctx, request.Repository, request.ProgramID)
+		if definitionErr != nil {
+			return boatstack.DeliveryController{}, definitionErr
+		}
+		program, err = distribution.ProgramForRepository(ctx, programRequest, definition)
+	} else {
+		program, err = distribution.StandardProgramForRepository(ctx, programRequest)
+	}
 	if err != nil {
 		return boatstack.DeliveryController{}, err
 	}
@@ -455,7 +479,7 @@ func buildRequest(operation surfaces.Operation, options commandOptions) (surface
 	if err != nil {
 		return surfaces.Request{}, err
 	}
-	authority, err := loadAuthority(options, correlation, objective, now)
+	authority, err := loadAuthority(options, correlation, objective, parameters, now)
 	if err != nil {
 		return surfaces.Request{}, err
 	}
@@ -467,7 +491,7 @@ func buildRequest(operation surfaces.Operation, options commandOptions) (surface
 	if err != nil {
 		return surfaces.Request{}, err
 	}
-	flowID := options.flowID
+	flowID := options.runID
 	if flowID == "" && objective.ID != "" {
 		flowID = "flow-" + objective.ID
 	}
@@ -476,7 +500,7 @@ func buildRequest(operation surfaces.Operation, options commandOptions) (surface
 	}
 	return surfaces.Request{
 		SchemaVersion: surfaces.SchemaVersion, Operation: operation, Repository: options.repository, Host: options.host, CorrelationID: correlation,
-		FlowID: flowID, Objective: objective, TransitionID: catalog.TransitionID(options.transitionID), Authority: authority, Parameters: parameters,
+		ProgramID: options.programID, EntryID: options.entryID, FlowID: flowID, Objective: objective, TransitionID: catalog.TransitionID(options.transitionID), Authority: authority, Parameters: parameters,
 		Prescription: protocol.Prescription{SchemaVersion: protocol.PrescriptionSchemaVersion, ID: options.prescriptionID,
 			TransitionID: catalog.TransitionID(options.transitionID), Freshness: general.Freshness{
 				ExpectedInstanceID: options.expectedInstanceID, ExpectedStateRevision: options.expectedStateRevision, ExpectedProgramFingerprint: options.expectedProgramFingerprint,
@@ -535,7 +559,7 @@ func isPathParameter(name string) bool {
 	}
 }
 
-func loadAuthority(options commandOptions, correlation string, objective model.Objective, now time.Time) (protocol.AuthorityBundle, error) {
+func loadAuthority(options commandOptions, correlation string, objective model.Objective, parameters protocol.Parameters, now time.Time) (protocol.AuthorityBundle, error) {
 	bundle := protocol.AuthorityBundle{}
 	for _, path := range options.authorityReceipts {
 		raw, err := os.ReadFile(path)
@@ -555,7 +579,11 @@ func loadAuthority(options commandOptions, correlation string, objective model.O
 		bundle.Receipts = append(bundle.Receipts, receipt)
 	}
 	if options.humanActor != "" {
-		fingerprint := hash([]byte(strings.Join([]string{correlation, objective.ID, options.transitionID, options.humanActor}, "\x00")))
+		parameterRaw, err := json.Marshal(parameters.Canonical())
+		if err != nil {
+			return protocol.AuthorityBundle{}, err
+		}
+		fingerprint := hash([]byte(strings.Join([]string{correlation, objective.ID, options.transitionID, options.humanActor, string(parameterRaw)}, "\x00")))
 		bundle.Receipts = append(bundle.Receipts, protocol.AuthorityReceipt{
 			ID: "human-" + fingerprint[:16], Class: catalog.AuthorityHuman, Subject: options.humanActor, Fingerprint: fingerprint,
 			IssuedAt: now, ExpiresAt: now.Add(5 * time.Minute),

@@ -29,20 +29,6 @@ type hostSkillMode struct {
 
 var hostSkillModes = []hostSkillMode{
 	{
-		Slug: "boatstack-autoplan", DisplayName: "Boatstack Autoplan",
-		Description:       "Create and approve a verified delivery plan.",
-		Target:            "the `approved-plan` terminal",
-		Extra:             "This trigger supplies planning intent only. It never approves unseen plan bytes.",
-		AuthorityContract: deliveryAuthorityContract,
-	},
-	{
-		Slug: "boatstack-run", DisplayName: "Boatstack Run",
-		Description:       "Drive delivery to an open or updated pull request.",
-		Target:            "the `open-or-updated-pr` terminal",
-		Extra:             "This trigger never grants merge authority. Provider authority remains a separate verified receipt.",
-		AuthorityContract: deliveryAuthorityContract,
-	},
-	{
 		Slug: "boatstack-update", DisplayName: "Boatstack Update",
 		Description:       "Apply a checksum-verified Boatstack update.",
 		Target:            "`installation.update` or, after exact human acceptance of program drift, `installation.reconcile-update`",
@@ -50,20 +36,6 @@ var hostSkillModes = []hostSkillMode{
 		AuthorityContract: updateAuthorityContract,
 	},
 }
-
-const deliveryAuthorityContract = `For this operation, request human and repository-policy authority sources. The
-repository-policy source remains requested when configuration is
-stale, uninitialized, or under recovery; do not pass ` + "`--repository-authority`" + `
-until the current configuration has exact verified fingerprint evidence.
-
-After a complete ` + "`installation.initialize`" + `, ` + "`configuration.initialize`" + `, or recovery
-receipt, re-observe the post-receipt state. If configuration is now verified,
-make one bounded attempt for that receipt to materialize the retained source by
-adding ` + "`--repository-authority`" + ` to the next resolution. The kernel must derive the
-receipt from that exact verified fingerprint. Never derive repository authority
-from file presence, authentication, or prior conversation. If the source remains
-unverifiable, record it as conclusively rejected and fail closed; do not retry it
-again for the same receipt.`
 
 const updateAuthorityContract = `For this operation, request only checksum-verified installation authority. Do not
 request or materialize repository, provider, publication, product-delivery, or

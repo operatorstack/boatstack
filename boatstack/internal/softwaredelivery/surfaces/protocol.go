@@ -1,7 +1,10 @@
 package surfaces
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -11,7 +14,9 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
 )
 
-const SchemaVersion = 5
+const SchemaVersion = 6
+
+var flowContextIdentity = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 type Operation string
 
@@ -40,6 +45,8 @@ type Request struct {
 	Repository          string                   `json:"repository"`
 	Host                string                   `json:"host"`
 	CorrelationID       string                   `json:"correlation_id"`
+	ProgramID           string                   `json:"program_id,omitempty"`
+	EntryID             string                   `json:"entry_id,omitempty"`
 	FlowID              string                   `json:"flow_id,omitempty"`
 	Objective           model.Objective          `json:"objective,omitempty"`
 	TransitionID        catalog.TransitionID     `json:"transition_id,omitempty"`
@@ -57,6 +64,12 @@ func (r Request) Validate(now time.Time) error {
 	}
 	if r.Operation != OperationCatalog && (r.Repository == "" || r.Host == "" || r.CorrelationID == "") {
 		return fmt.Errorf("surface request requires repository, host, and correlation identity")
+	}
+	if (r.ProgramID == "") != (r.EntryID == "") {
+		return fmt.Errorf("surface request requires both program and entry identity")
+	}
+	if r.ProgramID != "" && (!flowContextIdentity.MatchString(r.ProgramID) || !flowContextIdentity.MatchString(r.EntryID) || r.FlowID == "") {
+		return fmt.Errorf("surface Flow entry requires semantic program, entry, and run identity")
 	}
 	if r.Operation != OperationCatalog {
 		knownHost := false
@@ -125,9 +138,13 @@ type ProgramChange struct {
 type Response struct {
 	SchemaVersion int                         `json:"schema_version"`
 	Operation     Operation                   `json:"operation"`
+	ProgramID     string                      `json:"program_id,omitempty"`
+	EntryID       string                      `json:"entry_id,omitempty"`
+	RunID         string                      `json:"run_id,omitempty"`
 	Objective     model.Objective             `json:"objective,omitempty"`
 	Snapshot      *model.Snapshot             `json:"snapshot,omitempty"`
 	Decision      *supervisor.Decision        `json:"decision,omitempty"`
+	Question      *Question                   `json:"question,omitempty"`
 	Prescription  *protocol.Prescription      `json:"prescription,omitempty"`
 	Admission     *protocol.Admission         `json:"admission,omitempty"`
 	Receipt       *protocol.TransitionReceipt `json:"receipt,omitempty"`
@@ -138,4 +155,33 @@ type Response struct {
 	ProgramChange *ProgramChange              `json:"program_change,omitempty"`
 	Guard         *supervisor.GuardDecision   `json:"guard,omitempty"`
 	Error         string                      `json:"error,omitempty"`
+}
+
+// Question is a typed suspension, not a background task. Supplying its
+// required evidence and resolving again with the same run identity resumes the
+// existing command context.
+type Question struct {
+	ID           string                   `json:"id"`
+	RunID        string                   `json:"run_id"`
+	TransitionID catalog.TransitionID     `json:"transition_id"`
+	Prompt       string                   `json:"prompt,omitempty"`
+	Parameters   []catalog.ParameterSpec  `json:"parameters,omitempty"`
+	Authority    []catalog.AuthorityClass `json:"authority,omitempty"`
+	AuthorityAll []catalog.AuthorityClass `json:"authority_all,omitempty"`
+}
+
+func QuestionFor(runID, snapshotFingerprint string, decision supervisor.Decision) *Question {
+	if runID == "" || decision.Kind != supervisor.DecisionCandidate || decision.Transition == nil {
+		return nil
+	}
+	transition := decision.Transition
+	if transition.Prescription.AuthorityPrompt == "" && len(transition.Parameters) == 0 && len(transition.Authority) == 0 && len(transition.AuthorityAll) == 0 {
+		return nil
+	}
+	digest := sha256.Sum256([]byte(strings.Join([]string{runID, snapshotFingerprint, string(transition.ID)}, "\x00")))
+	return &Question{
+		ID: "question-" + hex.EncodeToString(digest[:12]), RunID: runID, TransitionID: transition.ID,
+		Prompt: transition.Prescription.AuthorityPrompt, Parameters: append([]catalog.ParameterSpec(nil), transition.Parameters...),
+		Authority: append([]catalog.AuthorityClass(nil), transition.Authority...), AuthorityAll: append([]catalog.AuthorityClass(nil), transition.AuthorityAll...),
+	}
 }

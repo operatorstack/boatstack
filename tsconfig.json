@@ -1,0 +1,7 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/boatstack" },
+    { "path": "packages/boatstack-software-delivery" }
+  ]
+}

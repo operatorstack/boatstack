@@ -1,6 +1,8 @@
 boatstack/boatstack-helper
 boatstack/boatstack-helper.exe
 dist/
+node_modules/
+*.tsbuildinfo
 .DS_Store
 .venv/
 venv/

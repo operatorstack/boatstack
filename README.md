@@ -65,14 +65,16 @@ repository, creates the initial configuration, and generates integrations for
 the enabled coding-agent hosts. Review and commit the generated
 `.boatstack/` files and host skills before starting delivery.
 
-Then use one of the exactly three operation skills from a supported coding
-agent:
+Boatstack keeps runtime maintenance separate from repository delivery. The
+installer generates the maintenance skill:
 
 ```text
-$boatstack-autoplan  # create, validate, and approve a plan
-$boatstack-run       # deliver to an open or updated pull request; never merge
 $boatstack-update    # install a checksum-verified runtime update
 ```
+
+A repository Flow declares its own entries. `boatstack flow compile` projects
+those entries into host skills such as `$product-delivery-run`; Boatstack does
+not interpret the word `run`.
 
 If the agent was already running during installation, start a fresh task so it
 can discover the generated skills. See [Getting started](docs/getting-started.md)
@@ -131,6 +133,7 @@ control graph. The complete list is generated from the registry in the
 | Surface | Shipped functionality |
 | --- | --- |
 | **Protocol and SDK** | One versioned protocol shared by the CLI, RPC, MCP, Go SDK, Cursor, Codex, Claude Code, and Gemini CLI. Hosts do not maintain independent delivery state machines. |
+| **Flow IR and TypeScript frontend** | A domain-neutral, canonical Control Program IR plus `@operatorstack/boatstack`. Trusted software-delivery bindings live in the separate `@operatorstack/boatstack-software-delivery` package. |
 | **Extensions** | Additive, checksum-bound subprocess extensions with declarative manifests, JSON-schema settings, bounded I/O, deadlines, capability checks, and exact-byte execution. |
 | **Analysis** | Passive retrospective analysis, generated Markdown and Mermaid catalogs, privacy-safe events, and checked Locus safety/liveness models. Formal whole-system claims remain advisory. |
 
@@ -144,13 +147,17 @@ boatstack status --repo . --format json
 boatstack next --repo . --objective-id <objective> --objective-kind <kind> \
   --delivery <delivery> --format json
 
+# Resolve one repository-owned entry.
+boatstack next --repo . --flow product-delivery --entry run --format json
+
 # Inspect the exact program and transition surface.
 boatstack doctor --repo . --format text
 boatstack catalog --format json
 boatstack events --repo . --format jsonl
 
 # Low-level integrations forward the complete prescription unchanged.
-boatstack apply --repo . --transition <stable-id> --flow <flow> \
+boatstack apply --repo . --transition <stable-id> --run-id <run> \
+  --flow <program> --entry <entry> \
   --prescription-id <id> --expected-state-revision <revision> \
   --expected-program-fingerprint <sha256> \
   --expected-snapshot-fingerprint <sha256> --format json
@@ -165,7 +172,7 @@ only a transition that advances the configured objective. Maintenance,
 correction, abandonment, provider actions, and merge authority are never
 invented as a way around a frontier. After an operation is
 selected, generated host drivers keep one command-scoped objective, repository,
-worktree, flow, actor, and authority context through every resolution, effect,
+worktree, program, entry, run, actor, and authority context through every resolution, effect,
 recovery, and re-resolution.
 
 ## Objectives and control state
@@ -227,10 +234,9 @@ The current authoring boundary already includes:
   capabilities, effects, verifiers, recovery, and context predicates;
 - a protocol execution boundary for repository-authored transitions.
 
-The ergonomic repository Flow authoring experience—project layout, authoring
-tools, examples, diagnostics, and a complete guide—is still under active
-development. StandardFlow remains the only first-party Flow. The ABI and SDK
-are useful for exploring the model today, but they are not stable APIs yet.
+Repository Flows are authored in `.boatstack/flows/*.flow.ts` and compiled into
+committed `.flow.ir.json` artifacts. Runtime commands load only canonical IR.
+The TypeScript SDK and IR remain alpha APIs.
 
 ## Safety model
 
