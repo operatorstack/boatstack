@@ -1,6 +1,10 @@
 package catalog
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
+)
 
 func TestCapabilityVocabularyFailsClosed(t *testing.T) {
 	if _, err := NormalizeCapabilities("test", []Capability{"production.nuke"}); err == nil {
@@ -15,6 +19,7 @@ func TestKernelEffectClassificationCannotBeWeakenedByTransitionDeclaration(t *te
 	// control-law: repository-authored requirements cannot under-classify a kernel effect
 	transition := Transition{
 		ID: "program/publish", Class: EventOwnedExternal, Effect: "publication.execute",
+		OwnedFacets:          []model.StateFacet{model.StateFacetControl, model.StateFacetProduct},
 		RequiredCapabilities: []Capability{CapabilityRepositoryWrite},
 		DeclaredCapabilities: []Capability{CapabilityRepositoryWrite, CapabilityCommandExecute, CapabilityProductMutate, CapabilityPublicationPublish},
 	}
@@ -23,6 +28,18 @@ func TestKernelEffectClassificationCannotBeWeakenedByTransitionDeclaration(t *te
 		if !required[capability] {
 			t.Errorf("publication.execute omitted kernel capability %q", capability)
 		}
+	}
+}
+
+func TestProductOwnershipRequiresProductMutationForArbitraryEffect(t *testing.T) {
+	transition := Transition{
+		ID: "program/advance", Class: EventOwnedLocal, Effect: "acme.advance",
+		OwnedFacets:          []model.StateFacet{model.StateFacetControl, model.StateFacetProduct},
+		RequiredCapabilities: []Capability{CapabilityRepositoryWrite},
+	}
+	required := NewCapabilitySet(RequiredCapabilities(transition)...)
+	if !required[CapabilityProductMutate] {
+		t.Fatalf("product-owning arbitrary effect was under-classified: %v", required.Sorted())
 	}
 }
 
