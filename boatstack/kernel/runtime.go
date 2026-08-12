@@ -65,13 +65,15 @@ type CapabilityClassifier interface {
 	RequiredCapabilities(Transition) ([]Capability, error)
 }
 
-type StateStore interface {
+// Store owns the durable transaction boundary. CommitTransition must atomically
+// persist the target control state and its receipt: either both become visible
+// or neither does. EnterRecovery is a separate compare-and-swap used only when
+// an operator may already have changed its domain but the transaction did not
+// commit.
+type Store interface {
 	Load(context.Context, string) (ControlState, error)
-	CompareAndSwap(context.Context, uint64, ControlState) error
-}
-
-type ReceiptStore interface {
-	Commit(context.Context, Receipt) error
+	CommitTransition(context.Context, uint64, ControlState, Receipt) error
+	EnterRecovery(context.Context, uint64, ControlState) error
 }
 
 type Lock interface{ Unlock() error }
@@ -152,29 +154,28 @@ type Runtime struct {
 	domain     Domain
 	operator   Operator
 	classifier CapabilityClassifier
-	states     StateStore
-	receipts   ReceiptStore
+	store      Store
 	locker     Locker
 	clock      Clock
 }
 
-func NewRuntime(program Program, domain Domain, operator Operator, classifier CapabilityClassifier, states StateStore, receipts ReceiptStore, locker Locker, clock Clock) (Runtime, error) {
+func NewRuntime(program Program, domain Domain, operator Operator, classifier CapabilityClassifier, store Store, locker Locker, clock Clock) (Runtime, error) {
 	if err := program.Validate(); err != nil {
 		return Runtime{}, err
 	}
-	if domain == nil || operator == nil || classifier == nil || states == nil || receipts == nil || locker == nil || clock == nil {
-		return Runtime{}, fmt.Errorf("kernel runtime requires domain, operator, capability classifier, state, receipt, lock, and clock ports")
+	if domain == nil || operator == nil || classifier == nil || store == nil || locker == nil || clock == nil {
+		return Runtime{}, fmt.Errorf("kernel runtime requires domain, operator, capability classifier, transactional store, lock, and clock ports")
 	}
 	for _, transition := range program.Transitions {
 		if _, err := requiredCapabilities(classifier, transition); err != nil {
 			return Runtime{}, err
 		}
 	}
-	return Runtime{program: program, domain: domain, operator: operator, classifier: classifier, states: states, receipts: receipts, locker: locker, clock: clock}, nil
+	return Runtime{program: program, domain: domain, operator: operator, classifier: classifier, store: store, locker: locker, clock: clock}, nil
 }
 
 func (r Runtime) Resolve(ctx context.Context, request ResolveRequest) (Resolution, error) {
-	state, err := r.states.Load(ctx, request.InstanceID)
+	state, err := r.store.Load(ctx, request.InstanceID)
 	if err != nil {
 		return Resolution{}, err
 	}
@@ -256,7 +257,7 @@ func (r Runtime) Apply(ctx context.Context, request ApplyRequest) (Receipt, erro
 		return Receipt{}, err
 	}
 	defer lock.Unlock()
-	state, err := r.states.Load(ctx, request.InstanceID)
+	state, err := r.store.Load(ctx, request.InstanceID)
 	if err != nil {
 		return Receipt{}, err
 	}
@@ -329,9 +330,6 @@ func (r Runtime) Apply(ctx context.Context, request ApplyRequest) (Receipt, erro
 	if len(transition.Recovers) != 0 {
 		target.Recovery = nil
 	}
-	if err := r.states.CompareAndSwap(ctx, state.Revision, target); err != nil {
-		return Receipt{}, fmt.Errorf("operator outcome requires recovery: control-state commit failed: %w", err)
-	}
 	receipt := Receipt{SchemaVersion: ReceiptSchemaVersion, PrescriptionID: request.Prescription.ID, Program: state.Program, TransitionID: transition.ID, PriorStateRevision: state.Revision, ResultStateRevision: target.Revision, ObjectiveBinding: cloneBinding(target.ObjectiveBinding), AuthorityFingerprint: authority.Fingerprint, Capabilities: required, Effects: append([]EffectFact(nil), effect.Facts...), PriorObservation: observation.Fingerprint, ResultObservation: targetObservation.Fingerprint, Verification: "satisfied", CommittedAt: r.clock.Now().UTC()}
 	identity := receipt
 	identity.ID = ""
@@ -341,10 +339,10 @@ func (r Runtime) Apply(ctx context.Context, request ApplyRequest) (Receipt, erro
 	}
 	receipt.ID = "rcp-" + receipt.ID
 	if err := receipt.Validate(); err != nil {
-		return Receipt{}, r.requireRecovery(ctx, target, request.Prescription, "committed receipt is invalid: "+err.Error())
+		return Receipt{}, r.requireRecovery(ctx, state, request.Prescription, "transition receipt is invalid: "+err.Error())
 	}
-	if err := r.receipts.Commit(ctx, receipt); err != nil {
-		return Receipt{}, r.requireRecovery(ctx, target, request.Prescription, "committed state has unrecorded receipt: "+err.Error())
+	if err := r.store.CommitTransition(ctx, state.Revision, target, receipt); err != nil {
+		return Receipt{}, r.requireRecovery(ctx, state, request.Prescription, "state and receipt transaction did not commit: "+err.Error())
 	}
 	return receipt, nil
 }
@@ -394,7 +392,7 @@ func (r Runtime) requireRecovery(ctx context.Context, state ControlState, prescr
 	target := state
 	target.Revision++
 	target.Recovery = &RecoveryState{PrescriptionID: prescription.ID, TransitionID: prescription.TransitionID, Reason: reason}
-	if err := r.states.CompareAndSwap(ctx, state.Revision, target); err != nil {
+	if err := r.store.EnterRecovery(ctx, state.Revision, target); err != nil {
 		return RecoveryRequiredError{Reason: reason + "; recovery state commit failed: " + err.Error()}
 	}
 	return RecoveryRequiredError{Reason: reason}

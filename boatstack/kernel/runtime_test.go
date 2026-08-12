@@ -10,9 +10,10 @@ import (
 )
 
 type integerDomain struct {
-	mu                 sync.Mutex
-	value              int
-	failAfterIncrement bool
+	mu                  sync.Mutex
+	value               int
+	incrementExecutions int
+	failAfterIncrement  bool
 }
 
 func (d *integerDomain) Observe(context.Context, string) (Observation, error) {
@@ -82,6 +83,7 @@ func (o integerOperator) Execute(_ context.Context, operation Operation) (Effect
 	switch operation.Transition.Operation {
 	case "objective.bind":
 	case "counter.increment":
+		o.domain.incrementExecutions++
 		o.domain.value++
 		if o.domain.failAfterIncrement {
 			o.domain.failAfterIncrement = false
@@ -101,8 +103,10 @@ func (o integerOperator) Execute(_ context.Context, operation Operation) (Effect
 }
 
 type memoryStateStore struct {
-	mu    sync.Mutex
-	state ControlState
+	mu             sync.Mutex
+	state          ControlState
+	receipts       *memoryReceipts
+	commitFailures int
 }
 
 func (s *memoryStateStore) Load(context.Context, string) (ControlState, error) {
@@ -110,7 +114,21 @@ func (s *memoryStateStore) Load(context.Context, string) (ControlState, error) {
 	defer s.mu.Unlock()
 	return s.state, nil
 }
-func (s *memoryStateStore) CompareAndSwap(_ context.Context, revision uint64, target ControlState) error {
+func (s *memoryStateStore) CommitTransition(_ context.Context, revision uint64, target ControlState, receipt Receipt) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.commitFailures > 0 {
+		s.commitFailures--
+		return fmt.Errorf("simulated atomic transaction failure")
+	}
+	if s.state.Revision != revision {
+		return fmt.Errorf("stale revision")
+	}
+	s.state = target
+	s.receipts.values = append(s.receipts.values, receipt)
+	return nil
+}
+func (s *memoryStateStore) EnterRecovery(_ context.Context, revision uint64, target ControlState) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.state.Revision != revision {
@@ -121,11 +139,6 @@ func (s *memoryStateStore) CompareAndSwap(_ context.Context, revision uint64, ta
 }
 
 type memoryReceipts struct{ values []Receipt }
-
-func (s *memoryReceipts) Commit(_ context.Context, receipt Receipt) error {
-	s.values = append(s.values, receipt)
-	return nil
-}
 
 type memoryLock struct{ mu *sync.Mutex }
 
@@ -185,10 +198,11 @@ func newIntegerRuntime(t *testing.T, bound bool) (Runtime, *memoryStateStore, *m
 		state.ObjectiveBinding = &binding
 		state.Mode = "zero"
 	}
-	states, receipts, domain := &memoryStateStore{state: state}, &memoryReceipts{}, &integerDomain{}
+	receipts, domain := &memoryReceipts{}, &integerDomain{}
+	states := &memoryStateStore{state: state, receipts: receipts}
 	now := time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC)
 	authority := Authority{Receipts: []AuthorityReceipt{{ID: "human-counter", Subject: "fixture", Fingerprint: "fixture-authority", Capabilities: []Capability{"objective.bind", "counter.increment", "counter.reset"}, IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)}}}
-	runtime, err := NewRuntime(program, domain, integerOperator{domain}, integerCapabilities{}, states, receipts, &memoryLocker{}, fixedClock{now})
+	runtime, err := NewRuntime(program, domain, integerOperator{domain}, integerCapabilities{}, states, &memoryLocker{}, fixedClock{now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,10 +299,11 @@ func TestTrustedCapabilityClassifierCannotBeWeakenedByProgram(t *testing.T) {
 	program := integerProgram(t)
 	objective, _ := NewObjective("reach-two", 1, map[string]int{"value": 2})
 	binding, _ := BindObjective(objective)
-	states, receipts, domain := &memoryStateStore{state: ControlState{InstanceID: "counter-fixture", Program: program.Identity(), ObjectiveBinding: &binding, Mode: "zero", Revision: 1}}, &memoryReceipts{}, &integerDomain{}
+	receipts, domain := &memoryReceipts{}, &integerDomain{}
+	states := &memoryStateStore{state: ControlState{InstanceID: "counter-fixture", Program: program.Identity(), ObjectiveBinding: &binding, Mode: "zero", Revision: 1}, receipts: receipts}
 	now := time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC)
 	authority := Authority{Receipts: []AuthorityReceipt{{ID: "program-declared-only", Subject: "fixture", Fingerprint: "authority", Capabilities: []Capability{"counter.increment"}, IssuedAt: now.Add(-time.Minute)}}}
-	runtime, err := NewRuntime(program, domain, integerOperator{domain}, strictCapabilities{}, states, receipts, &memoryLocker{}, fixedClock{now})
+	runtime, err := NewRuntime(program, domain, integerOperator{domain}, strictCapabilities{}, states, &memoryLocker{}, fixedClock{now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,5 +366,32 @@ func TestInterruptedOperatorRequiresAndCompletesExplicitRecovery(t *testing.T) {
 	_, err = runtime.Apply(ctx, ApplyRequest{ResolveRequest: ResolveRequest{InstanceID: "counter-fixture", Objective: &objective, Authority: authority, Requested: "counter.recover"}, Prescription: *recovery.Prescription})
 	if err != nil || states.state.Recovery != nil || states.state.Revision != 3 || domain.value != 0 {
 		t.Fatalf("recovery result: %#v value=%d err=%v", states.state, domain.value, err)
+	}
+}
+
+func TestAtomicTransactionFailureEntersRecoveryWithoutDuplicateEffect(t *testing.T) {
+	runtime, store, receipts, domain, objective, authority := newIntegerRuntime(t, true)
+	store.commitFailures = 1
+	ctx := context.Background()
+	resolution, err := runtime.Resolve(ctx, ResolveRequest{InstanceID: "counter-fixture", Objective: &objective, Authority: authority, Requested: "counter.increment-first"})
+	if err != nil || resolution.Decision.Kind != Prescribed {
+		t.Fatalf("resolve: %#v %v", resolution.Decision, err)
+	}
+	_, err = runtime.Apply(ctx, ApplyRequest{ResolveRequest: ResolveRequest{InstanceID: "counter-fixture", Objective: &objective, Authority: authority, Requested: "counter.increment-first"}, Prescription: *resolution.Prescription})
+	if !IsRecoveryRequired(err) {
+		t.Fatalf("apply error = %v", err)
+	}
+	if store.state.Mode != "zero" || store.state.Recovery == nil || len(receipts.values) != 0 {
+		t.Fatalf("non-atomic store result: state=%#v receipts=%d", store.state, len(receipts.values))
+	}
+	if domain.value != 1 || domain.incrementExecutions != 1 {
+		t.Fatalf("operator value/executions = %d/%d", domain.value, domain.incrementExecutions)
+	}
+	recovery, err := runtime.Resolve(ctx, ResolveRequest{InstanceID: "counter-fixture", Objective: &objective, Authority: authority})
+	if err != nil || recovery.Decision.Kind != Prescribed || recovery.Decision.Transition != "counter.recover" {
+		t.Fatalf("recovery resolve: %#v %v", recovery.Decision, err)
+	}
+	if domain.incrementExecutions != 1 {
+		t.Fatalf("original operator ran %d times", domain.incrementExecutions)
 	}
 }

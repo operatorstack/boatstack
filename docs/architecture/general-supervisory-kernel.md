@@ -111,6 +111,13 @@ Programs declare capabilities, but a trusted capability classifier supplies
 the minimum for each concrete operation. The operator receives only that
 admitted set. Effect facts must stay inside transition-owned facets.
 
+The generic `Store` is one durability boundary. `CommitTransition` atomically
+persists the target control state and its verified receipt; neither may become
+visible alone. If an operator may have changed domain state but that atomic
+commit fails, `EnterRecovery` records recovery against the unchanged
+pre-commit mode. Program compilation rejects any recovery mapping that cannot
+run from every source mode of the transition it recovers.
+
 ## Non-software proof fixture
 
 `boatstack/kernel/runtime_test.go` runs an integer control instance:

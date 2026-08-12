@@ -58,6 +58,24 @@ func (t Transition) validate() error {
 	return nil
 }
 
+func (t Transition) canonical() (Transition, error) {
+	copy := t
+	var err error
+	if copy.SourceModes, err = canonicalIDs(copy.SourceModes, "source mode"); err != nil {
+		return Transition{}, fmt.Errorf("transition %q: %w", copy.ID, err)
+	}
+	if copy.RequiredCapabilities, err = normalizeCapabilities(copy.RequiredCapabilities); err != nil {
+		return Transition{}, fmt.Errorf("transition %q: %w", copy.ID, err)
+	}
+	if copy.OwnedFacets, err = canonicalIDs(copy.OwnedFacets, "owned facet"); err != nil {
+		return Transition{}, fmt.Errorf("transition %q: %w", copy.ID, err)
+	}
+	if copy.Recovers, err = canonicalIDs(copy.Recovers, "recovery target"); err != nil {
+		return Transition{}, fmt.Errorf("transition %q: %w", copy.ID, err)
+	}
+	return copy, nil
+}
+
 type Program struct {
 	SchemaVersion             int          `json:"schema_version"`
 	ID                        string       `json:"id"`
@@ -102,9 +120,19 @@ func (p *Program) prepare() error {
 	if p.DomainContractFingerprint != "" && len(p.DomainContractFingerprint) != 64 {
 		return fmt.Errorf("program domain contract fingerprint must be an exact sha256 identity")
 	}
-	p.MarkedModes = append([]string(nil), p.MarkedModes...)
-	sort.Strings(p.MarkedModes)
+	markedModes, err := canonicalIDs(p.MarkedModes, "marked mode")
+	if err != nil {
+		return err
+	}
+	p.MarkedModes = markedModes
 	p.Transitions = append([]Transition(nil), p.Transitions...)
+	for index, transition := range p.Transitions {
+		canonical, err := transition.canonical()
+		if err != nil {
+			return err
+		}
+		p.Transitions[index] = canonical
+	}
 	sort.Slice(p.Transitions, func(i, j int) bool {
 		if p.Transitions[i].Priority != p.Transitions[j].Priority {
 			return p.Transitions[i].Priority < p.Transitions[j].Priority
@@ -123,12 +151,32 @@ func (p *Program) prepare() error {
 	}
 	for _, transition := range p.Transitions {
 		for _, recovered := range transition.Recovers {
-			if _, exists := p.byID[recovered]; !exists {
+			recoveredTransition, exists := p.byID[recovered]
+			if !exists {
 				return fmt.Errorf("transition %q recovers unknown transition %q", transition.ID, recovered)
+			}
+			for _, sourceMode := range recoveredTransition.SourceModes {
+				if !contains(transition.SourceModes, sourceMode) {
+					return fmt.Errorf("transition %q cannot recover %q from source mode %q", transition.ID, recovered, sourceMode)
+				}
 			}
 		}
 	}
 	return nil
+}
+
+func canonicalIDs(values []string, label string) ([]string, error) {
+	result := append([]string(nil), values...)
+	sort.Strings(result)
+	for index, value := range result {
+		if !semanticID.MatchString(value) {
+			return nil, fmt.Errorf("%s %q is not a semantic identifier", label, value)
+		}
+		if index > 0 && value == result[index-1] {
+			return nil, fmt.Errorf("%s %q is duplicated", label, value)
+		}
+	}
+	return result, nil
 }
 
 func (p Program) Validate() error {
