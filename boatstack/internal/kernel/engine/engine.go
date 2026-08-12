@@ -455,7 +455,7 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 		return result, requireRecovery("sequence allocation failed after verified effect", err)
 	}
 	completedAt := e.clock.Now()
-	receipt, err := protocol.NewReceipt(request.FlowID, sequence, e.program, admission, transition, target, prepared.CommittedEffects(), nil, startedAt, completedAt)
+	receipt, err := protocol.NewReceipt(request.FlowID, sequence, e.program, admission, transition, target, prepared.ChangedStateFacets(), prepared.CommittedEffects(), nil, startedAt, completedAt)
 	if err != nil {
 		return result, requireRecovery("receipt construction failed after verified effect", err)
 	}

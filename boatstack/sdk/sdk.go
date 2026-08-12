@@ -37,6 +37,7 @@ type DoctorReport = surfaces.DoctorReport
 type ProgramChange = surfaces.ProgramChange
 type Goal = model.Goal
 type GoalKind = model.GoalKind
+type StateFacet = model.StateFacet
 
 const (
 	GoalApprovedPlan = model.GoalApprovedPlan
@@ -44,6 +45,11 @@ const (
 	GoalOpenPR       = model.GoalOpenPR
 	GoalMerged       = model.GoalMerged
 	GoalAbandoned    = model.GoalAbandoned
+
+	StateFacetInstallation = model.StateFacetInstallation
+	StateFacetProgram      = model.StateFacetProgram
+	StateFacetControl      = model.StateFacetControl
+	StateFacetProduct      = model.StateFacetProduct
 )
 
 type TransitionID = catalog.TransitionID

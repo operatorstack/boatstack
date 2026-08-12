@@ -6,6 +6,7 @@ import (
 
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/durable"
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
 )
@@ -43,6 +44,7 @@ func BindStateRevision(ctx context.Context, prepared ports.PreparedEffect, resol
 	if state.ProgramFingerprint != "" && state.ProgramFingerprint != admission.ExpectedProgramFingerprint {
 		return nil, fmt.Errorf("compiled control program changed before revision binding")
 	}
+	before := state
 	state.Revision, err = durable.NextRevision(state.Revision)
 	if err != nil {
 		return nil, err
@@ -62,5 +64,15 @@ func BindStateRevision(ctx context.Context, prepared ports.PreparedEffect, resol
 	}
 	mutation.Resource, mutation.Owner = kernelStateResource, kernelStateOwner
 	effect.mutations = append(effect.mutations, mutation)
+	changed, err := changedStateFacets([2]durable.State{before, state})
+	if err != nil {
+		return nil, err
+	}
+	changed, err = validateTransitionStateFacets(transition, changed)
+	if err != nil {
+		return nil, err
+	}
+	effect.mutations = annotateStateFacetMutations(effect.mutations, changed)
+	effect.changedStateFacets = model.UnionStateFacets(effect.changedStateFacets, changed)
 	return effect, nil
 }

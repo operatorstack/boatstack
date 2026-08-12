@@ -74,22 +74,24 @@ type EffectResult struct {
 }
 
 type ResourceMutation struct {
-	Resource    string `json:"resource"`
-	Owner       string `json:"owner"`
-	Path        string `json:"path"`
-	Prior       []byte `json:"prior,omitempty"`
-	Target      []byte `json:"target,omitempty"`
-	PriorLink   string `json:"prior_link,omitempty"`
-	TargetLink  string `json:"target_link,omitempty"`
-	PriorExists bool   `json:"prior_exists"`
-	Mode        uint32 `json:"mode"`
-	InstallLast bool   `json:"install_last,omitempty"`
-	Delete      bool   `json:"delete,omitempty"`
+	Resource    string             `json:"resource"`
+	Owner       string             `json:"owner"`
+	Path        string             `json:"path"`
+	Prior       []byte             `json:"prior,omitempty"`
+	Target      []byte             `json:"target,omitempty"`
+	PriorLink   string             `json:"prior_link,omitempty"`
+	TargetLink  string             `json:"target_link,omitempty"`
+	PriorExists bool               `json:"prior_exists"`
+	Mode        uint32             `json:"mode"`
+	InstallLast bool               `json:"install_last,omitempty"`
+	Delete      bool               `json:"delete,omitempty"`
+	StateFacets []model.StateFacet `json:"state_facets,omitempty"`
 }
 
 type PreparedEffect interface {
 	Manifest() []ResourceMutation
 	CommittedEffects() []protocol.EffectFact
+	ChangedStateFacets() []model.StateFacet
 	VerificationInvocation() (model.InvocationContext, bool)
 	Execute(context.Context) (EffectResult, error)
 	Rollback(context.Context) error

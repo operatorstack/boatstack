@@ -208,8 +208,11 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 		}
 		mutations = append(mutations, bindingMutation)
 	}
+	var facetGroups [][2]durable.State
+	facetGroups = append(facetGroups, [2]durable.State{state, next})
 	if transition.ID == "workspace.cut" {
 		parked := parkedSourceState(state, next.Revision, transition.ID, d.clock.Now())
+		facetGroups = append(facetGroups, [2]durable.State{state, parked})
 		parkedRaw, encodeErr := durable.EncodeState(parked)
 		if encodeErr != nil {
 			return nil, encodeErr
@@ -271,7 +274,16 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 		mutations[index].Resource = transition.OwnedResources[0]
 		mutations[index].Owner = transition.Owner
 	}
-	prepared := &preparedEffect{mutations: mutations, verifyInvocation: verificationInvocation}
+	changedFacets, facetErr := changedStateFacets(facetGroups...)
+	if facetErr != nil {
+		return nil, facetErr
+	}
+	changedFacets, facetErr = validateTransitionStateFacets(transition, changedFacets)
+	if facetErr != nil {
+		return nil, facetErr
+	}
+	mutations = annotateStateFacetMutations(mutations, changedFacets)
+	prepared := &preparedEffect{mutations: mutations, verifyInvocation: verificationInvocation, changedStateFacets: changedFacets}
 	if err := bindPreparedCapabilities(prepared, admission, transition); err != nil {
 		return nil, err
 	}
