@@ -16,6 +16,19 @@ from boatstack_test_support import prescription_cli_arguments
 REPO = Path(__file__).resolve().parents[2]
 RUNTIME = REPO / "boatstack"
 CONFIG = REPO / "project.example.json"
+DOMAIN_NEUTRAL_ROOTS = (
+    ("pullrequest", "pull request"),
+    ("codingagent", "coding agent"),
+    ("github", "github"),
+    ("repository", "repository"),
+    ("worktree", "worktree"),
+    ("publication", "publication"),
+    ("branch", "branch"),
+    ("git", "git"),
+)
+DOMAIN_NEUTRAL_PHRASE = re.compile(r"\b(?:pull\s+request|coding\s+agent)\b", re.IGNORECASE)
+GO_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+GO_IDENTIFIER_PART = re.compile(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|[0-9]+")
 
 
 def go_source_metadata(paths: list[Path]) -> list[dict[str, object]]:
@@ -34,6 +47,48 @@ def go_source_metadata(paths: list[Path]) -> list[dict[str, object]]:
     if result.returncode != 0:
         raise RuntimeError(result.stdout + result.stderr)
     return json.loads(result.stdout)
+
+
+def identifier_domain_token(identifier: str) -> str | None:
+    for component in identifier.split("_"):
+        for part in GO_IDENTIFIER_PART.findall(component):
+            normalized = part.lower()
+            for root, token in DOMAIN_NEUTRAL_ROOTS:
+                if normalized == root or normalized.startswith(root):
+                    return token
+    return None
+
+
+def import_domain_token(import_path: str) -> str | None:
+    components = import_path.split("/")
+    if components and components[0] == "github.com":
+        components = components[1:]
+    for component in components:
+        for identifier in re.split(r"[.-]", component):
+            token = identifier_domain_token(identifier)
+            if token is not None:
+                return token
+    return None
+
+
+def domain_vocabulary_hits(paths: list[Path]) -> list[tuple[Path, str]]:
+    hits: list[tuple[Path, str]] = []
+    for path, metadata in zip(paths, go_source_metadata(paths), strict=True):
+        for import_path in metadata["imports"]:
+            token = import_domain_token(import_path)
+            if token is not None:
+                hits.append((path, token))
+        for source in metadata["vocabulary"]:
+            phrase = DOMAIN_NEUTRAL_PHRASE.search(source)
+            if phrase is not None:
+                hits.append((path, phrase.group(0).lower()))
+                continue
+            for identifier in GO_IDENTIFIER.findall(source):
+                token = identifier_domain_token(identifier)
+                if token is not None:
+                    hits.append((path, token))
+                    break
+    return hits
 
 
 class RepositoryContract(unittest.TestCase):
@@ -415,15 +470,35 @@ class RepositoryContract(unittest.TestCase):
     def test_general_kernel_is_domain_neutral_and_owns_shared_control_laws(self) -> None:
         kernel = REPO / "boatstack" / "kernel"
         kernel_files = sorted(kernel.glob("*.go"))
-        production_files = [
-            path for path in kernel_files if not path.name.endswith("_test.go")
-        ]
-        source = "\n".join(path.read_text() for path in production_files)
-        for token in (
-            "git", "repository", "worktree", "branch", "pull request",
-            "coding agent", "publication",
-        ):
-            self.assertNotIn(token, source.lower(), token)
+        self.assertEqual([], domain_vocabulary_hits(kernel_files))
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = Path(temporary) / "domain_leak_test.go"
+            for source, token in (
+                ('package kernel\nconst fixtureDomain = "pull request"\n', "pull request"),
+                ("package kernel\ntype gitClient struct{}\n", "git"),
+                ("package kernel\nvar testRepository string\n", "repository"),
+                ("package kernel\ntype worktreeManager struct{}\n", "worktree"),
+                ('package kernel\nconst provider = "github"\n', "github"),
+                ("package kernel\ntype githubClient struct{}\n", "github"),
+                ("package kernel\ntype gitclient struct{}\n", "git"),
+                ("package kernel\ntype repositoryclient struct{}\n", "repository"),
+                ("package kernel\ntype worktreemanager struct{}\n", "worktree"),
+                ("package kernel\ntype branchmanager struct{}\n", "branch"),
+                ("package kernel\ntype publicationqueue struct{}\n", "publication"),
+                ("package kernel\ntype pullrequesthandler struct{}\n", "pull request"),
+                ("package kernel\ntype codingagentpolicy struct{}\n", "coding agent"),
+            ):
+                with self.subTest(token=token):
+                    fixture.write_text(source)
+                    self.assertEqual([(fixture, token)], domain_vocabulary_hits([fixture]))
+            fixture.write_text('package kernel\nimport "github.com/example/provider"\n')
+            self.assertEqual([], domain_vocabulary_hits([fixture]))
+            fixture.write_text(
+                'package kernel\nimport vcs "github.com/go-git/go-git/v5"\nvar _ = vcs.PlainClone\n'
+            )
+            self.assertEqual([(fixture, "git")], domain_vocabulary_hits([fixture]))
+            fixture.write_text("package kernel\nfunc TestDigitalSignature() {}\n")
+            self.assertEqual([], domain_vocabulary_hits([fixture]))
 
         boatstack_packages = "github.com/operatorstack/boatstack/boatstack/"
         kernel_package = boatstack_packages + "kernel"
