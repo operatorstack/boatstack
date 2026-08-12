@@ -6,23 +6,29 @@ import (
 )
 
 func TestProgramFingerprintCanonicalizesSemanticSets(t *testing.T) {
-	left, err := CompileProgram("canonical", "1", "kernel-v1", "idle", []string{"done", "closed"}, []Transition{{
-		ID: "advance", SourceModes: []string{"ready", "idle"}, TargetMode: "done",
-		ObjectiveScope: ObjectiveNone, ObjectiveMutation: PreserveObjective,
-		RequiredCapabilities: []Capability{"state.write", "state.inspect"},
-		OwnedFacets:          []string{"counter.value", "counter.audit"},
-		Operation:            "counter.advance", Priority: 1,
-	}})
+	left, err := CompileProgram("canonical", "1", "kernel-v1", "idle", []string{"done", "closed"}, []Transition{
+		{
+			ID: "advance", SourceModes: []string{"ready", "idle"}, TargetMode: "done",
+			ObjectiveScope: ObjectiveNone, ObjectiveMutation: PreserveObjective,
+			RequiredCapabilities: []Capability{"state.write", "state.inspect"},
+			OwnedFacets:          []string{"counter.value", "counter.audit"},
+			Operation:            "counter.advance", Priority: 1,
+		},
+		{ID: "recover", SourceModes: []string{"idle", "ready"}, TargetMode: "idle", ObjectiveScope: ObjectiveNone, ObjectiveMutation: PreserveObjective, RequiredCapabilities: []Capability{"state.write"}, OwnedFacets: []string{"counter.value"}, Operation: "counter.recover", Priority: 2, Recovers: []string{"advance"}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	right, err := CompileProgram("canonical", "1", "kernel-v1", "idle", []string{"closed", "done"}, []Transition{{
-		ID: "advance", SourceModes: []string{"idle", "ready"}, TargetMode: "done",
-		ObjectiveScope: ObjectiveNone, ObjectiveMutation: PreserveObjective,
-		RequiredCapabilities: []Capability{"state.inspect", "state.write"},
-		OwnedFacets:          []string{"counter.audit", "counter.value"},
-		Operation:            "counter.advance", Priority: 1,
-	}})
+	right, err := CompileProgram("canonical", "1", "kernel-v1", "idle", []string{"closed", "done"}, []Transition{
+		{
+			ID: "advance", SourceModes: []string{"idle", "ready"}, TargetMode: "done",
+			ObjectiveScope: ObjectiveNone, ObjectiveMutation: PreserveObjective,
+			RequiredCapabilities: []Capability{"state.inspect", "state.write"},
+			OwnedFacets:          []string{"counter.audit", "counter.value"},
+			Operation:            "counter.advance", Priority: 1,
+		},
+		{ID: "recover", SourceModes: []string{"ready", "idle"}, TargetMode: "idle", ObjectiveScope: ObjectiveNone, ObjectiveMutation: PreserveObjective, RequiredCapabilities: []Capability{"state.write"}, OwnedFacets: []string{"counter.value"}, Operation: "counter.recover", Priority: 2, Recovers: []string{"advance"}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,6 +53,16 @@ func TestProgramRejectsObjectiveDependentRecovery(t *testing.T) {
 		{ID: "recover", SourceModes: []string{"idle"}, TargetMode: "idle", ObjectiveScope: ObjectiveBoundExact, ObjectiveMutation: PreserveObjective, RequiredCapabilities: []Capability{"counter.reset"}, OwnedFacets: []string{"counter.value"}, Operation: "counter.reset", Priority: 1, Recovers: []string{"advance"}},
 	})
 	if err == nil || !strings.Contains(err.Error(), `recovery transition "recover" must preserve objective state without requiring an exact objective`) {
+		t.Fatalf("compile error = %v", err)
+	}
+}
+
+func TestProgramRejectsTransitionWithoutDeclaredRecovery(t *testing.T) {
+	_, err := CompileProgram("unrecoverable", "1", "kernel-v1", "idle", []string{"done"}, []Transition{{
+		ID: "advance", SourceModes: []string{"idle"}, TargetMode: "done", ObjectiveScope: ObjectiveNone, ObjectiveMutation: PreserveObjective,
+		RequiredCapabilities: []Capability{"counter.increment"}, OwnedFacets: []string{"counter.value"}, Operation: "counter.increment", Priority: 1,
+	}})
+	if err == nil || !strings.Contains(err.Error(), `transition "advance" has no declared recovery`) {
 		t.Fatalf("compile error = %v", err)
 	}
 }

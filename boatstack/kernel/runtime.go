@@ -68,15 +68,14 @@ type CapabilityClassifier interface {
 	RequiredCapabilities(Transition) ([]Capability, error)
 }
 
-// Store owns the durable transaction boundary. CommitTransition must atomically
-// persist the target control state and its receipt: either both become visible
-// or neither does. EnterRecovery is a separate compare-and-swap used only when
-// an operator may already have changed its domain but the transaction did not
-// commit.
+// Store owns the durable transaction boundary. BeginEffect must atomically
+// persist an unresolved attempt before an operator can run. CommitTransition
+// must atomically replace that attempt with the target state and its receipt:
+// either both become visible or neither does.
 type Store interface {
 	Load(context.Context, string) (ControlState, error)
+	BeginEffect(context.Context, uint64, ControlState) error
 	CommitTransition(context.Context, uint64, ControlState, Receipt) error
-	EnterRecovery(context.Context, uint64, ControlState) error
 }
 
 type Lock interface{ Unlock() error }
@@ -142,6 +141,7 @@ type Receipt struct {
 	Program              ProgramIdentity   `json:"program"`
 	TransitionID         string            `json:"transition_id"`
 	PriorStateRevision   uint64            `json:"prior_state_revision"`
+	AttemptStateRevision uint64            `json:"attempt_state_revision"`
 	ResultStateRevision  uint64            `json:"result_state_revision"`
 	ObjectiveBinding     *ObjectiveBinding `json:"objective_binding,omitempty"`
 	AuthorityFingerprint string            `json:"authority_fingerprint"`
@@ -295,12 +295,30 @@ func (r Runtime) Apply(ctx context.Context, request ApplyRequest) (Receipt, erro
 	if err != nil {
 		return Receipt{}, err
 	}
+	attempt := state
+	attempt.Revision++
+	if state.Recovery == nil {
+		attempt.Recovery = &RecoveryState{
+			PrescriptionID: request.Prescription.ID,
+			TransitionID:   request.Prescription.TransitionID,
+			Reason:         "effect attempt began; outcome is unresolved",
+		}
+	} else {
+		recovery := *state.Recovery
+		attempt.Recovery = &recovery
+	}
+	if err := attempt.Validate(); err != nil {
+		return Receipt{}, fmt.Errorf("effect attempt state is invalid: %w", err)
+	}
+	if err := r.store.BeginEffect(ctx, state.Revision, attempt); err != nil {
+		return Receipt{}, fmt.Errorf("effect attempt did not begin: %w", err)
+	}
 	effect, err := r.operator.Execute(ctx, Operation{InstanceID: request.InstanceID, Transition: transition, Observation: observation, Objective: objective, Capabilities: required})
 	if err != nil {
-		return Receipt{}, r.requireRecovery(ctx, state, request.Prescription, fmt.Sprintf("operator outcome is unknown: %v", err))
+		return Receipt{}, RecoveryRequiredError{Reason: fmt.Sprintf("operator outcome is unknown: %v", err)}
 	}
 	if err := validateEffects(transition, effect); err != nil {
-		return Receipt{}, r.requireRecovery(ctx, state, request.Prescription, err.Error())
+		return Receipt{}, RecoveryRequiredError{Reason: err.Error()}
 	}
 	sort.Slice(effect.Facts, func(i, j int) bool {
 		if effect.Facts[i].Facet != effect.Facts[j].Facet {
@@ -313,12 +331,12 @@ func (r Runtime) Apply(ctx context.Context, request ApplyRequest) (Receipt, erro
 	})
 	targetObservation, err := r.domain.Observe(ctx, request.InstanceID)
 	if err != nil {
-		return Receipt{}, r.requireRecovery(ctx, state, request.Prescription, fmt.Sprintf("target observation failed: %v", err))
+		return Receipt{}, RecoveryRequiredError{Reason: fmt.Sprintf("target observation failed: %v", err)}
 	}
 	if err := r.domain.Verify(ctx, Evaluation{State: state, Observation: observation, Objective: objective, Transition: transition}, effect, targetObservation); err != nil {
-		return Receipt{}, r.requireRecovery(ctx, state, request.Prescription, fmt.Sprintf("verification failed: %v", err))
+		return Receipt{}, RecoveryRequiredError{Reason: fmt.Sprintf("verification failed: %v", err)}
 	}
-	target := state
+	target := attempt
 	target.Mode = transition.TargetMode
 	target.Revision++
 	switch transition.ObjectiveMutation {
@@ -331,10 +349,8 @@ func (r Runtime) Apply(ctx context.Context, request ApplyRequest) (Receipt, erro
 	case ClearObjectiveMutation:
 		target.ObjectiveBinding = nil
 	}
-	if len(transition.Recovers) != 0 {
-		target.Recovery = nil
-	}
-	receipt := Receipt{SchemaVersion: ReceiptSchemaVersion, InstanceID: state.InstanceID, PrescriptionID: request.Prescription.ID, Program: state.Program, TransitionID: transition.ID, PriorStateRevision: state.Revision, ResultStateRevision: target.Revision, ObjectiveBinding: cloneBinding(target.ObjectiveBinding), AuthorityFingerprint: authority.Fingerprint, Capabilities: required, Effects: append([]EffectFact(nil), effect.Facts...), PriorObservation: observation.Fingerprint, ResultObservation: targetObservation.Fingerprint, Verification: "satisfied", CommittedAt: r.clock.Now().UTC()}
+	target.Recovery = nil
+	receipt := Receipt{SchemaVersion: ReceiptSchemaVersion, InstanceID: state.InstanceID, PrescriptionID: request.Prescription.ID, Program: state.Program, TransitionID: transition.ID, PriorStateRevision: state.Revision, AttemptStateRevision: attempt.Revision, ResultStateRevision: target.Revision, ObjectiveBinding: cloneBinding(target.ObjectiveBinding), AuthorityFingerprint: authority.Fingerprint, Capabilities: required, Effects: append([]EffectFact(nil), effect.Facts...), PriorObservation: observation.Fingerprint, ResultObservation: targetObservation.Fingerprint, Verification: "satisfied", CommittedAt: r.clock.Now().UTC()}
 	identity := receipt
 	identity.ID = ""
 	receipt.ID, err = contentHash(identity)
@@ -343,10 +359,10 @@ func (r Runtime) Apply(ctx context.Context, request ApplyRequest) (Receipt, erro
 	}
 	receipt.ID = "rcp-" + receipt.ID
 	if err := receipt.Validate(); err != nil {
-		return Receipt{}, r.requireRecovery(ctx, state, request.Prescription, "transition receipt is invalid: "+err.Error())
+		return Receipt{}, RecoveryRequiredError{Reason: "transition receipt is invalid: " + err.Error()}
 	}
-	if err := r.store.CommitTransition(ctx, state.Revision, target, receipt); err != nil {
-		return Receipt{}, r.requireRecovery(ctx, state, request.Prescription, "state and receipt transaction did not commit: "+err.Error())
+	if err := r.store.CommitTransition(ctx, attempt.Revision, target, receipt); err != nil {
+		return Receipt{}, RecoveryRequiredError{Reason: "state and receipt transaction did not commit: " + err.Error()}
 	}
 	return receipt, nil
 }
@@ -359,7 +375,7 @@ func (r Receipt) Validate() error {
 	if err != nil || want != "rcp-"+got {
 		return fmt.Errorf("receipt content identity is invalid")
 	}
-	if r.SchemaVersion != ReceiptSchemaVersion || !semanticID.MatchString(r.InstanceID) || r.PrescriptionID == "" || !semanticID.MatchString(r.TransitionID) || r.PriorStateRevision == 0 || r.ResultStateRevision != r.PriorStateRevision+1 || r.AuthorityFingerprint == "" || len(r.PriorObservation) != 64 || len(r.ResultObservation) != 64 || r.Verification != "satisfied" || r.CommittedAt.IsZero() {
+	if r.SchemaVersion != ReceiptSchemaVersion || !semanticID.MatchString(r.InstanceID) || r.PrescriptionID == "" || !semanticID.MatchString(r.TransitionID) || r.PriorStateRevision == 0 || r.AttemptStateRevision != r.PriorStateRevision+1 || r.ResultStateRevision != r.AttemptStateRevision+1 || r.AuthorityFingerprint == "" || len(r.PriorObservation) != 64 || len(r.ResultObservation) != 64 || r.Verification != "satisfied" || r.CommittedAt.IsZero() {
 		return fmt.Errorf("receipt is missing exact instance, transition, revision, observation, authority, or verification facts")
 	}
 	if err := r.Program.Validate(); err != nil {
@@ -390,25 +406,6 @@ func (e RecoveryRequiredError) Error() string { return "recovery required: " + e
 func IsRecoveryRequired(err error) bool {
 	var target RecoveryRequiredError
 	return errors.As(err, &target)
-}
-
-func (r Runtime) requireRecovery(ctx context.Context, state ControlState, prescription Prescription, reason string) error {
-	target := state
-	target.Revision++
-	if state.Recovery == nil {
-		target.Recovery = &RecoveryState{PrescriptionID: prescription.ID, TransitionID: prescription.TransitionID, Reason: reason}
-	} else {
-		// A failed recovery attempt does not replace the original obligation.
-		// Keeping that identity lets the same declared reconciler observe the
-		// partial outcome and continue instead of creating an unmapped nested
-		// recovery transition.
-		recovery := *state.Recovery
-		target.Recovery = &recovery
-	}
-	if err := r.store.EnterRecovery(ctx, state.Revision, target); err != nil {
-		return RecoveryRequiredError{Reason: reason + "; recovery state commit failed: " + err.Error()}
-	}
-	return RecoveryRequiredError{Reason: reason}
 }
 
 func newPrescription(state ControlState, observation Observation, transition Transition, objective *Objective, authority authorityProjection, required []Capability) (Prescription, error) {

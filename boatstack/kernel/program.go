@@ -165,6 +165,17 @@ func (p *Program) prepare() error {
 			}
 		}
 	}
+	recovered := make(map[string]bool, len(p.Transitions))
+	for _, transition := range p.Transitions {
+		for _, recoveredID := range transition.Recovers {
+			recovered[recoveredID] = true
+		}
+	}
+	for _, transition := range p.Transitions {
+		if len(transition.Recovers) == 0 && !recovered[transition.ID] {
+			return fmt.Errorf("transition %q has no declared recovery", transition.ID)
+		}
+	}
 	return nil
 }
 

@@ -142,7 +142,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         self.assertEqual(binding["topology"], "detached")
 
         detached = self.helper_json(
-            "detach", "--repo", self.repo, *self.objective_flags(), "--human", "contract"
+            "detach", "--repo", self.repo, "--human", "contract"
         )
         self.assertEqual(detached["snapshot"]["invocation"]["topology"], "embedded")
         self.assertEqual(detached["receipt"]["transition_id"], "repository.detach")

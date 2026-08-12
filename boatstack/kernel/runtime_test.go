@@ -14,6 +14,7 @@ type integerDomain struct {
 	value               int
 	incrementExecutions int
 	failAfterIncrement  bool
+	panicAfterIncrement bool
 }
 
 func (d *integerDomain) Observe(context.Context, string) (Observation, error) {
@@ -85,6 +86,10 @@ func (o integerOperator) Execute(_ context.Context, operation Operation) (Effect
 	case "counter.increment":
 		o.domain.incrementExecutions++
 		o.domain.value++
+		if o.domain.panicAfterIncrement {
+			o.domain.panicAfterIncrement = false
+			panic("simulated process panic")
+		}
 		if o.domain.failAfterIncrement {
 			o.domain.failAfterIncrement = false
 			return Effect{}, fmt.Errorf("simulated interrupted operator")
@@ -114,6 +119,15 @@ func (s *memoryStateStore) Load(context.Context, string) (ControlState, error) {
 	defer s.mu.Unlock()
 	return s.state, nil
 }
+func (s *memoryStateStore) BeginEffect(_ context.Context, revision uint64, target ControlState) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state.Revision != revision {
+		return fmt.Errorf("stale revision")
+	}
+	s.state = target
+	return nil
+}
 func (s *memoryStateStore) CommitTransition(_ context.Context, revision uint64, target ControlState, receipt Receipt) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -126,15 +140,6 @@ func (s *memoryStateStore) CommitTransition(_ context.Context, revision uint64, 
 	}
 	s.state = target
 	s.receipts.values = append(s.receipts.values, receipt)
-	return nil
-}
-func (s *memoryStateStore) EnterRecovery(_ context.Context, revision uint64, target ControlState) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.state.Revision != revision {
-		return fmt.Errorf("stale revision")
-	}
-	s.state = target
 	return nil
 }
 
@@ -177,7 +182,8 @@ func integerProgram(t *testing.T) Program {
 		{ID: "counter.increment-first", SourceModes: []string{"zero"}, TargetMode: "one", ObjectiveScope: ObjectiveBoundExact, ObjectiveMutation: PreserveObjective, RequiredCapabilities: []Capability{"counter.increment"}, OwnedFacets: []string{"counter.value"}, Operation: "counter.increment", Priority: 10},
 		{ID: "counter.increment-second", SourceModes: []string{"one"}, TargetMode: "two", ObjectiveScope: ObjectiveBoundExact, ObjectiveMutation: PreserveObjective, RequiredCapabilities: []Capability{"counter.increment"}, OwnedFacets: []string{"counter.value"}, Operation: "counter.increment", Priority: 10},
 		{ID: "counter.reset", SourceModes: []string{"one", "two"}, TargetMode: "zero", ObjectiveScope: ObjectiveOptionalPreserve, ObjectiveMutation: PreserveObjective, RequiredCapabilities: []Capability{"counter.reset"}, OwnedFacets: []string{"counter.value"}, Operation: "counter.reset", Priority: 20},
-		{ID: "counter.recover", SourceModes: []string{"zero", "one"}, TargetMode: "zero", ObjectiveScope: ObjectiveOptionalPreserve, ObjectiveMutation: PreserveObjective, RequiredCapabilities: []Capability{"counter.reset"}, OwnedFacets: []string{"counter.value"}, Operation: "counter.reset", Priority: 1, Recovers: []string{"counter.increment-first", "counter.increment-second"}},
+		{ID: "objective.recover", SourceModes: []string{"unbound"}, TargetMode: "unbound", ObjectiveScope: ObjectiveOptionalPreserve, ObjectiveMutation: PreserveObjective, RequiredCapabilities: []Capability{"counter.reset"}, OwnedFacets: []string{"counter.value"}, Operation: "counter.reset", Priority: 1, Recovers: []string{"objective.bind"}},
+		{ID: "counter.recover", SourceModes: []string{"zero", "one", "two"}, TargetMode: "zero", ObjectiveScope: ObjectiveOptionalPreserve, ObjectiveMutation: PreserveObjective, RequiredCapabilities: []Capability{"counter.reset"}, OwnedFacets: []string{"counter.value"}, Operation: "counter.reset", Priority: 1, Recovers: []string{"counter.increment-first", "counter.increment-second", "counter.reset"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -221,7 +227,7 @@ func TestDeterministicNonSoftwareProgramReachesMarkedState(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if receipt.Verification != "satisfied" || receipt.Program.Fingerprint == "" || receipt.ResultStateRevision != receipt.PriorStateRevision+1 {
+		if receipt.Verification != "satisfied" || receipt.Program.Fingerprint == "" || receipt.AttemptStateRevision != receipt.PriorStateRevision+1 || receipt.ResultStateRevision != receipt.AttemptStateRevision+1 {
 			t.Fatalf("incomplete receipt: %#v", receipt)
 		}
 	}
@@ -229,7 +235,7 @@ func TestDeterministicNonSoftwareProgramReachesMarkedState(t *testing.T) {
 	if err != nil || resolution.Decision.Kind != Marked {
 		t.Fatalf("marked resolve: %#v %v", resolution.Decision, err)
 	}
-	if states.state.Revision != 4 || len(receipts.values) != 3 {
+	if states.state.Revision != 7 || len(receipts.values) != 3 {
 		t.Fatalf("state/receipts = %d/%d", states.state.Revision, len(receipts.values))
 	}
 }
@@ -255,6 +261,15 @@ func TestAuthorityDenialAndObjectiveAbsenceFailClosed(t *testing.T) {
 	}
 	if domain.value != 0 {
 		t.Fatal("refused resolution mutated domain")
+	}
+}
+
+func TestFutureAuthorityReceiptFailsClosedBeforeEffects(t *testing.T) {
+	runtime, _, _, domain, objective, authority := newIntegerRuntime(t, true)
+	authority.Receipts[0].IssuedAt = time.Date(2026, 8, 12, 10, 0, 1, 0, time.UTC)
+	resolution, err := runtime.Resolve(context.Background(), ResolveRequest{InstanceID: "counter-fixture", Objective: &objective, Authority: authority, Requested: "counter.increment-first"})
+	if err != nil || resolution.Decision.Kind != Refused || domain.value != 0 || domain.incrementExecutions != 0 {
+		t.Fatalf("decision/value/executions/error = %#v/%d/%d/%v", resolution.Decision, domain.value, domain.incrementExecutions, err)
 	}
 }
 
@@ -364,7 +379,7 @@ func TestInterruptedOperatorRequiresAndCompletesExplicitRecovery(t *testing.T) {
 		t.Fatalf("recovery resolve: %#v %v", recovery.Decision, err)
 	}
 	_, err = runtime.Apply(ctx, ApplyRequest{ResolveRequest: ResolveRequest{InstanceID: "counter-fixture", Objective: &objective, Authority: authority, Requested: "counter.recover"}, Prescription: *recovery.Prescription})
-	if err != nil || states.state.Recovery != nil || states.state.Revision != 3 || domain.value != 0 {
+	if err != nil || states.state.Recovery != nil || states.state.Revision != 4 || domain.value != 0 {
 		t.Fatalf("recovery result: %#v value=%d err=%v", states.state, domain.value, err)
 	}
 }
@@ -393,6 +408,28 @@ func TestAtomicTransactionFailureEntersRecoveryWithoutDuplicateEffect(t *testing
 	}
 	if domain.incrementExecutions != 1 {
 		t.Fatalf("original operator ran %d times", domain.incrementExecutions)
+	}
+}
+
+func TestProcessPanicLeavesDurableRecoveryBeforeEffectReplay(t *testing.T) {
+	runtime, store, _, domain, objective, authority := newIntegerRuntime(t, true)
+	domain.panicAfterIncrement = true
+	ctx := context.Background()
+	resolution, err := runtime.Resolve(ctx, ResolveRequest{InstanceID: "counter-fixture", Objective: &objective, Authority: authority, Requested: "counter.increment-first"})
+	if err != nil || resolution.Decision.Kind != Prescribed {
+		t.Fatalf("resolve: %#v %v", resolution.Decision, err)
+	}
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		_, _ = runtime.Apply(ctx, ApplyRequest{ResolveRequest: ResolveRequest{InstanceID: "counter-fixture", Objective: &objective, Authority: authority, Requested: "counter.increment-first"}, Prescription: *resolution.Prescription})
+	}()
+	if recovered == nil || store.state.Recovery == nil || store.state.Recovery.TransitionID != "counter.increment-first" || store.state.Revision != 2 || domain.value != 1 || domain.incrementExecutions != 1 {
+		t.Fatalf("panic/recovery state: panic=%v state=%#v value=%d executions=%d", recovered, store.state, domain.value, domain.incrementExecutions)
+	}
+	next, err := runtime.Resolve(ctx, ResolveRequest{InstanceID: "counter-fixture", Objective: &objective, Authority: authority})
+	if err != nil || next.Decision.Kind != Prescribed || next.Decision.Transition != "counter.recover" || domain.incrementExecutions != 1 {
+		t.Fatalf("post-panic resolution: %#v executions=%d error=%v", next.Decision, domain.incrementExecutions, err)
 	}
 }
 
@@ -426,7 +463,7 @@ func TestFailedRecoveryAttemptPreservesOriginalRecoveryObligation(t *testing.T) 
 		t.Fatalf("recovery retry resolve: %#v %v", retry.Decision, err)
 	}
 	_, err = runtime.Apply(ctx, ApplyRequest{ResolveRequest: ResolveRequest{InstanceID: "counter-fixture", Objective: &objective, Authority: authority, Requested: "counter.recover"}, Prescription: *retry.Prescription})
-	if err != nil || store.state.Recovery != nil || store.state.Mode != "zero" || store.state.Revision != 4 {
+	if err != nil || store.state.Recovery != nil || store.state.Mode != "zero" || store.state.Revision != 5 {
 		t.Fatalf("recovery retry result: state=%#v err=%v", store.state, err)
 	}
 }

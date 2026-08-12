@@ -17,7 +17,7 @@ import (
 const (
 	ProgramSchemaVersion      = 1
 	PrescriptionSchemaVersion = 2
-	ReceiptSchemaVersion      = 2
+	ReceiptSchemaVersion      = 3
 )
 
 var semanticID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
@@ -168,7 +168,7 @@ type AuthorityReceipt struct {
 }
 
 func (r AuthorityReceipt) Validate(now time.Time) error {
-	if !semanticID.MatchString(r.ID) || r.Subject == "" || r.Fingerprint == "" || r.IssuedAt.IsZero() || (!r.ExpiresAt.IsZero() && !now.Before(r.ExpiresAt)) {
+	if !semanticID.MatchString(r.ID) || r.Subject == "" || r.Fingerprint == "" || r.IssuedAt.IsZero() || r.IssuedAt.After(now) || (!r.ExpiresAt.IsZero() && !now.Before(r.ExpiresAt)) {
 		return fmt.Errorf("authority receipt %q is invalid or expired", r.ID)
 	}
 	if len(r.Capabilities) == 0 {
