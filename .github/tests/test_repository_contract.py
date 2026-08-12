@@ -172,6 +172,11 @@ class RepositoryContract(unittest.TestCase):
         self.assertIn("Resolver / apply agreement", prompt)
         self.assertIn("Receipts as facts", prompt)
         self.assertIn("Questions for model-level verification", prompt)
+        self.assertIn("Review to closure before reporting findings", prompt)
+        self.assertIn("second pass over the relevant dimensions", prompt)
+        self.assertIn("soundness: construct invalid implementations", prompt)
+        self.assertIn("completeness: construct valid implementations", prompt)
+        self.assertIn("CLOSURE OBLIGATIONS", prompt)
         self.assertIn("Return only the object required by the supplied output schema", prompt)
         self.assertEqual(
             set(schema["required"]),
