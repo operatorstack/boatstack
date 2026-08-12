@@ -84,8 +84,22 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 	if err != nil {
 		return err
 	}
-	rawIR, err := boatstackruntime.RunFlowFrontend(ctx, frontend, source)
+	sourceRaw, err := os.ReadFile(source)
 	if err != nil {
+		return err
+	}
+	lockRaw, err := os.ReadFile(lockPath)
+	if err != nil {
+		return err
+	}
+	rawIR, err := boatstackruntime.RunFlowFrontend(ctx, frontend, source, sourceRaw)
+	if err != nil {
+		return err
+	}
+	if err := requireUnchangedCompileInput(source, sourceRaw); err != nil {
+		return err
+	}
+	if err := requireUnchangedCompileInput(lockPath, lockRaw); err != nil {
 		return err
 	}
 	resolver, err := softwareflow.NewResolver(ctx)
@@ -97,14 +111,6 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 		return err
 	}
 	skills, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
-	if err != nil {
-		return err
-	}
-	sourceRaw, err := os.ReadFile(source)
-	if err != nil {
-		return err
-	}
-	lockRaw, err := os.ReadFile(lockPath)
 	if err != nil {
 		return err
 	}
@@ -139,6 +145,14 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 		return err
 	}
 	return renderFlowResult("compiled", artifactPath, artifact)
+}
+
+func requireUnchangedCompileInput(path string, expected []byte) error {
+	current, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(current, expected) {
+		return fmt.Errorf("FLOW_COMPILE_INPUT_CHANGED: %s changed while the frontend was running", path)
+	}
+	return nil
 }
 
 func obsoleteGeneratedSkills(repository, artifactPath string, next map[string]string) ([]string, error) {

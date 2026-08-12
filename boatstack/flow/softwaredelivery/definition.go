@@ -73,9 +73,15 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 		transition.SourceConditions = append(transition.SourceConditions, guard...)
 		transition.TargetConditions = append(transition.TargetConditions, target...)
 		transition.Priority = declaration.Priority
+		trustedObjectives := append([]model.ObjectiveKind(nil), transition.ObjectiveKinds...)
 		transition.ObjectiveKinds = transition.ObjectiveKinds[:0]
 		for objective := range objectives {
-			transition.ObjectiveKinds = append(transition.ObjectiveKinds, objective)
+			if containsAll(trustedObjectives, []model.ObjectiveKind{objective}) {
+				transition.ObjectiveKinds = append(transition.ObjectiveKinds, objective)
+			}
+		}
+		if len(transition.ObjectiveKinds) == 0 {
+			return delivery.ProgramRuntimeManifest{}, fmt.Errorf("transition %q supports none of the declared entry objectives", declaration.ID)
 		}
 		sort.Slice(transition.ObjectiveKinds, func(i, j int) bool { return transition.ObjectiveKinds[i] < transition.ObjectiveKinds[j] })
 		selected = append(selected, transition)

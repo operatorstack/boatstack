@@ -30,6 +30,8 @@ committed runtime inputs:
 `boatstack flow check` rejects stale sources, dependency locks, trusted
 bindings, program fingerprints, or skills. Runtime commands load only the
 checked IR artifact; they do not execute the TypeScript source.
+Compilation also rejects repository module imports, concurrent projection, and
+source or lock changes observed while the frontend is running.
 
 ## Machine-local controller state
 

@@ -88,3 +88,24 @@ func TestFlowProjectionStagesAllOutputsBeforeReplacement(t *testing.T) {
 		t.Fatalf("retired skill remains after successful retry: %v", statErr)
 	}
 }
+
+func TestFlowProjectionRefusesConcurrentCompiler(t *testing.T) {
+	// control-law: concurrent-compilers-cannot-interleave-one-projection
+	repository := resolvedTemporaryRepository(t)
+	lock, err := acquireProjectionLock(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(repository, ".agents", "skills", "product-delivery-run", "SKILL.md")
+	err = ApplyFlowProjection(repository, []ProjectionWrite{{Path: target, Content: []byte("skill"), Mode: 0o644}}, nil)
+	if err == nil || !strings.Contains(err.Error(), "FLOW_PROJECTION_BUSY") {
+		t.Fatalf("concurrent projection result = %v", err)
+	}
+	if _, statErr := os.Stat(target); !os.IsNotExist(statErr) {
+		t.Fatalf("refused compiler changed projection: %v", statErr)
+	}
+	lock.release()
+	if err := ApplyFlowProjection(repository, []ProjectionWrite{{Path: target, Content: []byte("skill"), Mode: 0o644}}, nil); err != nil {
+		t.Fatal(err)
+	}
+}

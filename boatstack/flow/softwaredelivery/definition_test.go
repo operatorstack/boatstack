@@ -113,6 +113,26 @@ func TestRepositoryTargetMustBeImpliedByTrustedPostcondition(t *testing.T) {
 	}
 }
 
+func TestRepositoryTransitionCannotWidenTrustedObjectiveKinds(t *testing.T) {
+	truth := true
+	compiled, resolver := compiledFlow(t, controlprogram.Predicate{True: &truth})
+	widened := compiled.Document
+	widened.Facets = append(widened.Facets, controlprogram.Facet{ID: "plan", Kind: "string"})
+	widened.Targets = []controlprogram.Target{{ID: "approved-plan", Predicate: fact("plan", "approved")}}
+	widened.Entries = []controlprogram.Entry{{ID: "autoplan", Target: "approved-plan"}}
+	unsafe, err := controlprogram.Compile(widened, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, err := softwareflow.NewDefinition(unsafe, resolver)
+	if err == nil {
+		_, err = definition.RuntimeManifest(context.Background())
+	}
+	if err == nil || !strings.Contains(err.Error(), "supports none of the declared entry objectives") {
+		t.Fatalf("widened objective result = %v", err)
+	}
+}
+
 func TestCompiledBindingDriftFailsClosed(t *testing.T) {
 	truth := true
 	compiled, resolver := compiledFlow(t, controlprogram.Predicate{True: &truth})

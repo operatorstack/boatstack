@@ -181,7 +181,7 @@ func TestFlowCompilerMutationSitesMapToFlowCompileEvent(t *testing.T) {
 			"runtime.ApplyFlowProjection": 1,
 		},
 		"internal/runtime/flow_files.go": {
-			"os.MkdirAll": 1, "os.CreateTemp": 1, "os.Remove": 5, "os.Rename": 2,
+			"os.MkdirAll": 2, "os.CreateTemp": 1, "os.OpenFile": 1, "os.Remove": 5, "os.Rename": 2,
 		},
 	}
 	for relative, wanted := range expected {

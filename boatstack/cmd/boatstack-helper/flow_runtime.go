@@ -17,6 +17,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
 )
 
@@ -98,21 +99,32 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	}
 	switch options.transitionID {
 	case "objective.bind":
-		if _, exists := parameters.Get("objective_kind"); !exists {
-			options.parameters = append(options.parameters, "objective_kind="+string(objective))
+		if err := bindResolvedParameter(&options, parameters, "objective_kind", string(objective)); err != nil {
+			return commandOptions{}, err
 		}
-		if _, exists := parameters.Get("delivery_id"); !exists {
-			options.parameters = append(options.parameters, "delivery_id="+deliveryID)
+		if err := bindResolvedParameter(&options, parameters, "delivery_id", deliveryID); err != nil {
+			return commandOptions{}, err
 		}
 	case "plan.create", "plan.amend":
-		if _, exists := parameters.Get("source_path"); !exists {
-			options.parameters = append(options.parameters, "source_path="+plan)
+		if err := bindResolvedParameter(&options, parameters, "source_path", plan); err != nil {
+			return commandOptions{}, err
 		}
-		if _, exists := parameters.Get("delivery_id"); !exists {
-			options.parameters = append(options.parameters, "delivery_id="+deliveryID)
+		if err := bindResolvedParameter(&options, parameters, "delivery_id", deliveryID); err != nil {
+			return commandOptions{}, err
 		}
 	}
 	return options, nil
+}
+
+func bindResolvedParameter(options *commandOptions, parameters protocol.Parameters, name, expected string) error {
+	if actual, exists := parameters.Get(name); exists {
+		if actual != expected {
+			return fmt.Errorf("FLOW_INPUT_MISMATCH: parameter %s conflicts with the entry-resolved value", name)
+		}
+		return nil
+	}
+	options.parameters = append(options.parameters, name+"="+expected)
+	return nil
 }
 
 func bindRPCFlowEntry(ctx context.Context, request surfaces.Request) (surfaces.Request, error) {

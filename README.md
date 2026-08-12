@@ -236,6 +236,8 @@ The current authoring boundary already includes:
 
 Repository Flows are authored in `.boatstack/flows/*.flow.ts` and compiled into
 committed `.flow.ir.json` artifacts. Runtime commands load only canonical IR.
+Compilation parses a restricted declaration subset and never executes
+repository modules. Local Flow imports fail closed.
 The TypeScript SDK and IR remain alpha APIs.
 
 ## Safety model

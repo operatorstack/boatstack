@@ -1,7 +1,9 @@
 package runtime
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,11 +12,12 @@ import (
 	"strings"
 )
 
-func RunFlowFrontend(ctx context.Context, executable, source string) ([]byte, error) {
-	if executable == "" || !filepath.IsAbs(executable) || !filepath.IsAbs(source) {
+func RunFlowFrontend(ctx context.Context, executable, sourceName string, source []byte) ([]byte, error) {
+	if executable == "" || !filepath.IsAbs(executable) || !filepath.IsAbs(sourceName) {
 		return nil, fmt.Errorf("Flow frontend and source paths must be exact and absolute")
 	}
-	command := exec.CommandContext(ctx, executable, source)
+	command := exec.CommandContext(ctx, executable, "--stdin", sourceName)
+	command.Stdin = bytes.NewReader(source)
 	output, err := command.Output()
 	if err != nil {
 		if exit, ok := err.(*exec.ExitError); ok {
@@ -54,6 +57,11 @@ func ApplyFlowProjection(repository string, writes []ProjectionWrite, removals [
 	if err != nil || resolvedRepository != repository {
 		return fmt.Errorf("projection repository must be a resolved directory")
 	}
+	lock, err := acquireProjectionLock(repository)
+	if err != nil {
+		return err
+	}
+	defer lock.release()
 	writes = append([]ProjectionWrite(nil), writes...)
 	removals = append([]string(nil), removals...)
 	sort.Slice(writes, func(i, j int) bool { return writes[i].Path < writes[j].Path })
@@ -136,6 +144,37 @@ func ApplyFlowProjection(repository string, writes []ProjectionWrite, removals [
 		return fmt.Errorf("commit Flow projection: %v; rollback failed: %w", commitErr, rollbackErr)
 	}
 	return fmt.Errorf("commit Flow projection: %w", commitErr)
+}
+
+type projectionLock struct {
+	file *os.File
+}
+
+func acquireProjectionLock(repository string) (*projectionLock, error) {
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return nil, err
+	}
+	root := filepath.Join(cache, "boatstack", "flow-projection-locks")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return nil, err
+	}
+	identity := sha256.Sum256([]byte(repository))
+	path := filepath.Join(root, fmt.Sprintf("%x.lock", identity))
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := lockProjectionFile(file); err != nil {
+		_ = file.Close()
+		return nil, fmt.Errorf("FLOW_PROJECTION_BUSY: %w", err)
+	}
+	return &projectionLock{file: file}, nil
+}
+
+func (l *projectionLock) release() {
+	_ = unlockProjectionFile(l.file)
+	_ = l.file.Close()
 }
 
 func validateProjectionPath(repository, path string) error {

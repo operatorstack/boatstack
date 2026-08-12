@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
 )
 
@@ -137,6 +139,62 @@ func TestRPCFlowEntryPreservesObjectiveEvidenceAndStopContext(t *testing.T) {
 	}
 	if bound.Objective.EvidenceFingerprint != strings.Repeat("a", 64) || !bound.Objective.FrontierIsStop {
 		t.Fatalf("RPC binding dropped objective context: %#v", bound.Objective)
+	}
+}
+
+func TestFlowEntryRejectsCallerOverridesOfResolvedInputs(t *testing.T) {
+	// control-law: entry-resolved-inputs-cannot-be-replaced-by-callers
+	for _, surface := range []string{"cli", "rpc"} {
+		t.Run(surface, func(t *testing.T) {
+			repository := flowRepository(t)
+			writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
+			other := filepath.Join(repository, "other.md")
+			writeFixture(t, repository, "other.md", []byte("other plan"))
+			if surface == "cli" {
+				_, err := bindFlowEntry(context.Background(), commandOptions{
+					repository: repository, programID: "product-delivery", entryID: "run", host: "codex",
+					transitionID: "plan.create", parameters: []string{"source_path=" + other},
+				})
+				if err == nil || !strings.Contains(err.Error(), "FLOW_INPUT_MISMATCH") {
+					t.Fatalf("CLI override result = %v", err)
+				}
+				return
+			}
+			_, err := bindRPCFlowEntry(context.Background(), surfaces.Request{
+				SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationResolve, Repository: repository,
+				Host: "claude", CorrelationID: "rpc-override", ProgramID: "product-delivery", EntryID: "run",
+				TransitionID: "plan.create", Parameters: protocol.Parameters{{Name: "source_path", Value: other}},
+			})
+			if err == nil || !strings.Contains(err.Error(), "FLOW_INPUT_MISMATCH") {
+				t.Fatalf("RPC override result = %v", err)
+			}
+		})
+	}
+}
+
+func TestFlowCompileRejectsSourceChangedDuringFrontend(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+	repository, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, repository, ".boatstack/flows/product-delivery.flow.ts", []byte("source A"))
+	writeFixture(t, repository, "package-lock.json", []byte("lock"))
+	frontend := filepath.Join(repository, "frontend.sh")
+	script := []byte("#!/bin/sh\ncat >/dev/null\nprintf 'source B' > \"$2\"\nprintf '{}\\n'\n")
+	if err := os.WriteFile(frontend, script, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	err = compileFlow(context.Background(), flowCommandOptions{
+		repository: repository, source: ".boatstack/flows/product-delivery.flow.ts", lock: "package-lock.json", frontend: frontend,
+	})
+	if err == nil || !strings.Contains(err.Error(), "FLOW_COMPILE_INPUT_CHANGED") {
+		t.Fatalf("source replacement result = %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(repository, ".boatstack/flows/product-delivery.flow.ir.json")); !os.IsNotExist(statErr) {
+		t.Fatalf("source race created an artifact: %v", statErr)
 	}
 }
 
