@@ -5,7 +5,7 @@
 <h1 align="center">Boatstack</h1>
 
 <p align="center">
-  Programmable supervisory control for software delivery.
+  Programmable supervisory control for state-changing operators.
 </p>
 
 <p align="center">
@@ -13,17 +13,20 @@
 </p>
 
 Boatstack is a programmable supervisory runtime over state-changing operators.
-Software delivery is its first production domain: an agent can propose what
-happens next, while a deterministic kernel decides what is admissible, executes
-registered effects, verifies fresh evidence, and records a durable receipt.
+An agent, human, workflow, or service can propose what should happen next.
+Boatstack owns the control law: it decides what is admissible, checks authority,
+executes registered effects, verifies the resulting state, and commits
+supervisory state with a durable receipt.
 
 ```text
-agent intent
-    ↓
-read-only observation → canonical snapshot → deterministic resolution
-                                              ↓
-durable receipt ← postcondition verification ← admitted effect
+Operator proposes.
+Boatstack admits.
+The effect executes.
+Boatstack verifies and commits.
 ```
+
+Coding agents are one operator type. The kernel is not built around prompts,
+language models, or coding-agent semantics.
 
 > [!WARNING]
 > Boatstack is alpha software for experimentation. The CLI, Control Program
@@ -71,28 +74,57 @@ can discover the generated skills. See [Getting started](docs/getting-started.md
 for the lower-level CLI path and [Configuration](docs/configuration.md) for the
 repository policy schema.
 
+## What Boatstack controls
+
+| Concept | Meaning |
+| --- | --- |
+| **Control Program** | The complete executable control law: transitions, gates, authority requirements, recovery paths, objective rules, and marked states. The product-facing name for one complete program is a **Flow**. |
+| **Supervisory state** | The small durable state owned by the kernel: program identity, control mode, exact objective binding, revision, and recovery state. Domain state stays outside the kernel. |
+| **Objective** | External intent identified by an exact immutable revision and fingerprint. Changing intent requires an explicit control transition. |
+| **Operator** | The component that performs one admitted operation. It may be an agent, human-mediated command, workflow, service, or deterministic program. |
+| **Effect** | A registered state-changing operation with explicit capabilities and owned facets. |
+| **Evidence** | Fresh observation and verification facts used to decide whether a transition may commit. |
+
+## Software delivery is the first domain
+
+Boatstack is not a generic platform for every agent system. Its first concrete
+domain is software delivery, where StandardFlow governs repositories, plans,
+worktrees, tests, reviews, publication, updates, and recovery. Git and
+coding-agent concepts live in this domain layer, not in the general kernel.
+
 ## What ships today
 
 Boatstack currently compiles 63 registered transitions into one executable
 control graph. The complete list is generated from the registry in the
 [transition catalog](docs/architecture/boatstack-v2-transition-catalog.md).
 
+### Kernel
+
 | Surface | Shipped functionality |
 | --- | --- |
-| **General kernel** | Domain-neutral programs, control instances, objective bindings, observations, capabilities, operators, verification, recovery, marked states, and receipts. The kernel does not require Git or a coding agent. |
-| **Control Programs** | One immutable program fingerprint binds executable semantics, objective contracts, resource ownership, capabilities, and transition IDs. |
+| **Programs and relation** | Domain-neutral programs, control instances, objective bindings, observations, operators, marked states, targeted and untargeted resolution, priorities, and prerequisite selection. One immutable fingerprint binds each program's executable semantics. |
+| **Admission and authority** | Capability-bearing authority receipts are fingerprinted, time-valid, and projected into admission. Required capabilities combine program declarations with a trusted mechanism classifier. |
+| **Transactions** | Prescriptions bind the exact control instance, state revision, program, objective binding, observation, transition, and authority. Apply rechecks that boundary before execution. |
+| **Verification and receipts** | Fresh postcondition verification, atomic state-and-receipt commits, and immutable transition facts. |
+| **Recovery** | A durable effect attempt precedes execution. Interrupted or uncertain outcomes enter explicit recovery instead of blindly repeating an effect. |
+
+### Software delivery
+
+| Surface | Shipped functionality |
+| --- | --- |
 | **StandardFlow** | A first-party product-delivery Flow covering installation, repository attachment, configuration, objectives, planning, worktrees, build/test/review evidence, publication, cleanup, and recovery. |
-| **Deterministic supervisor** | Targeted and untargeted resolution, explicit accepted objectives, transition priorities, prerequisite selection, and typed `PRESCRIBED`, `CANDIDATE`, `FRONTIER`, `BLOCKED`, `REFUSED`, `UNRESOLVED`, and `TERMINAL` decisions. |
-| **Authority and capabilities** | Separate human, autonomy, repository-policy, and external-provider receipts. Programs declare a maximum capability surface but cannot grant themselves authority. |
-| **Transactional effects** | Prescriptions bind the exact state revision, program fingerprint, snapshot fingerprint, transition, and correlation. Apply rechecks that compare-and-swap boundary under a repository lock before any managed effect. |
-| **Durable state ownership** | Installation, program, control, and product state are separate facets. A transition fails closed if it attempts to mutate a facet outside its Kernel-owned policy. |
-| **Verification and receipts** | Fresh postcondition checks, revision-bound build/test/review evidence, immutable transition facts, idempotent replay, and privacy-safe JSONL event projections. |
-| **Recovery** | Restart-safe journals, reversible local mutations, explicit resume/rollback/escalation paths, and preserved unknown settlement for external effects. |
+| **Delivery authority** | Separate human, autonomy, repository-policy, and external-provider receipts. Delivery programs declare a maximum capability surface but cannot grant themselves authority. |
+| **Delivery transactions** | Idempotent replay of committed transition receipts, with recovery required when the transaction state is not settled. |
 | **Repository topology** | Embedded, detached, and linked-worktree identity; verified state transfer when a workspace is cut; cleanup only after proved landing or explicit abandonment. |
 | **Publication** | Preview, provider-authorized execution, observation, correction, and reconciliation. Boatstack does not infer provider authority from `gh` authentication and never grants merge authority. |
 | **Runtime updates** | Per-repository immutable runtime pins, checksum verification, atomic program-drift reconciliation, rollback, and multiple repository versions in one host store. |
-| **Safety guard** | One command-intent classifier for supported hosts. High-confidence destructive commands are denied and managed effects are routed through Kernel admission. |
-| **Integrations** | One versioned protocol shared by the CLI, RPC, MCP, Go SDK, Cursor, Codex, Claude Code, and Gemini CLI. Hosts do not maintain independent delivery state machines. |
+| **Safety guard** | One command-intent classifier for supported hosts. High-confidence destructive commands are denied and managed effects are routed through kernel admission. |
+
+### Developer surfaces
+
+| Surface | Shipped functionality |
+| --- | --- |
+| **Protocol and SDK** | One versioned protocol shared by the CLI, RPC, MCP, Go SDK, Cursor, Codex, Claude Code, and Gemini CLI. Hosts do not maintain independent delivery state machines. |
 | **Extensions** | Additive, checksum-bound subprocess extensions with declarative manifests, JSON-schema settings, bounded I/O, deadlines, capability checks, and exact-byte execution. |
 | **Analysis** | Passive retrospective analysis, generated Markdown and Mermaid catalogs, privacy-safe events, and checked Locus safety/liveness models. Formal whole-system claims remain advisory. |
 
@@ -123,11 +155,24 @@ commands such as `plan-create`, `workspace-cut`, `record-test`, and `publish-pr`
 resolve and consume one exact prescription in the same invocation.
 
 Untargeted resolution selects
-only a transition that advances the configured objective. Maintenance, correction,
-abandonment, provider actions, and merge authority are never invented as a way
-around a frontier. After an operation is selected, generated host drivers keep
-one command-scoped objective, repository, worktree, flow, actor, and authority
-context through every resolution, effect, recovery, and re-resolution.
+only a transition that advances the configured objective. Maintenance,
+correction, abandonment, provider actions, and merge authority are never
+invented as a way around a frontier. After an operation is
+selected, generated host drivers keep one command-scoped objective, repository,
+worktree, flow, actor, and authority context through every resolution, effect,
+recovery, and re-resolution.
+
+## Objectives and control state
+
+Objectives are external intent. Boatstack stores only an exact objective
+binding—identity, revision, and fingerprint—in supervisory state. A new prompt
+or command cannot silently reinterpret that state: binding, replacing, or
+clearing an objective is an explicit transition governed by the active Control
+Program.
+
+Domain state remains outside the kernel. The kernel retains only the minimum
+state needed to control progress: program identity, control mode, objective
+binding, revision, and recovery obligation.
 
 ## Internals
 
@@ -141,7 +186,8 @@ Boatstack separates inference, control, execution, and verification:
                                │ versioned request
 ┌──────────────────────────────▼───────────────────────────────┐
 │ General kernel                                              │
-│ observe → relate → prescribe → admit → execute → verify     │
+│ observe → relate → prescribe → admit                        │
+│ persist attempt → execute → verify → commit state + receipt │
 └───────────────┬──────────────────────────────┬───────────────┘
                 │                              │
 ┌───────────────▼──────────────┐  ┌────────────▼───────────────┐
@@ -154,6 +200,11 @@ Boatstack separates inference, control, execution, and verification:
 The kernel owns mechanism. A Control Program owns policy. The product calls a
 complete Control Program a **Flow**; the rules encoded by it are its **control
 law**. See the [general kernel boundary](docs/architecture/general-supervisory-kernel.md).
+
+Boatstack deliberately uses ordinary systems primitives for runtime pinning,
+transactions, capabilities, versioning, and recovery. The distinguishing
+boundary is supervisory: operators may perform work, while a deterministic
+Control Program governs which observed state transitions may commit.
 
 The current authoring boundary already includes:
 
@@ -235,7 +286,7 @@ Every pull request that changes Boatstack adds an append-only release note. See
 
 Boatstack is being built in public and is not ready to promise compatibility.
 The project is currently focused on making repository-authored Control Programs
-safe to load and execute without moving authority out of the Kernel.
+safe to load and execute without moving authority out of the kernel.
 
 Issues and design feedback are welcome. Production stability, polished Flow
 authoring, and compatibility guarantees are not here yet.

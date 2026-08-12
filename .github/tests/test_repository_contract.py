@@ -285,6 +285,21 @@ class RepositoryContract(unittest.TestCase):
         self.assertIn("Untargeted resolution selects\nonly a transition that advances the configured objective", readme)
         self.assertIn("exactly three operation skills", readme)
 
+        _, kernel_and_later = readme.split("### Kernel", 1)
+        kernel_section, delivery_and_later = kernel_and_later.split("### Software delivery", 1)
+        delivery_section, _ = delivery_and_later.split("### Developer surfaces", 1)
+        self.assertNotIn("idempotent replay", kernel_section.lower())
+        self.assertIn("idempotent replay", delivery_section.lower())
+        for delivery_only_authority in (
+            "human",
+            "autonomy",
+            "repository-policy",
+            "external-provider",
+            "maximum capability surface",
+        ):
+            self.assertNotIn(delivery_only_authority, kernel_section.lower())
+            self.assertIn(delivery_only_authority, delivery_section.lower())
+
     def test_document_links_claims_and_assets_are_valid(self) -> None:
         def anchors(document: Path) -> set[str]:
             result: set[str] = set()
