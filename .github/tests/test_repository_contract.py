@@ -415,7 +415,10 @@ class RepositoryContract(unittest.TestCase):
     def test_general_kernel_is_domain_neutral_and_owns_shared_control_laws(self) -> None:
         kernel = REPO / "boatstack" / "kernel"
         kernel_files = sorted(kernel.glob("*.go"))
-        source = "\n".join(path.read_text() for path in kernel_files)
+        production_files = [
+            path for path in kernel_files if not path.name.endswith("_test.go")
+        ]
+        source = "\n".join(path.read_text() for path in production_files)
         for token in (
             "git", "repository", "worktree", "branch", "pull request",
             "coding agent", "publication",
@@ -424,13 +427,17 @@ class RepositoryContract(unittest.TestCase):
 
         boatstack_packages = "github.com/operatorstack/boatstack/boatstack/"
         kernel_package = boatstack_packages + "kernel"
+        conformance_package = kernel_package + "/conformance"
         kernel_metadata = go_source_metadata(kernel_files)
         for path, metadata in zip(kernel_files, kernel_metadata, strict=True):
+            allowed = {kernel_package}
+            if path.name.endswith("_test.go"):
+                allowed.add(conformance_package)
             invalid = [
                 import_path
                 for import_path in metadata["imports"]
                 if import_path.startswith(boatstack_packages)
-                and import_path != kernel_package
+                and import_path not in allowed
             ]
             self.assertEqual([], invalid, f"kernel dependency direction: {path}")
 
@@ -452,6 +459,37 @@ class RepositoryContract(unittest.TestCase):
                 ),
                 f"kernel test fixture imports software delivery: {path}",
             )
+
+        conformance_files = sorted((kernel / "conformance").glob("*.go"))
+        self.assertTrue(conformance_files)
+        conformance_source = "\n".join(path.read_text() for path in conformance_files)
+        for token in (
+            "git", "repository", "worktree", "pull request",
+            "softwaredelivery", "subprocess",
+        ):
+            self.assertNotRegex(
+                conformance_source.lower(),
+                rf"\b{re.escape(token)}\b",
+                token,
+            )
+        for path, metadata in zip(
+            conformance_files,
+            go_source_metadata(conformance_files),
+            strict=True,
+        ):
+            invalid = [
+                import_path
+                for import_path in metadata["imports"]
+                if import_path.startswith(boatstack_packages)
+                and import_path != kernel_package
+            ]
+            invalid.extend(
+                import_path
+                for import_path in metadata["imports"]
+                if import_path in {"os", "os/exec", "path/filepath"}
+            )
+            self.assertEqual([], invalid, f"kernel conformance dependency: {path}")
+        self.assertIn("conformance.IntegerFixture().Run(t)", test_source)
 
         runtime = (kernel / "runtime.go").read_text()
         software_relation = (
@@ -527,7 +565,7 @@ class RepositoryContract(unittest.TestCase):
             path
             for path in sorted((REPO / "boatstack").rglob("*.go"))
             if not path.name.endswith("_test.go")
-            and path.parent != REPO / "boatstack" / "kernel"
+            and not path.is_relative_to(REPO / "boatstack" / "kernel")
         ]
         consumers = [
             str(path.relative_to(REPO))

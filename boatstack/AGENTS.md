@@ -2,6 +2,15 @@
 
 Read this before opening a PR that touches anything under `boatstack/`.
 
+## Alpha compatibility policy
+
+Boatstack does not preserve backward compatibility during alpha development.
+Change existing interfaces, state, configuration, and generated surfaces when
+the current architecture requires it. Update every in-tree consumer in the same
+delivery. Do not add compatibility shims, dual paths, or migrations unless a
+task explicitly requires one. Local alpha installations may be reset or
+regenerated after a breaking change.
+
 ## Every Boatstack PR REQUIRES a new release note
 
 CI runs `.github/scripts/release_notes.py check-policy` in the
