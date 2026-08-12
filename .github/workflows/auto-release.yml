@@ -3,7 +3,7 @@ name: Publish verified Boatstack release
 
 on:
   workflow_run:
-    workflows: ["Verify Boatstack distribution"]
+    workflows: ["CI"]
     types: [completed]
 
 permissions:

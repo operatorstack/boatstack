@@ -18,6 +18,24 @@ RUNTIME = REPO / "boatstack"
 CONFIG = REPO / "project.example.json"
 
 
+def go_source_metadata(paths: list[Path]) -> list[dict[str, object]]:
+    result = subprocess.run(
+        [
+            "go",
+            "run",
+            str(REPO / ".github" / "tests" / "go_source_metadata.go"),
+            "--",
+            *map(str, paths),
+        ],
+        cwd=REPO,
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stdout + result.stderr)
+    return json.loads(result.stdout)
+
+
 class RepositoryContract(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -174,6 +192,7 @@ class RepositoryContract(unittest.TestCase):
         self.assertFalse((REPO / "UPSTREAM.json").exists())
 
     def test_release_builds_six_checksum_bound_v2_runtimes(self) -> None:
+        ci = (REPO / ".github" / "workflows" / "ci.yml").read_text()
         release = (REPO / ".github" / "workflows" / "release.yml").read_text()
         automatic = (REPO / ".github" / "workflows" / "auto-release.yml").read_text()
         for asset in (
@@ -189,7 +208,10 @@ class RepositoryContract(unittest.TestCase):
             self.assertIn(symbol, release)
         self.assertIn('source_commit="$(git rev-parse HEAD)"', release)
         self.assertIn("sha256sum", release)
-        self.assertIn('workflows: ["Verify Boatstack distribution"]', automatic)
+        ci_name = re.search(r"(?m)^name:\s*(.+?)\s*$", ci)
+        self.assertIsNotNone(ci_name)
+        self.assertEqual(ci_name.group(1), "CI")
+        self.assertIn(f'workflows: ["{ci_name.group(1)}"]', automatic)
 
     def test_manual_release_is_prerelease_only_and_exact_source_bound(self) -> None:
         # control-law: branch-prerelease-publishes-only-an-exact-new-rc-source
@@ -387,12 +409,44 @@ class RepositoryContract(unittest.TestCase):
 
     def test_general_kernel_is_domain_neutral_and_owns_shared_control_laws(self) -> None:
         kernel = REPO / "boatstack" / "kernel"
-        source = "\n".join(path.read_text() for path in sorted(kernel.glob("*.go")))
+        kernel_files = sorted(kernel.glob("*.go"))
+        source = "\n".join(path.read_text() for path in kernel_files)
         for token in (
             "git", "repository", "worktree", "branch", "pull request",
             "coding agent", "publication",
         ):
             self.assertNotIn(token, source.lower(), token)
+
+        boatstack_packages = "github.com/operatorstack/boatstack/boatstack/"
+        kernel_package = boatstack_packages + "kernel"
+        kernel_metadata = go_source_metadata(kernel_files)
+        for path, metadata in zip(kernel_files, kernel_metadata, strict=True):
+            invalid = [
+                import_path
+                for import_path in metadata["imports"]
+                if import_path.startswith(boatstack_packages)
+                and import_path != kernel_package
+            ]
+            self.assertEqual([], invalid, f"kernel dependency direction: {path}")
+
+        kernel_tests = sorted(kernel.glob("*_test.go"))
+        test_source = "\n".join(path.read_text() for path in kernel_tests)
+        self.assertNotRegex(test_source, r'\bexec\.Command\(\s*"git"')
+        self.assertNotRegex(
+            test_source,
+            r'\bexec\.CommandContext\([^,\n]+,\s*"git"',
+        )
+        self.assertNotIn("testRepository", test_source)
+        self.assertNotIn("softwaredelivery", test_source.lower())
+        test_metadata = go_source_metadata(kernel_tests)
+        for path, metadata in zip(kernel_tests, test_metadata, strict=True):
+            self.assertFalse(
+                any(
+                    "/softwaredelivery" in import_path
+                    for import_path in metadata["imports"]
+                ),
+                f"kernel test fixture imports software delivery: {path}",
+            )
 
         runtime = (kernel / "runtime.go").read_text()
         software_relation = (
@@ -431,6 +485,58 @@ class RepositoryContract(unittest.TestCase):
             "./internal/effects", "./internal/surfaces",
         ):
             self.assertNotIn(retired, component_ci)
+        self.assertIn("run: go test -race ./...", component_ci)
+        self.assertIn(
+            "run: go test -race ./kernel ./internal/softwaredelivery/effects",
+            component_ci,
+        )
+
+    def test_go_import_parser_accepts_legal_import_forms(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            commented = Path(directory) / "commented.go"
+            commented.write_text(
+                'package consumer\n\nimport /* migration T5 */ '
+                '"github.com/operatorstack/boatstack/boatstack/kernel"\n'
+            )
+            line_broken = Path(directory) / "line_broken.go"
+            line_broken.write_text(
+                'package consumer\n\nimport\n b "\\u0067ithub.com/operatorstack/'
+                'boatstack/boatstack/internal/buildinfo"\n'
+            )
+            self.assertEqual(
+                [
+                    "github.com/operatorstack/boatstack/boatstack/kernel",
+                    "github.com/operatorstack/boatstack/boatstack/internal/buildinfo",
+                ],
+                [
+                    metadata["imports"][0]
+                    for metadata in go_source_metadata([commented, line_broken])
+                ],
+            )
+
+    @unittest.expectedFailure
+    def test_kernel_runtime_has_no_production_consumer_yet(self) -> None:
+        # Migration task T5 must replace this marker with a permanent positive
+        # production-reachability assertion when the generic runtime is adopted.
+        production_files = [
+            path
+            for path in sorted((REPO / "boatstack").rglob("*.go"))
+            if not path.name.endswith("_test.go")
+            and path.parent != REPO / "boatstack" / "kernel"
+        ]
+        consumers = [
+            str(path.relative_to(REPO))
+            for path, metadata in zip(
+                production_files,
+                go_source_metadata(production_files),
+                strict=True,
+            )
+            if metadata["runtime_consumers"]
+        ]
+        self.assertTrue(
+            consumers,
+            "migration T5 has not connected the generic kernel runtime to production code",
+        )
 
     def test_documented_cli_verbs_are_registered_v2_surfaces(self) -> None:
         documents = [
