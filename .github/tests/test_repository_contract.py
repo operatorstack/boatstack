@@ -16,10 +16,18 @@ from boatstack_test_support import prescription_cli_arguments
 REPO = Path(__file__).resolve().parents[2]
 RUNTIME = REPO / "boatstack"
 CONFIG = REPO / "project.example.json"
-DOMAIN_NEUTRAL_WORDS = {"git", "github", "repository", "worktree", "branch", "publication"}
+DOMAIN_NEUTRAL_ROOTS = (
+    ("pullrequest", "pull request"),
+    ("codingagent", "coding agent"),
+    ("github", "github"),
+    ("repository", "repository"),
+    ("worktree", "worktree"),
+    ("publication", "publication"),
+    ("branch", "branch"),
+    ("git", "git"),
+)
 DOMAIN_NEUTRAL_PHRASE = re.compile(r"\b(?:pull\s+request|coding\s+agent)\b", re.IGNORECASE)
 GO_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-GO_IDENTIFIER_PART = re.compile(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|[0-9]+")
 
 
 def go_source_metadata(paths: list[Path]) -> list[dict[str, object]]:
@@ -47,15 +55,11 @@ def domain_vocabulary_hits(paths: list[Path]) -> list[tuple[Path, str]]:
             for match in DOMAIN_NEUTRAL_PHRASE.finditer(source):
                 hits.append((path, match.group(0).lower()))
             for identifier in GO_IDENTIFIER.findall(source):
-                if identifier.lower().startswith("github"):
-                    hits.append((path, "github"))
-                    continue
-                parts = [
-                    part.lower()
-                    for component in identifier.split("_")
-                    for part in GO_IDENTIFIER_PART.findall(component)
-                ]
-                hits.extend((path, part) for part in parts if part in DOMAIN_NEUTRAL_WORDS)
+                compact = identifier.lower().replace("_", "")
+                for root, token in DOMAIN_NEUTRAL_ROOTS:
+                    if root in compact:
+                        hits.append((path, token))
+                        break
     return hits
 
 
@@ -448,6 +452,15 @@ class RepositoryContract(unittest.TestCase):
                 ("package kernel\ntype worktreeManager struct{}\n", "worktree"),
                 ('package kernel\nconst provider = "github"\n', "github"),
                 ("package kernel\ntype githubClient struct{}\n", "github"),
+                ("package kernel\ntype gitclient struct{}\n", "git"),
+                ("package kernel\ntype mygitclient struct{}\n", "git"),
+                ("package kernel\ntype clientgit struct{}\n", "git"),
+                ("package kernel\ntype repositoryclient struct{}\n", "repository"),
+                ("package kernel\ntype worktreemanager struct{}\n", "worktree"),
+                ("package kernel\ntype branchmanager struct{}\n", "branch"),
+                ("package kernel\ntype publicationqueue struct{}\n", "publication"),
+                ("package kernel\ntype pullrequesthandler struct{}\n", "pull request"),
+                ("package kernel\ntype codingagentpolicy struct{}\n", "coding agent"),
             ):
                 with self.subTest(token=token):
                     fixture.write_text(source)
