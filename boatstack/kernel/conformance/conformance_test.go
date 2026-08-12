@@ -38,6 +38,31 @@ func TestIntegerBoundFixtureIncludesCommittedHistory(t *testing.T) {
 	}
 }
 
+func TestRetargetProgramCheckRejectsAdditionalFreshnessChanges(t *testing.T) {
+	fixture := newIntegerFixture(SetupBound)
+	before := fixture.Scenario.Snapshot()
+	fixture.Scenario.RetargetProgram(fixture.Scenario.AlternateProgram.Identity())
+	fixture.Scenario.BumpStateRevision()
+	after := fixture.Scenario.Snapshot()
+	if err := retargetProgramError(before, after, fixture.Scenario.AlternateProgram.Identity()); err == nil {
+		t.Fatal("expected revision-changing program hook to be rejected")
+	}
+}
+
+func TestAdvanceClockCheckRejectsAdditionalFreshnessChanges(t *testing.T) {
+	fixture := newIntegerFixture(SetupBound)
+	duration := time.Hour
+	beforeTime := fixture.Clock.Now()
+	before := fixture.Scenario.Snapshot()
+	fixture.Scenario.AdvanceClock(duration)
+	fixture.Scenario.ChangeObservation()
+	afterTime := fixture.Clock.Now()
+	after := fixture.Scenario.Snapshot()
+	if err := clockAdvanceError(before, after, beforeTime, afterTime, duration); err == nil {
+		t.Fatal("expected observation-changing clock hook to be rejected")
+	}
+}
+
 func TestResolveWithoutMutationRejectsEffectfulLoad(t *testing.T) {
 	fixture := newIntegerFixture(SetupBound)
 	base := fixture.Store.(*MemoryStateStore)

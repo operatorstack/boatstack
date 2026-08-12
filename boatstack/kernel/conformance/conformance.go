@@ -184,7 +184,12 @@ func (suite KernelConformance) programFingerprintInvalidatesPrescription(t *test
 		fixture, runtime := suite.fresh(t, SetupBound)
 		transition := fixture.Scenario.AdvanceTransitions[0]
 		request, prescription := resolve(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective, fixture.Scenario.Authority)
+		beforeRetarget := fixture.Scenario.Snapshot()
 		fixture.Scenario.RetargetProgram(fixture.Scenario.AlternateProgram.Identity())
+		afterRetarget := fixture.Scenario.Snapshot()
+		if err := retargetProgramError(beforeRetarget, afterRetarget, fixture.Scenario.AlternateProgram.Identity()); err != nil {
+			t.Fatal(err)
+		}
 		alternate, err := kernel.NewRuntime(fixture.Scenario.AlternateProgram, fixture.Domain, fixture.Operator, fixture.CapabilityClassifier, fixture.Store, fixture.Locker, fixture.Clock)
 		if err != nil {
 			t.Fatal(err)
@@ -260,13 +265,37 @@ func (suite KernelConformance) authorityExpiryInvalidatesPrescription(t *testing
 	authority.Receipts = append([]kernel.AuthorityReceipt(nil), authority.Receipts...)
 	authority.Receipts[0].ExpiresAt = fixture.Clock.Now().Add(time.Hour)
 	request, prescription := resolve(t, runtime, fixture.Scenario, transition, &fixture.Scenario.Objective, authority)
-	fixture.Scenario.AdvanceClock(2 * time.Hour)
+	duration := 2 * time.Hour
+	beforeClock := fixture.Clock.Now()
+	beforeAdvance := fixture.Scenario.Snapshot()
+	fixture.Scenario.AdvanceClock(duration)
+	afterClock := fixture.Clock.Now()
+	afterAdvance := fixture.Scenario.Snapshot()
+	if err := clockAdvanceError(beforeAdvance, afterAdvance, beforeClock, afterClock, duration); err != nil {
+		t.Fatal(err)
+	}
 	before := fixture.Scenario.Snapshot()
 	_, err := runtime.Apply(context.Background(), kernel.ApplyRequest{ResolveRequest: request, Prescription: prescription})
 	after := fixture.Scenario.Snapshot()
 	if unchangedErr := refusedApplyMutationError(before, after, transition); err == nil || unchangedErr != nil {
 		t.Fatalf("control-law apply-time-authority-expiry: error=%v mutation=%v before=%#v after=%#v", err, unchangedErr, before, after)
 	}
+}
+
+func retargetProgramError(before, after Snapshot, program kernel.ProgramIdentity) error {
+	expected := before
+	expected.State.Program = program
+	if !reflect.DeepEqual(after, expected) {
+		return fmt.Errorf("control-law program-retarget fixture changed evidence outside State.Program: before=%#v after=%#v", before, after)
+	}
+	return nil
+}
+
+func clockAdvanceError(before, after Snapshot, beforeTime, afterTime time.Time, duration time.Duration) error {
+	if !reflect.DeepEqual(after, before) || !afterTime.Equal(beforeTime.Add(duration)) {
+		return fmt.Errorf("control-law clock-advance fixture changed snapshot evidence or advanced by the wrong duration: before=%#v after=%#v before_time=%v after_time=%v duration=%v", before, after, beforeTime, afterTime, duration)
+	}
+	return nil
 }
 
 func (suite KernelConformance) capabilityClassifierCannotBeWeakened(t *testing.T) {

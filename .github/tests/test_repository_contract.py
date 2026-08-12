@@ -16,7 +16,7 @@ from boatstack_test_support import prescription_cli_arguments
 REPO = Path(__file__).resolve().parents[2]
 RUNTIME = REPO / "boatstack"
 CONFIG = REPO / "project.example.json"
-DOMAIN_NEUTRAL_WORDS = {"git", "repository", "worktree", "branch", "publication"}
+DOMAIN_NEUTRAL_WORDS = {"git", "github", "repository", "worktree", "branch", "publication"}
 DOMAIN_NEUTRAL_PHRASE = re.compile(r"\b(?:pull\s+request|coding\s+agent)\b", re.IGNORECASE)
 GO_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 GO_IDENTIFIER_PART = re.compile(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|[0-9]+")
@@ -42,19 +42,20 @@ def go_source_metadata(paths: list[Path]) -> list[dict[str, object]]:
 
 def domain_vocabulary_hits(paths: list[Path]) -> list[tuple[Path, str]]:
     hits: list[tuple[Path, str]] = []
-    for path in paths:
-        source = path.read_text()
-        for match in DOMAIN_NEUTRAL_PHRASE.finditer(source):
-            hits.append((path, match.group(0).lower()))
-        for identifier in GO_IDENTIFIER.findall(source):
-            if identifier.lower() == "github":
-                continue
-            parts = [
-                part.lower()
-                for component in identifier.split("_")
-                for part in GO_IDENTIFIER_PART.findall(component)
-            ]
-            hits.extend((path, part) for part in parts if part in DOMAIN_NEUTRAL_WORDS)
+    for path, metadata in zip(paths, go_source_metadata(paths), strict=True):
+        for source in metadata["vocabulary"]:
+            for match in DOMAIN_NEUTRAL_PHRASE.finditer(source):
+                hits.append((path, match.group(0).lower()))
+            for identifier in GO_IDENTIFIER.findall(source):
+                if identifier.lower().startswith("github"):
+                    hits.append((path, "github"))
+                    continue
+                parts = [
+                    part.lower()
+                    for component in identifier.split("_")
+                    for part in GO_IDENTIFIER_PART.findall(component)
+                ]
+                hits.extend((path, part) for part in parts if part in DOMAIN_NEUTRAL_WORDS)
     return hits
 
 
@@ -445,10 +446,14 @@ class RepositoryContract(unittest.TestCase):
                 ("package kernel\ntype gitClient struct{}\n", "git"),
                 ("package kernel\nvar testRepository string\n", "repository"),
                 ("package kernel\ntype worktreeManager struct{}\n", "worktree"),
+                ('package kernel\nconst provider = "github"\n', "github"),
+                ("package kernel\ntype githubClient struct{}\n", "github"),
             ):
                 with self.subTest(token=token):
                     fixture.write_text(source)
                     self.assertEqual([(fixture, token)], domain_vocabulary_hits([fixture]))
+            fixture.write_text('package kernel\nimport "github.com/example/provider"\n')
+            self.assertEqual([], domain_vocabulary_hits([fixture]))
 
         boatstack_packages = "github.com/operatorstack/boatstack/boatstack/"
         kernel_package = boatstack_packages + "kernel"
