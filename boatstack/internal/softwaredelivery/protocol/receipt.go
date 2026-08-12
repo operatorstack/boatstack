@@ -155,6 +155,10 @@ func NewReceipt(flowID string, sequence uint64, program ProgramIdentity, admissi
 	if admission.ExpectedStateRevision == ^uint64(0) || target.StateRevision != admission.ExpectedStateRevision+1 {
 		return TransitionReceipt{}, fmt.Errorf("receipt target revision must advance exactly once from the prescribed revision")
 	}
+	resultingObjectiveBindingFingerprint, err := ObjectiveBindingFingerprint(target)
+	if err != nil {
+		return TransitionReceipt{}, fmt.Errorf("receipt target objective binding: %w", err)
+	}
 	if len(effects) == 0 {
 		return TransitionReceipt{}, fmt.Errorf("committed transition requires kernel-observed effect facts")
 	}
@@ -179,7 +183,7 @@ func NewReceipt(flowID string, sequence uint64, program ProgramIdentity, admissi
 		PriorStateRevision: admission.ExpectedStateRevision, ResultingStateRevision: target.StateRevision,
 		ObjectiveID: admission.Objective.ID, ObjectiveKind: admission.Objective.Kind, DeliveryID: admission.Objective.DeliveryID,
 		ObjectiveScope: admission.ObjectiveScope, ObjectiveStatus: admission.ObjectiveStatus,
-		ObjectiveBindingFingerprint: admission.ExpectedObjectiveBindingFingerprint,
+		ObjectiveBindingFingerprint: resultingObjectiveBindingFingerprint,
 		SourceFingerprint:           admission.ExpectedSnapshotFingerprint, TargetFingerprint: target.Fingerprint,
 		AuthorityFingerprint: admission.AuthorityFingerprint, AuthoritySources: sources,
 		RequiredCapabilities:  append([]catalog.Capability(nil), admission.RequiredCapabilities...),

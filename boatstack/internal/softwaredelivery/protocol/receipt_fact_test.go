@@ -84,6 +84,25 @@ func TestCommittedTransitionFactBindsProgramTransitionStateAuthorityEffectsAndVe
 	}
 }
 
+func TestObjectiveBindReceiptRecordsResultingObjectiveBinding(t *testing.T) {
+	_, admission, transition, target, now := committedReceiptFixture(t)
+	transition.ID = "objective.bind"
+	transition.Policy.BindsRequestedObjective = true
+	target.Objective = model.Fact[model.Objective]{Status: model.FactKnown, Value: admission.Objective}
+	want, err := ObjectiveBindingFingerprint(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	effects := []EffectFact{{Kind: EffectResourceMutation, EffectID: transition.Effect, Owner: transition.Owner, Resource: "objective", Target: "/state", Operation: "update", PriorFingerprint: strings.Repeat("1", 64), ResultingFingerprint: strings.Repeat("2", 64)}}
+	receipt, err := NewReceipt("flow", 8, ProgramIdentity{ID: "product-delivery", Version: "2.1.0", Fingerprint: admission.ExpectedProgramFingerprint}, admission, transition, target, []model.StateFacet{model.StateFacetControl, model.StateFacetProduct}, effects, nil, now, now.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.ObjectiveBindingFingerprint != want || receipt.ObjectiveBindingFingerprint == admission.ExpectedObjectiveBindingFingerprint {
+		t.Fatalf("objective binding fingerprint = %q, want resulting %q", receipt.ObjectiveBindingFingerprint, want)
+	}
+}
+
 func TestCommittedTransitionFactRejectsNonSuccessSemantics(t *testing.T) {
 	receipt, _, _, _, _ := committedReceiptFixture(t)
 	receipt.Kind = "transition-refused"
