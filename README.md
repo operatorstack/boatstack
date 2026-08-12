@@ -1,164 +1,240 @@
-# Boatstack
+<p align="center">
+  <img src="./assets/boatstack-mark.svg" width="88" alt="Boatstack logo">
+</p>
 
-Boatstack is a programmable supervisory control runtime for software delivery,
-with a first-party standard delivery flow. It compiles one CoreSystem, one
-explicit program runtime, and optional conservative extensions into an immutable
-ControlProgram before it observes a repository, resolves one legal transition,
-binds exact authority, executes owned effects, verifies the result, and records
-a receipt.
+<h1 align="center">Boatstack</h1>
 
-Cursor, Codex, Claude Code, Gemini CLI, MCP, the CLI, and the Go SDK use the same
-versioned protocol. They do not keep separate workflow state machines.
+<p align="center">
+  Programmable supervisory control for software delivery.
+</p>
 
-> V2 is a flag-day replacement. It does not read or migrate V1 machine state,
-> commands, internal APIs, caches, leases, or detached bindings. Reinstall or
-> reattach a repository.
+<p align="center">
+  <strong>Alpha · active development · expect breaking changes</strong>
+</p>
 
-## Why V2
-
-V1 repeatedly reconstructed lifecycle, identity, publication, runtime, and
-recovery state in different commands. V2 replaces that distributed authority:
+Boatstack turns software delivery into a controlled state-transition system.
+An agent can propose what happens next; a deterministic Kernel decides what is
+admissible, executes registered effects, verifies the result from fresh
+evidence, and records a durable receipt.
 
 ```text
-explicit invocation
-  -> read-only observation
-  -> canonical snapshot
-  -> deterministic supervisor
-  -> exact admission
-  -> registered effect
-  -> fresh observation and postcondition
-  -> immutable receipt
+agent intent
+    ↓
+read-only observation → canonical snapshot → deterministic resolution
+                                              ↓
+durable receipt ← postcondition verification ← admitted effect
 ```
 
-The immediate value is simple: every host consumes one executable delivery law.
-The [technical specification](docs/architecture/boatstack-v2-kernel.md) records
-the complete contract and the historical failure synthesis.
-The [Control Program ABI](docs/architecture/control-program-abi.md) defines the
-strict repository source, canonical fingerprint, compatibility gate, and
-program-qualified transition identity used by complete user-facing Flows.
-The [prescription transaction boundary](docs/architecture/prescription-transactions.md)
-defines the exact durable-state and executable-program compare-and-swap contract
-between resolution and effects.
-The [capability and authority boundary](docs/architecture/capability-authority-boundary.md)
-defines how programs narrow effect surfaces without granting themselves
-authority, including the explicit arbitrary-command frontier.
+> [!WARNING]
+> Boatstack is alpha software for experimentation. The CLI, Control Program
+> ABI, configuration schema, generated skills, and state format may change
+> without a compatibility path. Audit it before using it on important work.
 
-## Install
+## Try it
 
-On macOS or Linux:
+Boatstack installs into an existing Git repository. The repository must have an
+attached branch and at least one commit. macOS, Linux, and Windows binaries are
+published with checksum sidecars.
+
+macOS or Linux:
 
 ```sh
+cd your-repository
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/operatorstack/boatstack/main/install.sh)"
-```
-
-On Windows PowerShell:
-
-```powershell
-irm https://raw.githubusercontent.com/operatorstack/boatstack/main/install.ps1 | iex
-```
-
-The installer verifies the release checksum, stores the runtime under its
-immutable version and digest, runs `installation.initialize`, and installs a
-stable dispatcher. Review and commit `.boatstack/project.json`,
-`.boatstack/runtime.json`, `.boatstack/host-skills.json`, and the generated host
-skills; machine-local controller state and runtime bytes stay outside the
-worktree. See [Runtime selection](docs/runtime-selection.md).
-
-Run the independent health query:
-
-```sh
 boatstack doctor --repo . --format text
 ```
 
-See [Getting started](docs/getting-started.md) and
-[Configuration](docs/configuration.md) for the first delivery.
+Windows PowerShell:
 
-## Product surface
+```powershell
+cd your-repository
+irm https://raw.githubusercontent.com/operatorstack/boatstack/main/install.ps1 | iex
+boatstack doctor --repo . --format text
+```
+
+The installer verifies the latest release, pins that exact runtime to the
+repository, creates the initial configuration, and generates integrations for
+the enabled coding-agent hosts. Review and commit the generated
+`.boatstack/` files and host skills before starting delivery.
+
+Then use one of the exactly three operation skills from a supported coding
+agent:
+
+```text
+$boatstack-autoplan  # create, validate, and approve a plan
+$boatstack-run       # deliver to an open or updated pull request; never merge
+$boatstack-update    # install a checksum-verified runtime update
+```
+
+If the agent was already running during installation, start a fresh task so it
+can discover the generated skills. See [Getting started](docs/getting-started.md)
+for the lower-level CLI path and [Configuration](docs/configuration.md) for the
+repository policy schema.
+
+## What ships today
+
+Boatstack currently compiles 63 registered transitions into one executable
+control graph. The complete list is generated from the registry in the
+[transition catalog](docs/architecture/boatstack-v2-transition-catalog.md).
+
+| Surface | Shipped functionality |
+| --- | --- |
+| **Control Programs** | One immutable `ControlProgram` compiled from the CoreSystem, one Program Runtime, and optional conservative extensions. Canonical fingerprints bind executable semantics, goal contracts, resource ownership, and program-qualified transition IDs. |
+| **StandardFlow** | A first-party product-delivery Flow covering installation, repository attachment, configuration, goals, planning, worktrees, build/test/review evidence, publication, cleanup, and recovery. |
+| **Deterministic supervisor** | Targeted and untargeted resolution, explicit terminal goals, transition priorities, prerequisite selection, and typed `PRESCRIBED`, `CANDIDATE`, `FRONTIER`, `BLOCKED`, `REFUSED`, `UNRESOLVED`, and `TERMINAL` decisions. |
+| **Authority and capabilities** | Separate human, autonomy, repository-policy, and external-provider receipts. Programs declare a maximum capability surface but cannot grant themselves authority. |
+| **Transactional effects** | Prescriptions bind the exact state revision, program fingerprint, snapshot fingerprint, transition, and correlation. Apply rechecks that compare-and-swap boundary under a repository lock before any managed effect. |
+| **Durable state ownership** | Installation, program, control, and product state are separate facets. A transition fails closed if it attempts to mutate a facet outside its Kernel-owned policy. |
+| **Verification and receipts** | Fresh postcondition checks, revision-bound build/test/review evidence, immutable transition facts, idempotent replay, and privacy-safe JSONL event projections. |
+| **Recovery** | Restart-safe journals, reversible local mutations, explicit resume/rollback/escalation paths, and preserved unknown settlement for external effects. |
+| **Repository topology** | Embedded, detached, and linked-worktree identity; verified state transfer when a workspace is cut; cleanup only after proved landing or explicit abandonment. |
+| **Publication** | Preview, provider-authorized execution, observation, correction, and reconciliation. Boatstack does not infer provider authority from `gh` authentication and never grants merge authority. |
+| **Runtime updates** | Per-repository immutable runtime pins, checksum verification, atomic program-drift reconciliation, rollback, and multiple repository versions in one host store. |
+| **Safety guard** | One command-intent classifier for supported hosts. High-confidence destructive commands are denied and managed effects are routed through Kernel admission. |
+| **Integrations** | One versioned protocol shared by the CLI, RPC, MCP, Go SDK, Cursor, Codex, Claude Code, and Gemini CLI. Hosts do not maintain independent delivery state machines. |
+| **Extensions** | Additive, checksum-bound subprocess extensions with declarative manifests, JSON-schema settings, bounded I/O, deadlines, capability checks, and exact-byte execution. |
+| **Analysis** | Passive retrospective analysis, generated Markdown and Mermaid catalogs, privacy-safe events, and checked Locus safety/liveness models. Formal whole-system claims remain advisory. |
+
+## The control loop
+
+The public protocol is deliberately small:
 
 ```sh
+# Observe or resolve. These commands do not mutate managed state.
 boatstack status --repo . --format json
+boatstack next --repo . --goal-id <goal> --goal-kind <kind> \
+  --delivery <delivery> --format json
+
+# Inspect the exact program and transition surface.
+boatstack doctor --repo . --format text
 boatstack catalog --format json
-boatstack next --repo . --goal-id <goal> --goal-kind <kind> --delivery <delivery> --format json
+boatstack events --repo . --format jsonl
+
+# Low-level integrations forward the complete prescription unchanged.
 boatstack apply --repo . --transition <stable-id> --flow <flow> \
   --prescription-id <id> --expected-state-revision <revision> \
   --expected-program-fingerprint <sha256> \
   --expected-snapshot-fingerprint <sha256> --format json
 ```
 
-- `status`, `next`, `doctor`, `catalog`, and `events` are read-only.
-- `apply` and `recover` consume a stable transition ID plus the exact
-  prescription returned by `next`; stale state or program identity causes zero
-  effects and requires re-resolution.
-- Friendly aliases such as `plan-create`, `plan-approve`,
-  `workspace-cut`, `record-test`, and `publish-pr` map to those IDs.
-- `guard` is the shared safety-hook query. It blocks high-confidence
-  destruction and routes active managed effects through admission.
-- `rpc` is the strict JSON boundary for hooks, MCP, and host adapters.
-- `sdk` is the public Go protocol client.
-- `retro` is passive analysis. It cannot decide lifecycle or write managed
-  delivery state.
-- Visual capture is normalized to `evidence.visual.attach`; the independent V1
-  capture and insight writers are removed.
+`status`, `next`, `doctor`, `catalog`, and `events` are read-only. Friendly
+commands such as `plan-create`, `workspace-cut`, `record-test`, and `publish-pr`
+resolve and consume one exact prescription in the same invocation.
 
-The generated [transition catalog](docs/architecture/boatstack-v2-transition-catalog.md)
-and [Mermaid inventory](docs/architecture/boatstack-v2-transition-catalog.mmd)
-come directly from the runtime registry. The generated
-[StandardFlow graph](docs/architecture/boatstack-standard-flow.mmd) filters the
-same compiled registry by control-program origin; it is not a second graph.
-The [replacement closure report](docs/architecture/boatstack-v2-closure-report.md)
-records the deleted V1 authority and its V2 evidence.
+Untargeted resolution selects
+only a transition that advances the configured goal. Maintenance, correction,
+abandonment, provider actions, and merge authority are never invented as a way
+around a frontier. After an operation is selected, generated host drivers keep
+one command-scoped goal, repository, worktree, flow, actor, and authority
+context through every resolution, effect, recovery, and re-resolution.
 
-The Go SDK keeps the standard distribution ergonomic with `sdk.New(...)`.
-Custom applications use `sdk.NewKernel(..., sdk.WithProgramRuntime(runtime),
-sdk.WithExtension(extension))`; the lower-level constructor requires an
-explicit trusted in-process program runtime and never inserts StandardFlow.
+## Internals
 
-## Coding-agent skills
+Boatstack separates inference, control, execution, and verification:
 
-Boatstack exposes exactly three operation skills on every supported interactive
-coding host:
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ Host surface                                                │
+│ CLI · RPC · MCP · SDK · coding-agent skills                 │
+└──────────────────────────────┬───────────────────────────────┘
+                               │ versioned request
+┌──────────────────────────────▼───────────────────────────────┐
+│ Kernel                                                      │
+│ observe → snapshot → supervise → admit → execute → verify   │
+└───────────────┬──────────────────────────────┬───────────────┘
+                │                              │
+┌───────────────▼──────────────┐  ┌────────────▼───────────────┐
+│ Control Program             │  │ Plant and effect boundary  │
+│ Core + Flow + extensions    │  │ Git · files · processes    │
+│ transitions · goals · laws  │  │ provider outcomes          │
+└──────────────────────────────┘  └────────────────────────────┘
+```
 
-- `boatstack-autoplan` reaches an approved plan.
-- `boatstack-run` drives delivery through a normal PR open or update and never
-  grants merge authority.
-- `boatstack-update` runs the checksum-verified installation update path. A
-  control-program change preserves the admitted runtime until a human accepts
-  the exact prior-to-candidate program delta; Boatstack then commits the new
-  repository pin, managed skills, and program state through one recoverable
-  transition.
+The Kernel owns mechanism. A Control Program owns delivery policy. The product
+calls a complete Control Program a **Flow**; the rules encoded by it are its
+**control law**.
 
-Codex and compatible Agent Skills hosts show `$boatstack-autoplan`,
-`$boatstack-run`, and `$boatstack-update`. Claude Code and Gemini CLI receive
-the same three skill identities. Cursor receives the same three slash commands.
-The initializer and updater project them from one canonical driver, so a host
-cannot acquire a separate workflow state machine.
+The current authoring boundary already includes:
 
-The initial `status` read is observation only. After an operation is selected,
-the host driver keeps one command-scoped goal, flow, worktree, actor, and authority
-context through resolution and effects. An authority-free diagnostic frontier
-cannot end an otherwise authorized invocation. Untargeted resolution selects
-only a transition that advances the configured goal; maintenance, correction,
-abandonment, and caller-defined markers require separate explicit intent.
-The host never derives slice order from plan prose or provider authority from an
-authenticated GitHub session.
+- a strict JSON [Control Program ABI](docs/architecture/control-program-abi.md);
+- public Go contracts in `boatstack/control`;
+- `sdk.New(...)` for StandardFlow and `sdk.NewKernel(...)` for an explicit
+  trusted Program Runtime;
+- canonical program identity and runtime compatibility checks;
+- program-qualified transitions, goal contracts, resource ownership,
+  capabilities, effects, verifiers, recovery, and context predicates;
+- a protocol execution boundary for repository-authored transitions.
 
-## Safety
+The ergonomic repository Flow authoring experience—project layout, authoring
+tools, examples, diagnostics, and a complete guide—is still under active
+development. StandardFlow remains the only first-party Flow. The ABI and SDK
+are useful for exploring the model today, but they are not stable APIs yet.
 
-Unknown, absent, stale, ambiguous, and conflicting evidence are different
-states. None grants permission to delete, publish, overwrite, or advance.
-External publication requires human or autonomy authority **and** a current
-provider receipt. Cleanup requires proved landing or explicit abandonment.
+## Safety model
 
-Boatstack never grants merge authority. See [Safety](docs/safety.md).
+Boatstack treats `absent`, `unknown`, `stale`, `ambiguous`, and `conflicting` as
+different evidence states. None grants permission to publish, delete,
+overwrite, approve, or advance.
+
+- A prescription carries no authority.
+- Authority is typed, scoped, expiring, and checked separately at admission.
+- Drift before apply produces zero managed effects and requires re-resolution.
+- Local effects stage reversible resources and install authoritative state last.
+- External outcomes can remain unknown; they are observed or reconciled, never
+  blindly retried.
+- Command guards are defense in depth, not a sandbox.
+
+Read [Safety](docs/safety.md), the
+[prescription transaction boundary](docs/architecture/prescription-transactions.md),
+and the [capability and authority boundary](docs/architecture/capability-authority-boundary.md)
+for the exact contracts.
+
+## Repository map
+
+```text
+boatstack/control/          Control Program authoring and compilation
+boatstack/core/             Kernel-owned operational transitions
+boatstack/flow/standard/    First-party StandardFlow
+boatstack/internal/kernel/  model, catalog, supervisor, admission, engine
+boatstack/internal/plant/   read-only repository observation
+boatstack/internal/effects/ transactional effects, receipts, and recovery
+boatstack/internal/runtime/ immutable runtime selection and dispatch
+boatstack/sdk/              public Go protocol client
+docs/architecture/          executable contracts and generated evidence
+```
+
+Start with the [architecture specification](docs/architecture/boatstack-v2-kernel.md)
+for the full internal model. The generated [StandardFlow graph](docs/architecture/boatstack-standard-flow.mmd)
+and [Mermaid catalog](docs/architecture/boatstack-v2-transition-catalog.mmd)
+come from the same executable registry used at runtime.
 
 ## Develop
+
+Boatstack is written in Go. Python tests enforce repository, release, generated
+artifact, and host-projection contracts.
 
 ```sh
 python3 .github/scripts/run_go_tests.py
 python3 -m unittest discover -s .github/tests -p 'test_*.py'
+
 cd boatstack
 go test -race ./...
 go vet ./...
+go build ./...
 ```
 
-Every pull request adds one release note. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Every pull request that changes Boatstack adds an append-only release note. See
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Status
+
+Boatstack is being built in public and is not ready to promise compatibility.
+The project is currently focused on making repository-authored Control Programs
+safe to load and execute without moving authority out of the Kernel.
+
+Issues and design feedback are welcome. Production stability, polished Flow
+authoring, and compatibility guarantees are not here yet.
+
+## License
+
+[MIT](LICENSE)
