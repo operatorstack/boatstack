@@ -23,6 +23,18 @@ func TestPublicProtocolCanBeConstructedWithoutInternalPackages(t *testing.T) {
 	}
 }
 
+func TestSDKPreservesCapabilityAdmissionProtocol(t *testing.T) {
+	// control-law: SDK and CLI consume the same versioned prescription fields
+	raw := []byte(`{"schema_version":4,"operation":"apply","repository":"/repo","host":"sdk","correlation_id":"correlation","flow_id":"flow","transition_id":"program/write","prescription":{"schema_version":2,"id":"prx-test","transition_id":"program/write","expected_state_revision":7,"expected_program_fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","expected_snapshot_fingerprint":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","authority_fingerprint":"auth-test","required_capabilities":["repository.write"],"effective_capabilities":["repository.write"]}}`)
+	var request sdk.Request
+	if err := json.Unmarshal(raw, &request); err != nil {
+		t.Fatal(err)
+	}
+	if request.Prescription.AuthorityFingerprint != "auth-test" || len(request.Prescription.RequiredCapabilities) != 1 || request.Prescription.RequiredCapabilities[0] != sdk.CapabilityRepositoryWrite {
+		t.Fatalf("SDK lost capability admission: %#v", request.Prescription)
+	}
+}
+
 func TestLowLevelSDKRequiresAndAcceptsExactlyOneNonStandardProgramRuntime(t *testing.T) {
 	// control-law: low-level-sdk-never-inserts-or-multiplies-standard-flow
 	if _, err := sdk.NewKernel(""); err == nil {
@@ -57,7 +69,7 @@ func (syntheticFlow) RuntimeManifest(context.Context) (control.ProgramRuntimeMan
 			ID: id, Version: 1, SelectionClass: control.SelectionProgramProgress, Class: control.EventOwnedLocal,
 			SourcePhases: []control.ProtocolPhase{control.PhaseObserved, control.PhaseActive}, TargetPhases: []control.ProtocolPhase{control.PhaseObserved, control.PhaseActive},
 			GoalKinds: []control.GoalKind{control.GoalVerified}, RequiredIdentity: []string{"repository-id", "git-common-id", "worktree-id"},
-			Authority: []control.AuthorityClass{control.AuthorityRepository}, RequiredEvidence: []string{"snapshot", "goal", "facet:" + fact},
+			Authority: []control.AuthorityClass{control.AuthorityRepository}, RequiredCapabilities: []control.Capability{control.CapabilityRepositoryWrite, control.CapabilityCommandExecute}, RequiredEvidence: []string{"snapshot", "goal", "facet:" + fact},
 			OwnedResources: []string{resource}, Effect: effect, LocalEffects: []control.EffectID{effect}, Idempotent: true,
 			Prescription:    control.Prescription{Operation: string(id), ExpectedPostcondition: target},
 			SourcePredicate: "synthetic-source", AdmissionPredicate: "exact-admission", TargetPredicate: "synthetic-target",
@@ -80,6 +92,7 @@ func (syntheticFlow) RuntimeManifest(context.Context) (control.ProgramRuntimeMan
 		GoalContracts:  []control.GoalContract{{GoalKind: control.GoalVerified, Conditions: []control.FacetCondition{control.KnownCondition(control.FacetName(fact), "terminal")}}},
 		Transitions:    []control.Transition{verify, finish}, Facts: []string{fact}, OwnedResources: []string{resource},
 		Effects: []string{string(verify.Effect), string(finish.Effect)}, Verifiers: []string{verify.Verifier, finish.Verifier},
+		Capabilities:          []control.Capability{control.CapabilityRepositoryWrite, control.CapabilityCommandExecute},
 		ConfigurationSchema:   json.RawMessage(`{"type":"object"}`),
 		PrivacyClassification: "metadata-only", TelemetryClassification: "transition-receipt",
 	}, nil

@@ -48,6 +48,7 @@ func (e isolatedObservationExtension) ExtensionManifest(context.Context) (contro
 	manifest := control.ExtensionManifest{
 		ID: e.id, Version: "1.0.0", ProtocolVersion: control.ExtensionProtocolVersion,
 		SettingsSchema: json.RawMessage(`{"type":"object"}`), Facts: []string{e.id + ".fact"},
+		Capabilities:          []control.Capability{control.CapabilityCommandExecute},
 		PrivacyClassification: "metadata-only", TelemetryClassification: "transition-receipt",
 	}
 	if e.executable {
@@ -93,7 +94,7 @@ func TestExecutableExtensionObservationWaitsForVerifiedProgramBinding(t *testing
 		Configuration: model.Known(model.ConfigurationVerified, model.Evidence{Source: "test", Fingerprint: "configuration", ObservedAt: time.Unix(100, 0).UTC()}),
 	}
 	observer := programObserver{base: fixedObservation{value: base}, program: program}
-	observed, err := observer.Observe(context.Background(), ports.ObservationRequest{Invocation: invocation})
+	observed, err := observer.Observe(context.Background(), ports.ObservationRequest{Invocation: invocation, Capabilities: []control.Capability{control.CapabilityCommandExecute}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +103,7 @@ func TestExecutableExtensionObservationWaitsForVerifiedProgramBinding(t *testing
 	}
 	base.RecordedProgramFingerprint = program.Fingerprint()
 	observer.base = fixedObservation{value: base}
-	observed, err = observer.Observe(context.Background(), ports.ObservationRequest{Invocation: invocation})
+	observed, err = observer.Observe(context.Background(), ports.ObservationRequest{Invocation: invocation, Capabilities: []control.Capability{control.CapabilityCommandExecute}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +128,7 @@ func TestExtensionObserversConsumeOneOrderIndependentProjection(t *testing.T) {
 	observed, err := (programObserver{
 		base:    fixedObservation{value: model.Observation{Invocation: invocation, ObservedAt: time.Unix(100, 0).UTC()}},
 		program: program,
-	}).Observe(context.Background(), ports.ObservationRequest{Invocation: invocation})
+	}).Observe(context.Background(), ports.ObservationRequest{Invocation: invocation, Capabilities: []control.Capability{control.CapabilityCommandExecute}})
 	if err != nil {
 		t.Fatal(err)
 	}

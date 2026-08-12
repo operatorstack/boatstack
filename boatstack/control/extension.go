@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const ExtensionProtocolVersion = 1
+const ExtensionProtocolVersion = 2
 
 type ExtensionOperation string
 
@@ -29,6 +29,7 @@ type ExtensionRequest struct {
 	CorrelationID      string             `json:"correlation_id"`
 	RepositoryRoot     string             `json:"repository_root,omitempty"`
 	TransitionID       TransitionID       `json:"transition_id,omitempty"`
+	Capabilities       []Capability       `json:"capabilities,omitempty"`
 	Snapshot           json.RawMessage    `json:"snapshot,omitempty"`
 	Parameters         json.RawMessage    `json:"parameters,omitempty"`
 	Settings           json.RawMessage    `json:"settings,omitempty"`

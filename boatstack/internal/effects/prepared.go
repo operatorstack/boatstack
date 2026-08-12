@@ -7,18 +7,22 @@ import (
 	"os"
 	"sort"
 
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
 )
 
 type boundaryCall func(context.Context) (ports.EffectResult, error)
 
 type preparedEffect struct {
-	mutations        []ports.ResourceMutation
-	boundary         boundaryCall
-	verifyInvocation *model.InvocationContext
-	applied          []ports.ResourceMutation
-	externalSettled  bool
+	mutations             []ports.ResourceMutation
+	boundary              boundaryCall
+	verifyInvocation      *model.InvocationContext
+	applied               []ports.ResourceMutation
+	externalSettled       bool
+	requiredCapabilities  []catalog.Capability
+	effectiveCapabilities []catalog.Capability
 }
 
 func (p *preparedEffect) Manifest() []ports.ResourceMutation {
@@ -36,6 +40,12 @@ func (p *preparedEffect) VerificationInvocation() (model.InvocationContext, bool
 
 func (p *preparedEffect) Execute(ctx context.Context) (ports.EffectResult, error) {
 	result := ports.EffectResult{Settlement: ports.EffectSettled}
+	if len(p.requiredCapabilities) == 0 {
+		return result, fmt.Errorf("effect boundary has no kernel capability classification")
+	}
+	if missing := catalog.MissingCapability(p.requiredCapabilities, catalog.NewCapabilitySet(p.effectiveCapabilities...)); missing != "" {
+		return result, fmt.Errorf("EFFECT_CAPABILITY_DENIED %q at prepared effect boundary", missing)
+	}
 	if p.boundary != nil {
 		var err error
 		result, err = p.boundary(ctx)
@@ -69,6 +79,15 @@ func (p *preparedEffect) Execute(ctx context.Context) (ports.EffectResult, error
 		p.applied = append(p.applied, mutation)
 	}
 	return result, nil
+}
+
+func bindPreparedCapabilities(effect *preparedEffect, admission protocol.Admission, transition catalog.Transition) error {
+	if err := protocol.ValidateEffectCapabilities(admission, transition); err != nil {
+		return err
+	}
+	effect.requiredCapabilities = catalog.RequiredCapabilities(transition)
+	effect.effectiveCapabilities = append([]catalog.Capability(nil), admission.EffectiveCapabilities...)
+	return nil
 }
 
 func (p *preparedEffect) Rollback(context.Context) error {

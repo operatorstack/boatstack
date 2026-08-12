@@ -15,11 +15,12 @@ func TestPrescriptionContentIdentityBindsTransitionStateProgramAndSnapshot(t *te
 		Fingerprint: strings.Repeat("b", 64),
 	}
 	transition := catalog.Transition{ID: "program/advance"}
-	one, err := NewPrescription(base, transition)
+	capabilities := CapabilityProjection{AuthorityFingerprint: "auth-test", Required: []catalog.Capability{catalog.CapabilityRepositoryWrite}, Effective: []catalog.Capability{catalog.CapabilityRepositoryWrite}}
+	one, err := NewPrescription(base, transition, capabilities)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := one.ValidateCurrent(base, transition); err != nil {
+	if err := one.ValidateCurrent(base, transition, capabilities); err != nil {
 		t.Fatal(err)
 	}
 	mutations := []struct {
@@ -34,7 +35,7 @@ func TestPrescriptionContentIdentityBindsTransitionStateProgramAndSnapshot(t *te
 	}
 	for _, mutation := range mutations {
 		t.Run(mutation.name, func(t *testing.T) {
-			other, err := NewPrescription(mutation.snapshot, mutation.transition)
+			other, err := NewPrescription(mutation.snapshot, mutation.transition, capabilities)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -47,5 +48,17 @@ func TestPrescriptionContentIdentityBindsTransitionStateProgramAndSnapshot(t *te
 	tampered.ExpectedStateRevision++
 	if err := tampered.Validate(); err == nil {
 		t.Fatal("tampered prescription retained validity")
+	}
+
+	for name, changed := range map[string]CapabilityProjection{
+		"authority":            {AuthorityFingerprint: "auth-other", Required: capabilities.Required, Effective: capabilities.Effective},
+		"required-capability":  {AuthorityFingerprint: capabilities.AuthorityFingerprint, Required: []catalog.Capability{catalog.CapabilityCommandExecute}, Effective: []catalog.Capability{catalog.CapabilityCommandExecute}},
+		"effective-capability": {AuthorityFingerprint: capabilities.AuthorityFingerprint, Required: capabilities.Required, Effective: []catalog.Capability{catalog.CapabilityCommandExecute}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := one.ValidateCurrent(base, transition, changed); err == nil {
+				t.Fatal("old prescription accepted changed authority or capability context")
+			}
+		})
 	}
 }

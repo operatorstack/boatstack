@@ -22,6 +22,7 @@ type Transition = catalog.Transition
 type TransitionID = catalog.TransitionID
 type EventClass = catalog.EventClass
 type AuthorityClass = catalog.AuthorityClass
+type Capability = catalog.Capability
 type FacetCondition = catalog.FacetCondition
 type SelectionClass = catalog.SelectionClass
 type GoalContract = catalog.GoalContract
@@ -49,6 +50,13 @@ const (
 	AuthorityHuman      = catalog.AuthorityHuman
 	AuthorityAutonomy   = catalog.AuthorityAutonomy
 	AuthorityProvider   = catalog.AuthorityProvider
+
+	CapabilityRepositoryWrite    = catalog.CapabilityRepositoryWrite
+	CapabilityCommandExecute     = catalog.CapabilityCommandExecute
+	CapabilityProductMutate      = catalog.CapabilityProductMutate
+	CapabilityPublicationPrepare = catalog.CapabilityPublicationPrepare
+	CapabilityPublicationPublish = catalog.CapabilityPublicationPublish
+	CapabilityHumanApprove       = catalog.CapabilityHumanApprove
 
 	SelectionSystemRecovery    = catalog.SelectionSystemRecovery
 	SelectionProgramRecovery   = catalog.SelectionProgramRecovery
@@ -106,7 +114,15 @@ const (
 	FacetGoal                = model.FacetGoal
 )
 
-const ProgramSchemaVersion = 1
+const ProgramSchemaVersion = 2
+
+func KernelEffectCapabilities(transition Transition) []Capability {
+	return catalog.KernelEffectCapabilities(transition)
+}
+
+func UnionCapabilities(groups ...[]Capability) []Capability {
+	return catalog.UnionCapabilities(groups...)
+}
 
 func KnownCondition(facet FacetName, values ...string) FacetCondition {
 	return FacetCondition{Facet: facet, Statuses: []FactStatus{FactKnown}, Values: append([]string(nil), values...)}
@@ -134,9 +150,10 @@ type Extension interface {
 }
 
 type CoreSystemManifest struct {
-	ID          string       `json:"id"`
-	Version     string       `json:"version"`
-	Transitions []Transition `json:"transitions"`
+	ID           string       `json:"id"`
+	Version      string       `json:"version"`
+	Capabilities []Capability `json:"capabilities"`
+	Transitions  []Transition `json:"transitions"`
 }
 
 type ProgramRuntimeManifest struct {
@@ -151,6 +168,7 @@ type ProgramRuntimeManifest struct {
 	OwnedResources          []string           `json:"owned_resources"`
 	Effects                 []string           `json:"effects"`
 	Verifiers               []string           `json:"verifiers"`
+	Capabilities            []Capability       `json:"capabilities"`
 	RecoveryTransitions     []TransitionID     `json:"recovery_transitions"`
 	Settings                json.RawMessage    `json:"settings,omitempty"`
 	ConfigurationSchema     json.RawMessage    `json:"configuration_schema,omitempty"`
@@ -176,6 +194,7 @@ type ExtensionManifest struct {
 	OwnedResources          []string         `json:"owned_resources,omitempty"`
 	Effects                 []string         `json:"effects,omitempty"`
 	Verifiers               []string         `json:"verifiers,omitempty"`
+	Capabilities            []Capability     `json:"capabilities"`
 	RecoveryTransitions     []TransitionID   `json:"recovery_transitions,omitempty"`
 	PrivacyClassification   string           `json:"privacy_classification"`
 	TelemetryClassification string           `json:"telemetry_classification"`
@@ -336,11 +355,20 @@ func Compile(ctx context.Context, request CompileRequest) (ControlProgram, error
 
 	transitions := make([]Transition, 0, len(core.Transitions)+len(flow.Transitions))
 	resources := map[string]string{}
-	appendComponent := func(items []Transition, origin catalog.TransitionOrigin) error {
+	appendComponent := func(items []Transition, origin catalog.TransitionOrigin, declared []Capability, runtimeExecution bool) error {
+		capabilities, capabilityErr := catalog.NormalizeCapabilities(origin.ID+".capabilities", declared)
+		if capabilityErr != nil || len(capabilities) == 0 {
+			if capabilityErr != nil {
+				return capabilityErr
+			}
+			return fmt.Errorf("component %q requires a non-empty capability surface", origin.ID)
+		}
 		for _, item := range items {
 			item = cloneTransition(item)
 			item.Origin = origin
 			item.Owner = origin.ID
+			item.RuntimeExecution = runtimeExecution
+			item.DeclaredCapabilities = append([]Capability(nil), capabilities...)
 			if item.Controllable() && !item.Policy.ReconcilesProgram && !hasFacet(item.SourceConditions, model.FacetProgram) {
 				item.SourceConditions = append(item.SourceConditions, KnownCondition(model.FacetProgram, string(model.ProgramUnbound), string(model.ProgramCurrent)))
 			}
@@ -354,10 +382,10 @@ func Compile(ctx context.Context, request CompileRequest) (ControlProgram, error
 		}
 		return nil
 	}
-	if err := appendComponent(core.Transitions, catalog.TransitionOrigin{Kind: catalog.OriginCoreSystem, ID: core.ID, Version: core.Version, ManifestFingerprint: coreFingerprint}); err != nil {
+	if err := appendComponent(core.Transitions, catalog.TransitionOrigin{Kind: catalog.OriginCoreSystem, ID: core.ID, Version: core.Version, ManifestFingerprint: coreFingerprint}, core.Capabilities, false); err != nil {
 		return ControlProgram{}, err
 	}
-	if err := appendComponent(flow.Transitions, catalog.TransitionOrigin{Kind: catalog.OriginControlProgram, ID: flow.ID, Version: flow.Version, ManifestFingerprint: flowFingerprint}); err != nil {
+	if err := appendComponent(flow.Transitions, catalog.TransitionOrigin{Kind: catalog.OriginControlProgram, ID: flow.ID, Version: flow.Version, ManifestFingerprint: flowFingerprint}, flow.Capabilities, flow.RuntimeMode == ProgramRuntimeProtocol); err != nil {
 		return ControlProgram{}, err
 	}
 
@@ -418,6 +446,8 @@ func Compile(ctx context.Context, request CompileRequest) (ControlProgram, error
 		}
 		for index := range manifest.Transitions {
 			item := cloneTransition(manifest.Transitions[index])
+			item.RuntimeExecution = true
+			item.DeclaredCapabilities = append([]Capability(nil), manifest.Capabilities...)
 			if item.Controllable() && !item.Policy.ReconcilesProgram && !hasFacet(item.SourceConditions, model.FacetProgram) {
 				item.SourceConditions = append(item.SourceConditions, KnownCondition(model.FacetProgram, string(model.ProgramUnbound), string(model.ProgramCurrent)))
 			}
@@ -520,8 +550,11 @@ func Compile(ctx context.Context, request CompileRequest) (ControlProgram, error
 }
 
 func validateCore(manifest CoreSystemManifest) error {
-	if !componentID.MatchString(manifest.ID) || manifest.Version == "" || len(manifest.Transitions) == 0 {
+	if !componentID.MatchString(manifest.ID) || manifest.Version == "" || len(manifest.Transitions) == 0 || len(manifest.Capabilities) == 0 {
 		return fmt.Errorf("CoreSystem requires semantic id, version, and transitions")
+	}
+	if _, err := catalog.NormalizeCapabilities("CoreSystem "+manifest.ID+" capabilities", manifest.Capabilities); err != nil {
+		return err
 	}
 	return nil
 }
@@ -530,9 +563,14 @@ func validateProgramRuntime(manifest ProgramRuntimeManifest) error {
 	if !componentID.MatchString(manifest.ID) || manifest.Version == "" || manifest.ProtocolVersion != ProgramRuntimeProtocolVersion ||
 		(manifest.RuntimeMode != ProgramRuntimeNative && manifest.RuntimeMode != ProgramRuntimeProtocol) ||
 		len(manifest.Transitions) == 0 || len(manifest.SupportedGoals) == 0 ||
+		len(manifest.Capabilities) == 0 ||
 		!validJSONObject(manifest.ConfigurationSchema) ||
 		manifest.PrivacyClassification == "" || manifest.TelemetryClassification == "" {
 		return fmt.Errorf("ProgramRuntime requires semantic id, version, configuration schema, goals, and transitions")
+	}
+	declaredCapabilities, err := catalog.NormalizeCapabilities("ProgramRuntime "+manifest.ID+" capabilities", manifest.Capabilities)
+	if err != nil {
+		return err
 	}
 	if err := validateDeclaredSchema(manifest.ConfigurationSchema, manifest.Settings, "ProgramRuntime "+manifest.ID+" configuration"); err != nil {
 		return err
@@ -575,6 +613,14 @@ func validateProgramRuntime(manifest ProgramRuntimeManifest) error {
 	}
 	transitions := make(map[TransitionID]Transition, len(manifest.Transitions))
 	for _, transition := range manifest.Transitions {
+		transition.RuntimeExecution = manifest.RuntimeMode == ProgramRuntimeProtocol
+		transition.DeclaredCapabilities = declaredCapabilities
+		if transition.Controllable() && len(transition.RequiredCapabilities) == 0 {
+			return fmt.Errorf("ProgramRuntime transition %q requires explicit capabilities", transition.ID)
+		}
+		if missing := catalog.MissingCapability(catalog.RequiredCapabilities(transition), catalog.NewCapabilitySet(declaredCapabilities...)); missing != "" {
+			return fmt.Errorf("ProgramRuntime transition %q: CAPABILITY_NOT_DECLARED %q", transition.ID, missing)
+		}
 		transitions[transition.ID] = transition
 		if manifest.RuntimeMode == ProgramRuntimeProtocol && !strings.HasPrefix(string(transition.ID), manifest.ID+".") {
 			return fmt.Errorf("protocol ProgramRuntime %q transition %q is not namespaced", manifest.ID, transition.ID)
@@ -638,6 +684,16 @@ func validateExtension(manifest ExtensionManifest, seen, reserved map[string]boo
 	}
 	if manifest.PrivacyClassification == "" || manifest.TelemetryClassification == "" {
 		return fmt.Errorf("extension %q requires privacy and telemetry classifications", manifest.ID)
+	}
+	declaredCapabilities, err := catalog.NormalizeCapabilities("extension "+manifest.ID+" capabilities", manifest.Capabilities)
+	if err != nil || ((len(manifest.Facts) != 0 || len(manifest.Transitions) != 0) && len(declaredCapabilities) == 0) {
+		if err != nil {
+			return err
+		}
+		return fmt.Errorf("extension %q runtime behavior requires a non-empty capability surface", manifest.ID)
+	}
+	if (len(manifest.Facts) != 0 || len(manifest.Transitions) != 0) && !catalog.NewCapabilitySet(declaredCapabilities...)[catalog.CapabilityCommandExecute] {
+		return fmt.Errorf("extension %q runtime behavior requires command.execute", manifest.ID)
 	}
 	if !validJSONObject(manifest.SettingsSchema) {
 		return fmt.Errorf("extension %q requires a JSON-object settings schema", manifest.ID)
@@ -718,6 +774,14 @@ func validateExtension(manifest ExtensionManifest, seen, reserved map[string]boo
 	}
 	seenTransitions := make(map[TransitionID]bool, len(manifest.Transitions))
 	for _, transition := range manifest.Transitions {
+		transition.RuntimeExecution = true
+		transition.DeclaredCapabilities = declaredCapabilities
+		if transition.Controllable() && len(transition.RequiredCapabilities) == 0 {
+			return fmt.Errorf("extension transition %q requires explicit capabilities", transition.ID)
+		}
+		if missing := catalog.MissingCapability(catalog.RequiredCapabilities(transition), catalog.NewCapabilitySet(declaredCapabilities...)); missing != "" {
+			return fmt.Errorf("extension transition %q: CAPABILITY_NOT_DECLARED %q", transition.ID, missing)
+		}
 		seenTransitions[transition.ID] = true
 		for _, condition := range transition.TargetConditions {
 			if !strings.HasPrefix(string(condition.Facet), manifest.ID+".") {
@@ -917,6 +981,8 @@ func cloneTransition(value Transition) Transition {
 	value.RequiredIdentity = append([]string(nil), value.RequiredIdentity...)
 	value.Authority = append([]catalog.AuthorityClass(nil), value.Authority...)
 	value.AuthorityAll = append([]catalog.AuthorityClass(nil), value.AuthorityAll...)
+	value.RequiredCapabilities = append([]Capability(nil), value.RequiredCapabilities...)
+	value.DeclaredCapabilities = append([]Capability(nil), value.DeclaredCapabilities...)
 	value.RequiredEvidence = append([]string(nil), value.RequiredEvidence...)
 	value.OwnedResources = append([]string(nil), value.OwnedResources...)
 	value.LocalEffects = append([]catalog.EffectID(nil), value.LocalEffects...)
@@ -941,6 +1007,7 @@ func cloneConditions(values []catalog.FacetCondition) []catalog.FacetCondition {
 }
 
 func cloneCoreManifest(value CoreSystemManifest) CoreSystemManifest {
+	value.Capabilities = append([]Capability(nil), value.Capabilities...)
 	value.Transitions = cloneTransitions(value.Transitions)
 	return value
 }
@@ -956,6 +1023,7 @@ func cloneRuntimeManifest(value ProgramRuntimeManifest) ProgramRuntimeManifest {
 	value.OwnedResources = append([]string(nil), value.OwnedResources...)
 	value.Effects = append([]string(nil), value.Effects...)
 	value.Verifiers = append([]string(nil), value.Verifiers...)
+	value.Capabilities = append([]Capability(nil), value.Capabilities...)
 	value.RecoveryTransitions = append([]TransitionID(nil), value.RecoveryTransitions...)
 	value.Settings = append(json.RawMessage(nil), value.Settings...)
 	value.ConfigurationSchema = append(json.RawMessage(nil), value.ConfigurationSchema...)
@@ -974,6 +1042,7 @@ func cloneExtensionManifest(value ExtensionManifest) ExtensionManifest {
 	value.OwnedResources = append([]string(nil), value.OwnedResources...)
 	value.Effects = append([]string(nil), value.Effects...)
 	value.Verifiers = append([]string(nil), value.Verifiers...)
+	value.Capabilities = append([]Capability(nil), value.Capabilities...)
 	value.RecoveryTransitions = append([]TransitionID(nil), value.RecoveryTransitions...)
 	value.Dependencies = append([]string(nil), value.Dependencies...)
 	return value

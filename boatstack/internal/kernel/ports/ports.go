@@ -15,6 +15,7 @@ type Observer interface {
 
 type ObservationRequest struct {
 	Invocation         model.InvocationContext
+	Capabilities       []catalog.Capability
 	IgnoreAdmissionID  string
 	VerifyTransitionID catalog.TransitionID
 }

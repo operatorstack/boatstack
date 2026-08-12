@@ -102,6 +102,9 @@ class RepositoryContract(unittest.TestCase):
             "--expected-state-revision", prescription["expected_state_revision"],
             "--expected-program-fingerprint", prescription["expected_program_fingerprint"],
             "--expected-snapshot-fingerprint", prescription["expected_snapshot_fingerprint"],
+            "--authority-fingerprint", prescription["authority_fingerprint"],
+            *sum((["--required-capability", value] for value in prescription["required_capabilities"]), []),
+            *sum((["--effective-capability", value] for value in prescription["effective_capabilities"]), []),
             cwd=cwd, env=env,
         )
         return json.loads(applied.stdout)
@@ -566,11 +569,16 @@ class RepositoryContract(unittest.TestCase):
             self.assertEqual(pin["version"], "v0.7.contract-new")
             self.assertEqual(pin["sha256"], hashlib.sha256(self.helper.read_bytes()).hexdigest())
             self.assertNotIn("path", pin)
-            events = self.run_command(
+            events = [json.loads(line) for line in self.run_command(
                 launcher, "events", "--repo", repository, "--format", "jsonl", env=env
-            ).stdout.splitlines()
-            transitions = {json.loads(line)["transition_id"] for line in events}
+            ).stdout.splitlines()]
+            transitions = {event["transition_id"] for event in events}
             self.assertTrue({"installation.initialize", "engagement.begin", "installation.reconcile-update"}.issubset(transitions))
+            for event in events:
+                self.assertTrue(event["authority_fingerprint"])
+                self.assertTrue(event["required_capabilities"])
+                self.assertTrue(event["granted_capabilities"])
+                self.assertTrue(event["exercised_capabilities"])
 
     def test_program_changing_update_is_explicit_atomic_and_dormant_safe(self) -> None:
         # control-law: accepted-program-delta-atomically-pins-runtime-and-program

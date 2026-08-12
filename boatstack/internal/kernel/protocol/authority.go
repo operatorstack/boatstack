@@ -68,6 +68,21 @@ func (b AuthorityBundle) canonical() AuthorityBundle {
 	return result
 }
 
+func (b AuthorityBundle) Fingerprint() (string, error) {
+	canonical := b.canonical()
+	sources := make([]AuthoritySource, 0, len(canonical.Receipts))
+	for _, receipt := range canonical.Receipts {
+		sources = append(sources, AuthoritySource{
+			ID: receipt.ID, Class: receipt.Class, Subject: receipt.Subject, Fingerprint: receipt.Fingerprint,
+		})
+	}
+	return contentID("auth-", sources)
+}
+
+func (b AuthorityBundle) GrantedCapabilities(now time.Time) []catalog.Capability {
+	return catalog.AuthorityCapabilities(b.Set(now)).Sorted()
+}
+
 func DeriveRepositoryAuthority(snapshot model.Snapshot, bundle AuthorityBundle, now time.Time) (AuthorityBundle, error) {
 	for _, receipt := range bundle.Receipts {
 		if receipt.Class == catalog.AuthorityRepository {

@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/operatorstack/boatstack/boatstack/control"
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
 )
 
 func TestNamespacedExtensionWriteRejectsSymlinkEscapeWithoutMutation(t *testing.T) {
@@ -27,9 +29,11 @@ func TestNamespacedExtensionWriteRejectsSymlinkEscapeWithoutMutation(t *testing.
 	}
 	content := []byte("must-not-escape")
 	digest := sha256.Sum256(content)
+	transition := catalog.Transition{ID: "example.guard/write", Effect: "example.guard.write", Class: catalog.EventOwnedLocal, RequiredCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite}, DeclaredCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite}}
+	admission := protocol.Admission{EffectiveCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite}}
 	_, err := NewExtensionLocalPrepared(repository, "example.guard", []control.ResourceWrite{{
 		Resource: "example.guard.evidence", Path: filepath.Join(link, "evidence.json"), Content: content, SHA256: hex.EncodeToString(digest[:]),
-	}})
+	}}, admission, transition)
 	if err == nil {
 		t.Fatal("symlink escape was accepted")
 	}

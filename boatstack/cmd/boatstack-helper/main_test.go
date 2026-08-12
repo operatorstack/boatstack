@@ -4,8 +4,11 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/buildinfo"
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/surfaces"
 	"github.com/operatorstack/boatstack/boatstack/internal/testprogram"
 )
@@ -71,5 +74,34 @@ func TestBuildRevisionPrefersReleaseEmbeddedSourceCommit(t *testing.T) {
 	t.Cleanup(func() { buildinfo.SourceCommit = prior })
 	if got := buildRevision(); got != "exact-release-source" {
 		t.Fatalf("build revision = %q", got)
+	}
+}
+
+func TestTransitionReceiptCannotBeLoadedAsAuthority(t *testing.T) {
+	// control-law: historical execution evidence is not a reusable authority token
+	path := filepath.Join(t.TempDir(), "transition-receipt.json")
+	if err := os.WriteFile(path, []byte(`{"schema_version":5,"id":"trc-old"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := loadAuthority(commandOptions{authorityReceipts: stringList{path}}, "correlation", model.Goal{}, time.Now().UTC())
+	if err == nil {
+		t.Fatal("transition receipt was accepted as authority")
+	}
+}
+
+func TestRawCLIReconstructsExactCapabilityPrescription(t *testing.T) {
+	options := commandOptions{
+		transitionID: "installation.update", host: "cli", repository: ".", prescriptionID: "prx-test",
+		expectedStateRevision: 7, expectedProgramFingerprint: hash([]byte("program")), expectedSnapshotFingerprint: hash([]byte("snapshot")),
+		authorityFingerprint:  "auth-test",
+		requiredCapabilities:  stringList{string(catalog.CapabilityRepositoryWrite), string(catalog.CapabilityCommandExecute)},
+		effectiveCapabilities: stringList{string(catalog.CapabilityRepositoryWrite), string(catalog.CapabilityCommandExecute)},
+	}
+	request, err := buildRequest(surfaces.OperationApply, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.Prescription.AuthorityFingerprint != options.authorityFingerprint || len(request.Prescription.RequiredCapabilities) != 2 || len(request.Prescription.EffectiveCapabilities) != 2 {
+		t.Fatalf("CLI lost capability prescription: %#v", request.Prescription)
 	}
 }

@@ -50,6 +50,7 @@ type TransitionID = catalog.TransitionID
 type Transition = catalog.Transition
 type GoalScope = catalog.GoalScope
 type AuthorityClass = catalog.AuthorityClass
+type Capability = catalog.Capability
 
 const (
 	GoalScopeOptionalPreserve = catalog.GoalScopeOptionalPreserve
@@ -58,6 +59,13 @@ const (
 	AuthorityHuman      = catalog.AuthorityHuman
 	AuthorityAutonomy   = catalog.AuthorityAutonomy
 	AuthorityProvider   = catalog.AuthorityProvider
+
+	CapabilityRepositoryWrite    = catalog.CapabilityRepositoryWrite
+	CapabilityCommandExecute     = catalog.CapabilityCommandExecute
+	CapabilityProductMutate      = catalog.CapabilityProductMutate
+	CapabilityPublicationPrepare = catalog.CapabilityPublicationPrepare
+	CapabilityPublicationPublish = catalog.CapabilityPublicationPublish
+	CapabilityHumanApprove       = catalog.CapabilityHumanApprove
 )
 
 type AuthorityReceipt = protocol.AuthorityReceipt

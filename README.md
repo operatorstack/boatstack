@@ -39,6 +39,9 @@ program-qualified transition identity used by complete user-facing Flows.
 The [prescription transaction boundary](docs/architecture/prescription-transactions.md)
 defines the exact durable-state and executable-program compare-and-swap contract
 between resolution and effects.
+The [capability and authority boundary](docs/architecture/capability-authority-boundary.md)
+defines how programs narrow effect surfaces without granting themselves
+authority, including the explicit arbitrary-command frontier.
 
 ## Install
 

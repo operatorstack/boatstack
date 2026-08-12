@@ -32,6 +32,11 @@ func (definition) RuntimeManifest(context.Context) (control.ProgramRuntimeManife
 		return control.ProgramRuntimeManifest{}, err
 	}
 	resources, effects, verifiers, recoveries := declarations(transitions)
+	capabilities := []control.Capability{control.CapabilityHumanApprove}
+	for index := range transitions {
+		transitions[index].RequiredCapabilities = control.KernelEffectCapabilities(transitions[index])
+		capabilities = control.UnionCapabilities(capabilities, transitions[index].RequiredCapabilities)
+	}
 	return control.ProgramRuntimeManifest{
 		ID: ID, Version: Version, ProtocolVersion: control.ProgramRuntimeProtocolVersion, RuntimeMode: control.ProgramRuntimeNative,
 		SupportedGoals: []control.GoalKind{
@@ -60,7 +65,7 @@ func (definition) RuntimeManifest(context.Context) (control.ProgramRuntimeManife
 				known(model.FacetWorkspace, string(model.WorkspaceAbandoned), string(model.WorkspaceAbsent))),
 		},
 		Facts:       []string{"plan", "workspace", "delivery", "verification", "publication"},
-		Transitions: transitions, OwnedResources: resources, Effects: effects, Verifiers: verifiers, RecoveryTransitions: recoveries,
+		Transitions: transitions, OwnedResources: resources, Effects: effects, Verifiers: verifiers, Capabilities: capabilities, RecoveryTransitions: recoveries,
 		Settings: json.RawMessage(`{}`), ConfigurationSchema: json.RawMessage(`{"type":"object"}`),
 		PrivacyClassification: "metadata-only", TelemetryClassification: "transition-receipt",
 	}, nil

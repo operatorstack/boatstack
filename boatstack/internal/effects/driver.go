@@ -52,6 +52,9 @@ func NewProgramDriver(resolver ports.InvocationResolver, clock ports.Clock, boun
 }
 
 func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, transition catalog.Transition) (ports.PreparedEffect, error) {
+	if err := protocol.ValidateEffectCapabilities(admission, transition); err != nil {
+		return nil, err
+	}
 	if len(d.resourceOwnership) != 0 {
 		for _, resource := range transition.OwnedResources {
 			if owner := d.resourceOwnership[resource]; owner == "" || owner != transition.Owner {
@@ -67,7 +70,18 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 		return nil, fmt.Errorf("effect invocation identity changed before preparation")
 	}
 	if transition.ID == "recovery.resume" || transition.ID == "recovery.rollback" || transition.ID == "workspace.reconcile" {
-		return d.prepareRecoveryReplay(ctx, layout, admission, transition)
+		prepared, prepareErr := d.prepareRecoveryReplay(ctx, layout, admission, transition)
+		if prepareErr != nil {
+			return nil, prepareErr
+		}
+		effect, ok := prepared.(*preparedEffect)
+		if !ok {
+			return nil, fmt.Errorf("recovery did not return a Boatstack prepared effect")
+		}
+		if err := bindPreparedCapabilities(effect, admission, transition); err != nil {
+			return nil, err
+		}
+		return effect, nil
 	}
 	state, err := loadDurableState(layout.StatePath, admission.Invocation, d.clock.Now())
 	if err != nil {
@@ -258,6 +272,9 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 		mutations[index].Owner = transition.Owner
 	}
 	prepared := &preparedEffect{mutations: mutations, verifyInvocation: verificationInvocation}
+	if err := bindPreparedCapabilities(prepared, admission, transition); err != nil {
+		return nil, err
+	}
 	if requiresCommandBoundary(transition.ID) {
 		prepared.boundary = func(boundaryContext context.Context) (ports.EffectResult, error) {
 			return d.boundary.Execute(boundaryContext, admission, transition, layout, state)

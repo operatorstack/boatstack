@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
 )
 
@@ -190,7 +191,7 @@ func TestHostSkillProjectionRemovesOnlyManagedDisabledHosts(t *testing.T) {
 
 func applyMutationsForTest(t *testing.T, mutations []ports.ResourceMutation) {
 	t.Helper()
-	prepared := &preparedEffect{mutations: mutations}
+	prepared := &preparedEffect{requiredCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite}, effectiveCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite}, mutations: mutations}
 	if _, err := prepared.Execute(context.Background()); err != nil {
 		t.Fatal(err)
 	}

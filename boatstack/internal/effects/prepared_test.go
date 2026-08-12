@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
 )
 
@@ -24,7 +25,7 @@ func TestPreparedEffectNeverAcceptsMixedEpochAtWriteBoundary(t *testing.T) {
 	if err := os.WriteFile(blocker, []byte("block"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	prepared := &preparedEffect{mutations: []ports.ResourceMutation{
+	prepared := &preparedEffect{requiredCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite}, effectiveCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite}, mutations: []ports.ResourceMutation{
 		{Path: first, Prior: []byte("prior-first"), PriorExists: true, Target: []byte("target-first"), Mode: 0o600},
 		{Path: filepath.Join(blocker, "second.json"), Target: []byte("target-second"), Mode: 0o600},
 		{Path: authoritative, Prior: []byte("prior-state"), PriorExists: true, Target: []byte("target-state"), Mode: 0o600, InstallLast: true},
@@ -53,7 +54,7 @@ func TestPreparedEffectRollsBackManagedLauncherSymlink(t *testing.T) {
 	if err := os.WriteFile(blocker, []byte("block"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	prepared := &preparedEffect{mutations: []ports.ResourceMutation{
+	prepared := &preparedEffect{requiredCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite}, effectiveCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite}, mutations: []ports.ResourceMutation{
 		{Path: launcher, PriorExists: true, PriorLink: "boatstack-old", TargetLink: "boatstack-new", Mode: 0o700},
 		{Path: filepath.Join(blocker, "state.json"), Target: []byte("new-state"), Mode: 0o600, InstallLast: true},
 	}}
@@ -69,5 +70,30 @@ func TestPreparedEffectRollsBackManagedLauncherSymlink(t *testing.T) {
 	}
 	if target != "boatstack-old" {
 		t.Fatalf("launcher rollback target = %q, want boatstack-old", target)
+	}
+}
+
+func TestPreparedEffectRefusesMissingKernelCapabilityBeforeAnyEffect(t *testing.T) {
+	// control-law: a trusted helper cannot use ambient authority for its caller
+	root := t.TempDir()
+	target := filepath.Join(root, "must-not-exist")
+	boundaryCalls := 0
+	prepared := &preparedEffect{
+		requiredCapabilities:  []catalog.Capability{catalog.CapabilityPublicationPublish},
+		effectiveCapabilities: []catalog.Capability{catalog.CapabilityPublicationPrepare},
+		boundary: func(context.Context) (ports.EffectResult, error) {
+			boundaryCalls++
+			return ports.EffectResult{Settlement: ports.EffectSettled}, nil
+		},
+		mutations: []ports.ResourceMutation{{Path: target, Target: []byte("changed"), Mode: 0o600}},
+	}
+	if _, err := prepared.Execute(context.Background()); err == nil {
+		t.Fatal("publication.prepare crossed a publication.publish effect boundary")
+	}
+	if boundaryCalls != 0 {
+		t.Fatalf("trusted helper ran %d privileged calls", boundaryCalls)
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("denied effect mutated repository: %v", err)
 	}
 }

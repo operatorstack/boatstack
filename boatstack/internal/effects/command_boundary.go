@@ -54,6 +54,9 @@ type pullRequestObservation struct {
 }
 
 func (b NativeBoundary) PrepareObservation(ctx context.Context, admission protocol.Admission, transition catalog.Transition, layout ports.ControllerLayout, state *durable.State) error {
+	if err := protocol.ValidateEffectCapabilities(admission, transition); err != nil {
+		return err
+	}
 	switch transition.ID {
 	case "publication.observe", "publication.reconcile":
 		publicationID, _ := admission.Parameters.Get("publication_id")
@@ -124,6 +127,9 @@ func (b NativeBoundary) PrepareObservation(ctx context.Context, admission protoc
 
 func (b NativeBoundary) Execute(ctx context.Context, admission protocol.Admission, transition catalog.Transition, layout ports.ControllerLayout, state durable.State) (ports.EffectResult, error) {
 	settled := ports.EffectResult{Settlement: ports.EffectSettled}
+	if err := protocol.ValidateEffectCapabilities(admission, transition); err != nil {
+		return settled, err
+	}
 	switch transition.ID {
 	case "gate.build.record", "gate.test.record":
 		raw, err := os.ReadFile(layout.ConfigPath)

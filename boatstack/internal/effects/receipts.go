@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
@@ -131,26 +132,30 @@ func (s *ReceiptStore) FindByIdempotency(ctx context.Context, invocation model.I
 }
 
 type processEvent struct {
-	SchemaVersion          int       `json:"schema_version"`
-	FlowID                 string    `json:"flow_id"`
-	Sequence               uint64    `json:"sequence"`
-	Timestamp              time.Time `json:"timestamp"`
-	GoalID                 string    `json:"goal_id"`
-	GoalScope              string    `json:"goal_scope,omitempty"`
-	GoalStatus             string    `json:"goal_status,omitempty"`
-	TransitionID           string    `json:"transition_id"`
-	ProgramFingerprint     string    `json:"program_fingerprint"`
-	PrescriptionID         string    `json:"prescription_id"`
-	PriorStateRevision     uint64    `json:"prior_state_revision"`
-	ResultingStateRevision uint64    `json:"resulting_state_revision"`
-	SourceFingerprint      string    `json:"source_fingerprint"`
-	TargetFingerprint      string    `json:"target_fingerprint"`
-	Outcome                string    `json:"outcome"`
-	DurationNanoseconds    int64     `json:"duration_nanoseconds"`
-	AuthorityClasses       []string  `json:"authority_classes,omitempty"`
-	Recovery               string    `json:"recovery,omitempty"`
-	Terminal               string    `json:"terminal"`
-	FailureClass           string    `json:"failure_class,omitempty"`
+	SchemaVersion          int                  `json:"schema_version"`
+	FlowID                 string               `json:"flow_id"`
+	Sequence               uint64               `json:"sequence"`
+	Timestamp              time.Time            `json:"timestamp"`
+	GoalID                 string               `json:"goal_id"`
+	GoalScope              string               `json:"goal_scope,omitempty"`
+	GoalStatus             string               `json:"goal_status,omitempty"`
+	TransitionID           string               `json:"transition_id"`
+	ProgramFingerprint     string               `json:"program_fingerprint"`
+	PrescriptionID         string               `json:"prescription_id"`
+	PriorStateRevision     uint64               `json:"prior_state_revision"`
+	ResultingStateRevision uint64               `json:"resulting_state_revision"`
+	SourceFingerprint      string               `json:"source_fingerprint"`
+	TargetFingerprint      string               `json:"target_fingerprint"`
+	Outcome                string               `json:"outcome"`
+	DurationNanoseconds    int64                `json:"duration_nanoseconds"`
+	AuthorityClasses       []string             `json:"authority_classes,omitempty"`
+	AuthorityFingerprint   string               `json:"authority_fingerprint"`
+	RequiredCapabilities   []catalog.Capability `json:"required_capabilities"`
+	GrantedCapabilities    []catalog.Capability `json:"granted_capabilities"`
+	ExercisedCapabilities  []catalog.Capability `json:"exercised_capabilities"`
+	Recovery               string               `json:"recovery,omitempty"`
+	Terminal               string               `json:"terminal"`
+	FailureClass           string               `json:"failure_class,omitempty"`
 }
 
 func appendLine(path string, value any, mode os.FileMode) error {
@@ -185,13 +190,17 @@ func (s *ReceiptStore) Append(ctx context.Context, receipt protocol.TransitionRe
 		return err
 	}
 	event := processEvent{
-		SchemaVersion: 2, FlowID: receipt.FlowID, Sequence: receipt.Sequence, Timestamp: s.clock.Now().UTC(), GoalID: receipt.GoalID,
+		SchemaVersion: 3, FlowID: receipt.FlowID, Sequence: receipt.Sequence, Timestamp: s.clock.Now().UTC(), GoalID: receipt.GoalID,
 		GoalScope: string(receipt.GoalScope), GoalStatus: string(receipt.GoalStatus),
 		TransitionID: string(receipt.TransitionID), ProgramFingerprint: receipt.ProgramFingerprint, PrescriptionID: receipt.PrescriptionID,
 		PriorStateRevision: receipt.PriorStateRevision, ResultingStateRevision: receipt.ResultingStateRevision,
 		SourceFingerprint: receipt.SourceFingerprint, TargetFingerprint: receipt.TargetFingerprint,
 		Outcome: string(receipt.Outcome), DurationNanoseconds: receipt.DurationNanoseconds,
 		AuthorityClasses: append([]string(nil), receipt.AuthorityClasses...), Recovery: string(receipt.Recovery), Terminal: string(receipt.Terminal), FailureClass: receipt.FailureClass,
+		AuthorityFingerprint:  receipt.AuthorityFingerprint,
+		RequiredCapabilities:  append([]catalog.Capability(nil), receipt.RequiredCapabilities...),
+		GrantedCapabilities:   append([]catalog.Capability(nil), receipt.GrantedCapabilities...),
+		ExercisedCapabilities: append([]catalog.Capability(nil), receipt.ExercisedCapabilities...),
 	}
 	// Telemetry is passive and never changes transition success.
 	_ = appendLine(layout.EventPath, event, 0o600)

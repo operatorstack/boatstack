@@ -217,7 +217,7 @@ func testRegistryWithAdvanceClass(t *testing.T, class catalog.EventClass) catalo
 		ID: "test.advance", Version: 1, Class: class,
 		Origin: catalog.TransitionOrigin{Kind: catalog.OriginControlProgram, ID: "test.synthetic", Version: "1.0.0", ManifestFingerprint: syntheticProgramFingerprint}, Owner: "test.synthetic", SelectionClass: catalog.SelectionProgramProgress,
 		SourcePhases: []model.ProtocolPhase{model.PhaseObserved}, TargetPhases: []model.ProtocolPhase{model.PhaseActive},
-		RequiredIdentity: identity, Authority: authority, RequiredEvidence: []string{"snapshot"}, OwnedResources: []string{"state"}, Effect: "test.advance", LocalEffects: localEffects, ExternalEffects: externalEffects, Idempotent: true,
+		RequiredIdentity: identity, Authority: authority, RequiredCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite}, DeclaredCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite, catalog.CapabilityCommandExecute}, RequiredEvidence: []string{"snapshot"}, OwnedResources: []string{"state"}, Effect: "test.advance", LocalEffects: localEffects, ExternalEffects: externalEffects, Idempotent: true,
 		Prescription: catalog.Prescription{Operation: "test.advance", ExpectedPostcondition: "active"}, SourcePredicate: "observed", AdmissionPredicate: "exact-admission", TargetPredicate: "active", Verifier: "fresh-active",
 		SourceConditions: []catalog.FacetCondition{{Facet: model.FacetName("test.synthetic.stage"), Statuses: []model.FactStatus{model.FactKnown}, Values: []string{"start"}}},
 		TargetConditions: []catalog.FacetCondition{{Facet: model.FacetName("test.synthetic.stage"), Statuses: []model.FactStatus{model.FactKnown}, Values: []string{"terminal"}}},
@@ -227,7 +227,7 @@ func testRegistryWithAdvanceClass(t *testing.T, class catalog.EventClass) catalo
 		ID: "test.recover", Version: 1, Class: catalog.EventRecovery,
 		Origin: catalog.TransitionOrigin{Kind: catalog.OriginControlProgram, ID: "test.synthetic", Version: "1.0.0", ManifestFingerprint: syntheticProgramFingerprint}, Owner: "test.synthetic", SelectionClass: catalog.SelectionProgramRecovery,
 		SourcePhases: []model.ProtocolPhase{model.PhaseRecovery}, TargetPhases: []model.ProtocolPhase{model.PhaseFrontier},
-		RequiredIdentity: identity, Authority: []catalog.AuthorityClass{catalog.AuthorityRepository}, RequiredEvidence: []string{"snapshot"}, OwnedResources: []string{"state"}, Effect: "test.recover", LocalEffects: []catalog.EffectID{"test.recover"}, Idempotent: true,
+		RequiredIdentity: identity, Authority: []catalog.AuthorityClass{catalog.AuthorityRepository}, RequiredCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite}, DeclaredCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite, catalog.CapabilityCommandExecute}, RequiredEvidence: []string{"snapshot"}, OwnedResources: []string{"state"}, Effect: "test.recover", LocalEffects: []catalog.EffectID{"test.recover"}, Idempotent: true,
 		Prescription: catalog.Prescription{Operation: "test.recover", ExpectedPostcondition: "frontier"}, SourcePredicate: "recovery", AdmissionPredicate: "exact-recovery-admission", TargetPredicate: "frontier", Verifier: "fresh-frontier",
 		SourceConditions: []catalog.FacetCondition{{Facet: model.FacetRecovery, Statuses: []model.FactStatus{model.FactKnown}, Values: []string{string(model.RecoveryReconcile)}}},
 		TargetConditions: []catalog.FacetCondition{{Facet: model.FacetRecovery, Statuses: []model.FactStatus{model.FactKnown}, Values: []string{string(model.RecoveryEscalated)}}},
@@ -248,13 +248,18 @@ func request(t *testing.T, now time.Time) ApplyRequest {
 		t.Fatal(err)
 	}
 	transition, _ := testRegistry(t).Lookup("test.advance")
-	prescription, err := protocol.NewPrescription(snapshot, transition)
+	authorityBundle := protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{ID: "auth", Class: catalog.AuthorityRepository, Subject: "repo", Fingerprint: "config-fingerprint", IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)}}}
+	capabilities, err := protocol.ProjectCapabilities(snapshot, transition, authorityBundle, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prescription, err := protocol.NewPrescription(snapshot, transition, capabilities)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return ApplyRequest{ResolveRequest: ResolveRequest{
 		Invocation: invocation, Goal: model.Goal{ID: "goal", Kind: model.GoalVerified, DeliveryID: "delivery"}, Requested: "test.advance",
-		Authority: protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{ID: "auth", Class: catalog.AuthorityRepository, Subject: "repo", Fingerprint: "config-fingerprint", IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)}}},
+		Authority: authorityBundle,
 	}, FlowID: "flow", Prescription: prescription, AdmissionLifetime: time.Minute}
 }
 
@@ -572,6 +577,19 @@ func TestOwnedExternalExecutionErrorRequiresRecoveryWithoutRollback(t *testing.T
 	}
 	apply := request(t, now)
 	apply.Authority.Receipts[0].Class = catalog.AuthorityHuman
+	snapshot, snapshotErr := model.CanonicalizeForProgram(observation(model.PhaseObserved, "source"), syntheticProgramFingerprint)
+	if snapshotErr != nil {
+		t.Fatal(snapshotErr)
+	}
+	transition, _ := registry.Lookup("test.advance")
+	capabilities, capabilityErr := protocol.ProjectCapabilities(snapshot, transition, apply.Authority, now)
+	if capabilityErr != nil {
+		t.Fatal(capabilityErr)
+	}
+	apply.Prescription, err = protocol.NewPrescription(snapshot, transition, capabilities)
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, err = kernel.Apply(context.Background(), apply)
 	var unknown ExternalOutcomeUnknownError
 	if !errors.As(err, &unknown) || !errors.Is(err, context.DeadlineExceeded) {

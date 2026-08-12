@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-const ProgramRuntimeProtocolVersion = 1
+const ProgramRuntimeProtocolVersion = 2
 
 type ProgramRuntimeMode string
 
@@ -36,6 +36,7 @@ type ProgramRuntimeRequest struct {
 	CorrelationID      string                  `json:"correlation_id"`
 	RepositoryRoot     string                  `json:"repository_root,omitempty"`
 	TransitionID       TransitionID            `json:"transition_id,omitempty"`
+	Capabilities       []Capability            `json:"capabilities,omitempty"`
 	Snapshot           json.RawMessage         `json:"snapshot,omitempty"`
 	Parameters         json.RawMessage         `json:"parameters,omitempty"`
 	Settings           json.RawMessage         `json:"settings,omitempty"`
@@ -93,7 +94,8 @@ func ValidateProgramRuntimeOperationResponse(operation ProgramRuntimeOperation, 
 
 // ProgramRuntime is the bounded in-process execution contract for a Control
 // Program. It receives projections and returns declarations; it never receives a
-// mutable Kernel object.
+// mutable Kernel object. Capabilities are the exact admitted upper bound; the
+// runtime cannot widen them.
 type ProgramRuntime interface {
 	InvokeProgram(context.Context, ProgramRuntimeRequest) (ProgramRuntimeResponse, error)
 }

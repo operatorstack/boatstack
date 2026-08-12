@@ -59,6 +59,7 @@ func (Extension) ExtensionManifest(context.Context) (control.ExtensionManifest, 
 		Reversibility: catalog.Reversible, TerminalEffect: "conjunctive-goal-obligation",
 		PrivacyClassification: "metadata-only", TelemetryClassification: "transition-receipt", CostClass: "local-verification",
 	}
+	transition.RequiredCapabilities = []catalog.Capability{catalog.CapabilityRepositoryWrite, catalog.CapabilityCommandExecute}
 	constraint := func(goal model.GoalKind) control.GoalConstraint {
 		return control.GoalConstraint{GoalKind: goal, Conditions: []catalog.FacetCondition{known(model.FacetName(FactID), "verified", "not-required")}}
 	}
@@ -66,6 +67,7 @@ func (Extension) ExtensionManifest(context.Context) (control.ExtensionManifest, 
 		ID: ID, Version: Version, ProtocolVersion: control.ExtensionProtocolVersion,
 		SettingsSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`),
 		Facts:          []string{FactID}, Transitions: []control.Transition{transition},
+		Capabilities:    []control.Capability{control.CapabilityRepositoryWrite, control.CapabilityCommandExecute},
 		GoalConstraints: []control.GoalConstraint{constraint(model.GoalOpenPR), constraint(model.GoalMerged)},
 		OwnedResources:  []string{Resource}, Effects: []string{Effect}, Verifiers: []string{Verifier},
 		PrivacyClassification: "metadata-only", TelemetryClassification: "transition-receipt",

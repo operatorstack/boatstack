@@ -32,8 +32,8 @@ func RenderCatalogMarkdown(transitions []catalog.Transition) string {
 		output.WriteString(string(facet))
 	}
 	output.WriteString("`.\n\n")
-	output.WriteString("| Transition | Origin | Owner | Selection | Class | Source phases | Target phases | Authority | Parameters | Owned resources | Verifier | Recovery | Cost |\n")
-	output.WriteString("|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
+	output.WriteString("| Transition | Origin | Owner | Selection | Class | Source phases | Target phases | Authority | Required capabilities | Parameters | Owned resources | Verifier | Recovery | Cost |\n")
+	output.WriteString("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
 	for _, transition := range ordered {
 		authority := joinAuthorities(transition.Authority)
 		if len(transition.AuthorityAll) > 0 {
@@ -52,10 +52,11 @@ func RenderCatalogMarkdown(transitions []catalog.Transition) string {
 			recovery = "-"
 		}
 		origin := fmt.Sprintf("%s:`%s@%s`<br/>`%s`", transition.Origin.Kind, transition.Origin.ID, transition.Origin.Version, transition.Origin.ManifestFingerprint)
-		fmt.Fprintf(&output, "| `%s` | %s | `%s` | %s | %s | %s | %s | %s | %s | %s | `%s` | `%s` | `%s` |\n",
+		fmt.Fprintf(&output, "| `%s` | %s | `%s` | %s | %s | %s | %s | %s | %s | %s | %s | `%s` | `%s` | `%s` |\n",
 			transition.ID, origin, transition.Owner, transition.SelectionClass, transition.Class,
 			joinPhases(transition.SourcePhases), joinPhases(transition.TargetPhases), authority,
-			markdownList(parameters), markdownList(transition.OwnedResources), transition.Verifier, recovery, transition.CostClass)
+			markdownList(capabilityStrings(catalog.RequiredCapabilities(transition))), markdownList(parameters),
+			markdownList(transition.OwnedResources), transition.Verifier, recovery, transition.CostClass)
 	}
 	output.WriteString("\n`*` marks a required parameter. OR authority is shown with `/`; mandatory authority clauses are shown with `AND`. Source and target facet predicates remain in the canonical JSON returned by `boatstack catalog --format json`.\n")
 	return output.String()
@@ -149,6 +150,14 @@ func joinAuthorities(values []catalog.AuthorityClass) string {
 }
 
 func phaseStrings(values []model.ProtocolPhase) []string {
+	parts := make([]string, len(values))
+	for index, value := range values {
+		parts[index] = string(value)
+	}
+	return parts
+}
+
+func capabilityStrings(values []catalog.Capability) []string {
 	parts := make([]string, len(values))
 	for index, value := range values {
 		parts[index] = string(value)

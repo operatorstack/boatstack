@@ -117,7 +117,11 @@ func TestRestartRecoveryRestoresPriorStateAndCommitsRecoveryRevision(t *testing.
 		{Name: "source_revision", Value: "recovery-fixture"}, {Name: "runtime_version", Value: runtimeIdentity.Version}, {Name: "runtime_sha256", Value: sha256Bytes(runtimeRaw)},
 		{Name: "config_path", Value: configPath}, {Name: "config_sha256", Value: configFingerprint},
 	}
-	prescription, err := protocol.NewPrescription(initial, transition)
+	capabilities, err := protocol.ProjectCapabilities(initial, transition, authority, clock.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	prescription, err := protocol.NewPrescription(initial, transition, capabilities)
 	if err != nil {
 		t.Fatal(err)
 	}

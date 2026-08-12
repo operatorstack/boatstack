@@ -23,6 +23,9 @@ func BindStateRevision(ctx context.Context, prepared ports.PreparedEffect, resol
 	if !ok {
 		return nil, fmt.Errorf("state revision binding requires a Boatstack prepared effect")
 	}
+	if err := bindPreparedCapabilities(effect, admission, transition); err != nil {
+		return nil, err
+	}
 	layout, invocation, err := resolver.ResolveLayout(ctx, admission.Invocation)
 	if err != nil {
 		return nil, err

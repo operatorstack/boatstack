@@ -7,10 +7,11 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/model"
 )
 
-const PrescriptionSchemaVersion = 1
+const PrescriptionSchemaVersion = 2
 
 // Prescription is the immutable compare-and-swap binding emitted by
-// resolution and required by apply. It carries no authority.
+// resolution and required by apply. It carries no reusable authority or
+// credential material, only the content identity of the admitted projection.
 type Prescription struct {
 	SchemaVersion               int                  `json:"schema_version"`
 	ID                          string               `json:"id"`
@@ -18,15 +19,21 @@ type Prescription struct {
 	ExpectedStateRevision       uint64               `json:"expected_state_revision"`
 	ExpectedProgramFingerprint  string               `json:"expected_program_fingerprint"`
 	ExpectedSnapshotFingerprint string               `json:"expected_snapshot_fingerprint"`
+	AuthorityFingerprint        string               `json:"authority_fingerprint"`
+	RequiredCapabilities        []catalog.Capability `json:"required_capabilities"`
+	EffectiveCapabilities       []catalog.Capability `json:"effective_capabilities"`
 }
 
-func NewPrescription(snapshot model.Snapshot, transition catalog.Transition) (Prescription, error) {
+func NewPrescription(snapshot model.Snapshot, transition catalog.Transition, capabilities CapabilityProjection) (Prescription, error) {
 	prescription := Prescription{
 		SchemaVersion:               PrescriptionSchemaVersion,
 		TransitionID:                transition.ID,
 		ExpectedStateRevision:       snapshot.StateRevision,
 		ExpectedProgramFingerprint:  snapshot.ProgramFingerprint,
 		ExpectedSnapshotFingerprint: snapshot.Fingerprint,
+		AuthorityFingerprint:        capabilities.AuthorityFingerprint,
+		RequiredCapabilities:        append([]catalog.Capability(nil), capabilities.Required...),
+		EffectiveCapabilities:       append([]catalog.Capability(nil), capabilities.Effective...),
 	}
 	if err := prescription.validateFields(); err != nil {
 		return Prescription{}, err
@@ -59,14 +66,15 @@ func (p Prescription) Validate() error {
 }
 
 func (p Prescription) validateFields() error {
-	if p.SchemaVersion != PrescriptionSchemaVersion || p.TransitionID == "" || p.ExpectedStateRevision == 0 ||
+	if p.SchemaVersion != PrescriptionSchemaVersion || p.TransitionID == "" || p.ExpectedStateRevision == 0 || p.AuthorityFingerprint == "" ||
+		len(p.RequiredCapabilities) == 0 || len(p.EffectiveCapabilities) == 0 ||
 		len(p.ExpectedProgramFingerprint) != 64 || len(p.ExpectedSnapshotFingerprint) != 64 {
 		return fmt.Errorf("prescription has invalid schema, transition, state revision, program, or snapshot identity")
 	}
 	return nil
 }
 
-func (p Prescription) ValidateCurrent(snapshot model.Snapshot, transition catalog.Transition) error {
+func (p Prescription) ValidateCurrent(snapshot model.Snapshot, transition catalog.Transition, capabilities CapabilityProjection) error {
 	if err := p.Validate(); err != nil {
 		return err
 	}
@@ -81,6 +89,11 @@ func (p Prescription) ValidateCurrent(snapshot model.Snapshot, transition catalo
 	}
 	if p.ExpectedSnapshotFingerprint != snapshot.Fingerprint {
 		return fmt.Errorf("prescription %q expected snapshot %s, observed %s", p.ID, p.ExpectedSnapshotFingerprint, snapshot.Fingerprint)
+	}
+	if p.AuthorityFingerprint != capabilities.AuthorityFingerprint ||
+		!sameCapabilities(p.RequiredCapabilities, capabilities.Required) ||
+		!sameCapabilities(p.EffectiveCapabilities, capabilities.Effective) {
+		return fmt.Errorf("prescription %q is bound to a different authority or capability context", p.ID)
 	}
 	return nil
 }

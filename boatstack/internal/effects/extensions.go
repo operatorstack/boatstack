@@ -10,23 +10,25 @@ import (
 	"strings"
 
 	"github.com/operatorstack/boatstack/boatstack/control"
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/kernel/ports"
+	"github.com/operatorstack/boatstack/boatstack/internal/kernel/protocol"
 )
 
 // NewExtensionLocalPrepared turns a declarative extension write plan into the
 // same reversible prepared-effect contract used by first-party effects.
-func NewExtensionLocalPrepared(repositoryRoot, extensionID string, writes []control.ResourceWrite) (ports.PreparedEffect, error) {
-	return newNamespacedLocalPrepared(repositoryRoot, filepath.Join("extensions", extensionID), extensionID, "extension", writes)
+func NewExtensionLocalPrepared(repositoryRoot, extensionID string, writes []control.ResourceWrite, admission protocol.Admission, transition catalog.Transition) (ports.PreparedEffect, error) {
+	return newNamespacedLocalPrepared(repositoryRoot, filepath.Join("extensions", extensionID), extensionID, "extension", writes, admission, transition)
 }
 
 // NewFlowLocalPrepared constrains a protocol-backed program runtime to its own
 // repository-local namespace while retaining the normal reversible effect
 // contract.
-func NewFlowLocalPrepared(repositoryRoot, flowID string, writes []control.ResourceWrite) (ports.PreparedEffect, error) {
-	return newNamespacedLocalPrepared(repositoryRoot, filepath.Join("flows", flowID), flowID, "program runtime", writes)
+func NewFlowLocalPrepared(repositoryRoot, flowID string, writes []control.ResourceWrite, admission protocol.Admission, transition catalog.Transition) (ports.PreparedEffect, error) {
+	return newNamespacedLocalPrepared(repositoryRoot, filepath.Join("flows", flowID), flowID, "program runtime", writes, admission, transition)
 }
 
-func newNamespacedLocalPrepared(repositoryRoot, namespace, owner, kind string, writes []control.ResourceWrite) (ports.PreparedEffect, error) {
+func newNamespacedLocalPrepared(repositoryRoot, namespace, owner, kind string, writes []control.ResourceWrite, admission protocol.Admission, transition catalog.Transition) (ports.PreparedEffect, error) {
 	if len(writes) == 0 {
 		return nil, fmt.Errorf("%s %q planned no local writes", kind, owner)
 	}
@@ -83,7 +85,11 @@ func newNamespacedLocalPrepared(repositoryRoot, namespace, owner, kind string, w
 		mutation.Resource, mutation.Owner = write.Resource, owner
 		mutations = append(mutations, mutation)
 	}
-	return &preparedEffect{mutations: mutations}, nil
+	prepared := &preparedEffect{mutations: mutations}
+	if err := bindPreparedCapabilities(prepared, admission, transition); err != nil {
+		return nil, err
+	}
+	return prepared, nil
 }
 
 func rejectSymlinkComponents(repositoryRoot, target string) error {
@@ -108,9 +114,13 @@ func rejectSymlinkComponents(repositoryRoot, target string) error {
 	return nil
 }
 
-func NewExtensionExternalPrepared(execute func(context.Context) (ports.EffectResult, error)) (ports.PreparedEffect, error) {
+func NewExtensionExternalPrepared(execute func(context.Context) (ports.EffectResult, error), admission protocol.Admission, transition catalog.Transition) (ports.PreparedEffect, error) {
 	if execute == nil {
 		return nil, fmt.Errorf("external extension effect requires an executor")
 	}
-	return &preparedEffect{boundary: execute}, nil
+	prepared := &preparedEffect{boundary: execute}
+	if err := bindPreparedCapabilities(prepared, admission, transition); err != nil {
+		return nil, err
+	}
+	return prepared, nil
 }

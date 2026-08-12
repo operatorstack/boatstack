@@ -57,7 +57,11 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 	if err := request.Invocation.Validate(false); err != nil {
 		return unresolvedResolution(request.Goal, "invocation identity is invalid"), err
 	}
-	observation, err := e.observer.Observe(ctx, ports.ObservationRequest{Invocation: request.Invocation})
+	now := e.clock.Now()
+	if err := request.Authority.Validate(now); err != nil {
+		return Resolution{}, err
+	}
+	observation, err := e.observer.Observe(ctx, ports.ObservationRequest{Invocation: request.Invocation, Capabilities: request.Authority.GrantedCapabilities(now)})
 	if err != nil {
 		return unresolvedResolution(request.Goal, "required observation failed"), fmt.Errorf("observe plant: %w", err)
 	}
@@ -84,10 +88,6 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 			return Resolution{}, fmt.Errorf("no valid requested or configured goal: %w", err)
 		}
 	}
-	now := e.clock.Now()
-	if err := request.Authority.Validate(now); err != nil {
-		return Resolution{}, err
-	}
 	decision := e.control.Resolve(snapshot, goal, request.Authority.Set(now), request.Requested)
 	if decision.Kind == supervisor.DecisionPrescribed && decision.Transition != nil {
 		goal, err = protocol.GoalForTransition(snapshot, goal, *decision.Transition)
@@ -108,7 +108,14 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 				decision.Transition = nil
 			}
 		} else {
-			prescription, prescriptionErr := protocol.NewPrescription(snapshot, *decision.Transition)
+			capabilities, capabilityErr := protocol.ProjectCapabilities(snapshot, *decision.Transition, request.Authority, now)
+			if capabilityErr != nil {
+				decision.Kind = supervisor.DecisionRefused
+				decision.Reason = capabilityErr.Error()
+				decision.Transition = nil
+				return Resolution{Snapshot: snapshot, Goal: goal, Decision: decision}, nil
+			}
+			prescription, prescriptionErr := protocol.NewPrescription(snapshot, *decision.Transition, capabilities)
 			if prescriptionErr != nil {
 				decision.Kind = supervisor.DecisionUnresolved
 				decision.Reason = prescriptionErr.Error()
@@ -173,6 +180,7 @@ type StalePrescriptionError struct {
 	ExpectedProgramFingerprint string
 	ObservedProgramFingerprint string
 	SnapshotChanged            bool
+	AuthorityChanged           bool
 }
 
 func (e StalePrescriptionError) Error() string {
@@ -185,6 +193,9 @@ func (e StalePrescriptionError) Error() string {
 	}
 	if e.SnapshotChanged {
 		facets = append(facets, "admission-relevant snapshot changed")
+	}
+	if e.AuthorityChanged {
+		facets = append(facets, "authority or capability context changed")
 	}
 	return fmt.Sprintf("STALE_PRESCRIPTION %q: %s; re-resolve before apply", e.PrescriptionID, strings.Join(facets, ", "))
 }
@@ -232,7 +243,7 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 			if err := validateReplayRequest(prior, request, e.programFingerprint); err != nil {
 				return result, err
 			}
-			observation, observeErr := e.observer.Observe(ctx, ports.ObservationRequest{Invocation: request.Invocation})
+			observation, observeErr := e.observer.Observe(ctx, ports.ObservationRequest{Invocation: request.Invocation, Capabilities: request.Authority.GrantedCapabilities(e.clock.Now())})
 			if observeErr != nil {
 				return result, observeErr
 			}
@@ -265,6 +276,14 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 	if err := validatePrescriptionCurrent(request.Prescription, resolution.Snapshot); err != nil {
 		return result, err
 	}
+	if resolution.Prescription.ID != request.Prescription.ID {
+		return result, StalePrescriptionError{
+			PrescriptionID: request.Prescription.ID, ExpectedStateRevision: request.Prescription.ExpectedStateRevision,
+			ObservedStateRevision: resolution.Snapshot.StateRevision, ExpectedProgramFingerprint: request.Prescription.ExpectedProgramFingerprint,
+			ObservedProgramFingerprint: resolution.Snapshot.ProgramFingerprint, SnapshotChanged: request.Prescription.ExpectedSnapshotFingerprint != resolution.Snapshot.Fingerprint,
+			AuthorityChanged: true,
+		}
+	}
 	request.Goal = resolution.Goal
 	if resolution.Decision.Kind != supervisor.DecisionPrescribed || resolution.Decision.Transition == nil {
 		return result, DecisionError{Decision: resolution.Decision}
@@ -288,7 +307,7 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 			if err := validateReplayRequest(prior, request, e.programFingerprint); err != nil {
 				return result, err
 			}
-			observation, observeErr := e.observer.Observe(ctx, ports.ObservationRequest{Invocation: request.Invocation})
+			observation, observeErr := e.observer.Observe(ctx, ports.ObservationRequest{Invocation: request.Invocation, Capabilities: admission.GrantedCapabilities})
 			if observeErr != nil {
 				return result, observeErr
 			}
@@ -317,7 +336,7 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 		}
 	}()
 
-	lockedObservation, err := e.observer.Observe(ctx, ports.ObservationRequest{Invocation: request.Invocation})
+	lockedObservation, err := e.observer.Observe(ctx, ports.ObservationRequest{Invocation: request.Invocation, Capabilities: admission.GrantedCapabilities})
 	if err != nil {
 		return result, err
 	}
@@ -350,6 +369,9 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 	if err := admission.ValidateCurrent(lockedSnapshot, request.Goal, transition, e.clock.Now()); err != nil {
 		return result, StaleAdmissionError{Err: err}
 	}
+	if err := protocol.ValidateEffectCapabilities(admission, transition); err != nil {
+		return result, err
+	}
 	if err := e.receipts.Bind(ctx, request.FlowID, admission); err != nil {
 		return result, err
 	}
@@ -378,6 +400,9 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 	if err != nil {
 		return result, abort("effect preparation failed", err)
 	}
+	if err := protocol.ValidateEffectCapabilities(admission, transition); err != nil {
+		return result, abort("effect capability check failed", err)
+	}
 	if err := e.journal.Stage(ctx, admission.ID, prepared.Manifest()); err != nil {
 		return result, abort("effect staging journal failed", err)
 	}
@@ -401,7 +426,7 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 	if transferred, ok := prepared.VerificationInvocation(); ok {
 		verificationInvocation = transferred
 	}
-	targetObservation, err := e.observer.Observe(ctx, ports.ObservationRequest{Invocation: verificationInvocation, IgnoreAdmissionID: admission.ID, VerifyTransitionID: transition.ID})
+	targetObservation, err := e.observer.Observe(ctx, ports.ObservationRequest{Invocation: verificationInvocation, Capabilities: admission.GrantedCapabilities, IgnoreAdmissionID: admission.ID, VerifyTransitionID: transition.ID})
 	if err != nil {
 		return result, requireRecovery("target observation failed after effect", err)
 	}

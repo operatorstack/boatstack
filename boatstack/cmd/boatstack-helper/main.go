@@ -48,6 +48,9 @@ type commandOptions struct {
 	expectedStateRevision       uint64
 	expectedProgramFingerprint  string
 	expectedSnapshotFingerprint string
+	authorityFingerprint        string
+	requiredCapabilities        stringList
+	effectiveCapabilities       stringList
 	idempotencyKey              string
 	humanActor                  string
 	repositoryPolicy            bool
@@ -252,6 +255,9 @@ func parseOptions(command string, arguments []string, transition catalog.Transit
 	flags.Uint64Var(&options.expectedStateRevision, "expected-state-revision", 0, "exact durable state revision observed during resolution")
 	flags.StringVar(&options.expectedProgramFingerprint, "expected-program-fingerprint", "", "exact executable control-program fingerprint observed during resolution")
 	flags.StringVar(&options.expectedSnapshotFingerprint, "expected-snapshot-fingerprint", "", "exact admission-relevant snapshot fingerprint observed during resolution")
+	flags.StringVar(&options.authorityFingerprint, "authority-fingerprint", "", "exact authority projection fingerprint from resolution")
+	flags.Var(&options.requiredCapabilities, "required-capability", "required capability from resolution (repeatable)")
+	flags.Var(&options.effectiveCapabilities, "effective-capability", "effective capability from resolution (repeatable)")
 	flags.StringVar(&options.idempotencyKey, "idempotency-key", "", "exact prior admission idempotency key for safe replay")
 	flags.StringVar(&options.humanActor, "human", "", "explicit command-scoped human authority actor")
 	flags.BoolVar(&options.repositoryPolicy, "repository-authority", false, "derive repository-policy authority from the V2 project configuration")
@@ -448,6 +454,14 @@ func buildRequest(operation surfaces.Operation, options commandOptions) (surface
 	if err != nil {
 		return surfaces.Request{}, err
 	}
+	requiredCapabilities, err := parseCapabilities("--required-capability", options.requiredCapabilities)
+	if err != nil {
+		return surfaces.Request{}, err
+	}
+	effectiveCapabilities, err := parseCapabilities("--effective-capability", options.effectiveCapabilities)
+	if err != nil {
+		return surfaces.Request{}, err
+	}
 	flowID := options.flowID
 	if flowID == "" && goal.ID != "" {
 		flowID = "flow-" + goal.ID
@@ -460,9 +474,22 @@ func buildRequest(operation surfaces.Operation, options commandOptions) (surface
 		FlowID: flowID, Goal: goal, TransitionID: catalog.TransitionID(options.transitionID), Authority: authority, Parameters: parameters,
 		Prescription: protocol.Prescription{SchemaVersion: protocol.PrescriptionSchemaVersion, ID: options.prescriptionID,
 			TransitionID: catalog.TransitionID(options.transitionID), ExpectedStateRevision: options.expectedStateRevision,
-			ExpectedProgramFingerprint: options.expectedProgramFingerprint, ExpectedSnapshotFingerprint: options.expectedSnapshotFingerprint},
+			ExpectedProgramFingerprint: options.expectedProgramFingerprint, ExpectedSnapshotFingerprint: options.expectedSnapshotFingerprint,
+			AuthorityFingerprint: options.authorityFingerprint, RequiredCapabilities: requiredCapabilities, EffectiveCapabilities: effectiveCapabilities},
 		RepositoryAuthority: options.repositoryPolicy, IdempotencyKey: options.idempotencyKey, Command: options.command,
 	}, nil
+}
+
+func parseCapabilities(field string, values []string) ([]catalog.Capability, error) {
+	capabilities := make([]catalog.Capability, len(values))
+	for index, value := range values {
+		capabilities[index] = catalog.Capability(value)
+	}
+	normalized, err := catalog.NormalizeCapabilities(field, capabilities)
+	if err != nil {
+		return nil, err
+	}
+	return normalized, nil
 }
 
 func parseParameters(values []string) (protocol.Parameters, error) {
