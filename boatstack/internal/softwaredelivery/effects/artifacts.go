@@ -151,6 +151,7 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		}
 		mutations = append(mutations, approvalMutation)
 		state.PlanFingerprint = fingerprint
+		state.ApprovalFingerprint = ""
 	case "plan.validate":
 		path := filepath.Join(artifactRoot, "plans", deliveryID+".source")
 		raw, readErr := os.ReadFile(path)
@@ -174,12 +175,14 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 			return nil, mutationErr
 		}
 		mutations = append(mutations, mutation)
+		state.ApprovalFingerprint = sha256Bytes(raw)
 	case "evidence.approval.revoke":
 		mutation, mutationErr := mutationFor(filepath.Join(artifactRoot, "approvals", deliveryID+".json"), nil, 0o644, false, true)
 		if mutationErr != nil {
 			return nil, mutationErr
 		}
 		mutations = append(mutations, mutation)
+		state.ApprovalFingerprint = ""
 	case "gate.build.record", "gate.test.record", "gate.review.record", "gate.change.record", "gate.journey.record":
 		revision, _ := admission.Parameters.Get("source_revision")
 		evidencePath, _ := admission.Parameters.Get("evidence_path")
@@ -297,6 +300,70 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		mutations = append(mutations, hostMutations...)
 	}
 	return mutations, nil
+}
+
+// prepareWorkspacePlanTransfer carries runtime-owned plan artifacts into a
+// newly cut worktree. A run binds the plan bytes before the cut, so the target
+// worktree must observe those exact bytes rather than fall back to the inbox
+// and accidentally select new intent.
+func prepareWorkspacePlanTransfer(repositoryRoot, workspacePath, deliveryID, expectedPlanFingerprint, expectedApprovalFingerprint string) ([]ports.ResourceMutation, error) {
+	if expectedPlanFingerprint == "" || deliveryID == "" {
+		return nil, nil
+	}
+	if workspacePath == "" || expectedApprovalFingerprint == "" {
+		return nil, fmt.Errorf("workspace plan transfer requires destination and exact approval for a bound plan")
+	}
+	deliveryID, err := safeSegment(deliveryID, "delivery identity")
+	if err != nil {
+		return nil, err
+	}
+	sourceRoot := filepath.Join(repositoryRoot, ".boatstack")
+	destinationRoot := filepath.Join(workspacePath, ".boatstack")
+	planPath := filepath.Join(sourceRoot, "plans", deliveryID+".source")
+	planRaw, err := readRegularWorkspacePlanArtifact(planPath)
+	if err != nil {
+		return nil, err
+	}
+	if actual := sha256Bytes(planRaw); actual != expectedPlanFingerprint {
+		return nil, fmt.Errorf("workspace plan artifact fingerprint changed: got %s", actual)
+	}
+	approvalPath := filepath.Join(sourceRoot, "approvals", deliveryID+".json")
+	approvalRaw, err := readRegularWorkspacePlanArtifact(approvalPath)
+	if err != nil {
+		return nil, err
+	}
+	if actual := sha256Bytes(approvalRaw); actual != expectedApprovalFingerprint {
+		return nil, fmt.Errorf("workspace approval artifact fingerprint changed: got %s", actual)
+	}
+	var approval approvalArtifact
+	if err := decodeStrictArtifact(approvalRaw, &approval); err != nil || approval.SchemaVersion != 1 || approval.DeliveryID != deliveryID ||
+		approval.PlanFingerprint != expectedPlanFingerprint || approval.Actor == "" || approval.AdmissionID == "" || approval.ApprovedAt.IsZero() {
+		return nil, fmt.Errorf("workspace approval artifact does not bind the admitted plan")
+	}
+	planMutation, err := mutationFor(filepath.Join(destinationRoot, "plans", deliveryID+".source"), planRaw, 0o644, false, false)
+	if err != nil {
+		return nil, err
+	}
+	approvalMutation, err := mutationFor(filepath.Join(destinationRoot, "approvals", deliveryID+".json"), approvalRaw, 0o644, false, false)
+	if err != nil {
+		return nil, err
+	}
+	return []ports.ResourceMutation{planMutation, approvalMutation}, nil
+}
+
+func readRegularWorkspacePlanArtifact(path string) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, fmt.Errorf("inspect workspace plan artifact %s: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("workspace plan artifact is not a regular file: %s", path)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read workspace plan artifact %s: %w", path, err)
+	}
+	return raw, nil
 }
 
 func transitionUsesDeliveryArtifacts(id catalog.TransitionID) bool {

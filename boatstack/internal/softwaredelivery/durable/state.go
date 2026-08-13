@@ -52,6 +52,7 @@ type State struct {
 	RuntimeFingerprint    string                   `json:"runtime_fingerprint,omitempty"`
 	RuntimeSource         string                   `json:"runtime_source_revision,omitempty"`
 	PlanFingerprint       string                   `json:"plan_fingerprint,omitempty"`
+	ApprovalFingerprint   string                   `json:"approval_fingerprint,omitempty"`
 	WorkspaceBranch       string                   `json:"workspace_branch,omitempty"`
 	WorkspacePath         string                   `json:"workspace_path,omitempty"`
 	WorkspaceBaseRef      string                   `json:"workspace_base_ref,omitempty"`

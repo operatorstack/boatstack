@@ -21,7 +21,7 @@ var stateFieldFacets = map[string]model.StateFacet{
 	"ConfigFingerprint": model.StateFacetControl, "PlanApprovalPolicy": model.StateFacetControl, "VisualEvidencePolicy": model.StateFacetControl,
 	"ExternalEffectPolicy": model.StateFacetControl, "IndependentReview": model.StateFacetControl, "EnabledHosts": model.StateFacetControl,
 	"RuntimeVersion": model.StateFacetInstallation, "RuntimeFingerprint": model.StateFacetInstallation, "RuntimeSource": model.StateFacetInstallation,
-	"PlanFingerprint": model.StateFacetProduct,
+	"PlanFingerprint": model.StateFacetProduct, "ApprovalFingerprint": model.StateFacetProduct,
 	"WorkspaceBranch": model.StateFacetProduct, "WorkspacePath": model.StateFacetProduct, "WorkspaceBaseRef": model.StateFacetProduct,
 	"WorkspaceSourcePath": model.StateFacetProduct, "WorkspaceSourceID": model.StateFacetProduct, "WorkspaceSourceRef": model.StateFacetProduct,
 	"PublicationID": model.StateFacetProduct, "PublicationURL": model.StateFacetProduct, "PreviewFingerprint": model.StateFacetProduct,

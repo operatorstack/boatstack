@@ -169,6 +169,13 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 	if err != nil {
 		return nil, err
 	}
+	if transition.ID == "workspace.cut" {
+		transferMutations, transferErr := prepareWorkspacePlanTransfer(layout.RepositoryRoot, next.WorkspacePath, admission.Objective.DeliveryID, next.PlanFingerprint, next.ApprovalFingerprint)
+		if transferErr != nil {
+			return nil, transferErr
+		}
+		mutations = append(mutations, transferMutations...)
+	}
 	if transitionSetsRuntimePin(transition.ID) || transition.ID == "catalog.reconcile" {
 		pinMutation, pinErr := prepareRuntimePinMutation(layout.RepositoryRoot, next)
 		if pinErr != nil {

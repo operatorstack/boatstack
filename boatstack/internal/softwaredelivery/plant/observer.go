@@ -520,19 +520,19 @@ func observeRepositoryArtifacts(layout ports.ControllerLayout, state durable.Sta
 	}
 	if state.Plan == model.PlanApproved || state.Plan == model.PlanLocked {
 		path := filepath.Join(layout.RepositoryRoot, ".boatstack", "approvals", deliveryID+".json")
-		evidence, _, exists, err := fileEvidence(path, "approval", now)
+		evidence, fingerprint, exists, err := fileEvidence(path, "approval", now)
 		if err != nil {
 			return plan, verification, terminal, nil, nil, err
 		}
 		planEvidence = append(planEvidence, evidence)
-		valid := exists
-		if exists {
+		valid := exists && state.ApprovalFingerprint != "" && fingerprint == state.ApprovalFingerprint
+		if valid {
 			raw, readErr := os.ReadFile(path)
 			if readErr != nil {
 				return plan, verification, terminal, nil, nil, readErr
 			}
 			var approval observedApproval
-			valid = decodeStrictJSON(raw, &approval) == nil && approval.SchemaVersion == 1 &&
+			valid = valid && decodeStrictJSON(raw, &approval) == nil && approval.SchemaVersion == 1 &&
 				approval.DeliveryID == deliveryID && approval.PlanFingerprint == state.PlanFingerprint &&
 				approval.Actor != "" && approval.AdmissionID != "" && !approval.ApprovedAt.IsZero()
 		}

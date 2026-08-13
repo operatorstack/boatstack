@@ -176,6 +176,54 @@ func TestPublicationPreviewRejectsFieldTamperingUnderAnOldFingerprint(t *testing
 	}
 }
 
+func TestPublicationExecutionUsesBoundBodyAndNoninteractiveTitle(t *testing.T) {
+	runner := &boundaryRunner{}
+	boundary, err := NewNativeBoundaryWithRunner(runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transition, _ := testprogram.StandardRegistry().Lookup("publication.execute")
+	layout := writeBoundaryConfig(t, "go test ./...")
+	bodyPath := filepath.Join(layout.RepositoryRoot, "body.md")
+	body := []byte("reviewed body")
+	if err := os.WriteFile(bodyPath, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	preview := publicationPreview{SchemaVersion: 1, DeliveryID: "delivery", BaseRef: "main", HeadRef: "feature", BodyPath: bodyPath, BodySHA256: sha256Bytes(body), CreatedAt: time.Unix(10, 0).UTC()}
+	identity := preview
+	identity.CreatedAt = time.Time{}
+	raw, err := json.Marshal(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview.Fingerprint = sha256Bytes(raw)
+	previewPath := filepath.Join(layout.RepositoryRoot, ".boatstack", "publication", "delivery.preview.json")
+	if err := os.MkdirAll(filepath.Dir(previewPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := encodeJSON(preview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(previewPath, encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	admission := protocol.Admission{
+		Invocation: model.InvocationContext{Ref: "refs/heads/feature"},
+		Objective:  model.Objective{DeliveryID: "delivery"},
+		Parameters: protocol.Parameters{{Name: "preview_fingerprint", Value: preview.Fingerprint}},
+	}
+	admission.RequiredCapabilities = catalog.RequiredCapabilities(transition)
+	admission.EffectiveCapabilities = admission.RequiredCapabilities
+	if _, err := boundary.Execute(context.Background(), admission, transition, layout, durable.State{}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"pr", "create", "--base", "main", "--head", "feature", "--fill-first", "--body-file", bodyPath}
+	if runner.name != "gh" || strings.Join(runner.arguments, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("publication command = %s %q, want gh %q", runner.name, runner.arguments, want)
+	}
+}
+
 func TestPublicationCorrectionRejectsBodyDriftBeforeProviderCall(t *testing.T) {
 	runner := &boundaryRunner{}
 	boundary, _ := NewNativeBoundaryWithRunner(runner)
