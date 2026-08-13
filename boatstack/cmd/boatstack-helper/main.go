@@ -168,7 +168,7 @@ func run(arguments []string) error {
 		request.Prescription = *resolved.Prescription
 	}
 	response, handleErr := kernel.Handle(context.Background(), request)
-	if settleErr := settleDelegationAtTarget(context.Background(), request, response); settleErr != nil && handleErr == nil {
+	if settleErr := settleDelegationAtTarget(context.Background(), request, response, kernel.TargetSatisfied(response.Snapshot, request.Objective), delegationLock != nil); settleErr != nil && handleErr == nil {
 		handleErr = settleErr
 	}
 	if command == "events" && options.follow {
@@ -224,7 +224,7 @@ func runRPC() error {
 		return err
 	}
 	response, handleErr := kernel.Handle(context.Background(), request)
-	if settleErr := settleDelegationAtTarget(context.Background(), request, response); settleErr != nil && handleErr == nil {
+	if settleErr := settleDelegationAtTarget(context.Background(), request, response, kernel.TargetSatisfied(response.Snapshot, request.Objective), delegationLock != nil); settleErr != nil && handleErr == nil {
 		handleErr = settleErr
 	}
 	encoder := json.NewEncoder(os.Stdout)

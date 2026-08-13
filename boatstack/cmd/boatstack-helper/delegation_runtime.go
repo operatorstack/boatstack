@@ -107,15 +107,21 @@ func prepareDelegation(ctx context.Context, request *surfaces.Request) (ports.Lo
 	return lock, nil, nil
 }
 
-func settleDelegationAtTarget(ctx context.Context, request surfaces.Request, response surfaces.Response) error {
-	if len(request.DelegatedAuthorities) == 0 || response.Decision == nil || response.Decision.Kind != supervisor.DecisionTerminal {
+func settleDelegationAtTarget(ctx context.Context, request surfaces.Request, response surfaces.Response, targetSatisfied, lockHeld bool) error {
+	terminalDecision := response.Decision != nil && response.Decision.Kind == supervisor.DecisionTerminal
+	committedTarget := response.Receipt != nil && targetSatisfied
+	if len(request.DelegatedAuthorities) == 0 || (!terminalDecision && !committedTarget) {
 		return nil
 	}
 	resolver, err := plant.NewResolver("")
 	if err != nil {
 		return err
 	}
-	invocation, err := resolver.ResolveInvocation(ctx, request.Repository, request.Host, request.CorrelationID)
+	repository := request.Repository
+	if committedTarget && response.Snapshot != nil {
+		repository = response.Snapshot.Invocation.InvokingPath
+	}
+	invocation, err := resolver.ResolveInvocation(ctx, repository, request.Host, request.CorrelationID)
 	if err != nil {
 		return err
 	}
@@ -123,15 +129,17 @@ func settleDelegationAtTarget(ctx context.Context, request surfaces.Request, res
 	if err != nil {
 		return err
 	}
-	lockPath, err := delegation.LockPath(layout.LockRoot, request.FlowID)
-	if err != nil {
-		return err
+	if !lockHeld {
+		lockPath, err := delegation.LockPath(layout.LockRoot, request.FlowID)
+		if err != nil {
+			return err
+		}
+		lock, err := effects.AcquireExclusivePath(ctx, lockPath)
+		if err != nil {
+			return err
+		}
+		defer lock.Release()
 	}
-	lock, err := effects.AcquireExclusivePath(ctx, lockPath)
-	if err != nil {
-		return err
-	}
-	defer lock.Release()
 	recordPath, err := delegation.Path(layout.FlowRoot, request.FlowID)
 	if err != nil {
 		return err

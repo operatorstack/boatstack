@@ -239,6 +239,27 @@ func TestFlowRunIdentitySurvivesWorkspaceTransfer(t *testing.T) {
 	if sourcePath, ok := parameters.Get("source_path"); !ok || sourcePath != filepath.Join(resumed.repository, ".boatstack", "plans", "delivery-one.source") {
 		t.Fatalf("destination plan binding = %q, %t", sourcePath, ok)
 	}
+
+	continuation := commandOptions{
+		repository: source, transitionID: "workspace.cut",
+		parameters:     []string{"base_ref=HEAD", "destination=" + destination},
+		prescriptionID: "prescription-cut", expectedInstanceID: "instance-source",
+		expectedStateRevision: 7, expectedProgramFingerprint: strings.Repeat("a", 64),
+		expectedSnapshotFingerprint: strings.Repeat("b", 64), expectedObjectiveBindingFingerprint: strings.Repeat("c", 64),
+		authorityFingerprint: strings.Repeat("d", 64), requiredCapabilities: []string{"workspace.write"},
+		effectiveCapabilities: []string{"workspace.write"}, idempotencyKey: "idem-cut",
+	}
+	resulting := model.InvocationContext{
+		RepositoryID: "repository", GitCommonID: "git-common", WorktreeID: "destination", Ref: "refs/heads/feature",
+		ControllerID: "controller", InvokingPath: destination, RuntimeVersion: "runtime", RuntimePath: destination,
+		RuntimeFingerprint: strings.Repeat("e", 64), Topology: model.TopologyEmbedded, Host: "codex", Correlation: "continuation",
+	}
+	if err := advanceContinuation(&continuation, surfaces.Response{Receipt: &protocol.TransitionReceipt{ExecutionContext: "advance", ResultingInvocation: &resulting}}); err != nil {
+		t.Fatal(err)
+	}
+	if continuation.repository != destination || continuation.transitionID != "" || len(continuation.parameters) != 0 || continuation.prescriptionID != "" || continuation.idempotencyKey != "" || len(continuation.requiredCapabilities) != 0 || len(continuation.effectiveCapabilities) != 0 {
+		t.Fatalf("continuation retained source context or transition parameters: %#v", continuation)
+	}
 }
 
 func TestFlowEntryRejectsCallerOverridesOfResolvedInputs(t *testing.T) {
@@ -1204,5 +1225,32 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	lock, suspension, err = prepareDelegation(context.Background(), &request)
 	if lock != nil || suspension != nil || err == nil || !strings.Contains(err.Error(), "DELEGATION_REVOKED") {
 		t.Fatalf("revoked apply preflight = lock=%v response=%#v err=%v", lock, suspension, err)
+	}
+	record.Status, record.Revision, record.RevokedAt = "active", record.Revision+1, time.Time{}
+	if err := effects.StoreDelegationRecord(recordPath, record); err != nil {
+		t.Fatal(err)
+	}
+	committed := surfaces.Response{Receipt: &protocol.TransitionReceipt{ID: "target-receipt"}}
+	delegationLockPath, err := delegation.LockPath(layout.LockRoot, bound.runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	heldDelegationLock, err := effects.AcquireExclusivePath(context.Background(), delegationLockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := settleDelegationAtTarget(context.Background(), request, committed, true, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := heldDelegationLock.Release(); err != nil {
+		t.Fatal(err)
+	}
+	completed, err := delegation.Load(recordPath)
+	if err != nil || completed.Status != "completed" || completed.EndReason != "target-met" || completed.Revision != record.Revision+1 {
+		t.Fatalf("target settlement = record=%#v err=%v", completed, err)
+	}
+	lock, suspension, err = prepareDelegation(context.Background(), &request)
+	if lock != nil || suspension != nil || err == nil || !strings.Contains(err.Error(), "DELEGATION_REVOKED") {
+		t.Fatalf("post-target apply preflight = lock=%v response=%#v err=%v", lock, suspension, err)
 	}
 }

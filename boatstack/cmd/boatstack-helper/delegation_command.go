@@ -219,6 +219,9 @@ func runFlowContinuation(arguments []string) error {
 			options.trustedObjectiveClass = string(response.Objective.TrustedObjectiveClass())
 			options.deliveryID = response.Objective.DeliveryID
 		}
+		if err := advanceContinuation(&options, response); err != nil {
+			return err
+		}
 		if response.Delegation != nil || response.Prescription == nil || response.Receipt == nil {
 			return renderResponse(response, options.format)
 		}
@@ -247,7 +250,7 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 		return surfaces.Response{}, err
 	}
 	resolved, err := kernel.Handle(ctx, resolveRequest)
-	if settleErr := settleDelegationAtTarget(ctx, resolveRequest, resolved); settleErr != nil && err == nil {
+	if settleErr := settleDelegationAtTarget(ctx, resolveRequest, resolved, kernel.TargetSatisfied(resolved.Snapshot, resolveRequest.Objective), false); settleErr != nil && err == nil {
 		err = settleErr
 	}
 	if err != nil || resolved.Prescription == nil {
@@ -285,4 +288,33 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 		applied.Prescription = &protocol.Prescription{SchemaVersion: protocol.PrescriptionSchemaVersion, ID: "continued", TransitionID: catalog.TransitionID(applyRequest.TransitionID)}
 	}
 	return applied, nil
+}
+
+func advanceContinuation(options *commandOptions, response surfaces.Response) error {
+	if response.Receipt == nil {
+		return nil
+	}
+	if response.Receipt.ExecutionContext == "advance" {
+		if response.Receipt.ResultingInvocation == nil {
+			return fmt.Errorf("FLOW_RUN_SUSPENDED: advancing receipt has no resulting invocation")
+		}
+		resulting := *response.Receipt.ResultingInvocation
+		if err := resulting.Validate(true); err != nil {
+			return fmt.Errorf("FLOW_RUN_SUSPENDED: invalid resulting invocation: %w", err)
+		}
+		options.repository = resulting.InvokingPath
+	}
+	options.transitionID = ""
+	options.parameters = nil
+	options.prescriptionID = ""
+	options.expectedInstanceID = ""
+	options.expectedStateRevision = 0
+	options.expectedProgramFingerprint = ""
+	options.expectedSnapshotFingerprint = ""
+	options.expectedObjectiveBindingFingerprint = ""
+	options.authorityFingerprint = ""
+	options.requiredCapabilities = nil
+	options.effectiveCapabilities = nil
+	options.idempotencyKey = ""
+	return nil
 }
