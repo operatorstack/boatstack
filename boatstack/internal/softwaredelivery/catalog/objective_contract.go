@@ -11,11 +11,11 @@ import (
 // Extension conditions are conjunctive and therefore can only narrow the
 // terminal set.
 type ObjectiveContract struct {
-	ObjectiveKind model.ObjectiveKind `json:"objective_kind"`
-	Conditions    []FacetCondition    `json:"conditions"`
+	TargetID   model.TargetID   `json:"target_id"`
+	Conditions []FacetCondition `json:"conditions"`
 }
 
-type ObjectiveContracts map[model.ObjectiveKind]ObjectiveContract
+type ObjectiveContracts map[model.TargetID]ObjectiveContract
 
 func (c ObjectiveContracts) Clone() ObjectiveContracts {
 	result := make(ObjectiveContracts, len(c))
@@ -26,29 +26,29 @@ func (c ObjectiveContracts) Clone() ObjectiveContracts {
 	return result
 }
 
-func NewObjectiveContracts(base []ObjectiveContract, extension map[model.ObjectiveKind][]FacetCondition) (ObjectiveContracts, error) {
+func NewObjectiveContracts(base []ObjectiveContract, extension map[model.TargetID][]FacetCondition) (ObjectiveContracts, error) {
 	contracts := make(ObjectiveContracts, len(base))
 	for _, contract := range base {
-		if !contract.ObjectiveKind.Valid() || len(contract.Conditions) == 0 {
+		if !contract.TargetID.Valid() || len(contract.Conditions) == 0 {
 			return nil, fmt.Errorf("objective contract requires a valid objective and conditions")
 		}
-		if _, exists := contracts[contract.ObjectiveKind]; exists {
-			return nil, fmt.Errorf("duplicate objective contract %q", contract.ObjectiveKind)
+		if _, exists := contracts[contract.TargetID]; exists {
+			return nil, fmt.Errorf("duplicate objective contract %q", contract.TargetID)
 		}
 		conditions := append([]FacetCondition(nil), contract.Conditions...)
-		conditions = append(conditions, extension[contract.ObjectiveKind]...)
+		conditions = append(conditions, extension[contract.TargetID]...)
 		for _, condition := range conditions {
 			if !condition.Facet.Valid() || len(condition.Statuses) == 0 {
-				return nil, fmt.Errorf("objective %q has invalid terminal condition", contract.ObjectiveKind)
+				return nil, fmt.Errorf("objective %q has invalid terminal condition", contract.TargetID)
 			}
 			for _, status := range condition.Statuses {
 				if !status.Valid() {
-					return nil, fmt.Errorf("objective %q has invalid terminal status %q", contract.ObjectiveKind, status)
+					return nil, fmt.Errorf("objective %q has invalid terminal status %q", contract.TargetID, status)
 				}
 			}
 		}
 		contract.Conditions = conditions
-		contracts[contract.ObjectiveKind] = contract
+		contracts[contract.TargetID] = contract
 	}
 	for objective := range extension {
 		if _, exists := contracts[objective]; !exists {
@@ -62,7 +62,7 @@ func (c ObjectiveContracts) Matches(snapshot model.Snapshot, objective model.Obj
 	if snapshot.Objective.Status != model.FactKnown || snapshot.Objective.Value != objective {
 		return false
 	}
-	contract, ok := c[objective.Kind]
+	contract, ok := c[objective.TargetID]
 	if !ok {
 		return false
 	}
@@ -80,6 +80,6 @@ func (c ObjectiveContracts) All() []ObjectiveContract {
 		contract.Conditions = append([]FacetCondition(nil), contract.Conditions...)
 		result = append(result, contract)
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].ObjectiveKind < result[j].ObjectiveKind })
+	sort.Slice(result, func(i, j int) bool { return result[i].TargetID < result[j].TargetID })
 	return result
 }

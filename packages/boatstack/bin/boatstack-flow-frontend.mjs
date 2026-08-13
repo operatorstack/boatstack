@@ -41,6 +41,8 @@ async function compile(input) {
     throw new Error("Flow source contains invalid TypeScript syntax");
   }
   const imports = new Map();
+  const locals = new Map();
+  const declarations = [];
   let exported;
 
   for (const statement of sourceFile.statements) {
@@ -68,6 +70,13 @@ async function compile(input) {
       exported = statement.expression;
       continue;
     }
+    if (ts.isVariableStatement(statement)) {
+      if ((statement.declarationList.flags & ts.NodeFlags.Const) === 0) {
+        throw new Error("Flow local declarations must be const");
+      }
+      declarations.push(statement.declarationList);
+      continue;
+    }
     if (ts.isEmptyStatement(statement)) continue;
     throw new Error("Flow source may contain only trusted imports and one default export");
   }
@@ -84,6 +93,7 @@ async function compile(input) {
     if (node.kind === ts.SyntaxKind.NullKeyword) return null;
     if (ts.isIdentifier(node)) {
       if (node.text === "undefined") return undefined;
+      if (locals.has(node.text)) return structuredClone(locals.get(node.text));
       if (!imports.has(node.text)) throw new Error(`Flow identifier is not a trusted SDK import: ${node.text}`);
       return structuredClone(imports.get(node.text));
     }
@@ -110,6 +120,18 @@ async function compile(input) {
     }
     throw new Error(`Flow expression is not declarative: ${ts.SyntaxKind[node.kind]}`);
   };
+
+  for (const declarationList of declarations) {
+    for (const declaration of declarationList.declarations) {
+      if (!ts.isIdentifier(declaration.name) || !declaration.initializer) {
+        throw new Error("Flow const declarations require one static identifier and initializer");
+      }
+      if (locals.has(declaration.name.text) || imports.has(declaration.name.text)) {
+        throw new Error(`Flow identifier is declared more than once: ${declaration.name.text}`);
+      }
+      locals.set(declaration.name.text, evaluate(declaration.initializer));
+    }
+  }
 
   const value = evaluate(exported);
   if (!value || typeof value !== "object" || Array.isArray(value)) {

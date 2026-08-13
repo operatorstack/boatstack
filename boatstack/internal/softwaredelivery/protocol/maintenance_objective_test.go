@@ -10,8 +10,8 @@ import (
 func TestMaintenanceObjectiveBindingUsesOnlyDurableProductState(t *testing.T) {
 	// control-law: maintenance-admission-is-independent-from-command-product-intent
 	transition := catalog.Transition{ID: "installation.update", Policy: catalog.PolicyContract{ObjectiveScope: catalog.ObjectiveScopeOptionalPreserve}}
-	configured := model.Objective{ID: "configured", Kind: model.ObjectiveOpenPR, DeliveryID: "delivery"}
-	conflicting := model.Objective{ID: "command", Kind: model.ObjectiveApprovedPlan, DeliveryID: "other"}
+	configured := model.Objective{ID: "configured", TargetID: model.ObjectiveOpenPR, DeliveryID: "delivery"}
+	conflicting := model.Objective{ID: "command", TargetID: model.ObjectiveApprovedPlan, DeliveryID: "other"}
 
 	tests := []struct {
 		name     string

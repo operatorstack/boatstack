@@ -20,7 +20,7 @@ func TestReceiptRejectsRehashedAuthorityProvenanceTampering(t *testing.T) {
 		ID: "admission", PrescriptionID: "prescription", ExpectedStateRevision: 1,
 		ExpectedProgramFingerprint: strings.Repeat("a", 64), ExpectedSnapshotFingerprint: strings.Repeat("b", 64),
 		ExpectedObjectiveBindingFingerprint: strings.Repeat("d", 64),
-		Objective:                           model.Objective{ID: "objective", Kind: model.ObjectiveApprovedPlan, DeliveryID: "delivery"},
+		Objective:                           model.Objective{ID: "objective", TargetID: model.ObjectiveApprovedPlan, DeliveryID: "delivery"},
 		ObjectiveScope:                      catalog.ObjectiveScopeBoundExact,
 		Authority:                           authority, AuthorityFingerprint: authorityFingerprint,
 		RequiredCapabilities:  []catalog.Capability{catalog.CapabilityRepositoryWrite},

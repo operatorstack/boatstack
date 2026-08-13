@@ -839,12 +839,12 @@ class RepositoryContract(unittest.TestCase):
             self.assertEqual(doctor["snapshot"]["runtime"]["value"], "verified")
 
             objective = (
-                "--objective-id", "bootstrap", "--objective-kind", "approved-plan",
+                "--objective-id", "bootstrap", "--target-id", "approved-plan",
                 "--delivery", "bootstrap",
             )
             self.apply_prescribed(
                 launcher, "objective.bind", "--repo", repository, *objective,
-                "--human", "contract", "--param", "objective_kind=approved-plan",
+                "--human", "contract", "--param", "target_id=approved-plan",
                 "--param", "delivery_id=bootstrap", env=env,
             )
             self.apply_prescribed(
@@ -956,7 +956,7 @@ class RepositoryContract(unittest.TestCase):
                 "contract",
                 "--objective-id",
                 "bootstrap",
-                "--objective-kind",
+                "--target-id",
                 "approved-plan",
                 "--delivery",
                 "bootstrap",

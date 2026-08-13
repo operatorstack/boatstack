@@ -17,9 +17,9 @@ func TestPublicProtocolCanBeConstructedWithoutInternalPackages(t *testing.T) {
 		Repository:    t.TempDir(),
 		Host:          "mcp",
 		CorrelationID: "correlation",
-		Objective:     sdk.Objective{ID: "objective", Kind: sdk.ObjectiveVerified, DeliveryID: "delivery"},
+		Objective:     sdk.Objective{ID: "objective", TargetID: sdk.ObjectiveVerified, DeliveryID: "delivery"},
 	}
-	if request.Objective.Kind != sdk.ObjectiveVerified || request.Operation != sdk.OperationResolve {
+	if request.Objective.TargetID != sdk.ObjectiveVerified || request.Operation != sdk.OperationResolve {
 		t.Fatalf("public V2 aliases lost protocol identity: %#v", request)
 	}
 }
@@ -37,7 +37,7 @@ func TestSDKPreservesCapabilityAdmissionProtocol(t *testing.T) {
 }
 
 func TestSDKSerializesTheSameDurableTransitionFactAsTheSurface(t *testing.T) {
-	raw := []byte(`{"schema_version":5,"operation":"apply","receipt":{"schema_version":8,"kind":"transition-committed","id":"trc-fact","flow_id":"flow","sequence":1,"program":{"id":"product-delivery","version":"1.0.0","fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"transition_id":"product-delivery/build.begin","transition_version":1,"prescription_id":"prx","admission_id":"adm","prior_state_revision":41,"resulting_state_revision":42,"objective_id":"objective","objective_kind":"verified","delivery_id":"delivery","objective_scope":"bound-exact","objective_binding_fingerprint":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","source_fingerprint":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","target_fingerprint":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","authority_fingerprint":"auth","authority_sources":[],"required_capabilities":["repository.write"],"granted_capabilities":["repository.write"],"committed_effects":[{"kind":"resource-mutation","effect_id":"build.begin","owner":"product-delivery","resource":"state","target":"/state","operation":"update","prior_fingerprint":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","resulting_fingerprint":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}],"changed_state_facets":["control","product"],"verification":{"verifier":"build-active","expected_postcondition":"active","result":"satisfied","evidence_fingerprint":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","verified_at":"2026-08-12T00:00:00Z"},"idempotency_key":"idem","terminal":"nonterminal","started_at":"2026-08-12T00:00:00Z","committed_at":"2026-08-12T00:00:01Z","duration_nanoseconds":1000000000}}`)
+	raw := []byte(`{"schema_version":5,"operation":"apply","receipt":{"schema_version":8,"kind":"transition-committed","id":"trc-fact","flow_id":"flow","sequence":1,"program":{"id":"product-delivery","version":"1.0.0","fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"transition_id":"product-delivery/build.begin","transition_version":1,"prescription_id":"prx","admission_id":"adm","prior_state_revision":41,"resulting_state_revision":42,"objective_id":"objective","target_id":"verified","delivery_id":"delivery","objective_scope":"bound-exact","objective_binding_fingerprint":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","source_fingerprint":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","target_fingerprint":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","authority_fingerprint":"auth","authority_sources":[],"required_capabilities":["repository.write"],"granted_capabilities":["repository.write"],"committed_effects":[{"kind":"resource-mutation","effect_id":"build.begin","owner":"product-delivery","resource":"state","target":"/state","operation":"update","prior_fingerprint":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","resulting_fingerprint":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}],"changed_state_facets":["control","product"],"verification":{"verifier":"build-active","expected_postcondition":"active","result":"satisfied","evidence_fingerprint":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","verified_at":"2026-08-12T00:00:00Z"},"idempotency_key":"idem","terminal":"nonterminal","started_at":"2026-08-12T00:00:00Z","committed_at":"2026-08-12T00:00:01Z","duration_nanoseconds":1000000000}}`)
 	var response sdk.Response
 	if err := json.Unmarshal(raw, &response); err != nil {
 		t.Fatal(err)
@@ -94,7 +94,7 @@ func (syntheticFlow) RuntimeManifest(context.Context) (delivery.ProgramRuntimeMa
 		return delivery.Transition{
 			ID: id, Version: 1, SelectionClass: delivery.SelectionProgramProgress, Class: delivery.EventOwnedLocal,
 			SourcePhases: []delivery.ProtocolPhase{delivery.PhaseObserved, delivery.PhaseActive}, TargetPhases: []delivery.ProtocolPhase{delivery.PhaseObserved, delivery.PhaseActive},
-			ObjectiveKinds: []delivery.ObjectiveKind{delivery.ObjectiveVerified}, RequiredIdentity: []string{"repository-id", "git-common-id", "worktree-id"},
+			TargetIDs: []delivery.TargetID{delivery.ObjectiveVerified}, RequiredIdentity: []string{"repository-id", "git-common-id", "worktree-id"},
 			Authority: []delivery.AuthorityClass{delivery.AuthorityRepository}, RequiredCapabilities: []delivery.Capability{delivery.CapabilityRepositoryWrite, delivery.CapabilityCommandExecute}, RequiredEvidence: []string{"snapshot", "objective", "facet:" + fact},
 			OwnedResources: []string{resource}, OwnedFacets: []delivery.StateFacet{delivery.StateFacetControl}, StateEffect: delivery.StateEffect{Kind: delivery.StateEffectAssignments},
 			Effect: effect, LocalEffects: []delivery.EffectID{effect}, Idempotent: true,
@@ -115,9 +115,9 @@ func (syntheticFlow) RuntimeManifest(context.Context) (delivery.ProgramRuntimeMa
 	finish := transition("synthetic.lifecycle.finish", "verify", "terminal", 2)
 	return delivery.ProgramRuntimeManifest{
 		ID: id, Version: "1.0.0", ProtocolVersion: delivery.ProgramRuntimeProtocolVersion, RuntimeMode: delivery.ProgramRuntimeProtocol,
-		SupportedObjectives: []delivery.ObjectiveKind{delivery.ObjectiveVerified},
-		ObjectiveContracts:  []delivery.ObjectiveContract{{ObjectiveKind: delivery.ObjectiveVerified, Conditions: []delivery.FacetCondition{delivery.KnownCondition(delivery.FacetName(fact), "terminal")}}},
-		Transitions:         []delivery.Transition{verify, finish}, Facts: []string{fact}, OwnedResources: []string{resource},
+		SupportedTargets:   []delivery.TargetID{delivery.ObjectiveVerified},
+		ObjectiveContracts: []delivery.ObjectiveContract{{TargetID: delivery.ObjectiveVerified, Conditions: []delivery.FacetCondition{delivery.KnownCondition(delivery.FacetName(fact), "terminal")}}},
+		Transitions:        []delivery.Transition{verify, finish}, Facts: []string{fact}, OwnedResources: []string{resource},
 		Effects: []string{string(verify.Effect), string(finish.Effect)}, Verifiers: []string{verify.Verifier, finish.Verifier},
 		Capabilities:          []delivery.Capability{delivery.CapabilityRepositoryWrite, delivery.CapabilityCommandExecute},
 		ConfigurationSchema:   json.RawMessage(`{"type":"object"}`),

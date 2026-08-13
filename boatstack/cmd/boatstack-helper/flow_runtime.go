@@ -100,8 +100,11 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		return commandOptions{}, fmt.Errorf("FLOW_ACTIVE_RUN_INVALID: active abandonment has no committed run identity")
 	}
 	options.repository = repository
-	if options.objectiveKind == "" {
-		options.objectiveKind = string(objective)
+	if options.targetID == "" {
+		options.targetID = string(objective.TargetID)
+	}
+	if options.trustedObjectiveClass == "" {
+		options.trustedObjectiveClass = string(objective.TrustedClass)
 	}
 	if options.deliveryID == "" {
 		options.deliveryID = deliveryID
@@ -110,7 +113,7 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	if options.objectiveID == "" {
 		options.objectiveID = expectedObjectiveID
 	}
-	if options.objectiveKind != string(objective) || options.deliveryID != deliveryID || options.objectiveID != expectedObjectiveID {
+	if options.targetID != string(objective.TargetID) || options.trustedObjectiveClass != string(objective.TrustedClass) || options.deliveryID != deliveryID || options.objectiveID != expectedObjectiveID {
 		return commandOptions{}, fmt.Errorf("FLOW_CONTEXT_MISMATCH: objective or delivery changed across the run")
 	}
 	parameters, err := parseParameters(options.parameters)
@@ -118,7 +121,7 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		return commandOptions{}, err
 	}
 	for name, expected := range map[string]string{
-		"objective_kind":     string(objective),
+		"target_id":          string(objective.TargetID),
 		"delivery_id":        deliveryID,
 		"source_path":        plan,
 		"source_fingerprint": planFingerprint,
@@ -129,7 +132,7 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	}
 	switch options.transitionID {
 	case "objective.bind":
-		if err := bindResolvedParameter(&options, parameters, "objective_kind", string(objective)); err != nil {
+		if err := bindResolvedParameter(&options, parameters, "target_id", string(objective.TargetID)); err != nil {
 			return commandOptions{}, err
 		}
 		if err := bindResolvedParameter(&options, parameters, "delivery_id", deliveryID); err != nil {
@@ -149,8 +152,8 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	return options, nil
 }
 
-func bindActiveFlowContext(ctx context.Context, repository string, options commandOptions, entryObjective model.ObjectiveKind) (commandOptions, error) {
-	if options.runID != "" && entryObjective != model.ObjectiveAbandoned {
+func bindActiveFlowContext(ctx context.Context, repository string, options commandOptions, entryObjective softwareflow.EntryObjective) (commandOptions, error) {
+	if options.runID != "" && entryObjective.TrustedClass != model.ObjectiveAbandoned {
 		return options, nil
 	}
 	resolver, err := plant.NewResolver("")
@@ -201,13 +204,13 @@ func bindActiveFlowContext(ctx context.Context, repository string, options comma
 	if !found || !strings.HasPrefix(receipt.FlowID, "run-") {
 		return commandOptions{}, fmt.Errorf("FLOW_ACTIVE_RUN_INVALID: active objective has no committed run identity")
 	}
-	if active.Kind == entryObjective && strings.HasPrefix(active.ID, prefix) {
+	if active.TargetID == entryObjective.TargetID && strings.HasPrefix(active.ID, prefix) {
 		options.runID, options.deliveryID = receipt.FlowID, active.DeliveryID
-		options.objectiveID, options.objectiveKind = active.ID, string(active.Kind)
+		options.objectiveID, options.targetID, options.trustedObjectiveClass = active.ID, string(active.TargetID), string(active.TrustedObjectiveClass())
 		options.activeFlowBound = true
 		return options, nil
 	}
-	if entryObjective == model.ObjectiveAbandoned {
+	if entryObjective.TrustedClass == model.ObjectiveAbandoned {
 		repositoryIdentity, identityErr := flowRepositoryIdentity(repository)
 		if identityErr != nil {
 			return commandOptions{}, identityErr
@@ -252,7 +255,7 @@ func bindRPCFlowEntry(ctx context.Context, request surfaces.Request) (surfaces.R
 	bound, err := bindFlowEntry(ctx, commandOptions{
 		repository: request.Repository, host: request.Host, programID: request.ProgramID, entryID: request.EntryID,
 		flowProgramFingerprint: request.ProgramFingerprint,
-		runID:                  request.FlowID, objectiveID: request.Objective.ID, objectiveKind: string(request.Objective.Kind), deliveryID: request.Objective.DeliveryID,
+		runID:                  request.FlowID, objectiveID: request.Objective.ID, targetID: string(request.Objective.TargetID), trustedObjectiveClass: string(request.Objective.TrustedObjectiveClass()), deliveryID: request.Objective.DeliveryID,
 		transitionID: string(request.TransitionID), parameters: parameterFlags,
 	})
 	if err != nil {
@@ -266,14 +269,15 @@ func bindRPCFlowEntry(ctx context.Context, request surfaces.Request) (surfaces.R
 	request.ProgramFingerprint = bound.flowProgramFingerprint
 	request.FlowID = bound.runID
 	request.Objective.ID = bound.objectiveID
-	request.Objective.Kind = model.ObjectiveKind(bound.objectiveKind)
+	request.Objective.TargetID = model.TargetID(bound.targetID)
+	request.Objective.TrustedClass = model.TargetID(bound.trustedObjectiveClass)
 	request.Objective.DeliveryID = bound.deliveryID
 	request.Parameters = parameters
 	return request, nil
 }
 
-func resolveBoundPlan(repository string, entry controlprogram.Entry, entryObjective model.ObjectiveKind, options commandOptions) (string, string, error) {
-	if options.activeFlowBound && entryObjective == model.ObjectiveAbandoned {
+func resolveBoundPlan(repository string, entry controlprogram.Entry, entryObjective softwareflow.EntryObjective, options commandOptions) (string, string, error) {
+	if options.activeFlowBound && entryObjective.TrustedClass == model.ObjectiveAbandoned {
 		return "", options.deliveryID, nil
 	}
 	if options.runID == "" && options.deliveryID == "" {

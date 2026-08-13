@@ -209,7 +209,7 @@ func TestFlowRunIdentitySurvivesWorkspaceTransfer(t *testing.T) {
 	resumed, err := bindFlowEntry(context.Background(), commandOptions{
 		repository: destination, programID: "product-delivery", entryID: "run", host: "codex",
 		flowProgramFingerprint: initial.flowProgramFingerprint, runID: initial.runID,
-		deliveryID: initial.deliveryID, objectiveKind: initial.objectiveKind, objectiveID: initial.objectiveID,
+		deliveryID: initial.deliveryID, targetID: initial.targetID, objectiveID: initial.objectiveID,
 		transitionID: "plan.create",
 	})
 	if err != nil {
@@ -777,13 +777,13 @@ func TestFlowEntryBindsStableRunAndResumesManagedPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(initial.runID, "run-") || initial.deliveryID != "delivery-one" || initial.objectiveKind != "open-or-updated-pr" || len(initial.parameters) != 0 {
+	if !strings.HasPrefix(initial.runID, "run-") || initial.deliveryID != "delivery-one" || initial.targetID != "published-pr" || initial.trustedObjectiveClass != "open-or-updated-pr" || len(initial.parameters) != 0 {
 		t.Fatalf("initial Flow context = %#v", initial)
 	}
 	for _, transitionID := range []string{"objective.bind", "plan.create"} {
 		preManaged, err := bindFlowEntry(context.Background(), commandOptions{
 			repository: repository, programID: "product-delivery", entryID: "run", runID: initial.runID, host: "codex",
-			deliveryID: initial.deliveryID, objectiveKind: initial.objectiveKind, objectiveID: initial.objectiveID, transitionID: transitionID,
+			deliveryID: initial.deliveryID, targetID: initial.targetID, objectiveID: initial.objectiveID, transitionID: transitionID,
 		})
 		if err != nil {
 			t.Fatalf("pre-materialization %s binding failed: %v", transitionID, err)
@@ -803,7 +803,7 @@ func TestFlowEntryBindsStableRunAndResumesManagedPlan(t *testing.T) {
 	writeFixture(t, repository, ".boatstack/plans/inbox/unrelated.md", []byte("other plan"))
 	resumed, err := bindFlowEntry(context.Background(), commandOptions{
 		repository: repository, programID: "product-delivery", entryID: "run", runID: initial.runID, host: "codex",
-		deliveryID: initial.deliveryID, objectiveKind: initial.objectiveKind, objectiveID: initial.objectiveID, transitionID: "plan.create",
+		deliveryID: initial.deliveryID, targetID: initial.targetID, objectiveID: initial.objectiveID, transitionID: "plan.create",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -822,7 +822,9 @@ func TestFlowEntryBindsStableRunAndResumesManagedPlan(t *testing.T) {
 
 func TestRepositoryNamedAbandonmentEntryUsesCompiledObjective(t *testing.T) {
 	entry := controlprogram.Entry{ID: "cancel", Target: "safely-abandoned"}
-	plan, delivery, err := resolveBoundPlan(t.TempDir(), entry, model.ObjectiveAbandoned, commandOptions{
+	plan, delivery, err := resolveBoundPlan(t.TempDir(), entry, softwareflow.EntryObjective{
+		TargetID: model.TargetID("safely-abandoned"), TrustedClass: model.ObjectiveAbandoned,
+	}, commandOptions{
 		entryID: "cancel", activeFlowBound: true, deliveryID: "delivery-one",
 	})
 	if err != nil {
@@ -845,7 +847,7 @@ func TestFlowEntryRejectsSelectedPlanContentSubstitution(t *testing.T) {
 	writeFixture(t, repository, planPath, []byte("plan B"))
 	_, err = bindFlowEntry(context.Background(), commandOptions{
 		repository: repository, programID: "product-delivery", entryID: "run", runID: initial.runID, host: "codex",
-		deliveryID: initial.deliveryID, objectiveKind: initial.objectiveKind, objectiveID: initial.objectiveID, transitionID: "plan.create",
+		deliveryID: initial.deliveryID, targetID: initial.targetID, objectiveID: initial.objectiveID, transitionID: "plan.create",
 	})
 	if err == nil || !strings.Contains(err.Error(), "FLOW_RUN_MISMATCH") {
 		t.Fatalf("plan substitution result = %v", err)
@@ -865,7 +867,7 @@ func TestFlowEntryPreservesSelectedPlanFilenameBeforeMaterialization(t *testing.
 	}
 	resumed, err := bindFlowEntry(context.Background(), commandOptions{
 		repository: repository, programID: "product-delivery", entryID: "run", runID: initial.runID, host: "codex",
-		deliveryID: initial.deliveryID, objectiveKind: initial.objectiveKind, objectiveID: initial.objectiveID, transitionID: "plan.create",
+		deliveryID: initial.deliveryID, targetID: initial.targetID, objectiveID: initial.objectiveID, transitionID: "plan.create",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -898,7 +900,7 @@ func TestFlowEntryRejectsAmbiguousPlanFilenameOnResume(t *testing.T) {
 	}
 	_, err = bindFlowEntry(context.Background(), commandOptions{
 		repository: repository, programID: "product-delivery", entryID: "run", runID: initial.runID, host: "codex",
-		deliveryID: initial.deliveryID, objectiveKind: initial.objectiveKind, objectiveID: initial.objectiveID, transitionID: "plan.create",
+		deliveryID: initial.deliveryID, targetID: initial.targetID, objectiveID: initial.objectiveID, transitionID: "plan.create",
 	})
 	if err == nil || !strings.Contains(err.Error(), "FLOW_INPUT_INVALID") {
 		t.Fatalf("ambiguous resume result = %v", err)
@@ -915,7 +917,7 @@ func TestFlowEntryRejectsObjectiveSubstitutionWithinRun(t *testing.T) {
 	}
 	_, err = bindFlowEntry(context.Background(), commandOptions{
 		repository: repository, programID: "product-delivery", entryID: "run", host: "codex",
-		runID: initial.runID, deliveryID: initial.deliveryID, objectiveKind: initial.objectiveKind,
+		runID: initial.runID, deliveryID: initial.deliveryID, targetID: initial.targetID,
 		objectiveID: "objective-substituted", transitionID: "objective.bind",
 	})
 	if err == nil || !strings.Contains(err.Error(), "FLOW_CONTEXT_MISMATCH") {
@@ -947,7 +949,7 @@ func TestFlowEntryRejectsManagedPlanSymlinkEscape(t *testing.T) {
 	}
 	_, err = bindFlowEntry(context.Background(), commandOptions{
 		repository: repository, programID: "product-delivery", entryID: "run", runID: initial.runID, host: "codex",
-		deliveryID: initial.deliveryID, objectiveKind: initial.objectiveKind, objectiveID: initial.objectiveID,
+		deliveryID: initial.deliveryID, targetID: initial.targetID, objectiveID: initial.objectiveID,
 	})
 	if err == nil || !strings.Contains(err.Error(), "regular non-symlink") {
 		t.Fatalf("managed symlink result = %v", err)

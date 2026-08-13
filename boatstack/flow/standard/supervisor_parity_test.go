@@ -58,7 +58,7 @@ func snapshotFor(t *testing.T, phase model.ProtocolPhase, terminal model.Termina
 }
 
 func objectiveFor() model.Objective {
-	return model.Objective{ID: "objective", Kind: model.ObjectiveVerified, DeliveryID: "delivery"}
+	return model.Objective{ID: "objective", TargetID: model.ObjectiveVerified, DeliveryID: "delivery"}
 }
 
 func recanonicalize(t *testing.T, snapshot model.Snapshot) model.Snapshot {
@@ -73,7 +73,7 @@ func recanonicalize(t *testing.T, snapshot model.Snapshot) model.Snapshot {
 func openPRSnapshot(t *testing.T, recordedGates ...string) (model.Snapshot, model.Objective) {
 	t.Helper()
 	snapshot := snapshotFor(t, model.PhaseActive, model.TerminalNonterminal)
-	objective := model.Objective{ID: "objective", Kind: model.ObjectiveOpenPR, DeliveryID: "delivery"}
+	objective := model.Objective{ID: "objective", TargetID: model.ObjectiveOpenPR, DeliveryID: "delivery"}
 	evidence := snapshot.Verification.Evidence[0]
 	snapshot.Objective = model.Known(objective, evidence)
 	snapshot.Plan = model.Known(model.PlanLocked, evidence)
@@ -118,7 +118,7 @@ func TestTerminalEvidenceForOldObjectiveDoesNotTerminateNewObjective(t *testing.
 	snapshot.Workspace = model.Known(model.WorkspacePublished, snapshot.Workspace.Evidence[0])
 	snapshot.Publication = model.Known(model.PublicationOpen, snapshot.Publication.Evidence[0])
 	snapshot = recanonicalize(t, snapshot)
-	newObjective := model.Objective{ID: "next-objective", Kind: model.ObjectiveOpenPR, DeliveryID: "next-delivery"}
+	newObjective := model.Objective{ID: "next-objective", TargetID: model.ObjectiveOpenPR, DeliveryID: "next-delivery"}
 	decision := s.Resolve(snapshot, newObjective, catalog.AuthoritySet{catalog.AuthorityHuman: true}, "")
 	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "objective.bind" {
 		t.Fatalf("untargeted terminal replacement decision=%#v, want exact new-objective configuration", decision)
@@ -130,7 +130,7 @@ func TestUntargetedResolutionReconfiguresDifferentObjectiveAndSkipsSatisfiedObje
 	snapshot := snapshotFor(t, model.PhaseActive, model.TerminalNonterminal)
 	authority := catalog.AuthoritySet{catalog.AuthorityHuman: true, catalog.AuthorityRepository: true}
 
-	newObjective := model.Objective{ID: "new-objective", Kind: model.ObjectiveOpenPR, DeliveryID: "delivery"}
+	newObjective := model.Objective{ID: "new-objective", TargetID: model.ObjectiveOpenPR, DeliveryID: "delivery"}
 	decision := New(testprogram.StandardRegistry(), testObjectiveContracts()).Resolve(snapshot, newObjective, authority, "")
 	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "objective.bind" {
 		t.Fatalf("different-objective decision = %#v, want objective.bind", decision)
@@ -147,7 +147,7 @@ func TestUntargetedResolutionReconfiguresDifferentObjectiveAndSkipsSatisfiedObje
 func TestDormantBootstrapObjectiveReconfiguresBeforeEngagement(t *testing.T) {
 	// control-law: a retained bootstrap objective cannot be bypassed by engagement
 	snapshot := snapshotFor(t, model.PhaseDormant, model.TerminalNonterminal)
-	requested := model.Objective{ID: "basic-project", Kind: model.ObjectiveApprovedPlan, DeliveryID: "basic-project"}
+	requested := model.Objective{ID: "basic-project", TargetID: model.ObjectiveApprovedPlan, DeliveryID: "basic-project"}
 	authority := catalog.AuthoritySet{catalog.AuthorityHuman: true, catalog.AuthorityRepository: true}
 
 	untargeted := New(testprogram.StandardRegistry(), testObjectiveContracts()).Resolve(snapshot, requested, authority, "")
@@ -178,7 +178,7 @@ func TestDisabledHostIsRefusedBeforeUntargetedSelection(t *testing.T) {
 func TestPublicationObservationRemainsSelectableForVolatileExternalState(t *testing.T) {
 	// control-law: a nonterminal provider observation is evidence, not permanent progress
 	snapshot, objective := openPRSnapshot(t, "build", "test", "review", "change", "journey")
-	objective.Kind = model.ObjectiveMerged
+	objective.TargetID = model.ObjectiveMerged
 	snapshot.Objective = model.Known(objective, snapshot.Objective.Evidence[0])
 	snapshot.Publication = model.Known(model.PublicationOpen, snapshot.Publication.Evidence[0])
 	snapshot = recanonicalize(t, snapshot)

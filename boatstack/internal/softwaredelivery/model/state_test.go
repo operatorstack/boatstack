@@ -136,7 +136,7 @@ func TestEveryControllingFacetChangesCanonicalIdentity(t *testing.T) {
 		},
 		FacetTerminal: func(o *Observation) { o.Terminal = Known(TerminalStale, evidence) },
 		FacetObjective: func(o *Observation) {
-			o.Objective = Known(Objective{ID: "objective", Kind: ObjectiveVerified, DeliveryID: "delivery"}, evidence)
+			o.Objective = Known(Objective{ID: "objective", TargetID: ObjectiveVerified, DeliveryID: "delivery"}, evidence)
 		},
 	}
 	for _, facet := range ControllingFacets() {

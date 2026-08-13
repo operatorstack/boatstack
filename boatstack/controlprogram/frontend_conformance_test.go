@@ -2,6 +2,7 @@ package controlprogram_test
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
+	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
 )
 
 func TestTypeScriptDSLAndRawIRHaveOneCanonicalFingerprint(t *testing.T) {
@@ -52,6 +54,59 @@ func TestTypeScriptDSLAndRawIRHaveOneCanonicalFingerprint(t *testing.T) {
 	}
 	if fromTypeScript.Fingerprint != fromRaw.Fingerprint {
 		t.Fatalf("frontend fingerprints differ: %s != %s", fromTypeScript.Fingerprint, fromRaw.Fingerprint)
+	}
+}
+
+func TestRepositoryOwnedSoftwareDeliveryFlowsShareOneRuntime(t *testing.T) {
+	// control-law: repositories-own-entry-target-and-transition-policy
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("cannot locate frontend fixtures")
+	}
+	moduleRoot := filepath.Clean(filepath.Join(filepath.Dir(file), ".."))
+	frontend := filepath.Join(filepath.Dir(moduleRoot), "node_modules", ".bin", "boatstack-flow-frontend")
+	if runtime.GOOS == "windows" {
+		frontend += ".cmd"
+	}
+	if _, err := os.Stat(frontend); err != nil {
+		t.Skip("Flow frontend dependencies are not installed")
+	}
+	resolver, err := softwareflow.NewResolver(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		fixture     string
+		entries     int
+		transitions int
+	}{
+		{"product-delivery-a.flow.ts", 1, 1},
+		{"product-delivery-b.flow.ts", 2, 2},
+		{"product-delivery-c.flow.ts", 1, 6},
+	}
+	for _, test := range cases {
+		t.Run(test.fixture, func(t *testing.T) {
+			source := filepath.Join(moduleRoot, "testdata", "control-programs", test.fixture)
+			frontendRaw, commandErr := exec.Command(frontend, source).CombinedOutput()
+			if commandErr != nil {
+				t.Fatalf("compile repository Flow: %v\n%s", commandErr, frontendRaw)
+			}
+			compiled, compileErr := controlprogram.Load(bytes.NewReader(frontendRaw), resolver)
+			if compileErr != nil {
+				t.Fatal(compileErr)
+			}
+			definition, definitionErr := softwareflow.NewDefinition(compiled, resolver)
+			if definitionErr != nil {
+				t.Fatal(definitionErr)
+			}
+			manifest, manifestErr := definition.RuntimeManifest(context.Background())
+			if manifestErr != nil {
+				t.Fatal(manifestErr)
+			}
+			if len(compiled.Document.Entries) != test.entries || len(manifest.Transitions) != test.transitions {
+				t.Fatalf("entries=%d transitions=%d", len(compiled.Document.Entries), len(manifest.Transitions))
+			}
+		})
 	}
 }
 

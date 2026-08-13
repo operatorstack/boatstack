@@ -91,7 +91,7 @@ func TestRestartRecoveryRestoresPriorStateAndCommitsRecoveryRevision(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	objective := model.Objective{ID: "objective-recovery", Kind: model.ObjectiveVerified, DeliveryID: "delivery-recovery"}
+	objective := model.Objective{ID: "objective-recovery", TargetID: model.ObjectiveVerified, DeliveryID: "delivery-recovery"}
 	authority := protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{
 		ID: "recovery-human", Class: catalog.AuthorityHuman, Subject: "fixture", Fingerprint: "recovery-human-fingerprint",
 		IssuedAt: clock.Now().Add(-time.Minute), ExpiresAt: clock.Now().Add(time.Hour),

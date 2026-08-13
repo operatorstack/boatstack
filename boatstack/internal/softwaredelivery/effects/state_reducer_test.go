@@ -14,7 +14,7 @@ import (
 
 func TestRequiredVisualEvidenceParticipatesInVerifiedTerminal(t *testing.T) {
 	// control-law: repository-visual-policy-is-terminal-authority-not-decoration
-	objective := model.Objective{ID: "visual-objective", Kind: model.ObjectiveVerified, DeliveryID: "visual-delivery"}
+	objective := model.Objective{ID: "visual-objective", TargetID: model.ObjectiveVerified, DeliveryID: "visual-delivery"}
 	state := durable.State{
 		SchemaVersion: durable.StateSchemaVersion, RepositoryID: "repo", GitCommonID: "git", WorktreeID: "worktree", Revision: 1,
 		Phase: model.PhaseActive, Engagement: model.EngagementActive, Delivery: model.DeliveryActive, Workspace: model.WorkspaceActive,
@@ -51,7 +51,7 @@ func TestRequiredVisualEvidenceParticipatesInVerifiedTerminal(t *testing.T) {
 
 func TestPublicationCorrectionRequiresIndependentObservationForTerminal(t *testing.T) {
 	// control-law: external-writer-cannot-self-certify-provider-state
-	objective := model.Objective{ID: "publication-objective", Kind: model.ObjectiveOpenPR, DeliveryID: "publication-delivery"}
+	objective := model.Objective{ID: "publication-objective", TargetID: model.ObjectiveOpenPR, DeliveryID: "publication-delivery"}
 	state := durable.State{
 		SchemaVersion: durable.StateSchemaVersion, RepositoryID: "repo", GitCommonID: "git", WorktreeID: "worktree", Revision: 1,
 		Phase: model.PhaseTerminal, Engagement: model.EngagementActive, Delivery: model.DeliveryTerminal, Workspace: model.WorkspacePublished,
@@ -79,14 +79,14 @@ func TestPublicationCorrectionRequiresIndependentObservationForTerminal(t *testi
 
 func TestWorkspaceReapPreservesEstablishedTerminalPhase(t *testing.T) {
 	for _, fixture := range []struct {
-		objectiveKind model.ObjectiveKind
+		objectiveKind model.TargetID
 		delivery      model.DeliveryState
 		phase         model.ProtocolPhase
 	}{
 		{objectiveKind: model.ObjectiveMerged, delivery: model.DeliveryTerminal, phase: model.PhaseTerminal},
 		{objectiveKind: model.ObjectiveAbandoned, delivery: model.DeliveryDiscarded, phase: model.PhaseAbandoned},
 	} {
-		objective := model.Objective{ID: "cleanup-objective", Kind: fixture.objectiveKind, DeliveryID: "cleanup-delivery"}
+		objective := model.Objective{ID: "cleanup-objective", TargetID: fixture.objectiveKind, DeliveryID: "cleanup-delivery"}
 		state := durable.State{
 			SchemaVersion: durable.StateSchemaVersion, RepositoryID: "repo", GitCommonID: "git", WorktreeID: "worktree", Revision: 1,
 			Phase: fixture.phase, Engagement: model.EngagementActive, Delivery: fixture.delivery, Workspace: model.WorkspaceAbandoned,
@@ -104,8 +104,8 @@ func TestWorkspaceReapPreservesEstablishedTerminalPhase(t *testing.T) {
 }
 
 func TestEscalatedRecoveryCanOnlyBeReconfiguredTowardExplicitAbandonment(t *testing.T) {
-	original := model.Objective{ID: "delivery-objective", Kind: model.ObjectiveOpenPR, DeliveryID: "delivery"}
-	abandoned := model.Objective{ID: "abandon-objective", Kind: model.ObjectiveAbandoned, DeliveryID: "delivery"}
+	original := model.Objective{ID: "delivery-objective", TargetID: model.ObjectiveOpenPR, DeliveryID: "delivery"}
+	abandoned := model.Objective{ID: "abandon-objective", TargetID: model.ObjectiveAbandoned, DeliveryID: "delivery"}
 	state := durable.State{
 		SchemaVersion: durable.StateSchemaVersion, RepositoryID: "repo", GitCommonID: "git", WorktreeID: "worktree", Revision: 1,
 		Phase: model.PhaseFrontier, Engagement: model.EngagementActive, Delivery: model.DeliveryPublished, Workspace: model.WorkspacePublished,
@@ -116,7 +116,7 @@ func TestEscalatedRecoveryCanOnlyBeReconfiguredTowardExplicitAbandonment(t *test
 	}
 	configure, _ := testprogram.StandardRegistry().Lookup("objective.bind")
 	configureAdmission := protocol.Admission{Objective: abandoned, Parameters: protocol.Parameters{
-		{Name: "objective_kind", Value: string(abandoned.Kind)}, {Name: "delivery_id", Value: abandoned.DeliveryID},
+		{Name: "target_id", Value: string(abandoned.TargetID)}, {Name: "delivery_id", Value: abandoned.DeliveryID},
 	}}
 	if err := applyStateTransition(&state, configureAdmission, configure); err != nil {
 		t.Fatal(err)
@@ -134,8 +134,8 @@ func TestEscalatedRecoveryCanOnlyBeReconfiguredTowardExplicitAbandonment(t *test
 }
 
 func TestObjectiveBindStartsDifferentDeliveryFromCleanProductState(t *testing.T) {
-	prior := model.Objective{ID: "prior", Kind: model.ObjectiveAbandoned, DeliveryID: "prior-delivery"}
-	next := model.Objective{ID: "next", Kind: model.ObjectiveOpenPR, DeliveryID: "next-delivery"}
+	prior := model.Objective{ID: "prior", TargetID: model.ObjectiveAbandoned, DeliveryID: "prior-delivery"}
+	next := model.Objective{ID: "next", TargetID: model.ObjectiveOpenPR, DeliveryID: "next-delivery"}
 	state := durable.State{
 		SchemaVersion: durable.StateSchemaVersion, RepositoryID: "repo", GitCommonID: "git", WorktreeID: "worktree", Revision: 1,
 		Phase: model.PhaseTerminal, Engagement: model.EngagementCommand, Delivery: model.DeliveryTerminal, Workspace: model.WorkspacePublished,
@@ -146,7 +146,7 @@ func TestObjectiveBindStartsDifferentDeliveryFromCleanProductState(t *testing.T)
 		PreviewFingerprint: "old-preview", Gates: []durable.GateEvidence{{Gate: "test", Revision: "old", Fingerprint: "old-test"}},
 	}
 	transition, _ := testprogram.StandardRegistry().Lookup("objective.bind")
-	admission := protocol.Admission{Objective: next, Parameters: protocol.Parameters{{Name: "objective_kind", Value: string(next.Kind)}, {Name: "delivery_id", Value: next.DeliveryID}}}
+	admission := protocol.Admission{Objective: next, Parameters: protocol.Parameters{{Name: "target_id", Value: string(next.TargetID)}, {Name: "delivery_id", Value: next.DeliveryID}}}
 	if err := applyStateTransition(&state, admission, transition); err != nil {
 		t.Fatal(err)
 	}
@@ -156,8 +156,8 @@ func TestObjectiveBindStartsDifferentDeliveryFromCleanProductState(t *testing.T)
 }
 
 func TestObjectiveBindRejectsDifferentDeliveryBeforeSafeTerminal(t *testing.T) {
-	prior := model.Objective{ID: "prior", Kind: model.ObjectiveOpenPR, DeliveryID: "prior-delivery"}
-	next := model.Objective{ID: "next", Kind: model.ObjectiveOpenPR, DeliveryID: "next-delivery"}
+	prior := model.Objective{ID: "prior", TargetID: model.ObjectiveOpenPR, DeliveryID: "prior-delivery"}
+	next := model.Objective{ID: "next", TargetID: model.ObjectiveOpenPR, DeliveryID: "next-delivery"}
 	state := durable.State{
 		SchemaVersion: durable.StateSchemaVersion, RepositoryID: "repo", GitCommonID: "git", WorktreeID: "worktree", Revision: 1,
 		Phase: model.PhaseActive, Engagement: model.EngagementActive, Delivery: model.DeliveryActive, Workspace: model.WorkspaceActive,
@@ -166,7 +166,7 @@ func TestObjectiveBindRejectsDifferentDeliveryBeforeSafeTerminal(t *testing.T) {
 		Objective: prior,
 	}
 	transition, _ := testprogram.StandardRegistry().Lookup("objective.bind")
-	admission := protocol.Admission{Objective: next, Parameters: protocol.Parameters{{Name: "objective_kind", Value: string(next.Kind)}, {Name: "delivery_id", Value: next.DeliveryID}}}
+	admission := protocol.Admission{Objective: next, Parameters: protocol.Parameters{{Name: "target_id", Value: string(next.TargetID)}, {Name: "delivery_id", Value: next.DeliveryID}}}
 	if err := applyStateTransition(&state, admission, transition); err == nil || !strings.Contains(err.Error(), "prior delivery") {
 		t.Fatalf("different active delivery bind result = %v", err)
 	}

@@ -1,12 +1,10 @@
 package softwaredelivery
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	"github.com/operatorstack/boatstack/boatstack/delivery"
@@ -19,6 +17,15 @@ import (
 type Definition struct {
 	compiled controlprogram.Compiled
 	resolver Resolver
+}
+
+// EntryObjective binds a repository-owned target identity and terminal
+// predicate to the trusted software-delivery objective class whose operators
+// may make progress toward it.
+type EntryObjective struct {
+	TargetID     model.TargetID
+	TrustedClass model.TargetID
+	Contract     delivery.ObjectiveContract
 }
 
 func NewDefinition(compiled controlprogram.Compiled, resolver Resolver) (Definition, error) {
@@ -39,14 +46,14 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 	for _, operator := range d.compiled.Document.Operators {
 		operatorByID[operator.ID] = operator
 	}
-	objectives := map[model.ObjectiveKind]bool{}
-	contracts := map[model.ObjectiveKind]delivery.ObjectiveContract{}
+	objectives := map[model.TargetID]EntryObjective{}
+	contracts := map[model.TargetID]delivery.ObjectiveContract{}
 	for _, entry := range d.compiled.Document.Entries {
-		kind, contract, objectiveErr := objectiveContractForEntry(d.compiled, base, entry.ID)
+		objective, objectiveErr := objectiveContractForEntry(d.compiled, base, entry.ID)
 		if objectiveErr != nil {
 			return delivery.ProgramRuntimeManifest{}, objectiveErr
 		}
-		objectives[kind], contracts[kind] = true, contract
+		objectives[objective.TargetID], contracts[objective.TargetID] = objective, objective.Contract
 	}
 
 	selected := make([]delivery.Transition, 0, len(d.compiled.Document.Transitions))
@@ -78,23 +85,23 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 		transition.SourceConditions = append(transition.SourceConditions, guard...)
 		transition.TargetConditions = append(transition.TargetConditions, target...)
 		transition.Priority = declaration.Priority
-		trustedObjectives := append([]model.ObjectiveKind(nil), transition.ObjectiveKinds...)
-		transition.ObjectiveKinds = transition.ObjectiveKinds[:0]
-		for objective := range objectives {
-			if containsAll(trustedObjectives, []model.ObjectiveKind{objective}) {
-				transition.ObjectiveKinds = append(transition.ObjectiveKinds, objective)
+		trustedObjectives := append([]model.TargetID(nil), transition.TargetIDs...)
+		transition.TargetIDs = transition.TargetIDs[:0]
+		for targetID, objective := range objectives {
+			if containsAll(trustedObjectives, []model.TargetID{objective.TrustedClass}) {
+				transition.TargetIDs = append(transition.TargetIDs, targetID)
 			}
 		}
-		if len(transition.ObjectiveKinds) == 0 {
-			return delivery.ProgramRuntimeManifest{}, fmt.Errorf("transition %q supports none of the declared entry objectives", declaration.ID)
+		if len(transition.TargetIDs) == 0 {
+			return delivery.ProgramRuntimeManifest{}, fmt.Errorf("transition %q supports none of the declared entry targets", declaration.ID)
 		}
-		if transition.ID == "plan.abandon" && objectives[model.ObjectiveAbandoned] {
+		if transition.ID == "plan.abandon" && hasTrustedClass(objectives, model.ObjectiveAbandoned) {
 			// A repository Flow that explicitly exposes a safely-abandoned entry
 			// makes abandonment progress for that objective only. Human authority
 			// remains mandatory and other objectives cannot select this transition.
 			transition.SelectionClass = delivery.SelectionProgramProgress
 		}
-		sort.Slice(transition.ObjectiveKinds, func(i, j int) bool { return transition.ObjectiveKinds[i] < transition.ObjectiveKinds[j] })
+		sort.Slice(transition.TargetIDs, func(i, j int) bool { return transition.TargetIDs[i] < transition.TargetIDs[j] })
 		selected = append(selected, transition)
 	}
 	if len(selected) == 0 {
@@ -106,33 +113,32 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 		selected[index].RequiredCapabilities = delivery.KernelEffectCapabilities(selected[index])
 		capabilities = delivery.UnionCapabilities(capabilities, selected[index].RequiredCapabilities)
 	}
-	supported := make([]model.ObjectiveKind, 0, len(objectives))
+	supported := make([]model.TargetID, 0, len(objectives))
 	objectiveContracts := make([]delivery.ObjectiveContract, 0, len(contracts))
 	for objective := range objectives {
 		supported = append(supported, objective)
 		objectiveContracts = append(objectiveContracts, contracts[objective])
 	}
 	sort.Slice(supported, func(i, j int) bool { return supported[i] < supported[j] })
-	sort.Slice(objectiveContracts, func(i, j int) bool { return objectiveContracts[i].ObjectiveKind < objectiveContracts[j].ObjectiveKind })
+	sort.Slice(objectiveContracts, func(i, j int) bool { return objectiveContracts[i].TargetID < objectiveContracts[j].TargetID })
 	settings, _ := json.Marshal(map[string]string{"flow_id": d.compiled.Document.Program.ID, "flow_fingerprint": d.compiled.Fingerprint})
 	base.Version = standard.Version + "+flow." + d.compiled.Fingerprint[:12]
-	base.SupportedObjectives = supported
+	base.SupportedTargets = supported
 	base.ObjectiveContracts = objectiveContracts
 	base.Transitions, base.OwnedResources, base.Effects, base.Verifiers = selected, resources, effects, verifiers
 	base.Capabilities, base.RecoveryTransitions, base.Settings = capabilities, recoveries, settings
 	return base, nil
 }
 
-func ObjectiveForEntry(ctx context.Context, compiled controlprogram.Compiled, resolver Resolver, entryID string) (delivery.ObjectiveKind, error) {
+func ObjectiveForEntry(ctx context.Context, compiled controlprogram.Compiled, resolver Resolver, entryID string) (EntryObjective, error) {
 	base, err := standard.Definition().RuntimeManifest(ctx)
 	if err != nil {
-		return "", err
+		return EntryObjective{}, err
 	}
-	kind, _, err := objectiveContractForEntry(compiled, base, entryID)
-	return kind, err
+	return objectiveContractForEntry(compiled, base, entryID)
 }
 
-func objectiveContractForEntry(compiled controlprogram.Compiled, base delivery.ProgramRuntimeManifest, entryID string) (model.ObjectiveKind, delivery.ObjectiveContract, error) {
+func objectiveContractForEntry(compiled controlprogram.Compiled, base delivery.ProgramRuntimeManifest, entryID string) (EntryObjective, error) {
 	var targetID string
 	for _, entry := range compiled.Document.Entries {
 		if entry.ID == entryID {
@@ -141,7 +147,10 @@ func objectiveContractForEntry(compiled controlprogram.Compiled, base delivery.P
 		}
 	}
 	if targetID == "" {
-		return "", delivery.ObjectiveContract{}, fmt.Errorf("unknown Flow entry %q", entryID)
+		return EntryObjective{}, fmt.Errorf("unknown Flow entry %q", entryID)
+	}
+	if !model.TargetID(targetID).Valid() {
+		return EntryObjective{}, fmt.Errorf("entry %q target identity is invalid", entryID)
 	}
 	var predicate controlprogram.Predicate
 	for _, target := range compiled.Document.Targets {
@@ -152,15 +161,48 @@ func objectiveContractForEntry(compiled controlprogram.Compiled, base delivery.P
 	}
 	conditions, err := conjunctiveConditions(predicate)
 	if err != nil {
-		return "", delivery.ObjectiveContract{}, fmt.Errorf("entry %q target is not a software-delivery marked state: %w", entryID, err)
+		return EntryObjective{}, fmt.Errorf("entry %q target is not a software-delivery marked state: %w", entryID, err)
 	}
-	normalizedTarget := canonicalConditions(conditions)
+	var matches []delivery.ObjectiveContract
 	for _, contract := range base.ObjectiveContracts {
-		if bytes.Equal(normalizedTarget, canonicalConditions(contract.Conditions)) {
-			return contract.ObjectiveKind, contract, nil
+		if conditionsStrengthen(conditions, contract.Conditions) {
+			matches = append(matches, contract)
 		}
 	}
-	return "", delivery.ObjectiveContract{}, fmt.Errorf("entry %q target does not match a trusted software-delivery marked state", entryID)
+	if len(matches) != 1 {
+		return EntryObjective{}, fmt.Errorf("entry %q target must strengthen exactly one trusted software-delivery marked state", entryID)
+	}
+	target := model.TargetID(targetID)
+	return EntryObjective{
+		TargetID:     target,
+		TrustedClass: matches[0].TargetID,
+		Contract:     delivery.ObjectiveContract{TargetID: target, Conditions: conditions},
+	}, nil
+}
+
+func conditionsStrengthen(repository, trusted []delivery.FacetCondition) bool {
+	for _, required := range trusted {
+		found := false
+		for _, declared := range repository {
+			if declared.Facet == required.Facet && conditionImplies(declared, required) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+func hasTrustedClass(objectives map[model.TargetID]EntryObjective, class model.TargetID) bool {
+	for _, objective := range objectives {
+		if objective.TrustedClass == class {
+			return true
+		}
+	}
+	return false
 }
 
 func conjunctiveConditions(predicate controlprogram.Predicate) ([]delivery.FacetCondition, error) {
@@ -189,21 +231,6 @@ func conjunctiveConditions(predicate controlprogram.Predicate) ([]delivery.Facet
 		return result, nil
 	}
 	return nil, fmt.Errorf("only true, fact, and all predicates are supported")
-}
-
-func canonicalConditions(values []delivery.FacetCondition) []byte {
-	copy := append([]delivery.FacetCondition(nil), values...)
-	for index := range copy {
-		sort.Slice(copy[index].Statuses, func(i, j int) bool { return copy[index].Statuses[i] < copy[index].Statuses[j] })
-		sort.Strings(copy[index].Values)
-	}
-	sort.Slice(copy, func(i, j int) bool {
-		left, _ := json.Marshal(copy[i])
-		right, _ := json.Marshal(copy[j])
-		return strings.Compare(string(left), string(right)) < 0
-	})
-	encoded, _ := json.Marshal(copy)
-	return encoded
 }
 
 func requireImpliedTarget(trusted, repository []delivery.FacetCondition) error {

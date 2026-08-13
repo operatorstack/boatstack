@@ -314,7 +314,7 @@ func programFixture() delivery.ProgramManifest {
 	advance.Class = delivery.EventOwnedLocal
 	advance.SourcePhases = []delivery.ProtocolPhase{delivery.PhaseActive}
 	advance.TargetPhases = []delivery.ProtocolPhase{delivery.PhaseTerminal}
-	advance.ObjectiveKinds = []delivery.ObjectiveKind{delivery.ObjectiveVerified}
+	advance.TargetIDs = []delivery.TargetID{delivery.ObjectiveVerified}
 	advance.Authority = []delivery.AuthorityClass{delivery.AuthorityHuman, delivery.AuthorityRepository}
 	advance.RequiredCapabilities = []delivery.Capability{delivery.CapabilityRepositoryWrite, delivery.CapabilityProductMutate}
 	advance.Effect = "program.advance"
@@ -334,7 +334,7 @@ func programFixture() delivery.ProgramManifest {
 			Effects: []string{"program.advance", "program.recover"}, Verifiers: []string{"program.current", "program.terminal"},
 			CapabilitySurface: []delivery.Capability{delivery.CapabilityRepositoryWrite, delivery.CapabilityCommandExecute, delivery.CapabilityProductMutate},
 		},
-		OwnedResources: []string{"program.state"}, ObjectiveContracts: []delivery.ObjectiveContract{{ObjectiveKind: delivery.ObjectiveVerified, Conditions: []delivery.FacetCondition{delivery.KnownCondition(delivery.FacetDelivery, "terminal")}}},
+		OwnedResources: []string{"program.state"}, ObjectiveContracts: []delivery.ObjectiveContract{{TargetID: delivery.ObjectiveVerified, Conditions: []delivery.FacetCondition{delivery.KnownCondition(delivery.FacetDelivery, "terminal")}}},
 		Transitions: []delivery.ProgramTransition{advance, recovery},
 	}
 }

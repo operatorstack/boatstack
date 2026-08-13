@@ -44,7 +44,7 @@ func PrescriptionCommand(transition catalog.Transition, prescription protocol.Pr
 		arguments = append(arguments, "--effective-capability", string(capability))
 	}
 	if objective.Validate() == nil {
-		arguments = append(arguments, "--objective-kind", string(objective.Kind), "--delivery", objective.DeliveryID, "--objective-id", objective.ID)
+		arguments = append(arguments, "--target-id", string(objective.TargetID), "--delivery", objective.DeliveryID, "--objective-id", objective.ID)
 	}
 	canonical := parameters.Canonical()
 	for _, parameter := range canonical {

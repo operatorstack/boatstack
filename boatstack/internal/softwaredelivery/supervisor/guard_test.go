@@ -43,7 +43,7 @@ func syntheticManagedTransition(id catalog.TransitionID, class catalog.EventClas
 		Origin: catalog.TransitionOrigin{Kind: catalog.OriginControlProgram, ID: "test.synthetic", Version: "1.0.0", ManifestFingerprint: "manifest"},
 		Owner:  "test.synthetic", SelectionClass: selection, Class: class,
 		SourcePhases: []model.ProtocolPhase{model.PhaseActive}, TargetPhases: []model.ProtocolPhase{model.PhaseActive},
-		ObjectiveKinds: []model.ObjectiveKind{model.ObjectiveVerified}, RequiredIdentity: []string{"repository-id"},
+		TargetIDs: []model.TargetID{model.ObjectiveVerified}, RequiredIdentity: []string{"repository-id"},
 		Authority: []catalog.AuthorityClass{catalog.AuthorityRepository}, RequiredCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite},
 		DeclaredCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite}, RequiredEvidence: []string{"snapshot"},
 		OwnedResources: []string{"test.synthetic.state"}, OwnedFacets: []model.StateFacet{model.StateFacetControl}, StateEffect: catalog.StateEffect{Kind: catalog.StateEffectAssignments},

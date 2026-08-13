@@ -39,7 +39,7 @@ func (Extension) ExtensionManifest(context.Context) (delivery.ExtensionManifest,
 	transition := catalog.Transition{
 		ID: Transition, Version: 1, Class: catalog.EventOwnedLocal, SelectionClass: catalog.SelectionObjectiveRequired,
 		SourcePhases: []model.ProtocolPhase{model.PhaseActive, model.PhaseTerminal}, TargetPhases: []model.ProtocolPhase{model.PhaseActive, model.PhaseTerminal},
-		ObjectiveKinds: []model.ObjectiveKind{model.ObjectiveOpenPR, model.ObjectiveMerged}, RequiredIdentity: []string{"repository-id", "git-common-id", "worktree-id", "controller-id", "topology", "host", "correlation-id"},
+		TargetIDs: []model.TargetID{model.ObjectiveOpenPR, model.ObjectiveMerged}, RequiredIdentity: []string{"repository-id", "git-common-id", "worktree-id", "controller-id", "topology", "host", "correlation-id"},
 		Authority: []catalog.AuthorityClass{catalog.AuthorityRepository}, RequiredEvidence: []string{"snapshot-fingerprint", "objective", "facet:" + FactID},
 		OwnedResources: []string{Resource}, Effect: Effect, LocalEffects: []catalog.EffectID{Effect}, Idempotent: true,
 		OwnedFacets: []model.StateFacet{model.StateFacetControl}, StateEffect: catalog.StateEffect{Kind: catalog.StateEffectAssignments},
@@ -62,8 +62,8 @@ func (Extension) ExtensionManifest(context.Context) (delivery.ExtensionManifest,
 		Policy: catalog.PolicyContract{ObjectiveScope: catalog.ObjectiveScopeBoundExact},
 	}
 	transition.RequiredCapabilities = []catalog.Capability{catalog.CapabilityRepositoryWrite, catalog.CapabilityCommandExecute}
-	constraint := func(objective model.ObjectiveKind) delivery.ObjectiveConstraint {
-		return delivery.ObjectiveConstraint{ObjectiveKind: objective, Conditions: []catalog.FacetCondition{known(model.FacetName(FactID), "verified", "not-required")}}
+	constraint := func(objective model.TargetID) delivery.ObjectiveConstraint {
+		return delivery.ObjectiveConstraint{TargetID: objective, Conditions: []catalog.FacetCondition{known(model.FacetName(FactID), "verified", "not-required")}}
 	}
 	return delivery.ExtensionManifest{
 		ID: ID, Version: Version, ProtocolVersion: delivery.ExtensionProtocolVersion,

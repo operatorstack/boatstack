@@ -124,7 +124,7 @@ func sameStateLineage(left, right model.InvocationContext) bool {
 
 func matchesObjectiveBinding(receipt protocol.TransitionReceipt, objective model.Objective, maximumRevision uint64) bool {
 	return receipt.TransitionID == "objective.bind" && strings.HasPrefix(receipt.FlowID, "run-") &&
-		receipt.ObjectiveID == objective.ID && receipt.ObjectiveKind == objective.Kind && receipt.DeliveryID == objective.DeliveryID &&
+		receipt.ObjectiveID == objective.ID && receipt.TargetID == objective.TargetID && receipt.TrustedClass == objective.TrustedClass && receipt.DeliveryID == objective.DeliveryID &&
 		receipt.ResultingStateRevision <= maximumRevision
 }
 

@@ -95,7 +95,7 @@ func TestHumanPublicationConfirmationBindsExactPreviewFingerprint(t *testing.T) 
 	// control-law: publication-authority-confirms-exact-preview-bytes
 	now := time.Now().UTC()
 	options := commandOptions{humanActor: "reviewer", transitionID: "publication.execute"}
-	objective := model.Objective{ID: "publish", Kind: model.ObjectiveOpenPR, DeliveryID: "delivery"}
+	objective := model.Objective{ID: "publish", TargetID: model.ObjectiveOpenPR, DeliveryID: "delivery"}
 	one, err := loadAuthority(options, "correlation", objective, protocol.Parameters{{Name: "preview_fingerprint", Value: strings.Repeat("a", 64)}}, now)
 	if err != nil {
 		t.Fatal(err)

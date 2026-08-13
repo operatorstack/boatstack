@@ -287,7 +287,7 @@ type Transition struct {
 	Class                         EventClass            `json:"class"`
 	SourcePhases                  []model.ProtocolPhase `json:"source_phases"`
 	TargetPhases                  []model.ProtocolPhase `json:"target_phases"`
-	ObjectiveKinds                []model.ObjectiveKind `json:"objective_kinds,omitempty"`
+	TargetIDs                     []model.TargetID      `json:"target_ids,omitempty"`
 	RequiredIdentity              []string              `json:"required_identity"`
 	Authority                     []AuthorityClass      `json:"authority"`
 	AuthorityAll                  []AuthorityClass      `json:"authority_all,omitempty"`
@@ -343,11 +343,11 @@ func (t Transition) SupportsObjective(objective model.Objective) bool {
 	if t.Policy.ObjectiveScope == ObjectiveScopeOptionalPreserve {
 		return true
 	}
-	if len(t.ObjectiveKinds) == 0 {
+	if len(t.TargetIDs) == 0 {
 		return true
 	}
-	for _, kind := range t.ObjectiveKinds {
-		if kind == objective.Kind {
+	for _, kind := range t.TargetIDs {
+		if kind == objective.TargetID {
 			return true
 		}
 	}
@@ -478,8 +478,8 @@ func validateTransition(t Transition) error {
 			return fmt.Errorf("%s: invalid phase %q", t.ID, phase)
 		}
 	}
-	objectiveKinds := map[model.ObjectiveKind]bool{}
-	for _, objective := range t.ObjectiveKinds {
+	objectiveKinds := map[model.TargetID]bool{}
+	for _, objective := range t.TargetIDs {
 		if !objective.Valid() || objectiveKinds[objective] {
 			return fmt.Errorf("%s: objective kinds must be valid and unique", t.ID)
 		}
@@ -676,7 +676,7 @@ func cloneTransitions(values []Transition) []Transition {
 func cloneTransition(value Transition) Transition {
 	value.SourcePhases = append([]model.ProtocolPhase(nil), value.SourcePhases...)
 	value.TargetPhases = append([]model.ProtocolPhase(nil), value.TargetPhases...)
-	value.ObjectiveKinds = append([]model.ObjectiveKind(nil), value.ObjectiveKinds...)
+	value.TargetIDs = append([]model.TargetID(nil), value.TargetIDs...)
 	value.RequiredIdentity = append([]string(nil), value.RequiredIdentity...)
 	value.Authority = append([]AuthorityClass(nil), value.Authority...)
 	value.AuthorityAll = append([]AuthorityClass(nil), value.AuthorityAll...)

@@ -32,9 +32,9 @@ This example targets a verified implementation:
 
 ```sh
 boatstack objective-bind --repo . \
-  --objective-id search-timeout --objective-kind verified-implementation \
+  --objective-id search-timeout --target-id verified-implementation \
   --delivery search-timeout --human alice \
-  --param objective_kind=verified-implementation \
+  --param target_id=verified-implementation \
   --param delivery_id=search-timeout
 ```
 
@@ -45,11 +45,11 @@ the current, independently hashed `.boatstack/project.json`.
 
 ```sh
 boatstack next --repo . --transition engagement.begin \
-  --objective-id search-timeout --objective-kind verified-implementation \
+  --objective-id search-timeout --target-id verified-implementation \
   --delivery search-timeout --repository-authority --format json
 
 boatstack apply --repo . --transition engagement.begin --run-id search-timeout \
-  --objective-id search-timeout --objective-kind verified-implementation \
+  --objective-id search-timeout --target-id verified-implementation \
   --delivery search-timeout --repository-authority \
   --correlation <correlation> --prescription-id <prescription-id> \
   --expected-state-revision <revision> \
@@ -69,13 +69,13 @@ time; both are read-only.
 
 ```sh
 boatstack plan-create --repo . \
-  --objective-id search-timeout --objective-kind verified-implementation \
+  --objective-id search-timeout --target-id verified-implementation \
   --delivery search-timeout --human alice \
   --param source_path=/absolute/path/to/plan.md \
   --param delivery_id=search-timeout
 
 boatstack plan-validate --repo . \
-  --objective-id search-timeout --objective-kind verified-implementation \
+  --objective-id search-timeout --target-id verified-implementation \
   --delivery search-timeout --repository-authority
 ```
 
@@ -84,12 +84,12 @@ bytes:
 
 ```sh
 boatstack plan-approve --repo . \
-  --objective-id search-timeout --objective-kind verified-implementation \
+  --objective-id search-timeout --target-id verified-implementation \
   --delivery search-timeout --human alice \
   --param plan_fingerprint=<sha256> --param actor=alice
 
 boatstack plan-activate --repo . \
-  --objective-id search-timeout --objective-kind verified-implementation \
+  --objective-id search-timeout --target-id verified-implementation \
   --delivery search-timeout --human alice
 ```
 
@@ -116,7 +116,7 @@ status installs the evidence and receipt. Command output is never persisted:
 
 ```sh
 boatstack record-build --repo . --repository-authority \
-  --objective-id search-timeout --objective-kind verified-implementation \
+  --objective-id search-timeout --target-id verified-implementation \
   --delivery search-timeout \
   --param source_revision="$(git rev-parse HEAD)" \
   --param evidence_path=/absolute/path/to/build-evidence.json \
@@ -137,7 +137,7 @@ parks the source checkout:
 
 ```sh
 boatstack workspace-cut --repo . --human alice \
-  --objective-id search-timeout --objective-kind verified-implementation \
+  --objective-id search-timeout --target-id verified-implementation \
   --delivery search-timeout \
   --param branch=feature/search-timeout \
   --param base_ref=origin/main \

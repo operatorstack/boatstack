@@ -113,6 +113,53 @@ func TestRepositoryTargetMustBeImpliedByTrustedPostcondition(t *testing.T) {
 	}
 }
 
+func TestRepositoryTargetIdentityAndStrengtheningBecomeRuntimeContract(t *testing.T) {
+	// control-law: repository-marked-target-is-the-runtime-terminal-contract
+	truth := true
+	compiled, resolver := compiledFlow(t, controlprogram.Predicate{True: &truth})
+	document := compiled.Document
+	document.Facets = append(document.Facets, controlprogram.Facet{ID: "release-policy", Kind: "string"})
+	document.Targets[0].ID = "release-ready"
+	document.Targets[0].Predicate.All = append(document.Targets[0].Predicate.All, fact("release-policy", "satisfied"))
+	document.Entries[0].ID, document.Entries[0].Target = "deliver", "release-ready"
+	repositoryOwned, err := controlprogram.Compile(document, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, err := softwareflow.NewDefinition(repositoryOwned, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := definition.RuntimeManifest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.SupportedTargets) != 1 || manifest.SupportedTargets[0] != "release-ready" {
+		t.Fatalf("runtime targets = %#v", manifest.SupportedTargets)
+	}
+	if len(manifest.ObjectiveContracts) != 1 || manifest.ObjectiveContracts[0].TargetID != "release-ready" || len(manifest.ObjectiveContracts[0].Conditions) != 5 {
+		t.Fatalf("runtime terminal contracts = %#v", manifest.ObjectiveContracts)
+	}
+	if len(manifest.Transitions) != 1 || len(manifest.Transitions[0].TargetIDs) != 1 || manifest.Transitions[0].TargetIDs[0] != "release-ready" {
+		t.Fatalf("target-conditioned transition = %#v", manifest.Transitions)
+	}
+}
+
+func TestRepositoryTargetCannotWeakenTrustedTerminalLaw(t *testing.T) {
+	// control-law: repository-targets-may-strengthen-but-never-weaken-domain-safety
+	truth := true
+	compiled, resolver := compiledFlow(t, controlprogram.Predicate{True: &truth})
+	document := compiled.Document
+	document.Targets[0].Predicate = fact("publication", "open")
+	weakened, err := controlprogram.Compile(document, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = softwareflow.NewDefinition(weakened, resolver); err == nil || !strings.Contains(err.Error(), "strengthen exactly one trusted") {
+		t.Fatalf("weakened target result = %v", err)
+	}
+}
+
 func TestRepositoryTransitionMustMatchTrustedBindingIdentity(t *testing.T) {
 	truth := true
 	compiled, resolver := compiledFlow(t, controlprogram.Predicate{True: &truth})
@@ -131,7 +178,7 @@ func TestRepositoryTransitionMustMatchTrustedBindingIdentity(t *testing.T) {
 	}
 }
 
-func TestRepositoryTransitionCannotWidenTrustedObjectiveKinds(t *testing.T) {
+func TestRepositoryTransitionCannotWidenTrustedTargetIDs(t *testing.T) {
 	truth := true
 	compiled, resolver := compiledFlow(t, controlprogram.Predicate{True: &truth})
 	widened := compiled.Document
@@ -146,7 +193,7 @@ func TestRepositoryTransitionCannotWidenTrustedObjectiveKinds(t *testing.T) {
 	if err == nil {
 		_, err = definition.RuntimeManifest(context.Background())
 	}
-	if err == nil || !strings.Contains(err.Error(), "supports none of the declared entry objectives") {
+	if err == nil || !strings.Contains(err.Error(), "supports none of the declared entry targets") {
 		t.Fatalf("widened objective result = %v", err)
 	}
 }
@@ -193,7 +240,7 @@ func TestAbandonmentEntryMakesTrustedAbandonmentObjectiveProgress(t *testing.T) 
 	}
 	for _, transition := range manifest.Transitions {
 		if transition.ID == "plan.abandon" {
-			if transition.SelectionClass != delivery.SelectionProgramProgress || len(transition.ObjectiveKinds) != 1 || transition.ObjectiveKinds[0] != delivery.ObjectiveAbandoned {
+			if transition.SelectionClass != delivery.SelectionProgramProgress || len(transition.TargetIDs) != 1 || transition.TargetIDs[0] != delivery.ObjectiveAbandoned {
 				t.Fatalf("abandonment transition = %#v", transition)
 			}
 			if transition.Priority != 31 {
