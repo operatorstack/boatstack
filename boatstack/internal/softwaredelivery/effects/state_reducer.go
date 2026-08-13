@@ -372,7 +372,7 @@ func resetDeliveryState(state *durable.State) {
 	state.Delivery, state.Plan = model.DeliveryUninitialized, model.PlanAbsent
 	state.Workspace = model.WorkspaceAbsent
 	state.Publication, state.Verification = model.PublicationNone, model.VerificationUnverified
-	state.PlanFingerprint, state.PublicationID, state.PublicationURL, state.PreviewFingerprint = "", "", "", ""
+	state.PlanFingerprint, state.ApprovalFingerprint, state.PublicationID, state.PublicationURL, state.PreviewFingerprint = "", "", "", "", ""
 	state.WorkspaceBranch, state.WorkspacePath, state.WorkspaceBaseRef = "", "", ""
 	state.WorkspaceSourcePath, state.WorkspaceSourceID, state.WorkspaceSourceRef = "", "", ""
 	state.Gates = nil

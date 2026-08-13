@@ -170,13 +170,13 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 		return nil, err
 	}
 	if transition.ID == "workspace.cut" {
-		transferMutations, transferErr := prepareWorkspacePlanTransfer(layout.RepositoryRoot, next.WorkspacePath, admission.Objective.DeliveryID, next.PlanFingerprint)
+		transferMutations, transferErr := prepareWorkspacePlanTransfer(layout.RepositoryRoot, next.WorkspacePath, admission.Objective.DeliveryID, next.PlanFingerprint, next.ApprovalFingerprint)
 		if transferErr != nil {
 			return nil, transferErr
 		}
 		mutations = append(mutations, transferMutations...)
 	} else if transition.ID == "workspace.activate" {
-		transferMutations, transferErr := prepareWorkspacePlanTransfer(next.WorkspaceSourcePath, layout.RepositoryRoot, admission.Objective.DeliveryID, next.PlanFingerprint)
+		transferMutations, transferErr := prepareWorkspacePlanTransfer(next.WorkspaceSourcePath, layout.RepositoryRoot, admission.Objective.DeliveryID, next.PlanFingerprint, next.ApprovalFingerprint)
 		if transferErr != nil {
 			return nil, transferErr
 		}

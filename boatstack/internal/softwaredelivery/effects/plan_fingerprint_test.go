@@ -59,7 +59,11 @@ func TestWorkspacePlanTransferCopiesOnlyRegularRuntimeOwnedArtifacts(t *testing.
 			t.Fatal(err)
 		}
 	}
-	mutations, err := prepareWorkspacePlanTransfer(repository, workspace, "delivery-one", sha256Bytes([]byte(plan)))
+	approvalRaw, err := os.ReadFile(filepath.Join(repository, ".boatstack", "approvals", "delivery-one.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutations, err := prepareWorkspacePlanTransfer(repository, workspace, "delivery-one", sha256Bytes([]byte(plan)), sha256Bytes(approvalRaw))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +98,11 @@ func TestWorkspacePlanTransferRejectsStaleOrMissingBoundArtifacts(t *testing.T) 
 	if err := os.WriteFile(planPath, []byte("# Substituted plan\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	mutations, err := prepareWorkspacePlanTransfer(repository, workspace, "delivery-one", sha256Bytes(bound))
+	approvalRaw, err := os.ReadFile(approvalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutations, err := prepareWorkspacePlanTransfer(repository, workspace, "delivery-one", sha256Bytes(bound), sha256Bytes(approvalRaw))
 	if err == nil || len(mutations) != 0 {
 		t.Fatalf("stale plan transfer = %#v, %v", mutations, err)
 	}
@@ -104,10 +112,17 @@ func TestWorkspacePlanTransferRejectsStaleOrMissingBoundArtifacts(t *testing.T) 
 	if err := os.WriteFile(planPath, bound, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(approvalPath, []byte(`{"schema_version":1,"delivery_id":"delivery-one","plan_fingerprint":"`+sha256Bytes(bound)+`","actor":"substitute","admission_id":"adm-1","approved_at":"2026-01-01T00:00:00Z"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mutations, err = prepareWorkspacePlanTransfer(repository, workspace, "delivery-one", sha256Bytes(bound), sha256Bytes(approvalRaw))
+	if err == nil || len(mutations) != 0 {
+		t.Fatalf("substituted approval transfer = %#v, %v", mutations, err)
+	}
 	if err := os.Remove(approvalPath); err != nil {
 		t.Fatal(err)
 	}
-	mutations, err = prepareWorkspacePlanTransfer(repository, workspace, "delivery-one", sha256Bytes(bound))
+	mutations, err = prepareWorkspacePlanTransfer(repository, workspace, "delivery-one", sha256Bytes(bound), sha256Bytes(approvalRaw))
 	if err == nil || len(mutations) != 0 {
 		t.Fatalf("missing approval transfer = %#v, %v", mutations, err)
 	}

@@ -151,6 +151,7 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		}
 		mutations = append(mutations, approvalMutation)
 		state.PlanFingerprint = fingerprint
+		state.ApprovalFingerprint = ""
 	case "plan.validate":
 		path := filepath.Join(artifactRoot, "plans", deliveryID+".source")
 		raw, readErr := os.ReadFile(path)
@@ -174,12 +175,14 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 			return nil, mutationErr
 		}
 		mutations = append(mutations, mutation)
+		state.ApprovalFingerprint = sha256Bytes(raw)
 	case "evidence.approval.revoke":
 		mutation, mutationErr := mutationFor(filepath.Join(artifactRoot, "approvals", deliveryID+".json"), nil, 0o644, false, true)
 		if mutationErr != nil {
 			return nil, mutationErr
 		}
 		mutations = append(mutations, mutation)
+		state.ApprovalFingerprint = ""
 	case "gate.build.record", "gate.test.record", "gate.review.record", "gate.change.record", "gate.journey.record":
 		revision, _ := admission.Parameters.Get("source_revision")
 		evidencePath, _ := admission.Parameters.Get("evidence_path")
@@ -303,12 +306,12 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 // newly cut worktree. A run binds the plan bytes before the cut, so the target
 // worktree must observe those exact bytes rather than fall back to the inbox
 // and accidentally select new intent.
-func prepareWorkspacePlanTransfer(repositoryRoot, workspacePath, deliveryID, expectedPlanFingerprint string) ([]ports.ResourceMutation, error) {
+func prepareWorkspacePlanTransfer(repositoryRoot, workspacePath, deliveryID, expectedPlanFingerprint, expectedApprovalFingerprint string) ([]ports.ResourceMutation, error) {
 	if expectedPlanFingerprint == "" || deliveryID == "" {
 		return nil, nil
 	}
-	if workspacePath == "" {
-		return nil, fmt.Errorf("workspace plan transfer requires a destination for a bound plan")
+	if workspacePath == "" || expectedApprovalFingerprint == "" {
+		return nil, fmt.Errorf("workspace plan transfer requires destination and exact approval for a bound plan")
 	}
 	deliveryID, err := safeSegment(deliveryID, "delivery identity")
 	if err != nil {
@@ -328,6 +331,9 @@ func prepareWorkspacePlanTransfer(repositoryRoot, workspacePath, deliveryID, exp
 	approvalRaw, err := readRegularWorkspacePlanArtifact(approvalPath)
 	if err != nil {
 		return nil, err
+	}
+	if actual := sha256Bytes(approvalRaw); actual != expectedApprovalFingerprint {
+		return nil, fmt.Errorf("workspace approval artifact fingerprint changed: got %s", actual)
 	}
 	var approval approvalArtifact
 	if err := decodeStrictArtifact(approvalRaw, &approval); err != nil || approval.SchemaVersion != 1 || approval.DeliveryID != deliveryID ||

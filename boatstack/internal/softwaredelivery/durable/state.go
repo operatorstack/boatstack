@@ -12,7 +12,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 )
 
-const StateSchemaVersion = 4
+const StateSchemaVersion = 5
 
 type GateEvidence struct {
 	Gate        string `json:"gate"`
@@ -52,6 +52,7 @@ type State struct {
 	RuntimeFingerprint    string                   `json:"runtime_fingerprint,omitempty"`
 	RuntimeSource         string                   `json:"runtime_source_revision,omitempty"`
 	PlanFingerprint       string                   `json:"plan_fingerprint,omitempty"`
+	ApprovalFingerprint   string                   `json:"approval_fingerprint,omitempty"`
 	WorkspaceBranch       string                   `json:"workspace_branch,omitempty"`
 	WorkspacePath         string                   `json:"workspace_path,omitempty"`
 	WorkspaceBaseRef      string                   `json:"workspace_base_ref,omitempty"`
@@ -126,6 +127,9 @@ func (s State) Validate() error {
 		if err := s.ConfigurationPolicy().Validate(); err != nil {
 			return fmt.Errorf("verified configuration policy: %w", err)
 		}
+	}
+	if (s.Plan == model.PlanApproved || s.Plan == model.PlanLocked) && (s.PlanFingerprint == "" || s.ApprovalFingerprint == "") {
+		return fmt.Errorf("approved or locked plan requires plan and approval fingerprints")
 	}
 	switch s.Workspace {
 	case model.WorkspaceCut, model.WorkspaceActive, model.WorkspacePublished, model.WorkspaceLanded, model.WorkspaceAttentionRequired, model.WorkspaceAbandoned:
