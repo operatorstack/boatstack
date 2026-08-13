@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 )
@@ -472,5 +473,14 @@ func rollbackProjection(root *os.Root, repository string, changed []string, snap
 }
 
 func sameProjectionState(left, right projectionSnapshot) bool {
-	return left.exists == right.exists && (!left.exists || (left.mode == right.mode && bytes.Equal(left.content, right.content)))
+	return left.exists == right.exists && (!left.exists || (sameProjectionMode(left.mode, right.mode) && bytes.Equal(left.content, right.content)))
+}
+
+func sameProjectionMode(left, right os.FileMode) bool {
+	if runtime.GOOS == "windows" {
+		// Windows chmod only controls the writable bit. The other Unix
+		// permission bits are not an observable projection-state identity.
+		return left.Perm()&0o200 == right.Perm()&0o200
+	}
+	return left.Perm() == right.Perm()
 }

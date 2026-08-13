@@ -18,6 +18,23 @@ func resolvedTemporaryRepository(t *testing.T) string {
 	return repository
 }
 
+func TestSameProjectionStateUsesHostPermissionSemantics(t *testing.T) {
+	// control-law: generated-output-drift-compares-only-host-enforceable-state
+	committed := projectionSnapshot{exists: true, content: []byte("skill"), mode: 0o644}
+	groupWritable := projectionSnapshot{exists: true, content: []byte("skill"), mode: 0o666}
+	if got := sameProjectionState(committed, groupWritable); got != (runtime.GOOS == "windows") {
+		t.Fatalf("host permission equivalence = %v on %s", got, runtime.GOOS)
+	}
+	readOnly := projectionSnapshot{exists: true, content: []byte("skill"), mode: 0o444}
+	if sameProjectionState(committed, readOnly) {
+		t.Fatal("writable and read-only projection states compare equal")
+	}
+	changed := projectionSnapshot{exists: true, content: []byte("changed"), mode: committed.mode}
+	if sameProjectionState(committed, changed) {
+		t.Fatal("changed projection bytes compare equal")
+	}
+}
+
 func TestFlowProjectionRejectsRepositoryParentSymlink(t *testing.T) {
 	// control-law: generated-projections-never-traverse-repository-symlinks
 	repository := resolvedTemporaryRepository(t)
