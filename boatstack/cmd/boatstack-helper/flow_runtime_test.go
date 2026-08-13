@@ -1134,6 +1134,32 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	if err != nil || lock != nil || suspension != nil || !request.Authority.Set(time.Now().UTC())[catalog.AuthorityAutonomy] {
 		t.Fatalf("authorized resolve = lock=%v response=%#v authority=%#v err=%v", lock, suspension, request.Authority, err)
 	}
+	record.ExpiresAt = now.Add(-time.Second)
+	if err := effects.StoreDelegationRecord(recordPath, record); err != nil {
+		t.Fatal(err)
+	}
+	if expiredLock, expiredSuspension, expiredErr := prepareDelegation(context.Background(), &request); expiredLock != nil || expiredSuspension != nil || expiredErr == nil || !strings.Contains(expiredErr.Error(), "DELEGATION_EXPIRED") {
+		t.Fatalf("expired delegation = lock=%v response=%#v err=%v", expiredLock, expiredSuspension, expiredErr)
+	}
+	renewedAt := time.Now().UTC()
+	renewed, changed, err := authorizeDelegation(&record, bound.delegationRequest, bound.delegationRequestFingerprint, record.Actor, time.Hour, renewedAt)
+	if err != nil || !changed || renewed.Revision != record.Revision+1 || renewed.ReceiptID == record.ReceiptID || !renewed.ExpiresAt.Equal(renewedAt.Add(time.Hour)) {
+		t.Fatalf("renewed delegation = record=%#v changed=%v err=%v", renewed, changed, err)
+	}
+	if idempotent, changedAgain, idempotentErr := authorizeDelegation(&renewed, bound.delegationRequest, bound.delegationRequestFingerprint, record.Actor, time.Hour, renewedAt.Add(time.Second)); idempotentErr != nil || changedAgain || idempotent.ReceiptID != renewed.ReceiptID {
+		t.Fatalf("idempotent renewal = record=%#v changed=%v err=%v", idempotent, changedAgain, idempotentErr)
+	}
+	if _, _, conflictErr := authorizeDelegation(&renewed, bound.delegationRequest, bound.delegationRequestFingerprint, "other-actor", time.Hour, renewedAt); conflictErr == nil || !strings.Contains(conflictErr.Error(), "DELEGATION_CONFLICT") {
+		t.Fatalf("conflicting renewal = %v", conflictErr)
+	}
+	if err := effects.StoreDelegationRecord(recordPath, renewed); err != nil {
+		t.Fatal(err)
+	}
+	record = renewed
+	lock, suspension, err = prepareDelegation(context.Background(), &request)
+	if err != nil || lock != nil || suspension != nil || !request.Authority.Set(time.Now().UTC())[catalog.AuthorityAutonomy] {
+		t.Fatalf("renewed resolve = lock=%v response=%#v authority=%#v err=%v", lock, suspension, request.Authority, err)
+	}
 	otherWorktree := filepath.Join(t.TempDir(), "other-worktree")
 	runFlowGit(t, repository, "worktree", "add", "-q", "-b", "other-worktree", otherWorktree)
 	otherBound, err := bindFlowEntry(context.Background(), commandOptions{repository: otherWorktree, programID: "product-delivery", entryID: "run", runID: bound.runID, deliveryID: bound.deliveryID, host: "codex"})
@@ -1171,7 +1197,7 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	if err := lock.Release(); err != nil {
 		t.Fatal(err)
 	}
-	record.Status, record.Revision, record.RevokedAt = "revoked", 2, time.Now().UTC()
+	record.Status, record.Revision, record.RevokedAt = "revoked", record.Revision+1, time.Now().UTC()
 	if err := effects.StoreDelegationRecord(recordPath, record); err != nil {
 		t.Fatal(err)
 	}

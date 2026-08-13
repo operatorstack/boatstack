@@ -38,6 +38,9 @@ func runFlowAuthorize(arguments []string) error {
 	if flags.NArg() != 0 || options.runID == "" || requestFingerprint == "" || options.humanActor == "" {
 		return fmt.Errorf("flow authorize requires --flow, --entry, --run-id, --request-fingerprint, and --human")
 	}
+	if expiresIn < 0 {
+		return fmt.Errorf("flow authorize --expires-in cannot be negative")
+	}
 	bound, err := bindFlowEntry(context.Background(), options)
 	if err != nil {
 		return err
@@ -70,32 +73,62 @@ func runFlowAuthorize(arguments []string) error {
 	if err != nil {
 		return err
 	}
-	if existing, loadErr := delegation.Load(recordPath); loadErr == nil {
-		if existing.RequestFingerprint == requestFingerprint && existing.Actor == options.humanActor && existing.Status == "active" {
-			return printDelegationRecord(existing)
-		}
-		return fmt.Errorf("DELEGATION_CONFLICT: run already has a different authorization, actor, or status")
+	var existing *delegation.Record
+	if loaded, loadErr := delegation.Load(recordPath); loadErr == nil {
+		existing = &loaded
 	} else if !os.IsNotExist(loadErr) {
 		return loadErr
 	}
 	now := time.Now().UTC()
-	receiptDigest := sha256.Sum256([]byte(requestFingerprint + "\x00" + options.humanActor))
+	record, changed, err := authorizeDelegation(existing, bound.delegationRequest, requestFingerprint, options.humanActor, expiresIn, now)
+	if err != nil {
+		return err
+	}
+	if changed {
+		if err := effects.StoreDelegationRecord(recordPath, record); err != nil {
+			return err
+		}
+	}
+	return printDelegationRecord(record)
+}
+
+func authorizeDelegation(existing *delegation.Record, request delegation.Request, requestFingerprint, actor string, expiresIn time.Duration, now time.Time) (delegation.Record, bool, error) {
+	if expiresIn < 0 {
+		return delegation.Record{}, false, fmt.Errorf("flow authorize --expires-in cannot be negative")
+	}
+	if existing != nil {
+		if existing.RequestFingerprint != requestFingerprint || existing.Actor != actor || existing.Status != "active" {
+			return delegation.Record{}, false, fmt.Errorf("DELEGATION_CONFLICT: run already has a different authorization, actor, or status")
+		}
+		if existing.ExpiresAt.IsZero() || now.Before(existing.ExpiresAt) {
+			return *existing, false, nil
+		}
+		record := *existing
+		record.Revision++
+		record.AuthorizedAt = now
+		record.ExpiresAt = time.Time{}
+		if expiresIn > 0 {
+			record.ExpiresAt = now.Add(expiresIn)
+		}
+		record.ReceiptID = authorizationReceiptID(requestFingerprint, actor, record.Revision, now)
+		record.RevokedAt, record.EndedAt, record.EndReason = time.Time{}, time.Time{}, ""
+		return record, true, nil
+	}
 	record := delegation.Record{
 		Schema: delegation.Schema, SchemaRevision: delegation.SchemaRevision,
-		Request: bound.delegationRequest, RequestFingerprint: requestFingerprint,
-		ReceiptID: "authorization-" + hex.EncodeToString(receiptDigest[:12]), Actor: options.humanActor,
+		Request: request, RequestFingerprint: requestFingerprint,
+		ReceiptID: authorizationReceiptID(requestFingerprint, actor, 1, now), Actor: actor,
 		AuthorizedAt: now, Revision: 1, Status: "active",
-	}
-	if expiresIn < 0 {
-		return fmt.Errorf("flow authorize --expires-in cannot be negative")
 	}
 	if expiresIn > 0 {
 		record.ExpiresAt = now.Add(expiresIn)
 	}
-	if err := effects.StoreDelegationRecord(recordPath, record); err != nil {
-		return err
-	}
-	return printDelegationRecord(record)
+	return record, true, nil
+}
+
+func authorizationReceiptID(requestFingerprint, actor string, revision uint64, authorizedAt time.Time) string {
+	receiptDigest := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%d\x00%s", requestFingerprint, actor, revision, authorizedAt.UTC().Format(time.RFC3339Nano))))
+	return "authorization-" + hex.EncodeToString(receiptDigest[:12])
 }
 
 func runFlowRevoke(arguments []string) error {
