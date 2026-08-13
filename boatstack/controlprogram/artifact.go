@@ -61,7 +61,7 @@ func NewArtifact(compiled Compiled, input ArtifactInput) (Artifact, []byte, erro
 }
 
 func LoadArtifact(source io.Reader) (Artifact, error) {
-	raw, err := io.ReadAll(io.LimitReader(source, 32<<20))
+	raw, err := readLimited(source, 32<<20, "CONTROL_PROGRAM_ARTIFACT_INVALID: input exceeds 32 MiB")
 	if err != nil {
 		return Artifact{}, err
 	}

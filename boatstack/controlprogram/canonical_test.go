@@ -119,6 +119,39 @@ func TestStrictLoaderRejectsUnknownAndDuplicateFields(t *testing.T) {
 	}
 }
 
+func TestStrictLoadersRejectOversizedTrailingInput(t *testing.T) {
+	// control-law: size-limited-loaders-never-treat-truncation-as-eof
+	documentRaw, err := json.Marshal(incidentProgram())
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiled, err := controlprogram.Compile(incidentProgram(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, artifactRaw, err := controlprogram.NewArtifact(compiled, controlprogram.ArtifactInput{
+		CompilerVersion: "compiler-1", SourcePath: "flow.ts", Source: []byte("source"),
+		DependencyLockPath: "package-lock.json", DependencyLock: []byte("lock"), GeneratedSkills: map[string][]byte{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oversized := func(raw []byte, limit int) []byte {
+		if len(raw) >= limit {
+			t.Fatalf("fixture length %d exceeds limit %d", len(raw), limit)
+		}
+		result := append([]byte(nil), raw...)
+		result = append(result, bytes.Repeat([]byte(" "), limit-len(result))...)
+		return append(result, 'x')
+	}
+	if _, err := controlprogram.Load(bytes.NewReader(oversized(documentRaw, 16<<20)), nil); err == nil || !strings.Contains(err.Error(), "exceeds 16 MiB") {
+		t.Fatalf("oversized IR result = %v", err)
+	}
+	if _, err := controlprogram.LoadArtifact(bytes.NewReader(oversized(artifactRaw, 32<<20))); err == nil || !strings.Contains(err.Error(), "exceeds 32 MiB") {
+		t.Fatalf("oversized artifact result = %v", err)
+	}
+}
+
 func TestCompilerRejectsUndeclaredEffectAndMissingRecovery(t *testing.T) {
 	for name, mutate := range map[string]func(*controlprogram.Document){
 		"undeclared-effect": func(value *controlprogram.Document) { value.Operators[0].Effects = []string{"undeclared"} },

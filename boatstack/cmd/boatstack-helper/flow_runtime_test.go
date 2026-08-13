@@ -345,6 +345,51 @@ func TestFlowCompileProjectsHyphenatedEntryIdentity(t *testing.T) {
 	}
 }
 
+func TestFlowCompileRejectsDependencyLockProjectionOverlap(t *testing.T) {
+	// control-law: compile-inputs-cannot-be-replaced-or-retired-by-their-own-projection
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+	repository, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	documentRaw, err := json.Marshal(productDeliveryDocument("product-delivery"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourcePath := ".boatstack/flows/product-delivery.flow.ts"
+	artifactPath := ".boatstack/flows/product-delivery.flow.ir.json"
+	writeFixture(t, repository, ".git/keep", nil)
+	writeFixture(t, repository, sourcePath, []byte("declarative source"))
+	writeFixture(t, repository, "package-lock.json", []byte("lock"))
+	writeFixture(t, repository, "raw-ir.json", documentRaw)
+	frontend := filepath.Join(repository, "frontend.sh")
+	if err := os.WriteFile(frontend, []byte("#!/bin/sh\ncat >/dev/null\ncat '"+filepath.Join(repository, "raw-ir.json")+"'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	options := flowCommandOptions{repository: repository, source: sourcePath, lock: "package-lock.json", frontend: frontend}
+	if err := compileFlow(context.Background(), options); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(repository, filepath.FromSlash(artifactPath)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	options.lock = artifactPath
+	err = compileFlow(context.Background(), options)
+	if err == nil || !strings.Contains(err.Error(), "FLOW_COMPILE_INPUT_OVERLAP") {
+		t.Fatalf("overlapping lock result = %v", err)
+	}
+	after, err := os.ReadFile(filepath.Join(repository, filepath.FromSlash(artifactPath)))
+	if err != nil || !bytes.Equal(after, before) {
+		t.Fatalf("overlapping compile changed artifact: %v", err)
+	}
+	if err := checkFlow(context.Background(), flowCommandOptions{repository: repository}); err != nil {
+		t.Fatalf("preserved artifact no longer checks: %v", err)
+	}
+}
+
 func TestFlowCompileRefusesUnmanagedGeneratedSkill(t *testing.T) {
 	// control-law: first-compile-cannot-adopt-or-overwrite-unmanaged-skill-bytes
 	if runtime.GOOS == "windows" {
@@ -693,7 +738,6 @@ func TestFlowEntryBindsStableRunAndResumesManagedPlan(t *testing.T) {
 	}
 	writeFixture(t, repository, ".boatstack/plans/delivery-one.source", []byte("exact plan"))
 	writeFixture(t, repository, ".boatstack/plans/inbox/unrelated.md", []byte("other plan"))
-	writeFixture(t, repository, ".boatstack/plans/delivery-one.source", []byte("approved amendment"))
 	resumed, err := bindFlowEntry(context.Background(), commandOptions{
 		repository: repository, programID: "product-delivery", entryID: "run", runID: initial.runID, host: "codex",
 		deliveryID: initial.deliveryID, objectiveKind: initial.objectiveKind, objectiveID: initial.objectiveID, transitionID: "plan.create",
@@ -710,6 +754,28 @@ func TestFlowEntryBindsStableRunAndResumesManagedPlan(t *testing.T) {
 	}
 	if source, ok := parameters.Get("source_path"); !ok || source != filepath.Join(resumed.repository, ".boatstack", "plans", "delivery-one.source") {
 		t.Fatalf("resumed source = %q, present=%t", source, ok)
+	}
+}
+
+func TestFlowEntryRejectsSelectedPlanContentSubstitution(t *testing.T) {
+	// control-law: one-flow-run-binds-the-exact-selected-plan-bytes
+	repository := flowRepository(t)
+	planPath := ".boatstack/plans/inbox/delivery-one.md"
+	writeFixture(t, repository, planPath, []byte("plan A"))
+	initial, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, repository, planPath, []byte("plan B"))
+	_, err = bindFlowEntry(context.Background(), commandOptions{
+		repository: repository, programID: "product-delivery", entryID: "run", runID: initial.runID, host: "codex",
+		deliveryID: initial.deliveryID, objectiveKind: initial.objectiveKind, objectiveID: initial.objectiveID, transitionID: "plan.create",
+	})
+	if err == nil || !strings.Contains(err.Error(), "FLOW_RUN_MISMATCH") {
+		t.Fatalf("plan substitution result = %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(repository, ".boatstack", "plans", "delivery-one.source")); !os.IsNotExist(statErr) {
+		t.Fatalf("plan substitution produced a managed source: %v", statErr)
 	}
 }
 

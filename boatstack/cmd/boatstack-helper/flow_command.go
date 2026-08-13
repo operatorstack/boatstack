@@ -153,6 +153,9 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 	writes = append(writes, boatstackruntime.ProjectionWrite{
 		Path: artifactPath, Content: artifactRaw, Mode: 0o644, ExpectedPreviousSHA256: artifactPrevious, PublishLast: true,
 	})
+	if err := rejectProjectionInputOverlap(lockPath, writes, removals); err != nil {
+		return err
+	}
 	expectations := []boatstackruntime.ProjectionExpectation{
 		{Path: source, Exists: true, ExpectedSHA256: fileDigest(sourceRaw)},
 		{Path: lockPath, Exists: true, ExpectedSHA256: fileDigest(lockRaw)},
@@ -163,6 +166,21 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 		return err
 	}
 	return renderFlowResult("compiled", artifactPath, artifact)
+}
+
+func rejectProjectionInputOverlap(lockPath string, writes []boatstackruntime.ProjectionWrite, removals []boatstackruntime.ProjectionRemoval) error {
+	lockPath = filepath.Clean(lockPath)
+	for _, write := range writes {
+		if filepath.Clean(write.Path) == lockPath {
+			return fmt.Errorf("FLOW_COMPILE_INPUT_OVERLAP: dependency lock is a projection output")
+		}
+	}
+	for _, removal := range removals {
+		if filepath.Clean(removal.Path) == lockPath {
+			return fmt.Errorf("FLOW_COMPILE_INPUT_OVERLAP: dependency lock is a retired projection output")
+		}
+	}
+	return nil
 }
 
 func requireUnchangedCompileInput(path string, expected []byte) error {

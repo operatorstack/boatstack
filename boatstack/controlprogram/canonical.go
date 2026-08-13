@@ -21,7 +21,7 @@ type Compiled struct {
 }
 
 func Load(source io.Reader, resolver BindingResolver) (Compiled, error) {
-	raw, err := io.ReadAll(io.LimitReader(source, 16<<20))
+	raw, err := readLimited(source, 16<<20, "CONTROL_PROGRAM_INVALID: input exceeds 16 MiB")
 	if err != nil {
 		return Compiled{}, err
 	}
@@ -38,6 +38,17 @@ func Load(source io.Reader, resolver BindingResolver) (Compiled, error) {
 		return Compiled{}, err
 	}
 	return Compile(document, resolver)
+}
+
+func readLimited(source io.Reader, limit int64, oversized string) ([]byte, error) {
+	raw, err := io.ReadAll(io.LimitReader(source, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(raw)) > limit {
+		return nil, fmt.Errorf("%s", oversized)
+	}
+	return raw, nil
 }
 
 func Compile(document Document, resolver BindingResolver) (Compiled, error) {

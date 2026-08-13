@@ -71,7 +71,12 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	if err != nil {
 		return commandOptions{}, err
 	}
-	runID := flowRunID(repository, compiled.Fingerprint, options.entryID, deliveryID)
+	planRaw, err := os.ReadFile(plan)
+	if err != nil {
+		return commandOptions{}, fmt.Errorf("FLOW_INPUT_REQUIRED: read selected plan: %w", err)
+	}
+	planDigest := sha256.Sum256(planRaw)
+	runID := flowRunID(repository, compiled.Fingerprint, options.entryID, deliveryID, hex.EncodeToString(planDigest[:]))
 	if options.runID != "" && options.runID != runID {
 		return commandOptions{}, fmt.Errorf("FLOW_RUN_MISMATCH: run ID does not identify the selected plan and worktree")
 	}
@@ -336,8 +341,8 @@ func findEntry(entries []controlprogram.Entry, id string) (controlprogram.Entry,
 	return controlprogram.Entry{}, false
 }
 
-func flowRunID(repository, fingerprint, entry, delivery string) string {
-	value := strings.Join([]string{repository, fingerprint, entry, delivery}, "\x00")
+func flowRunID(repository, fingerprint, entry, delivery, planFingerprint string) string {
+	value := strings.Join([]string{repository, fingerprint, entry, delivery, planFingerprint}, "\x00")
 	digest := sha256.Sum256([]byte(value))
 	return "run-" + hex.EncodeToString(digest[:16])
 }
