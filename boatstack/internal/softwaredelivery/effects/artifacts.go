@@ -299,6 +299,49 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 	return mutations, nil
 }
 
+// prepareWorkspacePlanTransfer carries runtime-owned plan artifacts into a
+// newly cut worktree. A run binds the plan bytes before the cut, so the target
+// worktree must observe those exact bytes rather than fall back to the inbox
+// and accidentally select new intent.
+func prepareWorkspacePlanTransfer(repositoryRoot, workspacePath, deliveryID string) ([]ports.ResourceMutation, error) {
+	if workspacePath == "" || deliveryID == "" {
+		return nil, nil
+	}
+	deliveryID, err := safeSegment(deliveryID, "delivery identity")
+	if err != nil {
+		return nil, err
+	}
+	sourceRoot := filepath.Join(repositoryRoot, ".boatstack")
+	destinationRoot := filepath.Join(workspacePath, ".boatstack")
+	var mutations []ports.ResourceMutation
+	for _, relative := range []string{
+		filepath.Join("plans", deliveryID+".source"),
+		filepath.Join("approvals", deliveryID+".json"),
+	} {
+		source := filepath.Join(sourceRoot, relative)
+		info, statErr := os.Lstat(source)
+		if os.IsNotExist(statErr) {
+			continue
+		}
+		if statErr != nil {
+			return nil, fmt.Errorf("inspect workspace plan artifact %s: %w", source, statErr)
+		}
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("workspace plan artifact is not a regular file: %s", source)
+		}
+		raw, readErr := os.ReadFile(source)
+		if readErr != nil {
+			return nil, fmt.Errorf("read workspace plan artifact %s: %w", source, readErr)
+		}
+		mutation, mutationErr := mutationFor(filepath.Join(destinationRoot, relative), raw, 0o644, false, false)
+		if mutationErr != nil {
+			return nil, mutationErr
+		}
+		mutations = append(mutations, mutation)
+	}
+	return mutations, nil
+}
+
 func transitionUsesDeliveryArtifacts(id catalog.TransitionID) bool {
 	switch id {
 	case "plan.create", "plan.amend", "plan.validate", "plan.approve", "plan.approve-amendment",

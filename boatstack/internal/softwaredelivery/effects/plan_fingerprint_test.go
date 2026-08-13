@@ -43,3 +43,31 @@ func TestPlanEffectRejectsSourceChangedAfterEntryBinding(t *testing.T) {
 		t.Fatalf("replaced plan created a managed effect: %v", statErr)
 	}
 }
+
+func TestWorkspacePlanTransferCopiesOnlyRegularRuntimeOwnedArtifacts(t *testing.T) {
+	repository := t.TempDir()
+	workspace := t.TempDir()
+	for path, contents := range map[string]string{
+		filepath.Join(repository, ".boatstack", "plans", "delivery-one.source"):   "# Bound plan\n",
+		filepath.Join(repository, ".boatstack", "approvals", "delivery-one.json"): "{\"approved\":true}\n",
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mutations, err := prepareWorkspacePlanTransfer(repository, workspace, "delivery-one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mutations) != 2 {
+		t.Fatalf("transfer mutations = %#v", mutations)
+	}
+	for _, mutation := range mutations {
+		if !strings.HasPrefix(mutation.Path, filepath.Join(workspace, ".boatstack")+string(filepath.Separator)) || !mutation.PriorExists && len(mutation.Target) == 0 {
+			t.Fatalf("invalid transfer mutation: %#v", mutation)
+		}
+	}
+}
