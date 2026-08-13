@@ -45,6 +45,7 @@ type commandOptions struct {
 	deliveryID                          string
 	programID                           string
 	flowProgramFingerprint              string
+	activeFlowBound                     bool
 	entryID                             string
 	runID                               string
 	transitionID                        string

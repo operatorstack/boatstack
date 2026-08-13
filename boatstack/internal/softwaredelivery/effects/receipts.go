@@ -72,7 +72,7 @@ func (s *ReceiptStore) layoutForFlow(_ context.Context, flowID string) (ports.Co
 	return binding.layout, nil
 }
 
-func scanCommittedReceipts(layout ports.ControllerLayout, visit func(protocol.TransitionReceipt) error) error {
+func scanCommittedReceipts(layout ports.ControllerLayout, visit func(journalRecord) error) error {
 	entries, err := os.ReadDir(layout.JournalRoot)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -92,11 +92,40 @@ func scanCommittedReceipts(layout ports.ControllerLayout, visit func(protocol.Tr
 		if record.Receipt == nil {
 			return fmt.Errorf("committed transaction %s lacks a transition fact", entry.Name())
 		}
-		if err := visit(*record.Receipt); err != nil {
+		if err := visit(record); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// FindLatestCommittedFlowForObjective returns the authoritative committed flow
+// identity for the current objective. Projected receipt files are deliberately
+// not used because projection is best effort.
+func FindLatestCommittedFlowForObjective(layout ports.ControllerLayout, invocation model.InvocationContext, objective model.Objective, maximumRevision uint64) (protocol.TransitionReceipt, bool, error) {
+	var found protocol.TransitionReceipt
+	err := scanCommittedReceipts(layout, func(record journalRecord) error {
+		receipt := *record.Receipt
+		if !sameStateLineage(record.Admission.Invocation, invocation) {
+			return nil
+		}
+		if matchesObjectiveBinding(receipt, objective, maximumRevision) && (found.ID == "" || receipt.ResultingStateRevision > found.ResultingStateRevision) {
+			found = receipt
+		}
+		return nil
+	})
+	return found, found.ID != "", err
+}
+
+func sameStateLineage(left, right model.InvocationContext) bool {
+	return left.RepositoryID == right.RepositoryID && left.GitCommonID == right.GitCommonID &&
+		left.WorktreeID == right.WorktreeID && left.ControllerID == right.ControllerID
+}
+
+func matchesObjectiveBinding(receipt protocol.TransitionReceipt, objective model.Objective, maximumRevision uint64) bool {
+	return receipt.TransitionID == "objective.bind" && strings.HasPrefix(receipt.FlowID, "run-") &&
+		receipt.ObjectiveID == objective.ID && receipt.ObjectiveKind == objective.Kind && receipt.DeliveryID == objective.DeliveryID &&
+		receipt.ResultingStateRevision <= maximumRevision
 }
 
 func (s *ReceiptStore) NextSequence(ctx context.Context, flowID string) (uint64, error) {
@@ -105,7 +134,8 @@ func (s *ReceiptStore) NextSequence(ctx context.Context, flowID string) (uint64,
 		return 0, err
 	}
 	var maximum uint64
-	err = scanCommittedReceipts(layout, func(receipt protocol.TransitionReceipt) error {
+	err = scanCommittedReceipts(layout, func(record journalRecord) error {
+		receipt := *record.Receipt
 		if receipt.FlowID == flowID && receipt.Sequence > maximum {
 			maximum = receipt.Sequence
 		}
@@ -123,7 +153,8 @@ func (s *ReceiptStore) FindByIdempotency(ctx context.Context, invocation model.I
 		return protocol.TransitionReceipt{}, false, err
 	}
 	var found protocol.TransitionReceipt
-	err = scanCommittedReceipts(layout, func(receipt protocol.TransitionReceipt) error {
+	err = scanCommittedReceipts(layout, func(record journalRecord) error {
+		receipt := *record.Receipt
 		if receipt.IdempotencyKey == key {
 			if found.ID != "" && found.ID != receipt.ID {
 				return fmt.Errorf("idempotency key %q identifies multiple committed transition facts", key)

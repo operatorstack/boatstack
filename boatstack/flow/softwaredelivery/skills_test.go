@@ -75,6 +75,32 @@ func TestGeneratedSkillDescriptionIsQuotedYAML(t *testing.T) {
 	}
 }
 
+func TestGeneratedRunSkillRequiresExplicitAbandonmentBeforeReplacement(t *testing.T) {
+	compiled := controlprogram.Compiled{Document: controlprogram.Document{
+		Program: controlprogram.Program{ID: "product-delivery"},
+		Entries: []controlprogram.Entry{
+			{ID: "run", Target: "published-pr"},
+			{ID: "cancel", Target: "safely-abandoned"},
+		},
+	}}
+	files, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 6 {
+		t.Fatalf("generated file count = %d, want 6", len(files))
+	}
+	run := string(files[".agents/skills/product-delivery-run/SKILL.md"])
+	for _, contract := range []string{"never retarget this run", "$product-delivery-cancel", "abandonment receipt", "starting a new run"} {
+		if !strings.Contains(run, contract) {
+			t.Fatalf("generated run skill lacks %q", contract)
+		}
+	}
+	if _, ok := files[".agents/skills/product-delivery-cancel/SKILL.md"]; !ok {
+		t.Fatal("abandonment entry skill was not generated")
+	}
+}
+
 func TestGeneratedSkillsRejectKernelMaintenanceIdentity(t *testing.T) {
 	compiled := controlprogram.Compiled{Document: controlprogram.Document{
 		Program: controlprogram.Program{ID: "boatstack"},

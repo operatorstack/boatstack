@@ -820,6 +820,19 @@ func TestFlowEntryBindsStableRunAndResumesManagedPlan(t *testing.T) {
 	}
 }
 
+func TestRepositoryNamedAbandonmentEntryUsesCompiledObjective(t *testing.T) {
+	entry := controlprogram.Entry{ID: "cancel", Target: "safely-abandoned"}
+	plan, delivery, err := resolveBoundPlan(t.TempDir(), entry, model.ObjectiveAbandoned, commandOptions{
+		entryID: "cancel", activeFlowBound: true, deliveryID: "delivery-one",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan != "" || delivery != "delivery-one" {
+		t.Fatalf("repository-named abandonment resolved plan=%q delivery=%q", plan, delivery)
+	}
+}
+
 func TestFlowEntryRejectsSelectedPlanContentSubstitution(t *testing.T) {
 	// control-law: one-flow-run-binds-the-exact-selected-plan-bytes
 	repository := flowRepository(t)

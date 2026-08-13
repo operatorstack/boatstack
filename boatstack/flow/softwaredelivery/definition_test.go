@@ -151,6 +151,60 @@ func TestRepositoryTransitionCannotWidenTrustedObjectiveKinds(t *testing.T) {
 	}
 }
 
+func TestAbandonmentEntryMakesTrustedAbandonmentObjectiveProgress(t *testing.T) {
+	truth := true
+	resolver, err := softwareflow.NewResolver(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := controlprogram.Document{
+		SchemaVersion: controlprogram.SchemaVersion,
+		Program:       controlprogram.Program{ID: "product-delivery", Version: "1"},
+		Facets: []controlprogram.Facet{
+			{ID: "publication", Kind: "string"}, {ID: "verification", Kind: "string"},
+			{ID: "configuration", Kind: "string"}, {ID: "runtime", Kind: "string"},
+			{ID: "delivery", Kind: "string"}, {ID: "workspace", Kind: "string"},
+		},
+		Operators: []controlprogram.Operator{
+			{ID: "publication.observe", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/publication.observe", Version: "1"}},
+			{ID: "plan.abandon", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/plan.abandon", Version: "1"}},
+		},
+		Transitions: []controlprogram.Transition{
+			{ID: "publication.observe", Operator: "publication.observe", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 77},
+			{ID: "plan.abandon", Operator: "plan.abandon", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 31},
+		},
+		Targets: []controlprogram.Target{
+			{ID: "published-pr", Predicate: controlprogram.Predicate{All: []controlprogram.Predicate{fact("verification", "current"), fact("configuration", "verified"), fact("runtime", "verified"), fact("publication", "open")}}},
+			{ID: "safely-abandoned", Predicate: controlprogram.Predicate{All: []controlprogram.Predicate{fact("delivery", "discarded"), {Fact: &controlprogram.FactPredicate{Facet: "workspace", Statuses: []string{"known"}, Values: []string{"abandoned", "absent"}}}}}},
+		},
+		Entries: []controlprogram.Entry{{ID: "run", Target: "published-pr"}, {ID: "abandon", Target: "safely-abandoned"}},
+	}
+	compiled, err := controlprogram.Compile(document, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, err := softwareflow.NewDefinition(compiled, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := definition.RuntimeManifest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, transition := range manifest.Transitions {
+		if transition.ID == "plan.abandon" {
+			if transition.SelectionClass != delivery.SelectionProgramProgress || len(transition.ObjectiveKinds) != 1 || transition.ObjectiveKinds[0] != delivery.ObjectiveAbandoned {
+				t.Fatalf("abandonment transition = %#v", transition)
+			}
+			if transition.Priority != 31 {
+				t.Fatalf("priority = %d, want 31", transition.Priority)
+			}
+			return
+		}
+	}
+	t.Fatal("trusted plan.abandon transition was not selected")
+}
+
 func TestCompiledBindingDriftFailsClosed(t *testing.T) {
 	truth := true
 	compiled, resolver := compiledFlow(t, controlprogram.Predicate{True: &truth})

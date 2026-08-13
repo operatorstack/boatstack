@@ -14,7 +14,10 @@ import (
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/durable"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/plant"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
 )
@@ -59,6 +62,7 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	if options.flowProgramFingerprint != "" && options.flowProgramFingerprint != compiled.Fingerprint {
 		return commandOptions{}, fmt.Errorf("FLOW_PROGRAM_DRIFT: run fingerprint does not match the current artifact")
 	}
+	options.flowProgramFingerprint = compiled.Fingerprint
 	objective, err := softwareflow.ObjectiveForEntry(ctx, compiled, resolver, options.entryID)
 	if err != nil {
 		return commandOptions{}, err
@@ -67,27 +71,35 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	if !ok {
 		return commandOptions{}, fmt.Errorf("FLOW_ENTRY_UNKNOWN: %s", options.entryID)
 	}
-	plan, deliveryID, err := resolveBoundPlan(repository, entry, options)
+	options, err = bindActiveFlowContext(ctx, repository, options, objective)
 	if err != nil {
 		return commandOptions{}, err
 	}
-	planRaw, err := os.ReadFile(plan)
-	if err != nil {
-		return commandOptions{}, fmt.Errorf("FLOW_INPUT_REQUIRED: read selected plan: %w", err)
-	}
-	planDigest := sha256.Sum256(planRaw)
-	planFingerprint := hex.EncodeToString(planDigest[:])
-	repositoryIdentity, err := flowRepositoryIdentity(repository)
+	plan, deliveryID, err := resolveBoundPlan(repository, entry, objective, options)
 	if err != nil {
 		return commandOptions{}, err
 	}
-	runID := flowRunID(repositoryIdentity, compiled.Fingerprint, options.entryID, deliveryID, planFingerprint)
-	if options.runID != "" && options.runID != runID {
-		return commandOptions{}, fmt.Errorf("FLOW_RUN_MISMATCH: run ID does not identify the selected plan and repository")
+	planFingerprint := ""
+	if plan != "" {
+		planRaw, readErr := os.ReadFile(plan)
+		if readErr != nil {
+			return commandOptions{}, fmt.Errorf("FLOW_INPUT_REQUIRED: read selected plan: %w", readErr)
+		}
+		planDigest := sha256.Sum256(planRaw)
+		planFingerprint = hex.EncodeToString(planDigest[:])
+		repositoryIdentity, identityErr := flowRepositoryIdentity(repository)
+		if identityErr != nil {
+			return commandOptions{}, identityErr
+		}
+		runID := flowRunID(repositoryIdentity, compiled.Fingerprint, options.entryID, deliveryID, planFingerprint)
+		if options.runID != "" && options.runID != runID {
+			return commandOptions{}, fmt.Errorf("FLOW_RUN_MISMATCH: run ID does not identify the selected plan and repository")
+		}
+		options.runID = runID
+	} else if options.runID == "" {
+		return commandOptions{}, fmt.Errorf("FLOW_ACTIVE_RUN_INVALID: active abandonment has no committed run identity")
 	}
 	options.repository = repository
-	options.flowProgramFingerprint = compiled.Fingerprint
-	options.runID = runID
 	if options.objectiveKind == "" {
 		options.objectiveKind = string(objective)
 	}
@@ -135,6 +147,80 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		}
 	}
 	return options, nil
+}
+
+func bindActiveFlowContext(ctx context.Context, repository string, options commandOptions, entryObjective model.ObjectiveKind) (commandOptions, error) {
+	if options.runID != "" && entryObjective != model.ObjectiveAbandoned {
+		return options, nil
+	}
+	resolver, err := plant.NewResolver("")
+	if err != nil {
+		return commandOptions{}, err
+	}
+	host := options.host
+	if host == "" {
+		host = "cli"
+	}
+	invocation, err := resolver.ResolveInvocation(ctx, repository, host, "flow-entry-resume")
+	if err != nil {
+		common, commonErr := flowRepositoryIdentity(repository)
+		if commonErr == nil {
+			if _, stateErr := os.Stat(filepath.Join(common, "boatstack", "v2")); os.IsNotExist(stateErr) {
+				return options, nil
+			}
+		}
+		if _, stateErr := os.Stat(filepath.Join(repository, ".git", "boatstack")); stateErr != nil {
+			return options, nil
+		}
+		return commandOptions{}, err
+	}
+	layout, _, err := resolver.ResolveLayout(ctx, invocation)
+	if err != nil {
+		return commandOptions{}, err
+	}
+	raw, err := os.ReadFile(layout.StatePath)
+	if os.IsNotExist(err) {
+		return options, nil
+	}
+	if err != nil {
+		return commandOptions{}, fmt.Errorf("FLOW_ACTIVE_RUN_INVALID: read durable state: %w", err)
+	}
+	state, err := durable.DecodeState(raw)
+	if err != nil {
+		return commandOptions{}, fmt.Errorf("FLOW_ACTIVE_RUN_INVALID: decode durable state: %w", err)
+	}
+	active, ok := state.ActiveObjective()
+	if !ok {
+		return options, nil
+	}
+	prefix := "objective-" + options.programID + "-" + options.entryID + "-"
+	receipt, found, findErr := effects.FindLatestCommittedFlowForObjective(layout, invocation, active, state.Revision)
+	if findErr != nil {
+		return commandOptions{}, fmt.Errorf("FLOW_ACTIVE_RUN_INVALID: inspect committed flow receipts: %w", findErr)
+	}
+	if !found || !strings.HasPrefix(receipt.FlowID, "run-") {
+		return commandOptions{}, fmt.Errorf("FLOW_ACTIVE_RUN_INVALID: active objective has no committed run identity")
+	}
+	if active.Kind == entryObjective && strings.HasPrefix(active.ID, prefix) {
+		options.runID, options.deliveryID = receipt.FlowID, active.DeliveryID
+		options.objectiveID, options.objectiveKind = active.ID, string(active.Kind)
+		options.activeFlowBound = true
+		return options, nil
+	}
+	if entryObjective == model.ObjectiveAbandoned {
+		repositoryIdentity, identityErr := flowRepositoryIdentity(repository)
+		if identityErr != nil {
+			return commandOptions{}, identityErr
+		}
+		expectedRunID := flowRunID(repositoryIdentity, options.flowProgramFingerprint, options.entryID, active.DeliveryID, "active-run:"+receipt.FlowID)
+		if options.runID != "" && options.runID != expectedRunID {
+			return commandOptions{}, fmt.Errorf("FLOW_RUN_MISMATCH: run ID does not identify the active delivery")
+		}
+		options.runID = expectedRunID
+		options.deliveryID, options.activeFlowBound = active.DeliveryID, true
+		return options, nil
+	}
+	return commandOptions{}, fmt.Errorf("FLOW_ACTIVE_RUN_CONFLICT: delivery %q is active under objective %q; abandon it before selecting another inbox plan", active.DeliveryID, active.ID)
 }
 
 func validateResolvedParameter(parameters protocol.Parameters, name, expected string) error {
@@ -186,8 +272,11 @@ func bindRPCFlowEntry(ctx context.Context, request surfaces.Request) (surfaces.R
 	return request, nil
 }
 
-func resolveBoundPlan(repository string, entry controlprogram.Entry, options commandOptions) (string, string, error) {
-	if options.runID == "" {
+func resolveBoundPlan(repository string, entry controlprogram.Entry, entryObjective model.ObjectiveKind, options commandOptions) (string, string, error) {
+	if options.activeFlowBound && entryObjective == model.ObjectiveAbandoned {
+		return "", options.deliveryID, nil
+	}
+	if options.runID == "" && options.deliveryID == "" {
 		return resolvePlanInput(repository, entry)
 	}
 	if !flowSegment.MatchString(options.deliveryID) {
