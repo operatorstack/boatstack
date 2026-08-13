@@ -7,7 +7,7 @@ import (
 )
 
 func TestInstallationUpdateKeepsCurrentJournalSchema(t *testing.T) {
-	if protocol.JournalSchemaVersion != 8 {
-		t.Fatalf("journal schema = %d, want current schema 8 for in-flight installation updates", protocol.JournalSchemaVersion)
+	if protocol.JournalSchemaVersion != 9 {
+		t.Fatalf("journal schema = %d, want current schema 9 for target-bound transaction records", protocol.JournalSchemaVersion)
 	}
 }

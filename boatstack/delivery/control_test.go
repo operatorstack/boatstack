@@ -260,7 +260,7 @@ func TestExtensionCompilationRejectsBoundaryViolations(t *testing.T) {
 			value.ObjectiveConstraints[0].Conditions[0].Statuses = []delivery.FactStatus{"invented"}
 		},
 		"objective-selection-without-matching-obligation": func(value *delivery.ExtensionManifest) {
-			value.Transitions[0].ObjectiveKinds = []delivery.ObjectiveKind{delivery.ObjectiveVerified}
+			value.Transitions[0].TargetIDs = []delivery.TargetID{delivery.ObjectiveVerified}
 		},
 		"objective-selection-does-not-discharge-obligation": func(value *delivery.ExtensionManifest) {
 			value.Transitions[0].TargetConditions[0].Values = []string{"missing"}
@@ -336,7 +336,7 @@ func TestExtensionObjectiveConditionsAreConjunctive(t *testing.T) {
 	}
 	conditionCount := func(program delivery.ControlProgram) int {
 		for _, contract := range program.RuntimeObjectiveContracts().All() {
-			if contract.ObjectiveKind == delivery.ObjectiveVerified {
+			if contract.TargetID == delivery.ObjectiveVerified {
 				return len(contract.Conditions)
 			}
 		}
@@ -345,15 +345,15 @@ func TestExtensionObjectiveConditionsAreConjunctive(t *testing.T) {
 	if conditionCount(extended) != conditionCount(base) {
 		t.Fatalf("release-note extension unexpectedly changed the verified objective")
 	}
-	for _, objective := range []delivery.ObjectiveKind{delivery.ObjectiveOpenPR, delivery.ObjectiveMerged} {
+	for _, objective := range []delivery.TargetID{delivery.ObjectiveOpenPR, delivery.ObjectiveMerged} {
 		baseCount, extendedCount := 0, 0
 		for _, contract := range base.RuntimeObjectiveContracts().All() {
-			if contract.ObjectiveKind == objective {
+			if contract.TargetID == objective {
 				baseCount = len(contract.Conditions)
 			}
 		}
 		for _, contract := range extended.RuntimeObjectiveContracts().All() {
-			if contract.ObjectiveKind == objective {
+			if contract.TargetID == objective {
 				extendedCount = len(contract.Conditions)
 			}
 		}
@@ -410,7 +410,7 @@ func cloneManifest(t *testing.T, value delivery.ExtensionManifest) delivery.Exte
 func (e declarationOnlyExtension) ExtensionManifest(context.Context) (delivery.ExtensionManifest, error) {
 	var constraints []delivery.ObjectiveConstraint
 	if len(e.objectiveConditions) != 0 {
-		constraints = []delivery.ObjectiveConstraint{{ObjectiveKind: delivery.ObjectiveOpenPR, Conditions: append([]delivery.FacetCondition(nil), e.objectiveConditions...)}}
+		constraints = []delivery.ObjectiveConstraint{{TargetID: delivery.ObjectiveOpenPR, Conditions: append([]delivery.FacetCondition(nil), e.objectiveConditions...)}}
 	}
 	return delivery.ExtensionManifest{
 		ID: e.id, Version: "1.0.0", ProtocolVersion: delivery.ExtensionProtocolVersion,

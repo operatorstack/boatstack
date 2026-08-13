@@ -103,7 +103,7 @@ func (s Snapshot) Facet(name FacetName) (FactStatus, string, bool) {
 		return s.Terminal.Status, string(s.Terminal.Value), true
 	case FacetObjective:
 		value := s.Objective.Value
-		return s.Objective.Status, strings.Join([]string{value.ID, string(value.Kind), value.DeliveryID, value.EvidenceFingerprint, fmt.Sprint(value.FrontierIsStop)}, "|"), true
+		return s.Objective.Status, strings.Join([]string{value.ID, string(value.TargetID), string(value.TrustedObjectiveClass()), value.DeliveryID, value.EvidenceFingerprint, fmt.Sprint(value.FrontierIsStop)}, "|"), true
 	default:
 		if fact, ok := s.ProgramFacts[string(name)]; ok {
 			return fact.Status, fact.Value, true

@@ -10,8 +10,8 @@ import (
 
 func TestMaintenanceReplayBindsDurableObjectiveState(t *testing.T) {
 	// control-law: maintenance-replay-preserves-verified-objective-state
-	configured := model.Objective{ID: "configured", Kind: model.ObjectiveOpenPR, DeliveryID: "delivery"}
-	commandObjective := model.Objective{ID: "command", Kind: model.ObjectiveApprovedPlan, DeliveryID: "other"}
+	configured := model.Objective{ID: "configured", TargetID: model.ObjectiveOpenPR, DeliveryID: "delivery"}
+	commandObjective := model.Objective{ID: "command", TargetID: model.ObjectiveApprovedPlan, DeliveryID: "other"}
 	request := ApplyRequest{ResolveRequest: ResolveRequest{Objective: commandObjective}, FlowID: "flow"}
 
 	tests := []struct {
@@ -21,9 +21,9 @@ func TestMaintenanceReplayBindsDurableObjectiveState(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "absent survives command objective and retry", receipt: protocol.TransitionReceipt{ObjectiveScope: catalog.ObjectiveScopeOptionalPreserve, ObjectiveStatus: model.FactAbsent}, fact: model.Fact[model.Objective]{Status: model.FactAbsent}},
-		{name: "known survives conflicting command objective and retry", receipt: protocol.TransitionReceipt{ObjectiveScope: catalog.ObjectiveScopeOptionalPreserve, ObjectiveStatus: model.FactKnown, ObjectiveID: configured.ID, ObjectiveKind: configured.Kind, DeliveryID: configured.DeliveryID}, fact: model.Fact[model.Objective]{Status: model.FactKnown, Value: configured}},
+		{name: "known survives conflicting command objective and retry", receipt: protocol.TransitionReceipt{ObjectiveScope: catalog.ObjectiveScopeOptionalPreserve, ObjectiveStatus: model.FactKnown, ObjectiveID: configured.ID, TargetID: configured.TargetID, DeliveryID: configured.DeliveryID}, fact: model.Fact[model.Objective]{Status: model.FactKnown, Value: configured}},
 		{name: "absent cannot replay after product objective appears", receipt: protocol.TransitionReceipt{ObjectiveScope: catalog.ObjectiveScopeOptionalPreserve, ObjectiveStatus: model.FactAbsent}, fact: model.Fact[model.Objective]{Status: model.FactKnown, Value: configured}, wantErr: true},
-		{name: "known cannot replay after product objective changes", receipt: protocol.TransitionReceipt{ObjectiveScope: catalog.ObjectiveScopeOptionalPreserve, ObjectiveStatus: model.FactKnown, ObjectiveID: configured.ID, ObjectiveKind: configured.Kind, DeliveryID: configured.DeliveryID}, fact: model.Fact[model.Objective]{Status: model.FactKnown, Value: commandObjective}, wantErr: true},
+		{name: "known cannot replay after product objective changes", receipt: protocol.TransitionReceipt{ObjectiveScope: catalog.ObjectiveScopeOptionalPreserve, ObjectiveStatus: model.FactKnown, ObjectiveID: configured.ID, TargetID: configured.TargetID, DeliveryID: configured.DeliveryID}, fact: model.Fact[model.Objective]{Status: model.FactKnown, Value: commandObjective}, wantErr: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -41,7 +41,7 @@ type StateAssignment = catalog.StateAssignment
 type StatePrecondition = catalog.StatePrecondition
 type StateValueReference = catalog.StateValueReference
 type StateFacet = model.StateFacet
-type ObjectiveKind = model.ObjectiveKind
+type TargetID = model.TargetID
 type ProtocolPhase = model.ProtocolPhase
 type FactStatus = model.FactStatus
 type FacetName = model.FacetName
@@ -132,7 +132,7 @@ const (
 	FacetObjective           = model.FacetObjective
 )
 
-const ProgramSchemaVersion = 4
+const ProgramSchemaVersion = 5
 
 func KernelEffectCapabilities(transition Transition) []Capability {
 	return catalog.KernelEffectCapabilities(transition)
@@ -179,7 +179,7 @@ type ProgramRuntimeManifest struct {
 	Version                 string              `json:"version"`
 	ProtocolVersion         int                 `json:"protocol_version"`
 	RuntimeMode             ProgramRuntimeMode  `json:"runtime_mode"`
-	SupportedObjectives     []ObjectiveKind     `json:"supported_objectives"`
+	SupportedTargets        []TargetID          `json:"supported_objectives"`
 	ObjectiveContracts      []ObjectiveContract `json:"objective_contracts"`
 	Transitions             []Transition        `json:"transitions"`
 	Facts                   []string            `json:"facts,omitempty"`
@@ -195,8 +195,8 @@ type ProgramRuntimeManifest struct {
 }
 
 type ObjectiveConstraint struct {
-	ObjectiveKind ObjectiveKind    `json:"objective_kind"`
-	Conditions    []FacetCondition `json:"conditions"`
+	TargetID   TargetID         `json:"target_id"`
+	Conditions []FacetCondition `json:"conditions"`
 }
 
 type ExtensionManifest struct {
@@ -417,7 +417,7 @@ func Compile(ctx context.Context, request CompileRequest) (ControlProgram, error
 		return ControlProgram{}, err
 	}
 
-	extensionConditions := map[model.ObjectiveKind][]catalog.FacetCondition{}
+	extensionConditions := map[model.TargetID][]catalog.FacetCondition{}
 	compiledExtensions := make([]compiledExtension, 0, len(request.Extensions))
 	extensionIdentities := make([]ComponentIdentity, 0, len(request.Extensions))
 	extensionCount := 0
@@ -461,7 +461,7 @@ func Compile(ctx context.Context, request CompileRequest) (ControlProgram, error
 		}
 		compiledExtensions = append(compiledExtensions, compiledExtension{manifest: manifest, identity: identity, runtime: runtime})
 		for _, constraint := range manifest.ObjectiveConstraints {
-			extensionConditions[constraint.ObjectiveKind] = append(extensionConditions[constraint.ObjectiveKind], constraint.Conditions...)
+			extensionConditions[constraint.TargetID] = append(extensionConditions[constraint.TargetID], constraint.Conditions...)
 		}
 		for _, resource := range manifest.OwnedResources {
 			if !strings.HasPrefix(resource, manifest.ID+".") {
@@ -631,7 +631,7 @@ func validateCore(manifest CoreSystemManifest) error {
 func validateProgramRuntime(manifest ProgramRuntimeManifest) error {
 	if !componentID.MatchString(manifest.ID) || manifest.Version == "" || manifest.ProtocolVersion != ProgramRuntimeProtocolVersion ||
 		(manifest.RuntimeMode != ProgramRuntimeNative && manifest.RuntimeMode != ProgramRuntimeProtocol) ||
-		len(manifest.Transitions) == 0 || len(manifest.SupportedObjectives) == 0 ||
+		len(manifest.Transitions) == 0 || len(manifest.SupportedTargets) == 0 ||
 		len(manifest.Capabilities) == 0 ||
 		!validJSONObject(manifest.ConfigurationSchema) ||
 		manifest.PrivacyClassification == "" || manifest.TelemetryClassification == "" {
@@ -644,18 +644,18 @@ func validateProgramRuntime(manifest ProgramRuntimeManifest) error {
 	if err := validateDeclaredSchema(manifest.ConfigurationSchema, manifest.Settings, "ProgramRuntime "+manifest.ID+" configuration"); err != nil {
 		return err
 	}
-	supported := map[ObjectiveKind]bool{}
-	for _, objective := range manifest.SupportedObjectives {
+	supported := map[TargetID]bool{}
+	for _, objective := range manifest.SupportedTargets {
 		if !objective.Valid() || supported[objective] {
 			return fmt.Errorf("ProgramRuntime has invalid or duplicate objective %q", objective)
 		}
 		supported[objective] = true
 	}
 	for _, contract := range manifest.ObjectiveContracts {
-		if !supported[contract.ObjectiveKind] {
-			return fmt.Errorf("ProgramRuntime objective contract %q is not supported", contract.ObjectiveKind)
+		if !supported[contract.TargetID] {
+			return fmt.Errorf("ProgramRuntime objective contract %q is not supported", contract.TargetID)
 		}
-		delete(supported, contract.ObjectiveKind)
+		delete(supported, contract.TargetID)
 	}
 	if len(supported) != 0 {
 		return fmt.Errorf("ProgramRuntime does not define every supported objective contract")
@@ -827,9 +827,9 @@ func validateExtension(manifest ExtensionManifest, seen, reserved map[string]boo
 			return fmt.Errorf("extension %q cannot depend on itself", manifest.ID)
 		}
 	}
-	constrainedFacets := map[ObjectiveKind]map[FacetName][]FacetCondition{}
+	constrainedFacets := map[TargetID]map[FacetName][]FacetCondition{}
 	for _, constraint := range manifest.ObjectiveConstraints {
-		if !constraint.ObjectiveKind.Valid() || len(constraint.Conditions) == 0 {
+		if !constraint.TargetID.Valid() || len(constraint.Conditions) == 0 {
 			return fmt.Errorf("extension %q has invalid objective constraint", manifest.ID)
 		}
 		for _, condition := range constraint.Conditions {
@@ -841,10 +841,10 @@ func validateExtension(manifest ExtensionManifest, seen, reserved map[string]boo
 					return fmt.Errorf("extension %q has invalid objective-condition status %q", manifest.ID, status)
 				}
 			}
-			if constrainedFacets[constraint.ObjectiveKind] == nil {
-				constrainedFacets[constraint.ObjectiveKind] = map[FacetName][]FacetCondition{}
+			if constrainedFacets[constraint.TargetID] == nil {
+				constrainedFacets[constraint.TargetID] = map[FacetName][]FacetCondition{}
 			}
-			constrainedFacets[constraint.ObjectiveKind][condition.Facet] = append(constrainedFacets[constraint.ObjectiveKind][condition.Facet], condition)
+			constrainedFacets[constraint.TargetID][condition.Facet] = append(constrainedFacets[constraint.TargetID][condition.Facet], condition)
 		}
 	}
 	declaredRecovery := map[TransitionID]bool{}
@@ -877,10 +877,10 @@ func validateExtension(manifest ExtensionManifest, seen, reserved map[string]boo
 			}
 		}
 		if transition.SelectionClass == SelectionObjectiveRequired {
-			if len(transition.ObjectiveKinds) == 0 {
+			if len(transition.TargetIDs) == 0 {
 				return fmt.Errorf("extension transition %q is implicitly selectable without an explicit constrained objective", transition.ID)
 			}
-			for _, objective := range transition.ObjectiveKinds {
+			for _, objective := range transition.TargetIDs {
 				discharges := false
 				for _, target := range transition.TargetConditions {
 					for _, obligation := range constrainedFacets[objective][target.Facet] {
@@ -1062,7 +1062,7 @@ func validateDependencies(extensions []compiledExtension) error {
 func cloneTransition(value Transition) Transition {
 	value.SourcePhases = append([]model.ProtocolPhase(nil), value.SourcePhases...)
 	value.TargetPhases = append([]model.ProtocolPhase(nil), value.TargetPhases...)
-	value.ObjectiveKinds = append([]model.ObjectiveKind(nil), value.ObjectiveKinds...)
+	value.TargetIDs = append([]model.TargetID(nil), value.TargetIDs...)
 	value.RequiredIdentity = append([]string(nil), value.RequiredIdentity...)
 	value.Authority = append([]catalog.AuthorityClass(nil), value.Authority...)
 	value.AuthorityAll = append([]catalog.AuthorityClass(nil), value.AuthorityAll...)
@@ -1110,7 +1110,7 @@ func cloneCoreManifest(value CoreSystemManifest) CoreSystemManifest {
 }
 
 func cloneRuntimeManifest(value ProgramRuntimeManifest) ProgramRuntimeManifest {
-	value.SupportedObjectives = append([]ObjectiveKind(nil), value.SupportedObjectives...)
+	value.SupportedTargets = append([]TargetID(nil), value.SupportedTargets...)
 	value.ObjectiveContracts = append([]ObjectiveContract(nil), value.ObjectiveContracts...)
 	for index := range value.ObjectiveContracts {
 		value.ObjectiveContracts[index].Conditions = cloneConditions(value.ObjectiveContracts[index].Conditions)

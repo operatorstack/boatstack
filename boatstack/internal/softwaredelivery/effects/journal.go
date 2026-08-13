@@ -37,7 +37,7 @@ type journalRecord struct {
 	Admission       protocol.Admission   `json:"admission"`
 	TransitionID    catalog.TransitionID `json:"transition_id"`
 	TransitionClass catalog.EventClass   `json:"transition_class"`
-	// AllowedStateFacets preserves the current schema-8 record shape. Recovery
+	// AllowedStateFacets preserves the declared record shape. Recovery
 	// authority is reconstructed from Admission.RequiredCapabilities instead.
 	AllowedStateFacets []model.StateFacet          `json:"allowed_state_facets"`
 	ReconcilesProgram  bool                        `json:"reconciles_program,omitempty"`
@@ -140,7 +140,7 @@ func readJournal(path string) (journalRecord, error) {
 		if receipt.PrescriptionID != admission.PrescriptionID || receipt.TransitionVersion != admission.TransitionVersion || receipt.Program.Fingerprint != admission.ExpectedProgramFingerprint ||
 			receipt.PriorStateRevision != admission.ExpectedStateRevision || receipt.SourceFingerprint != admission.ExpectedSnapshotFingerprint ||
 			receipt.AuthorityFingerprint != admission.AuthorityFingerprint || !slices.Equal(receipt.RequiredCapabilities, admission.RequiredCapabilities) ||
-			!slices.Equal(receipt.GrantedCapabilities, admission.GrantedCapabilities) || receipt.ObjectiveID != admission.Objective.ID || receipt.ObjectiveKind != admission.Objective.Kind ||
+			!slices.Equal(receipt.GrantedCapabilities, admission.GrantedCapabilities) || receipt.ObjectiveID != admission.Objective.ID || receipt.TargetID != admission.Objective.TargetID || receipt.TrustedClass != admission.Objective.TrustedClass ||
 			receipt.DeliveryID != admission.Objective.DeliveryID || receipt.ObjectiveScope != admission.ObjectiveScope || receipt.ObjectiveStatus != admission.ObjectiveStatus {
 			return journalRecord{}, fmt.Errorf("committed transition fact in %s does not match its exact admission", path)
 		}

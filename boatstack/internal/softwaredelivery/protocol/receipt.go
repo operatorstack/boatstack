@@ -12,7 +12,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 )
 
-const ReceiptSchemaVersion = 8
+const ReceiptSchemaVersion = 9
 
 type TransitionFactKind string
 
@@ -109,7 +109,8 @@ type TransitionReceipt struct {
 	PriorStateRevision          uint64                 `json:"prior_state_revision"`
 	ResultingStateRevision      uint64                 `json:"resulting_state_revision"`
 	ObjectiveID                 string                 `json:"objective_id"`
-	ObjectiveKind               model.ObjectiveKind    `json:"objective_kind"`
+	TargetID                    model.TargetID         `json:"target_id"`
+	TrustedClass                model.TargetID         `json:"trusted_class,omitempty"`
 	DeliveryID                  string                 `json:"delivery_id"`
 	ObjectiveScope              catalog.ObjectiveScope `json:"objective_scope,omitempty"`
 	ObjectiveStatus             model.FactStatus       `json:"objective_status,omitempty"`
@@ -181,7 +182,7 @@ func NewReceipt(flowID string, sequence uint64, program ProgramIdentity, admissi
 		TransitionID: transition.ID, TransitionVersion: transition.Version,
 		PrescriptionID: admission.PrescriptionID, AdmissionID: admission.ID,
 		PriorStateRevision: admission.ExpectedStateRevision, ResultingStateRevision: target.StateRevision,
-		ObjectiveID: admission.Objective.ID, ObjectiveKind: admission.Objective.Kind, DeliveryID: admission.Objective.DeliveryID,
+		ObjectiveID: admission.Objective.ID, TargetID: admission.Objective.TargetID, TrustedClass: admission.Objective.TrustedClass, DeliveryID: admission.Objective.DeliveryID,
 		ObjectiveScope: admission.ObjectiveScope, ObjectiveStatus: admission.ObjectiveStatus,
 		ObjectiveBindingFingerprint: resultingObjectiveBindingFingerprint,
 		SourceFingerprint:           admission.ExpectedSnapshotFingerprint, TargetFingerprint: target.Fingerprint,
@@ -289,17 +290,17 @@ func (r TransitionReceipt) Validate() error {
 	if r.ObjectiveScope == catalog.ObjectiveScopeOptionalPreserve {
 		switch r.ObjectiveStatus {
 		case model.FactKnown:
-			if r.ObjectiveID == "" || !r.ObjectiveKind.Valid() || r.DeliveryID == "" {
+			if r.ObjectiveID == "" || !r.TargetID.Valid() || (r.TrustedClass != "" && !r.TrustedClass.Valid()) || r.DeliveryID == "" {
 				return fmt.Errorf("maintenance receipt has incomplete known objective binding")
 			}
 		case model.FactAbsent:
-			if r.ObjectiveID != "" || r.ObjectiveKind != "" || r.DeliveryID != "" {
+			if r.ObjectiveID != "" || r.TargetID != "" || r.DeliveryID != "" {
 				return fmt.Errorf("maintenance receipt invents product intent from verified absence")
 			}
 		default:
 			return fmt.Errorf("maintenance receipt requires known or verified-absent objective status")
 		}
-	} else if r.ObjectiveID == "" || !r.ObjectiveKind.Valid() || r.DeliveryID == "" {
+	} else if r.ObjectiveID == "" || !r.TargetID.Valid() || (r.TrustedClass != "" && !r.TrustedClass.Valid()) || r.DeliveryID == "" {
 		return fmt.Errorf("receipt has incomplete objective identity")
 	}
 	if r.StartedAt.IsZero() || r.CommittedAt.Before(r.StartedAt) || r.DurationNanoseconds != r.CommittedAt.Sub(r.StartedAt).Nanoseconds() || r.Verification.VerifiedAt.After(r.CommittedAt) {

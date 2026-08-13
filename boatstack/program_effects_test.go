@@ -88,7 +88,7 @@ func (protocolStateRuntime) RuntimeManifest(context.Context) (delivery.ProgramRu
 	publish := delivery.Transition{
 		ID: publishID, Version: 1, SelectionClass: delivery.SelectionProgramProgress, Class: delivery.EventOwnedLocal,
 		SourcePhases: []delivery.ProtocolPhase{delivery.PhaseActive}, TargetPhases: []delivery.ProtocolPhase{delivery.PhaseActive},
-		ObjectiveKinds: []delivery.ObjectiveKind{delivery.ObjectiveVerified}, RequiredIdentity: []string{"repository-id", "git-common-id", "worktree-id"},
+		TargetIDs: []delivery.TargetID{delivery.ObjectiveVerified}, RequiredIdentity: []string{"repository-id", "git-common-id", "worktree-id"},
 		Authority:            []delivery.AuthorityClass{delivery.AuthorityHuman, delivery.AuthorityRepository},
 		RequiredCapabilities: []delivery.Capability{delivery.CapabilityRepositoryWrite, delivery.CapabilityCommandExecute, delivery.CapabilityProductMutate}, RequiredEvidence: []string{"snapshot", "objective"},
 		OwnedResources: []string{resource}, OwnedFacets: []delivery.StateFacet{delivery.StateFacetControl, delivery.StateFacetProduct},
@@ -105,9 +105,9 @@ func (protocolStateRuntime) RuntimeManifest(context.Context) (delivery.ProgramRu
 	}
 	return delivery.ProgramRuntimeManifest{
 		ID: programID, Version: "1.0.0", ProtocolVersion: delivery.ProgramRuntimeProtocolVersion, RuntimeMode: delivery.ProgramRuntimeProtocol,
-		SupportedObjectives: []delivery.ObjectiveKind{delivery.ObjectiveVerified},
-		ObjectiveContracts:  []delivery.ObjectiveContract{{ObjectiveKind: delivery.ObjectiveVerified, Conditions: []delivery.FacetCondition{delivery.KnownCondition(delivery.FacetDelivery, string(model.DeliveryPublished))}}},
-		Transitions:         []delivery.Transition{publish, recover}, OwnedResources: []string{resource},
+		SupportedTargets:   []delivery.TargetID{delivery.ObjectiveVerified},
+		ObjectiveContracts: []delivery.ObjectiveContract{{TargetID: delivery.ObjectiveVerified, Conditions: []delivery.FacetCondition{delivery.KnownCondition(delivery.FacetDelivery, string(model.DeliveryPublished))}}},
+		Transitions:        []delivery.Transition{publish, recover}, OwnedResources: []string{resource},
 		Effects: []string{string(publishEffect), string(recoverEffect)}, Verifiers: []string{"fixture.state.published", "fixture.state.recovered"},
 		Capabilities:        []delivery.Capability{delivery.CapabilityRepositoryWrite, delivery.CapabilityCommandExecute, delivery.CapabilityProductMutate},
 		ConfigurationSchema: json.RawMessage(`{"type":"object"}`), PrivacyClassification: "metadata-only", TelemetryClassification: "transition-receipt",
@@ -191,7 +191,7 @@ func TestProgramRuntimeProtocolCommitsDeclaredStateEffectBeforeReceipt(t *testin
 	state.Phase, state.Engagement, state.Delivery = model.PhaseActive, model.EngagementActive, model.DeliveryActive
 	state.Configuration, state.ConfigFingerprint = model.ConfigurationVerified, "configuration-fingerprint"
 	state.PlanApprovalPolicy, state.VisualEvidencePolicy, state.ExternalEffectPolicy, state.EnabledHosts = "human", "optional", "human-or-autonomy-plus-provider", []string{"cli"}
-	state.Objective = model.Objective{ID: "protocol-objective", Kind: model.ObjectiveVerified, DeliveryID: "protocol-delivery"}
+	state.Objective = model.Objective{ID: "protocol-objective", TargetID: model.ObjectiveVerified, DeliveryID: "protocol-delivery"}
 	encoded, err := durable.EncodeState(state)
 	if err != nil {
 		t.Fatal(err)

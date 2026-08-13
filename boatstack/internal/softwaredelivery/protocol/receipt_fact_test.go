@@ -22,7 +22,7 @@ func committedReceiptFixture(t *testing.T) (TransitionReceipt, Admission, catalo
 		ID: "adm-fixture", PrescriptionID: "prx-fixture", ExpectedStateRevision: 41,
 		ExpectedProgramFingerprint: strings.Repeat("a", 64), ExpectedSnapshotFingerprint: strings.Repeat("b", 64),
 		ExpectedObjectiveBindingFingerprint: strings.Repeat("d", 64),
-		Objective:                           model.Objective{ID: "objective", Kind: model.ObjectiveApprovedPlan, DeliveryID: "delivery"},
+		Objective:                           model.Objective{ID: "objective", TargetID: "approved-plan-for-repo", TrustedClass: model.ObjectiveApprovedPlan, DeliveryID: "delivery"},
 		ObjectiveScope:                      catalog.ObjectiveScopeBoundExact,
 		Authority:                           authority, AuthorityFingerprint: authorityFingerprint,
 		RequiredCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite}, GrantedCapabilities: authority.GrantedCapabilities(now), EffectiveCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite},
@@ -66,6 +66,9 @@ func TestCommittedTransitionFactBindsProgramTransitionStateAuthorityEffectsAndVe
 	}
 	if receipt.TransitionID != transition.ID || receipt.PriorStateRevision != 41 || receipt.ResultingStateRevision != 42 {
 		t.Fatalf("transition/revision fact = %#v", receipt)
+	}
+	if receipt.TargetID != admission.Objective.TargetID || receipt.TrustedClass != admission.Objective.TrustedClass {
+		t.Fatalf("target identity = %#v", receipt)
 	}
 	if receipt.AuthorityFingerprint != admission.AuthorityFingerprint || len(receipt.AuthoritySources) != 1 || len(receipt.RequiredCapabilities) != 1 || len(receipt.GrantedCapabilities) == 0 {
 		t.Fatalf("authority fact = %#v", receipt)

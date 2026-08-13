@@ -345,9 +345,9 @@ func applyCatalogReconcile(state *durable.State, admission protocol.Admission, _
 
 func applyObjectiveBind(state *durable.State, admission protocol.Admission, _ catalog.Transition) error {
 	wasActive := state.Phase == model.PhaseActive
-	kind, _ := admission.Parameters.Get("objective_kind")
+	kind, _ := admission.Parameters.Get("target_id")
 	delivery, _ := admission.Parameters.Get("delivery_id")
-	if kind != string(admission.Objective.Kind) || delivery != admission.Objective.DeliveryID {
+	if kind != string(admission.Objective.TargetID) || delivery != admission.Objective.DeliveryID {
 		return fmt.Errorf("objective parameters do not match admitted objective")
 	}
 	if state.Objective.DeliveryID != "" && state.Objective.DeliveryID != admission.Objective.DeliveryID {
@@ -380,7 +380,7 @@ func resetDeliveryState(state *durable.State) {
 
 func applyPlanApprove(state *durable.State, admission protocol.Admission, _ catalog.Transition) error {
 	state.Plan, state.Delivery, state.Phase = model.PlanApproved, model.DeliveryApproved, model.PhaseActive
-	if admission.Objective.Kind == model.ObjectiveApprovedPlan {
+	if admission.Objective.TrustedObjectiveClass() == model.ObjectiveApprovedPlan {
 		establishTerminal(state, model.PhaseTerminal)
 	}
 	return nil
@@ -440,7 +440,7 @@ func applyVisualEvidence(state *durable.State, admission protocol.Admission, _ c
 	upsertGate(state, durable.GateEvidence{Gate: "visual", Revision: revision, Fingerprint: fingerprint})
 	state.SourceRevision, state.WorktreeFingerprint = admission.SourceRevision, admission.WorktreeFingerprint
 	state.Terminal = model.TerminalNonterminal
-	if admission.Objective.Kind == model.ObjectiveVerified {
+	if admission.Objective.TrustedObjectiveClass() == model.ObjectiveVerified {
 		state.Delivery = model.DeliveryActive
 	}
 	state.Verification, state.Phase = model.VerificationCurrent, model.PhaseActive
@@ -458,9 +458,9 @@ func applyPublicationObservation(state *durable.State, admission protocol.Admiss
 		state.Phase = model.PhaseUnresolved
 	} else if state.Publication == model.PublicationClosedUnmerged {
 		state.Phase = model.PhaseFrontier
-	} else if admission.Objective.Kind == model.ObjectiveOpenPR && state.Publication == model.PublicationOpen {
+	} else if admission.Objective.TrustedObjectiveClass() == model.ObjectiveOpenPR && state.Publication == model.PublicationOpen {
 		establishTerminal(state, model.PhaseTerminal)
-	} else if admission.Objective.Kind == model.ObjectiveMerged && state.Publication == model.PublicationMerged {
+	} else if admission.Objective.TrustedObjectiveClass() == model.ObjectiveMerged && state.Publication == model.PublicationMerged {
 		state.Workspace, state.Delivery = model.WorkspaceLanded, model.DeliveryTerminal
 		establishTerminal(state, model.PhaseTerminal)
 	} else {
@@ -535,7 +535,7 @@ func hasGates(state durable.State, names ...string) bool {
 }
 
 func verifiedObjectiveSatisfied(state durable.State, objective model.Objective) bool {
-	if objective.Kind != model.ObjectiveVerified || !hasGates(state, "build", "test", "review") {
+	if objective.TrustedObjectiveClass() != model.ObjectiveVerified || !hasGates(state, "build", "test", "review") {
 		return false
 	}
 	return state.VisualEvidencePolicy != "required" || hasGates(state, "visual")

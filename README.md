@@ -146,7 +146,7 @@ The public protocol is deliberately small:
 ```sh
 # Observe or resolve. These commands do not mutate managed state.
 boatstack status --repo . --format json
-boatstack next --repo . --objective-id <objective> --objective-kind <kind> \
+boatstack next --repo . --objective-id <objective> --target-id <kind> \
   --delivery <delivery> --format json
 
 # Resolve one repository-owned entry.

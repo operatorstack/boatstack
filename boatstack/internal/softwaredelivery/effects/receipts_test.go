@@ -8,9 +8,9 @@ import (
 )
 
 func TestActiveFlowIdentityComesFromObjectiveBindingReceipt(t *testing.T) {
-	objective := model.Objective{ID: "objective-product-delivery-run-one", Kind: model.ObjectiveOpenPR, DeliveryID: "one"}
-	binding := protocol.TransitionReceipt{ID: "binding", FlowID: "run-original", TransitionID: "objective.bind", ObjectiveID: objective.ID, ObjectiveKind: objective.Kind, DeliveryID: objective.DeliveryID, ResultingStateRevision: 4}
-	maintenance := protocol.TransitionReceipt{ID: "maintenance", FlowID: "run-maintenance", TransitionID: "installation.reconcile-update", ObjectiveID: objective.ID, ObjectiveKind: objective.Kind, DeliveryID: objective.DeliveryID, ResultingStateRevision: 5}
+	objective := model.Objective{ID: "objective-product-delivery-run-one", TargetID: "published-pr", TrustedClass: model.ObjectiveOpenPR, DeliveryID: "one"}
+	binding := protocol.TransitionReceipt{ID: "binding", FlowID: "run-original", TransitionID: "objective.bind", ObjectiveID: objective.ID, TargetID: objective.TargetID, TrustedClass: objective.TrustedClass, DeliveryID: objective.DeliveryID, ResultingStateRevision: 4}
+	maintenance := protocol.TransitionReceipt{ID: "maintenance", FlowID: "run-maintenance", TransitionID: "installation.reconcile-update", ObjectiveID: objective.ID, TargetID: objective.TargetID, TrustedClass: objective.TrustedClass, DeliveryID: objective.DeliveryID, ResultingStateRevision: 5}
 	if !matchesObjectiveBinding(binding, objective, 5) {
 		t.Fatal("objective binding receipt was not recognized")
 	}
@@ -19,6 +19,11 @@ func TestActiveFlowIdentityComesFromObjectiveBindingReceipt(t *testing.T) {
 	}
 	if matchesObjectiveBinding(binding, objective, 3) {
 		t.Fatal("future objective binding receipt was accepted")
+	}
+	wrongClass := binding
+	wrongClass.TrustedClass = model.ObjectiveVerified
+	if matchesObjectiveBinding(wrongClass, objective, 5) {
+		t.Fatal("receipt from another trusted target class was accepted")
 	}
 }
 

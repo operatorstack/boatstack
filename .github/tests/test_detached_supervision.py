@@ -118,7 +118,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
     @staticmethod
     def objective_flags() -> tuple[str, ...]:
         return (
-            "--objective-id", "bootstrap", "--objective-kind", "approved-plan",
+            "--objective-id", "bootstrap", "--target-id", "approved-plan",
             "--delivery", "bootstrap",
         )
 
@@ -207,7 +207,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         self.apply_prescribed(
             "objective.bind", "--repo", self.repo,
             *self.objective_flags(), "--human", "contract",
-            "--param", "objective_kind=approved-plan", "--param", "delivery_id=bootstrap",
+            "--param", "target_id=approved-plan", "--param", "delivery_id=bootstrap",
         )
         self.apply_prescribed(
             "engagement.begin", "--repo", self.repo,
@@ -232,7 +232,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         # control-law: codex-mode-authority-survives-observation-and-effects
         objective = (
             "--objective-id", "codex-driver-authority-triggers",
-            "--objective-kind", "open-or-updated-pr",
+            "--target-id", "open-or-updated-pr",
             "--delivery", "codex-driver-authority-triggers",
         )
         flow = ("--run-id", "flow-codex-driver-authority-triggers")
@@ -258,7 +258,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         self.apply_prescribed(
             "objective.bind", "--repo", self.repo,
             *objective, *flow, "--human", "contract",
-            "--param", "objective_kind=open-or-updated-pr",
+            "--param", "target_id=open-or-updated-pr",
             "--param", "delivery_id=codex-driver-authority-triggers",
         )
         self.apply_prescribed(
@@ -322,7 +322,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         # control-law: retained-repository-source-crosses-maintenance-receipt-once
         objective = (
             "--objective-id", "preserve-repository-authority-context",
-            "--objective-kind", "open-or-updated-pr",
+            "--target-id", "open-or-updated-pr",
             "--delivery", "preserve-repository-authority-context",
         )
         flow = ("--run-id", "flow-preserve-repository-authority-context")
@@ -391,7 +391,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         configured = self.apply_prescribed(
             "objective.bind", "--repo", self.repo,
             *objective, *flow, *actor,
-            "--param", "objective_kind=open-or-updated-pr",
+            "--param", "target_id=open-or-updated-pr",
             "--param", "delivery_id=preserve-repository-authority-context",
         )
         self.assertEqual(configured["receipt"]["transition_id"], "objective.bind")
@@ -449,7 +449,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         result = self.run_helper(
             "next", "--repo", root,
             "--objective-id", "unverified-authority",
-            "--objective-kind", "open-or-updated-pr",
+            "--target-id", "open-or-updated-pr",
             "--delivery", "unverified-authority",
             "--run-id", "flow-unverified-authority",
             "--human", "contract", "--repository-authority",

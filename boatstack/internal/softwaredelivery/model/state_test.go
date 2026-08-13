@@ -61,6 +61,14 @@ func TestCanonicalizeIsDeterministicAndControlSensitive(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeRejectsPriorObjectiveSchema(t *testing.T) {
+	observation := testObservation(PhaseObserved)
+	observation.SchemaVersion = SnapshotSchemaVersion - 1
+	if _, err := Canonicalize(observation); err == nil {
+		t.Fatal("prior objective snapshot schema was accepted")
+	}
+}
+
 func TestCanonicalizeRejectsKnownFactWithoutEvidence(t *testing.T) {
 	// control-law: controlling-facts-carry-evidence
 	observation := testObservation(PhaseObserved)
@@ -136,7 +144,7 @@ func TestEveryControllingFacetChangesCanonicalIdentity(t *testing.T) {
 		},
 		FacetTerminal: func(o *Observation) { o.Terminal = Known(TerminalStale, evidence) },
 		FacetObjective: func(o *Observation) {
-			o.Objective = Known(Objective{ID: "objective", Kind: ObjectiveVerified, DeliveryID: "delivery"}, evidence)
+			o.Objective = Known(Objective{ID: "objective", TargetID: ObjectiveVerified, DeliveryID: "delivery"}, evidence)
 		},
 	}
 	for _, facet := range ControllingFacets() {

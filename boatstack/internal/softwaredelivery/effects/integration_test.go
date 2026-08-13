@@ -164,7 +164,7 @@ func TestConcreteBoundaryAppliesAndReceiptsOneTransition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	objective := model.Objective{ID: "objective-1", Kind: model.ObjectiveVerified, DeliveryID: "delivery-1"}
+	objective := model.Objective{ID: "objective-1", TargetID: model.ObjectiveVerified, DeliveryID: "delivery-1"}
 	authority := protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{
 		ID: "authority-1", Class: catalog.AuthorityHuman, Subject: invocation.RepositoryID, Fingerprint: "human-fingerprint",
 		IssuedAt: clock.Now().Add(-time.Minute), ExpiresAt: clock.Now().Add(time.Hour),
@@ -236,7 +236,7 @@ func TestDeclaredStateEffectAppliesAndReceiptsWithoutTransitionDispatch(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	objective := model.Objective{ID: "declared-state-objective", Kind: model.ObjectiveVerified, DeliveryID: "declared-state-delivery"}
+	objective := model.Objective{ID: "declared-state-objective", TargetID: model.ObjectiveVerified, DeliveryID: "declared-state-delivery"}
 	human := protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{
 		ID: "declared-state-human", Class: catalog.AuthorityHuman, Subject: invocation.RepositoryID, Fingerprint: "explicit-human",
 		IssuedAt: clock.Now().Add(-time.Minute), ExpiresAt: clock.Now().Add(time.Hour),
@@ -276,7 +276,7 @@ func TestExternalConfigurationAuthorityTransfersAcrossAttachAndDetach(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	objective := model.Objective{ID: "external-config-objective", Kind: model.ObjectiveApprovedPlan, DeliveryID: "external-config"}
+	objective := model.Objective{ID: "external-config-objective", TargetID: model.ObjectiveApprovedPlan, DeliveryID: "external-config"}
 	now := time.Now().UTC()
 	human := protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{
 		ID: "external-config-human", Class: catalog.AuthorityHuman, Subject: "integration", Fingerprint: "explicit-human",
@@ -309,7 +309,7 @@ func TestExternalConfigurationAuthorityTransfersAcrossAttachAndDetach(t *testing
 		{Name: "source_revision", Value: "external-config-fixture"}, {Name: "runtime_version", Value: runtimeVersion}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
 		{Name: "config_path", Value: initialPath}, {Name: "config_sha256", Value: configFingerprint(t, initialConfig)},
 	})
-	apply("objective.bind", human, false, protocol.Parameters{{Name: "objective_kind", Value: string(objective.Kind)}, {Name: "delivery_id", Value: objective.DeliveryID}})
+	apply("objective.bind", human, false, protocol.Parameters{{Name: "target_id", Value: string(objective.TargetID)}, {Name: "delivery_id", Value: objective.DeliveryID}})
 	apply("repository.attach", human, false, protocol.Parameters{{Name: "topology", Value: "detached"}, {Name: "config_authority", Value: "external"}})
 	resolver, err := plant.NewResolver(externalRoot)
 	if err != nil {
@@ -370,7 +370,7 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	objective := model.Objective{ID: "program-drift", Kind: model.ObjectiveApprovedPlan, DeliveryID: "program-drift"}
+	objective := model.Objective{ID: "program-drift", TargetID: model.ObjectiveApprovedPlan, DeliveryID: "program-drift"}
 	now := time.Now().UTC()
 	human := protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{
 		ID: "program-drift-human", Class: catalog.AuthorityHuman, Subject: "operator", Fingerprint: "explicit-program-reconciliation",
@@ -505,7 +505,7 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 	}
 	updateRequest := surfaces.Request{
 		SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationApply, Repository: repository, Host: "cli", CorrelationID: "program-current-update",
-		FlowID: "flow-program-drift", Objective: model.Objective{ID: "ignored-command-objective", Kind: model.ObjectiveOpenPR, DeliveryID: "ignored"},
+		FlowID: "flow-program-drift", Objective: model.Objective{ID: "ignored-command-objective", TargetID: model.ObjectiveOpenPR, DeliveryID: "ignored"},
 		TransitionID: "installation.update", Authority: human,
 		Parameters: protocol.Parameters{
 			{Name: "source_revision", Value: "program-current"}, {Name: "runtime_version", Value: runtimeVersion}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
@@ -540,7 +540,7 @@ func TestReferenceExtensionUsesKernelAdmissionVerificationAndReceiptPath(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	objective := model.Objective{ID: "extension-receipt", Kind: model.ObjectiveOpenPR, DeliveryID: "extension-receipt"}
+	objective := model.Objective{ID: "extension-receipt", TargetID: model.ObjectiveOpenPR, DeliveryID: "extension-receipt"}
 	now := time.Now().UTC()
 	authority := func(class catalog.AuthorityClass) protocol.AuthorityBundle {
 		fingerprint, subject := "explicit-human", "integration"
@@ -587,7 +587,7 @@ func TestReferenceExtensionUsesKernelAdmissionVerificationAndReceiptPath(t *test
 	if initialized.Receipt == nil || initialized.Receipt.AuthorityFingerprint == "" || len(initialized.Receipt.AuthoritySources) != 1 || len(initialized.Receipt.RequiredCapabilities) == 0 || len(initialized.Receipt.GrantedCapabilities) == 0 || len(initialized.Receipt.ExercisedCapabilities) != 0 || len(initialized.Receipt.CommittedEffects) == 0 || initialized.Receipt.Verification.Result != protocol.VerificationSatisfied {
 		t.Fatalf("receipt lost capability or authority provenance: %#v", initialized.Receipt)
 	}
-	apply("objective.bind", authority(catalog.AuthorityHuman), protocol.Parameters{{Name: "objective_kind", Value: string(objective.Kind)}, {Name: "delivery_id", Value: objective.DeliveryID}})
+	apply("objective.bind", authority(catalog.AuthorityHuman), protocol.Parameters{{Name: "target_id", Value: string(objective.TargetID)}, {Name: "delivery_id", Value: objective.DeliveryID}})
 	apply("engagement.begin", authority(catalog.AuthorityRepository), nil)
 	planPath := filepath.Join(t.TempDir(), "plan.md")
 	planRaw := []byte("# Extension plan\n")
@@ -712,12 +712,12 @@ func TestConcreteWorkflowPreservesConfigurationProofAndObjectiveTerminals(t *tes
 	if err := os.WriteFile(configPath, configRaw, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	approvedObjective := model.Objective{ID: "objective-approved", Kind: model.ObjectiveApprovedPlan, DeliveryID: "delivery-workflow"}
+	approvedObjective := model.Objective{ID: "objective-approved", TargetID: model.ObjectiveApprovedPlan, DeliveryID: "delivery-workflow"}
 	apply(approvedObjective, "installation.initialize", authority(catalog.AuthorityHuman), protocol.Parameters{
 		{Name: "source_revision", Value: "integration-revision"}, {Name: "runtime_version", Value: runtimeVersion}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
 		{Name: "config_path", Value: configPath}, {Name: "config_sha256", Value: configFingerprint(t, configRaw)},
 	})
-	apply(approvedObjective, "objective.bind", authority(catalog.AuthorityHuman), protocol.Parameters{{Name: "objective_kind", Value: string(approvedObjective.Kind)}, {Name: "delivery_id", Value: approvedObjective.DeliveryID}})
+	apply(approvedObjective, "objective.bind", authority(catalog.AuthorityHuman), protocol.Parameters{{Name: "target_id", Value: string(approvedObjective.TargetID)}, {Name: "delivery_id", Value: approvedObjective.DeliveryID}})
 	apply(approvedObjective, "engagement.begin", authority(catalog.AuthorityRepository), nil)
 
 	updatedConfigPath := filepath.Join(t.TempDir(), "project-v2-updated.json")
@@ -744,8 +744,8 @@ func TestConcreteWorkflowPreservesConfigurationProofAndObjectiveTerminals(t *tes
 		t.Fatalf("approved-plan terminal not established: %#v", approved.Target)
 	}
 
-	verifiedObjective := model.Objective{ID: "objective-verified", Kind: model.ObjectiveVerified, DeliveryID: approvedObjective.DeliveryID}
-	apply(verifiedObjective, "objective.bind", authority(catalog.AuthorityHuman), protocol.Parameters{{Name: "objective_kind", Value: string(verifiedObjective.Kind)}, {Name: "delivery_id", Value: verifiedObjective.DeliveryID}})
+	verifiedObjective := model.Objective{ID: "objective-verified", TargetID: model.ObjectiveVerified, DeliveryID: approvedObjective.DeliveryID}
+	apply(verifiedObjective, "objective.bind", authority(catalog.AuthorityHuman), protocol.Parameters{{Name: "target_id", Value: string(verifiedObjective.TargetID)}, {Name: "delivery_id", Value: verifiedObjective.DeliveryID}})
 	apply(verifiedObjective, "plan.activate", authority(catalog.AuthorityHuman), nil)
 	head := strings.TrimSpace(commandOutput(t, repository, "git", "rev-parse", "HEAD"))
 	gateParameters := func(name string) protocol.Parameters {
@@ -816,7 +816,7 @@ func TestWorkspaceCutTransfersAuthorityToExactDestinationWorktree(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	objective := model.Objective{ID: "objective-workspace", Kind: model.ObjectiveMerged, DeliveryID: "delivery-workspace"}
+	objective := model.Objective{ID: "objective-workspace", TargetID: model.ObjectiveMerged, DeliveryID: "delivery-workspace"}
 	human := protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{
 		ID: "human-workspace", Class: catalog.AuthorityHuman, Subject: "operator", Fingerprint: "human-workspace-proof",
 		IssuedAt: clock.Now().Add(-time.Minute), ExpiresAt: clock.Now().Add(time.Hour),
@@ -850,7 +850,7 @@ func TestWorkspaceCutTransfersAuthorityToExactDestinationWorktree(t *testing.T) 
 		{Name: "source_revision", Value: "integration-revision"}, {Name: "runtime_version", Value: runtimeVersion}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
 		{Name: "config_path", Value: configSource}, {Name: "config_sha256", Value: configFingerprint(t, configRaw)},
 	})
-	apply(sourceInvocation, "objective.bind", human, protocol.Parameters{{Name: "objective_kind", Value: string(objective.Kind)}, {Name: "delivery_id", Value: objective.DeliveryID}})
+	apply(sourceInvocation, "objective.bind", human, protocol.Parameters{{Name: "target_id", Value: string(objective.TargetID)}, {Name: "delivery_id", Value: objective.DeliveryID}})
 	run(t, repository, "git", "add", ".boatstack/project.json")
 	run(t, repository, "git", "commit", "-q", "-m", "install V2 configuration")
 	repositoryAuthority := func(path string) protocol.AuthorityBundle {
@@ -917,8 +917,8 @@ func TestWorkspaceCutTransfersAuthorityToExactDestinationWorktree(t *testing.T) 
 	if err := os.WriteFile(destinationConfigPath, destinationConfig, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	objective = model.Objective{ID: "objective-workspace-abandon", Kind: model.ObjectiveAbandoned, DeliveryID: "delivery-workspace"}
-	apply(destinationInvocation, "objective.bind", human, protocol.Parameters{{Name: "objective_kind", Value: string(objective.Kind)}, {Name: "delivery_id", Value: objective.DeliveryID}})
+	objective = model.Objective{ID: "objective-workspace-abandon", TargetID: model.ObjectiveAbandoned, DeliveryID: "delivery-workspace"}
+	apply(destinationInvocation, "objective.bind", human, protocol.Parameters{{Name: "target_id", Value: string(objective.TargetID)}, {Name: "delivery_id", Value: objective.DeliveryID}})
 	abandoned := apply(destinationInvocation, "workspace.abandon", human, protocol.Parameters{{Name: "branch", Value: "feature/v2-workspace-transfer"}})
 	if abandoned.Target.Terminal.Value != model.TerminalEstablished || abandoned.Target.Workspace.Value != model.WorkspaceAbandoned {
 		t.Fatalf("workspace abandonment did not establish its configured terminal: %#v", abandoned.Target)

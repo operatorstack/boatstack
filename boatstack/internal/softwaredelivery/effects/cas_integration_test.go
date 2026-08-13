@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,7 +59,7 @@ func TestConcurrentApplyConsumesOneRevisionExactlyOnce(t *testing.T) {
 		ID: "cas-human", Class: catalog.AuthorityHuman, Subject: "operator", Fingerprint: "cas-human-proof",
 		IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
 	}}}
-	objective := model.Objective{ID: "cas-objective", Kind: model.ObjectiveApprovedPlan, DeliveryID: "cas-delivery"}
+	objective := model.Objective{ID: "cas-objective", TargetID: model.ObjectiveApprovedPlan, DeliveryID: "cas-delivery"}
 	request := surfaces.Request{
 		SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationApply, Repository: repository, Host: "cli", CorrelationID: "cas-concurrent",
 		FlowID: "flow-cas", Objective: objective, TransitionID: "installation.initialize", Authority: human,
@@ -142,7 +143,7 @@ func TestConcurrentApplyConsumesOneRevisionExactlyOnce(t *testing.T) {
 	}
 	committedRaw, err := os.ReadFile(committedJournals[0])
 	if err != nil || !bytes.Contains(committedRaw, []byte(committed.Receipt.ID)) || !bytes.Contains(committedRaw, []byte("committed_effects")) ||
-		!bytes.Contains(committedRaw, []byte(`"schema_version": 8`)) || !bytes.Contains(committedRaw, []byte(`"allowed_state_facets"`)) {
+		!bytes.Contains(committedRaw, []byte(fmt.Sprintf(`"schema_version": %d`, protocol.JournalSchemaVersion))) || !bytes.Contains(committedRaw, []byte(`"allowed_state_facets"`)) {
 		t.Fatalf("committed journal lacks its complete transition fact: %v %q", err, committedRaw)
 	}
 	// Simulate a crash after canonical commit but before the passive receipt
@@ -190,7 +191,7 @@ func TestProgramChangeInvalidatesPriorPrescriptionBeforeEffects(t *testing.T) {
 	now := time.Now().UTC()
 	request := surfaces.Request{
 		SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationApply, Repository: repository, Host: "cli", CorrelationID: "program-cas",
-		FlowID: "flow-program-cas", Objective: model.Objective{ID: "program-cas", Kind: model.ObjectiveApprovedPlan, DeliveryID: "program-cas"}, TransitionID: "installation.initialize",
+		FlowID: "flow-program-cas", Objective: model.Objective{ID: "program-cas", TargetID: model.ObjectiveApprovedPlan, DeliveryID: "program-cas"}, TransitionID: "installation.initialize",
 		Authority: protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{ID: "program-cas-human", Class: catalog.AuthorityHuman, Subject: "operator", Fingerprint: "human", IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)}}},
 		Parameters: protocol.Parameters{
 			{Name: "source_revision", Value: "program-cas"}, {Name: "runtime_version", Value: runtimeVersion}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},

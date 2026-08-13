@@ -191,21 +191,22 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 	recoveryInfoFact := model.Absent[model.RecoveryContext]("no recovery context", stateEvidence...)
 	transactionInfoFact := model.Absent[model.TransactionContext]("no active transaction", stateEvidence...)
 	terminal := artifactTerminal
-	requiresCurrentImplementation := state.Objective.Kind == model.ObjectiveVerified || state.Objective.Kind == model.ObjectiveOpenPR
+	class := state.Objective.TrustedObjectiveClass()
+	requiresCurrentImplementation := class == model.ObjectiveVerified || class == model.ObjectiveOpenPR
 	currentDeliveryInvalid := verification != model.VerificationCurrent || configuration != model.ConfigurationVerified || runtimeState != model.RuntimeVerified
 	if requiresCurrentImplementation && (terminal == model.TerminalStale || (terminal == model.TerminalEstablished && currentDeliveryInvalid)) {
 		terminal, phase, delivery = model.TerminalStale, model.PhaseActive, model.DeliveryActive
 		if runtimeState == model.RuntimeAbsent {
 			phase = model.PhaseObserved
 		}
-	} else if state.Objective.Kind == model.ObjectiveApprovedPlan && terminal == model.TerminalStale {
+	} else if class == model.ObjectiveApprovedPlan && terminal == model.TerminalStale {
 		phase, delivery = model.PhaseActive, model.DeliveryPlanning
 	}
-	if state.Objective.Kind == model.ObjectiveMerged && state.Publication == model.PublicationMerged && state.Delivery == model.DeliveryTerminal &&
+	if class == model.ObjectiveMerged && state.Publication == model.PublicationMerged && state.Delivery == model.DeliveryTerminal &&
 		(state.Workspace == model.WorkspaceLanded || state.Workspace == model.WorkspaceAbsent) {
 		terminal, phase = model.TerminalEstablished, model.PhaseTerminal
 	}
-	if state.Objective.Kind == model.ObjectiveAbandoned && state.Delivery == model.DeliveryDiscarded &&
+	if class == model.ObjectiveAbandoned && state.Delivery == model.DeliveryDiscarded &&
 		(state.Workspace == model.WorkspaceAbandoned || state.Workspace == model.WorkspaceAbsent) {
 		terminal, phase = model.TerminalEstablished, model.PhaseAbandoned
 	}
@@ -600,7 +601,7 @@ func observeRepositoryArtifacts(layout ports.ControllerLayout, state durable.Sta
 			verification, terminal = model.VerificationStale, model.TerminalStale
 		}
 	}
-	if terminal == model.TerminalEstablished && state.Objective.Kind == model.ObjectiveVerified && state.VisualEvidencePolicy == "required" && !hasVisual {
+	if terminal == model.TerminalEstablished && state.Objective.TrustedObjectiveClass() == model.ObjectiveVerified && state.VisualEvidencePolicy == "required" && !hasVisual {
 		verification, terminal = model.VerificationUnresolved, model.TerminalStale
 	}
 	return plan, verification, terminal, planEvidence, verificationEvidence, nil

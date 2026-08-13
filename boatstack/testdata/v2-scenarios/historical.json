@@ -41,7 +41,7 @@
       },
       "requested_objective": {
         "id": "objective-stale-worktree-runtime-selection",
-        "kind": "verified-implementation",
+        "target_id": "verified-implementation",
         "delivery_id": "delivery-stale-worktree-runtime-selection"
       },
       "event": "runtime.hydrate",
@@ -98,7 +98,7 @@
       },
       "requested_objective": {
         "id": "objective-detached-bootstrap-hydration",
-        "kind": "approved-plan",
+        "target_id": "approved-plan",
         "delivery_id": "delivery-detached-bootstrap-hydration"
       },
       "event": "runtime.hydrate",
@@ -155,7 +155,7 @@
       },
       "requested_objective": {
         "id": "objective-workspace-transition-deadlock",
-        "kind": "safely-abandoned",
+        "target_id": "safely-abandoned",
         "delivery_id": "delivery-workspace-transition-deadlock"
       },
       "event": "workspace.abandon",
@@ -212,7 +212,7 @@
       },
       "requested_objective": {
         "id": "objective-cleanup-before-publication",
-        "kind": "open-or-updated-pr",
+        "target_id": "open-or-updated-pr",
         "delivery_id": "delivery-cleanup-before-publication"
       },
       "event": "workspace.cleanup",
@@ -270,7 +270,7 @@
       },
       "requested_objective": {
         "id": "objective-saved-plan-ambient-restriction",
-        "kind": "verified-implementation",
+        "target_id": "verified-implementation",
         "delivery_id": "delivery-saved-plan-ambient-restriction"
       },
       "event": "plan.activate",
@@ -327,7 +327,7 @@
       },
       "requested_objective": {
         "id": "objective-detached-command-admission-mismatch",
-        "kind": "approved-plan",
+        "target_id": "approved-plan",
         "delivery_id": "delivery-detached-command-admission-mismatch"
       },
       "event": "plan.validate",
@@ -384,7 +384,7 @@
       },
       "requested_objective": {
         "id": "objective-split-bootstrap-command-authority",
-        "kind": "approved-plan",
+        "target_id": "approved-plan",
         "delivery_id": "delivery-split-bootstrap-command-authority"
       },
       "event": "plan.create",
@@ -441,7 +441,7 @@
       },
       "requested_objective": {
         "id": "objective-configuration-projection-drift",
-        "kind": "verified-implementation",
+        "target_id": "verified-implementation",
         "delivery_id": "delivery-configuration-projection-drift"
       },
       "event": "configuration.mutate",
@@ -498,7 +498,7 @@
       },
       "requested_objective": {
         "id": "objective-partial-delivery-vs-merged-projection",
-        "kind": "merged-delivery",
+        "target_id": "merged-delivery",
         "delivery_id": "delivery-partial-delivery-vs-merged-projection"
       },
       "event": "workspace.cleanup",
@@ -556,7 +556,7 @@
       },
       "requested_objective": {
         "id": "objective-dormant-repository-interference",
-        "kind": "approved-plan",
+        "target_id": "approved-plan",
         "delivery_id": "delivery-dormant-repository-interference"
       },
       "event": "plan.create",
@@ -613,7 +613,7 @@
       },
       "requested_objective": {
         "id": "objective-configuration-mutation-self-invalidation",
-        "kind": "verified-implementation",
+        "target_id": "verified-implementation",
         "delivery_id": "delivery-configuration-mutation-self-invalidation"
       },
       "event": "configuration.mutate",
@@ -670,7 +670,7 @@
       },
       "requested_objective": {
         "id": "objective-cross-shard-deterministic-resolution",
-        "kind": "approved-plan",
+        "target_id": "approved-plan",
         "delivery_id": "delivery-cross-shard-deterministic-resolution"
       },
       "event": "plan.validate",
@@ -727,7 +727,7 @@
       },
       "requested_objective": {
         "id": "objective-unpublished-equal-main-not-landed",
-        "kind": "merged-delivery",
+        "target_id": "merged-delivery",
         "delivery_id": "delivery-unpublished-equal-main-not-landed"
       },
       "event": "workspace.cleanup",
@@ -784,7 +784,7 @@
       },
       "requested_objective": {
         "id": "objective-closed-unmerged-not-cleanup-eligible",
-        "kind": "merged-delivery",
+        "target_id": "merged-delivery",
         "delivery_id": "delivery-closed-unmerged-not-cleanup-eligible"
       },
       "event": "workspace.cleanup",
@@ -841,7 +841,7 @@
       },
       "requested_objective": {
         "id": "objective-bindd-merged-terminal",
-        "kind": "merged-delivery",
+        "target_id": "merged-delivery",
         "delivery_id": "delivery-configured-merged-terminal"
       },
       "event": "",
@@ -898,7 +898,7 @@
       },
       "requested_objective": {
         "id": "objective-active-workspace-preserved",
-        "kind": "merged-delivery",
+        "target_id": "merged-delivery",
         "delivery_id": "delivery-active-workspace-preserved"
       },
       "event": "workspace.cleanup",
@@ -955,7 +955,7 @@
       },
       "requested_objective": {
         "id": "objective-amendment-deadlock",
-        "kind": "verified-implementation",
+        "target_id": "verified-implementation",
         "delivery_id": "delivery-amendment-deadlock"
       },
       "event": "plan.approve-amendment",
@@ -1013,7 +1013,7 @@
       },
       "requested_objective": {
         "id": "objective-ambiguous-detached-controller-alias",
-        "kind": "verified-implementation",
+        "target_id": "verified-implementation",
         "delivery_id": "delivery-ambiguous-detached-controller-alias"
       },
       "event": "workspace.cleanup",
@@ -1071,7 +1071,7 @@
       },
       "requested_objective": {
         "id": "objective-activation-wrong-worktree-identity",
-        "kind": "verified-implementation",
+        "target_id": "verified-implementation",
         "delivery_id": "delivery-activation-wrong-worktree-identity"
       },
       "event": "plan.activate",
@@ -1128,7 +1128,7 @@
       },
       "requested_objective": {
         "id": "objective-runtime-publication-before-lock-release",
-        "kind": "open-or-updated-pr",
+        "target_id": "open-or-updated-pr",
         "delivery_id": "delivery-runtime-publication-before-lock-release"
       },
       "event": "publication.preview",
@@ -1186,7 +1186,7 @@
       },
       "requested_objective": {
         "id": "objective-recovery-outranks-slice-position",
-        "kind": "verified-implementation",
+        "target_id": "verified-implementation",
         "delivery_id": "delivery-recovery-outranks-slice-position"
       },
       "event": "recovery.resume",
@@ -1243,7 +1243,7 @@
       },
       "requested_objective": {
         "id": "objective-unknown-provider-is-not-complete",
-        "kind": "open-or-updated-pr",
+        "target_id": "open-or-updated-pr",
         "delivery_id": "delivery-unknown-provider-is-not-complete"
       },
       "event": "publication.execute",

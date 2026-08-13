@@ -39,7 +39,7 @@ func (definition) RuntimeManifest(context.Context) (delivery.ProgramRuntimeManif
 	}
 	return delivery.ProgramRuntimeManifest{
 		ID: ID, Version: Version, ProtocolVersion: delivery.ProgramRuntimeProtocolVersion, RuntimeMode: delivery.ProgramRuntimeNative,
-		SupportedObjectives: []delivery.ObjectiveKind{
+		SupportedTargets: []delivery.TargetID{
 			model.ObjectiveApprovedPlan, model.ObjectiveVerified, model.ObjectiveOpenPR,
 			model.ObjectiveMerged, model.ObjectiveAbandoned,
 		},
@@ -108,8 +108,8 @@ func declarations(transitions []delivery.Transition) ([]string, []string, []stri
 	return resources, effects, verifiers, recoveries
 }
 
-func contract(objective model.ObjectiveKind, conditions ...delivery.FacetCondition) delivery.ObjectiveContract {
-	return delivery.ObjectiveContract{ObjectiveKind: objective, Conditions: conditions}
+func contract(objective model.TargetID, conditions ...delivery.FacetCondition) delivery.ObjectiveContract {
+	return delivery.ObjectiveContract{TargetID: objective, Conditions: conditions}
 }
 
 func known(facet model.FacetName, values ...string) delivery.FacetCondition {

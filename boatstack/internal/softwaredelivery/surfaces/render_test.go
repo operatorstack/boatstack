@@ -20,7 +20,7 @@ func TestShellRenderersConsumeOneCommandAST(t *testing.T) {
 	if !ok {
 		t.Fatal("missing plan.create")
 	}
-	objective := model.Objective{ID: "objective", Kind: model.ObjectiveVerified, DeliveryID: "delivery"}
+	objective := model.Objective{ID: "objective", TargetID: model.ObjectiveVerified, DeliveryID: "delivery"}
 	parameters := protocol.Parameters{{Name: "source_path", Value: "/tmp/O'Brien plan.md"}, {Name: "delivery_id", Value: "delivery"}}
 	prescription := protocol.Prescription{
 		ID: "prx-fixture", Freshness: general.Freshness{ExpectedInstanceID: "repo-fixture", ExpectedStateRevision: 41, ExpectedProgramFingerprint: strings.Repeat("a", 64), ExpectedSnapshotFingerprint: strings.Repeat("b", 64), ExpectedObjectiveBindingFingerprint: strings.Repeat("c", 64), AuthorityFingerprint: "auth-fixture"},
@@ -118,7 +118,7 @@ func TestLocusModelsAreGeneratedFromEveryRuntimeTransition(t *testing.T) {
 }
 
 func TestEveryHostConsumesOneSemanticPrescription(t *testing.T) {
-	objective := model.Objective{ID: "objective", Kind: model.ObjectiveVerified, DeliveryID: "delivery"}
+	objective := model.Objective{ID: "objective", TargetID: model.ObjectiveVerified, DeliveryID: "delivery"}
 	prescription := protocol.Prescription{ID: "prx-fixture", Freshness: general.Freshness{ExpectedInstanceID: "repo-fixture", ExpectedStateRevision: 41, ExpectedProgramFingerprint: strings.Repeat("a", 64), ExpectedSnapshotFingerprint: strings.Repeat("b", 64), ExpectedObjectiveBindingFingerprint: strings.Repeat("c", 64)}}
 	for _, transition := range testprogram.StandardRegistry().All() {
 		if !transition.Controllable() {

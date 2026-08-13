@@ -26,8 +26,8 @@ var syntheticProgram = protocol.ProgramIdentity{ID: "test.synthetic", Version: "
 func syntheticObjectiveContracts(t *testing.T) catalog.ObjectiveContracts {
 	t.Helper()
 	contracts, err := catalog.NewObjectiveContracts([]catalog.ObjectiveContract{{
-		ObjectiveKind: model.ObjectiveVerified,
-		Conditions:    []catalog.FacetCondition{{Facet: model.FacetName("test.synthetic.stage"), Statuses: []model.FactStatus{model.FactKnown}, Values: []string{"terminal"}}},
+		TargetID:   model.ObjectiveVerified,
+		Conditions: []catalog.FacetCondition{{Facet: model.FacetName("test.synthetic.stage"), Statuses: []model.FactStatus{model.FactKnown}, Values: []string{"terminal"}}},
 	}}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -192,7 +192,7 @@ func observation(phase model.ProtocolPhase, fingerprint string) model.Observatio
 		ConfigurationPolicy: model.Known(model.ConfigurationPolicy{PlanApproval: "human", VisualEvidence: "optional", ExternalEffectAuthority: "human-or-autonomy-plus-provider", Hosts: []string{"cli"}}, configurationEvidence),
 		Publication:         model.Known(model.PublicationNone, e), Verification: model.Known(model.VerificationUnverified, e), Recovery: model.Known(model.RecoveryNone, e),
 		Transaction: model.Known(model.TransactionNone, e), RecoveryInfo: model.Absent[model.RecoveryContext]("none", e), TransactionInfo: model.Absent[model.TransactionContext]("none", e),
-		Terminal: model.Known(model.TerminalNonterminal, e), Objective: model.Known(model.Objective{ID: "objective", Kind: model.ObjectiveVerified, DeliveryID: "delivery"}, e), ObservedAt: time.Unix(20, 0).UTC(),
+		Terminal: model.Known(model.TerminalNonterminal, e), Objective: model.Known(model.Objective{ID: "objective", TargetID: model.ObjectiveVerified, DeliveryID: "delivery"}, e), ObservedAt: time.Unix(20, 0).UTC(),
 		ProgramFacts: map[string]model.Fact[string]{"test.synthetic.stage": model.Known(stage, e)},
 	}
 }
@@ -282,7 +282,7 @@ func request(t *testing.T, now time.Time) ApplyRequest {
 		t.Fatal(err)
 	}
 	return ApplyRequest{ResolveRequest: ResolveRequest{
-		Invocation: invocation, Objective: model.Objective{ID: "objective", Kind: model.ObjectiveVerified, DeliveryID: "delivery"}, Requested: "test.advance",
+		Invocation: invocation, Objective: model.Objective{ID: "objective", TargetID: model.ObjectiveVerified, DeliveryID: "delivery"}, Requested: "test.advance",
 		Authority: authorityBundle,
 	}, FlowID: "flow", Prescription: prescription, AdmissionLifetime: time.Minute}
 }
@@ -439,7 +439,7 @@ func TestProjectionFailureCannotUndoCanonicalTransitionFact(t *testing.T) {
 
 func TestSyntheticStartVerifyTerminalContractNeedsNoStandardFlowFacet(t *testing.T) {
 	// control-law: kernel-terminal-is-defined-only-by-the-compiled-control-program-contract
-	objective := model.Objective{ID: "objective", Kind: model.ObjectiveVerified, DeliveryID: "delivery"}
+	objective := model.Objective{ID: "objective", TargetID: model.ObjectiveVerified, DeliveryID: "delivery"}
 	source, err := model.CanonicalizeForProgram(observation(model.PhaseObserved, "source"), syntheticProgramFingerprint)
 	if err != nil {
 		t.Fatal(err)

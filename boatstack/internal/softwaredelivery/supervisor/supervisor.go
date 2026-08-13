@@ -42,8 +42,13 @@ func New(registry catalog.Registry, contracts catalog.ObjectiveContracts) Superv
 func (s Supervisor) Resolve(snapshot model.Snapshot, objective model.Objective, authority catalog.AuthoritySet, requested catalog.TransitionID) Decision {
 	base := Decision{SnapshotFingerprint: snapshot.Fingerprint}
 	objectiveAbsent := snapshot.Objective.Status == model.FactAbsent
-	if (objective.Validate() != nil && !objectiveAbsent) || snapshot.Fingerprint == "" {
+	objectiveProvided := objective.ID != "" || objective.TargetID != "" || objective.TrustedClass != "" || objective.DeliveryID != ""
+	if (objectiveProvided && objective.Validate() != nil) || (!objectiveProvided && !objectiveAbsent) || snapshot.Fingerprint == "" {
 		base.Kind, base.Reason = DecisionUnresolved, "objective or canonical snapshot is invalid"
+		return base
+	}
+	if objectiveProvided && !s.contracts.Accepts(objective) {
+		base.Kind, base.Reason = DecisionRefused, "objective target and trusted class do not match the compiled program"
 		return base
 	}
 	if snapshot.Terminal.Status != model.FactKnown || snapshot.Phase.Status != model.FactKnown {

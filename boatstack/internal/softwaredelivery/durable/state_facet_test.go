@@ -25,7 +25,7 @@ func TestChangedFacetsPreservesExactDomainValues(t *testing.T) {
 	before := facetFixture()
 	before.ProgramFingerprint = "program-a"
 	before.RuntimeVersion = "runtime-a"
-	before.Objective = model.Objective{ID: "objective-a", Kind: model.ObjectiveOpenPR, DeliveryID: "delivery-a"}
+	before.Objective = model.Objective{ID: "objective-a", TargetID: model.ObjectiveOpenPR, DeliveryID: "delivery-a"}
 	after := before
 	after.RuntimeVersion = "runtime-b"
 	after.Revision++

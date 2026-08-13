@@ -36,7 +36,7 @@ type Response = surfaces.Response
 type DoctorReport = surfaces.DoctorReport
 type ProgramChange = surfaces.ProgramChange
 type Objective = model.Objective
-type ObjectiveKind = model.ObjectiveKind
+type TargetID = model.TargetID
 type StateFacet = model.StateFacet
 
 const (

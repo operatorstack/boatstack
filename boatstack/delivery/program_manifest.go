@@ -51,7 +51,7 @@ type ProgramTransition struct {
 	Class                         EventClass           `json:"class"`
 	SourcePhases                  []ProtocolPhase      `json:"source_phases"`
 	TargetPhases                  []ProtocolPhase      `json:"target_phases"`
-	ObjectiveKinds                []ObjectiveKind      `json:"objective_kinds,omitempty"`
+	TargetIDs                     []TargetID           `json:"target_ids,omitempty"`
 	RequiredIdentity              []string             `json:"required_identity"`
 	Authority                     []AuthorityClass     `json:"authority"`
 	AuthorityAll                  []AuthorityClass     `json:"authority_all,omitempty"`
@@ -276,7 +276,7 @@ func ValidateProgram(manifest ProgramManifest, runtime RuntimeCompatibility) (Co
 			return ControlProgram{}, invalidProgram(fmt.Sprintf("objective_contracts[%d].conditions", index), err.Error())
 		}
 	}
-	sort.Slice(contracts, func(i, j int) bool { return contracts[i].ObjectiveKind < contracts[j].ObjectiveKind })
+	sort.Slice(contracts, func(i, j int) bool { return contracts[i].TargetID < contracts[j].TargetID })
 	objectiveContracts, err := catalog.NewObjectiveContracts(contracts, nil)
 	if err != nil {
 		return ControlProgram{}, invalidProgram("objective_contracts", err.Error())
@@ -335,7 +335,7 @@ func ValidateProgram(manifest ProgramManifest, runtime RuntimeCompatibility) (Co
 func (value ProgramTransition) runtimeTransition() Transition {
 	return Transition{
 		ID: value.ID, Version: value.Version, SelectionClass: value.SelectionClass, Class: value.Class,
-		SourcePhases: value.SourcePhases, TargetPhases: value.TargetPhases, ObjectiveKinds: value.ObjectiveKinds,
+		SourcePhases: value.SourcePhases, TargetPhases: value.TargetPhases, TargetIDs: value.TargetIDs,
 		RequiredIdentity: value.RequiredIdentity, Authority: value.Authority, AuthorityAll: value.AuthorityAll,
 		RequiredCapabilities: value.RequiredCapabilities,
 		RequiredEvidence:     value.RequiredEvidence, OwnedResources: value.OwnedResources, Effect: value.Effect,
@@ -448,7 +448,7 @@ func normalizeProgramTransition(value Transition) (Transition, error) {
 	if err != nil {
 		return Transition{}, err
 	}
-	value.ObjectiveKinds, err = uniqueSorted(value.ObjectiveKinds, func(v ObjectiveKind) string { return string(v) })
+	value.TargetIDs, err = uniqueSorted(value.TargetIDs, func(v TargetID) string { return string(v) })
 	if err != nil {
 		return Transition{}, err
 	}

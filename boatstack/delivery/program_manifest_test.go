@@ -179,6 +179,7 @@ func TestProgramManifestNamespaceAndCompatibilityBoundary(t *testing.T) {
 		code    delivery.ProgramErrorCode
 	}{
 		{"unsupported-schema", func(value *delivery.ProgramManifest) { value.SchemaVersion = delivery.ProgramSchemaVersion + 1 }, runtimeFixture(), delivery.ProgramSchemaUnsupported},
+		{"prior-schema", func(value *delivery.ProgramManifest) { value.SchemaVersion = delivery.ProgramSchemaVersion - 1 }, runtimeFixture(), delivery.ProgramSchemaUnsupported},
 		{"invalid-schema", func(value *delivery.ProgramManifest) { value.SchemaVersion = 0 }, runtimeFixture(), delivery.ProgramInvalid},
 		{"runtime-too-old", func(value *delivery.ProgramManifest) { value.RequiresRuntime = ">=2.0.0" }, runtimeFixture(), delivery.RuntimeTooOld},
 		{"malformed-runtime", func(value *delivery.ProgramManifest) { value.RequiresRuntime = "^1" }, runtimeFixture(), delivery.ProgramInvalid},
@@ -314,7 +315,7 @@ func programFixture() delivery.ProgramManifest {
 	advance.Class = delivery.EventOwnedLocal
 	advance.SourcePhases = []delivery.ProtocolPhase{delivery.PhaseActive}
 	advance.TargetPhases = []delivery.ProtocolPhase{delivery.PhaseTerminal}
-	advance.ObjectiveKinds = []delivery.ObjectiveKind{delivery.ObjectiveVerified}
+	advance.TargetIDs = []delivery.TargetID{delivery.ObjectiveVerified}
 	advance.Authority = []delivery.AuthorityClass{delivery.AuthorityHuman, delivery.AuthorityRepository}
 	advance.RequiredCapabilities = []delivery.Capability{delivery.CapabilityRepositoryWrite, delivery.CapabilityProductMutate}
 	advance.Effect = "program.advance"
@@ -334,7 +335,7 @@ func programFixture() delivery.ProgramManifest {
 			Effects: []string{"program.advance", "program.recover"}, Verifiers: []string{"program.current", "program.terminal"},
 			CapabilitySurface: []delivery.Capability{delivery.CapabilityRepositoryWrite, delivery.CapabilityCommandExecute, delivery.CapabilityProductMutate},
 		},
-		OwnedResources: []string{"program.state"}, ObjectiveContracts: []delivery.ObjectiveContract{{ObjectiveKind: delivery.ObjectiveVerified, Conditions: []delivery.FacetCondition{delivery.KnownCondition(delivery.FacetDelivery, "terminal")}}},
+		OwnedResources: []string{"program.state"}, ObjectiveContracts: []delivery.ObjectiveContract{{TargetID: delivery.ObjectiveVerified, Conditions: []delivery.FacetCondition{delivery.KnownCondition(delivery.FacetDelivery, "terminal")}}},
 		Transitions: []delivery.ProgramTransition{advance, recovery},
 	}
 }

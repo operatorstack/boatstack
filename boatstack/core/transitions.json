@@ -19,7 +19,7 @@
       "OBSERVED",
       "ACTIVE"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -222,7 +222,7 @@
     "target_phases": [
       "ACTIVE"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -426,7 +426,7 @@
     "target_phases": [
       "DORMANT"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -631,7 +631,7 @@
     "target_phases": [
       "OBSERVED"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -797,7 +797,7 @@
     "target_phases": [
       "OBSERVED"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -984,7 +984,7 @@
     "target_phases": [
       "DORMANT"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -1165,7 +1165,7 @@
       "ACTIVE",
       "TERMINAL"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -1356,7 +1356,7 @@
       "OBSERVED",
       "TERMINAL"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -1549,7 +1549,7 @@
       "FRONTIER",
       "TERMINAL"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -1714,7 +1714,7 @@
       "OBSERVED",
       "TERMINAL"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -1900,7 +1900,7 @@
       "ACTIVE",
       "TERMINAL"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -2113,7 +2113,7 @@
       "FRONTIER",
       "TERMINAL"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -2263,7 +2263,7 @@
     "target_phases": [
       "OBSERVED"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -2478,7 +2478,7 @@
       "TERMINAL",
       "ABANDONED"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -2722,7 +2722,7 @@
       "TERMINAL",
       "ABANDONED"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -2961,7 +2961,7 @@
       "TERMINAL",
       "ABANDONED"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -3148,7 +3148,7 @@
       "ACTIVE",
       "FRONTIER"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -3190,7 +3190,7 @@
     "idempotent": true,
     "parameters": [
       {
-        "name": "objective_kind",
+        "name": "target_id",
         "required": true,
         "secret": false
       },
@@ -3298,7 +3298,7 @@
       "TERMINAL",
       "ABANDONED"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -3453,7 +3453,7 @@
       "TERMINAL",
       "ABANDONED"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -3603,7 +3603,7 @@
     "target_phases": [
       "FRONTIER"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -3795,7 +3795,7 @@
     "target_phases": [
       "OBSERVED"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -3897,7 +3897,7 @@
     "target_phases": [
       "OBSERVED"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -3999,7 +3999,7 @@
     "target_phases": [
       "OBSERVED"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -4102,7 +4102,7 @@
       "OBSERVED",
       "RECOVERY"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -4213,7 +4213,7 @@
       "OBSERVED",
       "UNRESOLVED"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -4324,7 +4324,7 @@
       "DORMANT",
       "FRONTIER"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -4434,7 +4434,7 @@
     "target_phases": [
       "RECOVERY"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -4551,7 +4551,7 @@
       "ACTIVE",
       "TERMINAL"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -4655,7 +4655,7 @@
       "ACTIVE",
       "TERMINAL"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -4762,7 +4762,7 @@
       "ACTIVE",
       "TERMINAL"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -4869,7 +4869,7 @@
       "ACTIVE",
       "FRONTIER"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -4977,7 +4977,7 @@
       "ACTIVE",
       "TERMINAL"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",
@@ -5083,7 +5083,7 @@
       "UNRESOLVED",
       "RECOVERY"
     ],
-    "objective_kinds": [
+    "target_ids": [
       "approved-plan",
       "verified-implementation",
       "open-or-updated-pr",

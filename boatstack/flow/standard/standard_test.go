@@ -27,10 +27,10 @@ func TestManifestOwnsOnlyStandardDeliverySemantics(t *testing.T) {
 	if len(manifest.ObjectiveContracts) != 5 {
 		t.Fatalf("objective contracts = %d, want 5", len(manifest.ObjectiveContracts))
 	}
-	for _, objective := range []delivery.ObjectiveKind{delivery.ObjectiveApprovedPlan, delivery.ObjectiveVerified, delivery.ObjectiveOpenPR, delivery.ObjectiveMerged, delivery.ObjectiveAbandoned} {
+	for _, objective := range []delivery.TargetID{delivery.ObjectiveApprovedPlan, delivery.ObjectiveVerified, delivery.ObjectiveOpenPR, delivery.ObjectiveMerged, delivery.ObjectiveAbandoned} {
 		found := false
 		for _, contract := range manifest.ObjectiveContracts {
-			found = found || contract.ObjectiveKind == objective
+			found = found || contract.TargetID == objective
 		}
 		if !found {
 			t.Errorf("missing objective contract %s", objective)

@@ -52,7 +52,7 @@ func requireOwnedChange(t *testing.T, transition catalog.Transition, before, aft
 
 func TestStateFacetIsolationMatrix(t *testing.T) {
 	base := ownershipState()
-	knownObjective := model.Objective{ID: "objective", Kind: model.ObjectiveOpenPR, DeliveryID: "delivery"}
+	knownObjective := model.Objective{ID: "objective", TargetID: model.ObjectiveOpenPR, DeliveryID: "delivery"}
 	fixtures := []struct {
 		name       string
 		transition catalog.Transition
@@ -84,7 +84,7 @@ func TestMaintenancePreservesAbsentAndKnownObjectiveExactly(t *testing.T) {
 	transition := transitionFixture("installation.update", catalog.OriginCoreSystem, false)
 	transition.Policy.ObjectiveScope = catalog.ObjectiveScopeOptionalPreserve
 	transition.TargetPhases = []model.ProtocolPhase{model.PhaseDormant}
-	for _, objective := range []model.Objective{{}, {ID: "known", Kind: model.ObjectiveOpenPR, DeliveryID: "delivery"}} {
+	for _, objective := range []model.Objective{{}, {ID: "known", TargetID: model.ObjectiveOpenPR, DeliveryID: "delivery"}} {
 		state := ownershipState()
 		state.Objective = objective
 		admission := protocol.Admission{ObjectiveStatus: model.FactAbsent}
@@ -103,7 +103,7 @@ func TestMaintenancePreservesAbsentAndKnownObjectiveExactly(t *testing.T) {
 func TestRecoveryCannotReplayFacetOutsideInterruptedTransition(t *testing.T) {
 	before := ownershipState()
 	after := before
-	after.Objective = model.Objective{ID: "invented", Kind: model.ObjectiveApprovedPlan, DeliveryID: "invented"}
+	after.Objective = model.Objective{ID: "invented", TargetID: model.ObjectiveApprovedPlan, DeliveryID: "invented"}
 	prior, _ := durable.EncodeState(before)
 	target, _ := durable.EncodeState(after)
 	record := journalRecord{TransitionID: "installation.update", AllowedStateFacets: []model.StateFacet{model.StateFacetControl, model.StateFacetInstallation}, Mutations: []ports.ResourceMutation{{Path: "/controller/state.json", PriorExists: true, Prior: prior, Target: target, StateFacets: []model.StateFacet{model.StateFacetControl, model.StateFacetProduct}}}}

@@ -41,7 +41,8 @@ type commandOptions struct {
 	repository                          string
 	format                              string
 	objectiveID                         string
-	objectiveKind                       string
+	targetID                            string
+	trustedObjectiveClass               string
 	deliveryID                          string
 	programID                           string
 	flowProgramFingerprint              string
@@ -272,12 +273,12 @@ func parseOptions(command string, arguments []string, transition catalog.Transit
 	flags.SetOutput(os.Stderr)
 	options := commandOptions{format: "json", transitionID: string(transition), host: "cli"}
 	if defaults != nil {
-		options.objectiveKind, options.deliveryID, options.objectiveID = defaults["objective-kind"], defaults["delivery"], defaults["objective-id"]
+		options.targetID, options.deliveryID, options.objectiveID = defaults["target-id"], defaults["delivery"], defaults["objective-id"]
 	}
 	flags.StringVar(&options.repository, "repo", ".", "explicit invoking repository or worktree")
 	flags.StringVar(&options.format, "format", options.format, "json, text, or jsonl")
 	flags.StringVar(&options.objectiveID, "objective-id", options.objectiveID, "configured objective identity")
-	flags.StringVar(&options.objectiveKind, "objective-kind", options.objectiveKind, "approved-plan, verified-implementation, open-or-updated-pr, merged-delivery, or safely-abandoned")
+	flags.StringVar(&options.targetID, "target-id", options.targetID, "program-scoped marked target identity")
 	flags.StringVar(&options.deliveryID, "delivery", options.deliveryID, "delivery identity")
 	flags.StringVar(&options.programID, "flow", "", "repository Control Program identity")
 	flags.StringVar(&options.entryID, "entry", "", "named Flow entry")
@@ -495,8 +496,8 @@ func buildRequest(operation surfaces.Operation, options commandOptions) (surface
 		correlation = fmt.Sprintf("cli-%d-%d", os.Getpid(), now.UnixNano())
 	}
 	objective := model.Objective{}
-	if options.objectiveKind != "" || options.objectiveID != "" || options.deliveryID != "" {
-		objective = model.Objective{ID: options.objectiveID, Kind: model.ObjectiveKind(options.objectiveKind), DeliveryID: options.deliveryID}
+	if options.targetID != "" || options.objectiveID != "" || options.deliveryID != "" {
+		objective = model.Objective{ID: options.objectiveID, TargetID: model.TargetID(options.targetID), TrustedClass: model.TargetID(options.trustedObjectiveClass), DeliveryID: options.deliveryID}
 		if err := objective.Validate(); err != nil {
 			return surfaces.Request{}, err
 		}

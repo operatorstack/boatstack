@@ -92,6 +92,10 @@ func (r Resolver) Transition(reference string) (delivery.Transition, bool) {
 		return delivery.Transition{}, false
 	}
 	transition, ok := r.transitions[id]
+	transition.TargetIDs = append([]delivery.TargetID(nil), transition.TargetIDs...)
+	transition.SourceConditions = append([]delivery.FacetCondition(nil), transition.SourceConditions...)
+	transition.TargetConditions = append([]delivery.FacetCondition(nil), transition.TargetConditions...)
+	transition.RequiredCapabilities = append([]delivery.Capability(nil), transition.RequiredCapabilities...)
 	return transition, ok
 }
 

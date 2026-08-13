@@ -513,7 +513,7 @@ func validateReplayRequest(prior protocol.TransitionReceipt, request ApplyReques
 		return fmt.Errorf("idempotency receipt belongs to a different prescription")
 	}
 	if prior.ObjectiveScope != catalog.ObjectiveScopeOptionalPreserve && request.Objective.Validate() == nil {
-		if prior.ObjectiveID != request.Objective.ID || prior.ObjectiveKind != request.Objective.Kind || prior.DeliveryID != request.Objective.DeliveryID {
+		if prior.ObjectiveID != request.Objective.ID || prior.TargetID != request.Objective.TargetID || prior.TrustedClass != request.Objective.TrustedClass || prior.DeliveryID != request.Objective.DeliveryID {
 			return fmt.Errorf("idempotency receipt belongs to a different configured objective")
 		}
 	}
@@ -530,7 +530,7 @@ func validateReplayObjectiveState(prior protocol.TransitionReceipt, snapshot mod
 	switch prior.ObjectiveStatus {
 	case model.FactKnown:
 		if snapshot.Objective.Status != model.FactKnown || snapshot.Objective.Value.ID != prior.ObjectiveID ||
-			snapshot.Objective.Value.Kind != prior.ObjectiveKind || snapshot.Objective.Value.DeliveryID != prior.DeliveryID {
+			snapshot.Objective.Value.TargetID != prior.TargetID || snapshot.Objective.Value.TrustedClass != prior.TrustedClass || snapshot.Objective.Value.DeliveryID != prior.DeliveryID {
 			return fmt.Errorf("idempotency receipt objective binding no longer matches current state")
 		}
 	case model.FactAbsent:
