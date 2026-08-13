@@ -128,9 +128,6 @@ func (s State) Validate() error {
 			return fmt.Errorf("verified configuration policy: %w", err)
 		}
 	}
-	if (s.Plan == model.PlanApproved || s.Plan == model.PlanLocked) && (s.PlanFingerprint == "" || s.ApprovalFingerprint == "") {
-		return fmt.Errorf("approved or locked plan requires plan and approval fingerprints")
-	}
 	switch s.Workspace {
 	case model.WorkspaceCut, model.WorkspaceActive, model.WorkspacePublished, model.WorkspaceLanded, model.WorkspaceAttentionRequired, model.WorkspaceAbandoned:
 		if s.WorkspacePath == "" || s.WorkspaceBranch == "" || s.WorkspaceSourcePath == "" || s.WorkspaceSourceID == "" || s.WorkspaceSourceRef == "" {
