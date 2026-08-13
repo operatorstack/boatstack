@@ -342,6 +342,74 @@ func TestFlowCompileProjectsHyphenatedEntryIdentity(t *testing.T) {
 	}
 }
 
+func TestFlowCompileAndCheckRejectRuntimeInvalidSoftwareFlow(t *testing.T) {
+	// control-law: compiled-and-checked-artifacts-are-admissible-by-the-production-adapter
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+	document := productDeliveryDocument("product-delivery")
+	document.Transitions[0].ID = "observe-alias"
+	for _, operation := range []string{"compile", "check"} {
+		t.Run(operation, func(t *testing.T) {
+			repository, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			sourcePath, lockPath := ".boatstack/flows/product-delivery.flow.ts", "package-lock.json"
+			source, lock := []byte("declarative source"), []byte("lock")
+			writeFixture(t, repository, sourcePath, source)
+			writeFixture(t, repository, lockPath, lock)
+			if operation == "compile" {
+				documentRaw, marshalErr := json.Marshal(document)
+				if marshalErr != nil {
+					t.Fatal(marshalErr)
+				}
+				writeFixture(t, repository, "raw-ir.json", documentRaw)
+				frontend := filepath.Join(repository, "frontend.sh")
+				script := []byte("#!/bin/sh\ncat >/dev/null\ncat '" + filepath.Join(repository, "raw-ir.json") + "'\n")
+				if err := os.WriteFile(frontend, script, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				err = compileFlow(context.Background(), flowCommandOptions{repository: repository, source: sourcePath, lock: lockPath, frontend: frontend})
+				if err == nil || !strings.Contains(err.Error(), "FLOW_RUNTIME_INVALID") {
+					t.Fatalf("runtime-invalid compile result = %v", err)
+				}
+				if _, statErr := os.Stat(filepath.Join(repository, ".boatstack", "flows", "product-delivery.flow.ir.json")); !os.IsNotExist(statErr) {
+					t.Fatalf("runtime-invalid compile published an artifact: %v", statErr)
+				}
+				return
+			}
+			resolver, err := softwareflow.NewResolver(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			compiled, err := controlprogram.Compile(document, resolver)
+			if err != nil {
+				t.Fatal(err)
+			}
+			skills, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for path, content := range skills {
+				writeFixture(t, repository, path, content)
+			}
+			_, artifactRaw, err := controlprogram.NewArtifact(compiled, controlprogram.ArtifactInput{
+				CompilerVersion: flowCompilerVersion, SourcePath: sourcePath, Source: source,
+				DependencyLockPath: lockPath, DependencyLock: lock, GeneratedSkills: skills,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeFixture(t, repository, ".boatstack/flows/product-delivery.flow.ir.json", artifactRaw)
+			err = checkFlow(context.Background(), flowCommandOptions{repository: repository})
+			if err == nil || !strings.Contains(err.Error(), "FLOW_RUNTIME_INVALID") {
+				t.Fatalf("runtime-invalid check result = %v", err)
+			}
+		})
+	}
+}
+
 func TestFlowEntryBindsStableRunAndResumesManagedPlan(t *testing.T) {
 	// control-law: questions-and-restarts-preserve-the-exact-plan-worktree-and-run
 	repository := flowRepository(t)
@@ -352,6 +420,25 @@ func TestFlowEntryBindsStableRunAndResumesManagedPlan(t *testing.T) {
 	}
 	if !strings.HasPrefix(initial.runID, "run-") || initial.deliveryID != "delivery-one" || initial.objectiveKind != "open-or-updated-pr" || len(initial.parameters) != 0 {
 		t.Fatalf("initial Flow context = %#v", initial)
+	}
+	for _, transitionID := range []string{"objective.bind", "plan.create"} {
+		preManaged, err := bindFlowEntry(context.Background(), commandOptions{
+			repository: repository, programID: "product-delivery", entryID: "run", runID: initial.runID, host: "codex",
+			deliveryID: initial.deliveryID, objectiveKind: initial.objectiveKind, objectiveID: initial.objectiveID, transitionID: transitionID,
+		})
+		if err != nil {
+			t.Fatalf("pre-materialization %s binding failed: %v", transitionID, err)
+		}
+		if transitionID == "plan.create" {
+			parameters, parseErr := parseParameters(preManaged.parameters)
+			if parseErr != nil {
+				t.Fatal(parseErr)
+			}
+			expected := filepath.Join(initial.repository, ".boatstack", "plans", "inbox", "delivery-one.md")
+			if source, ok := parameters.Get("source_path"); !ok || source != expected {
+				t.Fatalf("pre-materialization source = %q, present=%t", source, ok)
+			}
+		}
 	}
 	writeFixture(t, repository, ".boatstack/plans/delivery-one.source", []byte("exact plan"))
 	writeFixture(t, repository, ".boatstack/plans/inbox/unrelated.md", []byte("other plan"))

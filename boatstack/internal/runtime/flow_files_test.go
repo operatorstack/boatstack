@@ -201,6 +201,30 @@ func TestFlowProjectionRevalidatesCompileInputsUnderLock(t *testing.T) {
 	}
 }
 
+func TestFlowProjectionRevalidatesGeneratedOutputsBeforeArtifactPublication(t *testing.T) {
+	// control-law: artifact-publication-binds-the-exact-generated-output-bytes
+	repository := resolvedTemporaryRepository(t)
+	skillPath := filepath.Join(repository, ".agents", "skills", "product-delivery-run", "SKILL.md")
+	artifactPath := filepath.Join(repository, ".boatstack", "flows", "product-delivery.flow.ir.json")
+	err := applyFlowProjection(repository, []ProjectionWrite{
+		{Path: skillPath, Content: []byte("generated skill"), Mode: 0o644},
+		{Path: artifactPath, Content: []byte("artifact"), Mode: 0o644, PublishLast: true},
+	}, nil, nil, projectionHooks{afterRemovals: func() {
+		if err := os.WriteFile(skillPath, []byte("concurrent edit"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}})
+	if err == nil || !strings.Contains(err.Error(), "FLOW_PROJECTION_OUTPUT_CHANGED") {
+		t.Fatalf("generated output drift result = %v", err)
+	}
+	if actual, readErr := os.ReadFile(skillPath); readErr != nil || string(actual) != "concurrent edit" {
+		t.Fatalf("concurrent skill edit changed: %q, %v", actual, readErr)
+	}
+	if _, statErr := os.Stat(artifactPath); !os.IsNotExist(statErr) {
+		t.Fatalf("generated output drift published artifact: %v", statErr)
+	}
+}
+
 func TestFlowProjectionRecoversAfterCrashBeforeArtifactPublication(t *testing.T) {
 	// control-law: retired-skills-precede-artifact-publication-and-retry-recovers-a-crash
 	if os.Getenv("BOATSTACK_FLOW_CRASH_CHILD") == "1" {

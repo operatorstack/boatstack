@@ -190,6 +190,7 @@ func applyFlowProjection(repository string, writes []ProjectionWrite, removals [
 	}
 
 	changed := make([]string, 0, len(writes)+len(removals))
+	committed := map[string]projectionSnapshot{}
 	var commitErr error
 	for index, value := range staged {
 		if writes[index].PublishLast {
@@ -204,6 +205,7 @@ func applyFlowProjection(repository string, writes []ProjectionWrite, removals [
 			break
 		}
 		changed = append(changed, value.target)
+		committed[value.target] = projectionSnapshot{path: value.target, exists: true, content: writes[index].Content, mode: writes[index].Mode.Perm()}
 	}
 	if commitErr == nil {
 		for _, removal := range removals {
@@ -228,10 +230,40 @@ func applyFlowProjection(repository string, writes []ProjectionWrite, removals [
 				break
 			}
 			changed = append(changed, removal.Path)
+			committed[removal.Path] = projectionSnapshot{path: removal.Path}
 		}
 	}
 	if commitErr == nil && hooks.afterRemovals != nil {
 		hooks.afterRemovals()
+	}
+	if commitErr == nil && publishLast == 1 {
+		for index, value := range staged {
+			if writes[index].PublishLast {
+				continue
+			}
+			current, currentErr := snapshotProjectionPath(root, repository, value.target)
+			if currentErr != nil {
+				commitErr = currentErr
+				break
+			}
+			if !sameProjectionState(current, committed[value.target]) {
+				commitErr = fmt.Errorf("FLOW_PROJECTION_OUTPUT_CHANGED: %s changed before artifact publication", value.target)
+				break
+			}
+		}
+	}
+	if commitErr == nil && publishLast == 1 {
+		for _, removal := range removals {
+			current, currentErr := snapshotProjectionPath(root, repository, removal.Path)
+			if currentErr != nil {
+				commitErr = currentErr
+				break
+			}
+			if current.exists {
+				commitErr = fmt.Errorf("FLOW_PROJECTION_OUTPUT_CHANGED: retired output %s reappeared before artifact publication", removal.Path)
+				break
+			}
+		}
 	}
 	if commitErr == nil && publishLast == 1 {
 		for _, expectation := range expectations {
@@ -258,6 +290,7 @@ func applyFlowProjection(repository string, writes []ProjectionWrite, removals [
 			}
 			if commitErr = root.Rename(value.temporary, target); commitErr == nil {
 				changed = append(changed, value.target)
+				committed[value.target] = projectionSnapshot{path: value.target, exists: true, content: writes[index].Content, mode: writes[index].Mode.Perm()}
 			}
 			break
 		}
@@ -265,7 +298,7 @@ func applyFlowProjection(repository string, writes []ProjectionWrite, removals [
 	if commitErr == nil {
 		return nil
 	}
-	if rollbackErr := rollbackProjection(root, repository, changed, snapshots); rollbackErr != nil {
+	if rollbackErr := rollbackProjection(root, repository, changed, snapshots, committed); rollbackErr != nil {
 		return fmt.Errorf("commit Flow projection: %v; rollback failed: %w", commitErr, rollbackErr)
 	}
 	return fmt.Errorf("commit Flow projection: %w", commitErr)
@@ -406,9 +439,16 @@ func stageProjectionFile(root *os.Root, repository, path string, content []byte,
 	return "", fmt.Errorf("cannot allocate a staged projection file")
 }
 
-func rollbackProjection(root *os.Root, repository string, changed []string, snapshots map[string]projectionSnapshot) error {
+func rollbackProjection(root *os.Root, repository string, changed []string, snapshots, committed map[string]projectionSnapshot) error {
 	for index := len(changed) - 1; index >= 0; index-- {
 		snapshot := snapshots[changed[index]]
+		current, err := snapshotProjectionPath(root, repository, snapshot.path)
+		if err != nil {
+			return err
+		}
+		if !sameProjectionState(current, committed[changed[index]]) {
+			continue
+		}
 		relative, err := projectionRelativePath(repository, snapshot.path)
 		if err != nil {
 			return err
@@ -429,4 +469,8 @@ func rollbackProjection(root *os.Root, repository string, changed []string, snap
 		}
 	}
 	return nil
+}
+
+func sameProjectionState(left, right projectionSnapshot) bool {
+	return left.exists == right.exists && (!left.exists || (left.mode == right.mode && bytes.Equal(left.content, right.content)))
 }

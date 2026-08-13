@@ -186,22 +186,38 @@ func resolveBoundPlan(repository string, entry controlprogram.Entry, options com
 		return "", "", fmt.Errorf("FLOW_CONTEXT_MISMATCH: active run requires its delivery identity")
 	}
 	managed := filepath.Join(repository, ".boatstack", "plans", options.deliveryID+".source")
-	info, err := os.Lstat(managed)
+	if _, err := os.Lstat(managed); err == nil {
+		resolved, resolveErr := resolveRegularRepositoryFile(repository, managed, "active run plan")
+		return resolved, options.deliveryID, resolveErr
+	} else if !os.IsNotExist(err) {
+		return "", "", fmt.Errorf("FLOW_INPUT_INVALID: inspect active run plan: %w", err)
+	}
+	inbox, _, err := resolvePlanInbox(repository, entry)
 	if err != nil {
-		return "", "", fmt.Errorf("FLOW_INPUT_REQUIRED: active run plan is unavailable: %w", err)
+		return "", "", err
+	}
+	selected := filepath.Join(inbox, options.deliveryID+".md")
+	resolved, err := resolveRegularRepositoryFile(repository, selected, "active run inbox plan")
+	return resolved, options.deliveryID, err
+}
+
+func resolveRegularRepositoryFile(repository, path, label string) (string, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return "", fmt.Errorf("FLOW_INPUT_REQUIRED: %s is unavailable: %w", label, err)
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return "", "", fmt.Errorf("FLOW_INPUT_INVALID: active run plan must be a regular non-symlink file")
+		return "", fmt.Errorf("FLOW_INPUT_INVALID: %s must be a regular non-symlink file", label)
 	}
-	resolved, err := filepath.EvalSymlinks(managed)
+	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
-		return "", "", fmt.Errorf("FLOW_INPUT_INVALID: resolve active run plan: %w", err)
+		return "", fmt.Errorf("FLOW_INPUT_INVALID: resolve %s: %w", label, err)
 	}
 	relative, err := filepath.Rel(repository, resolved)
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return "", "", fmt.Errorf("FLOW_INPUT_INVALID: active run plan escapes the repository")
+		return "", fmt.Errorf("FLOW_INPUT_INVALID: %s escapes the repository", label)
 	}
-	return resolved, options.deliveryID, nil
+	return resolved, nil
 }
 
 func loadFlowDefinition(ctx context.Context, repository, programID string) (softwareflow.Definition, error) {
@@ -229,33 +245,9 @@ func loadFlowDefinition(ctx context.Context, repository, programID string) (soft
 }
 
 func resolvePlanInput(repository string, entry controlprogram.Entry) (string, string, error) {
-	if len(entry.Inputs) != 1 || !entry.Inputs[0].Required || entry.Inputs[0].Resolver != "software-delivery.plan-inbox" {
-		return "", "", fmt.Errorf("FLOW_INPUT_INVALID: entry %q requires exactly one required trusted plan inbox", entry.ID)
-	}
-	input := &entry.Inputs[0]
-	decoder := json.NewDecoder(bytes.NewReader(input.Config))
-	decoder.DisallowUnknownFields()
-	var config planInboxConfig
-	if err := decoder.Decode(&config); err != nil {
-		return "", "", fmt.Errorf("FLOW_INPUT_INVALID: %w", err)
-	}
-	if err := requireJSONEOF(decoder); err != nil || config.Cardinality != "exactly-one" {
-		return "", "", fmt.Errorf("FLOW_INPUT_INVALID: plan inbox requires exact cardinality")
-	}
-	inbox, err := exactRepositoryPath(repository, config.Path)
+	inbox, config, err := resolvePlanInbox(repository, entry)
 	if err != nil {
-		return "", "", fmt.Errorf("FLOW_INPUT_INVALID: %w", err)
-	}
-	resolvedInbox, err := filepath.EvalSymlinks(inbox)
-	if err != nil && !os.IsNotExist(err) {
-		return "", "", fmt.Errorf("FLOW_INPUT_INVALID: resolve plan inbox: %w", err)
-	}
-	if err == nil {
-		relative, relativeErr := filepath.Rel(repository, resolvedInbox)
-		if relativeErr != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-			return "", "", fmt.Errorf("FLOW_INPUT_INVALID: plan inbox escapes the repository")
-		}
-		inbox = resolvedInbox
+		return "", "", err
 	}
 	entries, err := os.ReadDir(inbox)
 	if err != nil {
@@ -287,19 +279,43 @@ func resolvePlanInput(repository string, entry controlprogram.Entry) (string, st
 	}
 	deliveryID := strings.TrimSuffix(candidates[0], filepath.Ext(candidates[0]))
 	selected := filepath.Join(inbox, candidates[0])
-	info, err := os.Lstat(selected)
-	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return "", "", fmt.Errorf("FLOW_INPUT_INVALID: selected plan is not a regular repository file")
-	}
-	resolved, err := filepath.EvalSymlinks(selected)
+	resolved, err := resolveRegularRepositoryFile(repository, selected, "selected plan")
 	if err != nil {
-		return "", "", fmt.Errorf("FLOW_INPUT_INVALID: resolve selected plan: %w", err)
-	}
-	relative, err := filepath.Rel(inbox, resolved)
-	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return "", "", fmt.Errorf("FLOW_INPUT_INVALID: selected plan escapes its inbox")
+		return "", "", err
 	}
 	return resolved, deliveryID, nil
+}
+
+func resolvePlanInbox(repository string, entry controlprogram.Entry) (string, planInboxConfig, error) {
+	if len(entry.Inputs) != 1 || !entry.Inputs[0].Required || entry.Inputs[0].Resolver != "software-delivery.plan-inbox" {
+		return "", planInboxConfig{}, fmt.Errorf("FLOW_INPUT_INVALID: entry %q requires exactly one required trusted plan inbox", entry.ID)
+	}
+	input := &entry.Inputs[0]
+	decoder := json.NewDecoder(bytes.NewReader(input.Config))
+	decoder.DisallowUnknownFields()
+	var config planInboxConfig
+	if err := decoder.Decode(&config); err != nil {
+		return "", planInboxConfig{}, fmt.Errorf("FLOW_INPUT_INVALID: %w", err)
+	}
+	if err := requireJSONEOF(decoder); err != nil || config.Cardinality != "exactly-one" {
+		return "", planInboxConfig{}, fmt.Errorf("FLOW_INPUT_INVALID: plan inbox requires exact cardinality")
+	}
+	inbox, err := exactRepositoryPath(repository, config.Path)
+	if err != nil {
+		return "", planInboxConfig{}, fmt.Errorf("FLOW_INPUT_INVALID: %w", err)
+	}
+	resolvedInbox, err := filepath.EvalSymlinks(inbox)
+	if err != nil && !os.IsNotExist(err) {
+		return "", planInboxConfig{}, fmt.Errorf("FLOW_INPUT_INVALID: resolve plan inbox: %w", err)
+	}
+	if err == nil {
+		relative, relativeErr := filepath.Rel(repository, resolvedInbox)
+		if relativeErr != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return "", planInboxConfig{}, fmt.Errorf("FLOW_INPUT_INVALID: plan inbox escapes the repository")
+		}
+		inbox = resolvedInbox
+	}
+	return inbox, config, nil
 }
 
 func findEntry(entries []controlprogram.Entry, id string) (controlprogram.Entry, bool) {

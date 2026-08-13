@@ -108,6 +108,9 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 	if err != nil {
 		return err
 	}
+	if err := validateSoftwareFlow(ctx, compiled, resolver); err != nil {
+		return err
+	}
 	artifactPath, err := resolveArtifactPath(options.repository, options.artifact, compiled.Document.Program.ID)
 	if err != nil {
 		return err
@@ -233,10 +236,25 @@ func checkFlow(ctx context.Context, options flowCommandOptions) error {
 	if err != nil {
 		return err
 	}
-	if _, err := controlprogram.CheckArtifact(options.repository, artifact, flowCompilerVersion, resolver); err != nil {
+	compiled, err := controlprogram.CheckArtifact(options.repository, artifact, flowCompilerVersion, resolver)
+	if err != nil {
+		return err
+	}
+	if err := validateSoftwareFlow(ctx, compiled, resolver); err != nil {
 		return err
 	}
 	return renderFlowResult("valid", artifactPath, artifact)
+}
+
+func validateSoftwareFlow(ctx context.Context, compiled controlprogram.Compiled, resolver softwareflow.Resolver) error {
+	definition, err := softwareflow.NewDefinition(compiled, resolver)
+	if err != nil {
+		return fmt.Errorf("FLOW_RUNTIME_INVALID: %w", err)
+	}
+	if _, err := definition.RuntimeManifest(ctx); err != nil {
+		return fmt.Errorf("FLOW_RUNTIME_INVALID: %w", err)
+	}
+	return nil
 }
 
 func resolveFlowSource(repository, requested string) (string, error) {
