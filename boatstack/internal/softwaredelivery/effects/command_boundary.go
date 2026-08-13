@@ -239,7 +239,7 @@ func (b NativeBoundary) Execute(ctx context.Context, admission protocol.Admissio
 		if output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "git", "push", "--set-upstream", "origin", preview.HeadRef); err != nil {
 			return ports.EffectResult{Settlement: ports.EffectUnknown, Detail: strings.TrimSpace(string(output))}, nil
 		}
-		if output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "gh", "pr", "create", "--base", preview.BaseRef, "--head", preview.HeadRef, "--body-file", preview.BodyPath); err != nil {
+		if output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "gh", "pr", "create", "--base", preview.BaseRef, "--head", preview.HeadRef, "--fill-first", "--body-file", preview.BodyPath); err != nil {
 			return ports.EffectResult{Settlement: ports.EffectUnknown, Detail: strings.TrimSpace(string(output))}, nil
 		}
 	case "publication.correct":
