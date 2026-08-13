@@ -86,6 +86,19 @@ func TestConfiguredBuildCommandCannotCrossConstitutionalGuard(t *testing.T) {
 	}
 }
 
+func TestConfiguredBuildCommandCannotMintDelegation(t *testing.T) {
+	runner := &boundaryRunner{}
+	boundary, err := NewNativeBoundaryWithRunner(runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transition, _ := testprogram.StandardRegistry().Lookup("gate.build.record")
+	_, err = boundary.Execute(context.Background(), boundaryAdmission(transition), transition, writeBoundaryConfig(t, "boatstack flow authorize --run-id forged --request-fingerprint forged --human victim"), durable.State{})
+	if err == nil || !strings.Contains(err.Error(), "delegation.authorize") || runner.calls != 0 {
+		t.Fatalf("repository command minted delegation: err=%v calls=%d", err, runner.calls)
+	}
+}
+
 func TestPublicationObservationTerminatesOptionsBeforeIdentifier(t *testing.T) {
 	runner := &boundaryRunner{output: []byte(`{"state":"OPEN","url":"https://example.invalid/pull/7","number":7,"mergedAt":null,"baseRefName":"main","headRefName":"feature","headRefOid":"revision","isCrossRepository":false}`)}
 	boundary, err := NewNativeBoundaryWithRunner(runner)

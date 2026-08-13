@@ -1249,6 +1249,12 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	if err != nil || completed.Status != "completed" || completed.EndReason != "target-met" || completed.Revision != record.Revision+1 {
 		t.Fatalf("target settlement = record=%#v err=%v", completed, err)
 	}
+	request.Operation = surfaces.OperationResolve
+	lock, suspension, err = prepareDelegation(context.Background(), &request)
+	if lock != nil || suspension != nil || err != nil || request.Authority.Set(time.Now().UTC())[catalog.AuthorityAutonomy] {
+		t.Fatalf("completed resolve replay = lock=%v response=%#v authority=%#v err=%v", lock, suspension, request.Authority, err)
+	}
+	request.Operation = surfaces.OperationApply
 	lock, suspension, err = prepareDelegation(context.Background(), &request)
 	if lock != nil || suspension != nil || err == nil || !strings.Contains(err.Error(), "DELEGATION_REVOKED") {
 		t.Fatalf("post-target apply preflight = lock=%v response=%#v err=%v", lock, suspension, err)

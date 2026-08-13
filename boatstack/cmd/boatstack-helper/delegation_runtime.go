@@ -82,6 +82,18 @@ func prepareDelegation(ctx context.Context, request *surfaces.Request) (ports.Lo
 		releaseOnError()
 		return nil, nil, fmt.Errorf("DELEGATION_CONTEXT_UNAUTHORIZED: current worktree is not in the verified run lineage")
 	}
+	filtered := request.Authority.Receipts[:0]
+	for _, receipt := range request.Authority.Receipts {
+		if len(receipt.ID) < len("delegation-") || receipt.ID[:len("delegation-")] != "delegation-" {
+			filtered = append(filtered, receipt)
+		}
+	}
+	request.Authority.Receipts = filtered
+	if record.Status == "completed" && request.Operation == surfaces.OperationResolve {
+		// A completed delegation carries no authority, but resolving the exact
+		// bound run remains safe and lets restarts replay its terminal state.
+		return nil, nil, nil
+	}
 	if record.Status != "active" {
 		releaseOnError()
 		return nil, nil, fmt.Errorf("DELEGATION_REVOKED: run authorization is %s", record.Status)
@@ -90,13 +102,6 @@ func prepareDelegation(ctx context.Context, request *surfaces.Request) (ports.Lo
 		releaseOnError()
 		return nil, nil, fmt.Errorf("DELEGATION_EXPIRED: run authorization expired")
 	}
-	filtered := request.Authority.Receipts[:0]
-	for _, receipt := range request.Authority.Receipts {
-		if len(receipt.ID) < len("delegation-") || receipt.ID[:len("delegation-")] != "delegation-" {
-			filtered = append(filtered, receipt)
-		}
-	}
-	request.Authority.Receipts = filtered
 	for _, authority := range request.DelegatedAuthorities {
 		receiptDigest := sha256.Sum256([]byte(record.ReceiptID + "\x00" + string(authority)))
 		request.Authority.Receipts = append(request.Authority.Receipts, protocol.AuthorityReceipt{

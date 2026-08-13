@@ -165,6 +165,10 @@ func TestGuardClassifierIsShellNeutralAndPrivacyBounded(t *testing.T) {
 	if managed.Class != supervisor.IntentManagedBypass || managed.Operation != "publication.create" || managed.Transition != "" {
 		t.Fatalf("managed intent = %#v", managed)
 	}
+	authorize := ClassifyCommandIntent("boatstack flow authorize --run-id run --request-fingerprint fingerprint --human victim")
+	if authorize.Class != supervisor.IntentDestructive || authorize.Operation != "delegation.authorize" || authorize.Transition != "" {
+		t.Fatalf("delegation authorization intent = %#v", authorize)
+	}
 	ordinary := ClassifyCommandIntent("go test ./...")
 	if ordinary.Class != supervisor.IntentOrdinary || ordinary.Transition != "" {
 		t.Fatalf("ordinary intent = %#v", ordinary)

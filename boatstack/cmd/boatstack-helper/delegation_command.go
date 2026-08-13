@@ -15,6 +15,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/plant"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
 )
 
@@ -222,7 +223,7 @@ func runFlowContinuation(arguments []string) error {
 		if err := advanceContinuation(&options, response); err != nil {
 			return err
 		}
-		if response.Delegation != nil || response.Prescription == nil || response.Receipt == nil {
+		if response.Delegation != nil || response.Prescription == nil || response.Receipt == nil || (response.Decision != nil && response.Decision.Kind == supervisor.DecisionTerminal) {
 			return renderResponse(response, options.format)
 		}
 	}
@@ -279,11 +280,21 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 	}
 	defer lease.Release()
 	applied, err := kernel.Handle(ctx, applyRequest)
-	if settleErr := settleDelegationAtTarget(ctx, applyRequest, applied, kernel.TargetSatisfied(applied.Snapshot, applyRequest.Objective), delegationLock != nil); settleErr != nil && err == nil {
+	targetSatisfied := kernel.TargetSatisfied(applied.Snapshot, applyRequest.Objective)
+	if settleErr := settleDelegationAtTarget(ctx, applyRequest, applied, targetSatisfied, delegationLock != nil); settleErr != nil && err == nil {
 		err = settleErr
 	}
 	if err != nil {
 		return applied, err
+	}
+	if targetSatisfied {
+		snapshotFingerprint := ""
+		if applied.Snapshot != nil {
+			snapshotFingerprint = applied.Snapshot.Fingerprint
+		}
+		applied.Decision = &supervisor.Decision{Kind: supervisor.DecisionTerminal, SnapshotFingerprint: snapshotFingerprint, Reason: "marked Flow target is established"}
+		applied.Prescription = nil
+		return applied, nil
 	}
 	// Mark the response as a completed internal continuation step. The next
 	// iteration resolves again from the committed receipt and durable state.
