@@ -279,6 +279,9 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 	}
 	defer lease.Release()
 	applied, err := kernel.Handle(ctx, applyRequest)
+	if settleErr := settleDelegationAtTarget(ctx, applyRequest, applied, kernel.TargetSatisfied(applied.Snapshot, applyRequest.Objective), delegationLock != nil); settleErr != nil && err == nil {
+		err = settleErr
+	}
 	if err != nil {
 		return applied, err
 	}
