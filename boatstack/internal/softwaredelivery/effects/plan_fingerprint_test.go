@@ -47,9 +47,10 @@ func TestPlanEffectRejectsSourceChangedAfterEntryBinding(t *testing.T) {
 func TestWorkspacePlanTransferCopiesOnlyRegularRuntimeOwnedArtifacts(t *testing.T) {
 	repository := t.TempDir()
 	workspace := t.TempDir()
+	plan := "# Bound plan\n"
 	for path, contents := range map[string]string{
-		filepath.Join(repository, ".boatstack", "plans", "delivery-one.source"):   "# Bound plan\n",
-		filepath.Join(repository, ".boatstack", "approvals", "delivery-one.json"): "{\"approved\":true}\n",
+		filepath.Join(repository, ".boatstack", "plans", "delivery-one.source"):   plan,
+		filepath.Join(repository, ".boatstack", "approvals", "delivery-one.json"): `{"schema_version":1,"delivery_id":"delivery-one","plan_fingerprint":"` + sha256Bytes([]byte(plan)) + `","actor":"reviewer","admission_id":"adm-1","approved_at":"2026-01-01T00:00:00Z"}`,
 	} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)
@@ -58,7 +59,7 @@ func TestWorkspacePlanTransferCopiesOnlyRegularRuntimeOwnedArtifacts(t *testing.
 			t.Fatal(err)
 		}
 	}
-	mutations, err := prepareWorkspacePlanTransfer(repository, workspace, "delivery-one")
+	mutations, err := prepareWorkspacePlanTransfer(repository, workspace, "delivery-one", sha256Bytes([]byte(plan)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,5 +70,42 @@ func TestWorkspacePlanTransferCopiesOnlyRegularRuntimeOwnedArtifacts(t *testing.
 		if !strings.HasPrefix(mutation.Path, filepath.Join(workspace, ".boatstack")+string(filepath.Separator)) || !mutation.PriorExists && len(mutation.Target) == 0 {
 			t.Fatalf("invalid transfer mutation: %#v", mutation)
 		}
+	}
+}
+
+func TestWorkspacePlanTransferRejectsStaleOrMissingBoundArtifacts(t *testing.T) {
+	repository := t.TempDir()
+	workspace := t.TempDir()
+	planPath := filepath.Join(repository, ".boatstack", "plans", "delivery-one.source")
+	approvalPath := filepath.Join(repository, ".boatstack", "approvals", "delivery-one.json")
+	if err := os.MkdirAll(filepath.Dir(planPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	bound := []byte("# Bound plan\n")
+	if err := os.WriteFile(planPath, bound, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(approvalPath, []byte(`{"schema_version":1,"delivery_id":"delivery-one","plan_fingerprint":"`+sha256Bytes(bound)+`","actor":"reviewer","admission_id":"adm-1","approved_at":"2026-01-01T00:00:00Z"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(planPath, []byte("# Substituted plan\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mutations, err := prepareWorkspacePlanTransfer(repository, workspace, "delivery-one", sha256Bytes(bound))
+	if err == nil || len(mutations) != 0 {
+		t.Fatalf("stale plan transfer = %#v, %v", mutations, err)
+	}
+	if _, err := os.Stat(filepath.Join(workspace, ".boatstack", "plans", "delivery-one.source")); !os.IsNotExist(err) {
+		t.Fatalf("stale plan created destination artifact: %v", err)
+	}
+	if err := os.WriteFile(planPath, bound, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(approvalPath); err != nil {
+		t.Fatal(err)
+	}
+	mutations, err = prepareWorkspacePlanTransfer(repository, workspace, "delivery-one", sha256Bytes(bound))
+	if err == nil || len(mutations) != 0 {
+		t.Fatalf("missing approval transfer = %#v, %v", mutations, err)
 	}
 }
