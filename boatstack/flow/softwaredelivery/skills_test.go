@@ -80,7 +80,7 @@ func TestGeneratedRunSkillRequiresExplicitAbandonmentBeforeReplacement(t *testin
 		Program: controlprogram.Program{ID: "product-delivery"},
 		Entries: []controlprogram.Entry{
 			{ID: "run", Target: "published-pr"},
-			{ID: "abandon", Target: "safely-abandoned"},
+			{ID: "cancel", Target: "safely-abandoned"},
 		},
 	}}
 	files, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
@@ -91,12 +91,12 @@ func TestGeneratedRunSkillRequiresExplicitAbandonmentBeforeReplacement(t *testin
 		t.Fatalf("generated file count = %d, want 6", len(files))
 	}
 	run := string(files[".agents/skills/product-delivery-run/SKILL.md"])
-	for _, contract := range []string{"never retarget this run", "$product-delivery-abandon", "abandonment receipt", "starting a new run"} {
+	for _, contract := range []string{"never retarget this run", "$product-delivery-cancel", "abandonment receipt", "starting a new run"} {
 		if !strings.Contains(run, contract) {
 			t.Fatalf("generated run skill lacks %q", contract)
 		}
 	}
-	if _, ok := files[".agents/skills/product-delivery-abandon/SKILL.md"]; !ok {
+	if _, ok := files[".agents/skills/product-delivery-cancel/SKILL.md"]; !ok {
 		t.Fatal("abandonment entry skill was not generated")
 	}
 }

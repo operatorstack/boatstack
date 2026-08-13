@@ -49,14 +49,17 @@ func renderSkill(compiled controlprogram.Compiled, entry controlprogram.Entry, s
 	}
 	description += " Use only when the user explicitly selects this repository Flow entry."
 	supersession := ""
-	if entry.ID == "run" && hasTargetEntry(compiled.Document.Entries, "safely-abandoned") {
-		supersession = fmt.Sprintf(`
+	if entry.Target == "published-pr" {
+		abandonmentSkill, ok := targetEntrySkill(compiled.Document.Program.ID, compiled.Document.Entries, "safely-abandoned")
+		if ok {
+			supersession = fmt.Sprintf(`
 If the user requests different work, never retarget this run. When no objective
 binding receipt exists, stop this unbound attempt and allow the inbox plan to be
-replaced. Once the objective is bound, require explicit use of $%s-abandon for
+replaced. Once the objective is bound, require explicit use of $%s for
 the same delivery and wait for its abandonment receipt before selecting a new
 plan and starting a new run.
-`, compiled.Document.Program.ID)
+`, abandonmentSkill)
+		}
 	}
 	return []byte(fmt.Sprintf(`---
 name: %s
@@ -85,13 +88,13 @@ authority.
 `, slug, description, title(slug), compiled.Document.Program.ID, entry.ID, entry.Target, compiled.Document.Program.ID, entry.ID, host, supersession))
 }
 
-func hasTargetEntry(entries []controlprogram.Entry, target string) bool {
+func targetEntrySkill(programID string, entries []controlprogram.Entry, target string) (string, bool) {
 	for _, entry := range entries {
 		if entry.Target == target {
-			return true
+			return flowSkillSlug(programID, entry.ID), true
 		}
 	}
-	return false
+	return "", false
 }
 
 func title(value string) string {

@@ -62,6 +62,7 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	if options.flowProgramFingerprint != "" && options.flowProgramFingerprint != compiled.Fingerprint {
 		return commandOptions{}, fmt.Errorf("FLOW_PROGRAM_DRIFT: run fingerprint does not match the current artifact")
 	}
+	options.flowProgramFingerprint = compiled.Fingerprint
 	objective, err := softwareflow.ObjectiveForEntry(ctx, compiled, resolver, options.entryID)
 	if err != nil {
 		return commandOptions{}, err
@@ -74,7 +75,7 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	if err != nil {
 		return commandOptions{}, err
 	}
-	plan, deliveryID, err := resolveBoundPlan(repository, entry, options)
+	plan, deliveryID, err := resolveBoundPlan(repository, entry, objective, options)
 	if err != nil {
 		return commandOptions{}, err
 	}
@@ -99,7 +100,6 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		return commandOptions{}, fmt.Errorf("FLOW_ACTIVE_RUN_INVALID: active abandonment has no committed run identity")
 	}
 	options.repository = repository
-	options.flowProgramFingerprint = compiled.Fingerprint
 	if options.objectiveKind == "" {
 		options.objectiveKind = string(objective)
 	}
@@ -150,7 +150,7 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 }
 
 func bindActiveFlowContext(ctx context.Context, repository string, options commandOptions, entryObjective model.ObjectiveKind) (commandOptions, error) {
-	if options.runID != "" && options.entryID != "abandon" {
+	if options.runID != "" && entryObjective != model.ObjectiveAbandoned {
 		return options, nil
 	}
 	resolver, err := plant.NewResolver("")
@@ -207,7 +207,7 @@ func bindActiveFlowContext(ctx context.Context, repository string, options comma
 		options.activeFlowBound = true
 		return options, nil
 	}
-	if options.entryID == "abandon" {
+	if entryObjective == model.ObjectiveAbandoned {
 		repositoryIdentity, identityErr := flowRepositoryIdentity(repository)
 		if identityErr != nil {
 			return commandOptions{}, identityErr
@@ -272,8 +272,8 @@ func bindRPCFlowEntry(ctx context.Context, request surfaces.Request) (surfaces.R
 	return request, nil
 }
 
-func resolveBoundPlan(repository string, entry controlprogram.Entry, options commandOptions) (string, string, error) {
-	if options.activeFlowBound && options.entryID == "abandon" {
+func resolveBoundPlan(repository string, entry controlprogram.Entry, entryObjective model.ObjectiveKind, options commandOptions) (string, string, error) {
+	if options.activeFlowBound && entryObjective == model.ObjectiveAbandoned {
 		return "", options.deliveryID, nil
 	}
 	if options.runID == "" && options.deliveryID == "" {
