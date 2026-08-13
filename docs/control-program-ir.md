@@ -14,20 +14,26 @@ Software terms such as plans, tests, Git, and pull requests belong to
 
 ## Compile and check
 
-Install the TypeScript frontend in the repository, then run:
+Install the TypeScript frontend in the repository, resolve its absolute path,
+then run:
 
 ```sh
-boatstack flow compile --repo .
+boatstack flow compile --repo . \
+  --frontend "$(pwd)/node_modules/.bin/boatstack-flow-frontend"
 boatstack flow check --repo .
 boatstack next --repo . --flow product-delivery --entry run
 ```
 
 Compilation sends the exact source bytes to a restricted TypeScript frontend.
+The frontend path is explicit authority: Boatstack never selects or executes a
+repository `node_modules/.bin` program automatically.
 The frontend accepts only literal data and calls to named exports from trusted
 Boatstack SDKs. It rejects local imports and other repository code without
 executing them. Boatstack then validates, canonicalizes, fingerprints, and
-projects the committed `.flow.ir.json` artifact and generated skills as one
-serialized update. Runtime commands never execute `flow.ts`.
+projects generated skills, retires obsolete skills, and publishes the committed
+`.flow.ir.json` artifact last as one serialized update. Runtime commands never
+execute `flow.ts`. The artifact filename comes from the declared program ID,
+not the source filename.
 
 The artifact binds the source hash, compiler version, dependency-lock hash,
 trusted operator fingerprints, canonical program fingerprint, and generated

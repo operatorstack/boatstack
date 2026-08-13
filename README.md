@@ -74,7 +74,9 @@ $boatstack-update    # install a checksum-verified runtime update
 
 A repository Flow declares its own entries. `boatstack flow compile` projects
 those entries into host skills such as `$product-delivery-run`; Boatstack does
-not interpret the word `run`.
+not interpret the word `run`. Compilation requires an explicitly selected,
+absolute frontend path and never executes an automatically discovered
+repository binary.
 
 If the agent was already running during installation, start a fresh task so it
 can discover the generated skills. See [Getting started](docs/getting-started.md)

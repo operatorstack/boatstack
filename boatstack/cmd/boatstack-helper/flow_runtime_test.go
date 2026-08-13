@@ -23,23 +23,7 @@ func flowRepository(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	truth := true
-	config := json.RawMessage(`{"path":".boatstack/plans/inbox","cardinality":"exactly-one"}`)
-	document := controlprogram.Document{
-		SchemaVersion: controlprogram.SchemaVersion,
-		Program:       controlprogram.Program{ID: "product-delivery", Version: "1"},
-		Declarations:  controlprogram.Declarations{InputResolvers: []string{"software-delivery.plan-inbox"}},
-		Facets: []controlprogram.Facet{
-			{ID: "publication", Kind: "string"}, {ID: "verification", Kind: "string"},
-			{ID: "configuration", Kind: "string"}, {ID: "runtime", Kind: "string"},
-		},
-		Operators:   []controlprogram.Operator{{ID: "publication.observe", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/publication.observe", Version: "1"}}},
-		Transitions: []controlprogram.Transition{{ID: "publication.observe", Operator: "publication.observe", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 77}},
-		Targets: []controlprogram.Target{{ID: "published-pr", Predicate: controlprogram.Predicate{All: []controlprogram.Predicate{
-			flowFact("verification", "current"), flowFact("configuration", "verified"), flowFact("runtime", "verified"), flowFact("publication", "open"),
-		}}}},
-		Entries: []controlprogram.Entry{{ID: "run", Target: "published-pr", Inputs: []controlprogram.EntryInput{{ID: "plan", Type: "markdown-file", Required: true, Resolver: "software-delivery.plan-inbox", Config: config}}}},
-	}
+	document := productDeliveryDocument("product-delivery")
 	compiled, err := controlprogram.Compile(document, resolver)
 	if err != nil {
 		t.Fatal(err)
@@ -64,6 +48,26 @@ func flowRepository(t *testing.T) string {
 	}
 	writeFixture(t, repository, ".boatstack/flows/product-delivery.flow.ir.json", artifactRaw)
 	return repository
+}
+
+func productDeliveryDocument(programID string) controlprogram.Document {
+	truth := true
+	config := json.RawMessage(`{"path":".boatstack/plans/inbox","cardinality":"exactly-one"}`)
+	return controlprogram.Document{
+		SchemaVersion: controlprogram.SchemaVersion,
+		Program:       controlprogram.Program{ID: programID, Version: "1"},
+		Declarations:  controlprogram.Declarations{InputResolvers: []string{"software-delivery.plan-inbox"}},
+		Facets: []controlprogram.Facet{
+			{ID: "publication", Kind: "string"}, {ID: "verification", Kind: "string"},
+			{ID: "configuration", Kind: "string"}, {ID: "runtime", Kind: "string"},
+		},
+		Operators:   []controlprogram.Operator{{ID: "publication.observe", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/publication.observe", Version: "1"}}},
+		Transitions: []controlprogram.Transition{{ID: "publication.observe", Operator: "publication.observe", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 77}},
+		Targets: []controlprogram.Target{{ID: "published-pr", Predicate: controlprogram.Predicate{All: []controlprogram.Predicate{
+			flowFact("verification", "current"), flowFact("configuration", "verified"), flowFact("runtime", "verified"), flowFact("publication", "open"),
+		}}}},
+		Entries: []controlprogram.Entry{{ID: "run", Target: "published-pr", Inputs: []controlprogram.EntryInput{{ID: "plan", Type: "markdown-file", Required: true, Resolver: "software-delivery.plan-inbox", Config: config}}}},
+	}
 }
 
 func writeFixture(t *testing.T, repository, relative string, content []byte) {
@@ -198,6 +202,68 @@ func TestFlowCompileRejectsSourceChangedDuringFrontend(t *testing.T) {
 	}
 }
 
+func TestFlowCompileDoesNotAutomaticallyExecuteRepositoryFrontend(t *testing.T) {
+	// control-law: repository-content-cannot-authorize-ambient-frontend-execution
+	repository, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(repository, "sentinel")
+	writeFixture(t, repository, ".boatstack/flows/product-delivery.flow.ts", []byte("source"))
+	writeFixture(t, repository, "package-lock.json", []byte("lock"))
+	frontend := filepath.Join(repository, "node_modules", ".bin", "boatstack-flow-frontend")
+	if runtime.GOOS == "windows" {
+		frontend += ".cmd"
+	}
+	if err := os.MkdirAll(filepath.Dir(frontend), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(frontend, []byte("#!/bin/sh\nprintf executed > '"+sentinel+"'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	err = compileFlow(context.Background(), flowCommandOptions{repository: repository, lock: "package-lock.json"})
+	if err == nil || !strings.Contains(err.Error(), "FLOW_FRONTEND_REQUIRED") {
+		t.Fatalf("automatic frontend result = %v", err)
+	}
+	if _, statErr := os.Stat(sentinel); !os.IsNotExist(statErr) {
+		t.Fatalf("repository frontend executed: %v", statErr)
+	}
+}
+
+func TestFlowCompileNamesDefaultArtifactFromProgramID(t *testing.T) {
+	// control-law: compiled-artifact-is-discoverable-by-declared-program-identity
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+	repository, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	documentRaw, err := json.Marshal(productDeliveryDocument("bar"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, repository, ".boatstack/flows/foo.flow.ts", []byte("declarative source"))
+	writeFixture(t, repository, "package-lock.json", []byte("lock"))
+	writeFixture(t, repository, "raw-ir.json", documentRaw)
+	frontend := filepath.Join(repository, "frontend.sh")
+	script := []byte("#!/bin/sh\ncat >/dev/null\ncat '" + filepath.Join(repository, "raw-ir.json") + "'\n")
+	if err := os.WriteFile(frontend, script, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := compileFlow(context.Background(), flowCommandOptions{
+		repository: repository, source: ".boatstack/flows/foo.flow.ts", lock: "package-lock.json", frontend: frontend,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(repository, ".boatstack", "flows", "bar.flow.ir.json")); err != nil {
+		t.Fatalf("program artifact missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repository, ".boatstack", "flows", "foo.flow.ir.json")); !os.IsNotExist(err) {
+		t.Fatalf("source-stem artifact exists: %v", err)
+	}
+}
+
 func TestFlowEntryBindsStableRunAndResumesManagedPlan(t *testing.T) {
 	// control-law: questions-and-restarts-preserve-the-exact-plan-worktree-and-run
 	repository := flowRepository(t)
@@ -271,15 +337,22 @@ func TestFlowCompileRetiresOnlyUnmodifiedPriorGeneratedSkills(t *testing.T) {
 	}
 	artifactPath := filepath.Join(repository, ".boatstack", "flows", "program.flow.ir.json")
 	writeFixture(t, repository, ".boatstack/flows/program.flow.ir.json", raw)
-	paths, err := obsoleteGeneratedSkills(repository, artifactPath, map[string]string{retainedPath: fileDigest(retained)})
+	paths, artifactExpectation, err := obsoleteGeneratedSkills(repository, artifactPath, map[string]string{retainedPath: fileDigest(retained)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(paths) != 1 || paths[0] != filepath.Join(repository, filepath.FromSlash(retiredPath)) {
+	if len(paths) != 1 || paths[0].Path != filepath.Join(repository, filepath.FromSlash(retiredPath)) || !artifactExpectation.Exists {
 		t.Fatalf("retired paths = %v", paths)
 	}
 	writeFixture(t, repository, retiredPath, []byte("user changed"))
-	if _, err := obsoleteGeneratedSkills(repository, artifactPath, map[string]string{retainedPath: fileDigest(retained)}); err == nil || !strings.Contains(err.Error(), "was modified") {
+	if _, _, err := obsoleteGeneratedSkills(repository, artifactPath, map[string]string{retainedPath: fileDigest(retained)}); err == nil || !strings.Contains(err.Error(), "was modified") {
 		t.Fatalf("modified retired projection was not protected: %v", err)
+	}
+	if err := os.Remove(filepath.Join(repository, filepath.FromSlash(retiredPath))); err != nil {
+		t.Fatal(err)
+	}
+	paths, _, err = obsoleteGeneratedSkills(repository, artifactPath, map[string]string{retainedPath: fileDigest(retained)})
+	if err != nil || len(paths) != 1 || !paths[0].AllowMissing {
+		t.Fatalf("interrupted retirement was not retryable: %v, %v", paths, err)
 	}
 }

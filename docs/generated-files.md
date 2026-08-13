@@ -31,7 +31,10 @@ committed runtime inputs:
 bindings, program fingerprints, or skills. Runtime commands load only the
 checked IR artifact; they do not execute the TypeScript source.
 Compilation also rejects repository module imports, concurrent projection, and
-source or lock changes observed while the frontend is running.
+source or lock changes observed through projection commit. It requires an
+explicit absolute frontend path, revalidates retirement authorization under the
+projection lock, and publishes the artifact only after obsolete skills are
+retired.
 
 ## Machine-local controller state
 

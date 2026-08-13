@@ -29,9 +29,22 @@ func RunFlowFrontend(ctx context.Context, executable, sourceName string, source 
 }
 
 type ProjectionWrite struct {
-	Path    string
-	Content []byte
-	Mode    os.FileMode
+	Path        string
+	Content     []byte
+	Mode        os.FileMode
+	PublishLast bool
+}
+
+type ProjectionRemoval struct {
+	Path           string
+	ExpectedSHA256 string
+	AllowMissing   bool
+}
+
+type ProjectionExpectation struct {
+	Path           string
+	Exists         bool
+	ExpectedSHA256 string
 }
 
 type projectionSnapshot struct {
@@ -46,10 +59,19 @@ type stagedProjection struct {
 	temporary string
 }
 
+type projectionHooks struct {
+	afterValidation func()
+	afterRemovals   func()
+}
+
 // ApplyFlowProjection stages every output before mutating the repository and
 // restores the prior bytes if any commit step fails. Generated outputs may not
 // traverse repository symlinks.
-func ApplyFlowProjection(repository string, writes []ProjectionWrite, removals []string) error {
+func ApplyFlowProjection(repository string, writes []ProjectionWrite, removals []ProjectionRemoval, expectations []ProjectionExpectation) error {
+	return applyFlowProjection(repository, writes, removals, expectations, projectionHooks{})
+}
+
+func applyFlowProjection(repository string, writes []ProjectionWrite, removals []ProjectionRemoval, expectations []ProjectionExpectation, hooks projectionHooks) error {
 	if !filepath.IsAbs(repository) || filepath.Clean(repository) != repository {
 		return fmt.Errorf("projection repository must be exact and absolute")
 	}
@@ -63,15 +85,26 @@ func ApplyFlowProjection(repository string, writes []ProjectionWrite, removals [
 	}
 	defer lock.release()
 	writes = append([]ProjectionWrite(nil), writes...)
-	removals = append([]string(nil), removals...)
-	sort.Slice(writes, func(i, j int) bool { return writes[i].Path < writes[j].Path })
-	sort.Strings(removals)
+	removals = append([]ProjectionRemoval(nil), removals...)
+	expectations = append([]ProjectionExpectation(nil), expectations...)
+	sort.Slice(writes, func(i, j int) bool {
+		if writes[i].PublishLast != writes[j].PublishLast {
+			return !writes[i].PublishLast
+		}
+		return writes[i].Path < writes[j].Path
+	})
+	sort.Slice(removals, func(i, j int) bool { return removals[i].Path < removals[j].Path })
+	sort.Slice(expectations, func(i, j int) bool { return expectations[i].Path < expectations[j].Path })
 
 	seen := map[string]bool{}
 	snapshots := map[string]projectionSnapshot{}
+	publishLast := 0
 	for _, write := range writes {
 		if write.Mode.Perm() == 0 || seen[write.Path] {
 			return fmt.Errorf("projection contains an invalid or duplicate write path")
+		}
+		if write.PublishLast {
+			publishLast++
 		}
 		seen[write.Path] = true
 		if err := validateProjectionPath(repository, write.Path); err != nil {
@@ -83,22 +116,43 @@ func ApplyFlowProjection(repository string, writes []ProjectionWrite, removals [
 		}
 		snapshots[write.Path] = snapshot
 	}
-	for _, path := range removals {
-		if seen[path] {
+	if publishLast > 1 {
+		return fmt.Errorf("projection contains multiple publish-last writes")
+	}
+	for _, removal := range removals {
+		if seen[removal.Path] || removal.ExpectedSHA256 == "" {
 			return fmt.Errorf("projection cannot write and remove the same path")
 		}
-		seen[path] = true
-		if err := validateProjectionPath(repository, path); err != nil {
+		seen[removal.Path] = true
+		if err := validateProjectionPath(repository, removal.Path); err != nil {
 			return err
 		}
-		snapshot, err := snapshotProjectionPath(path)
+		snapshot, err := snapshotProjectionPath(removal.Path)
 		if err != nil {
 			return err
 		}
-		if !snapshot.exists {
+		if !snapshot.exists && !removal.AllowMissing {
 			return fmt.Errorf("projection removal target is missing")
 		}
-		snapshots[path] = snapshot
+		if snapshot.exists && projectionDigest(snapshot.content) != removal.ExpectedSHA256 {
+			return fmt.Errorf("FLOW_PROJECTION_INPUT_CHANGED: removal target %s changed before commit", removal.Path)
+		}
+		snapshots[removal.Path] = snapshot
+	}
+	for _, expectation := range expectations {
+		if err := validateProjectionPath(repository, expectation.Path); err != nil {
+			return err
+		}
+		snapshot, err := snapshotProjectionPath(expectation.Path)
+		if err != nil {
+			return err
+		}
+		if snapshot.exists != expectation.Exists || (expectation.Exists && projectionDigest(snapshot.content) != expectation.ExpectedSHA256) {
+			return fmt.Errorf("FLOW_PROJECTION_INPUT_CHANGED: %s changed before commit", expectation.Path)
+		}
+	}
+	if hooks.afterValidation != nil {
+		hooks.afterValidation()
 	}
 
 	staged := make([]stagedProjection, 0, len(writes))
@@ -123,18 +177,60 @@ func ApplyFlowProjection(repository string, writes []ProjectionWrite, removals [
 
 	changed := make([]string, 0, len(writes)+len(removals))
 	var commitErr error
-	for _, value := range staged {
+	for index, value := range staged {
+		if writes[index].PublishLast {
+			continue
+		}
 		if commitErr = os.Rename(value.temporary, value.target); commitErr != nil {
 			break
 		}
 		changed = append(changed, value.target)
 	}
 	if commitErr == nil {
-		for _, path := range removals {
-			if commitErr = os.Remove(path); commitErr != nil {
+		for _, removal := range removals {
+			current, currentErr := snapshotProjectionPath(removal.Path)
+			if currentErr != nil {
+				commitErr = currentErr
 				break
 			}
-			changed = append(changed, path)
+			if !current.exists && removal.AllowMissing {
+				continue
+			}
+			if !current.exists || projectionDigest(current.content) != removal.ExpectedSHA256 {
+				commitErr = fmt.Errorf("FLOW_PROJECTION_INPUT_CHANGED: removal target %s changed before removal", removal.Path)
+				break
+			}
+			if commitErr = os.Remove(removal.Path); commitErr != nil {
+				break
+			}
+			changed = append(changed, removal.Path)
+		}
+	}
+	if commitErr == nil && hooks.afterRemovals != nil {
+		hooks.afterRemovals()
+	}
+	if commitErr == nil && publishLast == 1 {
+		for _, expectation := range expectations {
+			current, currentErr := snapshotProjectionPath(expectation.Path)
+			if currentErr != nil {
+				commitErr = currentErr
+				break
+			}
+			if current.exists != expectation.Exists || (expectation.Exists && projectionDigest(current.content) != expectation.ExpectedSHA256) {
+				commitErr = fmt.Errorf("FLOW_PROJECTION_INPUT_CHANGED: %s changed before publication", expectation.Path)
+				break
+			}
+		}
+	}
+	if commitErr == nil && publishLast == 1 {
+		for index, value := range staged {
+			if !writes[index].PublishLast {
+				continue
+			}
+			if commitErr = os.Rename(value.temporary, value.target); commitErr == nil {
+				changed = append(changed, value.target)
+			}
+			break
 		}
 	}
 	if commitErr == nil {
@@ -144,6 +240,10 @@ func ApplyFlowProjection(repository string, writes []ProjectionWrite, removals [
 		return fmt.Errorf("commit Flow projection: %v; rollback failed: %w", commitErr, rollbackErr)
 	}
 	return fmt.Errorf("commit Flow projection: %w", commitErr)
+}
+
+func projectionDigest(value []byte) string {
+	return fmt.Sprintf("%x", sha256.Sum256(value))
 }
 
 type projectionLock struct {
