@@ -132,7 +132,7 @@ const (
 	FacetObjective           = model.FacetObjective
 )
 
-const ProgramSchemaVersion = 4
+const ProgramSchemaVersion = 5
 
 func KernelEffectCapabilities(transition Transition) []Capability {
 	return catalog.KernelEffectCapabilities(transition)

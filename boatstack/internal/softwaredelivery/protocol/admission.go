@@ -9,7 +9,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 )
 
-const AdmissionSchemaVersion = 5
+const AdmissionSchemaVersion = 6
 
 type Admission struct {
 	SchemaVersion                       int                     `json:"schema_version"`

@@ -37,7 +37,7 @@ type journalRecord struct {
 	Admission       protocol.Admission   `json:"admission"`
 	TransitionID    catalog.TransitionID `json:"transition_id"`
 	TransitionClass catalog.EventClass   `json:"transition_class"`
-	// AllowedStateFacets preserves the current schema-8 record shape. Recovery
+	// AllowedStateFacets preserves the declared record shape. Recovery
 	// authority is reconstructed from Admission.RequiredCapabilities instead.
 	AllowedStateFacets []model.StateFacet          `json:"allowed_state_facets"`
 	ReconcilesProgram  bool                        `json:"reconciles_program,omitempty"`

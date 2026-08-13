@@ -12,7 +12,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 )
 
-const ReceiptSchemaVersion = 8
+const ReceiptSchemaVersion = 9
 
 type TransitionFactKind string
 

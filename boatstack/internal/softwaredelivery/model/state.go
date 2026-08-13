@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const SnapshotSchemaVersion = 4
+const SnapshotSchemaVersion = 5
 
 type ProtocolPhase string
 

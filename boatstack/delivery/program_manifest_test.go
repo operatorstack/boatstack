@@ -179,6 +179,7 @@ func TestProgramManifestNamespaceAndCompatibilityBoundary(t *testing.T) {
 		code    delivery.ProgramErrorCode
 	}{
 		{"unsupported-schema", func(value *delivery.ProgramManifest) { value.SchemaVersion = delivery.ProgramSchemaVersion + 1 }, runtimeFixture(), delivery.ProgramSchemaUnsupported},
+		{"prior-schema", func(value *delivery.ProgramManifest) { value.SchemaVersion = delivery.ProgramSchemaVersion - 1 }, runtimeFixture(), delivery.ProgramSchemaUnsupported},
 		{"invalid-schema", func(value *delivery.ProgramManifest) { value.SchemaVersion = 0 }, runtimeFixture(), delivery.ProgramInvalid},
 		{"runtime-too-old", func(value *delivery.ProgramManifest) { value.RequiresRuntime = ">=2.0.0" }, runtimeFixture(), delivery.RuntimeTooOld},
 		{"malformed-runtime", func(value *delivery.ProgramManifest) { value.RequiresRuntime = "^1" }, runtimeFixture(), delivery.ProgramInvalid},

@@ -161,8 +161,8 @@ func TestRestartRecoveryRestoresPriorStateAndCommitsRecoveryRevision(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(basePending, []byte(`"schema_version": 8`)) || !bytes.Contains(basePending, []byte(`"allowed_state_facets"`)) {
-		t.Fatalf("pending update journal is not current-main schema 8: %s", basePending)
+	if !bytes.Contains(basePending, []byte(`"schema_version": 9`)) || !bytes.Contains(basePending, []byte(`"allowed_state_facets"`)) {
+		t.Fatalf("pending update journal is not target-bound schema 9: %s", basePending)
 	}
 
 	restartedInvocation, err := resolver.ResolveInvocation(ctx, repository, "cli", "after-restart")

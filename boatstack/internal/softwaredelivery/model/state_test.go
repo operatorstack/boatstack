@@ -61,6 +61,14 @@ func TestCanonicalizeIsDeterministicAndControlSensitive(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeRejectsPriorObjectiveSchema(t *testing.T) {
+	observation := testObservation(PhaseObserved)
+	observation.SchemaVersion = SnapshotSchemaVersion - 1
+	if _, err := Canonicalize(observation); err == nil {
+		t.Fatal("prior objective snapshot schema was accepted")
+	}
+}
+
 func TestCanonicalizeRejectsKnownFactWithoutEvidence(t *testing.T) {
 	// control-law: controlling-facts-carry-evidence
 	observation := testObservation(PhaseObserved)
