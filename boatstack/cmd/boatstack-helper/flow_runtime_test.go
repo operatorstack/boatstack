@@ -21,6 +21,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/plant"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
 )
 
@@ -852,6 +853,88 @@ func TestFlowEntryBindsStableRunAndResumesManagedPlan(t *testing.T) {
 	}
 	if source, ok := parameters.Get("source_path"); !ok || source != filepath.Join(resumed.repository, ".boatstack", "plans", "delivery-one.source") {
 		t.Fatalf("resumed source = %q, present=%t", source, ok)
+	}
+}
+
+func TestContinuationRebindsOnlyRepositoryResolvedCandidateParameters(t *testing.T) {
+	// control-law: continuation-may-re-resolve-only-one-supervisor-candidate-with-repository-owned-parameters
+	repository := flowRepository(t)
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("exact plan"))
+	bound, err := bindFlowEntry(context.Background(), commandOptions{
+		repository: repository, programID: "product-delivery", entryID: "run", host: "codex",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	objectiveBind := catalog.Transition{ID: "objective.bind", Parameters: []catalog.ParameterSpec{{Name: "target_id", Required: true}, {Name: "delivery_id", Required: true}}}
+	rebound, changed, err := bindContinuationCandidate(context.Background(), bound, surfaces.Response{Decision: &supervisor.Decision{
+		Kind: supervisor.DecisionCandidate, Transition: &objectiveBind, Candidates: []catalog.TransitionID{"objective.bind"},
+	}})
+	if err != nil || !changed || rebound.transitionID != "objective.bind" {
+		t.Fatalf("repository candidate rebind = options=%#v changed=%t err=%v", rebound, changed, err)
+	}
+	parameters, err := parseParameters(rebound.parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target, ok := parameters.Get("target_id"); !ok || target != "published-pr" {
+		t.Fatalf("bound target = %q, %t", target, ok)
+	}
+	if delivery, ok := parameters.Get("delivery_id"); !ok || delivery != "delivery-one" {
+		t.Fatalf("bound delivery = %q, %t", delivery, ok)
+	}
+	planCreate := catalog.Transition{ID: "plan.create", Parameters: []catalog.ParameterSpec{{Name: "source_path", Required: true}, {Name: "source_fingerprint", Required: true}, {Name: "delivery_id", Required: true}}}
+	planBound, planChanged, err := bindContinuationCandidate(context.Background(), bound, surfaces.Response{Decision: &supervisor.Decision{
+		Kind: supervisor.DecisionCandidate, Transition: &planCreate, Candidates: []catalog.TransitionID{"plan.create"},
+	}})
+	if err != nil || !planChanged || planBound.transitionID != "plan.create" {
+		t.Fatalf("plan candidate rebind = options=%#v changed=%t err=%v", planBound, planChanged, err)
+	}
+	planParameters, err := parseParameters(planBound.parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"source_path", "source_fingerprint", "delivery_id"} {
+		if _, ok := planParameters.Get(name); !ok {
+			t.Fatalf("plan parameter %q was not bound", name)
+		}
+	}
+
+	for name, decision := range map[string]supervisor.Decision{
+		"ambiguous": {
+			Kind: supervisor.DecisionCandidate, Transition: &objectiveBind,
+			Candidates: []catalog.TransitionID{"objective.bind", "plan.create"},
+		},
+		"mismatched": {
+			Kind: supervisor.DecisionCandidate, Transition: &objectiveBind,
+			Candidates: []catalog.TransitionID{"plan.create"},
+		},
+		"human-question": {
+			Kind:       supervisor.DecisionCandidate,
+			Transition: &catalog.Transition{ID: "plan.approve", Parameters: []catalog.ParameterSpec{{Name: "plan_fingerprint", Required: true}}, Prescription: catalog.Prescription{AuthorityPrompt: "Approve exact plan bytes"}},
+			Candidates: []catalog.TransitionID{"plan.approve"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			result, reboundChanged, reboundErr := bindContinuationCandidate(context.Background(), bound, surfaces.Response{Decision: &decision})
+			if reboundErr != nil || reboundChanged || result.transitionID != "" || len(result.parameters) != 0 {
+				t.Fatalf("unsafe candidate rebound = options=%#v changed=%t err=%v", result, reboundChanged, reboundErr)
+			}
+		})
+	}
+
+	explicit := bound
+	explicit.transitionID = "objective.bind"
+	if _, changed, err := bindContinuationCandidate(context.Background(), explicit, surfaces.Response{Decision: &supervisor.Decision{
+		Kind: supervisor.DecisionCandidate, Transition: &objectiveBind, Candidates: []catalog.TransitionID{"objective.bind"},
+	}}); err != nil || changed {
+		t.Fatalf("explicit transition rebound changed=%t err=%v", changed, err)
+	}
+	if _, changed, err := bindContinuationCandidate(context.Background(), bound, surfaces.Response{
+		Decision:     &supervisor.Decision{Kind: supervisor.DecisionCandidate, Transition: &objectiveBind, Candidates: []catalog.TransitionID{"objective.bind"}},
+		Prescription: &protocol.Prescription{TransitionID: "objective.bind"},
+	}); err != nil || changed {
+		t.Fatalf("prescribed response rebound changed=%t err=%v", changed, err)
 	}
 }
 
