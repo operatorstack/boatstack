@@ -181,7 +181,9 @@ func TestFlowCompilerMutationSitesMapToFlowCompileEvent(t *testing.T) {
 			"runtime.ApplyFlowProjection": 1,
 		},
 		"internal/runtime/flow_files.go": {
-			"os.MkdirAll": 2, "os.CreateTemp": 1, "os.OpenFile": 1, "os.Remove": 5, "os.Rename": 3,
+			"os.MkdirAll": 1, "os.OpenFile": 1,
+			"os.Root.MkdirAll": 1, "os.Root.OpenFile": 1, "os.Root.Remove": 5, "os.Root.Rename": 3,
+			"os.File.Write": 1, "os.File.Chmod": 1,
 		},
 	}
 	for relative, wanted := range expected {
@@ -213,6 +215,10 @@ func TestFlowCompilerMutationSitesMapToFlowCompileEvent(t *testing.T) {
 			switch {
 			case importPath == "os" && writerCallsForInventory(selector.Sel.Name):
 				observed["os."+selector.Sel.Name]++
+			case owner.Name == "root" && rootWriterCallsForInventory(selector.Sel.Name):
+				observed["os.Root."+selector.Sel.Name]++
+			case owner.Name == "temporary" && fileWriterCallsForInventory(selector.Sel.Name):
+				observed["os.File."+selector.Sel.Name]++
 			case strings.HasSuffix(importPath, "/internal/runtime") && selector.Sel.Name == "ApplyFlowProjection":
 				observed["runtime."+selector.Sel.Name]++
 			}
@@ -222,6 +228,19 @@ func TestFlowCompilerMutationSitesMapToFlowCompileEvent(t *testing.T) {
 			t.Fatalf("flow.compile mutation inventory for %s = %v, want %v", relative, observed, wanted)
 		}
 	}
+}
+
+func rootWriterCallsForInventory(name string) bool {
+	switch name {
+	case "MkdirAll", "OpenFile", "Remove", "Rename":
+		return true
+	default:
+		return false
+	}
+}
+
+func fileWriterCallsForInventory(name string) bool {
+	return name == "Write" || name == "Chmod"
 }
 
 func writerCallsForInventory(name string) bool {

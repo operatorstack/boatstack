@@ -110,6 +110,17 @@ func TestFlowEntryRejectsPlanCardinalityBeforeManagedState(t *testing.T) {
 	}
 }
 
+func TestFlowEntryRejectsAdditionalRequiredInputs(t *testing.T) {
+	config := json.RawMessage(`{"path":".boatstack/plans/inbox","cardinality":"exactly-one"}`)
+	entry := controlprogram.Entry{ID: "run", Inputs: []controlprogram.EntryInput{
+		{ID: "first", Required: true, Resolver: "software-delivery.plan-inbox", Config: config},
+		{ID: "second", Required: true, Resolver: "software-delivery.plan-inbox", Config: config},
+	}}
+	if _, _, err := resolvePlanInput(t.TempDir(), entry); err == nil || !strings.Contains(err.Error(), "exactly one required trusted plan inbox") {
+		t.Fatalf("multiple required inputs result = %v", err)
+	}
+}
+
 func TestRPCFlowEntryRejectsUnknownEntryAndInvalidInboxBeforeManagedState(t *testing.T) {
 	// control-law: every-surface-binds-the-repository-entry-before-resolution-or-effects
 	for name, entry := range map[string]string{"unknown-entry": "missing", "empty-inbox": "run"} {

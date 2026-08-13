@@ -191,16 +191,10 @@ func loadFlowDefinition(ctx context.Context, repository, programID string) (soft
 }
 
 func resolvePlanInput(repository string, entry controlprogram.Entry) (string, string, error) {
-	var input *controlprogram.EntryInput
-	for index := range entry.Inputs {
-		if entry.Inputs[index].Resolver == "software-delivery.plan-inbox" {
-			input = &entry.Inputs[index]
-			break
-		}
+	if len(entry.Inputs) != 1 || !entry.Inputs[0].Required || entry.Inputs[0].Resolver != "software-delivery.plan-inbox" {
+		return "", "", fmt.Errorf("FLOW_INPUT_INVALID: entry %q requires exactly one required trusted plan inbox", entry.ID)
 	}
-	if input == nil {
-		return "", "", fmt.Errorf("FLOW_INPUT_INVALID: entry %q has no trusted plan inbox", entry.ID)
-	}
+	input := &entry.Inputs[0]
 	decoder := json.NewDecoder(bytes.NewReader(input.Config))
 	decoder.DisallowUnknownFields()
 	var config planInboxConfig

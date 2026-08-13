@@ -40,3 +40,35 @@ func TestGeneratedSkillsProjectOnlyDeclaredEntriesWithHostParity(t *testing.T) {
 		}
 	}
 }
+
+func TestGeneratedSkillsRejectKernelMaintenanceIdentity(t *testing.T) {
+	compiled := controlprogram.Compiled{Document: controlprogram.Document{
+		Program: controlprogram.Program{ID: "boatstack"},
+		Entries: []controlprogram.Entry{{ID: "update", Target: "done"}},
+	}}
+	if _, err := softwareflow.GenerateSkills(compiled, []string{"codex"}); err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("maintenance collision result = %v", err)
+	}
+}
+
+func TestGeneratedSkillIdentityIsInjectiveAcrossProgramEntryPairs(t *testing.T) {
+	generate := func(program, entry string) map[string][]byte {
+		t.Helper()
+		compiled := controlprogram.Compiled{Document: controlprogram.Document{
+			Program: controlprogram.Program{ID: program},
+			Entries: []controlprogram.Entry{{ID: entry, Target: "done"}},
+		}}
+		files, err := softwareflow.GenerateSkills(compiled, []string{"codex"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return files
+	}
+	first := generate("a-b", "c")
+	second := generate("a", "b-c")
+	for path := range first {
+		if _, collision := second[path]; collision {
+			t.Fatalf("distinct program/entry pairs collide at %s", path)
+		}
+	}
+}

@@ -44,5 +44,6 @@ drift fail closed. A source or lock change during compilation also fails closed.
 Trusted software-delivery bindings fix capabilities, authority, effects,
 verifiers, recovery, and state effects. A repository may select and order those
 operators and add conjunctive guards. It cannot weaken or replace the trusted
-contract. Durable software state continues to pass through the existing
+contract, alias a trusted transition identity, or leave required entry inputs
+unresolved. Durable software state continues to pass through the existing
 schema-v4 declared-effect reducer and native-handler boundary.

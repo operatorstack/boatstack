@@ -3,6 +3,7 @@ package runtime
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
 	"os"
@@ -61,6 +62,7 @@ type stagedProjection struct {
 
 type projectionHooks struct {
 	afterValidation func()
+	beforeStage     func(string)
 	afterRemovals   func()
 }
 
@@ -79,6 +81,11 @@ func applyFlowProjection(repository string, writes []ProjectionWrite, removals [
 	if err != nil || resolvedRepository != repository {
 		return fmt.Errorf("projection repository must be a resolved directory")
 	}
+	root, err := os.OpenRoot(repository)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
 	lock, err := acquireProjectionLock(repository)
 	if err != nil {
 		return err
@@ -110,7 +117,7 @@ func applyFlowProjection(repository string, writes []ProjectionWrite, removals [
 		if err := validateProjectionPath(repository, write.Path); err != nil {
 			return err
 		}
-		snapshot, err := snapshotProjectionPath(write.Path)
+		snapshot, err := snapshotProjectionPath(root, repository, write.Path)
 		if err != nil {
 			return err
 		}
@@ -127,7 +134,7 @@ func applyFlowProjection(repository string, writes []ProjectionWrite, removals [
 		if err := validateProjectionPath(repository, removal.Path); err != nil {
 			return err
 		}
-		snapshot, err := snapshotProjectionPath(removal.Path)
+		snapshot, err := snapshotProjectionPath(root, repository, removal.Path)
 		if err != nil {
 			return err
 		}
@@ -143,7 +150,7 @@ func applyFlowProjection(repository string, writes []ProjectionWrite, removals [
 		if err := validateProjectionPath(repository, expectation.Path); err != nil {
 			return err
 		}
-		snapshot, err := snapshotProjectionPath(expectation.Path)
+		snapshot, err := snapshotProjectionPath(root, repository, expectation.Path)
 		if err != nil {
 			return err
 		}
@@ -158,17 +165,24 @@ func applyFlowProjection(repository string, writes []ProjectionWrite, removals [
 	staged := make([]stagedProjection, 0, len(writes))
 	defer func() {
 		for _, value := range staged {
-			_ = os.Remove(value.temporary)
+			_ = root.Remove(value.temporary)
 		}
 	}()
 	for _, write := range writes {
-		if err := os.MkdirAll(filepath.Dir(write.Path), 0o755); err != nil {
+		relative, relativeErr := projectionRelativePath(repository, write.Path)
+		if relativeErr != nil {
+			return relativeErr
+		}
+		if err := root.MkdirAll(filepath.Dir(relative), 0o755); err != nil {
 			return err
 		}
 		if err := validateProjectionPath(repository, write.Path); err != nil {
 			return err
 		}
-		temporary, err := stageProjectionFile(write.Path, write.Content, write.Mode)
+		if hooks.beforeStage != nil {
+			hooks.beforeStage(write.Path)
+		}
+		temporary, err := stageProjectionFile(root, repository, write.Path, write.Content, write.Mode)
 		if err != nil {
 			return err
 		}
@@ -181,14 +195,19 @@ func applyFlowProjection(repository string, writes []ProjectionWrite, removals [
 		if writes[index].PublishLast {
 			continue
 		}
-		if commitErr = os.Rename(value.temporary, value.target); commitErr != nil {
+		target, targetErr := projectionRelativePath(repository, value.target)
+		if targetErr != nil {
+			commitErr = targetErr
+			break
+		}
+		if commitErr = root.Rename(value.temporary, target); commitErr != nil {
 			break
 		}
 		changed = append(changed, value.target)
 	}
 	if commitErr == nil {
 		for _, removal := range removals {
-			current, currentErr := snapshotProjectionPath(removal.Path)
+			current, currentErr := snapshotProjectionPath(root, repository, removal.Path)
 			if currentErr != nil {
 				commitErr = currentErr
 				break
@@ -200,7 +219,12 @@ func applyFlowProjection(repository string, writes []ProjectionWrite, removals [
 				commitErr = fmt.Errorf("FLOW_PROJECTION_INPUT_CHANGED: removal target %s changed before removal", removal.Path)
 				break
 			}
-			if commitErr = os.Remove(removal.Path); commitErr != nil {
+			relative, relativeErr := projectionRelativePath(repository, removal.Path)
+			if relativeErr != nil {
+				commitErr = relativeErr
+				break
+			}
+			if commitErr = root.Remove(relative); commitErr != nil {
 				break
 			}
 			changed = append(changed, removal.Path)
@@ -211,7 +235,7 @@ func applyFlowProjection(repository string, writes []ProjectionWrite, removals [
 	}
 	if commitErr == nil && publishLast == 1 {
 		for _, expectation := range expectations {
-			current, currentErr := snapshotProjectionPath(expectation.Path)
+			current, currentErr := snapshotProjectionPath(root, repository, expectation.Path)
 			if currentErr != nil {
 				commitErr = currentErr
 				break
@@ -227,7 +251,12 @@ func applyFlowProjection(repository string, writes []ProjectionWrite, removals [
 			if !writes[index].PublishLast {
 				continue
 			}
-			if commitErr = os.Rename(value.temporary, value.target); commitErr == nil {
+			target, targetErr := projectionRelativePath(repository, value.target)
+			if targetErr != nil {
+				commitErr = targetErr
+				break
+			}
+			if commitErr = root.Rename(value.temporary, target); commitErr == nil {
 				changed = append(changed, value.target)
 			}
 			break
@@ -236,7 +265,7 @@ func applyFlowProjection(repository string, writes []ProjectionWrite, removals [
 	if commitErr == nil {
 		return nil
 	}
-	if rollbackErr := rollbackProjection(changed, snapshots); rollbackErr != nil {
+	if rollbackErr := rollbackProjection(root, repository, changed, snapshots); rollbackErr != nil {
 		return fmt.Errorf("commit Flow projection: %v; rollback failed: %w", commitErr, rollbackErr)
 	}
 	return fmt.Errorf("commit Flow projection: %w", commitErr)
@@ -314,8 +343,20 @@ func validateProjectionPath(repository, path string) error {
 	return nil
 }
 
-func snapshotProjectionPath(path string) (projectionSnapshot, error) {
-	info, err := os.Lstat(path)
+func projectionRelativePath(repository, path string) (string, error) {
+	relative, err := filepath.Rel(repository, path)
+	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("managed output path escapes the repository")
+	}
+	return relative, nil
+}
+
+func snapshotProjectionPath(root *os.Root, repository, path string) (projectionSnapshot, error) {
+	relative, err := projectionRelativePath(repository, path)
+	if err != nil {
+		return projectionSnapshot{}, err
+	}
+	info, err := root.Lstat(relative)
 	if os.IsNotExist(err) {
 		return projectionSnapshot{path: path}, nil
 	}
@@ -325,47 +366,65 @@ func snapshotProjectionPath(path string) (projectionSnapshot, error) {
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 		return projectionSnapshot{}, fmt.Errorf("managed output is not a regular file")
 	}
-	content, err := os.ReadFile(path)
+	content, err := root.ReadFile(relative)
 	if err != nil {
 		return projectionSnapshot{}, err
 	}
 	return projectionSnapshot{path: path, exists: true, content: content, mode: info.Mode().Perm()}, nil
 }
 
-func stageProjectionFile(path string, content []byte, mode os.FileMode) (string, error) {
-	temporary, err := os.CreateTemp(filepath.Dir(path), ".boatstack-flow-*")
+func stageProjectionFile(root *os.Root, repository, path string, content []byte, mode os.FileMode) (string, error) {
+	relative, err := projectionRelativePath(repository, path)
 	if err != nil {
 		return "", err
 	}
-	temporaryPath := temporary.Name()
-	if _, err = temporary.Write(content); err == nil {
-		err = temporary.Chmod(mode)
+	for attempt := 0; attempt < 100; attempt++ {
+		nonce := make([]byte, 16)
+		if _, err := rand.Read(nonce); err != nil {
+			return "", err
+		}
+		temporaryPath := filepath.Join(filepath.Dir(relative), fmt.Sprintf(".boatstack-flow-%x", nonce))
+		temporary, openErr := root.OpenFile(temporaryPath, os.O_RDWR|os.O_CREATE|os.O_EXCL, mode)
+		if os.IsExist(openErr) {
+			continue
+		}
+		if openErr != nil {
+			return "", openErr
+		}
+		if _, err = temporary.Write(content); err == nil {
+			err = temporary.Chmod(mode)
+		}
+		if closeErr := temporary.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			_ = root.Remove(temporaryPath)
+			return "", err
+		}
+		return temporaryPath, nil
 	}
-	if closeErr := temporary.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		_ = os.Remove(temporaryPath)
-		return "", err
-	}
-	return temporaryPath, nil
+	return "", fmt.Errorf("cannot allocate a staged projection file")
 }
 
-func rollbackProjection(changed []string, snapshots map[string]projectionSnapshot) error {
+func rollbackProjection(root *os.Root, repository string, changed []string, snapshots map[string]projectionSnapshot) error {
 	for index := len(changed) - 1; index >= 0; index-- {
 		snapshot := snapshots[changed[index]]
+		relative, err := projectionRelativePath(repository, snapshot.path)
+		if err != nil {
+			return err
+		}
 		if !snapshot.exists {
-			if err := os.Remove(snapshot.path); err != nil && !os.IsNotExist(err) {
+			if err := root.Remove(relative); err != nil && !os.IsNotExist(err) {
 				return err
 			}
 			continue
 		}
-		temporary, err := stageProjectionFile(snapshot.path, snapshot.content, snapshot.mode)
+		temporary, err := stageProjectionFile(root, repository, snapshot.path, snapshot.content, snapshot.mode)
 		if err != nil {
 			return err
 		}
-		if err := os.Rename(temporary, snapshot.path); err != nil {
-			_ = os.Remove(temporary)
+		if err := root.Rename(temporary, relative); err != nil {
+			_ = root.Remove(temporary)
 			return err
 		}
 	}

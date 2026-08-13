@@ -113,6 +113,24 @@ func TestRepositoryTargetMustBeImpliedByTrustedPostcondition(t *testing.T) {
 	}
 }
 
+func TestRepositoryTransitionMustMatchTrustedBindingIdentity(t *testing.T) {
+	truth := true
+	compiled, resolver := compiledFlow(t, controlprogram.Predicate{True: &truth})
+	aliased := compiled.Document
+	aliased.Transitions[0].ID = "observe-alias"
+	unsafe, err := controlprogram.Compile(aliased, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, err := softwareflow.NewDefinition(unsafe, resolver)
+	if err == nil {
+		_, err = definition.RuntimeManifest(context.Background())
+	}
+	if err == nil || !strings.Contains(err.Error(), "does not match trusted binding identity") {
+		t.Fatalf("transition alias result = %v", err)
+	}
+}
+
 func TestRepositoryTransitionCannotWidenTrustedObjectiveKinds(t *testing.T) {
 	truth := true
 	compiled, resolver := compiledFlow(t, controlprogram.Predicate{True: &truth})

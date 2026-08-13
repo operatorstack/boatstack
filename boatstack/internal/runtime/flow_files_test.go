@@ -35,6 +35,38 @@ func TestFlowProjectionRejectsRepositoryParentSymlink(t *testing.T) {
 	}
 }
 
+func TestFlowProjectionRejectsParentSymlinkSwapBeforeStaging(t *testing.T) {
+	// control-law: repository-root-capability-remains-bound-through-filesystem-mutation
+	repository := resolvedTemporaryRepository(t)
+	external := resolvedTemporaryRepository(t)
+	parent := filepath.Join(repository, ".agents")
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(parent, "skills", "product-delivery-run", "SKILL.md")
+	swapped := false
+	err := applyFlowProjection(repository,
+		[]ProjectionWrite{{Path: target, Content: []byte("generated"), Mode: 0o644}}, nil, nil,
+		projectionHooks{beforeStage: func(path string) {
+			if swapped || path != target {
+				return
+			}
+			swapped = true
+			if err := os.Rename(parent, parent+"-original"); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(external, parent); err != nil {
+				t.Fatal(err)
+			}
+		}})
+	if err == nil {
+		t.Fatal("parent symlink swap was accepted")
+	}
+	if _, statErr := os.Stat(filepath.Join(external, "skills", "product-delivery-run", "SKILL.md")); !os.IsNotExist(statErr) {
+		t.Fatalf("projection escaped through swapped parent: %v", statErr)
+	}
+}
+
 func TestFlowProjectionStagesAllOutputsBeforeReplacement(t *testing.T) {
 	// control-law: artifact-and-skills-replace-as-one-recoverable-projection
 	if runtime.GOOS == "windows" {

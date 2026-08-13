@@ -11,7 +11,10 @@ import (
 func GenerateSkills(compiled controlprogram.Compiled, hosts []string) (map[string][]byte, error) {
 	result := map[string][]byte{}
 	for _, entry := range compiled.Document.Entries {
-		slug := compiled.Document.Program.ID + "-" + entry.ID
+		slug := flowSkillSlug(compiled.Document.Program.ID, entry.ID)
+		if slug == "boatstack-update" {
+			return nil, fmt.Errorf("generated Flow skill %q is reserved for kernel maintenance", slug)
+		}
 		for _, host := range hosts {
 			skill := renderSkill(compiled, entry, slug, host)
 			switch host {
@@ -27,6 +30,10 @@ func GenerateSkills(compiled controlprogram.Compiled, hosts []string) (map[strin
 		}
 	}
 	return result, nil
+}
+
+func flowSkillSlug(programID, entryID string) string {
+	return programID + "-" + strings.ReplaceAll(entryID, "-", "--")
 }
 
 func renderSkill(compiled controlprogram.Compiled, entry controlprogram.Entry, slug, host string) []byte {

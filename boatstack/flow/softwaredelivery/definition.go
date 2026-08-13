@@ -58,6 +58,9 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 		if !ok || seen[transition.ID] {
 			return delivery.ProgramRuntimeManifest{}, fmt.Errorf("software-delivery binding %q is unknown or reused", operator.Binding.Reference)
 		}
+		if string(transition.ID) != declaration.ID {
+			return delivery.ProgramRuntimeManifest{}, fmt.Errorf("transition %q does not match trusted binding identity %q", declaration.ID, transition.ID)
+		}
 		seen[transition.ID] = true
 		guard, predicateErr := conjunctiveConditions(declaration.Guard)
 		if predicateErr != nil {
