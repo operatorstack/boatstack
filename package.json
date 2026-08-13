@@ -1,0 +1,14 @@
+{
+  "name": "boatstack-workspace",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build:flow-sdk": "tsc -b packages/boatstack packages/boatstack-software-delivery",
+    "test:flow-sdk": "npm run build:flow-sdk"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

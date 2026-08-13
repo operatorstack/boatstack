@@ -127,6 +127,7 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		state.EnabledHosts = append([]string(nil), policy.Hosts...)
 	case "plan.create", "plan.amend":
 		source, _ := admission.Parameters.Get("source_path")
+		expected, _ := admission.Parameters.Get("source_fingerprint")
 		raw, readErr := os.ReadFile(source)
 		if readErr != nil {
 			return nil, fmt.Errorf("read source plan: %w", readErr)
@@ -135,6 +136,9 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 			return nil, fmt.Errorf("source plan is empty")
 		}
 		fingerprint := sha256Bytes(raw)
+		if expected != "" && fingerprint != expected {
+			return nil, fmt.Errorf("source plan fingerprint changed after entry binding")
+		}
 		path := filepath.Join(artifactRoot, "plans", deliveryID+".source")
 		mutation, mutationErr := mutationFor(path, raw, 0o644, false, false)
 		if mutationErr != nil {

@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -146,7 +147,7 @@ func TestSourceInventoryHasNoWriterOrLifecycleAuthorityOutsideOwnedPackages(t *t
 				t.Errorf("managed writer os.%s escaped effects package in %s", selector.Sel.Name, relative)
 			}
 			if importPath == "os/exec" && (selector.Sel.Name == "Command" || selector.Sel.Name == "CommandContext") {
-				if relative != "internal/softwaredelivery/effects/command_boundary.go" && relative != "internal/softwaredelivery/plant/resolver.go" && relative != "extension/subprocess/subprocess.go" && relative != "internal/runtime/exec_windows.go" {
+				if relative != "internal/softwaredelivery/effects/command_boundary.go" && relative != "internal/softwaredelivery/plant/resolver.go" && relative != "extension/subprocess/subprocess.go" && relative != "internal/runtime/exec_windows.go" && relative != "internal/runtime/flow_files.go" {
 					t.Errorf("unclassified command boundary in %s", relative)
 				}
 			}
@@ -169,6 +170,89 @@ func TestSourceInventoryHasNoWriterOrLifecycleAuthorityOutsideOwnedPackages(t *t
 		t.Fatalf("deleted shadow controller still contains %d entries", len(entries))
 	} else if err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
+	}
+}
+
+func TestFlowCompilerMutationSitesMapToFlowCompileEvent(t *testing.T) {
+	// control-law: every-flow-projection-mutation-is-one-classified-authoring-event
+	root := sourceRoot(t)
+	expected := map[string]map[string]int{
+		"cmd/boatstack-helper/flow_command.go": {
+			"runtime.ApplyOwnedFlowProjection": 1,
+		},
+		"internal/runtime/flow_files.go": {
+			"os.OpenFile": 1, "os.Remove": 1, "os.Rename": 1,
+			"os.Root.MkdirAll": 1, "os.Root.OpenFile": 1, "os.Root.Remove": 5, "os.Root.Rename": 3,
+			"os.File.Write": 1, "os.File.Chmod": 2,
+		},
+		"internal/runtime/flow_ownership.go": {
+			"os.MkdirAll": 1, "os.OpenFile": 1, "os.Remove": 1,
+			"os.File.Write": 1,
+		},
+	}
+	for relative, wanted := range expected {
+		path := filepath.Join(root, filepath.FromSlash(relative))
+		parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		imports := map[string]string{}
+		for _, item := range parsed.Imports {
+			value, _ := strconv.Unquote(item.Path.Value)
+			name := filepath.Base(value)
+			if item.Name != nil {
+				name = item.Name.Name
+			}
+			imports[name] = value
+		}
+		observed := map[string]int{}
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			selector, ok := node.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			owner, ok := selector.X.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			importPath := imports[owner.Name]
+			switch {
+			case importPath == "os" && writerCallsForInventory(selector.Sel.Name):
+				observed["os."+selector.Sel.Name]++
+			case owner.Name == "root" && rootWriterCallsForInventory(selector.Sel.Name):
+				observed["os.Root."+selector.Sel.Name]++
+			case (owner.Name == "temporary" || owner.Name == "file") && fileWriterCallsForInventory(selector.Sel.Name):
+				observed["os.File."+selector.Sel.Name]++
+			case strings.HasSuffix(importPath, "/internal/runtime") && (selector.Sel.Name == "ApplyFlowProjection" || selector.Sel.Name == "ApplyOwnedFlowProjection"):
+				observed["runtime."+selector.Sel.Name]++
+			}
+			return true
+		})
+		if !reflect.DeepEqual(observed, wanted) {
+			t.Fatalf("flow.compile mutation inventory for %s = %v, want %v", relative, observed, wanted)
+		}
+	}
+}
+
+func rootWriterCallsForInventory(name string) bool {
+	switch name {
+	case "MkdirAll", "OpenFile", "Remove", "Rename":
+		return true
+	default:
+		return false
+	}
+}
+
+func fileWriterCallsForInventory(name string) bool {
+	return name == "Write" || name == "Chmod"
+}
+
+func writerCallsForInventory(name string) bool {
+	switch name {
+	case "WriteFile", "Rename", "Remove", "RemoveAll", "Mkdir", "MkdirAll", "Create", "CreateTemp", "MkdirTemp", "OpenFile":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -366,6 +450,7 @@ func TestPackageImportsPreserveControlProgramDependencyDirection(t *testing.T) {
 
 func classifiedProductionFile(relative string) bool {
 	return relative == "delivery_controller.go" || relative == "program_effects.go" || relative == "program_observer.go" || strings.HasPrefix(relative, "cmd/boatstack-helper/") ||
+		strings.HasPrefix(relative, "controlprogram/") ||
 		strings.HasPrefix(relative, "delivery/") || strings.HasPrefix(relative, "core/") ||
 		strings.HasPrefix(relative, "flow/") || strings.HasPrefix(relative, "distribution/") || strings.HasPrefix(relative, "extension/") ||
 		strings.HasPrefix(relative, "internal/softwaredelivery/") ||

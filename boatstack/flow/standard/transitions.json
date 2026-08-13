@@ -75,6 +75,11 @@
         "name": "delivery_id",
         "required": true,
         "secret": false
+      },
+      {
+        "name": "source_fingerprint",
+        "required": false,
+        "secret": false
       }
     ],
     "prescription": {
@@ -976,6 +981,11 @@
       {
         "name": "delivery_id",
         "required": true,
+        "secret": false
+      },
+      {
+        "name": "source_fingerprint",
+        "required": false,
         "secret": false
       }
     ],

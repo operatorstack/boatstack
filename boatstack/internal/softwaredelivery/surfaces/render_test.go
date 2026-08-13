@@ -27,7 +27,7 @@ func TestShellRenderersConsumeOneCommandAST(t *testing.T) {
 		RequiredCapabilities:  []catalog.Capability{catalog.CapabilityRepositoryWrite, catalog.CapabilityCommandExecute},
 		EffectiveCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite, catalog.CapabilityCommandExecute},
 	}
-	command := PrescriptionCommand(transition, prescription, "corr-1", "/repo with space", objective, "flow", parameters)
+	command := PrescriptionCommand(transition, prescription, "corr-1", "/repo with space", objective, "run-1", "product-delivery", "run", parameters)
 	joined := strings.Join(command.Arguments, " ")
 	for _, binding := range []string{"--correlation corr-1", "--prescription-id prx-fixture", "--expected-instance-id repo-fixture", "--expected-state-revision 41", "--expected-program-fingerprint", "--expected-snapshot-fingerprint", "--expected-objective-binding-fingerprint", "--authority-fingerprint auth-fixture", "--required-capability repository.write", "--required-capability command.execute", "--effective-capability repository.write", "--effective-capability command.execute"} {
 		if !strings.Contains(joined, binding) {
@@ -130,7 +130,7 @@ func TestEveryHostConsumesOneSemanticPrescription(t *testing.T) {
 		}
 		var canonical HostPrescription
 		for index, host := range CanonicalHostNames() {
-			projection, err := ProjectHostPrescription(host, transition, prescription, "corr-1", "/repo", objective, "flow", parameters)
+			projection, err := ProjectHostPrescription(host, transition, prescription, "corr-1", "/repo", objective, "run-1", "product-delivery", "run", parameters)
 			if err != nil {
 				t.Fatal(err)
 			}

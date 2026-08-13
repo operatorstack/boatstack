@@ -14,6 +14,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  flow-sdk:
+    name: flow-sdk
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: boatstack/go.mod
+          cache-dependency-path: boatstack/go.sum
+      - name: Build TypeScript frontends
+        run: npm ci && npm run build:flow-sdk
+      - name: Prove frontend canonical equivalence
+        working-directory: boatstack
+        env:
+          BOATSTACK_REQUIRE_FLOW_FRONTEND: '1'
+        run: go test ./controlprogram -run TestTypeScriptDSLAndRawIRHaveOneCanonicalFingerprint
+
   component:
     name: component-${{ matrix.name }}
     strategy:
@@ -23,7 +44,7 @@ jobs:
           - name: kernel-mechanism
             packages: ./kernel
           - name: control-program-compiler
-            packages: ./delivery ./core
+            packages: ./controlprogram ./delivery ./core ./flow/softwaredelivery
           - name: standard-flow
             packages: ./flow/standard ./internal/softwaredelivery/protocol
           - name: extension-conformance

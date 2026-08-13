@@ -53,6 +53,16 @@ type RepositoryProgramRequest struct {
 // project configuration. A new value is returned per call, so concurrent
 // repositories never share mutable program state.
 func StandardProgramForRepository(ctx context.Context, request RepositoryProgramRequest) (delivery.ControlProgram, error) {
+	return ProgramForRepository(ctx, request, standard.Definition())
+}
+
+// ProgramForRepository compiles the CoreSystem with one trusted Flow runtime
+// and the repository's exact configured extensions. Repository-authored IR is
+// admitted by a domain adapter before it can reach this composition boundary.
+func ProgramForRepository(ctx context.Context, request RepositoryProgramRequest, runtime delivery.ProgramRuntimeDefinition) (delivery.ControlProgram, error) {
+	if runtime == nil {
+		return delivery.ControlProgram{}, fmt.Errorf("repository Flow runtime is required")
+	}
 	configured, settings, err := ConfiguredExtensions(ctx, request)
 	if err != nil {
 		return delivery.ControlProgram{}, err
@@ -60,7 +70,7 @@ func StandardProgramForRepository(ctx context.Context, request RepositoryProgram
 	extensions := append([]delivery.Extension(nil), request.Extensions...)
 	extensions = append(extensions, configured...)
 	return delivery.Compile(ctx, delivery.CompileRequest{
-		KernelVersion: boatstack.Version, Core: core.System(), Runtime: standard.Definition(),
+		KernelVersion: boatstack.Version, Core: core.System(), Runtime: runtime,
 		Extensions: extensions, Settings: settings,
 	})
 }

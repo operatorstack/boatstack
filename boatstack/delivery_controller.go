@@ -80,7 +80,7 @@ func NewDeliveryController(externalStateRoot string, program delivery.ControlPro
 }
 
 func (k DeliveryController) Handle(ctx context.Context, request surfaces.Request) (surfaces.Response, error) {
-	response := surfaces.Response{SchemaVersion: surfaces.SchemaVersion, Operation: request.Operation}
+	response := surfaces.Response{SchemaVersion: surfaces.SchemaVersion, Operation: request.Operation, ProgramID: request.ProgramID, EntryID: request.EntryID, RunID: request.FlowID}
 	if err := request.Validate(k.clock.Now()); err != nil {
 		response.Error = err.Error()
 		return response, err
@@ -119,6 +119,13 @@ func (k DeliveryController) Handle(ctx context.Context, request surfaces.Request
 		}
 		if resolution.Snapshot.Fingerprint != "" {
 			response.Snapshot = &resolution.Snapshot
+		}
+		response.Question = surfaces.QuestionFor(request.FlowID, resolution.Snapshot.Fingerprint, resolution.Decision)
+		if response.Question == nil && request.FlowID != "" && len(resolution.Decision.Candidates) == 1 {
+			if transition, ok := k.registry.Lookup(resolution.Decision.Candidates[0]); ok {
+				questionDecision := supervisor.Decision{Kind: supervisor.DecisionCandidate, Transition: &transition}
+				response.Question = surfaces.QuestionFor(request.FlowID, resolution.Snapshot.Fingerprint, questionDecision)
+			}
 		}
 		response.ProgramChange = programChangeFor(response.Snapshot)
 		if resolveErr != nil {
