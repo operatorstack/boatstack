@@ -36,6 +36,11 @@ type ArtifactInput struct {
 	GeneratedSkills    map[string][]byte
 }
 
+// ProjectionGenerator derives repository projections from compiled executable
+// semantics. Artifact digests are evidence about this trusted derivation, not
+// an alternative authority for projection contents.
+type ProjectionGenerator func(Compiled) (map[string][]byte, error)
+
 func NewArtifact(compiled Compiled, input ArtifactInput) (Artifact, []byte, error) {
 	if input.CompilerVersion == "" || !safeRelative(input.SourcePath) || !safeRelative(input.DependencyLockPath) {
 		return Artifact{}, nil, fmt.Errorf("CONTROL_PROGRAM_ARTIFACT_INVALID: compiler and relative source/lock paths are required")
@@ -102,7 +107,7 @@ func safeGeneratedSkillPath(value string) bool {
 	return len(parts) == 4 && parts[0] == ".claude" && parts[1] == "skills" && validID(parts[2]) && parts[3] == "SKILL.md"
 }
 
-func CheckArtifact(repository string, artifact Artifact, compilerVersion string, resolver BindingResolver) (Compiled, error) {
+func CheckArtifact(repository string, artifact Artifact, compilerVersion string, resolver BindingResolver, generate ProjectionGenerator) (Compiled, error) {
 	if artifact.CompilerVersion != compilerVersion {
 		return Compiled{}, fmt.Errorf("CONTROL_PROGRAM_STALE: compiler version changed")
 	}
@@ -124,23 +129,36 @@ func CheckArtifact(repository string, artifact Artifact, compilerVersion string,
 			return Compiled{}, fmt.Errorf("CONTROL_PROGRAM_STALE: %s does not match artifact", check.label)
 		}
 	}
-	paths := make([]string, 0, len(artifact.GeneratedSkills))
-	for path := range artifact.GeneratedSkills {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
-	for _, path := range paths {
-		raw, readErr := readRepositoryFile(repository, path)
-		if readErr != nil || digest(raw) != artifact.GeneratedSkills[path] {
-			return Compiled{}, fmt.Errorf("CONTROL_PROGRAM_STALE: generated skill %s does not match artifact", path)
-		}
-	}
 	compiled, err := Compile(artifact.Program, resolver)
 	if err != nil {
 		return Compiled{}, err
 	}
 	if compiled.Fingerprint != artifact.ProgramFingerprint {
 		return Compiled{}, fmt.Errorf("CONTROL_PROGRAM_STALE: program fingerprint does not match artifact")
+	}
+	expected := map[string][]byte{}
+	if generate != nil {
+		expected, err = generate(compiled)
+		if err != nil {
+			return Compiled{}, fmt.Errorf("CONTROL_PROGRAM_STALE: regenerate projections: %w", err)
+		}
+	}
+	if len(expected) != len(artifact.GeneratedSkills) {
+		return Compiled{}, fmt.Errorf("CONTROL_PROGRAM_STALE: generated skill set does not match compiled program")
+	}
+	paths := make([]string, 0, len(expected))
+	for path := range expected {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		if !safeGeneratedSkillPath(path) || artifact.GeneratedSkills[path] != digest(expected[path]) {
+			return Compiled{}, fmt.Errorf("CONTROL_PROGRAM_STALE: generated skill %s is not derived from compiled program", path)
+		}
+		raw, readErr := readRepositoryFile(repository, path)
+		if readErr != nil || !bytes.Equal(raw, expected[path]) {
+			return Compiled{}, fmt.Errorf("CONTROL_PROGRAM_STALE: generated skill %s does not match compiled program", path)
+		}
 	}
 	return compiled, nil
 }

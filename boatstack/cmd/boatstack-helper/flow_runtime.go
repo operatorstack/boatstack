@@ -52,7 +52,7 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	if err != nil {
 		return commandOptions{}, err
 	}
-	compiled, err := controlprogram.CheckArtifact(repository, artifact, flowCompilerVersion, resolver)
+	compiled, err := controlprogram.CheckArtifact(repository, artifact, flowCompilerVersion, resolver, generateSoftwareFlowSkills)
 	if err != nil {
 		return commandOptions{}, err
 	}
@@ -76,9 +76,14 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		return commandOptions{}, fmt.Errorf("FLOW_INPUT_REQUIRED: read selected plan: %w", err)
 	}
 	planDigest := sha256.Sum256(planRaw)
-	runID := flowRunID(repository, compiled.Fingerprint, options.entryID, deliveryID, hex.EncodeToString(planDigest[:]))
+	planFingerprint := hex.EncodeToString(planDigest[:])
+	repositoryIdentity, err := flowRepositoryIdentity(repository)
+	if err != nil {
+		return commandOptions{}, err
+	}
+	runID := flowRunID(repositoryIdentity, compiled.Fingerprint, options.entryID, deliveryID, planFingerprint)
 	if options.runID != "" && options.runID != runID {
-		return commandOptions{}, fmt.Errorf("FLOW_RUN_MISMATCH: run ID does not identify the selected plan and worktree")
+		return commandOptions{}, fmt.Errorf("FLOW_RUN_MISMATCH: run ID does not identify the selected plan and repository")
 	}
 	options.repository = repository
 	options.flowProgramFingerprint = compiled.Fingerprint
@@ -101,9 +106,10 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		return commandOptions{}, err
 	}
 	for name, expected := range map[string]string{
-		"objective_kind": string(objective),
-		"delivery_id":    deliveryID,
-		"source_path":    plan,
+		"objective_kind":     string(objective),
+		"delivery_id":        deliveryID,
+		"source_path":        plan,
+		"source_fingerprint": planFingerprint,
 	} {
 		if err := validateResolvedParameter(parameters, name, expected); err != nil {
 			return commandOptions{}, err
@@ -122,6 +128,9 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 			return commandOptions{}, err
 		}
 		if err := bindResolvedParameter(&options, parameters, "delivery_id", deliveryID); err != nil {
+			return commandOptions{}, err
+		}
+		if err := bindResolvedParameter(&options, parameters, "source_fingerprint", planFingerprint); err != nil {
 			return commandOptions{}, err
 		}
 	}
@@ -260,7 +269,7 @@ func loadFlowDefinition(ctx context.Context, repository, programID string) (soft
 	if err != nil {
 		return softwareflow.Definition{}, err
 	}
-	compiled, err := controlprogram.CheckArtifact(repository, artifact, flowCompilerVersion, resolver)
+	compiled, err := controlprogram.CheckArtifact(repository, artifact, flowCompilerVersion, resolver, generateSoftwareFlowSkills)
 	if err != nil {
 		return softwareflow.Definition{}, err
 	}
@@ -341,8 +350,58 @@ func findEntry(entries []controlprogram.Entry, id string) (controlprogram.Entry,
 	return controlprogram.Entry{}, false
 }
 
-func flowRunID(repository, fingerprint, entry, delivery, planFingerprint string) string {
-	value := strings.Join([]string{repository, fingerprint, entry, delivery, planFingerprint}, "\x00")
+func generateSoftwareFlowSkills(compiled controlprogram.Compiled) (map[string][]byte, error) {
+	return softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
+}
+
+func flowRepositoryIdentity(repository string) (string, error) {
+	marker := filepath.Join(repository, ".git")
+	info, err := os.Lstat(marker)
+	if err != nil {
+		return "", fmt.Errorf("FLOW_REPOSITORY_IDENTITY_REQUIRED: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return "", fmt.Errorf("FLOW_REPOSITORY_IDENTITY_INVALID: .git is a symlink")
+	}
+	common := marker
+	if !info.IsDir() {
+		if !info.Mode().IsRegular() {
+			return "", fmt.Errorf("FLOW_REPOSITORY_IDENTITY_INVALID: .git is not a directory or worktree marker")
+		}
+		raw, readErr := os.ReadFile(marker)
+		if readErr != nil {
+			return "", readErr
+		}
+		line := strings.TrimSpace(string(raw))
+		if !strings.HasPrefix(line, "gitdir: ") || strings.Contains(strings.TrimPrefix(line, "gitdir: "), "\n") {
+			return "", fmt.Errorf("FLOW_REPOSITORY_IDENTITY_INVALID: invalid worktree Git marker")
+		}
+		gitDirectory := strings.TrimPrefix(line, "gitdir: ")
+		if !filepath.IsAbs(gitDirectory) {
+			gitDirectory = filepath.Join(repository, gitDirectory)
+		}
+		common = gitDirectory
+		if rawCommon, commonErr := os.ReadFile(filepath.Join(gitDirectory, "commondir")); commonErr == nil {
+			common = strings.TrimSpace(string(rawCommon))
+			if !filepath.IsAbs(common) {
+				common = filepath.Join(gitDirectory, common)
+			}
+		} else if !os.IsNotExist(commonErr) {
+			return "", commonErr
+		}
+	}
+	common, err = filepath.EvalSymlinks(filepath.Clean(common))
+	if err != nil {
+		return "", fmt.Errorf("FLOW_REPOSITORY_IDENTITY_INVALID: %w", err)
+	}
+	if info, err := os.Stat(common); err != nil || !info.IsDir() {
+		return "", fmt.Errorf("FLOW_REPOSITORY_IDENTITY_INVALID: Git common directory is unavailable")
+	}
+	return common, nil
+}
+
+func flowRunID(repositoryIdentity, fingerprint, entry, delivery, planFingerprint string) string {
+	value := strings.Join([]string{repositoryIdentity, fingerprint, entry, delivery, planFingerprint}, "\x00")
 	digest := sha256.Sum256([]byte(value))
 	return "run-" + hex.EncodeToString(digest[:16])
 }

@@ -194,13 +194,33 @@ func TestArtifactBindsSourceLockSkillsAndCompiler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := controlprogram.CheckArtifact(repository, artifact, "compiler-1", nil); err != nil {
+	generate := func(controlprogram.Compiled) (map[string][]byte, error) {
+		return map[string][]byte{skillPath: skill}, nil
+	}
+	if _, err := controlprogram.CheckArtifact(repository, artifact, "compiler-1", nil, generate); err != nil {
+		t.Fatal(err)
+	}
+	forgedSkill := []byte("forged skill")
+	forgedArtifact, _, err := controlprogram.NewArtifact(compiled, controlprogram.ArtifactInput{
+		CompilerVersion: "compiler-1", SourcePath: sourcePath, Source: source, DependencyLockPath: lockPath, DependencyLock: lock,
+		GeneratedSkills: map[string][]byte{skillPath: forgedSkill},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, filepath.FromSlash(skillPath)), forgedSkill, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := controlprogram.CheckArtifact(repository, forgedArtifact, "compiler-1", nil, generate); err == nil || !strings.Contains(err.Error(), "derived from compiled program") {
+		t.Fatalf("self-consistent forged projection result = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, filepath.FromSlash(skillPath)), skill, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(repository, sourcePath), []byte("changed"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := controlprogram.CheckArtifact(repository, artifact, "compiler-1", nil); err == nil || !strings.Contains(err.Error(), "source") {
+	if _, err := controlprogram.CheckArtifact(repository, artifact, "compiler-1", nil, generate); err == nil || !strings.Contains(err.Error(), "source") {
 		t.Fatalf("stale source result = %v", err)
 	}
 }

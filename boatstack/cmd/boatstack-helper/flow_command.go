@@ -245,7 +245,7 @@ func checkFlow(ctx context.Context, options flowCommandOptions) error {
 	if err != nil {
 		return err
 	}
-	compiled, err := controlprogram.CheckArtifact(options.repository, artifact, flowCompilerVersion, resolver)
+	compiled, err := controlprogram.CheckArtifact(options.repository, artifact, flowCompilerVersion, resolver, generateSoftwareFlowSkills)
 	if err != nil {
 		return err
 	}

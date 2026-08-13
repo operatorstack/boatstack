@@ -21,6 +21,9 @@ import (
 func flowRepository(t *testing.T) string {
 	t.Helper()
 	repository := t.TempDir()
+	if err := os.Mkdir(filepath.Join(repository, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	document := productDeliveryDocument("product-delivery")
 	sourcePath, lockPath := ".boatstack/flows/product-delivery.flow.ts", "package-lock.json"
 	source, lock := []byte("flow source"), []byte("lock")
@@ -29,6 +32,26 @@ func flowRepository(t *testing.T) string {
 	}
 	writeFlowArtifact(t, repository, document, sourcePath, source, lockPath, lock)
 	return repository
+}
+
+func bindSharedGitCommon(t *testing.T, repository, gitDirectory, commonDirectory string) {
+	t.Helper()
+	if err := os.Remove(filepath.Join(repository, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(gitDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	relative, err := filepath.Rel(gitDirectory, commonDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gitDirectory, "commondir"), []byte(relative+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, ".git"), []byte("gitdir: "+gitDirectory+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func writeFlowArtifact(t *testing.T, repository string, document controlprogram.Document, sourcePath string, source []byte, lockPath string, lock []byte) {
@@ -161,6 +184,46 @@ func TestRPCFlowEntryPreservesObjectiveEvidenceAndStopContext(t *testing.T) {
 	}
 	if bound.Objective.EvidenceFingerprint != strings.Repeat("a", 64) || !bound.Objective.FrontierIsStop {
 		t.Fatalf("RPC binding dropped objective context: %#v", bound.Objective)
+	}
+}
+
+func TestFlowRunIdentitySurvivesWorkspaceTransfer(t *testing.T) {
+	// control-law: a repository Flow run retains one identity when workspace.cut transfers authority
+	common := filepath.Join(t.TempDir(), "repository.git")
+	if err := os.MkdirAll(filepath.Join(common, "worktrees"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	source, destination := flowRepository(t), flowRepository(t)
+	bindSharedGitCommon(t, source, filepath.Join(common, "worktrees", "source"), common)
+	bindSharedGitCommon(t, destination, filepath.Join(common, "worktrees", "destination"), common)
+	plan := []byte("# Exact plan\n")
+	writeFixture(t, source, ".boatstack/plans/inbox/delivery-one.md", plan)
+	writeFixture(t, destination, ".boatstack/plans/delivery-one.source", plan)
+
+	initial, err := bindFlowEntry(context.Background(), commandOptions{
+		repository: source, programID: "product-delivery", entryID: "run", host: "codex",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := bindFlowEntry(context.Background(), commandOptions{
+		repository: destination, programID: "product-delivery", entryID: "run", host: "codex",
+		flowProgramFingerprint: initial.flowProgramFingerprint, runID: initial.runID,
+		deliveryID: initial.deliveryID, objectiveKind: initial.objectiveKind, objectiveID: initial.objectiveID,
+		transitionID: "plan.create",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumed.runID != initial.runID {
+		t.Fatalf("workspace transfer changed Flow run identity: %q != %q", resumed.runID, initial.runID)
+	}
+	parameters, err := parseParameters(resumed.parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sourcePath, ok := parameters.Get("source_path"); !ok || sourcePath != filepath.Join(resumed.repository, ".boatstack", "plans", "delivery-one.source") {
+		t.Fatalf("destination plan binding = %q, %t", sourcePath, ok)
 	}
 }
 
