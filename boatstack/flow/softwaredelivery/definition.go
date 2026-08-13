@@ -88,6 +88,12 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 		if len(transition.ObjectiveKinds) == 0 {
 			return delivery.ProgramRuntimeManifest{}, fmt.Errorf("transition %q supports none of the declared entry objectives", declaration.ID)
 		}
+		if transition.ID == "plan.abandon" && objectives[model.ObjectiveAbandoned] {
+			// A repository Flow that explicitly exposes a safely-abandoned entry
+			// makes abandonment progress for that objective only. Human authority
+			// remains mandatory and other objectives cannot select this transition.
+			transition.SelectionClass = delivery.SelectionProgramProgress
+		}
 		sort.Slice(transition.ObjectiveKinds, func(i, j int) bool { return transition.ObjectiveKinds[i] < transition.ObjectiveKinds[j] })
 		selected = append(selected, transition)
 	}

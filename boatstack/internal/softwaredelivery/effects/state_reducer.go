@@ -350,6 +350,13 @@ func applyObjectiveBind(state *durable.State, admission protocol.Admission, _ ca
 	if kind != string(admission.Objective.Kind) || delivery != admission.Objective.DeliveryID {
 		return fmt.Errorf("objective parameters do not match admitted objective")
 	}
+	if state.Objective.DeliveryID != "" && state.Objective.DeliveryID != admission.Objective.DeliveryID {
+		if state.Terminal != model.TerminalEstablished || state.Workspace != model.WorkspaceAbsent {
+			return fmt.Errorf("a different delivery requires the prior delivery to be terminal with no managed workspace")
+		}
+		resetDeliveryState(state)
+		wasActive = false
+	}
 	state.Objective = admission.Objective
 	state.Terminal = model.TerminalNonterminal
 	state.Phase = model.PhaseObserved
@@ -359,6 +366,15 @@ func applyObjectiveBind(state *durable.State, admission protocol.Admission, _ ca
 		state.Phase = model.PhaseActive
 	}
 	return nil
+}
+
+func resetDeliveryState(state *durable.State) {
+	state.Delivery, state.Plan = model.DeliveryUninitialized, model.PlanAbsent
+	state.Publication, state.Verification = model.PublicationNone, model.VerificationUnverified
+	state.PlanFingerprint, state.PublicationID, state.PublicationURL, state.PreviewFingerprint = "", "", "", ""
+	state.WorkspaceBranch, state.WorkspacePath, state.WorkspaceBaseRef = "", "", ""
+	state.WorkspaceSourcePath, state.WorkspaceSourceID, state.WorkspaceSourceRef = "", "", ""
+	state.Gates = nil
 }
 
 func applyPlanApprove(state *durable.State, admission protocol.Admission, _ catalog.Transition) error {

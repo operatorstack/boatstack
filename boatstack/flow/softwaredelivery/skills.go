@@ -48,6 +48,16 @@ func renderSkill(compiled controlprogram.Compiled, entry controlprogram.Entry, s
 		description = "Run repository Flow entry " + entry.ID + " to target " + entry.Target + "."
 	}
 	description += " Use only when the user explicitly selects this repository Flow entry."
+	supersession := ""
+	if entry.ID == "run" && hasTargetEntry(compiled.Document.Entries, "safely-abandoned") {
+		supersession = fmt.Sprintf(`
+If the user requests different work, never retarget this run. When no objective
+binding receipt exists, stop this unbound attempt and allow the inbox plan to be
+replaced. Once the objective is bound, require explicit use of $%s-abandon for
+the same delivery and wait for its abandonment receipt before selecting a new
+plan and starting a new run.
+`, compiled.Document.Program.ID)
+	}
 	return []byte(fmt.Sprintf(`---
 name: %s
 description: %q
@@ -67,11 +77,21 @@ Apply only the exact immediately preceding prescription and its declared
 parameters. A question suspends this run: ask the user, submit only the typed
 answer evidence, and resume the same run ID. Nothing continues in the
 background while input is missing. Never synthesize authority.
+%s
 
 Stop only when Boatstack reports the marked target, a typed blocker, refusal,
 unresolved recovery, or missing authority. This entry grants no merge or deploy
 authority.
-`, slug, description, title(slug), compiled.Document.Program.ID, entry.ID, entry.Target, compiled.Document.Program.ID, entry.ID, host))
+`, slug, description, title(slug), compiled.Document.Program.ID, entry.ID, entry.Target, compiled.Document.Program.ID, entry.ID, host, supersession))
+}
+
+func hasTargetEntry(entries []controlprogram.Entry, target string) bool {
+	for _, entry := range entries {
+		if entry.Target == target {
+			return true
+		}
+	}
+	return false
 }
 
 func title(value string) string {

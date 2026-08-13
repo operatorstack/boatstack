@@ -163,6 +163,10 @@ func (s State) ConfigurationPolicy() model.ConfigurationPolicy {
 	}.Canonical()
 }
 
+func (s State) ActiveObjective() (model.Objective, bool) {
+	return s.Objective, s.Objective.ID != "" && s.Terminal == model.TerminalNonterminal
+}
+
 func EncodeState(state State) ([]byte, error) {
 	state = state.Canonical()
 	if err := state.Validate(); err != nil {

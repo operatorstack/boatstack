@@ -99,6 +99,26 @@ func scanCommittedReceipts(layout ports.ControllerLayout, visit func(protocol.Tr
 	return nil
 }
 
+// FindLatestCommittedFlowForObjective returns the authoritative committed flow
+// identity for the current objective. Projected receipt files are deliberately
+// not used because projection is best effort.
+func FindLatestCommittedFlowForObjective(layout ports.ControllerLayout, objective model.Objective, maximumRevision uint64) (protocol.TransitionReceipt, bool, error) {
+	var found protocol.TransitionReceipt
+	err := scanCommittedReceipts(layout, func(receipt protocol.TransitionReceipt) error {
+		if matchesObjectiveBinding(receipt, objective, maximumRevision) && (found.ID == "" || receipt.ResultingStateRevision > found.ResultingStateRevision) {
+			found = receipt
+		}
+		return nil
+	})
+	return found, found.ID != "", err
+}
+
+func matchesObjectiveBinding(receipt protocol.TransitionReceipt, objective model.Objective, maximumRevision uint64) bool {
+	return receipt.TransitionID == "objective.bind" && strings.HasPrefix(receipt.FlowID, "run-") &&
+		receipt.ObjectiveID == objective.ID && receipt.ObjectiveKind == objective.Kind && receipt.DeliveryID == objective.DeliveryID &&
+		receipt.ResultingStateRevision <= maximumRevision
+}
+
 func (s *ReceiptStore) NextSequence(ctx context.Context, flowID string) (uint64, error) {
 	layout, err := s.layoutForFlow(ctx, flowID)
 	if err != nil {

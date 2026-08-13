@@ -63,6 +63,15 @@ export const publishedPR: TargetDefinition = marked(
   "A provider-observed open or updated pull request",
 );
 
+export const safelyAbandoned: TargetDefinition = marked(
+  "safely-abandoned",
+  all(
+    fact("delivery", ["discarded"]),
+    fact("workspace", ["abandoned", "absent"]),
+  ),
+  "The selected delivery is explicitly and safely abandoned",
+);
+
 export interface TrustedStep {
   id: string;
   priority: number;
@@ -93,6 +102,11 @@ export const runToPublishedPR: TrustedStep[] = [
   { id: "publication.correct", priority: 80 },
   { id: "workspace.reconcile", priority: 2 },
   { id: "publication.reconcile", priority: 1 },
+];
+
+export const runWithAbandonment: TrustedStep[] = [
+  ...runToPublishedPR,
+  { id: "plan.abandon", priority: 31 },
 ];
 
 export function inbox(path: string): EntryInputDefinition {
@@ -149,7 +163,9 @@ export function productDeliveryFlow(input: {
     ],
     operators: trustedOperators(steps),
     transitions: trustedTransitions(steps),
-    targets: [publishedPR],
+    targets: input.entries.some((value) => value.target === safelyAbandoned.id)
+      ? [publishedPR, safelyAbandoned]
+      : [publishedPR],
     entries: input.entries,
   };
 }
@@ -160,5 +176,14 @@ export function runEntry(path = ".boatstack/plans/inbox"): EntryDefinition {
     "published-pr",
     [inbox(path)],
     "Implement one approved repository plan and publish a pull request",
+  );
+}
+
+export function abandonEntry(path = ".boatstack/plans/inbox"): EntryDefinition {
+  return entry(
+    "abandon",
+    "safely-abandoned",
+    [inbox(path)],
+    "Explicitly abandon the selected delivery before starting different work",
   );
 }
