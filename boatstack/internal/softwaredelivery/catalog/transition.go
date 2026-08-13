@@ -346,8 +346,12 @@ func (t Transition) SupportsObjective(objective model.Objective) bool {
 	if len(t.TargetIDs) == 0 {
 		return true
 	}
+	targetID := objective.TargetID
+	if t.Origin.Kind == OriginCoreSystem {
+		targetID = objective.TrustedObjectiveClass()
+	}
 	for _, kind := range t.TargetIDs {
-		if kind == objective.TargetID {
+		if kind == targetID {
 			return true
 		}
 	}

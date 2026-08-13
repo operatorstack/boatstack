@@ -9,6 +9,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/core"
 	"github.com/operatorstack/boatstack/boatstack/delivery"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 )
 
 func compiledFlow(t *testing.T, guard controlprogram.Predicate) (controlprogram.Compiled, softwareflow.Resolver) {
@@ -64,6 +65,16 @@ func TestTrustedFlowLowersThroughStandardStateEffectBoundary(t *testing.T) {
 	}
 	if program.Summary().RuntimeTransitionCount != 1 {
 		t.Fatalf("runtime transition count = %d", program.Summary().RuntimeTransitionCount)
+	}
+	objective := model.Objective{ID: "objective", TargetID: "published-pr", TrustedClass: model.ObjectiveOpenPR, DeliveryID: "delivery"}
+	bootstrap, ok := program.RuntimeRegistry().Lookup("objective.bind")
+	if !ok || !bootstrap.SupportsObjective(objective) || !program.RuntimeObjectiveContracts().Accepts(objective) {
+		t.Fatalf("repository target lost trusted bootstrap correlation: transition=%#v found=%v", bootstrap, ok)
+	}
+	spoofed := objective
+	spoofed.TrustedClass = model.ObjectiveApprovedPlan
+	if program.RuntimeObjectiveContracts().Accepts(spoofed) {
+		t.Fatal("repository target accepted a caller-supplied trusted class")
 	}
 }
 

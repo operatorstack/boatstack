@@ -11,8 +11,9 @@ import (
 // Extension conditions are conjunctive and therefore can only narrow the
 // terminal set.
 type ObjectiveContract struct {
-	TargetID   model.TargetID   `json:"target_id"`
-	Conditions []FacetCondition `json:"conditions"`
+	TargetID     model.TargetID   `json:"target_id"`
+	TrustedClass model.TargetID   `json:"trusted_class"`
+	Conditions   []FacetCondition `json:"conditions"`
 }
 
 type ObjectiveContracts map[model.TargetID]ObjectiveContract
@@ -31,6 +32,12 @@ func NewObjectiveContracts(base []ObjectiveContract, extension map[model.TargetI
 	for _, contract := range base {
 		if !contract.TargetID.Valid() || len(contract.Conditions) == 0 {
 			return nil, fmt.Errorf("objective contract requires a valid objective and conditions")
+		}
+		if contract.TrustedClass == "" {
+			contract.TrustedClass = contract.TargetID
+		}
+		if !contract.TrustedClass.Valid() {
+			return nil, fmt.Errorf("objective contract %q requires a valid trusted class", contract.TargetID)
 		}
 		if _, exists := contracts[contract.TargetID]; exists {
 			return nil, fmt.Errorf("duplicate objective contract %q", contract.TargetID)
@@ -56,6 +63,11 @@ func NewObjectiveContracts(base []ObjectiveContract, extension map[model.TargetI
 		}
 	}
 	return contracts, nil
+}
+
+func (c ObjectiveContracts) Accepts(objective model.Objective) bool {
+	contract, ok := c[objective.TargetID]
+	return ok && contract.TrustedClass == objective.TrustedObjectiveClass()
 }
 
 func (c ObjectiveContracts) Matches(snapshot model.Snapshot, objective model.Objective) bool {

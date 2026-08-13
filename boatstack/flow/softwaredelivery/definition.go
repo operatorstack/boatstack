@@ -176,7 +176,7 @@ func objectiveContractForEntry(compiled controlprogram.Compiled, base delivery.P
 	return EntryObjective{
 		TargetID:     target,
 		TrustedClass: matches[0].TargetID,
-		Contract:     delivery.ObjectiveContract{TargetID: target, Conditions: conditions},
+		Contract:     delivery.ObjectiveContract{TargetID: target, TrustedClass: matches[0].TargetID, Conditions: conditions},
 	}, nil
 }
 
