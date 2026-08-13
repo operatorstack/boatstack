@@ -114,10 +114,14 @@ func TestExplicitPostTerminalCleanupRemainsAdmissible(t *testing.T) {
 func TestTerminalEvidenceForOldObjectiveDoesNotTerminateNewObjective(t *testing.T) {
 	// control-law: terminal-evidence-is-bound-to-exact-objective-not-local-phase
 	s := New(testprogram.StandardRegistry(), testObjectiveContracts())
-	newObjective := model.Objective{ID: "next-objective", Kind: model.ObjectiveOpenPR, DeliveryID: "delivery"}
-	decision := s.Resolve(snapshotFor(t, model.PhaseTerminal, model.TerminalEstablished), newObjective, catalog.AuthoritySet{catalog.AuthorityHuman: true}, "objective.bind")
+	snapshot := snapshotFor(t, model.PhaseTerminal, model.TerminalEstablished)
+	snapshot.Workspace = model.Known(model.WorkspacePublished, snapshot.Workspace.Evidence[0])
+	snapshot.Publication = model.Known(model.PublicationOpen, snapshot.Publication.Evidence[0])
+	snapshot = recanonicalize(t, snapshot)
+	newObjective := model.Objective{ID: "next-objective", Kind: model.ObjectiveOpenPR, DeliveryID: "next-delivery"}
+	decision := s.Resolve(snapshot, newObjective, catalog.AuthoritySet{catalog.AuthorityHuman: true}, "")
 	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "objective.bind" {
-		t.Fatalf("decision=%#v, want exact new-objective configuration", decision)
+		t.Fatalf("untargeted terminal replacement decision=%#v, want exact new-objective configuration", decision)
 	}
 }
 

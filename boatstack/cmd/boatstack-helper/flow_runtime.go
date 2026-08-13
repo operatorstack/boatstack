@@ -194,7 +194,7 @@ func bindActiveFlowContext(ctx context.Context, repository string, options comma
 		return options, nil
 	}
 	prefix := "objective-" + options.programID + "-" + options.entryID + "-"
-	receipt, found, findErr := effects.FindLatestCommittedFlowForObjective(layout, active, state.Revision)
+	receipt, found, findErr := effects.FindLatestCommittedFlowForObjective(layout, invocation, active, state.Revision)
 	if findErr != nil {
 		return commandOptions{}, fmt.Errorf("FLOW_ACTIVE_RUN_INVALID: inspect committed flow receipts: %w", findErr)
 	}

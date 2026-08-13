@@ -138,10 +138,11 @@ func TestObjectiveBindStartsDifferentDeliveryFromCleanProductState(t *testing.T)
 	next := model.Objective{ID: "next", Kind: model.ObjectiveOpenPR, DeliveryID: "next-delivery"}
 	state := durable.State{
 		SchemaVersion: durable.StateSchemaVersion, RepositoryID: "repo", GitCommonID: "git", WorktreeID: "worktree", Revision: 1,
-		Phase: model.PhaseAbandoned, Engagement: model.EngagementCommand, Delivery: model.DeliveryDiscarded, Workspace: model.WorkspaceAbsent,
+		Phase: model.PhaseTerminal, Engagement: model.EngagementCommand, Delivery: model.DeliveryTerminal, Workspace: model.WorkspacePublished,
 		Plan: model.PlanLocked, Configuration: model.ConfigurationVerified, Runtime: model.RuntimeVerified, Publication: model.PublicationOpen,
 		Verification: model.VerificationCurrent, Recovery: model.RecoveryNone, Transaction: model.TransactionNone, Terminal: model.TerminalEstablished,
 		Objective: prior, PlanFingerprint: "old-plan", PublicationID: "old-pr", PublicationURL: "https://example.invalid/pr/1",
+		WorkspacePath: "/worktrees/prior", WorkspaceBranch: "feature/prior", WorkspaceSourcePath: "/source", WorkspaceSourceID: "source-id", WorkspaceSourceRef: "refs/heads/main",
 		PreviewFingerprint: "old-preview", Gates: []durable.GateEvidence{{Gate: "test", Revision: "old", Fingerprint: "old-test"}},
 	}
 	transition, _ := testprogram.StandardRegistry().Lookup("objective.bind")
@@ -149,7 +150,7 @@ func TestObjectiveBindStartsDifferentDeliveryFromCleanProductState(t *testing.T)
 	if err := applyStateTransition(&state, admission, transition); err != nil {
 		t.Fatal(err)
 	}
-	if state.Objective != next || state.Delivery != model.DeliveryUninitialized || state.Plan != model.PlanAbsent || state.Publication != model.PublicationNone || state.Verification != model.VerificationUnverified || state.Terminal != model.TerminalNonterminal || len(state.Gates) != 0 || state.PlanFingerprint != "" || state.PublicationID != "" {
+	if state.Objective != next || state.Delivery != model.DeliveryUninitialized || state.Workspace != model.WorkspaceAbsent || state.Plan != model.PlanAbsent || state.Publication != model.PublicationNone || state.Verification != model.VerificationUnverified || state.Terminal != model.TerminalNonterminal || len(state.Gates) != 0 || state.PlanFingerprint != "" || state.PublicationID != "" || state.WorkspacePath != "" {
 		t.Fatalf("new delivery inherited prior product state: %#v", state)
 	}
 }

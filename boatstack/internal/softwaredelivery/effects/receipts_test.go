@@ -21,3 +21,20 @@ func TestActiveFlowIdentityComesFromObjectiveBindingReceipt(t *testing.T) {
 		t.Fatal("future objective binding receipt was accepted")
 	}
 }
+
+func TestActiveFlowIdentityRequiresExactWorktreeLineage(t *testing.T) {
+	current := model.InvocationContext{RepositoryID: "repo", GitCommonID: "common", WorktreeID: "worktree-a", ControllerID: "controller"}
+	otherWorktree := current
+	otherWorktree.WorktreeID = "worktree-b"
+	otherController := current
+	otherController.ControllerID = "other-controller"
+	if !sameStateLineage(current, current) {
+		t.Fatal("exact worktree lineage was rejected")
+	}
+	if sameStateLineage(otherWorktree, current) {
+		t.Fatal("linked worktree receipt was accepted for the current durable state")
+	}
+	if sameStateLineage(otherController, current) {
+		t.Fatal("different controller lineage was accepted for the current durable state")
+	}
+}
