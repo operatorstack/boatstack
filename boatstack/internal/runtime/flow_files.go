@@ -31,10 +31,11 @@ func RunFlowFrontend(ctx context.Context, executable, sourceName string, source 
 }
 
 type ProjectionWrite struct {
-	Path        string
-	Content     []byte
-	Mode        os.FileMode
-	PublishLast bool
+	Path                   string
+	Content                []byte
+	Mode                   os.FileMode
+	ExpectedPreviousSHA256 string
+	PublishLast            bool
 }
 
 type ProjectionRemoval struct {
@@ -122,6 +123,9 @@ func applyFlowProjection(repository string, writes []ProjectionWrite, removals [
 		if err != nil {
 			return err
 		}
+		if !projectionWriteAuthorized(snapshot, write) {
+			return fmt.Errorf("FLOW_PROJECTION_WRITE_UNAUTHORIZED: %s is not absent, exact crash residue, or authorized by the prior artifact", write.Path)
+		}
 		snapshots[write.Path] = snapshot
 	}
 	if publishLast > 1 {
@@ -195,6 +199,20 @@ func applyFlowProjection(repository string, writes []ProjectionWrite, removals [
 	var commitErr error
 	for index, value := range staged {
 		if writes[index].PublishLast {
+			continue
+		}
+		current, currentErr := snapshotProjectionPath(root, repository, value.target)
+		if currentErr != nil {
+			commitErr = currentErr
+			break
+		}
+		if !projectionWriteAuthorized(current, writes[index]) {
+			commitErr = fmt.Errorf("FLOW_PROJECTION_WRITE_UNAUTHORIZED: %s changed before replacement", value.target)
+			break
+		}
+		desired := projectionSnapshot{path: value.target, exists: true, content: writes[index].Content, mode: writes[index].Mode.Perm()}
+		if sameProjectionState(current, desired) {
+			committed[value.target] = current
 			continue
 		}
 		target, targetErr := projectionRelativePath(repository, value.target)
@@ -284,6 +302,20 @@ func applyFlowProjection(repository string, writes []ProjectionWrite, removals [
 			if !writes[index].PublishLast {
 				continue
 			}
+			current, currentErr := snapshotProjectionPath(root, repository, value.target)
+			if currentErr != nil {
+				commitErr = currentErr
+				break
+			}
+			if !projectionWriteAuthorized(current, writes[index]) {
+				commitErr = fmt.Errorf("FLOW_PROJECTION_WRITE_UNAUTHORIZED: %s changed before replacement", value.target)
+				break
+			}
+			desired := projectionSnapshot{path: value.target, exists: true, content: writes[index].Content, mode: writes[index].Mode.Perm()}
+			if sameProjectionState(current, desired) {
+				committed[value.target] = current
+				break
+			}
 			target, targetErr := projectionRelativePath(repository, value.target)
 			if targetErr != nil {
 				commitErr = targetErr
@@ -309,23 +341,42 @@ func projectionDigest(value []byte) string {
 	return fmt.Sprintf("%x", sha256.Sum256(value))
 }
 
+func projectionWriteAuthorized(current projectionSnapshot, write ProjectionWrite) bool {
+	if !current.exists {
+		return write.ExpectedPreviousSHA256 == ""
+	}
+	desired := projectionSnapshot{exists: true, content: write.Content, mode: write.Mode.Perm()}
+	if sameProjectionState(current, desired) {
+		return true
+	}
+	return write.ExpectedPreviousSHA256 != "" && projectionDigest(current.content) == write.ExpectedPreviousSHA256
+}
+
 type projectionLock struct {
 	file *os.File
 }
 
 func acquireProjectionLock(repository string) (*projectionLock, error) {
-	cache, err := os.UserCacheDir()
+	gitDirectory, err := projectionGitDirectory(repository)
 	if err != nil {
 		return nil, err
 	}
-	root := filepath.Join(cache, "boatstack", "flow-projection-locks")
-	if err := os.MkdirAll(root, 0o700); err != nil {
+	path := filepath.Join(gitDirectory, "boatstack-flow-projection.lock")
+	if info, statErr := os.Lstat(path); statErr == nil && (info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular()) {
+		return nil, fmt.Errorf("FLOW_PROJECTION_LOCK_INVALID: repository lock is not a regular file")
+	} else if statErr != nil && !os.IsNotExist(statErr) {
+		return nil, statErr
+	}
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o666)
+	if err != nil {
 		return nil, err
 	}
-	identity := sha256.Sum256([]byte(repository))
-	path := filepath.Join(root, fmt.Sprintf("%x.lock", identity))
-	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
-	if err != nil {
+	if info, statErr := file.Stat(); statErr != nil || !info.Mode().IsRegular() {
+		_ = file.Close()
+		return nil, fmt.Errorf("FLOW_PROJECTION_LOCK_INVALID: repository lock is not a regular file")
+	}
+	if err := file.Chmod(0o666); err != nil {
+		_ = file.Close()
 		return nil, err
 	}
 	if err := lockProjectionFile(file); err != nil {
@@ -333,6 +384,43 @@ func acquireProjectionLock(repository string) (*projectionLock, error) {
 		return nil, fmt.Errorf("FLOW_PROJECTION_BUSY: %w", err)
 	}
 	return &projectionLock{file: file}, nil
+}
+
+func projectionGitDirectory(repository string) (string, error) {
+	marker := filepath.Join(repository, ".git")
+	info, err := os.Lstat(marker)
+	if err != nil {
+		return "", fmt.Errorf("FLOW_PROJECTION_LOCK_UNAVAILABLE: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return "", fmt.Errorf("FLOW_PROJECTION_LOCK_UNAVAILABLE: .git is a symlink")
+	}
+	if info.IsDir() {
+		return marker, nil
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("FLOW_PROJECTION_LOCK_UNAVAILABLE: .git is not a directory or worktree marker")
+	}
+	raw, err := os.ReadFile(marker)
+	if err != nil {
+		return "", err
+	}
+	line := strings.TrimSpace(string(raw))
+	if !strings.HasPrefix(line, "gitdir: ") || strings.Contains(strings.TrimPrefix(line, "gitdir: "), "\n") {
+		return "", fmt.Errorf("FLOW_PROJECTION_LOCK_UNAVAILABLE: invalid worktree Git marker")
+	}
+	gitDirectory := strings.TrimPrefix(line, "gitdir: ")
+	if !filepath.IsAbs(gitDirectory) {
+		gitDirectory = filepath.Join(repository, gitDirectory)
+	}
+	gitDirectory, err = filepath.EvalSymlinks(filepath.Clean(gitDirectory))
+	if err != nil {
+		return "", fmt.Errorf("FLOW_PROJECTION_LOCK_UNAVAILABLE: %w", err)
+	}
+	if info, err := os.Stat(gitDirectory); err != nil || !info.IsDir() {
+		return "", fmt.Errorf("FLOW_PROJECTION_LOCK_UNAVAILABLE: worktree Git directory is unavailable")
+	}
+	return gitDirectory, nil
 }
 
 func (l *projectionLock) release() {

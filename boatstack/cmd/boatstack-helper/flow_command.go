@@ -128,7 +128,7 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 	if err != nil {
 		return err
 	}
-	obsoleteSkills, artifactExpectation, err := obsoleteGeneratedSkills(options.repository, artifactPath, artifact.GeneratedSkills)
+	obsoleteSkills, artifactExpectation, priorSkills, err := obsoleteGeneratedSkills(options.repository, artifactPath, artifact.GeneratedSkills)
 	if err != nil {
 		return err
 	}
@@ -143,9 +143,13 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 		if pathErr != nil {
 			return pathErr
 		}
-		writes = append(writes, boatstackruntime.ProjectionWrite{Path: absolute, Content: skills[path], Mode: 0o644})
+		writes = append(writes, boatstackruntime.ProjectionWrite{
+			Path: absolute, Content: skills[path], Mode: 0o644, ExpectedPreviousSHA256: priorSkills[path],
+		})
 	}
-	writes = append(writes, boatstackruntime.ProjectionWrite{Path: artifactPath, Content: artifactRaw, Mode: 0o644, PublishLast: true})
+	writes = append(writes, boatstackruntime.ProjectionWrite{
+		Path: artifactPath, Content: artifactRaw, Mode: 0o644, ExpectedPreviousSHA256: artifactExpectation.ExpectedSHA256, PublishLast: true,
+	})
 	expectations := []boatstackruntime.ProjectionExpectation{
 		{Path: source, Exists: true, ExpectedSHA256: fileDigest(sourceRaw)},
 		{Path: lockPath, Exists: true, ExpectedSHA256: fileDigest(lockRaw)},
@@ -165,27 +169,27 @@ func requireUnchangedCompileInput(path string, expected []byte) error {
 	return nil
 }
 
-func obsoleteGeneratedSkills(repository, artifactPath string, next map[string]string) ([]boatstackruntime.ProjectionRemoval, boatstackruntime.ProjectionExpectation, error) {
+func obsoleteGeneratedSkills(repository, artifactPath string, next map[string]string) ([]boatstackruntime.ProjectionRemoval, boatstackruntime.ProjectionExpectation, map[string]string, error) {
 	expectation := boatstackruntime.ProjectionExpectation{Path: artifactPath}
 	info, err := os.Lstat(artifactPath)
 	if os.IsNotExist(err) {
-		return nil, expectation, nil
+		return nil, expectation, map[string]string{}, nil
 	}
 	if err != nil {
-		return nil, expectation, err
+		return nil, expectation, nil, err
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return nil, expectation, fmt.Errorf("CONTROL_PROGRAM_STALE: existing artifact is not a regular file")
+		return nil, expectation, nil, fmt.Errorf("CONTROL_PROGRAM_STALE: existing artifact is not a regular file")
 	}
 	raw, err := os.ReadFile(artifactPath)
 	if err != nil {
-		return nil, expectation, err
+		return nil, expectation, nil, err
 	}
 	expectation.Exists = true
 	expectation.ExpectedSHA256 = fileDigest(raw)
 	prior, err := controlprogram.LoadArtifact(bytes.NewReader(raw))
 	if err != nil {
-		return nil, expectation, fmt.Errorf("CONTROL_PROGRAM_STALE: existing artifact cannot authorize projection replacement: %w", err)
+		return nil, expectation, nil, fmt.Errorf("CONTROL_PROGRAM_STALE: existing artifact cannot authorize projection replacement: %w", err)
 	}
 	retired := make([]boatstackruntime.ProjectionRemoval, 0)
 	for relative, expected := range prior.GeneratedSkills {
@@ -194,7 +198,7 @@ func obsoleteGeneratedSkills(repository, artifactPath string, next map[string]st
 		}
 		path, pathErr := exactRepositoryPath(repository, relative)
 		if pathErr != nil {
-			return nil, expectation, pathErr
+			return nil, expectation, nil, pathErr
 		}
 		fileInfo, statErr := os.Lstat(path)
 		if os.IsNotExist(statErr) {
@@ -202,16 +206,16 @@ func obsoleteGeneratedSkills(repository, artifactPath string, next map[string]st
 			continue
 		}
 		if statErr != nil || fileInfo.Mode()&os.ModeSymlink != 0 || !fileInfo.Mode().IsRegular() {
-			return nil, expectation, fmt.Errorf("CONTROL_PROGRAM_STALE: retired generated skill %s is not regular", relative)
+			return nil, expectation, nil, fmt.Errorf("CONTROL_PROGRAM_STALE: retired generated skill %s is not regular", relative)
 		}
 		content, readErr := os.ReadFile(path)
 		if readErr != nil || fileDigest(content) != expected {
-			return nil, expectation, fmt.Errorf("CONTROL_PROGRAM_STALE: retired generated skill %s was modified", relative)
+			return nil, expectation, nil, fmt.Errorf("CONTROL_PROGRAM_STALE: retired generated skill %s was modified", relative)
 		}
 		retired = append(retired, boatstackruntime.ProjectionRemoval{Path: path, ExpectedSHA256: expected, AllowMissing: true})
 	}
 	sort.Slice(retired, func(i, j int) bool { return retired[i].Path < retired[j].Path })
-	return retired, expectation, nil
+	return retired, expectation, prior.GeneratedSkills, nil
 }
 
 func fileDigest(value []byte) string {
@@ -247,6 +251,11 @@ func checkFlow(ctx context.Context, options flowCommandOptions) error {
 }
 
 func validateSoftwareFlow(ctx context.Context, compiled controlprogram.Compiled, resolver softwareflow.Resolver) error {
+	for _, flowEntry := range compiled.Document.Entries {
+		if _, err := softwareflow.PlanInboxForEntry(flowEntry); err != nil {
+			return fmt.Errorf("FLOW_RUNTIME_INVALID: %w", err)
+		}
+	}
 	definition, err := softwareflow.NewDefinition(compiled, resolver)
 	if err != nil {
 		return fmt.Errorf("FLOW_RUNTIME_INVALID: %w", err)

@@ -1,6 +1,7 @@
 package softwaredelivery_test
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -37,6 +38,39 @@ func TestGeneratedSkillsProjectOnlyDeclaredEntriesWithHostParity(t *testing.T) {
 	for path := range files {
 		if strings.Contains(path, "autoplan") || strings.Contains(path, "boatstack-run") {
 			t.Fatalf("undeclared entry generated: %s", path)
+		}
+	}
+}
+
+func TestGeneratedSkillDescriptionIsQuotedYAML(t *testing.T) {
+	description := "Implement: parser\n# heading\n---\nnext"
+	compiled := controlprogram.Compiled{Document: controlprogram.Document{
+		Program: controlprogram.Program{ID: "product-delivery"},
+		Entries: []controlprogram.Entry{{ID: "run", Target: "published-pr", Description: description}},
+	}}
+	files, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, raw := range files {
+		if !strings.HasSuffix(path, "SKILL.md") {
+			continue
+		}
+		value := string(raw)
+		if strings.Count(value, "\n---\n") != 1 {
+			t.Fatalf("%s contains an injected frontmatter delimiter", path)
+		}
+		var rendered string
+		for _, line := range strings.Split(value, "\n") {
+			if strings.HasPrefix(line, "description: ") {
+				if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "description: ")), &rendered); err != nil {
+					t.Fatalf("%s description is not a quoted YAML/JSON scalar: %v", path, err)
+				}
+			}
+		}
+		expected := description + " Use only when the user explicitly selects this repository Flow entry."
+		if rendered != expected {
+			t.Fatalf("%s description = %q, want %q", path, rendered, expected)
 		}
 	}
 }

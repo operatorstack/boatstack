@@ -47,9 +47,10 @@ func renderSkill(compiled controlprogram.Compiled, entry controlprogram.Entry, s
 	if description == "" {
 		description = "Run repository Flow entry " + entry.ID + " to target " + entry.Target + "."
 	}
+	description += " Use only when the user explicitly selects this repository Flow entry."
 	return []byte(fmt.Sprintf(`---
 name: %s
-description: %s Use only when the user explicitly selects this repository Flow entry.
+description: %q
 ---
 
 # %s

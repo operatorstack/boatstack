@@ -122,7 +122,7 @@ func TestFlowEntryRejectsAdditionalRequiredInputs(t *testing.T) {
 		{ID: "first", Required: true, Resolver: "software-delivery.plan-inbox", Config: config},
 		{ID: "second", Required: true, Resolver: "software-delivery.plan-inbox", Config: config},
 	}}
-	if _, _, err := resolvePlanInput(t.TempDir(), entry); err == nil || !strings.Contains(err.Error(), "exactly one required trusted plan inbox") {
+	if _, _, err := resolvePlanInput(t.TempDir(), entry); err == nil || !strings.Contains(err.Error(), "exactly one plan input") {
 		t.Fatalf("multiple required inputs result = %v", err)
 	}
 }
@@ -276,6 +276,7 @@ func TestFlowCompileNamesDefaultArtifactFromProgramID(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFixture(t, repository, ".boatstack/flows/foo.flow.ts", []byte("declarative source"))
+	writeFixture(t, repository, ".git/keep", nil)
 	writeFixture(t, repository, "package-lock.json", []byte("lock"))
 	writeFixture(t, repository, "raw-ir.json", documentRaw)
 	frontend := filepath.Join(repository, "frontend.sh")
@@ -312,6 +313,7 @@ func TestFlowCompileProjectsHyphenatedEntryIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFixture(t, repository, ".boatstack/flows/product-delivery.flow.ts", []byte("declarative source"))
+	writeFixture(t, repository, ".git/keep", nil)
 	writeFixture(t, repository, "package-lock.json", []byte("lock"))
 	writeFixture(t, repository, "raw-ir.json", documentRaw)
 	frontend := filepath.Join(repository, "frontend.sh")
@@ -339,6 +341,44 @@ func TestFlowCompileProjectsHyphenatedEntryIdentity(t *testing.T) {
 		if strings.Contains(path, "--") {
 			t.Fatalf("artifact contains invalid skill path %s", path)
 		}
+	}
+}
+
+func TestFlowCompileRefusesUnmanagedGeneratedSkill(t *testing.T) {
+	// control-law: first-compile-cannot-adopt-or-overwrite-unmanaged-skill-bytes
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+	repository, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	documentRaw, err := json.Marshal(productDeliveryDocument("product-delivery"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, repository, ".git/keep", nil)
+	writeFixture(t, repository, ".boatstack/flows/product-delivery.flow.ts", []byte("declarative source"))
+	writeFixture(t, repository, "package-lock.json", []byte("lock"))
+	writeFixture(t, repository, "raw-ir.json", documentRaw)
+	skillPath := ".agents/skills/product-delivery-run/SKILL.md"
+	writeFixture(t, repository, skillPath, []byte("user-owned skill"))
+	frontend := filepath.Join(repository, "frontend.sh")
+	script := []byte("#!/bin/sh\ncat >/dev/null\ncat '" + filepath.Join(repository, "raw-ir.json") + "'\n")
+	if err := os.WriteFile(frontend, script, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	err = compileFlow(context.Background(), flowCommandOptions{
+		repository: repository, source: ".boatstack/flows/product-delivery.flow.ts", lock: "package-lock.json", frontend: frontend,
+	})
+	if err == nil || !strings.Contains(err.Error(), "FLOW_PROJECTION_WRITE_UNAUTHORIZED") {
+		t.Fatalf("unmanaged skill compile result = %v", err)
+	}
+	if actual, readErr := os.ReadFile(filepath.Join(repository, filepath.FromSlash(skillPath))); readErr != nil || string(actual) != "user-owned skill" {
+		t.Fatalf("unmanaged skill changed: %q, %v", actual, readErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(repository, ".boatstack", "flows", "product-delivery.flow.ir.json")); !os.IsNotExist(statErr) {
+		t.Fatalf("unmanaged skill compile published artifact: %v", statErr)
 	}
 }
 
@@ -410,6 +450,74 @@ func TestFlowCompileAndCheckRejectRuntimeInvalidSoftwareFlow(t *testing.T) {
 	}
 }
 
+func TestFlowCompileAndCheckRejectUnbindableEntryInputs(t *testing.T) {
+	// control-law: artifact-admission-and-runtime-resolution-share-one-entry-input-contract
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+	document := productDeliveryDocument("product-delivery")
+	document.Entries[0].Inputs = nil
+	for _, operation := range []string{"compile", "check"} {
+		t.Run(operation, func(t *testing.T) {
+			repository, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			sourcePath, lockPath := ".boatstack/flows/product-delivery.flow.ts", "package-lock.json"
+			source, lock := []byte("declarative source"), []byte("lock")
+			writeFixture(t, repository, sourcePath, source)
+			writeFixture(t, repository, lockPath, lock)
+			if operation == "compile" {
+				documentRaw, marshalErr := json.Marshal(document)
+				if marshalErr != nil {
+					t.Fatal(marshalErr)
+				}
+				writeFixture(t, repository, "raw-ir.json", documentRaw)
+				frontend := filepath.Join(repository, "frontend.sh")
+				script := []byte("#!/bin/sh\ncat >/dev/null\ncat '" + filepath.Join(repository, "raw-ir.json") + "'\n")
+				if err := os.WriteFile(frontend, script, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				err = compileFlow(context.Background(), flowCommandOptions{repository: repository, source: sourcePath, lock: lockPath, frontend: frontend})
+				if err == nil || !strings.Contains(err.Error(), "FLOW_RUNTIME_INVALID") {
+					t.Fatalf("input-invalid compile result = %v", err)
+				}
+				if _, statErr := os.Stat(filepath.Join(repository, ".boatstack", "flows", "product-delivery.flow.ir.json")); !os.IsNotExist(statErr) {
+					t.Fatalf("input-invalid compile published an artifact: %v", statErr)
+				}
+				return
+			}
+			resolver, err := softwareflow.NewResolver(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			compiled, err := controlprogram.Compile(document, resolver)
+			if err != nil {
+				t.Fatal(err)
+			}
+			skills, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for path, content := range skills {
+				writeFixture(t, repository, path, content)
+			}
+			_, artifactRaw, err := controlprogram.NewArtifact(compiled, controlprogram.ArtifactInput{
+				CompilerVersion: flowCompilerVersion, SourcePath: sourcePath, Source: source,
+				DependencyLockPath: lockPath, DependencyLock: lock, GeneratedSkills: skills,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeFixture(t, repository, ".boatstack/flows/product-delivery.flow.ir.json", artifactRaw)
+			err = checkFlow(context.Background(), flowCommandOptions{repository: repository})
+			if err == nil || !strings.Contains(err.Error(), "FLOW_RUNTIME_INVALID") {
+				t.Fatalf("input-invalid check result = %v", err)
+			}
+		})
+	}
+}
+
 func TestFlowEntryBindsStableRunAndResumesManagedPlan(t *testing.T) {
 	// control-law: questions-and-restarts-preserve-the-exact-plan-worktree-and-run
 	repository := flowRepository(t)
@@ -459,6 +567,27 @@ func TestFlowEntryBindsStableRunAndResumesManagedPlan(t *testing.T) {
 	}
 	if source, ok := parameters.Get("source_path"); !ok || source != filepath.Join(resumed.repository, ".boatstack", "plans", "delivery-one.source") {
 		t.Fatalf("resumed source = %q, present=%t", source, ok)
+	}
+}
+
+func TestFlowEntryRejectsObjectiveSubstitutionWithinRun(t *testing.T) {
+	// control-law: one-flow-run-retains-one-exact-product-objective
+	repository := flowRepository(t)
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
+	initial, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = bindFlowEntry(context.Background(), commandOptions{
+		repository: repository, programID: "product-delivery", entryID: "run", host: "codex",
+		runID: initial.runID, deliveryID: initial.deliveryID, objectiveKind: initial.objectiveKind,
+		objectiveID: "objective-substituted", transitionID: "objective.bind",
+	})
+	if err == nil || !strings.Contains(err.Error(), "FLOW_CONTEXT_MISMATCH") {
+		t.Fatalf("objective substitution result = %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(repository, ".boatstack", "state.json")); !os.IsNotExist(statErr) {
+		t.Fatalf("objective substitution created managed state: %v", statErr)
 	}
 }
 
@@ -555,21 +684,24 @@ func TestFlowCompileRetiresOnlyUnmodifiedPriorGeneratedSkills(t *testing.T) {
 	}
 	artifactPath := filepath.Join(repository, ".boatstack", "flows", "program.flow.ir.json")
 	writeFixture(t, repository, ".boatstack/flows/program.flow.ir.json", raw)
-	paths, artifactExpectation, err := obsoleteGeneratedSkills(repository, artifactPath, map[string]string{retainedPath: fileDigest(retained)})
+	paths, artifactExpectation, priorSkills, err := obsoleteGeneratedSkills(repository, artifactPath, map[string]string{retainedPath: fileDigest(retained)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(paths) != 1 || paths[0].Path != filepath.Join(repository, filepath.FromSlash(retiredPath)) || !artifactExpectation.Exists {
 		t.Fatalf("retired paths = %v", paths)
 	}
+	if priorSkills[retainedPath] != fileDigest(retained) || priorSkills[retiredPath] != fileDigest(retired) {
+		t.Fatalf("prior generated skills = %v", priorSkills)
+	}
 	writeFixture(t, repository, retiredPath, []byte("user changed"))
-	if _, _, err := obsoleteGeneratedSkills(repository, artifactPath, map[string]string{retainedPath: fileDigest(retained)}); err == nil || !strings.Contains(err.Error(), "was modified") {
+	if _, _, _, err := obsoleteGeneratedSkills(repository, artifactPath, map[string]string{retainedPath: fileDigest(retained)}); err == nil || !strings.Contains(err.Error(), "was modified") {
 		t.Fatalf("modified retired projection was not protected: %v", err)
 	}
 	if err := os.Remove(filepath.Join(repository, filepath.FromSlash(retiredPath))); err != nil {
 		t.Fatal(err)
 	}
-	paths, _, err = obsoleteGeneratedSkills(repository, artifactPath, map[string]string{retainedPath: fileDigest(retained)})
+	paths, _, _, err = obsoleteGeneratedSkills(repository, artifactPath, map[string]string{retainedPath: fileDigest(retained)})
 	if err != nil || len(paths) != 1 || !paths[0].AllowMissing {
 		t.Fatalf("interrupted retirement was not retryable: %v, %v", paths, err)
 	}

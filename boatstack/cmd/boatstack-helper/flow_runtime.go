@@ -5,9 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -22,11 +20,6 @@ import (
 )
 
 var flowSegment = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
-
-type planInboxConfig struct {
-	Path        string `json:"path"`
-	Cardinality string `json:"cardinality"`
-}
 
 func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions, error) {
 	if options.programID == "" && options.entryID == "" {
@@ -91,10 +84,11 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	if options.deliveryID == "" {
 		options.deliveryID = deliveryID
 	}
+	expectedObjectiveID := "objective-" + options.programID + "-" + options.entryID + "-" + deliveryID
 	if options.objectiveID == "" {
-		options.objectiveID = "objective-" + options.programID + "-" + options.entryID + "-" + deliveryID
+		options.objectiveID = expectedObjectiveID
 	}
-	if options.objectiveKind != string(objective) || options.deliveryID != deliveryID {
+	if options.objectiveKind != string(objective) || options.deliveryID != deliveryID || options.objectiveID != expectedObjectiveID {
 		return commandOptions{}, fmt.Errorf("FLOW_CONTEXT_MISMATCH: objective or delivery changed across the run")
 	}
 	parameters, err := parseParameters(options.parameters)
@@ -286,32 +280,23 @@ func resolvePlanInput(repository string, entry controlprogram.Entry) (string, st
 	return resolved, deliveryID, nil
 }
 
-func resolvePlanInbox(repository string, entry controlprogram.Entry) (string, planInboxConfig, error) {
-	if len(entry.Inputs) != 1 || !entry.Inputs[0].Required || entry.Inputs[0].Resolver != "software-delivery.plan-inbox" {
-		return "", planInboxConfig{}, fmt.Errorf("FLOW_INPUT_INVALID: entry %q requires exactly one required trusted plan inbox", entry.ID)
-	}
-	input := &entry.Inputs[0]
-	decoder := json.NewDecoder(bytes.NewReader(input.Config))
-	decoder.DisallowUnknownFields()
-	var config planInboxConfig
-	if err := decoder.Decode(&config); err != nil {
-		return "", planInboxConfig{}, fmt.Errorf("FLOW_INPUT_INVALID: %w", err)
-	}
-	if err := requireJSONEOF(decoder); err != nil || config.Cardinality != "exactly-one" {
-		return "", planInboxConfig{}, fmt.Errorf("FLOW_INPUT_INVALID: plan inbox requires exact cardinality")
-	}
-	inbox, err := exactRepositoryPath(repository, config.Path)
+func resolvePlanInbox(repository string, entry controlprogram.Entry) (string, softwareflow.PlanInbox, error) {
+	config, err := softwareflow.PlanInboxForEntry(entry)
 	if err != nil {
-		return "", planInboxConfig{}, fmt.Errorf("FLOW_INPUT_INVALID: %w", err)
+		return "", softwareflow.PlanInbox{}, fmt.Errorf("FLOW_INPUT_INVALID: %w", err)
+	}
+	inbox, err := exactRepositoryPath(repository, filepath.FromSlash(config.Path))
+	if err != nil {
+		return "", softwareflow.PlanInbox{}, fmt.Errorf("FLOW_INPUT_INVALID: %w", err)
 	}
 	resolvedInbox, err := filepath.EvalSymlinks(inbox)
 	if err != nil && !os.IsNotExist(err) {
-		return "", planInboxConfig{}, fmt.Errorf("FLOW_INPUT_INVALID: resolve plan inbox: %w", err)
+		return "", softwareflow.PlanInbox{}, fmt.Errorf("FLOW_INPUT_INVALID: resolve plan inbox: %w", err)
 	}
 	if err == nil {
 		relative, relativeErr := filepath.Rel(repository, resolvedInbox)
 		if relativeErr != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-			return "", planInboxConfig{}, fmt.Errorf("FLOW_INPUT_INVALID: plan inbox escapes the repository")
+			return "", softwareflow.PlanInbox{}, fmt.Errorf("FLOW_INPUT_INVALID: plan inbox escapes the repository")
 		}
 		inbox = resolvedInbox
 	}
@@ -331,15 +316,4 @@ func flowRunID(repository, fingerprint, entry, delivery string) string {
 	value := strings.Join([]string{repository, fingerprint, entry, delivery}, "\x00")
 	digest := sha256.Sum256([]byte(value))
 	return "run-" + hex.EncodeToString(digest[:16])
-}
-
-func requireJSONEOF(decoder *json.Decoder) error {
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		if err == nil {
-			return fmt.Errorf("trailing JSON")
-		}
-		return err
-	}
-	return nil
 }
