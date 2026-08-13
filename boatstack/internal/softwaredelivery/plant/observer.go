@@ -526,13 +526,13 @@ func observeRepositoryArtifacts(layout ports.ControllerLayout, state durable.Sta
 		}
 		planEvidence = append(planEvidence, evidence)
 		valid := exists && state.ApprovalFingerprint != "" && fingerprint == state.ApprovalFingerprint
-		if exists {
+		if valid {
 			raw, readErr := os.ReadFile(path)
 			if readErr != nil {
 				return plan, verification, terminal, nil, nil, readErr
 			}
 			var approval observedApproval
-			valid = decodeStrictJSON(raw, &approval) == nil && approval.SchemaVersion == 1 &&
+			valid = valid && decodeStrictJSON(raw, &approval) == nil && approval.SchemaVersion == 1 &&
 				approval.DeliveryID == deliveryID && approval.PlanFingerprint == state.PlanFingerprint &&
 				approval.Actor != "" && approval.AdmissionID != "" && !approval.ApprovedAt.IsZero()
 		}

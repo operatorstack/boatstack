@@ -12,7 +12,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 )
 
-const StateSchemaVersion = 5
+const StateSchemaVersion = 4
 
 type GateEvidence struct {
 	Gate        string `json:"gate"`

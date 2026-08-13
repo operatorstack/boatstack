@@ -209,6 +209,51 @@ func TestDoubleStarMatchesRootAndNestedPaths(t *testing.T) {
 	}
 }
 
+func TestObserverMarksApprovalByteSubstitutionStale(t *testing.T) {
+	// control-law: an approval remains authoritative only while its exact admitted bytes remain present.
+	repository := t.TempDir()
+	planPath := filepath.Join(repository, ".boatstack", "plans", "delivery.source")
+	approvalPath := filepath.Join(repository, ".boatstack", "approvals", "delivery.json")
+	if err := os.MkdirAll(filepath.Dir(planPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(approvalPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	planRaw := []byte("# Approved plan\n")
+	approvalRaw := []byte(`{"schema_version":1,"delivery_id":"delivery","plan_fingerprint":"pending","actor":"reviewer","admission_id":"adm-1","approved_at":"2026-01-01T00:00:00Z"}`)
+	if err := os.WriteFile(planPath, planRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, planFingerprint, _, err := fileEvidence(planPath, "plan", time.Unix(1, 0).UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	approvalRaw = []byte(`{"schema_version":1,"delivery_id":"delivery","plan_fingerprint":"` + planFingerprint + `","actor":"reviewer","admission_id":"adm-1","approved_at":"2026-01-01T00:00:00Z"}`)
+	if err := os.WriteFile(approvalPath, approvalRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, approvalFingerprint, _, err := fileEvidence(approvalPath, "approval", time.Unix(1, 0).UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := durable.State{
+		Plan: model.PlanApproved, Verification: model.VerificationCurrent, Terminal: model.TerminalNonterminal,
+		Objective:       model.Objective{ID: "objective", TargetID: model.ObjectiveOpenPR, DeliveryID: "delivery"},
+		PlanFingerprint: planFingerprint, ApprovalFingerprint: approvalFingerprint,
+	}
+	if err := os.WriteFile(approvalPath, []byte(`{"schema_version":1,"delivery_id":"delivery","plan_fingerprint":"`+planFingerprint+`","actor":"substitute","admission_id":"adm-1","approved_at":"2026-01-01T00:00:00Z"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	plan, _, terminal, _, _, err := observeRepositoryArtifacts(ports.ControllerLayout{RepositoryRoot: repository}, state, time.Unix(2, 0).UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan != model.PlanStale || terminal != model.TerminalStale {
+		t.Fatalf("substituted approval observed as plan=%s terminal=%s", plan, terminal)
+	}
+}
+
 func TestObserverDerivesHighRiskChangeFromCommittedAndWorkingTreePaths(t *testing.T) {
 	repository := t.TempDir()
 	runGit(t, repository, "init", "-q")
