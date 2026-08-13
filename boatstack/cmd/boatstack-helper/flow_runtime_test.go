@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -19,11 +20,22 @@ import (
 func flowRepository(t *testing.T) string {
 	t.Helper()
 	repository := t.TempDir()
+	document := productDeliveryDocument("product-delivery")
+	sourcePath, lockPath := ".boatstack/flows/product-delivery.flow.ts", "package-lock.json"
+	source, lock := []byte("flow source"), []byte("lock")
+	for path, content := range map[string][]byte{sourcePath: source, lockPath: lock} {
+		writeFixture(t, repository, path, content)
+	}
+	writeFlowArtifact(t, repository, document, sourcePath, source, lockPath, lock)
+	return repository
+}
+
+func writeFlowArtifact(t *testing.T, repository string, document controlprogram.Document, sourcePath string, source []byte, lockPath string, lock []byte) {
+	t.Helper()
 	resolver, err := softwareflow.NewResolver(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	document := productDeliveryDocument("product-delivery")
 	compiled, err := controlprogram.Compile(document, resolver)
 	if err != nil {
 		t.Fatal(err)
@@ -31,11 +43,6 @@ func flowRepository(t *testing.T) string {
 	skills, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
 	if err != nil {
 		t.Fatal(err)
-	}
-	sourcePath, lockPath := ".boatstack/flows/product-delivery.flow.ts", "package-lock.json"
-	source, lock := []byte("flow source"), []byte("lock")
-	for path, content := range map[string][]byte{sourcePath: source, lockPath: lock} {
-		writeFixture(t, repository, path, content)
 	}
 	for path, content := range skills {
 		writeFixture(t, repository, path, content)
@@ -46,8 +53,7 @@ func flowRepository(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFixture(t, repository, ".boatstack/flows/product-delivery.flow.ir.json", artifactRaw)
-	return repository
+	writeFixture(t, repository, ".boatstack/flows/"+document.Program.ID+".flow.ir.json", artifactRaw)
 }
 
 func productDeliveryDocument(programID string) controlprogram.Document {
@@ -187,6 +193,21 @@ func TestFlowEntryRejectsCallerOverridesOfResolvedInputs(t *testing.T) {
 	}
 }
 
+func TestFlowEntryRejectsCallerOverridesDuringUntargetedResolution(t *testing.T) {
+	// control-law: untargeted-resolution-and-apply-share-the-exact-entry-input-boundary
+	repository := flowRepository(t)
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
+	other := filepath.Join(repository, "other.md")
+	writeFixture(t, repository, "other.md", []byte("other plan"))
+	_, err := bindFlowEntry(context.Background(), commandOptions{
+		repository: repository, programID: "product-delivery", entryID: "run", host: "codex",
+		parameters: []string{"source_path=" + other},
+	})
+	if err == nil || !strings.Contains(err.Error(), "FLOW_INPUT_MISMATCH") {
+		t.Fatalf("untargeted override result = %v", err)
+	}
+}
+
 func TestFlowCompileRejectsSourceChangedDuringFrontend(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixture is Unix-only")
@@ -275,6 +296,52 @@ func TestFlowCompileNamesDefaultArtifactFromProgramID(t *testing.T) {
 	}
 }
 
+func TestFlowCompileProjectsHyphenatedEntryIdentity(t *testing.T) {
+	// control-law: every valid IR entry identity has an injective artifact-valid skill path
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+	repository, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := productDeliveryDocument("product-delivery")
+	document.Entries[0].ID = "run-now"
+	documentRaw, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, repository, ".boatstack/flows/product-delivery.flow.ts", []byte("declarative source"))
+	writeFixture(t, repository, "package-lock.json", []byte("lock"))
+	writeFixture(t, repository, "raw-ir.json", documentRaw)
+	frontend := filepath.Join(repository, "frontend.sh")
+	script := []byte("#!/bin/sh\ncat >/dev/null\ncat '" + filepath.Join(repository, "raw-ir.json") + "'\n")
+	if err := os.WriteFile(frontend, script, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := compileFlow(context.Background(), flowCommandOptions{
+		repository: repository, source: ".boatstack/flows/product-delivery.flow.ts", lock: "package-lock.json", frontend: frontend,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	artifactRaw, err := os.ReadFile(filepath.Join(repository, ".boatstack", "flows", "product-delivery.flow.ir.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := controlprogram.LoadArtifact(bytes.NewReader(artifactRaw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(artifact.GeneratedSkills) != 3 {
+		t.Fatalf("generated skills = %v", artifact.GeneratedSkills)
+	}
+	for path := range artifact.GeneratedSkills {
+		if strings.Contains(path, "--") {
+			t.Fatalf("artifact contains invalid skill path %s", path)
+		}
+	}
+}
+
 func TestFlowEntryBindsStableRunAndResumesManagedPlan(t *testing.T) {
 	// control-law: questions-and-restarts-preserve-the-exact-plan-worktree-and-run
 	repository := flowRepository(t)
@@ -305,6 +372,59 @@ func TestFlowEntryBindsStableRunAndResumesManagedPlan(t *testing.T) {
 	}
 	if source, ok := parameters.Get("source_path"); !ok || source != filepath.Join(resumed.repository, ".boatstack", "plans", "delivery-one.source") {
 		t.Fatalf("resumed source = %q, present=%t", source, ok)
+	}
+}
+
+func TestFlowEntryRejectsManagedPlanSymlinkEscape(t *testing.T) {
+	// control-law: resumed-run-plan-remains-a-regular-repository-file
+	repository := flowRepository(t)
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("exact plan"))
+	initial, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	external := filepath.Join(t.TempDir(), "outside.md")
+	if err := os.WriteFile(external, []byte("outside"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	managed := filepath.Join(repository, ".boatstack", "plans", "delivery-one.source")
+	if err := os.MkdirAll(filepath.Dir(managed), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(external, managed); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	_, err = bindFlowEntry(context.Background(), commandOptions{
+		repository: repository, programID: "product-delivery", entryID: "run", runID: initial.runID, host: "codex",
+		deliveryID: initial.deliveryID, objectiveKind: initial.objectiveKind, objectiveID: initial.objectiveID,
+	})
+	if err == nil || !strings.Contains(err.Error(), "regular non-symlink") {
+		t.Fatalf("managed symlink result = %v", err)
+	}
+}
+
+func TestFlowKernelRejectsArtifactChangedAfterEntryBinding(t *testing.T) {
+	// control-law: run-entry-kernel-and-receipts-bind-one-exact-program-artifact
+	repository := flowRepository(t)
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
+	bound, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := buildRequest(surfaces.OperationResolve, bound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := productDeliveryDocument("product-delivery")
+	changed.Transitions[0].Priority++
+	writeFlowArtifact(t, repository, changed, ".boatstack/flows/product-delivery.flow.ts", []byte("flow source"), "package-lock.json", []byte("lock"))
+	if _, err := standardKernel(context.Background(), request); err == nil || !strings.Contains(err.Error(), "FLOW_PROGRAM_DRIFT") {
+		t.Fatalf("artifact drift result = %v", err)
+	}
+	for _, path := range []string{".boatstack/state.json", ".boatstack/receipts"} {
+		if _, statErr := os.Stat(filepath.Join(repository, filepath.FromSlash(path))); !os.IsNotExist(statErr) {
+			t.Fatalf("artifact drift created managed output %s: %v", path, statErr)
+		}
 	}
 }
 

@@ -71,4 +71,16 @@ func TestGeneratedSkillIdentityIsInjectiveAcrossProgramEntryPairs(t *testing.T) 
 			t.Fatalf("distinct program/entry pairs collide at %s", path)
 		}
 	}
+	encoded := generate("product-delivery", "run-now")
+	for path := range encoded {
+		if strings.Contains(path, "--") {
+			t.Fatalf("hyphenated entry produced an invalid path: %s", path)
+		}
+	}
+	reservedPrefix := generate("product-delivery", "x072756e2d6e6f77")
+	for path := range encoded {
+		if _, collision := reservedPrefix[path]; collision {
+			t.Fatalf("encoded and literal entry identities collide at %s", path)
+		}
+	}
 }

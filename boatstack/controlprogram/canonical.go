@@ -462,6 +462,12 @@ func sortPredicates(values []Predicate) {
 }
 
 func stripDescriptions(value Document) Document {
+	value.Facets = append([]Facet(nil), value.Facets...)
+	value.Evidence = append([]Evidence(nil), value.Evidence...)
+	value.Operators = append([]Operator(nil), value.Operators...)
+	value.Transitions = append([]Transition(nil), value.Transitions...)
+	value.Targets = append([]Target(nil), value.Targets...)
+	value.Entries = append([]Entry(nil), value.Entries...)
 	value.Description, value.Program.Description = "", ""
 	for i := range value.Facets {
 		value.Facets[i].Description = ""

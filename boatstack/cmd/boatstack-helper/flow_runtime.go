@@ -63,6 +63,9 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	if err != nil {
 		return commandOptions{}, err
 	}
+	if options.flowProgramFingerprint != "" && options.flowProgramFingerprint != compiled.Fingerprint {
+		return commandOptions{}, fmt.Errorf("FLOW_PROGRAM_DRIFT: run fingerprint does not match the current artifact")
+	}
 	objective, err := softwareflow.ObjectiveForEntry(ctx, compiled, resolver, options.entryID)
 	if err != nil {
 		return commandOptions{}, err
@@ -80,6 +83,7 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		return commandOptions{}, fmt.Errorf("FLOW_RUN_MISMATCH: run ID does not identify the selected plan and worktree")
 	}
 	options.repository = repository
+	options.flowProgramFingerprint = compiled.Fingerprint
 	options.runID = runID
 	if options.objectiveKind == "" {
 		options.objectiveKind = string(objective)
@@ -96,6 +100,15 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	parameters, err := parseParameters(options.parameters)
 	if err != nil {
 		return commandOptions{}, err
+	}
+	for name, expected := range map[string]string{
+		"objective_kind": string(objective),
+		"delivery_id":    deliveryID,
+		"source_path":    plan,
+	} {
+		if err := validateResolvedParameter(parameters, name, expected); err != nil {
+			return commandOptions{}, err
+		}
 	}
 	switch options.transitionID {
 	case "objective.bind":
@@ -114,6 +127,13 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		}
 	}
 	return options, nil
+}
+
+func validateResolvedParameter(parameters protocol.Parameters, name, expected string) error {
+	if actual, exists := parameters.Get(name); exists && actual != expected {
+		return fmt.Errorf("FLOW_INPUT_MISMATCH: parameter %s conflicts with the entry-resolved value", name)
+	}
+	return nil
 }
 
 func bindResolvedParameter(options *commandOptions, parameters protocol.Parameters, name, expected string) error {
@@ -137,7 +157,8 @@ func bindRPCFlowEntry(ctx context.Context, request surfaces.Request) (surfaces.R
 	}
 	bound, err := bindFlowEntry(ctx, commandOptions{
 		repository: request.Repository, host: request.Host, programID: request.ProgramID, entryID: request.EntryID,
-		runID: request.FlowID, objectiveID: request.Objective.ID, objectiveKind: string(request.Objective.Kind), deliveryID: request.Objective.DeliveryID,
+		flowProgramFingerprint: request.ProgramFingerprint,
+		runID:                  request.FlowID, objectiveID: request.Objective.ID, objectiveKind: string(request.Objective.Kind), deliveryID: request.Objective.DeliveryID,
 		transitionID: string(request.TransitionID), parameters: parameterFlags,
 	})
 	if err != nil {
@@ -148,6 +169,7 @@ func bindRPCFlowEntry(ctx context.Context, request surfaces.Request) (surfaces.R
 		return surfaces.Request{}, err
 	}
 	request.Repository = bound.repository
+	request.ProgramFingerprint = bound.flowProgramFingerprint
 	request.FlowID = bound.runID
 	request.Objective.ID = bound.objectiveID
 	request.Objective.Kind = model.ObjectiveKind(bound.objectiveKind)
@@ -157,13 +179,29 @@ func bindRPCFlowEntry(ctx context.Context, request surfaces.Request) (surfaces.R
 }
 
 func resolveBoundPlan(repository string, entry controlprogram.Entry, options commandOptions) (string, string, error) {
-	if options.runID != "" && flowSegment.MatchString(options.deliveryID) {
-		managed := filepath.Join(repository, ".boatstack", "plans", options.deliveryID+".source")
-		if info, err := os.Stat(managed); err == nil && info.Mode().IsRegular() {
-			return managed, options.deliveryID, nil
-		}
+	if options.runID == "" {
+		return resolvePlanInput(repository, entry)
 	}
-	return resolvePlanInput(repository, entry)
+	if !flowSegment.MatchString(options.deliveryID) {
+		return "", "", fmt.Errorf("FLOW_CONTEXT_MISMATCH: active run requires its delivery identity")
+	}
+	managed := filepath.Join(repository, ".boatstack", "plans", options.deliveryID+".source")
+	info, err := os.Lstat(managed)
+	if err != nil {
+		return "", "", fmt.Errorf("FLOW_INPUT_REQUIRED: active run plan is unavailable: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return "", "", fmt.Errorf("FLOW_INPUT_INVALID: active run plan must be a regular non-symlink file")
+	}
+	resolved, err := filepath.EvalSymlinks(managed)
+	if err != nil {
+		return "", "", fmt.Errorf("FLOW_INPUT_INVALID: resolve active run plan: %w", err)
+	}
+	relative, err := filepath.Rel(repository, resolved)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", "", fmt.Errorf("FLOW_INPUT_INVALID: active run plan escapes the repository")
+	}
+	return resolved, options.deliveryID, nil
 }
 
 func loadFlowDefinition(ctx context.Context, repository, programID string) (softwareflow.Definition, error) {

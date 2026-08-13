@@ -1,6 +1,7 @@
 package softwaredelivery
 
 import (
+	"encoding/hex"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -33,7 +34,12 @@ func GenerateSkills(compiled controlprogram.Compiled, hosts []string) (map[strin
 }
 
 func flowSkillSlug(programID, entryID string) string {
-	return programID + "-" + strings.ReplaceAll(entryID, "-", "--")
+	const encodedPrefix = "x0"
+	encodedEntry := entryID
+	if strings.Contains(entryID, "-") || strings.HasPrefix(entryID, encodedPrefix) {
+		encodedEntry = encodedPrefix + hex.EncodeToString([]byte(entryID))
+	}
+	return programID + "-" + encodedEntry
 }
 
 func renderSkill(compiled controlprogram.Compiled, entry controlprogram.Entry, slug, host string) []byte {

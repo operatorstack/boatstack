@@ -16,26 +16,28 @@ func incidentProgram() controlprogram.Document {
 	return controlprogram.Document{
 		SchemaVersion: controlprogram.SchemaVersion,
 		Program:       controlprogram.Program{ID: "incident-response", Version: "1", Description: "human text"},
+		Description:   "incident control program",
 		Declarations: controlprogram.Declarations{
 			Capabilities: []string{"service.restart"}, Authorities: []string{"incident-commander"},
 			Effects: []string{"service.restart"}, Verifiers: []string{"healthcheck"}, InputResolvers: []string{"incident.input"},
 		},
 		Facets: []controlprogram.Facet{
-			{ID: "service", Kind: "enum", Values: []string{"healthy", "degraded"}},
+			{ID: "service", Kind: "enum", Values: []string{"healthy", "degraded"}, Description: "service health"},
 			{ID: "incident", Kind: "enum", Values: []string{"open", "mitigated"}},
 		},
-		Evidence: []controlprogram.Evidence{{ID: "healthcheck", Subject: "service", Kind: "observation"}},
+		Evidence: []controlprogram.Evidence{{ID: "healthcheck", Subject: "service", Kind: "observation", Description: "observed health"}},
 		Operators: []controlprogram.Operator{{
 			ID: "restart", Capabilities: []string{"service.restart"}, Authority: []string{"incident-commander"},
 			Effects: []string{"service.restart"}, Verifier: "healthcheck", Recovery: "restart",
+			Description: "restart the service",
 			StateEffect: &controlprogram.StateEffect{Kind: "assignments", Assignments: []controlprogram.StateAssignment{{Facet: "incident", Value: &mitigated}}},
 		}},
 		Transitions: []controlprogram.Transition{{
 			ID: "restart", Operator: "restart", Priority: 10,
 			Guard: fact("incident", "open"), Target: fact("incident", "mitigated"), Description: "restart service",
 		}},
-		Targets: []controlprogram.Target{{ID: "mitigated", Predicate: fact("incident", "mitigated")}},
-		Entries: []controlprogram.Entry{{ID: "respond", Target: "mitigated", Inputs: []controlprogram.EntryInput{{ID: "incident", Type: "json", Required: true, Resolver: "incident.input", Config: json.RawMessage(`{"b":2,"a":1}`)}}}},
+		Targets: []controlprogram.Target{{ID: "mitigated", Predicate: fact("incident", "mitigated"), Description: "incident mitigated"}},
+		Entries: []controlprogram.Entry{{ID: "respond", Target: "mitigated", Description: "respond to incident", Inputs: []controlprogram.EntryInput{{ID: "incident", Type: "json", Required: true, Resolver: "incident.input", Config: json.RawMessage(`{"b":2,"a":1}`)}}}},
 	}
 }
 
@@ -64,6 +66,12 @@ func TestDomainNeutralIncidentProgramCompiles(t *testing.T) {
 	}
 	if len(compiled.Fingerprint) != 64 || !bytes.Contains(compiled.Canonical, []byte(`"incident-response"`)) {
 		t.Fatalf("compiled incident program = %#v", compiled)
+	}
+	if compiled.Document.Description == "" || compiled.Document.Program.Description == "" ||
+		compiled.Document.Facets[1].Description == "" || compiled.Document.Evidence[0].Description == "" ||
+		compiled.Document.Operators[0].Description == "" || compiled.Document.Transitions[0].Description == "" ||
+		compiled.Document.Targets[0].Description == "" || compiled.Document.Entries[0].Description == "" {
+		t.Fatalf("compilation removed declared descriptions: %#v", compiled.Document)
 	}
 }
 

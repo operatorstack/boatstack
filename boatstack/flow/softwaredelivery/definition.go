@@ -28,6 +28,8 @@ func NewDefinition(compiled controlprogram.Compiled, resolver Resolver) (Definit
 	return Definition{compiled: compiled, resolver: resolver}, nil
 }
 
+func (d Definition) Fingerprint() string { return d.compiled.Fingerprint }
+
 func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntimeManifest, error) {
 	base, err := standard.Definition().RuntimeManifest(ctx)
 	if err != nil {

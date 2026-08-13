@@ -44,6 +44,7 @@ type commandOptions struct {
 	objectiveKind                       string
 	deliveryID                          string
 	programID                           string
+	flowProgramFingerprint              string
 	entryID                             string
 	runID                               string
 	transitionID                        string
@@ -335,6 +336,9 @@ func standardKernel(ctx context.Context, request surfaces.Request) (boatstack.De
 		if definitionErr != nil {
 			return boatstack.DeliveryController{}, definitionErr
 		}
+		if definition.Fingerprint() != request.ProgramFingerprint {
+			return boatstack.DeliveryController{}, fmt.Errorf("FLOW_PROGRAM_DRIFT: bound fingerprint %q does not match current artifact %q", request.ProgramFingerprint, definition.Fingerprint())
+		}
 		program, err = distribution.ProgramForRepository(ctx, programRequest, definition)
 	} else {
 		program, err = distribution.StandardProgramForRepository(ctx, programRequest)
@@ -504,7 +508,7 @@ func buildRequest(operation surfaces.Operation, options commandOptions) (surface
 	}
 	return surfaces.Request{
 		SchemaVersion: surfaces.SchemaVersion, Operation: operation, Repository: options.repository, Host: options.host, CorrelationID: correlation,
-		ProgramID: options.programID, EntryID: options.entryID, FlowID: flowID, Objective: objective, TransitionID: catalog.TransitionID(options.transitionID), Authority: authority, Parameters: parameters,
+		ProgramID: options.programID, ProgramFingerprint: options.flowProgramFingerprint, EntryID: options.entryID, FlowID: flowID, Objective: objective, TransitionID: catalog.TransitionID(options.transitionID), Authority: authority, Parameters: parameters,
 		Prescription: protocol.Prescription{SchemaVersion: protocol.PrescriptionSchemaVersion, ID: options.prescriptionID,
 			TransitionID: catalog.TransitionID(options.transitionID), Freshness: general.Freshness{
 				ExpectedInstanceID: options.expectedInstanceID, ExpectedStateRevision: options.expectedStateRevision, ExpectedProgramFingerprint: options.expectedProgramFingerprint,

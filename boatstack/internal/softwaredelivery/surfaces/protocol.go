@@ -46,6 +46,7 @@ type Request struct {
 	Host                string                   `json:"host"`
 	CorrelationID       string                   `json:"correlation_id"`
 	ProgramID           string                   `json:"program_id,omitempty"`
+	ProgramFingerprint  string                   `json:"program_fingerprint,omitempty"`
 	EntryID             string                   `json:"entry_id,omitempty"`
 	FlowID              string                   `json:"flow_id,omitempty"`
 	Objective           model.Objective          `json:"objective,omitempty"`
@@ -68,8 +69,11 @@ func (r Request) Validate(now time.Time) error {
 	if (r.ProgramID == "") != (r.EntryID == "") {
 		return fmt.Errorf("surface request requires both program and entry identity")
 	}
-	if r.ProgramID != "" && (!flowContextIdentity.MatchString(r.ProgramID) || !flowContextIdentity.MatchString(r.EntryID) || r.FlowID == "") {
+	if r.ProgramID != "" && (!flowContextIdentity.MatchString(r.ProgramID) || len(r.ProgramFingerprint) != 64 || !flowContextIdentity.MatchString(r.EntryID) || r.FlowID == "") {
 		return fmt.Errorf("surface Flow entry requires semantic program, entry, and run identity")
+	}
+	if r.ProgramID == "" && r.ProgramFingerprint != "" {
+		return fmt.Errorf("surface request cannot carry a program fingerprint without a program")
 	}
 	if r.Operation != OperationCatalog {
 		knownHost := false
