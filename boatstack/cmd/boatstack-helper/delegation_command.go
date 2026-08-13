@@ -255,7 +255,38 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 		err = settleErr
 	}
 	if err != nil || resolved.Prescription == nil {
-		return resolved, err
+		if err != nil {
+			return resolved, err
+		}
+		rebound, changed, rebindErr := bindContinuationCandidate(ctx, bound, resolved)
+		if rebindErr != nil {
+			return surfaces.Response{}, rebindErr
+		}
+		if !changed {
+			return resolved, nil
+		}
+		resolveRequest, err = buildRequest(surfaces.OperationResolve, rebound)
+		if err != nil {
+			return surfaces.Response{}, err
+		}
+		_, delegationResponse, err = prepareDelegation(ctx, &resolveRequest)
+		if err != nil {
+			return surfaces.Response{}, err
+		}
+		if delegationResponse != nil {
+			return *delegationResponse, nil
+		}
+		kernel, err = standardKernel(ctx, resolveRequest)
+		if err != nil {
+			return surfaces.Response{}, err
+		}
+		resolved, err = kernel.Handle(ctx, resolveRequest)
+		if settleErr := settleDelegationAtTarget(ctx, resolveRequest, resolved, kernel.TargetSatisfied(resolved.Snapshot, resolveRequest.Objective), false); settleErr != nil && err == nil {
+			err = settleErr
+		}
+		if err != nil || resolved.Prescription == nil {
+			return resolved, err
+		}
 	}
 	applyRequest := resolveRequest
 	applyRequest.Operation = surfaces.OperationApply
@@ -302,6 +333,26 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 		applied.Prescription = &protocol.Prescription{SchemaVersion: protocol.PrescriptionSchemaVersion, ID: "continued", TransitionID: catalog.TransitionID(applyRequest.TransitionID)}
 	}
 	return applied, nil
+}
+
+func bindContinuationCandidate(ctx context.Context, bound commandOptions, response surfaces.Response) (commandOptions, bool, error) {
+	if bound.transitionID != "" || response.Prescription != nil || response.Decision == nil || response.Decision.Kind != supervisor.DecisionCandidate || response.Decision.Transition == nil || len(response.Decision.Candidates) != 1 {
+		return bound, false, nil
+	}
+	candidate := response.Decision.Transition.ID
+	if response.Decision.Candidates[0] != candidate {
+		return bound, false, nil
+	}
+	rebound := bound
+	rebound.transitionID = string(candidate)
+	rebound, err := bindFlowEntry(ctx, rebound)
+	if err != nil {
+		return commandOptions{}, false, err
+	}
+	if len(rebound.parameters) <= len(bound.parameters) {
+		return bound, false, nil
+	}
+	return rebound, true, nil
 }
 
 func advanceContinuation(options *commandOptions, response surfaces.Response) error {
