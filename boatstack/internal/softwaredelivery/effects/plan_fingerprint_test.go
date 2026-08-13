@@ -81,6 +81,9 @@ func TestWorkspacePlanTransferRejectsStaleOrMissingBoundArtifacts(t *testing.T) 
 	if err := os.MkdirAll(filepath.Dir(planPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Dir(approvalPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	bound := []byte("# Bound plan\n")
 	if err := os.WriteFile(planPath, bound, 0o600); err != nil {
 		t.Fatal(err)

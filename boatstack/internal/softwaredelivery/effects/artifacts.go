@@ -304,11 +304,11 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 // worktree must observe those exact bytes rather than fall back to the inbox
 // and accidentally select new intent.
 func prepareWorkspacePlanTransfer(repositoryRoot, workspacePath, deliveryID, expectedPlanFingerprint string) ([]ports.ResourceMutation, error) {
-	if expectedPlanFingerprint == "" {
+	if expectedPlanFingerprint == "" || deliveryID == "" {
 		return nil, nil
 	}
-	if workspacePath == "" || deliveryID == "" {
-		return nil, fmt.Errorf("workspace plan transfer requires workspace and delivery for a bound plan")
+	if workspacePath == "" {
+		return nil, fmt.Errorf("workspace plan transfer requires a destination for a bound plan")
 	}
 	deliveryID, err := safeSegment(deliveryID, "delivery identity")
 	if err != nil {
