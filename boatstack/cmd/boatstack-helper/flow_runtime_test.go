@@ -412,7 +412,7 @@ func TestFlowCompileProjectsHyphenatedEntryIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(artifact.GeneratedSkills) != 3 {
+	if len(artifact.GeneratedSkills) != 5 {
 		t.Fatalf("generated skills = %v", artifact.GeneratedSkills)
 	}
 	for path := range artifact.GeneratedSkills {
@@ -1082,13 +1082,14 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	runFlowGit(t, repository, "init", "-q")
 	runFlowGit(t, repository, "config", "user.email", "test@example.com")
 	runFlowGit(t, repository, "config", "user.name", "Test User")
+	runFlowGit(t, repository, "config", "core.autocrlf", "true")
 	document := productDeliveryDocument("product-delivery")
 	document.Entries[0].Delegation = &controlprogram.DelegationBinding{Reference: "software-delivery/delegation/autonomy", Version: "1"}
 	sourcePath, lockPath := ".boatstack/flows/product-delivery.flow.ts", "package-lock.json"
 	source, dependencyLock := []byte("flow source"), []byte("lock")
 	writeFixture(t, repository, sourcePath, source)
 	writeFixture(t, repository, lockPath, dependencyLock)
-	writeFixture(t, repository, ".boatstack/plans/inbox/delivery.md", []byte("# Delivery\n"))
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery.md", []byte("# Delivery"))
 	writeFlowArtifact(t, repository, document, sourcePath, source, lockPath, dependencyLock)
 	writeFixture(t, repository, "README.md", []byte("fixture\n"))
 	runFlowGit(t, repository, "add", ".")

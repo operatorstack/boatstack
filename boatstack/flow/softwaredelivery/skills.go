@@ -11,6 +11,7 @@ import (
 
 func GenerateSkills(compiled controlprogram.Compiled, hosts []string) (map[string][]byte, error) {
 	result := map[string][]byte{}
+	const exactCheckoutAttributes = "** -text"
 	for _, entry := range compiled.Document.Entries {
 		slug := flowSkillSlug(compiled.Document.Program.ID, entry.ID)
 		if slug == "boatstack-update" {
@@ -21,10 +22,13 @@ func GenerateSkills(compiled controlprogram.Compiled, hosts []string) (map[strin
 			switch host {
 			case "codex":
 				root := filepath.ToSlash(filepath.Join(".agents", "skills", slug))
+				result[root+"/.gitattributes"] = []byte(exactCheckoutAttributes)
 				result[root+"/SKILL.md"] = skill
 				result[root+"/agents/openai.yaml"] = []byte(fmt.Sprintf("interface:\n  display_name: %q\n  short_description: %q\n  default_prompt: %q\npolicy:\n  allow_implicit_invocation: false\n", title(slug), entry.Description, "Use $"+slug+" to run the repository-owned Boatstack Flow entry."))
 			case "claude":
-				result[filepath.ToSlash(filepath.Join(".claude", "skills", slug, "SKILL.md"))] = skill
+				root := filepath.ToSlash(filepath.Join(".claude", "skills", slug))
+				result[root+"/.gitattributes"] = []byte(exactCheckoutAttributes)
+				result[root+"/SKILL.md"] = skill
 			default:
 				return nil, fmt.Errorf("unsupported generated Flow skill host %q", host)
 			}

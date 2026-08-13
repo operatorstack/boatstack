@@ -102,6 +102,9 @@ func safeGeneratedSkillPath(value string) bool {
 		return false
 	}
 	parts := strings.Split(value, "/")
+	if len(parts) == 4 && (parts[0] == ".agents" || parts[0] == ".claude") && parts[1] == "skills" && validID(parts[2]) && parts[3] == ".gitattributes" {
+		return true
+	}
 	if len(parts) == 4 && parts[0] == ".agents" && parts[1] == "skills" && validID(parts[2]) && parts[3] == "SKILL.md" {
 		return true
 	}
