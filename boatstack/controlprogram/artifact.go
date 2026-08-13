@@ -13,10 +13,14 @@ import (
 	"strings"
 )
 
-const ArtifactSchemaVersion = 1
+const (
+	ArtifactSchemaName     = "control-program-artifact"
+	ArtifactSchemaRevision = 1
+)
 
 type Artifact struct {
-	SchemaVersion        int               `json:"schema_version"`
+	Schema               string            `json:"schema"`
+	SchemaRevision       int               `json:"schema_revision"`
 	CompilerVersion      string            `json:"compiler_version"`
 	SourcePath           string            `json:"source_path"`
 	SourceSHA256         string            `json:"source_sha256"`
@@ -53,7 +57,7 @@ func NewArtifact(compiled Compiled, input ArtifactInput) (Artifact, []byte, erro
 		skills[filepath.ToSlash(path)] = digest(raw)
 	}
 	artifact := Artifact{
-		SchemaVersion: ArtifactSchemaVersion, CompilerVersion: input.CompilerVersion,
+		Schema: ArtifactSchemaName, SchemaRevision: ArtifactSchemaRevision, CompilerVersion: input.CompilerVersion,
 		SourcePath: filepath.ToSlash(input.SourcePath), SourceSHA256: digest(input.Source),
 		DependencyLockPath: filepath.ToSlash(input.DependencyLockPath), DependencyLockSHA256: digest(input.DependencyLock),
 		ProgramFingerprint: compiled.Fingerprint, GeneratedSkills: skills, Program: compiled.Document,
@@ -82,7 +86,7 @@ func LoadArtifact(source io.Reader) (Artifact, error) {
 	if err := requireEOF(decoder); err != nil {
 		return Artifact{}, err
 	}
-	if artifact.SchemaVersion != ArtifactSchemaVersion || artifact.CompilerVersion == "" || !safeRelative(artifact.SourcePath) || !safeRelative(artifact.DependencyLockPath) || len(artifact.ProgramFingerprint) != 64 || artifact.GeneratedSkills == nil {
+	if artifact.Schema != ArtifactSchemaName || artifact.SchemaRevision != ArtifactSchemaRevision || artifact.CompilerVersion == "" || !safeRelative(artifact.SourcePath) || !safeRelative(artifact.DependencyLockPath) || len(artifact.ProgramFingerprint) != 64 || artifact.GeneratedSkills == nil {
 		return Artifact{}, fmt.Errorf("CONTROL_PROGRAM_ARTIFACT_INVALID: artifact envelope is incomplete")
 	}
 	for path, fingerprint := range artifact.GeneratedSkills {

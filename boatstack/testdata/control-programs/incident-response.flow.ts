@@ -26,10 +26,11 @@ export default defineFlow({
   operators: [
     operator("restart", {
       capabilities: ["service.restart"],
-      authority: ["incident-commander"],
+      authority: { any_of: ["incident-commander"] },
       effects: ["service.restart"],
       verifier: "healthcheck",
       recovery: "restart",
+      execution_context: "preserve",
       state_effect: {
         kind: "assignments",
         assignments: [{ facet: "incident", value: "mitigated" }],
@@ -44,5 +45,5 @@ export default defineFlow({
     }),
   ],
   targets: [marked("mitigated", fact("incident", ["mitigated"]))],
-  entries: [entry("respond", "mitigated")],
+  entries: [entry({ id: "respond", target: "mitigated" })],
 });

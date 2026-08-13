@@ -31,7 +31,7 @@ func atomicWrite(path string, value []byte, mode os.FileMode) error {
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return err
 	}
-	temporary, err := os.CreateTemp(directory, ".boatstack-v2-stage-*")
+	temporary, err := os.CreateTemp(directory, ".boatstack-stage-*")
 	if err != nil {
 		return err
 	}
@@ -67,7 +67,7 @@ func atomicSymlink(path, target string) error {
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return err
 	}
-	temporary, err := os.CreateTemp(directory, ".boatstack-v2-link-*")
+	temporary, err := os.CreateTemp(directory, ".boatstack-link-*")
 	if err != nil {
 		return err
 	}

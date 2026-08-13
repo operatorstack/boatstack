@@ -66,7 +66,7 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 		return model.Observation{}, err
 	}
 	configuration := state.Configuration
-	configurationPolicy := model.Absent[model.ConfigurationPolicy]("no valid V2 configuration policy", configEvidence)
+	configurationPolicy := model.Absent[model.ConfigurationPolicy]("no valid Boatstack configuration policy", configEvidence)
 	if !configExists {
 		configuration = model.ConfigurationUnsupported
 	} else if configRaw, readErr := os.ReadFile(layout.ConfigPath); readErr != nil {
@@ -255,7 +255,7 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 	if configEvidence.Source != "" {
 		configurationEvidence = append(append([]model.Evidence(nil), stateEvidence...), configEvidence)
 	}
-	objectiveFact := model.Absent[model.Objective]("no configured V2 objective", stateEvidence...)
+	objectiveFact := model.Absent[model.Objective]("no configured Boatstack objective", stateEvidence...)
 	if state.Objective.Validate() == nil {
 		objectiveFact = model.Fact[model.Objective]{Status: model.FactKnown, Value: state.Objective, Evidence: stateEvidence}
 	}

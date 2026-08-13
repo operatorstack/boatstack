@@ -20,8 +20,8 @@ func compiledFlow(t *testing.T, guard controlprogram.Predicate) (controlprogram.
 	}
 	truth := true
 	document := controlprogram.Document{
-		SchemaVersion: controlprogram.SchemaVersion,
-		Program:       controlprogram.Program{ID: "product-delivery", Version: "1"},
+		Schema: controlprogram.SchemaName, SchemaRevision: controlprogram.SchemaRevision,
+		Program: controlprogram.Program{ID: "product-delivery", Version: "1"},
 		Facets: []controlprogram.Facet{
 			{ID: "publication", Kind: "string"}, {ID: "verification", Kind: "string"},
 			{ID: "configuration", Kind: "string"}, {ID: "runtime", Kind: "string"},
@@ -104,6 +104,54 @@ func TestRepositoryGuardCanOnlyStrengthenTrustedBinding(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "does not strengthen") {
 		t.Fatalf("non-conjunctive guard result = %v", err)
 	}
+}
+
+func TestRepositoryAuthorityRequirementIsConjunctive(t *testing.T) {
+	// control-law: repository-policy-can-add-a-gate-but-cannot-create-an-authority-alternative
+	truth := true
+	compiled, resolver := compiledFlow(t, controlprogram.Predicate{True: &truth})
+	document := compiled.Document
+	document.Declarations.Authorities = append(document.Declarations.Authorities, "human")
+	document.Transitions[0].Requires.Authorities = []string{"human"}
+	strengthened, err := controlprogram.Compile(document, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, err := softwareflow.NewDefinition(strengthened, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := definition.RuntimeManifest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	transition := manifest.Transitions[0]
+	if len(transition.AuthorityAll) != 1 || transition.AuthorityAll[0] != delivery.AuthorityHuman {
+		t.Fatalf("mandatory authority = %#v; alternatives = %#v", transition.AuthorityAll, transition.Authority)
+	}
+}
+
+func TestPublicationBindingPreservesProviderAsMandatory(t *testing.T) {
+	resolver, err := softwareflow.NewResolver(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := resolver.ResolveOperator("software-delivery/publication.execute", "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(resolved.Authority.AnyOf, "human") || !contains(resolved.Authority.AnyOf, "autonomy") || !contains(resolved.Authority.AllOf, "external-provider") {
+		t.Fatalf("publication authority = %#v", resolved.Authority)
+	}
+}
+
+func contains(values []string, wanted string) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func TestRepositoryTargetMustBeImpliedByTrustedPostcondition(t *testing.T) {
@@ -216,8 +264,8 @@ func TestAbandonmentEntryMakesTrustedAbandonmentObjectiveProgress(t *testing.T) 
 		t.Fatal(err)
 	}
 	document := controlprogram.Document{
-		SchemaVersion: controlprogram.SchemaVersion,
-		Program:       controlprogram.Program{ID: "product-delivery", Version: "1"},
+		Schema: controlprogram.SchemaName, SchemaRevision: controlprogram.SchemaRevision,
+		Program: controlprogram.Program{ID: "product-delivery", Version: "1"},
 		Facets: []controlprogram.Facet{
 			{ID: "publication", Kind: "string"}, {ID: "verification", Kind: "string"},
 			{ID: "configuration", Kind: "string"}, {ID: "runtime", Kind: "string"},

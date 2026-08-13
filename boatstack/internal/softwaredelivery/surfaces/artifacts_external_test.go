@@ -18,9 +18,9 @@ func TestCheckedArchitectureArtifactsMatchCompiledStandardProgram(t *testing.T) 
 	}
 	transitions := program.Transitions()
 	checks := map[string]string{
-		"boatstack-v2-transition-catalog.md":  surfaces.RenderCatalogMarkdown(transitions),
-		"boatstack-v2-transition-catalog.mmd": surfaces.RenderCatalogMermaid(transitions),
-		"boatstack-standard-flow.mmd":         surfaces.RenderStandardFlowMermaid(transitions),
+		"boatstack-transition-catalog.md":  surfaces.RenderCatalogMarkdown(transitions),
+		"boatstack-transition-catalog.mmd": surfaces.RenderCatalogMermaid(transitions),
+		"boatstack-standard-flow.mmd":      surfaces.RenderStandardFlowMermaid(transitions),
 	}
 	safety, err := surfaces.RenderCatalogLocusSafety(transitions)
 	if err != nil {
@@ -30,8 +30,8 @@ func TestCheckedArchitectureArtifactsMatchCompiledStandardProgram(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	checks["boatstack-v2-locus-safety.json"] = safety
-	checks["boatstack-v2-locus-liveness.json"] = liveness
+	checks["boatstack-locus-safety.json"] = safety
+	checks["boatstack-locus-liveness.json"] = liveness
 
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {

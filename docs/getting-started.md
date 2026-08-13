@@ -1,4 +1,4 @@
-# Getting started with Boatstack V2
+# Getting started with Boatstack
 
 ## Install once
 
@@ -131,7 +131,7 @@ exact manifest for that same revision with `evidence.visual.attach`,
 
 ## Use a linked worktree
 
-`workspace-cut` verifies that the base contains the current V2 configuration,
+`workspace-cut` verifies that the base contains the current Boatstack configuration,
 creates the worktree, transfers controller state to its exact identity, and
 parks the source checkout:
 

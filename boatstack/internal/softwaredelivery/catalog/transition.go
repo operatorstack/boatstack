@@ -320,6 +320,7 @@ type Transition struct {
 	Priority                      int                   `json:"priority"`
 	AllowsIdentityRebind          bool                  `json:"allows_identity_rebind,omitempty"`
 	AllowsWorktreeTransfer        bool                  `json:"allows_worktree_transfer,omitempty"`
+	ExecutionContext              string                `json:"execution_context,omitempty"`
 	BindsSourceRevision           bool                  `json:"binds_source_revision,omitempty"`
 	AuthorityFingerprintParameter string                `json:"authority_fingerprint_parameter,omitempty"`
 }
@@ -476,6 +477,9 @@ func validateTransition(t Transition) error {
 	}
 	if t.Version < 1 || len(t.SourcePhases) == 0 || len(t.TargetPhases) == 0 {
 		return fmt.Errorf("%s: version, source phases, and target phases are required", t.ID)
+	}
+	if t.ExecutionContext != "" && t.ExecutionContext != "preserve" && t.ExecutionContext != "advance" {
+		return fmt.Errorf("%s: invalid execution context effect %q", t.ID, t.ExecutionContext)
 	}
 	for _, phase := range append(append([]model.ProtocolPhase(nil), t.SourcePhases...), t.TargetPhases...) {
 		if !phase.Valid() {

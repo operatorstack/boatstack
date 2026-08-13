@@ -1,4 +1,4 @@
-"""End-to-end tests for the V2 detached identity and guard boundary."""
+"""End-to-end tests for the detached identity and guard boundary."""
 
 from __future__ import annotations
 
@@ -136,7 +136,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         self.assertEqual(self.porcelain(), before)
         self.assertEqual(attached["snapshot"]["invocation"]["topology"], "detached")
         self.assertEqual(attached["receipt"]["transition_id"], "repository.attach")
-        bindings = list((self.state_root / "boatstack" / "v2").rglob("binding.json"))
+        bindings = list((self.state_root / "boatstack").rglob("binding.json"))
         self.assertEqual(len(bindings), 1)
         binding = json.loads(bindings[0].read_text())
         self.assertEqual(binding["topology"], "detached")
@@ -166,7 +166,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         two = self.attach(clone)
         self.assertEqual(one["snapshot"]["invocation"]["repository_id"], two["snapshot"]["invocation"]["repository_id"])
         self.assertNotEqual(one["snapshot"]["invocation"]["git_common_id"], two["snapshot"]["invocation"]["git_common_id"])
-        bindings = list((self.state_root / "boatstack" / "v2").rglob("binding.json"))
+        bindings = list((self.state_root / "boatstack").rglob("binding.json"))
         self.assertEqual(len(bindings), 2)
 
     def test_detached_installation_and_engaged_guard_use_the_same_kernel(self) -> None:

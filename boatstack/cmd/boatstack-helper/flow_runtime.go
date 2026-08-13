@@ -14,6 +14,7 @@ import (
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/delegation"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
@@ -116,6 +117,58 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	if options.targetID != string(objective.TargetID) || options.trustedObjectiveClass != string(objective.TrustedClass) || options.deliveryID != deliveryID || options.objectiveID != expectedObjectiveID {
 		return commandOptions{}, fmt.Errorf("FLOW_CONTEXT_MISMATCH: objective or delivery changed across the run")
 	}
+	if entry.Delegation != nil {
+		contextResolver, resolverErr := plant.NewResolver("")
+		if resolverErr != nil {
+			return commandOptions{}, resolverErr
+		}
+		host := options.host
+		if host == "" {
+			host = "cli"
+		}
+		invocation, invocationErr := contextResolver.ResolveInvocation(ctx, repository, host, "flow-delegation-request")
+		if invocationErr != nil {
+			return commandOptions{}, invocationErr
+		}
+		description := entry.Description
+		if description == "" {
+			description = fmt.Sprintf("Run %s/%s to %s", options.programID, options.entryID, objective.TargetID)
+		}
+		delegationRequest := delegation.Request{
+			RunID: options.runID, ProgramID: options.programID, ProgramFingerprint: compiled.Fingerprint,
+			EntryID: options.entryID, TargetID: string(objective.TargetID), ObjectiveID: options.objectiveID, DeliveryID: deliveryID,
+			InputFingerprints: []string{planFingerprint}, RepositoryID: invocation.RepositoryID, GitCommonID: invocation.GitCommonID,
+			InitialWorktreeID: invocation.WorktreeID, InitialRef: invocation.Ref,
+			BindingFingerprint: entry.Delegation.Fingerprint, RequestedAuthorities: append([]string(nil), entry.Delegation.Authorities...),
+			Description: description,
+		}
+		layout, _, layoutErr := contextResolver.ResolveLayout(ctx, invocation)
+		if layoutErr != nil {
+			return commandOptions{}, layoutErr
+		}
+		recordPath, pathErr := delegation.Path(layout.FlowRoot, options.runID)
+		if pathErr != nil {
+			return commandOptions{}, pathErr
+		}
+		if record, loadErr := delegation.Load(recordPath); loadErr == nil {
+			bound := record.Request
+			if bound.RunID != delegationRequest.RunID || bound.ProgramID != delegationRequest.ProgramID || bound.ProgramFingerprint != delegationRequest.ProgramFingerprint || bound.EntryID != delegationRequest.EntryID || bound.TargetID != delegationRequest.TargetID || bound.ObjectiveID != delegationRequest.ObjectiveID || bound.DeliveryID != delegationRequest.DeliveryID || strings.Join(bound.InputFingerprints, "\x00") != strings.Join(delegationRequest.InputFingerprints, "\x00") || bound.RepositoryID != delegationRequest.RepositoryID || bound.GitCommonID != delegationRequest.GitCommonID || bound.BindingFingerprint != delegationRequest.BindingFingerprint || strings.Join(bound.RequestedAuthorities, "\x00") != strings.Join(delegationRequest.RequestedAuthorities, "\x00") || bound.Description != delegationRequest.Description {
+				return commandOptions{}, fmt.Errorf("DELEGATION_DRIFT: current Flow context does not match the authorized request")
+			}
+			delegationRequest = bound
+		} else if !os.IsNotExist(loadErr) {
+			return commandOptions{}, loadErr
+		}
+		fingerprint, fingerprintErr := delegationRequest.Fingerprint()
+		if fingerprintErr != nil {
+			return commandOptions{}, fingerprintErr
+		}
+		options.delegationBindingFingerprint = entry.Delegation.Fingerprint
+		options.delegationRequestFingerprint = fingerprint
+		options.delegationAuthorities = append(options.delegationAuthorities[:0], entry.Delegation.Authorities...)
+		options.delegationDescription = description
+		options.delegationRequest = delegationRequest
+	}
 	parameters, err := parseParameters(options.parameters)
 	if err != nil {
 		return commandOptions{}, err
@@ -168,7 +221,7 @@ func bindActiveFlowContext(ctx context.Context, repository string, options comma
 	if err != nil {
 		common, commonErr := flowRepositoryIdentity(repository)
 		if commonErr == nil {
-			if _, stateErr := os.Stat(filepath.Join(common, "boatstack", "v2")); os.IsNotExist(stateErr) {
+			if _, stateErr := os.Stat(filepath.Join(common, "boatstack")); os.IsNotExist(stateErr) {
 				return options, nil
 			}
 		}
@@ -273,6 +326,9 @@ func bindRPCFlowEntry(ctx context.Context, request surfaces.Request) (surfaces.R
 	request.Objective.TrustedClass = model.TargetID(bound.trustedObjectiveClass)
 	request.Objective.DeliveryID = bound.deliveryID
 	request.Parameters = parameters
+	request.DelegationBindingFingerprint = bound.delegationBindingFingerprint
+	request.DelegationRequestFingerprint = bound.delegationRequestFingerprint
+	request.DelegatedAuthorities = delegationClasses(bound.delegationAuthorities)
 	return request, nil
 }
 
@@ -280,7 +336,7 @@ func resolveBoundPlan(repository string, entry controlprogram.Entry, entryObject
 	if options.activeFlowBound && entryObjective.TrustedClass == model.ObjectiveAbandoned {
 		return "", options.deliveryID, nil
 	}
-	if options.runID == "" && options.deliveryID == "" {
+	if options.deliveryID == "" {
 		return resolvePlanInput(repository, entry)
 	}
 	if !flowSegment.MatchString(options.deliveryID) {

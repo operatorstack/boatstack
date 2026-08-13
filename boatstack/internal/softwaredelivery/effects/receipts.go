@@ -117,6 +117,40 @@ func FindLatestCommittedFlowForObjective(layout ports.ControllerLayout, invocati
 	return found, found.ID != "", err
 }
 
+// InvocationAuthorizedByFlow reconstructs worktree lineage only from valid,
+// committed transition receipts. Mutable delegation records cannot invent a
+// context transfer.
+func InvocationAuthorizedByFlow(layout ports.ControllerLayout, flowID string, initial, current model.InvocationContext) (bool, error) {
+	receipts := []protocol.TransitionReceipt{}
+	if err := scanCommittedReceipts(layout, func(record journalRecord) error {
+		if record.Receipt != nil && record.Receipt.FlowID == flowID {
+			if err := record.Receipt.Validate(); err != nil {
+				return err
+			}
+			receipts = append(receipts, *record.Receipt)
+		}
+		return nil
+	}); err != nil {
+		return false, err
+	}
+	sort.Slice(receipts, func(i, j int) bool { return receipts[i].Sequence < receipts[j].Sequence })
+	contextKey := func(invocation model.InvocationContext) string {
+		return invocation.WorktreeID + "\x00" + invocation.Ref
+	}
+	authorized := map[string]bool{contextKey(initial): true}
+	for _, receipt := range receipts {
+		if receipt.ExecutionContext != "advance" {
+			continue
+		}
+		prior, resulting := receipt.PriorInvocation, receipt.ResultingInvocation
+		if prior == nil || resulting == nil || prior.RepositoryID != initial.RepositoryID || prior.GitCommonID != initial.GitCommonID || resulting.RepositoryID != initial.RepositoryID || resulting.GitCommonID != initial.GitCommonID || !authorized[contextKey(*prior)] {
+			return false, fmt.Errorf("delegation receipt lineage is invalid at %s", receipt.ID)
+		}
+		authorized[contextKey(*resulting)] = true
+	}
+	return current.RepositoryID == initial.RepositoryID && current.GitCommonID == initial.GitCommonID && authorized[contextKey(current)], nil
+}
+
 func sameStateLineage(left, right model.InvocationContext) bool {
 	return left.RepositoryID == right.RepositoryID && left.GitCommonID == right.GitCommonID &&
 		left.WorktreeID == right.WorktreeID && left.ControllerID == right.ControllerID

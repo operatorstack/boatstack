@@ -1,4 +1,4 @@
-# V2 workflow reference
+# Boatstack workflow reference
 
 The executable catalog is the authority. Generate the full inventory with:
 

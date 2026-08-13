@@ -82,6 +82,7 @@ type ProgramTransition struct {
 	Priority                      int                  `json:"priority"`
 	AllowsIdentityRebind          bool                 `json:"allows_identity_rebind,omitempty"`
 	AllowsWorktreeTransfer        bool                 `json:"allows_worktree_transfer,omitempty"`
+	ExecutionContext              string               `json:"execution_context,omitempty"`
 	BindsSourceRevision           bool                 `json:"binds_source_revision,omitempty"`
 	AuthorityFingerprintParameter string               `json:"authority_fingerprint_parameter,omitempty"`
 }
@@ -348,6 +349,7 @@ func (value ProgramTransition) runtimeTransition() Transition {
 		PrivacyClassification: value.PrivacyClassification, TelemetryClassification: value.TelemetryClassification,
 		CostClass: value.CostClass, Policy: value.Policy, Priority: value.Priority,
 		AllowsIdentityRebind: value.AllowsIdentityRebind, AllowsWorktreeTransfer: value.AllowsWorktreeTransfer,
+		ExecutionContext:    value.ExecutionContext,
 		BindsSourceRevision: value.BindsSourceRevision, AuthorityFingerprintParameter: value.AuthorityFingerprintParameter,
 	}
 }

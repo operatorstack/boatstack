@@ -186,7 +186,7 @@ func TestConcreteBoundaryAppliesAndReceiptsOneTransition(t *testing.T) {
 	}
 	for _, path := range []string{layout.StatePath, layout.ReceiptPath, layout.EventPath} {
 		if _, err := os.Stat(path); err != nil {
-			t.Errorf("expected V2 artifact %s: %v", path, err)
+			t.Errorf("expected Boatstack artifact %s: %v", path, err)
 		}
 	}
 }
@@ -852,7 +852,7 @@ func TestWorkspaceCutTransfersAuthorityToExactDestinationWorktree(t *testing.T) 
 	})
 	apply(sourceInvocation, "objective.bind", human, protocol.Parameters{{Name: "target_id", Value: string(objective.TargetID)}, {Name: "delivery_id", Value: objective.DeliveryID}})
 	run(t, repository, "git", "add", ".boatstack/project.json")
-	run(t, repository, "git", "commit", "-q", "-m", "install V2 configuration")
+	run(t, repository, "git", "commit", "-q", "-m", "install Boatstack configuration")
 	repositoryAuthority := func(path string) protocol.AuthorityBundle {
 		raw, readErr := os.ReadFile(filepath.Join(path, ".boatstack", "project.json"))
 		if readErr != nil {
@@ -871,7 +871,7 @@ func TestWorkspaceCutTransfersAuthorityToExactDestinationWorktree(t *testing.T) 
 	}
 	canonicalDestination := filepath.Join(destinationParent, filepath.Base(destination))
 	cut := apply(sourceInvocation, "workspace.cut", human, protocol.Parameters{
-		{Name: "branch", Value: "feature/v2-workspace-transfer"}, {Name: "base_ref", Value: "HEAD"}, {Name: "destination", Value: destination},
+		{Name: "branch", Value: "feature/workspace-transfer"}, {Name: "base_ref", Value: "HEAD"}, {Name: "destination", Value: destination},
 	})
 	if cut.Target.Invocation.InvokingPath != canonicalDestination || cut.Target.Invocation.WorktreeID == sourceInvocation.WorktreeID || cut.Target.Workspace.Value != model.WorkspaceCut {
 		t.Fatalf("workspace authority did not transfer to destination: %#v", cut.Target)
@@ -910,7 +910,7 @@ func TestWorkspaceCutTransfersAuthorityToExactDestinationWorktree(t *testing.T) 
 	if destinationObservation.Workspace.Value != model.WorkspaceCut || destinationObservation.Objective.Value != objective {
 		t.Fatalf("destination did not receive exact controller state: %#v", destinationObservation)
 	}
-	activated := apply(destinationInvocation, "workspace.activate", repositoryAuthority(canonicalDestination), protocol.Parameters{{Name: "branch", Value: "feature/v2-workspace-transfer"}})
+	activated := apply(destinationInvocation, "workspace.activate", repositoryAuthority(canonicalDestination), protocol.Parameters{{Name: "branch", Value: "feature/workspace-transfer"}})
 	if activated.Target.Workspace.Value != model.WorkspaceActive || activated.Target.Invocation.WorktreeID != destinationInvocation.WorktreeID {
 		t.Fatalf("destination activation failed: %#v", activated.Target)
 	}
@@ -919,11 +919,11 @@ func TestWorkspaceCutTransfersAuthorityToExactDestinationWorktree(t *testing.T) 
 	}
 	objective = model.Objective{ID: "objective-workspace-abandon", TargetID: model.ObjectiveAbandoned, DeliveryID: "delivery-workspace"}
 	apply(destinationInvocation, "objective.bind", human, protocol.Parameters{{Name: "target_id", Value: string(objective.TargetID)}, {Name: "delivery_id", Value: objective.DeliveryID}})
-	abandoned := apply(destinationInvocation, "workspace.abandon", human, protocol.Parameters{{Name: "branch", Value: "feature/v2-workspace-transfer"}})
+	abandoned := apply(destinationInvocation, "workspace.abandon", human, protocol.Parameters{{Name: "branch", Value: "feature/workspace-transfer"}})
 	if abandoned.Target.Terminal.Value != model.TerminalEstablished || abandoned.Target.Workspace.Value != model.WorkspaceAbandoned {
 		t.Fatalf("workspace abandonment did not establish its configured terminal: %#v", abandoned.Target)
 	}
-	cleaned := apply(destinationInvocation, "workspace.cleanup", human, protocol.Parameters{{Name: "branch", Value: "feature/v2-workspace-transfer"}})
+	cleaned := apply(destinationInvocation, "workspace.cleanup", human, protocol.Parameters{{Name: "branch", Value: "feature/workspace-transfer"}})
 	if cleaned.Target.Invocation.WorktreeID != sourceInvocation.WorktreeID || cleaned.Target.Workspace.Value != model.WorkspaceAbsent || cleaned.Target.Phase.Value != model.PhaseAbandoned {
 		t.Fatalf("cleanup did not return verified authority to source checkout: %#v", cleaned.Target)
 	}

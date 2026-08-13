@@ -54,7 +54,7 @@ type historicalFixture struct {
 
 func loadHistoricalCorpus(t *testing.T) historicalCorpus {
 	t.Helper()
-	raw, err := os.ReadFile("../../testdata/v2-scenarios/historical.json")
+	raw, err := os.ReadFile("../../testdata/scenarios/historical.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,7 @@ func TestHistoricalCorpusCoversEveryPRFrom172Through185(t *testing.T) {
 	}
 	for number := 172; number <= 185; number++ {
 		if !covered[number] {
-			t.Errorf("PR #%d has no historical V2 fixture", number)
+			t.Errorf("PR #%d has no historical Boatstack fixture", number)
 		}
 	}
 }

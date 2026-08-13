@@ -4,7 +4,7 @@ Frozen against `c5b5e10cdcf4d97b645d705cb164e762acf93ff1`. This file is deletion
 
 The inventory uses conservative syntactic definitions so its counts are reproducible:
 
-- **Direct lifecycle/completion decision declarations:** every function or method declaration in the nine files named by the V2 deletion contract as independent lifecycle/completion owners.
+- **Direct lifecycle/completion decision declarations:** every function or method declaration in the nine files named by Boatstack deletion contract as independent lifecycle/completion owners.
 - **Supporting control-authority declarations:** every declaration in the additional authority-owning files named by that contract.
 - **Direct filesystem mutation sites:** every production call to the listed `os` mutation primitives.
 - **External-effect sites:** the generic command boundaries plus explicit Git mutation intents. Read-only Git observations are excluded; the generic boundaries are included because their arguments could request effects.

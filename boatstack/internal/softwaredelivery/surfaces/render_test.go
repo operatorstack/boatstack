@@ -191,7 +191,7 @@ func TestGuardPreservesConstitutionalDestructionFloor(t *testing.T) {
 		`gcloud sql instances delete primary`,
 		`aws ec2 terminate-instances --instance-ids i-1`,
 		`gh pr merge 123 --squash`,
-		`printf '{}' > .git/boatstack/v2/worktrees/x/state.json`,
+		`printf '{}' > .git/boatstack/worktrees/x/state.json`,
 		`Remove-Item -Recurse -Force .boatstack/evidence`,
 	}
 	for _, command := range destructive {

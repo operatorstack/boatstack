@@ -49,6 +49,22 @@ func renderSkill(compiled controlprogram.Compiled, entry controlprogram.Entry, s
 	}
 	description += " Use only when the user explicitly selects this repository Flow entry."
 	supersession := ""
+	delegation := ""
+	if entry.Delegation != nil {
+		delegation = fmt.Sprintf(`
+The first `+"`next`"+` returns a typed `+"`DELEGATION_REQUIRED`"+` response before
+managed state changes. Display its exact run ID, request fingerprint, requested
+authorities, and description. Obtain one explicit human approval for that exact
+request, then run:
+
+`+"`boatstack flow authorize --repo . --flow %s --entry %s --run-id <run-id> --request-fingerprint <fingerprint> --human <actor> --host %s`"+`
+
+After authorization, use `+"`boatstack flow run --repo . --flow %s --entry %s --run-id <run-id> --host %s --format json`"+`.
+Do not request approval again after a restart or typed suspension. Resume the
+same run and delegation unless Boatstack reports revocation, expiry, drift, or
+terminal completion. Never authorize on the user's behalf.
+`, compiled.Document.Program.ID, entry.ID, host, compiled.Document.Program.ID, entry.ID, host)
+	}
 	if entry.Target == "published-pr" {
 		abandonmentSkill, ok := targetEntrySkill(compiled.Document.Program.ID, compiled.Document.Entries, "safely-abandoned")
 		if ok {
@@ -81,11 +97,12 @@ parameters. A question suspends this run: ask the user, submit only the typed
 answer evidence, and resume the same run ID. Nothing continues in the
 background while input is missing. Never synthesize authority.
 %s
+%s
 
 Stop only when Boatstack reports the marked target, a typed blocker, refusal,
 unresolved recovery, or missing authority. This entry grants no merge or deploy
 authority.
-`, slug, description, title(slug), compiled.Document.Program.ID, entry.ID, entry.Target, compiled.Document.Program.ID, entry.ID, host, supersession))
+`, slug, description, title(slug), compiled.Document.Program.ID, entry.ID, entry.Target, compiled.Document.Program.ID, entry.ID, host, delegation, supersession))
 }
 
 func targetEntrySkill(programID string, entries []controlprogram.Entry, target string) (string, bool) {

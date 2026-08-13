@@ -1,4 +1,4 @@
-# Boatstack V2 safety
+# Boatstack safety
 
 ## Evidence status
 

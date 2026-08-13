@@ -32,5 +32,5 @@ export default defineFlow({
     fact("runtime", ["verified"]),
     fact("publication", ["open"]),
   ))],
-  entries: [entry("run", "published-pr", [inbox(".boatstack/plans/inbox")])],
+  entries: [entry({ id: "run", target: "published-pr", inputs: [inbox(".boatstack/plans/inbox")] })],
 });

@@ -23,7 +23,7 @@ func prepareAttachBinding(layout ports.ControllerLayout, admission protocol.Admi
 	if topology != model.TopologyDetached && topology != model.TopologyHybrid {
 		return ports.ResourceMutation{}, fmt.Errorf("repository.attach topology must be detached or hybrid")
 	}
-	controllerID := sha256Bytes([]byte("v2:" + admission.Invocation.RepositoryID + ":" + admission.Invocation.GitCommonID + ":" + topologyValue + ":" + configAuthority))[:20]
+	controllerID := sha256Bytes([]byte("controller:" + admission.Invocation.RepositoryID + ":" + admission.Invocation.GitCommonID + ":" + topologyValue + ":" + configAuthority))[:20]
 	binding := durable.Binding{
 		SchemaVersion: durable.BindingSchemaVersion, RepositoryID: admission.Invocation.RepositoryID, GitCommonID: admission.Invocation.GitCommonID,
 		Topology: topology, ControllerID: controllerID, ConfigAuthority: configAuthority, CreatedAt: admission.IssuedAt.UTC(),

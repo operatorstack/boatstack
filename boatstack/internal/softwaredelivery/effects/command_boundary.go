@@ -176,7 +176,7 @@ func (b NativeBoundary) Execute(ctx context.Context, admission protocol.Admissio
 		}
 		baseConfig, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "git", "show", baseRef+":.boatstack/project.json")
 		if err != nil {
-			return settled, fmt.Errorf("workspace base does not contain the verified V2 configuration: %w", err)
+			return settled, fmt.Errorf("workspace base does not contain the verified Boatstack configuration: %w", err)
 		}
 		_, baseFingerprint, fingerprintErr := protocol.ProjectConfigFingerprint(baseConfig)
 		if fingerprintErr != nil {

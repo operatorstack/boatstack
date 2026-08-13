@@ -74,11 +74,11 @@ func DecodeProjectConfig(value []byte) (ProjectConfig, error) {
 	decoder := json.NewDecoder(bytes.NewReader(value))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&config); err != nil {
-		return ProjectConfig{}, fmt.Errorf("decode V2 project configuration: %w", err)
+		return ProjectConfig{}, fmt.Errorf("decode Boatstack project configuration: %w", err)
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); err != io.EOF {
-		return ProjectConfig{}, fmt.Errorf("V2 project configuration contains trailing JSON")
+		return ProjectConfig{}, fmt.Errorf("Boatstack project configuration contains trailing JSON")
 	}
 	if err := config.Validate(); err != nil {
 		return ProjectConfig{}, err
@@ -125,7 +125,7 @@ func ProjectConfigFingerprint(value []byte) (ProjectConfig, string, error) {
 	}
 	encoded, err := json.Marshal(canonical)
 	if err != nil {
-		return ProjectConfig{}, "", fmt.Errorf("encode canonical V2 project configuration: %w", err)
+		return ProjectConfig{}, "", fmt.Errorf("encode canonical Boatstack project configuration: %w", err)
 	}
 	digest := sha256.Sum256(encoded)
 	return config, hex.EncodeToString(digest[:]), nil
@@ -133,7 +133,7 @@ func ProjectConfigFingerprint(value []byte) (ProjectConfig, string, error) {
 
 func (c ProjectConfig) Validate() error {
 	if c.SchemaVersion != ConfigSchemaVersion || c.Project.Name == "" || c.Project.DefaultBranch == "" || c.Project.Commands == nil {
-		return fmt.Errorf("V2 project configuration requires schema 2, project name, default branch, and commands")
+		return fmt.Errorf("Boatstack project configuration requires schema 2, project name, default branch, and commands")
 	}
 	if err := ValidateGitBranch(c.Project.DefaultBranch); err != nil {
 		return fmt.Errorf("invalid default branch: %w", err)
@@ -163,7 +163,7 @@ func (c ProjectConfig) Validate() error {
 		seen[host] = true
 	}
 	if !seen["cli"] {
-		return fmt.Errorf("V2 project configuration must enable the canonical CLI surface")
+		return fmt.Errorf("Boatstack project configuration must enable the canonical CLI surface")
 	}
 	seenExtensions := map[string]bool{}
 	for _, extension := range c.Extensions {

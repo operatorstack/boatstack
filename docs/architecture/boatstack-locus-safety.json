@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "boatstack-v2-executable-catalog-safety-v1",
+  "id": "boatstack-executable-catalog-safety-v1",
   "subject": "Finite stable-phase abstraction generated from the compiled Boatstack ControlProgram registry. It contains one event for every runtime entry and expands each declared source and target phase set. The 18-facet predicates, operating-system behavior, and external-provider truth remain executable evidence obligations rather than theorem assumptions.",
   "evidence": [
     {
@@ -8,7 +8,7 @@
       "note": "Compiler combines exact CoreSystem, ProgramRuntime, extension, contract, and ownership declarations into one immutable runtime registry."
     },
     {
-      "path": "docs/architecture/boatstack-v2-transition-catalog.md",
+      "path": "docs/architecture/boatstack-transition-catalog.md",
       "note": "Generated readable projection from the same runtime registry."
     },
     {

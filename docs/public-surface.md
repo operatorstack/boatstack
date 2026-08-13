@@ -6,7 +6,7 @@ A new user should understand three facts before implementation detail:
 
 1. Boatstack is one delivery controller, not a collection of host prompts.
 2. Managed effects need exact evidence and authority.
-3. V2 is a flag-day replacement with no V1 compatibility path.
+3. Boatstack is a flag-day replacement with no V1 compatibility path.
 
 ## Required public evidence
 
@@ -32,5 +32,5 @@ screenshots.
 ## Accessibility
 
 Public SVG assets keep a title, description, and `role="img"`. Command examples
-must use registered V2 verbs and flags. Links and JSON examples must validate in
+must use registered Boatstack verbs and flags. Links and JSON examples must validate in
 the repository contract.

@@ -105,7 +105,7 @@ func renderOpenAIMetadata(mode hostSkillMode) []byte {
   default_prompt: %q
 policy:
   allow_implicit_invocation: false
-`, mode.DisplayName, mode.Description, "Use $"+mode.Slug+" to follow the authority-preserving Boatstack V2 driver."))
+`, mode.DisplayName, mode.Description, "Use $"+mode.Slug+" to follow the authority-preserving Boatstack driver."))
 }
 
 func desiredHostSkillFiles(hosts []string) map[string][]byte {

@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-# Boatstack V2 bootstrap trust boundary. The script installs a verified runtime;
+# Boatstack bootstrap trust boundary. The script installs a verified runtime;
 # the kernel owns every subsequent repository mutation.
 
 $Repository = if ($env:BOATSTACK_REPO) { $env:BOATSTACK_REPO } else { (Get-Location).Path }
@@ -10,7 +10,7 @@ $Actor = if ($env:BOATSTACK_ACTOR) { $env:BOATSTACK_ACTOR } elseif ($env:USERNAM
 $InstallDir = if ($env:BOATSTACK_INSTALL_DIR) { $env:BOATSTACK_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA "Boatstack\bin" }
 $BoatstackHome = if ($env:BOATSTACK_HOME) { $env:BOATSTACK_HOME } else { Join-Path $env:LOCALAPPDATA "Boatstack" }
 
-if ($Mode -notin @("install", "update")) { throw "Boatstack V2 supports BOATSTACK_MODE=install or update" }
+if ($Mode -notin @("install", "update")) { throw "Boatstack supports BOATSTACK_MODE=install or update" }
 $RepositoryOutput = & git -C $Repository rev-parse --show-toplevel
 $RepositoryStatus = $LASTEXITCODE
 if ($RepositoryStatus -ne 0 -or -not $RepositoryOutput) { throw "Boatstack installation requires a Git repository" }
@@ -34,7 +34,7 @@ $Architecture = switch ([System.Runtime.InteropServices.RuntimeInformation]::OSA
   default { throw "unsupported architecture" }
 }
 $Asset = "boatstack-helper_windows_$Architecture.exe"
-$Temporary = Join-Path ([System.IO.Path]::GetTempPath()) ("boatstack-v2-" + [guid]::NewGuid().ToString("N"))
+$Temporary = Join-Path ([System.IO.Path]::GetTempPath()) ("boatstack-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $Temporary | Out-Null
 
 try {
@@ -116,7 +116,7 @@ try {
   $StagedLauncher = Join-Path $InstallDir (".boatstack-" + [guid]::NewGuid().ToString("N") + ".exe")
   Copy-Item -LiteralPath $Candidate -Destination $StagedLauncher
   Move-Item -LiteralPath $StagedLauncher -Destination $Launcher -Force
-  Write-Host "Boatstack V2 installed at $Runtime"
+  Write-Host "Boatstack installed at $Runtime"
   Write-Host "Review and commit $Repository\.boatstack\project.json, $Repository\.boatstack\runtime.json, and the generated host skills"
   Write-Host "Run: $Launcher doctor --repo `"$Repository`" --format text"
 } finally {

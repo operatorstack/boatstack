@@ -11,12 +11,29 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 )
 
+type delegationResolver struct {
+	fingerprint string
+	authorities []string
+	delegable   bool
+}
+
+func (r delegationResolver) ResolveOperator(string, string) (controlprogram.ResolvedOperator, error) {
+	return controlprogram.ResolvedOperator{}, nil
+}
+
+func (r delegationResolver) ResolveDelegation(reference, version string) (controlprogram.ResolvedDelegation, error) {
+	if reference != "incident/delegation/autonomy" || version != "1" {
+		return controlprogram.ResolvedDelegation{}, os.ErrNotExist
+	}
+	return controlprogram.ResolvedDelegation{Fingerprint: r.fingerprint, Authorities: r.authorities, Delegable: r.delegable}, nil
+}
+
 func incidentProgram() controlprogram.Document {
 	mitigated := "mitigated"
 	return controlprogram.Document{
-		SchemaVersion: controlprogram.SchemaVersion,
-		Program:       controlprogram.Program{ID: "incident-response", Version: "1", Description: "human text"},
-		Description:   "incident control program",
+		Schema: controlprogram.SchemaName, SchemaRevision: controlprogram.SchemaRevision,
+		Program:     controlprogram.Program{ID: "incident-response", Version: "1", Description: "human text"},
+		Description: "incident control program",
 		Declarations: controlprogram.Declarations{
 			Capabilities: []string{"service.restart"}, Authorities: []string{"incident-commander"},
 			Effects: []string{"service.restart"}, Verifiers: []string{"healthcheck"}, InputResolvers: []string{"incident.input"},
@@ -27,9 +44,9 @@ func incidentProgram() controlprogram.Document {
 		},
 		Evidence: []controlprogram.Evidence{{ID: "healthcheck", Subject: "service", Kind: "observation", Description: "observed health"}},
 		Operators: []controlprogram.Operator{{
-			ID: "restart", Capabilities: []string{"service.restart"}, Authority: []string{"incident-commander"},
+			ID: "restart", Capabilities: []string{"service.restart"}, Authority: controlprogram.AuthorityRequirement{AnyOf: []string{"incident-commander"}},
 			Effects: []string{"service.restart"}, Verifier: "healthcheck", Recovery: "restart",
-			Description: "restart the service",
+			Description: "restart the service", ExecutionContext: "preserve",
 			StateEffect: &controlprogram.StateEffect{Kind: "assignments", Assignments: []controlprogram.StateAssignment{{Facet: "incident", Value: &mitigated}}},
 		}},
 		Transitions: []controlprogram.Transition{{
@@ -106,16 +123,80 @@ func TestCanonicalFingerprintIgnoresOrderingAndDescriptions(t *testing.T) {
 	}
 }
 
+func TestDelegationBindingIsResolvedAndFingerprintBound(t *testing.T) {
+	// control-law: repository-source-can-request-but-cannot-grant-authority
+	document := incidentProgram()
+	document.Entries[0].Delegation = &controlprogram.DelegationBinding{Reference: "incident/delegation/autonomy", Version: "1"}
+	resolver := delegationResolver{fingerprint: strings.Repeat("d", 64), authorities: []string{"autonomy"}, delegable: true}
+	compiled, err := controlprogram.Compile(document, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding := compiled.Document.Entries[0].Delegation
+	if binding.Fingerprint != resolver.fingerprint || len(binding.Authorities) != 1 || binding.Authorities[0] != "autonomy" {
+		t.Fatalf("resolved delegation = %#v", binding)
+	}
+	if _, err := controlprogram.Compile(compiled.Document, delegationResolver{fingerprint: strings.Repeat("e", 64), authorities: []string{"autonomy"}, delegable: true}); err == nil || !strings.Contains(err.Error(), "drift") {
+		t.Fatalf("delegation drift result = %v", err)
+	}
+	if _, err := controlprogram.Compile(document, delegationResolver{fingerprint: strings.Repeat("d", 64), authorities: []string{"autonomy"}, delegable: false}); err == nil || !strings.Contains(err.Error(), "not delegable") {
+		t.Fatalf("nondelegable result = %v", err)
+	}
+}
+
+func TestAuthorityAlgebraAndRepositoryStrengtheningAreExecutableSemantics(t *testing.T) {
+	// control-law: alternatives-and-mandatory-authority-never-flatten
+	base := incidentProgram()
+	base.Declarations.Authorities = []string{"autonomy", "external-provider", "human", "incident-commander"}
+	base.Operators[0].Authority = controlprogram.AuthorityRequirement{AnyOf: []string{"human", "autonomy"}, AllOf: []string{"external-provider"}}
+	base.Transitions[0].Requires.Authorities = []string{"incident-commander"}
+	compiled, err := controlprogram.Compile(base, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(compiled.Document.Operators[0].Authority.AnyOf) != 2 || len(compiled.Document.Operators[0].Authority.AllOf) != 1 || len(compiled.Document.Transitions[0].Requires.Authorities) != 1 {
+		t.Fatalf("authority semantics = %#v %#v", compiled.Document.Operators[0].Authority, compiled.Document.Transitions[0].Requires)
+	}
+	changed := clone(t, base)
+	changed.Transitions[0].Requires.Authorities = nil
+	withoutStrengthening, err := controlprogram.Compile(changed, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if compiled.Fingerprint == withoutStrengthening.Fingerprint {
+		t.Fatal("repository authority strengthening did not change executable fingerprint")
+	}
+}
+
+func TestOnlyTrustedBindingsMayAdvanceExecutionContext(t *testing.T) {
+	document := incidentProgram()
+	document.Operators[0].ExecutionContext = "advance"
+	if _, err := controlprogram.Compile(document, nil); err == nil || !strings.Contains(err.Error(), "trusted bindings") {
+		t.Fatalf("untrusted execution advance result = %v", err)
+	}
+}
+
 func TestStrictLoaderRejectsUnknownAndDuplicateFields(t *testing.T) {
 	// control-law: only-the-closed-ir-schema-crosses-the-compiler-boundary
 	valid, _ := json.Marshal(incidentProgram())
-	unknown := bytes.Replace(valid, []byte(`"schema_version"`), []byte(`"unknown":true,"schema_version"`), 1)
+	unknown := bytes.Replace(valid, []byte(`"schema"`), []byte(`"unknown":true,"schema"`), 1)
 	if _, err := controlprogram.Load(bytes.NewReader(unknown), nil); err == nil {
 		t.Fatal("unknown field was accepted")
 	}
-	duplicate := bytes.Replace(valid, []byte(`"schema_version"`), []byte(`"schema_version":"control-program/v1","schema_version"`), 1)
+	duplicate := bytes.Replace(valid, []byte(`"schema"`), []byte(`"schema":"control-program","schema"`), 1)
 	if _, err := controlprogram.Load(bytes.NewReader(duplicate), nil); err == nil {
 		t.Fatal("duplicate field was accepted")
+	}
+}
+
+func TestGenerationLabelledControlProgramAndArtifactFormatsAreRejected(t *testing.T) {
+	legacyProgram := []byte(`{"schema_version":"control-program/v1"}`)
+	if _, err := controlprogram.Load(bytes.NewReader(legacyProgram), nil); err == nil {
+		t.Fatal("generation-labelled Control Program format was accepted")
+	}
+	legacyArtifact := []byte(`{"schema_version":1,"compiler_version":"control-program/v1.compiler.1"}`)
+	if _, err := controlprogram.LoadArtifact(bytes.NewReader(legacyArtifact)); err == nil {
+		t.Fatal("generation-labelled artifact format was accepted")
 	}
 }
 

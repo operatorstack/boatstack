@@ -114,7 +114,7 @@ func TestSourceInventoryHasNoWriterOrLifecycleAuthorityOutsideOwnedPackages(t *t
 		}
 		relative = filepath.ToSlash(relative)
 		if !classifiedProductionFile(relative) {
-			t.Errorf("production source %s has no V2 ownership classification", relative)
+			t.Errorf("production source %s has no Boatstack ownership classification", relative)
 		}
 		classifiedFiles++
 		parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)

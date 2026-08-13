@@ -1,20 +1,20 @@
 # Boatstack programmable delivery control architecture
 
 Status: normative implementation specification
-Base revision: `f7a5c9d1f2d15057f484371f348ee57311c0155e` (`origin/main`, after the V2 kernel replacement)
+Base revision: `f7a5c9d1f2d15057f484371f348ee57311c0155e` (`origin/main`, after Boatstack kernel replacement)
 Implementation branch: `feat/control-program-and-standard-flow`
 Scope: separate mechanism, system capabilities, primary delivery flow, optional
 extensions, and product surfaces in one final pull request; no merge is
 authorized by this document
 
-> Boatstack V2 is a flag-day replacement. Existing machine-local state may be
+> Boatstack is a flag-day replacement. Existing machine-local state may be
 > discarded and regenerated. No V1 runtime remains after cutover.
 
-This document is the source of truth for the Boatstack implementation. If code and this
+This document is the source of truth for Boatstack implementation. If code and this
 document disagree, the discrepancy is a release blocker: either the code must be
 corrected or this document must be deliberately amended with matching tests.
-The [replacement closure report](boatstack-v2-closure-report.md) binds its frozen
-V1 counts to the implemented V2 evidence.
+The [replacement closure report](boatstack-closure-report.md) binds its frozen
+V1 counts to the implemented Boatstack evidence.
 
 ## ZCA projection and decisions
 
@@ -47,7 +47,7 @@ atomic replacement. A user decision is required only if a new transition would
 change who may authorize an effect or what counts as a delivery terminal.
 
 Value emerges at the compilation boundary: the smallest valuable change is not
-a second workflow engine, but one deterministic program that preserves the V2
+a second workflow engine, but one deterministic program that preserves Boatstack
 effect protocol while moving delivery policy out of the mechanism. The two
 jointly shipped slices are therefore (1) program compilation and Kernel
 execution, and (2) standard distribution and surface projection.
@@ -282,7 +282,7 @@ Observable behavior is classified only as follows:
   terminals, visual evidence, safety hooks, configuration, cleanup/reap,
   abandonment, portable host guidance, evidence, receipts, and passive
   retrospectives.
-- **NORMALIZE:** every preserved behavior crosses the V2 observation, resolution,
+- **NORMALIZE:** every preserved behavior crosses Boatstack observation, resolution,
   admission, effect, verification, and receipt contracts. Commands and output
   text may change. Machine state, schemas, file layouts, Go APIs, and adapter
   protocols may change without compatibility shims. Visual capture is the
@@ -294,10 +294,10 @@ Observable behavior is classified only as follows:
   insight/capture writers, and every other accidental or unsafe V1 behavior.
 
 There is deliberately no backward-compatibility promise. Historical behavior is
-evidence about product value and failure classes, not a language or API that V2
+evidence about product value and failure classes, not a language or API that Boatstack
 must refine. Existing repositories may be reinstalled or reattached. Committed
 plans, specifications, approvals, evidence, PR briefs, configuration, and policy
-are read as product inputs when they satisfy V2 schemas; accidental V1 machine
+are read as product inputs when they satisfy Boatstack schemas; accidental V1 machine
 state is discarded.
 
 ## 2. Historical failure synthesis
@@ -310,12 +310,12 @@ The history through PR #185 converges on one structural diagnosis:
 
 Local repairs repeatedly added a distinction or precedence rule to one resolver
 while another resolver, renderer, writer, or host retained a different model.
-The V2 class-eliminating change is not another precedence rule. It is one runtime
+The Boatstack class-eliminating change is not another precedence rule. It is one runtime
 snapshot, one transition registry, one supervisor, one admission path, one effect
 boundary, and one independently verified receipt protocol.
 
 The detailed episode inventory and fixture mapping are in Appendix A. The
-structural classes carried into V2 are:
+structural classes carried into Boatstack are:
 
 - control-insufficient state projection;
 - split transition, identity, configuration, and completion authority;
@@ -478,7 +478,7 @@ They are one of:
 - `observed-external` (`Sigma_u`): the plant changed outside Boatstack;
 - `recovery` (`Sigma_c`): a bounded resume, rollback, reconcile, escalation, or
   abandonment event. External effects that have no proven inverse reconcile or
-  escalate; V2 does not register a generic fake compensation;
+  escalate; Boatstack does not register a generic fake compensation;
 - `query`: a read-only surface operation that cannot alter kernel state and is
   not counted as a managed transition.
 
@@ -519,8 +519,8 @@ and reachability. CLI verbs and handlers map to IDs; they are not IDs. POSIX,
 PowerShell, SDK/MCP, and host instructions are renderings of the same typed
 prescription. The registry is executable runtime authority, not a shadow model.
 
-The checked [catalog table](boatstack-v2-transition-catalog.md) and
-[Mermaid graph](boatstack-v2-transition-catalog.mmd) are deterministic
+The checked [catalog table](boatstack-transition-catalog.md) and
+[Mermaid graph](boatstack-transition-catalog.mmd) are deterministic
 projections of this registry. Golden tests reject either artifact when it drifts.
 The checked [StandardFlow graph](boatstack-standard-flow.mmd) filters that same
 compiled registry by control-program origin and contains exactly 30 transitions;
@@ -700,7 +700,7 @@ cannot resume the flow without a new objective or registered correction transiti
 
 ## 14. Package and dependency architecture
 
-All V2 implementation lives below `boatstack/`; the top-level `boatstack` package
+All Boatstack implementation lives below `boatstack/`; the top-level `boatstack` package
 is a product facade with no independent durable state or decision law.
 Dependencies point downward in this table and are acyclic.
 
@@ -826,13 +826,13 @@ the catalog to code. They are theorem-only or advisory, not live-system proof.
 | `control.supervisory-rw` | full-observation internal model controllable | theorem-only | bind internal events to catalog |
 | `control.diagnosability` | partial surface projection diagnosable | theorem-only | consumer parity fixtures |
 | `control.supervisory-rw` on partial observation | refused because unobservable events make that operator inapplicable | correct refusal | diagnosability is the applicable surface claim |
-| `verification.conservative-feature-extension` | refused: `intentional-redesign` | correct refusal | none; V2 has no compatibility obligation |
-| `verification.trace-refinement` | corrected abstract protocol refines a minimal control envelope | non-normative theorem-only | not a V2 release gate or V1 compatibility claim |
+| `verification.conservative-feature-extension` | refused: `intentional-redesign` | correct refusal | none; Boatstack has no compatibility obligation |
+| `verification.trace-refinement` | corrected abstract protocol refines a minimal control envelope | non-normative theorem-only | not a Boatstack release gate or V1 compatibility claim |
 
 Derivation `drv-bbc6258499be4e1739a9d344f1d211682476da18be46c4bcee80227ed55f7d82`
 has current claim `theorem-only`. The explicit `verified` frontier terminates as
 `work-remaining`; rank 1 is
-`discharge-obligation:control.nonblockingness:event-completeness`. V2 therefore
+`discharge-obligation:control.nonblockingness:event-completeness`. Boatstack therefore
 cannot claim verified liveness until the real reader/writer/event/surface
 inventory is bound and accepted.
 
@@ -850,8 +850,8 @@ Capability analysis records three separate dispositions without modifying Locus:
 ### Locus postimplementation disposition
 
 The executable registry now deterministically generates the checked
-[safety model](boatstack-v2-locus-safety.json) and
-[liveness model](boatstack-v2-locus-liveness.json). Both contain exactly the 63
+[safety model](boatstack-locus-safety.json) and
+[liveness model](boatstack-locus-liveness.json). Both contain exactly the 63
 runtime events. The liveness abstraction expands the declared phase predicates
 to 496 inferred stable-phase edges over eight reachable phases; the safety
 model adds one guarded counterfactual edge and `UNADMITTED_EFFECT` state.
@@ -885,7 +885,7 @@ branches, arbitrary third-party extension executables, fresh coding-host
 execution, operating-system interruption behavior, and external-provider truth
 remain executable integration evidence rather than whole-host formal proof.
 
-## 18. Complete V2 replacement work order
+## 18. Complete Boatstack replacement work order
 
 This is one atomic branch and one final PR. The order controls build safety, not
 rollout compatibility.
@@ -910,7 +910,7 @@ rollout compatibility.
 10. Update public docs and one release note, verify the exact pushed head, and
     open one concise PR. Do not merge.
 
-Both logical slices must be present before any V2 runtime is publishable. No
+Both logical slices must be present before any Boatstack runtime is publishable. No
 partial package rollout, feature flag, fallback, shadow execution, or second PR
 is permitted.
 
@@ -931,7 +931,7 @@ The final tree must delete, not retain “just in case”:
 - effect authority or direct managed writers in activation, planning, plan,
   delivery, mutation, configuration, runtime, publication, update, safety,
   recovery, attach/detach, init/provision, visual publication, and helper command
-  paths; pure algorithms may survive only behind V2 ports;
+  paths; pure algorithms may survive only behind Boatstack ports;
 - direct workflow dispatch in `cmd/boatstack-helper`;
 - handwritten host/shell prescriptions that duplicate registry knowledge;
 - path-only effect APIs, first-match alias resolution, ambient engagement, saved-
@@ -945,7 +945,7 @@ product operation needs an adapter, it targets the new facade/protocol directly.
 
 ## 20. Completion criteria
 
-V2 is complete only when all criteria are evidenced at the exact final head.
+Boatstack is complete only when all criteria are evidenced at the exact final head.
 
 Architecture: one runtime kernel, catalog, observer, explicit identity,
 admission path, receipt model, recovery model, and objective model own their respective
@@ -962,7 +962,7 @@ without progress/recovery/frontier/safe terminal; zero consumer prescription
 disagreements; zero accepted failed postconditions or mixed epochs; zero default
 cleanup of unpublished/unresolved work; zero stale prescription admissions.
 
-Behavior: valuable workflows remain possible through V2; safety is equal or
+Behavior: valuable workflows remain possible through Boatstack; safety is equal or
 stronger; the historical corpus passes; adapted full Go and repository contract
 tests pass; race tests pass; Windows/macOS/Linux compile/check jobs pass; POSIX
 and PowerShell are semantically equivalent; all hosts consume kernel decisions.
@@ -970,11 +970,11 @@ and PowerShell are semantically equivalent; all hosts consume kernel decisions.
 Formal closure: the executable catalog is the checked model; event, writer, and
 consumer inventories are complete; Locus safety and live coreachability results
 are supported by observed code evidence; the explicit `verified` frontier is
-`target-met` or any remaining action is proved outside the declared V2 target.
+`target-met` or any remaining action is proved outside the declared Boatstack target.
 
 Documentation and delivery: this specification matches code; diagrams are
 generated from the registry; public claims bind to tests; one release note
-describes V2; one final PR has exact-head green CI; the PR is not automatically
+describes Boatstack; one final PR has exact-head green CI; the PR is not automatically
 merged.
 
 ## Appendix A. Historical control-law episodes and regression corpus
@@ -984,7 +984,7 @@ expected admitted transition, expected postcondition, forbidden transition,
 source provenance, and failure class. Rows may share a stronger class fixture,
 but every cited PR has an explicit provenance edge.
 
-| Episode/provenance | Symptom and missing distinction | Split/mis-owned authority | V2 structural repair | Required fixture / removed accident |
+| Episode/provenance | Symptom and missing distinction | Split/mis-owned authority | Boatstack structural repair | Required fixture / removed accident |
 | --- | --- | --- | --- | --- |
 | Initialization and repair, PRs #35-#37 | Partial initialization and repair could leave mixed or misleading state | Filesystem writes vs installed binding/runtime | Journaled staged initialization with binding last and verified receipt | Fail every write boundary; remove repair-by-presence |
 | Run/recovery, PRs #38-#39 | Interrupted commands could strand progress | Command success vs recovery state | Recovery is catalog state with bounded resume/rollback | Restart at each interruption; remove exception-path recovery |

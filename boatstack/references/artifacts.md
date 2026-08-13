@@ -1,4 +1,4 @@
-# V2 artifact ownership
+# Boatstack artifact ownership
 
 Repository artifacts live below `.boatstack/` and are written only by
 registered effects:

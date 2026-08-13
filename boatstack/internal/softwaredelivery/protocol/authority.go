@@ -86,7 +86,7 @@ func (b AuthorityBundle) GrantedCapabilities(now time.Time) []catalog.Capability
 func DeriveRepositoryAuthority(snapshot model.Snapshot, bundle AuthorityBundle, now time.Time) (AuthorityBundle, error) {
 	for _, receipt := range bundle.Receipts {
 		if receipt.Class == catalog.AuthorityRepository {
-			return AuthorityBundle{}, fmt.Errorf("repository authority must be derived once by the V2 kernel")
+			return AuthorityBundle{}, fmt.Errorf("repository authority must be derived once by Boatstack kernel")
 		}
 	}
 	if snapshot.Configuration.Status != model.FactKnown || snapshot.Configuration.Value != model.ConfigurationVerified {

@@ -1,6 +1,6 @@
-# Boatstack V2 configuration
+# Boatstack configuration
 
-`.boatstack/project.json` is the repository-owned policy input. V2 accepts only
+`.boatstack/project.json` is the repository-owned policy input. Boatstack accepts only
 schema version 2. Unknown top-level fields, unsupported policy values, duplicate
 hosts, trailing JSON, and missing required fields fail closed.
 
@@ -127,4 +127,4 @@ boatstack attach --repo . --human alice \
 ```
 
 V1 configuration schemas are intentionally unsupported. Reinstall or supply a
-new V2 document; no compatibility conversion runs.
+new Boatstack document; no compatibility conversion runs.

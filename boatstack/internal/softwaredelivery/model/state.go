@@ -165,7 +165,7 @@ func (s ConfigurationState) Valid() bool {
 	}
 }
 
-// ConfigurationPolicy is the control-relevant projection of the strict V2
+// ConfigurationPolicy is the control-relevant projection of the strict Boatstack
 // project document. Keeping it in the canonical snapshot prevents policy bytes
 // from being validated but then ignored by admission or terminal logic.
 type ConfigurationPolicy struct {

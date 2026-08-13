@@ -1,6 +1,6 @@
 # Configuration schema
 
-Boatstack V2 accepts only `.boatstack/project.json` schema version 2. The
+Boatstack accepts only `.boatstack/project.json` schema version 2. The
 normative Go decoder is
 `internal/softwaredelivery/protocol.DecodeProjectConfig`; the public example is
 `project.example.json`.

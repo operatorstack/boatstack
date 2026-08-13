@@ -1,4 +1,4 @@
-# V2 files and ownership
+# Boatstack files and ownership
 
 ## Committed product evidence
 
@@ -6,7 +6,7 @@ Boatstack may create these reviewable paths through registered effects:
 
 | Path | Owner | Meaning |
 |---|---|---|
-| `.boatstack/project.json` | repository policy | strict V2 configuration |
+| `.boatstack/project.json` | repository policy | strict Boatstack configuration |
 | `.boatstack/plans/<delivery>.source` | plan effect | exact source plan bytes |
 | `.boatstack/approvals/<delivery>.json` | approval effect | plan-fingerprint and actor receipt |
 | `.boatstack/evidence/<delivery>/*.json` | gate/evidence effects | revision-bound build, test, review, journey, change, or visual evidence |
@@ -43,6 +43,19 @@ a parent-directory symlink swap cannot redirect them outside the repository.
 
 ## Machine-local controller state
 
+Boatstack uses only these canonical roots:
+
+| Context | Root |
+|---|---|
+| embedded | `<git-common>/boatstack` |
+| explicit state base | `<BOATSTACK_STATE_ROOT>/boatstack` |
+| macOS | `~/Library/Application Support/boatstack` |
+| XDG | `$XDG_STATE_HOME/boatstack` |
+
+It does not read or migrate generation-labelled roots. A run delegation record
+lives under the external repository and Git-common Flow root. It is bound to
+one run and protected by its own lock before controller or effect locks.
+
 Embedded worktree state is partitioned under the Git common directory.
 Detached and hybrid state is partitioned under the platform state directory.
 Clone-family journals, locks, receipts, and event streams use a repository ID
@@ -53,7 +66,7 @@ Workspace transfer writes both the parked source state and destination state in
 one staged manifest. Recovery journals are clone-shared so interruption remains
 discoverable even if a worktree was removed.
 
-All V1 machine state is unsupported and may be deleted. V2 never searches for or
+All V1 machine state is unsupported and may be deleted. Boatstack never searches for or
 falls back to it.
 
 ## Generated architecture evidence
@@ -63,11 +76,11 @@ architecture artifacts:
 
 | Artifact | Regeneration command |
 |---|---|
-| `docs/architecture/boatstack-v2-transition-catalog.md` | `boatstack-helper catalog --format markdown` |
-| `docs/architecture/boatstack-v2-transition-catalog.mmd` | `boatstack-helper catalog --format mermaid` |
+| `docs/architecture/boatstack-transition-catalog.md` | `boatstack-helper catalog --format markdown` |
+| `docs/architecture/boatstack-transition-catalog.mmd` | `boatstack-helper catalog --format mermaid` |
 | `docs/architecture/boatstack-standard-flow.mmd` | `boatstack-helper catalog --format standard-flow-mermaid` |
-| `docs/architecture/boatstack-v2-locus-safety.json` | `boatstack-helper catalog --format locus-safety` |
-| `docs/architecture/boatstack-v2-locus-liveness.json` | `boatstack-helper catalog --format locus-liveness` |
+| `docs/architecture/boatstack-locus-safety.json` | `boatstack-helper catalog --format locus-safety` |
+| `docs/architecture/boatstack-locus-liveness.json` | `boatstack-helper catalog --format locus-liveness` |
 
 Repository and Go tests compare every checked byte with a fresh render and
 require both Locus alphabets to equal all 63 executable catalog transitions.

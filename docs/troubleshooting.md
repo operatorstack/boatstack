@@ -1,4 +1,4 @@
-# Troubleshooting Boatstack V2
+# Troubleshooting Boatstack
 
 ## Doctor reports configuration drift
 
