@@ -570,6 +570,56 @@ func TestFlowEntryBindsStableRunAndResumesManagedPlan(t *testing.T) {
 	}
 }
 
+func TestFlowEntryPreservesSelectedPlanFilenameBeforeMaterialization(t *testing.T) {
+	// control-law: an-admitted-plan-filename-remains-resolvable-for-the-same-run
+	repository := flowRepository(t)
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery.MD", []byte("exact plan"))
+	initial, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := bindFlowEntry(context.Background(), commandOptions{
+		repository: repository, programID: "product-delivery", entryID: "run", runID: initial.runID, host: "codex",
+		deliveryID: initial.deliveryID, objectiveKind: initial.objectiveKind, objectiveID: initial.objectiveID, transitionID: "plan.create",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parameters, err := parseParameters(resumed.parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := filepath.Join(initial.repository, ".boatstack", "plans", "inbox", "delivery.MD")
+	if source, ok := parameters.Get("source_path"); !ok || source != expected {
+		t.Fatalf("resumed source = %q, present=%t; want %q", source, ok, expected)
+	}
+}
+
+func TestFlowEntryRejectsAmbiguousPlanFilenameOnResume(t *testing.T) {
+	// control-law: a-run-cannot-resume-through-a-different-case-colliding-plan-identity
+	repository := flowRepository(t)
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery.MD", []byte("selected plan"))
+	initial, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery.md", []byte("different plan"))
+	entries, err := os.ReadDir(filepath.Join(repository, ".boatstack", "plans", "inbox"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Skip("filesystem does not preserve case-colliding filenames")
+	}
+	_, err = bindFlowEntry(context.Background(), commandOptions{
+		repository: repository, programID: "product-delivery", entryID: "run", runID: initial.runID, host: "codex",
+		deliveryID: initial.deliveryID, objectiveKind: initial.objectiveKind, objectiveID: initial.objectiveID, transitionID: "plan.create",
+	})
+	if err == nil || !strings.Contains(err.Error(), "FLOW_INPUT_INVALID") {
+		t.Fatalf("ambiguous resume result = %v", err)
+	}
+}
+
 func TestFlowEntryRejectsObjectiveSubstitutionWithinRun(t *testing.T) {
 	// control-law: one-flow-run-retains-one-exact-product-objective
 	repository := flowRepository(t)

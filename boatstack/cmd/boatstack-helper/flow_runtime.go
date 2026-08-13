@@ -190,9 +190,33 @@ func resolveBoundPlan(repository string, entry controlprogram.Entry, options com
 	if err != nil {
 		return "", "", err
 	}
-	selected := filepath.Join(inbox, options.deliveryID+".md")
-	resolved, err := resolveRegularRepositoryFile(repository, selected, "active run inbox plan")
+	resolved, err := resolveActiveInboxPlan(repository, inbox, options.deliveryID)
 	return resolved, options.deliveryID, err
+}
+
+func resolveActiveInboxPlan(repository, inbox, deliveryID string) (string, error) {
+	entries, err := os.ReadDir(inbox)
+	if err != nil {
+		return "", fmt.Errorf("FLOW_INPUT_REQUIRED: active run inbox is unavailable: %w", err)
+	}
+	var candidates []string
+	for _, candidate := range entries {
+		extension := filepath.Ext(candidate.Name())
+		if candidate.Type()&os.ModeSymlink != 0 || candidate.IsDir() || !strings.EqualFold(extension, ".md") || strings.TrimSuffix(candidate.Name(), extension) != deliveryID {
+			continue
+		}
+		info, infoErr := candidate.Info()
+		if infoErr == nil && info.Mode().IsRegular() {
+			candidates = append(candidates, candidate.Name())
+		}
+	}
+	if len(candidates) == 0 {
+		return "", fmt.Errorf("FLOW_INPUT_REQUIRED: active run inbox plan %q is unavailable", deliveryID)
+	}
+	if len(candidates) != 1 {
+		return "", fmt.Errorf("FLOW_INPUT_INVALID: active run inbox plan %q is ambiguous", deliveryID)
+	}
+	return resolveRegularRepositoryFile(repository, filepath.Join(inbox, candidates[0]), "active run inbox plan")
 }
 
 func resolveRegularRepositoryFile(repository, path, label string) (string, error) {
