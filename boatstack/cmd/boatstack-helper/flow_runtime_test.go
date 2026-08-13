@@ -12,6 +12,7 @@ import (
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
+	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
@@ -382,6 +383,148 @@ func TestFlowCompileRefusesUnmanagedGeneratedSkill(t *testing.T) {
 	}
 }
 
+func TestFlowCompileRejectsForgedArtifactOwnership(t *testing.T) {
+	// control-law: repository-artifacts-cannot-grant-generated-output-ownership
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+	repository, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := productDeliveryDocument("product-delivery")
+	documentRaw, _ := json.Marshal(document)
+	source, lock := []byte("declarative source"), []byte("lock")
+	writeFixture(t, repository, ".git/keep", nil)
+	writeFixture(t, repository, ".boatstack/flows/product-delivery.flow.ts", source)
+	writeFixture(t, repository, "package-lock.json", lock)
+	writeFixture(t, repository, "raw-ir.json", documentRaw)
+	unrelatedPath := ".agents/skills/unrelated/SKILL.md"
+	unrelated := []byte("user-owned skill")
+	writeFixture(t, repository, unrelatedPath, unrelated)
+	resolver, _ := softwareflow.NewResolver(context.Background())
+	compiled, _ := controlprogram.Compile(document, resolver)
+	skills, _ := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
+	for path, content := range skills {
+		writeFixture(t, repository, path, content)
+	}
+	forged, _, err := controlprogram.NewArtifact(compiled, controlprogram.ArtifactInput{
+		CompilerVersion: flowCompilerVersion, SourcePath: ".boatstack/flows/product-delivery.flow.ts", Source: source,
+		DependencyLockPath: "package-lock.json", DependencyLock: lock, GeneratedSkills: skills,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	forged.GeneratedSkills[unrelatedPath] = fileDigest(unrelated)
+	forgedRaw, _ := json.Marshal(forged)
+	writeFixture(t, repository, ".boatstack/flows/product-delivery.flow.ir.json", forgedRaw)
+	frontend := filepath.Join(repository, "frontend.sh")
+	if err := os.WriteFile(frontend, []byte("#!/bin/sh\ncat >/dev/null\ncat '"+filepath.Join(repository, "raw-ir.json")+"'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	err = compileFlow(context.Background(), flowCommandOptions{repository: repository, source: ".boatstack/flows/product-delivery.flow.ts", lock: "package-lock.json", frontend: frontend})
+	if err == nil || !strings.Contains(err.Error(), "FLOW_PROJECTION") {
+		t.Fatalf("forged ownership result = %v", err)
+	}
+	if actual, readErr := os.ReadFile(filepath.Join(repository, filepath.FromSlash(unrelatedPath))); readErr != nil || !bytes.Equal(actual, unrelated) {
+		t.Fatalf("unrelated skill changed: %q, %v", actual, readErr)
+	}
+}
+
+func TestFlowExecutionLeaseSerializesProjectionPublicationThroughEffect(t *testing.T) {
+	// control-law: official-flow-publication-cannot-cross-apply-or-recovery
+	repository, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, repository, ".git/keep", nil)
+	lease, err := acquireFlowExecutionLease(surfaces.Request{ProgramID: "product-delivery", Operation: surfaces.OperationApply, Repository: repository})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(repository, ".boatstack", "flows", "product-delivery.flow.ir.json")
+	err = boatstackruntime.ApplyFlowProjection(repository, []boatstackruntime.ProjectionWrite{{Path: target, Content: []byte("program B"), Mode: 0o644}}, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "FLOW_PROJECTION_BUSY") {
+		t.Fatalf("publication during effect result = %v", err)
+	}
+	if _, statErr := os.Stat(target); !os.IsNotExist(statErr) {
+		t.Fatalf("blocked publication changed artifact: %v", statErr)
+	}
+	lease.Release()
+}
+
+func TestFlowValidationRejectsMissingProductionRecoveryClosure(t *testing.T) {
+	// control-law: published-flows-close-recovery-in-the-production-composition
+	document := productDeliveryDocument("product-delivery")
+	document.Operators[0] = controlprogram.Operator{ID: "publication.execute", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/publication.execute", Version: "1"}}
+	document.Transitions[0] = controlprogram.Transition{ID: "publication.execute", Operator: "publication.execute", Guard: document.Transitions[0].Guard, Target: document.Transitions[0].Target, Priority: 77}
+	resolver, err := softwareflow.NewResolver(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := resolver.ResolveOperator("software-delivery/publication.execute", "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared := map[string]bool{}
+	for _, facet := range document.Facets {
+		declared[facet.ID] = true
+	}
+	for _, precondition := range resolved.StateEffect.Preconditions {
+		if !declared[precondition.Facet] {
+			document.Facets = append(document.Facets, controlprogram.Facet{ID: precondition.Facet, Kind: "string"})
+			declared[precondition.Facet] = true
+		}
+	}
+	for _, assignment := range resolved.StateEffect.Assignments {
+		if !declared[assignment.Facet] {
+			document.Facets = append(document.Facets, controlprogram.Facet{ID: assignment.Facet, Kind: "string"})
+			declared[assignment.Facet] = true
+		}
+	}
+	compiled, err := controlprogram.Compile(document, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateSoftwareFlow(context.Background(), t.TempDir(), compiled, resolver); err == nil || !strings.Contains(err.Error(), "FLOW_RUNTIME_INVALID") {
+		t.Fatalf("missing recovery closure result = %v", err)
+	}
+}
+
+func TestFlowCompileRetiresProjectionWhenSourceChangesProgramID(t *testing.T) {
+	// control-law: one-flow-source-owns-one-current-program-projection
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+	repository, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourcePath := ".boatstack/flows/delivery.flow.ts"
+	writeFixture(t, repository, ".git/keep", nil)
+	writeFixture(t, repository, sourcePath, []byte("declarative source"))
+	writeFixture(t, repository, "package-lock.json", []byte("lock"))
+	frontend := filepath.Join(repository, "frontend.sh")
+	if err := os.WriteFile(frontend, []byte("#!/bin/sh\ncat >/dev/null\ncat '"+filepath.Join(repository, "raw-ir.json")+"'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, programID := range []string{"foo", "bar"} {
+		raw, _ := json.Marshal(productDeliveryDocument(programID))
+		writeFixture(t, repository, "raw-ir.json", raw)
+		if err := compileFlow(context.Background(), flowCommandOptions{repository: repository, source: sourcePath, lock: "package-lock.json", frontend: frontend}); err != nil {
+			t.Fatalf("compile %s: %v", programID, err)
+		}
+	}
+	for _, stale := range []string{".boatstack/flows/foo.flow.ir.json", ".agents/skills/foo-run/SKILL.md", ".agents/skills/foo-run/agents/openai.yaml", ".claude/skills/foo-run/SKILL.md"} {
+		if _, err := os.Stat(filepath.Join(repository, filepath.FromSlash(stale))); !os.IsNotExist(err) {
+			t.Fatalf("stale projection remains at %s: %v", stale, err)
+		}
+	}
+	if err := checkFlow(context.Background(), flowCommandOptions{repository: repository}); err != nil {
+		t.Fatalf("renamed projection check failed: %v", err)
+	}
+}
+
 func TestFlowCompileAndCheckRejectRuntimeInvalidSoftwareFlow(t *testing.T) {
 	// control-law: compiled-and-checked-artifacts-are-admissible-by-the-production-adapter
 	if runtime.GOOS == "windows" {
@@ -714,7 +857,11 @@ func TestFlowEntryRejectsPlanInboxSymlinkEscape(t *testing.T) {
 
 func TestFlowCompileRetiresOnlyUnmodifiedPriorGeneratedSkills(t *testing.T) {
 	// control-law: removing-an-entry-cannot-leave-a-stale-authority-bearing-skill
-	repository := t.TempDir()
+	repository, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, repository, ".git/keep", nil)
 	retained := []byte("retained")
 	retired := []byte("retired")
 	retainedPath := ".agents/skills/program-keep/SKILL.md"
@@ -734,24 +881,38 @@ func TestFlowCompileRetiresOnlyUnmodifiedPriorGeneratedSkills(t *testing.T) {
 	}
 	artifactPath := filepath.Join(repository, ".boatstack", "flows", "program.flow.ir.json")
 	writeFixture(t, repository, ".boatstack/flows/program.flow.ir.json", raw)
-	paths, artifactExpectation, priorSkills, err := obsoleteGeneratedSkills(repository, artifactPath, map[string]string{retainedPath: fileDigest(retained)})
+	sourcePath := ".boatstack/flows/program.flow.ts"
+	priorOwnership, err := boatstackruntime.LoadFlowProjectionOwnership(repository, sourcePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(paths) != 1 || paths[0].Path != filepath.Join(repository, filepath.FromSlash(retiredPath)) || !artifactExpectation.Exists {
+	ownership := boatstackruntime.NewFlowProjectionOwnership(sourcePath, ".boatstack/flows/program.flow.ir.json", raw, map[string][]byte{retainedPath: retained, retiredPath: retired})
+	if err := boatstackruntime.ApplyOwnedFlowProjection(repository, []boatstackruntime.ProjectionWrite{
+		{Path: filepath.Join(repository, filepath.FromSlash(retainedPath)), Content: retained, Mode: 0o600},
+		{Path: filepath.Join(repository, filepath.FromSlash(retiredPath)), Content: retired, Mode: 0o600},
+		{Path: artifactPath, Content: raw, Mode: 0o600, PublishLast: true},
+	}, nil, nil, priorOwnership, ownership); err != nil {
+		t.Fatal(err)
+	}
+	paths, artifactPrevious, priorSkills, _, err := ownedProjectionChanges(repository, sourcePath, artifactPath, map[string]string{retainedPath: fileDigest(retained)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 1 || paths[0].Path != filepath.Join(repository, filepath.FromSlash(retiredPath)) || artifactPrevious != fileDigest(raw) {
 		t.Fatalf("retired paths = %v", paths)
 	}
 	if priorSkills[retainedPath] != fileDigest(retained) || priorSkills[retiredPath] != fileDigest(retired) {
 		t.Fatalf("prior generated skills = %v", priorSkills)
 	}
 	writeFixture(t, repository, retiredPath, []byte("user changed"))
-	if _, _, _, err := obsoleteGeneratedSkills(repository, artifactPath, map[string]string{retainedPath: fileDigest(retained)}); err == nil || !strings.Contains(err.Error(), "was modified") {
-		t.Fatalf("modified retired projection was not protected: %v", err)
+	paths, _, _, _, err = ownedProjectionChanges(repository, sourcePath, artifactPath, map[string]string{retainedPath: fileDigest(retained)})
+	if err != nil || len(paths) != 1 {
+		t.Fatalf("owned retirement plan = %v, %v", paths, err)
 	}
 	if err := os.Remove(filepath.Join(repository, filepath.FromSlash(retiredPath))); err != nil {
 		t.Fatal(err)
 	}
-	paths, _, _, err = obsoleteGeneratedSkills(repository, artifactPath, map[string]string{retainedPath: fileDigest(retained)})
+	paths, _, _, _, err = ownedProjectionChanges(repository, sourcePath, artifactPath, map[string]string{retainedPath: fileDigest(retained)})
 	if err != nil || len(paths) != 1 || !paths[0].AllowMissing {
 		t.Fatalf("interrupted retirement was not retryable: %v, %v", paths, err)
 	}

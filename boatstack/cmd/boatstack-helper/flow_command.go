@@ -13,7 +13,10 @@ import (
 	"sort"
 	"strings"
 
+	boatstack "github.com/operatorstack/boatstack/boatstack"
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
+	"github.com/operatorstack/boatstack/boatstack/core"
+	"github.com/operatorstack/boatstack/boatstack/delivery"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 )
@@ -108,7 +111,7 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := validateSoftwareFlow(ctx, compiled, resolver); err != nil {
+	if err := validateSoftwareFlow(ctx, options.repository, compiled, resolver); err != nil {
 		return err
 	}
 	artifactPath, err := resolveArtifactPath(options.repository, options.artifact, compiled.Document.Program.ID)
@@ -128,7 +131,7 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 	if err != nil {
 		return err
 	}
-	obsoleteSkills, artifactExpectation, priorSkills, err := obsoleteGeneratedSkills(options.repository, artifactPath, artifact.GeneratedSkills)
+	removals, artifactPrevious, priorSkills, ownership, err := ownedProjectionChanges(options.repository, filepath.ToSlash(sourceRelative), artifactPath, artifact.GeneratedSkills)
 	if err != nil {
 		return err
 	}
@@ -148,14 +151,15 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 		})
 	}
 	writes = append(writes, boatstackruntime.ProjectionWrite{
-		Path: artifactPath, Content: artifactRaw, Mode: 0o644, ExpectedPreviousSHA256: artifactExpectation.ExpectedSHA256, PublishLast: true,
+		Path: artifactPath, Content: artifactRaw, Mode: 0o644, ExpectedPreviousSHA256: artifactPrevious, PublishLast: true,
 	})
 	expectations := []boatstackruntime.ProjectionExpectation{
 		{Path: source, Exists: true, ExpectedSHA256: fileDigest(sourceRaw)},
 		{Path: lockPath, Exists: true, ExpectedSHA256: fileDigest(lockRaw)},
-		artifactExpectation,
 	}
-	if err := boatstackruntime.ApplyFlowProjection(options.repository, writes, obsoleteSkills, expectations); err != nil {
+	artifactRelative, _ := filepath.Rel(options.repository, artifactPath)
+	nextOwnership := boatstackruntime.NewFlowProjectionOwnership(filepath.ToSlash(sourceRelative), filepath.ToSlash(artifactRelative), artifactRaw, skills)
+	if err := boatstackruntime.ApplyOwnedFlowProjection(options.repository, writes, removals, expectations, ownership, nextOwnership); err != nil {
 		return err
 	}
 	return renderFlowResult("compiled", artifactPath, artifact)
@@ -169,53 +173,36 @@ func requireUnchangedCompileInput(path string, expected []byte) error {
 	return nil
 }
 
-func obsoleteGeneratedSkills(repository, artifactPath string, next map[string]string) ([]boatstackruntime.ProjectionRemoval, boatstackruntime.ProjectionExpectation, map[string]string, error) {
-	expectation := boatstackruntime.ProjectionExpectation{Path: artifactPath}
-	info, err := os.Lstat(artifactPath)
-	if os.IsNotExist(err) {
-		return nil, expectation, map[string]string{}, nil
+func ownedProjectionChanges(repository, sourceRelative, artifactPath string, next map[string]string) ([]boatstackruntime.ProjectionRemoval, string, map[string]string, boatstackruntime.FlowProjectionOwnershipSnapshot, error) {
+	ownership, err := boatstackruntime.LoadFlowProjectionOwnership(repository, sourceRelative)
+	if err != nil || !ownership.Exists() {
+		return nil, "", map[string]string{}, ownership, err
 	}
-	if err != nil {
-		return nil, expectation, nil, err
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return nil, expectation, nil, fmt.Errorf("CONTROL_PROGRAM_STALE: existing artifact is not a regular file")
-	}
-	raw, err := os.ReadFile(artifactPath)
-	if err != nil {
-		return nil, expectation, nil, err
-	}
-	expectation.Exists = true
-	expectation.ExpectedSHA256 = fileDigest(raw)
-	prior, err := controlprogram.LoadArtifact(bytes.NewReader(raw))
-	if err != nil {
-		return nil, expectation, nil, fmt.Errorf("CONTROL_PROGRAM_STALE: existing artifact cannot authorize projection replacement: %w", err)
-	}
-	retired := make([]boatstackruntime.ProjectionRemoval, 0)
+	prior := ownership.Record
+	retired := make([]boatstackruntime.ProjectionRemoval, 0, len(prior.GeneratedSkills)+1)
 	for relative, expected := range prior.GeneratedSkills {
 		if _, retained := next[relative]; retained {
 			continue
 		}
 		path, pathErr := exactRepositoryPath(repository, relative)
 		if pathErr != nil {
-			return nil, expectation, nil, pathErr
-		}
-		fileInfo, statErr := os.Lstat(path)
-		if os.IsNotExist(statErr) {
-			retired = append(retired, boatstackruntime.ProjectionRemoval{Path: path, ExpectedSHA256: expected, AllowMissing: true})
-			continue
-		}
-		if statErr != nil || fileInfo.Mode()&os.ModeSymlink != 0 || !fileInfo.Mode().IsRegular() {
-			return nil, expectation, nil, fmt.Errorf("CONTROL_PROGRAM_STALE: retired generated skill %s is not regular", relative)
-		}
-		content, readErr := os.ReadFile(path)
-		if readErr != nil || fileDigest(content) != expected {
-			return nil, expectation, nil, fmt.Errorf("CONTROL_PROGRAM_STALE: retired generated skill %s was modified", relative)
+			return nil, "", nil, ownership, pathErr
 		}
 		retired = append(retired, boatstackruntime.ProjectionRemoval{Path: path, ExpectedSHA256: expected, AllowMissing: true})
 	}
+	artifactRelative, _ := filepath.Rel(repository, artifactPath)
+	artifactPrevious := ""
+	if filepath.ToSlash(artifactRelative) == prior.ArtifactPath {
+		artifactPrevious = prior.ArtifactSHA256
+	} else {
+		priorArtifact, pathErr := exactRepositoryPath(repository, prior.ArtifactPath)
+		if pathErr != nil {
+			return nil, "", nil, ownership, pathErr
+		}
+		retired = append(retired, boatstackruntime.ProjectionRemoval{Path: priorArtifact, ExpectedSHA256: prior.ArtifactSHA256, AllowMissing: true})
+	}
 	sort.Slice(retired, func(i, j int) bool { return retired[i].Path < retired[j].Path })
-	return retired, expectation, prior.GeneratedSkills, nil
+	return retired, artifactPrevious, prior.GeneratedSkills, ownership, nil
 }
 
 func fileDigest(value []byte) string {
@@ -244,13 +231,13 @@ func checkFlow(ctx context.Context, options flowCommandOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := validateSoftwareFlow(ctx, compiled, resolver); err != nil {
+	if err := validateSoftwareFlow(ctx, options.repository, compiled, resolver); err != nil {
 		return err
 	}
 	return renderFlowResult("valid", artifactPath, artifact)
 }
 
-func validateSoftwareFlow(ctx context.Context, compiled controlprogram.Compiled, resolver softwareflow.Resolver) error {
+func validateSoftwareFlow(ctx context.Context, _ string, compiled controlprogram.Compiled, resolver softwareflow.Resolver) error {
 	for _, flowEntry := range compiled.Document.Entries {
 		if _, err := softwareflow.PlanInboxForEntry(flowEntry); err != nil {
 			return fmt.Errorf("FLOW_RUNTIME_INVALID: %w", err)
@@ -260,7 +247,7 @@ func validateSoftwareFlow(ctx context.Context, compiled controlprogram.Compiled,
 	if err != nil {
 		return fmt.Errorf("FLOW_RUNTIME_INVALID: %w", err)
 	}
-	if _, err := definition.RuntimeManifest(ctx); err != nil {
+	if _, err := delivery.Compile(ctx, delivery.CompileRequest{KernelVersion: boatstack.Version, Core: core.System(), Runtime: definition, Settings: map[string]string{"validation": "flow"}}); err != nil {
 		return fmt.Errorf("FLOW_RUNTIME_INVALID: %w", err)
 	}
 	return nil

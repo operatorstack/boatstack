@@ -178,12 +178,16 @@ func TestFlowCompilerMutationSitesMapToFlowCompileEvent(t *testing.T) {
 	root := sourceRoot(t)
 	expected := map[string]map[string]int{
 		"cmd/boatstack-helper/flow_command.go": {
-			"runtime.ApplyFlowProjection": 1,
+			"runtime.ApplyOwnedFlowProjection": 1,
 		},
 		"internal/runtime/flow_files.go": {
-			"os.OpenFile": 1,
+			"os.OpenFile": 1, "os.Remove": 1, "os.Rename": 1,
 			"os.Root.MkdirAll": 1, "os.Root.OpenFile": 1, "os.Root.Remove": 5, "os.Root.Rename": 3,
-			"os.File.Write": 1, "os.File.Chmod": 1,
+			"os.File.Write": 1, "os.File.Chmod": 2,
+		},
+		"internal/runtime/flow_ownership.go": {
+			"os.MkdirAll": 1, "os.OpenFile": 1, "os.Remove": 1,
+			"os.File.Write": 1,
 		},
 	}
 	for relative, wanted := range expected {
@@ -217,9 +221,9 @@ func TestFlowCompilerMutationSitesMapToFlowCompileEvent(t *testing.T) {
 				observed["os."+selector.Sel.Name]++
 			case owner.Name == "root" && rootWriterCallsForInventory(selector.Sel.Name):
 				observed["os.Root."+selector.Sel.Name]++
-			case owner.Name == "temporary" && fileWriterCallsForInventory(selector.Sel.Name):
+			case (owner.Name == "temporary" || owner.Name == "file") && fileWriterCallsForInventory(selector.Sel.Name):
 				observed["os.File."+selector.Sel.Name]++
-			case strings.HasSuffix(importPath, "/internal/runtime") && selector.Sel.Name == "ApplyFlowProjection":
+			case strings.HasSuffix(importPath, "/internal/runtime") && (selector.Sel.Name == "ApplyFlowProjection" || selector.Sel.Name == "ApplyOwnedFlowProjection"):
 				observed["runtime."+selector.Sel.Name]++
 			}
 			return true

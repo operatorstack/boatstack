@@ -76,6 +76,10 @@ func ApplyFlowProjection(repository string, writes []ProjectionWrite, removals [
 }
 
 func applyFlowProjection(repository string, writes []ProjectionWrite, removals []ProjectionRemoval, expectations []ProjectionExpectation, hooks projectionHooks) error {
+	return applyFlowProjectionWithOwnership(repository, writes, removals, expectations, hooks, nil)
+}
+
+func applyFlowProjectionWithOwnership(repository string, writes []ProjectionWrite, removals []ProjectionRemoval, expectations []ProjectionExpectation, hooks projectionHooks, ownership *flowProjectionOwnershipChange) error {
 	if !filepath.IsAbs(repository) || filepath.Clean(repository) != repository {
 		return fmt.Errorf("projection repository must be exact and absolute")
 	}
@@ -93,6 +97,14 @@ func applyFlowProjection(repository string, writes []ProjectionWrite, removals [
 		return err
 	}
 	defer lock.release()
+	if ownership != nil {
+		if ownership.prior.path == "" || ownership.next.SourcePath != ownership.prior.sourcePath || (ownership.prior.exists && ownership.prior.Record.SourcePath != ownership.next.SourcePath) {
+			return fmt.Errorf("FLOW_PROJECTION_OWNERSHIP_INVALID: provenance update does not identify one source")
+		}
+		if err := validateOwnershipSnapshot(ownership.prior); err != nil {
+			return err
+		}
+	}
 	writes = append([]ProjectionWrite(nil), writes...)
 	removals = append([]ProjectionRemoval(nil), removals...)
 	expectations = append([]ProjectionExpectation(nil), expectations...)
@@ -124,7 +136,7 @@ func applyFlowProjection(repository string, writes []ProjectionWrite, removals [
 			return err
 		}
 		if !projectionWriteAuthorized(snapshot, write) {
-			return fmt.Errorf("FLOW_PROJECTION_WRITE_UNAUTHORIZED: %s is not absent, exact crash residue, or authorized by the prior artifact", write.Path)
+			return fmt.Errorf("FLOW_PROJECTION_WRITE_UNAUTHORIZED: %s is not absent, exact crash residue, or authorized by kernel provenance", write.Path)
 		}
 		snapshots[write.Path] = snapshot
 	}
@@ -168,9 +180,13 @@ func applyFlowProjection(repository string, writes []ProjectionWrite, removals [
 	}
 
 	staged := make([]stagedProjection, 0, len(writes))
+	ownershipTemporary := ""
 	defer func() {
 		for _, value := range staged {
 			_ = root.Remove(value.temporary)
+		}
+		if ownershipTemporary != "" {
+			_ = os.Remove(ownershipTemporary)
 		}
 	}()
 	for _, write := range writes {
@@ -192,6 +208,12 @@ func applyFlowProjection(repository string, writes []ProjectionWrite, removals [
 			return err
 		}
 		staged = append(staged, stagedProjection{target: write.Path, temporary: temporary})
+	}
+	if ownership != nil {
+		ownershipTemporary, err = stageOwnership(ownership.prior, ownership.next)
+		if err != nil {
+			return err
+		}
 	}
 
 	changed := make([]string, 0, len(writes)+len(removals))
@@ -326,6 +348,14 @@ func applyFlowProjection(repository string, writes []ProjectionWrite, removals [
 				committed[value.target] = projectionSnapshot{path: value.target, exists: true, content: writes[index].Content, mode: writes[index].Mode.Perm()}
 			}
 			break
+		}
+	}
+	if commitErr == nil && ownership != nil {
+		if commitErr = validateOwnershipSnapshot(ownership.prior); commitErr == nil {
+			commitErr = os.Rename(ownershipTemporary, ownership.prior.path)
+			if commitErr == nil {
+				ownershipTemporary = ""
+			}
 		}
 	}
 	if commitErr == nil {

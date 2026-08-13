@@ -118,6 +118,11 @@ func run(arguments []string) error {
 	if err != nil {
 		return err
 	}
+	lease, err := acquireFlowExecutionLease(request)
+	if err != nil {
+		return err
+	}
+	defer lease.Release()
 	kernel, err := standardKernel(context.Background(), request)
 	if err != nil {
 		return err
@@ -176,6 +181,11 @@ func runRPC() error {
 	if err != nil {
 		return err
 	}
+	lease, err := acquireFlowExecutionLease(request)
+	if err != nil {
+		return err
+	}
+	defer lease.Release()
 	kernel, err := standardKernel(context.Background(), request)
 	if err != nil {
 		return err
@@ -347,6 +357,13 @@ func standardKernel(ctx context.Context, request surfaces.Request) (boatstack.De
 		return boatstack.DeliveryController{}, err
 	}
 	return boatstack.NewDeliveryController("", program)
+}
+
+func acquireFlowExecutionLease(request surfaces.Request) (*boatstackruntime.FlowProjectionLease, error) {
+	if request.ProgramID == "" || (request.Operation != surfaces.OperationApply && request.Operation != surfaces.OperationRecover) {
+		return &boatstackruntime.FlowProjectionLease{}, nil
+	}
+	return boatstackruntime.AcquireFlowProjectionLease(request.Repository)
 }
 
 func followEvents(kernel boatstack.DeliveryController, request surfaces.Request) error {
