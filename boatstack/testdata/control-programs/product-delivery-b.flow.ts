@@ -35,7 +35,7 @@ export default defineFlow({
     )),
   ],
   entries: [
-    entry("deliver", "published-pr", [inbox(".boatstack/plans/inbox")]),
-    entry("cancel", "safely-abandoned", [inbox(".boatstack/plans/inbox")]),
+    entry({ id: "deliver", target: "published-pr", inputs: [inbox(".boatstack/plans/inbox")] }),
+    entry({ id: "cancel", target: "safely-abandoned", inputs: [inbox(".boatstack/plans/inbox")] }),
   ],
 });

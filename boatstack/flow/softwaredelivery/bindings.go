@@ -18,6 +18,7 @@ import (
 )
 
 const BindingPrefix = "software-delivery/"
+const DelegationPrefix = BindingPrefix + "delegation/"
 
 type Resolver struct {
 	transitions map[string]delivery.Transition
@@ -47,6 +48,7 @@ func (r Resolver) ResolveOperator(reference, version string) (controlprogram.Res
 	if version != strconv.Itoa(transition.Version) {
 		return controlprogram.ResolvedOperator{}, fmt.Errorf("operator %q requires binding version %d", id, transition.Version)
 	}
+	transition.ExecutionContext = executionContextFor(transition)
 	fingerprint, err := transitionFingerprint(transition)
 	if err != nil {
 		return controlprogram.ResolvedOperator{}, err
@@ -55,17 +57,8 @@ func (r Resolver) ResolveOperator(reference, version string) (controlprogram.Res
 	for index, value := range transition.RequiredCapabilities {
 		capabilities[index] = string(value)
 	}
-	authoritySet := map[string]bool{}
-	for _, values := range [][]delivery.AuthorityClass{transition.Authority, transition.AuthorityAll} {
-		for _, value := range values {
-			authoritySet[string(value)] = true
-		}
-	}
-	authority := make([]string, 0, len(authoritySet))
-	for value := range authoritySet {
-		authority = append(authority, value)
-	}
-	sort.Strings(authority)
+	anyOf := authorityStrings(transition.Authority)
+	allOf := authorityStrings(transition.AuthorityAll)
 	effectSet := map[string]bool{}
 	if transition.Effect != "" {
 		effectSet[string(transition.Effect)] = true
@@ -81,9 +74,48 @@ func (r Resolver) ResolveOperator(reference, version string) (controlprogram.Res
 	}
 	sort.Strings(effects)
 	return controlprogram.ResolvedOperator{
-		Fingerprint: fingerprint, Capabilities: capabilities, Authority: authority, Effects: effects,
+		Fingerprint: fingerprint, Capabilities: capabilities,
+		Authority: controlprogram.AuthorityRequirement{AnyOf: anyOf, AllOf: allOf}, Effects: effects,
 		Verifier: transition.Verifier, Recovery: string(transition.Interruption.Recovery), StateEffect: projectStateEffect(transition.StateEffect),
+		ExecutionContext: executionContextFor(transition),
 	}, nil
+}
+
+func (r Resolver) ResolveDelegation(reference, version string) (controlprogram.ResolvedDelegation, error) {
+	authority, ok := strings.CutPrefix(reference, DelegationPrefix)
+	if !ok || authority != string(delivery.AuthorityAutonomy) || version != "1" {
+		return controlprogram.ResolvedDelegation{}, fmt.Errorf("unknown or nondelegable software-delivery delegation %q", reference)
+	}
+	payload := struct {
+		Reference   string   `json:"reference"`
+		Version     string   `json:"version"`
+		Authorities []string `json:"authorities"`
+	}{Reference: reference, Version: version, Authorities: []string{authority}}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return controlprogram.ResolvedDelegation{}, err
+	}
+	digest := sha256.Sum256(encoded)
+	return controlprogram.ResolvedDelegation{Fingerprint: hex.EncodeToString(digest[:]), Authorities: payload.Authorities, Delegable: true}, nil
+}
+
+func authorityStrings(values []delivery.AuthorityClass) []string {
+	result := make([]string, len(values))
+	result = result[:0]
+	for _, value := range values {
+		if value != delivery.AuthorityNone {
+			result = append(result, string(value))
+		}
+	}
+	sort.Strings(result)
+	return result
+}
+
+func executionContextFor(transition delivery.Transition) string {
+	if transition.ExecutionContext == "advance" {
+		return "advance"
+	}
+	return "preserve"
 }
 
 func (r Resolver) Transition(reference string) (delivery.Transition, bool) {
@@ -96,6 +128,8 @@ func (r Resolver) Transition(reference string) (delivery.Transition, bool) {
 	transition.SourceConditions = append([]delivery.FacetCondition(nil), transition.SourceConditions...)
 	transition.TargetConditions = append([]delivery.FacetCondition(nil), transition.TargetConditions...)
 	transition.RequiredCapabilities = append([]delivery.Capability(nil), transition.RequiredCapabilities...)
+	transition.Authority = append([]delivery.AuthorityClass(nil), transition.Authority...)
+	transition.AuthorityAll = append([]delivery.AuthorityClass(nil), transition.AuthorityAll...)
 	return transition, ok
 }
 

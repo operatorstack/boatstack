@@ -8,9 +8,9 @@
   "claims": [
     {
       "id": "one-authoritative-kernel",
-      "public_claim": "Every V2 lifecycle decision and managed effect crosses one executable transition registry and engine.",
+      "public_claim": "Every Boatstack lifecycle decision and managed effect crosses one executable transition registry and engine.",
       "status": "verified",
-      "readable_evidence": "architecture/boatstack-v2-kernel.md#14-package-and-dependency-architecture",
+      "readable_evidence": "architecture/boatstack-kernel.md#14-package-and-dependency-architecture",
       "implementation": [
         "../boatstack/internal/softwaredelivery/engine/engine.go",
         "../boatstack/delivery/control.go",
@@ -39,7 +39,7 @@
     },
     {
       "id": "transactional-recovery",
-      "public_claim": "V2 stages local resources, installs authority last, verifies a fresh target, and exposes interrupted work through a restart-safe journal.",
+      "public_claim": "Boatstack stages local resources, installs authority last, verifies a fresh target, and exposes interrupted work through a restart-safe journal.",
       "status": "verified",
       "readable_evidence": "safety.md#transaction-boundary",
       "implementation": [
@@ -57,7 +57,7 @@
       "id": "consumer-parity",
       "public_claim": "CLI, Cursor, Codex, Claude Code, Gemini CLI, MCP, and the Go SDK project the same transition prescription.",
       "status": "verified",
-      "readable_evidence": "architecture/boatstack-v2-kernel.md#15-cli-hook-sdk-mcp-and-host-adapter-contracts",
+      "readable_evidence": "architecture/boatstack-kernel.md#15-cli-hook-sdk-mcp-and-host-adapter-contracts",
       "implementation": [
         "../boatstack/internal/softwaredelivery/surfaces/protocol.go",
         "../boatstack/internal/softwaredelivery/surfaces/render.go",
@@ -89,7 +89,7 @@
       "id": "revision-bound-gate-proof",
       "public_claim": "Verified delivery requires current build, test, and review evidence; build and test execute guarded repository commands and generated proof cannot invalidate itself.",
       "status": "verified",
-      "readable_evidence": "architecture/boatstack-v2-kernel.md#11-verification-and-receipt-model",
+      "readable_evidence": "architecture/boatstack-kernel.md#11-verification-and-receipt-model",
       "implementation": [
         "../boatstack/internal/softwaredelivery/protocol/admission.go",
         "../boatstack/internal/softwaredelivery/effects/artifacts.go",
@@ -107,7 +107,7 @@
       "id": "privacy-safe-process-events",
       "public_claim": "The passive JSONL stream derives from real transition receipts and excludes prompts, source, diffs, documents, command output, and secrets.",
       "status": "verified",
-      "readable_evidence": "architecture/boatstack-v2-kernel.md#16-process-telemetry-contract",
+      "readable_evidence": "architecture/boatstack-kernel.md#16-process-telemetry-contract",
       "implementation": [
         "../boatstack/internal/softwaredelivery/effects/receipts.go",
         "../boatstack/delivery_controller.go"
@@ -140,11 +140,11 @@
       "id": "formal-live-system-closure",
       "public_claim": "The generated 63-event stable-phase abstraction satisfies the checked safety and liveness properties; executable tests separately bind catalog completeness, facets, reducer branches, operating-system behavior, and provider outcomes.",
       "status": "advisory",
-      "readable_evidence": "architecture/boatstack-v2-kernel.md#17-test-and-formal-property-strategy",
+      "readable_evidence": "architecture/boatstack-kernel.md#17-test-and-formal-property-strategy",
       "implementation": [
-        "architecture/boatstack-v2-transition-catalog.md",
-        "architecture/boatstack-v2-locus-safety.json",
-        "architecture/boatstack-v2-locus-liveness.json",
+        "architecture/boatstack-transition-catalog.md",
+        "architecture/boatstack-locus-safety.json",
+        "architecture/boatstack-locus-liveness.json",
         "../boatstack/delivery/control.go",
         "../boatstack/core/transitions.json",
         "../boatstack/flow/standard/transitions.json"

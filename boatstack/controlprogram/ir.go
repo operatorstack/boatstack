@@ -5,19 +5,23 @@ package controlprogram
 
 import "encoding/json"
 
-const SchemaVersion = "control-program/v1"
+const (
+	SchemaName     = "control-program"
+	SchemaRevision = 1
+)
 
 type Document struct {
-	SchemaVersion string       `json:"schema_version"`
-	Program       Program      `json:"program"`
-	Declarations  Declarations `json:"declarations"`
-	Facets        []Facet      `json:"facets"`
-	Evidence      []Evidence   `json:"evidence,omitempty"`
-	Operators     []Operator   `json:"operators"`
-	Transitions   []Transition `json:"transitions"`
-	Targets       []Target     `json:"targets"`
-	Entries       []Entry      `json:"entries"`
-	Description   string       `json:"description,omitempty"`
+	Schema         string       `json:"schema"`
+	SchemaRevision int          `json:"schema_revision"`
+	Program        Program      `json:"program"`
+	Declarations   Declarations `json:"declarations"`
+	Facets         []Facet      `json:"facets"`
+	Evidence       []Evidence   `json:"evidence,omitempty"`
+	Operators      []Operator   `json:"operators"`
+	Transitions    []Transition `json:"transitions"`
+	Targets        []Target     `json:"targets"`
+	Entries        []Entry      `json:"entries"`
+	Description    string       `json:"description,omitempty"`
 }
 
 type Program struct {
@@ -69,16 +73,22 @@ type OperatorBinding struct {
 	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
+type AuthorityRequirement struct {
+	AnyOf []string `json:"any_of,omitempty"`
+	AllOf []string `json:"all_of,omitempty"`
+}
+
 type Operator struct {
-	ID           string           `json:"id"`
-	Binding      *OperatorBinding `json:"binding,omitempty"`
-	Capabilities []string         `json:"capabilities,omitempty"`
-	Authority    []string         `json:"authority,omitempty"`
-	Effects      []string         `json:"effects,omitempty"`
-	Verifier     string           `json:"verifier,omitempty"`
-	Recovery     string           `json:"recovery,omitempty"`
-	StateEffect  *StateEffect     `json:"state_effect,omitempty"`
-	Description  string           `json:"description,omitempty"`
+	ID               string               `json:"id"`
+	Binding          *OperatorBinding     `json:"binding,omitempty"`
+	Capabilities     []string             `json:"capabilities,omitempty"`
+	Authority        AuthorityRequirement `json:"authority"`
+	Effects          []string             `json:"effects,omitempty"`
+	Verifier         string               `json:"verifier,omitempty"`
+	Recovery         string               `json:"recovery,omitempty"`
+	StateEffect      *StateEffect         `json:"state_effect,omitempty"`
+	ExecutionContext string               `json:"execution_context"`
+	Description      string               `json:"description,omitempty"`
 }
 
 type StateEffect struct {
@@ -106,12 +116,17 @@ type ValueReference struct {
 }
 
 type Transition struct {
-	ID          string    `json:"id"`
-	Operator    string    `json:"operator"`
-	Guard       Predicate `json:"guard"`
-	Target      Predicate `json:"target"`
-	Priority    int       `json:"priority"`
-	Description string    `json:"description,omitempty"`
+	ID          string                 `json:"id"`
+	Operator    string                 `json:"operator"`
+	Guard       Predicate              `json:"guard"`
+	Target      Predicate              `json:"target"`
+	Priority    int                    `json:"priority"`
+	Requires    TransitionRequirements `json:"requires,omitempty"`
+	Description string                 `json:"description,omitempty"`
+}
+
+type TransitionRequirements struct {
+	Authorities []string `json:"authorities,omitempty"`
 }
 
 type Target struct {
@@ -121,10 +136,18 @@ type Target struct {
 }
 
 type Entry struct {
-	ID          string       `json:"id"`
-	Target      string       `json:"target"`
-	Inputs      []EntryInput `json:"inputs,omitempty"`
-	Description string       `json:"description,omitempty"`
+	ID          string             `json:"id"`
+	Target      string             `json:"target"`
+	Inputs      []EntryInput       `json:"inputs,omitempty"`
+	Delegation  *DelegationBinding `json:"delegation,omitempty"`
+	Description string             `json:"description,omitempty"`
+}
+
+type DelegationBinding struct {
+	Reference   string   `json:"reference"`
+	Version     string   `json:"version"`
+	Fingerprint string   `json:"fingerprint,omitempty"`
+	Authorities []string `json:"authorities,omitempty"`
 }
 
 type EntryInput struct {
@@ -140,14 +163,22 @@ type EntryInput struct {
 // and binds their exact fingerprint.
 type BindingResolver interface {
 	ResolveOperator(reference, version string) (ResolvedOperator, error)
+	ResolveDelegation(reference, version string) (ResolvedDelegation, error)
 }
 
 type ResolvedOperator struct {
-	Fingerprint  string
-	Capabilities []string
-	Authority    []string
-	Effects      []string
-	Verifier     string
-	Recovery     string
-	StateEffect  StateEffect
+	Fingerprint      string
+	Capabilities     []string
+	Authority        AuthorityRequirement
+	Effects          []string
+	Verifier         string
+	Recovery         string
+	StateEffect      StateEffect
+	ExecutionContext string
+}
+
+type ResolvedDelegation struct {
+	Fingerprint string
+	Authorities []string
+	Delegable   bool
 }

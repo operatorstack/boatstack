@@ -129,7 +129,7 @@ func TestTypeScriptFrontendRejectsRepositoryCodeWithoutExecutingIt(t *testing.T)
 	source := filepath.Join(directory, "unsafe.flow.ts")
 	content := "import { writeFileSync } from 'node:fs';\n" +
 		"writeFileSync(" + strconv.Quote(sentinel) + ", 'unsafe');\n" +
-		"export default { schema_version: 'control-program/v1' };\n"
+		"export default { schema: 'control-program', schema_revision: 1 };\n"
 	if err := os.WriteFile(source, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}

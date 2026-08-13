@@ -6,11 +6,17 @@ Boatstack separates authoring languages from executable semantics:
 TypeScript Flow -> raw Control Program IR -> Go canonicalizer -> committed artifact -> kernel
 ```
 
-The `control-program/v1` IR is domain-neutral. It declares typed facets,
+The `control-program` schema at revision `1` is domain-neutral. It declares typed facets,
 evidence relations, predicate ASTs, operators, capabilities, authority,
 effects, verification, recovery, transitions, marked targets, and entries.
 Software terms such as plans, tests, Git, and pull requests belong to
 `@operatorstack/boatstack-software-delivery`, not the base SDK.
+
+Trusted operator authority remains algebraic: `any_of` lists alternatives and
+`all_of` lists mandatory classes. Repository transitions may add mandatory
+authorities through `requires.authorities`; they cannot add alternatives or
+grant authority. Entries may request a trusted delegation binding, but only the
+runtime-owned authorization record can grant it for an exact run.
 
 ## Compile and check
 
@@ -22,6 +28,17 @@ boatstack flow compile --repo . \
   --frontend "$(pwd)/node_modules/.bin/boatstack-flow-frontend"
 boatstack flow check --repo .
 boatstack next --repo . --flow product-delivery --entry run
+```
+
+If the entry requests delegation, `next` returns `DELEGATION_REQUIRED` with an
+exact run and request fingerprint before managed state changes. A human can
+authorize that exact request and continue it:
+
+```sh
+boatstack flow authorize --repo . --flow product-delivery --entry run \
+  --run-id <run-id> --request-fingerprint <fingerprint> --human <actor>
+boatstack flow run --repo . --flow product-delivery --entry run --run-id <run-id>
+boatstack flow revoke --repo . --run-id <run-id> --human <actor>
 ```
 
 Compilation sends the exact source bytes to a restricted TypeScript frontend.

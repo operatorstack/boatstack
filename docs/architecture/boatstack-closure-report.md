@@ -1,13 +1,13 @@
-# Boatstack V2 replacement closure
+# Boatstack replacement closure
 
 > Historical replacement evidence for PR #186. The normative current
 > architecture and executable counts are defined by
-> [Boatstack programmable delivery control architecture](boatstack-v2-kernel.md).
+> [Boatstack programmable delivery control architecture](boatstack-kernel.md).
 
 Base revision: `c5b5e10cdcf4d97b645d705cb164e762acf93ff1`
 Replacement mode: flag day; no V1 compatibility or state migration
 
-This report binds the V2 implementation to the frozen V1 inventory. It is not a
+This report binds Boatstack implementation to the frozen V1 inventory. It is not a
 claim that old APIs remain available.
 
 ## ZCA translation and value
@@ -16,7 +16,7 @@ The rewrite ships two logical slices together. Slice 1 is one authoritative
 kernel over one canonical snapshot and transition catalog. Slice 2 is the CLI,
 hook, SDK/MCP, shell, and host projection of that same kernel. The immediate
 value is the removal of independently reconstructed lifecycle and effect
-authority while keeping the product workflows available through V2 semantics.
+authority while keeping the product workflows available through Boatstack semantics.
 
 ## Deleted authority
 
@@ -32,7 +32,7 @@ rewrite deletes:
   coexistence, state-repair, host-state-machine, and fallback code.
 
 The conservative removed V1 managed-effect surface is therefore 120 sites.
-V2's static source inventory fails if an `os` writer exists outside
+Boatstack's static source inventory fails if an `os` writer exists outside
 `internal/softwaredelivery/effects`, if a command boundary exists outside the exact plant/effect
 allowlist, if a production file is unclassified, or if the deleted shadow
 controller is imported or recreated.
@@ -49,10 +49,10 @@ The runtime has 17 controlling facets and 61 semantic transitions:
 | recovery | 7 |
 | observed-external | 13 |
 
-The [generated table](boatstack-v2-transition-catalog.md),
-[generated Mermaid graph](boatstack-v2-transition-catalog.mmd),
-[Locus safety model](boatstack-v2-locus-safety.json), and
-[Locus liveness model](boatstack-v2-locus-liveness.json) come from the same
+The [generated table](boatstack-transition-catalog.md),
+[generated Mermaid graph](boatstack-transition-catalog.mmd),
+[Locus safety model](boatstack-locus-safety.json), and
+[Locus liveness model](boatstack-locus-liveness.json) come from the same
 registry used by the supervisor and engine. Golden tests reject byte drift and
 require both formal alphabets to equal all 61 executable transitions.
 
@@ -71,7 +71,7 @@ required-visual terminal until revision-bound evidence exists.
 The historical corpus contains 22 typed fixtures. It covers every PR from #172
 through #185 and the additional ambiguity, interruption, stale-runtime,
 publication, workspace, configuration, and objective-terminal failure classes named
-in the V2 specification.
+in Boatstack specification.
 
 Live integration tests exercise embedded and detached installation, attach and
 detach, two-clone identity separation, exact runtime update, linked-worktree

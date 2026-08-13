@@ -1,4 +1,5 @@
-export const CONTROL_PROGRAM_SCHEMA_VERSION = "control-program/v1" as const;
+export const CONTROL_PROGRAM_SCHEMA = "control-program" as const;
+export const CONTROL_PROGRAM_SCHEMA_REVISION = 1 as const;
 
 export type Predicate =
   | { true: boolean }
@@ -54,11 +55,12 @@ export interface OperatorDefinition {
   id: string;
   binding?: { reference: string; version: string };
   capabilities?: string[];
-  authority?: string[];
+  authority?: { any_of?: string[]; all_of?: string[] };
   effects?: string[];
   verifier?: string;
   recovery?: string;
   state_effect?: StateEffectDefinition;
+  execution_context?: "preserve" | "advance";
   description?: string;
 }
 
@@ -68,6 +70,7 @@ export interface TransitionDefinition {
   guard: Predicate;
   target: Predicate;
   priority: number;
+  requires?: { authorities?: string[] };
   description?: string;
 }
 
@@ -89,7 +92,13 @@ export interface EntryDefinition {
   id: string;
   target: string;
   inputs?: EntryInputDefinition[];
+  delegation?: DelegationBindingDefinition;
   description?: string;
+}
+
+export interface DelegationBindingDefinition {
+  reference: string;
+  version: string;
 }
 
 export interface FlowDefinition {
@@ -112,7 +121,8 @@ export interface FlowDefinition {
 }
 
 export interface ControlProgramIR {
-  schema_version: typeof CONTROL_PROGRAM_SCHEMA_VERSION;
+  schema: typeof CONTROL_PROGRAM_SCHEMA;
+  schema_revision: typeof CONTROL_PROGRAM_SCHEMA_REVISION;
   program: { id: string; version: string; description?: string };
   declarations: NonNullable<FlowDefinition["declarations"]>;
   facets: FacetDefinition[];
@@ -126,7 +136,8 @@ export interface ControlProgramIR {
 
 export function defineFlow(definition: FlowDefinition): ControlProgramIR {
   return {
-    schema_version: CONTROL_PROGRAM_SCHEMA_VERSION,
+    schema: CONTROL_PROGRAM_SCHEMA,
+    schema_revision: CONTROL_PROGRAM_SCHEMA_REVISION,
     program: {
       id: definition.id,
       version: definition.version,
@@ -184,13 +195,8 @@ export function marked(
   return { id, predicate, ...(description ? { description } : {}) };
 }
 
-export function entry(
-  id: string,
-  target: string,
-  inputs: EntryInputDefinition[] = [],
-  description?: string,
-): EntryDefinition {
-  return { id, target, inputs, ...(description ? { description } : {}) };
+export function entry(definition: EntryDefinition): EntryDefinition {
+  return { ...definition, inputs: definition.inputs ?? [] };
 }
 
 export const always: Predicate = { true: true };

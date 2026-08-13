@@ -20,7 +20,7 @@ func TestPublicProtocolCanBeConstructedWithoutInternalPackages(t *testing.T) {
 		Objective:     sdk.Objective{ID: "objective", TargetID: sdk.ObjectiveVerified, DeliveryID: "delivery"},
 	}
 	if request.Objective.TargetID != sdk.ObjectiveVerified || request.Operation != sdk.OperationResolve {
-		t.Fatalf("public V2 aliases lost protocol identity: %#v", request)
+		t.Fatalf("public Boatstack aliases lost protocol identity: %#v", request)
 	}
 }
 

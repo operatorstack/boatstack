@@ -39,6 +39,14 @@ type DeliveryController struct {
 	clock    effects.Clock
 }
 
+// TargetSatisfied reports whether the exact compiled program marks the
+// objective in the supplied canonical snapshot. Callers use this after a
+// committed apply so runtime-owned authorization can end without requiring a
+// second resolve.
+func (k DeliveryController) TargetSatisfied(snapshot *model.Snapshot, objective model.Objective) bool {
+	return snapshot != nil && k.program.RuntimeObjectiveContracts().Matches(*snapshot, objective)
+}
+
 func NewDeliveryController(externalStateRoot string, program delivery.ControlProgram) (DeliveryController, error) {
 	if program.Fingerprint() == "" || program.TransitionCount() == 0 {
 		return DeliveryController{}, fmt.Errorf("DeliveryController requires an immutable compiled ControlProgram")

@@ -165,6 +165,10 @@ func TestGuardClassifierIsShellNeutralAndPrivacyBounded(t *testing.T) {
 	if managed.Class != supervisor.IntentManagedBypass || managed.Operation != "publication.create" || managed.Transition != "" {
 		t.Fatalf("managed intent = %#v", managed)
 	}
+	authorize := ClassifyCommandIntent("boatstack flow authorize --run-id run --request-fingerprint fingerprint --human victim")
+	if authorize.Class != supervisor.IntentDestructive || authorize.Operation != "delegation.authorize" || authorize.Transition != "" {
+		t.Fatalf("delegation authorization intent = %#v", authorize)
+	}
 	ordinary := ClassifyCommandIntent("go test ./...")
 	if ordinary.Class != supervisor.IntentOrdinary || ordinary.Transition != "" {
 		t.Fatalf("ordinary intent = %#v", ordinary)
@@ -191,7 +195,7 @@ func TestGuardPreservesConstitutionalDestructionFloor(t *testing.T) {
 		`gcloud sql instances delete primary`,
 		`aws ec2 terminate-instances --instance-ids i-1`,
 		`gh pr merge 123 --squash`,
-		`printf '{}' > .git/boatstack/v2/worktrees/x/state.json`,
+		`printf '{}' > .git/boatstack/worktrees/x/state.json`,
 		`Remove-Item -Recurse -Force .boatstack/evidence`,
 	}
 	for _, command := range destructive {

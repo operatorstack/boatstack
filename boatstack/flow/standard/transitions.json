@@ -1999,6 +1999,7 @@
     },
     "priority": 52,
     "allows_worktree_transfer": true,
+    "execution_context": "advance",
     "owned_facets": [
       "control",
       "product"
@@ -2929,6 +2930,7 @@
     },
     "priority": 92,
     "allows_worktree_transfer": true,
+    "execution_context": "advance",
     "owned_facets": [
       "control",
       "product"
@@ -3147,6 +3149,7 @@
     },
     "priority": 98,
     "allows_worktree_transfer": true,
+    "execution_context": "advance",
     "owned_facets": [
       "control",
       "product"
@@ -3560,6 +3563,7 @@
     },
     "priority": 2,
     "allows_worktree_transfer": true,
+    "execution_context": "advance",
     "owned_facets": [
       "control",
       "product"

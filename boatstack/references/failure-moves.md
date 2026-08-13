@@ -1,8 +1,8 @@
-# V2 failure moves
+# Boatstack failure moves
 
 Use the failure class, not the latest symptom:
 
-| Failure class | V2 move |
+| Failure class | Boatstack move |
 |---|---|
 | stale snapshot or prescription | discard it; re-resolve; execute no effects |
 | ambiguous identity | preserve resources; supply exact invocation |

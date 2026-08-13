@@ -17,6 +17,7 @@ type commandPattern struct {
 // receives the same result. Raw command text is fingerprinted but never
 // persisted in a receipt or process event.
 var destructiveCommandPatterns = []commandPattern{
+	{"delegation.authorize", regexp.MustCompile(`(?i)\bboatstack(?:-helper)?\s+flow\s+authorize\b`)},
 	{"database.reset", regexp.MustCompile(`(?i)\b(?:supabase\s+db\s+reset|prisma\s+migrate\s+reset|rails\s+db:(?:drop|reset)|django-admin\s+flush|manage\.py\s+flush|alembic\s+downgrade\s+base|pg_restore\b[^\n]*\s--clean\b)`)},
 	{"external-resource.delete", regexp.MustCompile(`(?i)\bsupabase[\s"',()]+branches?[\s"',()]+delete\b`)},
 	{"external-lifecycle.weaken", regexp.MustCompile(`(?i)\bsupabase[\s"',()]+branches?[\s"',()]+update\b[^\n;&|]*(?:--persistent(?:=|[\s"',()]+)false\b|--no-persistent\b)`)},

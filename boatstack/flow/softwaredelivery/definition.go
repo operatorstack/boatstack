@@ -85,6 +85,11 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 		transition.SourceConditions = append(transition.SourceConditions, guard...)
 		transition.TargetConditions = append(transition.TargetConditions, target...)
 		transition.Priority = declaration.Priority
+		transition.ExecutionContext = operator.ExecutionContext
+		for _, authority := range declaration.Requires.Authorities {
+			transition.AuthorityAll = append(transition.AuthorityAll, delivery.AuthorityClass(authority))
+		}
+		transition.AuthorityAll = uniqueAuthorities(transition.AuthorityAll)
 		trustedObjectives := append([]model.TargetID(nil), transition.TargetIDs...)
 		transition.TargetIDs = transition.TargetIDs[:0]
 		for targetID, objective := range objectives {
@@ -128,6 +133,19 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 	base.Transitions, base.OwnedResources, base.Effects, base.Verifiers = selected, resources, effects, verifiers
 	base.Capabilities, base.RecoveryTransitions, base.Settings = capabilities, recoveries, settings
 	return base, nil
+}
+
+func uniqueAuthorities(values []delivery.AuthorityClass) []delivery.AuthorityClass {
+	seen := map[delivery.AuthorityClass]bool{}
+	result := make([]delivery.AuthorityClass, 0, len(values))
+	for _, value := range values {
+		if !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result
 }
 
 func ObjectiveForEntry(ctx context.Context, compiled controlprogram.Compiled, resolver Resolver, entryID string) (EntryObjective, error) {

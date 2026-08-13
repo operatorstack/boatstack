@@ -81,11 +81,11 @@ func externalStateRoot(explicit string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return filepath.Join(absolute, "boatstack", "v2"), nil
+		return filepath.Join(absolute, "boatstack"), nil
 	}
 	if runtime.GOOS == "windows" {
 		if base := strings.TrimSpace(os.Getenv("LOCALAPPDATA")); base != "" {
-			return filepath.Join(base, "boatstack", "v2"), nil
+			return filepath.Join(base, "boatstack"), nil
 		}
 	}
 	if runtime.GOOS == "darwin" {
@@ -93,16 +93,16 @@ func externalStateRoot(explicit string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return filepath.Join(home, "Library", "Application Support", "boatstack", "v2"), nil
+		return filepath.Join(home, "Library", "Application Support", "boatstack"), nil
 	}
 	if base := strings.TrimSpace(os.Getenv("XDG_STATE_HOME")); base != "" {
-		return filepath.Join(base, "boatstack", "v2"), nil
+		return filepath.Join(base, "boatstack"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".local", "state", "boatstack", "v2"), nil
+	return filepath.Join(home, ".local", "state", "boatstack"), nil
 }
 
 func canonicalExisting(path string) (string, error) {
@@ -257,7 +257,7 @@ func (r Resolver) ResolveLayout(ctx context.Context, invocation model.Invocation
 		return ports.ControllerLayout{}, current, err
 	}
 	bindingPath := filepath.Join(r.externalRoot, "repositories", current.RepositoryID, current.GitCommonID, "binding.json")
-	embeddedSharedRoot := filepath.Join(commonRoot, "boatstack", "v2")
+	embeddedSharedRoot := filepath.Join(commonRoot, "boatstack")
 	embeddedStateRoot := filepath.Join(embeddedSharedRoot, "worktrees", current.WorktreeID)
 	externalSharedRoot := filepath.Join(r.externalRoot, "repositories", current.RepositoryID, current.GitCommonID)
 	externalStateRoot := filepath.Join(externalSharedRoot, "worktrees", current.WorktreeID)

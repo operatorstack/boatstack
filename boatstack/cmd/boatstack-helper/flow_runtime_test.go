@@ -5,15 +5,21 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/delegation"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/plant"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
 )
@@ -32,6 +38,14 @@ func flowRepository(t *testing.T) string {
 	}
 	writeFlowArtifact(t, repository, document, sourcePath, source, lockPath, lock)
 	return repository
+}
+
+func runFlowGit(t *testing.T, repository string, arguments ...string) {
+	t.Helper()
+	command := exec.Command("git", append([]string{"-C", repository}, arguments...)...)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", arguments, err, output)
+	}
 }
 
 func bindSharedGitCommon(t *testing.T, repository, gitDirectory, commonDirectory string) {
@@ -84,9 +98,9 @@ func productDeliveryDocument(programID string) controlprogram.Document {
 	truth := true
 	config := json.RawMessage(`{"path":".boatstack/plans/inbox","cardinality":"exactly-one"}`)
 	return controlprogram.Document{
-		SchemaVersion: controlprogram.SchemaVersion,
-		Program:       controlprogram.Program{ID: programID, Version: "1"},
-		Declarations:  controlprogram.Declarations{InputResolvers: []string{"software-delivery.plan-inbox"}},
+		Schema: controlprogram.SchemaName, SchemaRevision: controlprogram.SchemaRevision,
+		Program:      controlprogram.Program{ID: programID, Version: "1"},
+		Declarations: controlprogram.Declarations{InputResolvers: []string{"software-delivery.plan-inbox"}},
 		Facets: []controlprogram.Facet{
 			{ID: "publication", Kind: "string"}, {ID: "verification", Kind: "string"},
 			{ID: "configuration", Kind: "string"}, {ID: "runtime", Kind: "string"},
@@ -224,6 +238,27 @@ func TestFlowRunIdentitySurvivesWorkspaceTransfer(t *testing.T) {
 	}
 	if sourcePath, ok := parameters.Get("source_path"); !ok || sourcePath != filepath.Join(resumed.repository, ".boatstack", "plans", "delivery-one.source") {
 		t.Fatalf("destination plan binding = %q, %t", sourcePath, ok)
+	}
+
+	continuation := commandOptions{
+		repository: source, transitionID: "workspace.cut",
+		parameters:     []string{"base_ref=HEAD", "destination=" + destination},
+		prescriptionID: "prescription-cut", expectedInstanceID: "instance-source",
+		expectedStateRevision: 7, expectedProgramFingerprint: strings.Repeat("a", 64),
+		expectedSnapshotFingerprint: strings.Repeat("b", 64), expectedObjectiveBindingFingerprint: strings.Repeat("c", 64),
+		authorityFingerprint: strings.Repeat("d", 64), requiredCapabilities: []string{"workspace.write"},
+		effectiveCapabilities: []string{"workspace.write"}, idempotencyKey: "idem-cut",
+	}
+	resulting := model.InvocationContext{
+		RepositoryID: "repository", GitCommonID: "git-common", WorktreeID: "destination", Ref: "refs/heads/feature",
+		ControllerID: "controller", InvokingPath: destination, RuntimeVersion: "runtime", RuntimePath: destination,
+		RuntimeFingerprint: strings.Repeat("e", 64), Topology: model.TopologyEmbedded, Host: "codex", Correlation: "continuation",
+	}
+	if err := advanceContinuation(&continuation, surfaces.Response{Receipt: &protocol.TransitionReceipt{ExecutionContext: "advance", ResultingInvocation: &resulting}}); err != nil {
+		t.Fatal(err)
+	}
+	if continuation.repository != destination || continuation.transitionID != "" || len(continuation.parameters) != 0 || continuation.prescriptionID != "" || continuation.idempotencyKey != "" || len(continuation.requiredCapabilities) != 0 || len(continuation.effectiveCapabilities) != 0 {
+		t.Fatalf("continuation retained source context or transition parameters: %#v", continuation)
 	}
 }
 
@@ -398,7 +433,7 @@ func TestFlowCompileProjectsHyphenatedEntryIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(artifact.GeneratedSkills) != 3 {
+	if len(artifact.GeneratedSkills) != 5 {
 		t.Fatalf("generated skills = %v", artifact.GeneratedSkills)
 	}
 	for path := range artifact.GeneratedSkills {
@@ -1013,7 +1048,7 @@ func TestFlowCompileRetiresOnlyUnmodifiedPriorGeneratedSkills(t *testing.T) {
 	writeFixture(t, repository, retainedPath, retained)
 	writeFixture(t, repository, retiredPath, retired)
 	artifact := controlprogram.Artifact{
-		SchemaVersion: controlprogram.ArtifactSchemaVersion, CompilerVersion: flowCompilerVersion,
+		Schema: controlprogram.ArtifactSchemaName, SchemaRevision: controlprogram.ArtifactSchemaRevision, CompilerVersion: flowCompilerVersion,
 		SourcePath: ".boatstack/flows/program.flow.ts", SourceSHA256: strings.Repeat("a", 64),
 		DependencyLockPath: "package-lock.json", DependencyLockSHA256: strings.Repeat("b", 64),
 		ProgramFingerprint: strings.Repeat("c", 64),
@@ -1059,5 +1094,169 @@ func TestFlowCompileRetiresOnlyUnmodifiedPriorGeneratedSkills(t *testing.T) {
 	paths, _, _, _, err = ownedProjectionChanges(repository, sourcePath, artifactPath, map[string]string{retainedPath: fileDigest(retained)})
 	if err != nil || len(paths) != 1 || !paths[0].AllowMissing {
 		t.Fatalf("interrupted retirement was not retryable: %v, %v", paths, err)
+	}
+}
+
+func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) {
+	// control-law: repository-declaration-cannot-self-grant-and-apply-reloads-revocation-before-effects
+	repository := t.TempDir()
+	runFlowGit(t, repository, "init", "-q")
+	runFlowGit(t, repository, "config", "user.email", "test@example.com")
+	runFlowGit(t, repository, "config", "user.name", "Test User")
+	runFlowGit(t, repository, "config", "core.autocrlf", "true")
+	document := productDeliveryDocument("product-delivery")
+	document.Entries[0].Delegation = &controlprogram.DelegationBinding{Reference: "software-delivery/delegation/autonomy", Version: "1"}
+	sourcePath, lockPath := ".boatstack/flows/product-delivery.flow.ts", "package-lock.json"
+	source, dependencyLock := []byte("flow source"), []byte("lock")
+	writeFixture(t, repository, sourcePath, source)
+	writeFixture(t, repository, lockPath, dependencyLock)
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery.md", []byte("# Delivery"))
+	writeFlowArtifact(t, repository, document, sourcePath, source, lockPath, dependencyLock)
+	writeFixture(t, repository, "README.md", []byte("fixture\n"))
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "fixture")
+	t.Setenv("BOATSTACK_STATE_ROOT", t.TempDir())
+
+	bound, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := buildRequest(surfaces.OperationResolve, bound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, suspension, err := prepareDelegation(context.Background(), &request)
+	if err != nil || lock != nil || suspension == nil || suspension.Delegation == nil || suspension.Delegation.Code != "DELEGATION_REQUIRED" || suspension.Delegation.RequestFingerprint != bound.delegationRequestFingerprint {
+		t.Fatalf("delegation suspension = lock=%v response=%#v err=%v", lock, suspension, err)
+	}
+
+	resolver, err := plant.NewResolver("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, err := resolver.ResolveInvocation(context.Background(), repository, "codex", "authorize-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, _, err := resolver.ResolveLayout(context.Background(), invocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordPath, err := delegation.Path(layout.FlowRoot, bound.runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	record := delegation.Record{Schema: delegation.Schema, SchemaRevision: delegation.SchemaRevision, Request: bound.delegationRequest, RequestFingerprint: bound.delegationRequestFingerprint, ReceiptID: "authorization-test", Actor: "human@example.com", AuthorizedAt: now, Revision: 1, Status: "active"}
+	if err := effects.StoreDelegationRecord(recordPath, record); err != nil {
+		t.Fatal(err)
+	}
+	lock, suspension, err = prepareDelegation(context.Background(), &request)
+	if err != nil || lock != nil || suspension != nil || !request.Authority.Set(time.Now().UTC())[catalog.AuthorityAutonomy] {
+		t.Fatalf("authorized resolve = lock=%v response=%#v authority=%#v err=%v", lock, suspension, request.Authority, err)
+	}
+	record.ExpiresAt = now.Add(-time.Second)
+	if err := effects.StoreDelegationRecord(recordPath, record); err != nil {
+		t.Fatal(err)
+	}
+	if expiredLock, expiredSuspension, expiredErr := prepareDelegation(context.Background(), &request); expiredLock != nil || expiredSuspension != nil || expiredErr == nil || !strings.Contains(expiredErr.Error(), "DELEGATION_EXPIRED") {
+		t.Fatalf("expired delegation = lock=%v response=%#v err=%v", expiredLock, expiredSuspension, expiredErr)
+	}
+	renewedAt := time.Now().UTC()
+	renewed, changed, err := authorizeDelegation(&record, bound.delegationRequest, bound.delegationRequestFingerprint, record.Actor, time.Hour, renewedAt)
+	if err != nil || !changed || renewed.Revision != record.Revision+1 || renewed.ReceiptID == record.ReceiptID || !renewed.ExpiresAt.Equal(renewedAt.Add(time.Hour)) {
+		t.Fatalf("renewed delegation = record=%#v changed=%v err=%v", renewed, changed, err)
+	}
+	if idempotent, changedAgain, idempotentErr := authorizeDelegation(&renewed, bound.delegationRequest, bound.delegationRequestFingerprint, record.Actor, time.Hour, renewedAt.Add(time.Second)); idempotentErr != nil || changedAgain || idempotent.ReceiptID != renewed.ReceiptID {
+		t.Fatalf("idempotent renewal = record=%#v changed=%v err=%v", idempotent, changedAgain, idempotentErr)
+	}
+	if _, _, conflictErr := authorizeDelegation(&renewed, bound.delegationRequest, bound.delegationRequestFingerprint, "other-actor", time.Hour, renewedAt); conflictErr == nil || !strings.Contains(conflictErr.Error(), "DELEGATION_CONFLICT") {
+		t.Fatalf("conflicting renewal = %v", conflictErr)
+	}
+	if err := effects.StoreDelegationRecord(recordPath, renewed); err != nil {
+		t.Fatal(err)
+	}
+	record = renewed
+	lock, suspension, err = prepareDelegation(context.Background(), &request)
+	if err != nil || lock != nil || suspension != nil || !request.Authority.Set(time.Now().UTC())[catalog.AuthorityAutonomy] {
+		t.Fatalf("renewed resolve = lock=%v response=%#v authority=%#v err=%v", lock, suspension, request.Authority, err)
+	}
+	otherWorktree := filepath.Join(t.TempDir(), "other-worktree")
+	runFlowGit(t, repository, "worktree", "add", "-q", "-b", "other-worktree", otherWorktree)
+	otherBound, err := bindFlowEntry(context.Background(), commandOptions{repository: otherWorktree, programID: "product-delivery", entryID: "run", runID: bound.runID, deliveryID: bound.deliveryID, host: "codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherRequest, err := buildRequest(surfaces.OperationResolve, otherBound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherLock, otherSuspension, otherErr := prepareDelegation(context.Background(), &otherRequest)
+	if otherLock != nil || otherSuspension != nil || otherErr == nil || !strings.Contains(otherErr.Error(), "DELEGATION_CONTEXT_UNAUTHORIZED") {
+		t.Fatalf("unauthorized worktree = lock=%v response=%#v err=%v", otherLock, otherSuspension, otherErr)
+	}
+	runFlowGit(t, repository, "checkout", "-q", "-b", "changed-ref")
+	refBound, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", runID: bound.runID, deliveryID: bound.deliveryID, host: "codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	refRequest, err := buildRequest(surfaces.OperationResolve, refBound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refLock, refSuspension, refErr := prepareDelegation(context.Background(), &refRequest)
+	if refLock != nil || refSuspension != nil || refErr == nil || !strings.Contains(refErr.Error(), "DELEGATION_CONTEXT_UNAUTHORIZED") {
+		t.Fatalf("unauthorized ref = lock=%v response=%#v err=%v", refLock, refSuspension, refErr)
+	}
+	runFlowGit(t, repository, "checkout", "-q", strings.TrimPrefix(record.Request.InitialRef, "refs/heads/"))
+
+	request.Operation = surfaces.OperationApply
+	lock, suspension, err = prepareDelegation(context.Background(), &request)
+	if err != nil || lock == nil || suspension != nil {
+		t.Fatalf("authorized apply preflight = lock=%v response=%#v err=%v", lock, suspension, err)
+	}
+	if err := lock.Release(); err != nil {
+		t.Fatal(err)
+	}
+	record.Status, record.Revision, record.RevokedAt = "revoked", record.Revision+1, time.Now().UTC()
+	if err := effects.StoreDelegationRecord(recordPath, record); err != nil {
+		t.Fatal(err)
+	}
+	lock, suspension, err = prepareDelegation(context.Background(), &request)
+	if lock != nil || suspension != nil || err == nil || !strings.Contains(err.Error(), "DELEGATION_REVOKED") {
+		t.Fatalf("revoked apply preflight = lock=%v response=%#v err=%v", lock, suspension, err)
+	}
+	record.Status, record.Revision, record.RevokedAt = "active", record.Revision+1, time.Time{}
+	if err := effects.StoreDelegationRecord(recordPath, record); err != nil {
+		t.Fatal(err)
+	}
+	committed := surfaces.Response{Receipt: &protocol.TransitionReceipt{ID: "target-receipt"}}
+	delegationLockPath, err := delegation.LockPath(layout.LockRoot, bound.runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	heldDelegationLock, err := effects.AcquireExclusivePath(context.Background(), delegationLockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := settleDelegationAtTarget(context.Background(), request, committed, true, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := heldDelegationLock.Release(); err != nil {
+		t.Fatal(err)
+	}
+	completed, err := delegation.Load(recordPath)
+	if err != nil || completed.Status != "completed" || completed.EndReason != "target-met" || completed.Revision != record.Revision+1 {
+		t.Fatalf("target settlement = record=%#v err=%v", completed, err)
+	}
+	request.Operation = surfaces.OperationResolve
+	lock, suspension, err = prepareDelegation(context.Background(), &request)
+	if lock != nil || suspension != nil || err != nil || request.Authority.Set(time.Now().UTC())[catalog.AuthorityAutonomy] {
+		t.Fatalf("completed resolve replay = lock=%v response=%#v authority=%#v err=%v", lock, suspension, request.Authority, err)
+	}
+	request.Operation = surfaces.OperationApply
+	lock, suspension, err = prepareDelegation(context.Background(), &request)
+	if lock != nil || suspension != nil || err == nil || !strings.Contains(err.Error(), "DELEGATION_REVOKED") {
+		t.Fatalf("post-target apply preflight = lock=%v response=%#v err=%v", lock, suspension, err)
 	}
 }

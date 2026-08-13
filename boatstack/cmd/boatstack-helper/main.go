@@ -23,6 +23,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/buildinfo"
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/delegation"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
@@ -69,6 +70,11 @@ type commandOptions struct {
 	follow                              bool
 	host                                string
 	command                             string
+	delegationBindingFingerprint        string
+	delegationRequestFingerprint        string
+	delegationAuthorities               stringList
+	delegationDescription               string
+	delegationRequest                   delegation.Request
 }
 
 func main() {
@@ -120,6 +126,16 @@ func run(arguments []string) error {
 	if err != nil {
 		return err
 	}
+	delegationLock, delegationResponse, err := prepareDelegation(context.Background(), &request)
+	if err != nil {
+		return err
+	}
+	if delegationLock != nil {
+		defer delegationLock.Release()
+	}
+	if delegationResponse != nil {
+		return renderResponse(*delegationResponse, options.format)
+	}
 	lease, err := acquireFlowExecutionLease(request)
 	if err != nil {
 		return err
@@ -152,6 +168,9 @@ func run(arguments []string) error {
 		request.Prescription = *resolved.Prescription
 	}
 	response, handleErr := kernel.Handle(context.Background(), request)
+	if settleErr := settleDelegationAtTarget(context.Background(), request, response, kernel.TargetSatisfied(response.Snapshot, request.Objective), delegationLock != nil); settleErr != nil && handleErr == nil {
+		handleErr = settleErr
+	}
 	if command == "events" && options.follow {
 		if options.format != "jsonl" {
 			return fmt.Errorf("events --follow requires --format jsonl")
@@ -173,15 +192,27 @@ func runRPC() error {
 	decoder.DisallowUnknownFields()
 	var request surfaces.Request
 	if err := decoder.Decode(&request); err != nil {
-		return fmt.Errorf("decode V2 RPC request: %w", err)
+		return fmt.Errorf("decode Boatstack RPC request: %w", err)
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); err != io.EOF {
-		return fmt.Errorf("V2 RPC request contains trailing JSON")
+		return fmt.Errorf("Boatstack RPC request contains trailing JSON")
 	}
 	request, err := bindRPCFlowEntry(context.Background(), request)
 	if err != nil {
 		return err
+	}
+	delegationLock, delegationResponse, err := prepareDelegation(context.Background(), &request)
+	if err != nil {
+		return err
+	}
+	if delegationLock != nil {
+		defer delegationLock.Release()
+	}
+	if delegationResponse != nil {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(delegationResponse)
 	}
 	lease, err := acquireFlowExecutionLease(request)
 	if err != nil {
@@ -193,6 +224,9 @@ func runRPC() error {
 		return err
 	}
 	response, handleErr := kernel.Handle(context.Background(), request)
+	if settleErr := settleDelegationAtTarget(context.Background(), request, response, kernel.TargetSatisfied(response.Snapshot, request.Objective), delegationLock != nil); settleErr != nil && handleErr == nil {
+		handleErr = settleErr
+	}
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(response); err != nil {
@@ -296,7 +330,7 @@ func parseOptions(command string, arguments []string, transition catalog.Transit
 	flags.Var(&options.effectiveCapabilities, "effective-capability", "effective capability from resolution (repeatable)")
 	flags.StringVar(&options.idempotencyKey, "idempotency-key", "", "exact prior admission idempotency key for safe replay")
 	flags.StringVar(&options.humanActor, "human", "", "explicit command-scoped human authority actor")
-	flags.BoolVar(&options.repositoryPolicy, "repository-authority", false, "derive repository-policy authority from the V2 project configuration")
+	flags.BoolVar(&options.repositoryPolicy, "repository-authority", false, "derive repository-policy authority from Boatstack project configuration")
 	flags.BoolVar(&options.acceptProgramChange, "accept-program-change", false, "explicitly accept the exact prior-to-candidate control-program delta during update")
 	flags.Var(&options.parameters, "param", "transition parameter name=value (repeatable)")
 	flags.Var(&options.authorityReceipts, "authority-receipt", "authority receipt JSON path (repeatable)")
@@ -406,7 +440,7 @@ func populateInitParameters(options *commandOptions) error {
 		return err
 	}
 	if _, ok := parameters.Get("config_path"); !ok {
-		return fmt.Errorf("init requires --param config_path=<V2-config.json>")
+		return fmt.Errorf("init requires --param config_path=<Boatstack-config.json>")
 	}
 	configPath, _ := parameters.Get("config_path")
 	configRaw, err := os.ReadFile(configPath)
@@ -535,7 +569,18 @@ func buildRequest(operation surfaces.Operation, options commandOptions) (surface
 				AuthorityFingerprint: options.authorityFingerprint,
 			}, RequiredCapabilities: requiredCapabilities, EffectiveCapabilities: effectiveCapabilities},
 		RepositoryAuthority: options.repositoryPolicy, IdempotencyKey: options.idempotencyKey, Command: options.command,
+		DelegationBindingFingerprint: options.delegationBindingFingerprint,
+		DelegationRequestFingerprint: options.delegationRequestFingerprint,
+		DelegatedAuthorities:         delegationClasses(options.delegationAuthorities),
 	}, nil
+}
+
+func delegationClasses(values []string) []catalog.AuthorityClass {
+	result := make([]catalog.AuthorityClass, len(values))
+	for index, value := range values {
+		result[index] = catalog.AuthorityClass(value)
+	}
+	return result
 }
 
 func parseCapabilities(field string, values []string) ([]catalog.Capability, error) {

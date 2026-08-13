@@ -40,23 +40,26 @@ func (o Operation) Valid() bool {
 }
 
 type Request struct {
-	SchemaVersion       int                      `json:"schema_version"`
-	Operation           Operation                `json:"operation"`
-	Repository          string                   `json:"repository"`
-	Host                string                   `json:"host"`
-	CorrelationID       string                   `json:"correlation_id"`
-	ProgramID           string                   `json:"program_id,omitempty"`
-	ProgramFingerprint  string                   `json:"program_fingerprint,omitempty"`
-	EntryID             string                   `json:"entry_id,omitempty"`
-	FlowID              string                   `json:"flow_id,omitempty"`
-	Objective           model.Objective          `json:"objective,omitempty"`
-	TransitionID        catalog.TransitionID     `json:"transition_id,omitempty"`
-	Prescription        protocol.Prescription    `json:"prescription,omitempty"`
-	Authority           protocol.AuthorityBundle `json:"authority,omitempty"`
-	RepositoryAuthority bool                     `json:"repository_authority,omitempty"`
-	Parameters          protocol.Parameters      `json:"parameters,omitempty"`
-	IdempotencyKey      string                   `json:"idempotency_key,omitempty"`
-	Command             string                   `json:"command,omitempty"`
+	SchemaVersion                int                      `json:"schema_version"`
+	Operation                    Operation                `json:"operation"`
+	Repository                   string                   `json:"repository"`
+	Host                         string                   `json:"host"`
+	CorrelationID                string                   `json:"correlation_id"`
+	ProgramID                    string                   `json:"program_id,omitempty"`
+	ProgramFingerprint           string                   `json:"program_fingerprint,omitempty"`
+	EntryID                      string                   `json:"entry_id,omitempty"`
+	FlowID                       string                   `json:"flow_id,omitempty"`
+	Objective                    model.Objective          `json:"objective,omitempty"`
+	TransitionID                 catalog.TransitionID     `json:"transition_id,omitempty"`
+	Prescription                 protocol.Prescription    `json:"prescription,omitempty"`
+	Authority                    protocol.AuthorityBundle `json:"authority,omitempty"`
+	RepositoryAuthority          bool                     `json:"repository_authority,omitempty"`
+	Parameters                   protocol.Parameters      `json:"parameters,omitempty"`
+	IdempotencyKey               string                   `json:"idempotency_key,omitempty"`
+	Command                      string                   `json:"command,omitempty"`
+	DelegationBindingFingerprint string                   `json:"delegation_binding_fingerprint,omitempty"`
+	DelegationRequestFingerprint string                   `json:"delegation_request_fingerprint,omitempty"`
+	DelegatedAuthorities         []catalog.AuthorityClass `json:"delegated_authorities,omitempty"`
 }
 
 func (r Request) Validate(now time.Time) error {
@@ -74,6 +77,14 @@ func (r Request) Validate(now time.Time) error {
 	}
 	if r.ProgramID == "" && r.ProgramFingerprint != "" {
 		return fmt.Errorf("surface request cannot carry a program fingerprint without a program")
+	}
+	if len(r.DelegatedAuthorities) != 0 && (r.ProgramID == "" || len(r.DelegationBindingFingerprint) != 64 || len(r.DelegationRequestFingerprint) != 64) {
+		return fmt.Errorf("surface delegated Flow request requires exact binding and request fingerprints")
+	}
+	for _, authority := range r.DelegatedAuthorities {
+		if !authority.Valid() || authority == catalog.AuthorityNone {
+			return fmt.Errorf("surface delegated Flow request has invalid authority %q", authority)
+		}
 	}
 	if r.Operation != OperationCatalog {
 		knownHost := false
@@ -159,6 +170,15 @@ type Response struct {
 	ProgramChange *ProgramChange              `json:"program_change,omitempty"`
 	Guard         *supervisor.GuardDecision   `json:"guard,omitempty"`
 	Error         string                      `json:"error,omitempty"`
+	Delegation    *DelegationRequired         `json:"delegation,omitempty"`
+}
+
+type DelegationRequired struct {
+	Code               string                   `json:"code"`
+	RunID              string                   `json:"run_id"`
+	RequestFingerprint string                   `json:"request_fingerprint"`
+	Authorities        []catalog.AuthorityClass `json:"authorities"`
+	Description        string                   `json:"description"`
 }
 
 // Question is a typed suspension, not a background task. Supplying its

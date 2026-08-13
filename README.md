@@ -105,7 +105,7 @@ coding-agent concepts live in this domain layer, not in the general kernel.
 
 Boatstack currently compiles 63 registered transitions into one executable
 control graph. The complete list is generated from the registry in the
-[transition catalog](docs/architecture/boatstack-v2-transition-catalog.md).
+[transition catalog](docs/architecture/boatstack-transition-catalog.md).
 
 ### Kernel
 
@@ -275,9 +275,9 @@ boatstack/sdk/              public Go protocol client
 docs/architecture/          executable contracts and generated evidence
 ```
 
-Start with the [architecture specification](docs/architecture/boatstack-v2-kernel.md)
+Start with the [architecture specification](docs/architecture/boatstack-kernel.md)
 for the full internal model. The generated [StandardFlow graph](docs/architecture/boatstack-standard-flow.mmd)
-and [Mermaid catalog](docs/architecture/boatstack-v2-transition-catalog.mmd)
+and [Mermaid catalog](docs/architecture/boatstack-transition-catalog.mmd)
 come from the same executable registry used at runtime.
 
 ## Develop

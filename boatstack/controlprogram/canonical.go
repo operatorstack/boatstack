@@ -52,8 +52,8 @@ func readLimited(source io.Reader, limit int64, oversized string) ([]byte, error
 }
 
 func Compile(document Document, resolver BindingResolver) (Compiled, error) {
-	if document.SchemaVersion != SchemaVersion {
-		return Compiled{}, invalid("schema_version", "unsupported schema")
+	if document.Schema != SchemaName || document.SchemaRevision != SchemaRevision {
+		return Compiled{}, invalid("schema", "unsupported schema or revision")
 	}
 	if !validID(document.Program.ID) || document.Program.Version == "" {
 		return Compiled{}, invalid("program", "id and version are required")
@@ -108,10 +108,10 @@ func Compile(document Document, resolver BindingResolver) (Compiled, error) {
 	if err != nil {
 		return Compiled{}, err
 	}
-	if err := normalizeTransitions(&document, facets, operators); err != nil {
+	if err := normalizeTargetsAndEntries(&document, facets, resolver); err != nil {
 		return Compiled{}, err
 	}
-	if err := normalizeTargetsAndEntries(&document, facets); err != nil {
+	if err := normalizeTransitions(&document, facets, operators); err != nil {
 		return Compiled{}, err
 	}
 
@@ -173,35 +173,48 @@ func normalizeOperators(document *Document, facets map[string]Facet, resolver Bi
 				if op.Binding.Fingerprint != resolved.Fingerprint {
 					return nil, invalid("operators."+op.ID+".binding", "binding fingerprint drift")
 				}
-				expected := Operator{ID: op.ID, Binding: &OperatorBinding{Reference: op.Binding.Reference, Version: op.Binding.Version, Fingerprint: resolved.Fingerprint}, Capabilities: resolved.Capabilities, Authority: resolved.Authority, Effects: resolved.Effects, Verifier: resolved.Verifier, Recovery: resolved.Recovery, StateEffect: &resolved.StateEffect}
+				expected := Operator{ID: op.ID, Binding: &OperatorBinding{Reference: op.Binding.Reference, Version: op.Binding.Version, Fingerprint: resolved.Fingerprint}, Capabilities: resolved.Capabilities, Authority: resolved.Authority, Effects: resolved.Effects, Verifier: resolved.Verifier, Recovery: resolved.Recovery, StateEffect: &resolved.StateEffect, ExecutionContext: resolved.ExecutionContext}
 				expectedBinding = &expected
 			} else {
 				op.Binding.Fingerprint = resolved.Fingerprint
 				op.Capabilities, op.Authority, op.Effects = resolved.Capabilities, resolved.Authority, resolved.Effects
-				op.Verifier, op.Recovery, op.StateEffect = resolved.Verifier, resolved.Recovery, &resolved.StateEffect
+				op.Verifier, op.Recovery, op.StateEffect, op.ExecutionContext = resolved.Verifier, resolved.Recovery, &resolved.StateEffect, resolved.ExecutionContext
 			}
 		}
 		var err error
 		if op.Capabilities, err = normalizedReferenceSet("operators."+op.ID+".capabilities", op.Capabilities); err != nil {
 			return nil, err
 		}
-		if op.Authority, err = normalizedReferenceSet("operators."+op.ID+".authority", op.Authority); err != nil {
+		if op.Authority.AnyOf, err = normalizedReferenceSet("operators."+op.ID+".authority.any_of", op.Authority.AnyOf); err != nil {
 			return nil, err
+		}
+		if op.Authority.AllOf, err = normalizedReferenceSet("operators."+op.ID+".authority.all_of", op.Authority.AllOf); err != nil {
+			return nil, err
+		}
+		if op.ExecutionContext != "preserve" && op.ExecutionContext != "advance" {
+			return nil, invalid("operators."+op.ID+".execution_context", "must be preserve or advance")
+		}
+		if op.Binding == nil && op.ExecutionContext == "advance" {
+			return nil, invalid("operators."+op.ID+".execution_context", "only trusted bindings may advance execution context")
 		}
 		if op.Effects, err = normalizedReferenceSet("operators."+op.ID+".effects", op.Effects); err != nil {
 			return nil, err
 		}
 		if op.Binding != nil {
 			document.Declarations.Capabilities = union(document.Declarations.Capabilities, op.Capabilities)
-			document.Declarations.Authorities = union(document.Declarations.Authorities, op.Authority)
+			document.Declarations.Authorities = union(document.Declarations.Authorities, op.Authority.AnyOf)
+			document.Declarations.Authorities = union(document.Declarations.Authorities, op.Authority.AllOf)
 			document.Declarations.Effects = union(document.Declarations.Effects, op.Effects)
 			document.Declarations.Verifiers = union(document.Declarations.Verifiers, []string{op.Verifier})
 		}
 		if missing := firstUndeclared(op.Capabilities, document.Declarations.Capabilities); missing != "" {
 			return nil, invalid("operators."+op.ID+".capabilities", "undeclared "+missing)
 		}
-		if missing := firstUndeclared(op.Authority, document.Declarations.Authorities); missing != "" {
-			return nil, invalid("operators."+op.ID+".authority", "undeclared "+missing)
+		if missing := firstUndeclared(op.Authority.AnyOf, document.Declarations.Authorities); missing != "" {
+			return nil, invalid("operators."+op.ID+".authority.any_of", "undeclared "+missing)
+		}
+		if missing := firstUndeclared(op.Authority.AllOf, document.Declarations.Authorities); missing != "" {
+			return nil, invalid("operators."+op.ID+".authority.all_of", "undeclared "+missing)
 		}
 		if missing := firstUndeclared(op.Effects, document.Declarations.Effects); missing != "" {
 			return nil, invalid("operators."+op.ID+".effects", "undeclared "+missing)
@@ -220,7 +233,8 @@ func normalizeOperators(document *Document, facets map[string]Facet, resolver Bi
 		}
 		if expectedBinding != nil {
 			expectedBinding.Capabilities, _ = normalizedReferenceSet("binding.capabilities", expectedBinding.Capabilities)
-			expectedBinding.Authority, _ = normalizedReferenceSet("binding.authority", expectedBinding.Authority)
+			expectedBinding.Authority.AnyOf, _ = normalizedReferenceSet("binding.authority.any_of", expectedBinding.Authority.AnyOf)
+			expectedBinding.Authority.AllOf, _ = normalizedReferenceSet("binding.authority.all_of", expectedBinding.Authority.AllOf)
 			expectedBinding.Effects, _ = normalizedReferenceSet("binding.effects", expectedBinding.Effects)
 			_ = normalizeStateEffect(expectedBinding.StateEffect, facets)
 			if !sameOperatorSemantics(*op, *expectedBinding) {
@@ -253,6 +267,7 @@ func normalizeTransitions(document *Document, facets map[string]Facet, operators
 	seen := map[string]bool{}
 	for i := range document.Transitions {
 		value := &document.Transitions[i]
+		var err error
 		if !validID(value.ID) || seen[value.ID] || operators[value.Operator].ID == "" {
 			return invalid(fmt.Sprintf("transitions[%d]", i), "invalid transition or operator reference")
 		}
@@ -262,6 +277,13 @@ func normalizeTransitions(document *Document, facets map[string]Facet, operators
 		}
 		if err := normalizePredicate(&value.Target, facets); err != nil {
 			return invalid("transitions."+value.ID+".target", err.Error())
+		}
+		value.Requires.Authorities, err = normalizedReferenceSet("transitions."+value.ID+".requires.authorities", value.Requires.Authorities)
+		if err != nil {
+			return err
+		}
+		if missing := firstUndeclared(value.Requires.Authorities, document.Declarations.Authorities); missing != "" {
+			return invalid("transitions."+value.ID+".requires.authorities", "undeclared "+missing)
 		}
 	}
 	if len(seen) == 0 {
@@ -276,7 +298,7 @@ func normalizeTransitions(document *Document, facets map[string]Facet, operators
 	return nil
 }
 
-func normalizeTargetsAndEntries(document *Document, facets map[string]Facet) error {
+func normalizeTargetsAndEntries(document *Document, facets map[string]Facet, resolver BindingResolver) error {
 	targets := map[string]bool{}
 	for i := range document.Targets {
 		value := &document.Targets[i]
@@ -299,6 +321,29 @@ func normalizeTargetsAndEntries(document *Document, facets map[string]Facet) err
 			return invalid(fmt.Sprintf("entries[%d]", i), "invalid entry or target reference")
 		}
 		entries[entry.ID] = true
+		if entry.Delegation != nil {
+			if resolver == nil {
+				return invalid("entries."+entry.ID+".delegation", "no binding resolver is available")
+			}
+			compiledBinding := entry.Delegation.Fingerprint != "" || len(entry.Delegation.Authorities) != 0
+			resolved, resolveErr := resolver.ResolveDelegation(entry.Delegation.Reference, entry.Delegation.Version)
+			if resolveErr != nil {
+				return invalid("entries."+entry.ID+".delegation", resolveErr.Error())
+			}
+			if !resolved.Delegable || len(resolved.Fingerprint) != 64 {
+				return invalid("entries."+entry.ID+".delegation", "binding is not delegable")
+			}
+			resolved.Authorities, resolveErr = normalizedReferenceSet("entries."+entry.ID+".delegation.authorities", resolved.Authorities)
+			if resolveErr != nil || len(resolved.Authorities) == 0 {
+				return invalid("entries."+entry.ID+".delegation", "binding grants no valid authority")
+			}
+			if compiledBinding && (entry.Delegation.Fingerprint != resolved.Fingerprint || !equalStrings(entry.Delegation.Authorities, resolved.Authorities)) {
+				return invalid("entries."+entry.ID+".delegation", "binding semantics drift")
+			}
+			entry.Delegation.Fingerprint = resolved.Fingerprint
+			entry.Delegation.Authorities = append([]string(nil), resolved.Authorities...)
+			document.Declarations.Authorities = union(document.Declarations.Authorities, resolved.Authorities)
+		}
 		inputs := map[string]bool{}
 		for j := range entry.Inputs {
 			input := &entry.Inputs[j]
@@ -502,7 +547,7 @@ func stripDescriptions(value Document) Document {
 }
 
 func hasInlineSemantics(value Operator) bool {
-	return len(value.Capabilities) != 0 || len(value.Authority) != 0 || len(value.Effects) != 0 || value.Verifier != "" || value.Recovery != "" || value.StateEffect != nil
+	return len(value.Capabilities) != 0 || len(value.Authority.AnyOf) != 0 || len(value.Authority.AllOf) != 0 || len(value.Effects) != 0 || value.Verifier != "" || value.Recovery != "" || value.StateEffect != nil || value.ExecutionContext != ""
 }
 func sameOperatorSemantics(left, right Operator) bool {
 	left.Description, right.Description = "", ""
@@ -511,6 +556,17 @@ func sameOperatorSemantics(left, right Operator) bool {
 	return leftErr == nil && rightErr == nil && bytes.Equal(leftRaw, rightRaw)
 }
 func validID(value string) bool { return semanticID.MatchString(value) }
+func equalStrings(left, right []string) bool {
+	return len(left) == len(right) && containsAllStrings(left, right)
+}
+func containsAllStrings(left, right []string) bool {
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
 func contains(values []string, wanted string) bool {
 	i := sort.SearchStrings(values, wanted)
 	return i < len(values) && values[i] == wanted

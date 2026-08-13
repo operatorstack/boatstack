@@ -8,6 +8,7 @@ import {
   type FacetDefinition,
   type OperatorDefinition,
   type TransitionDefinition,
+  type DelegationBindingDefinition,
 } from "@operatorstack/boatstack";
 
 const bindingPrefix = "software-delivery/";
@@ -60,6 +61,19 @@ export interface TrustedStep {
   priority: number;
 }
 
+export interface TrustedTransitionOptions {
+  requires?: { authorities?: string[] };
+}
+
+export function trustedDelegation(
+  authority: "autonomy",
+): DelegationBindingDefinition {
+  return {
+    reference: `${bindingPrefix}delegation/${authority}`,
+    version: "1",
+  };
+}
+
 export function inbox(path: string): EntryInputDefinition {
   return {
     id: "plan",
@@ -80,16 +94,21 @@ export function trustedOperators(steps: TrustedStep[]): OperatorDefinition[] {
   return steps.map(trustedOperator);
 }
 
-export function trustedTransition(step: TrustedStep): TransitionDefinition {
+export function trustedTransition(
+  step: TrustedStep,
+  options: TrustedTransitionOptions = {},
+): TransitionDefinition {
   return transition(step.id, step.id, {
     guard: always,
     target: always,
     priority: step.priority,
+    ...(options.requires ? { requires: options.requires } : {}),
   });
 }
 
 export function trustedTransitions(
   steps: TrustedStep[],
+  options: TrustedTransitionOptions = {},
 ): TransitionDefinition[] {
-  return steps.map(trustedTransition);
+  return steps.map((step) => trustedTransition(step, options));
 }

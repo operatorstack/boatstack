@@ -677,9 +677,9 @@ class RepositoryContract(unittest.TestCase):
     def test_catalog_and_generated_artifacts_match_the_executable_registry(self) -> None:
         attributes = (REPO / ".gitattributes").read_text().splitlines()
         for pattern in (
-            "docs/architecture/boatstack-v2-*.md text eol=lf",
-            "docs/architecture/boatstack-v2-*.mmd text eol=lf",
-            "docs/architecture/boatstack-v2-*.json text eol=lf",
+            "docs/architecture/boatstack-*.md text eol=lf",
+            "docs/architecture/boatstack-*.mmd text eol=lf",
+            "docs/architecture/boatstack-*.json text eol=lf",
             "docs/architecture/boatstack-standard-flow.mmd text eol=lf",
         ):
             self.assertIn(pattern, attributes)
@@ -705,11 +705,11 @@ class RepositoryContract(unittest.TestCase):
         ).stdout
         self.assertEqual(
             markdown,
-            (REPO / "docs" / "architecture" / "boatstack-v2-transition-catalog.md").read_text(),
+            (REPO / "docs" / "architecture" / "boatstack-transition-catalog.md").read_text(),
         )
         self.assertEqual(
             mermaid,
-            (REPO / "docs" / "architecture" / "boatstack-v2-transition-catalog.mmd").read_text(),
+            (REPO / "docs" / "architecture" / "boatstack-transition-catalog.mmd").read_text(),
         )
         self.assertEqual(
             standard_flow,
@@ -717,8 +717,8 @@ class RepositoryContract(unittest.TestCase):
         )
         self.assertEqual(standard_flow.count("<br/>"), 30)
         for name, rendered in (
-            ("boatstack-v2-locus-safety.json", locus_safety),
-            ("boatstack-v2-locus-liveness.json", locus_liveness),
+            ("boatstack-locus-safety.json", locus_safety),
+            ("boatstack-locus-liveness.json", locus_liveness),
         ):
             checked = (REPO / "docs" / "architecture" / name).read_text()
             self.assertEqual(rendered, checked)

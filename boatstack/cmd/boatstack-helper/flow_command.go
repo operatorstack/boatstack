@@ -21,7 +21,7 @@ import (
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 )
 
-const flowCompilerVersion = "control-program/v1.compiler.1"
+const flowCompilerVersion = "control-program.compiler.1"
 
 type flowCommandOptions struct {
 	repository string
@@ -33,9 +33,18 @@ type flowCommandOptions struct {
 
 func runFlowCommand(arguments []string) error {
 	if len(arguments) == 0 {
-		return fmt.Errorf("usage: boatstack flow <compile|check> [flags]")
+		return fmt.Errorf("usage: boatstack flow <compile|check|authorize|revoke|run> [flags]")
 	}
 	action := arguments[0]
+	if action == "authorize" {
+		return runFlowAuthorize(arguments[1:])
+	}
+	if action == "revoke" {
+		return runFlowRevoke(arguments[1:])
+	}
+	if action == "run" {
+		return runFlowContinuation(arguments[1:])
+	}
 	flags := flag.NewFlagSet("flow "+action, flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	options := flowCommandOptions{}

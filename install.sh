@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Boatstack V2 bootstrap trust boundary. This script installs a checksum-bound
+# Boatstack bootstrap trust boundary. This script installs a checksum-bound
 # runtime transport. Every repository mutation is then performed by the
 # installation.initialize or installation.update kernel transition.
 
@@ -15,7 +15,7 @@ config_source="${BOATSTACK_CONFIG:-}"
 
 case "$mode" in
   install|update) ;;
-  *) echo "Boatstack V2 supports BOATSTACK_MODE=install or update" >&2; exit 2 ;;
+  *) echo "Boatstack supports BOATSTACK_MODE=install or update" >&2; exit 2 ;;
 esac
 
 repository="$(git -C "$repository" rev-parse --show-toplevel)"
@@ -127,6 +127,6 @@ launcher_staged="$install_dir/.boatstack.$$"
 install -m 0755 "$candidate" "$launcher_staged"
 mv -f "$launcher_staged" "$install_dir/boatstack"
 
-echo "Boatstack V2 installed at $runtime"
+echo "Boatstack installed at $runtime"
 echo "Review and commit $repository/.boatstack/project.json, $repository/.boatstack/runtime.json, and the generated host skills"
 echo "Run: $install_dir/boatstack doctor --repo $repository --format text"
