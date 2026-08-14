@@ -64,16 +64,41 @@ func captureStdout(t *testing.T, action func() error) ([]byte, error) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	type captureResult struct {
+		output []byte
+		err    error
+	}
+	captured := make(chan captureResult, 1)
+	go func() {
+		output, readErr := io.ReadAll(readSide)
+		captured <- captureResult{output: output, err: readErr}
+	}()
 	os.Stdout = writeSide
 	runErr := action()
-	_ = writeSide.Close()
 	os.Stdout = oldStdout
-	output, readErr := io.ReadAll(readSide)
-	_ = readSide.Close()
-	if readErr != nil {
-		t.Fatal(readErr)
+	if err := writeSide.Close(); err != nil {
+		t.Fatal(err)
 	}
-	return output, runErr
+	result := <-captured
+	_ = readSide.Close()
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	return result.output, runErr
+}
+
+func TestCaptureStdoutDrainsWhileActionWrites(t *testing.T) {
+	payload := bytes.Repeat([]byte("x"), 1<<20)
+	output, err := captureStdout(t, func() error {
+		_, writeErr := os.Stdout.Write(payload)
+		return writeErr
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(output, payload) {
+		t.Fatalf("captured %d bytes, want %d", len(output), len(payload))
+	}
 }
 
 func TestExplanationTextPreservesAuthorityAlgebra(t *testing.T) {
