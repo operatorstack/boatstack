@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+
+	"github.com/operatorstack/boatstack/boatstack/internal/buildinfo"
 )
 
 const (
@@ -77,19 +79,19 @@ func runtimeBootstrapDiagnostic(code, message, repository string, identity Ident
 	diagnostic.RequiredRuntime = &BootstrapRequiredRuntime{
 		Version: identity.Version, SHA256: identity.SHA256, SourceRevision: identity.SourceRevision,
 	}
-	if code == CodeRuntimeNotInstalled && publicReleasePattern.MatchString(identity.Version) {
+	if code == CodeRuntimeNotInstalled && publicReleasePattern.MatchString(identity.Version) && publicReleasePattern.MatchString(buildinfo.Version) {
 		diagnostic.Recovery = &BootstrapRecovery{
-			Action: "install-exact-runtime", Command: releaseInstallCommand(identity.Version), RequiresConfirmation: true,
+			Action: "install-exact-runtime", Command: releaseInstallCommand(identity, buildinfo.Version), RequiresConfirmation: true,
 		}
 	}
 	return diagnostic
 }
 
-func releaseInstallCommand(version string) string {
+func releaseInstallCommand(identity Identity, installerVersion string) string {
 	if runtime.GOOS == "windows" {
-		return fmt.Sprintf("$env:BOATSTACK_MODE='hydrate'; $env:BOATSTACK_VERSION='%s'; Invoke-RestMethod https://raw.githubusercontent.com/operatorstack/boatstack/%s/install.ps1 | Invoke-Expression", version, version)
+		return fmt.Sprintf("$env:BOATSTACK_MODE='hydrate'; $env:BOATSTACK_VERSION='%s'; $env:BOATSTACK_EXPECTED_RUNTIME_SHA256='%s'; Invoke-RestMethod https://raw.githubusercontent.com/operatorstack/boatstack/%s/install.ps1 | Invoke-Expression", identity.Version, identity.SHA256, installerVersion)
 	}
-	return fmt.Sprintf("BOATSTACK_MODE=hydrate BOATSTACK_VERSION=%s /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/operatorstack/boatstack/%s/install.sh)\"", version, version)
+	return fmt.Sprintf("BOATSTACK_MODE=hydrate BOATSTACK_VERSION=%s BOATSTACK_EXPECTED_RUNTIME_SHA256=%s /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/operatorstack/boatstack/%s/install.sh)\"", identity.Version, identity.SHA256, installerVersion)
 }
 
 func requestedJSON(arguments []string) bool {

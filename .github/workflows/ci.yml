@@ -184,6 +184,53 @@ jobs:
             $errors | ForEach-Object { Write-Error $_ }
             exit 1
           }
+      - name: Prove PowerShell install and hydration boundaries
+        if: matrix.shard == '0'
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP ("boatstack-installer-" + [guid]::NewGuid().ToString("N"))
+          $helper = (Resolve-Path boatstack/boatstack-helper.exe).Path
+          $version = (& $helper version).Trim()
+          $digest = (Get-FileHash -Algorithm SHA256 -LiteralPath $helper).Hash.ToLowerInvariant()
+          try {
+            foreach ($mode in @("hydrate", "install")) {
+              $repository = Join-Path $root "$mode-repository"
+              New-Item -ItemType Directory -Force -Path $repository | Out-Null
+              & git -C $repository init --initial-branch=main | Out-Null
+              & git -C $repository config user.email "installer-contract@example.invalid"
+              & git -C $repository config user.name "Installer Contract"
+              Set-Content -LiteralPath (Join-Path $repository "README.md") -Value "fixture"
+              & git -C $repository add README.md
+              & git -C $repository commit -m "Initialize fixture" | Out-Null
+
+              $runtimeHome = Join-Path $root "$mode-home"
+              $installDir = Join-Path $root "$mode-bin"
+              $env:BOATSTACK_REPO = $repository
+              $env:BOATSTACK_HOME = $runtimeHome
+              $env:BOATSTACK_INSTALL_DIR = $installDir
+              $env:BOATSTACK_MODE = $mode
+              $env:BOATSTACK_VERSION = $version
+              $env:BOATSTACK_BINARY = $helper
+              $env:BOATSTACK_BINARY_SHA256 = $digest
+              $env:BOATSTACK_EXPECTED_RUNTIME_SHA256 = $digest
+              & ./install.ps1
+              if ($LASTEXITCODE -ne 0) { throw "$mode installer failed" }
+
+              $runtime = Join-Path $runtimeHome "runtimes\$version-$digest\boatstack-runtime.exe"
+              $launcher = Join-Path $installDir "boatstack.exe"
+              if (-not (Test-Path -LiteralPath $runtime -PathType Leaf)) { throw "$mode did not stage the runtime" }
+              if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) { throw "$mode did not stage the launcher" }
+              if ($mode -eq "hydrate") {
+                if (Test-Path -LiteralPath (Join-Path $repository ".boatstack")) { throw "hydrate changed repository state" }
+                if (Test-Path -LiteralPath (Join-Path $repository ".git\boatstack")) { throw "hydrate changed controller state" }
+                if (& git -C $repository status --porcelain) { throw "hydrate changed tracked repository files" }
+              } elseif (-not (Test-Path -LiteralPath (Join-Path $repository ".boatstack\runtime.json") -PathType Leaf)) {
+                throw "install did not initialize the repository runtime pin"
+              }
+            }
+          } finally {
+            Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+          }
 
   repository-contract:
     name: repository-contract

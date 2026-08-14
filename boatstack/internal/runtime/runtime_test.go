@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/operatorstack/boatstack/boatstack/internal/buildinfo"
 )
 
 func requireBootstrapDiagnostic(t *testing.T, err error, code string) *BootstrapDiagnostic {
@@ -116,6 +118,9 @@ func TestMissingPinnedRuntimeFailsClosedWithoutLatestFallback(t *testing.T) {
 	}
 	if diagnostic.Recovery == nil || diagnostic.Recovery.Action != "install-exact-runtime" || !diagnostic.Recovery.RequiresConfirmation || !strings.Contains(diagnostic.Recovery.Command, "BOATSTACK_MODE") || !strings.Contains(diagnostic.Recovery.Command, "hydrate") || !strings.Contains(diagnostic.Recovery.Command, missing.Version) || strings.Contains(diagnostic.Recovery.Command, "latest") || strings.Contains(diagnostic.Recovery.Command, "BOATSTACK_MODE=update") {
 		t.Fatalf("recovery = %#v", diagnostic.Recovery)
+	}
+	if !strings.Contains(diagnostic.Recovery.Command, missing.SHA256) || !strings.Contains(diagnostic.Recovery.Command, "/"+buildinfo.Version+"/install") || strings.Contains(diagnostic.Recovery.Command, "/"+missing.Version+"/install") {
+		t.Fatalf("recovery is not bound to target digest and current installer: %s", diagnostic.Recovery.Command)
 	}
 	if _, statErr := os.Stat(filepath.Join(repository, ".git", "boatstack")); !os.IsNotExist(statErr) {
 		t.Fatalf("missing runtime created managed state: %v", statErr)

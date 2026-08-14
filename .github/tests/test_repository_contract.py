@@ -102,8 +102,8 @@ class RepositoryContract(unittest.TestCase):
             "boatstack-helper-old.exe" if os.name == "nt" else "boatstack-helper-old"
         )
         for output, version, source in (
-            (cls.helper, "v0.7.contract-new", "b" * 40),
-            (cls.old_helper, "v0.7.contract-old", "a" * 40),
+            (cls.helper, "v9.9.10", "b" * 40),
+            (cls.old_helper, "v9.9.9", "a" * 40),
         ):
             ldflags = " ".join(
                 (
@@ -884,7 +884,7 @@ class RepositoryContract(unittest.TestCase):
             )
             self.assertTrue(updated["doctor"]["healthy"])
             pin = json.loads((repository / ".boatstack" / "runtime.json").read_text())
-            self.assertEqual(pin["version"], "v0.7.contract-new")
+            self.assertEqual(pin["version"], "v9.9.10")
             self.assertEqual(pin["sha256"], hashlib.sha256(self.helper.read_bytes()).hexdigest())
             self.assertNotIn("path", pin)
             events = [json.loads(line) for line in self.run_command(
@@ -994,6 +994,21 @@ class RepositoryContract(unittest.TestCase):
                 "",
             )
 
+            wrong_digest = dict(env)
+            wrong_digest.update(
+                {
+                    "BOATSTACK_HOME": str(root / "digest-home"),
+                    "BOATSTACK_INSTALL_DIR": str(root / "digest-bin"),
+                    "BOATSTACK_EXPECTED_RUNTIME_SHA256": "0" * 64,
+                }
+            )
+            digest_rejected = self.run_command(
+                "bash", REPO / "install.sh", cwd=repository, env=wrong_digest, expected=1,
+            )
+            self.assertIn("BOATSTACK_RUNTIME_ARTIFACT_CHECKSUM_MISMATCH", digest_rejected.stderr)
+            self.assertFalse((root / "digest-home").exists())
+            self.assertFalse((root / "digest-bin").exists())
+
             wrong_version = dict(env)
             wrong_version.update(
                 {
@@ -1008,6 +1023,25 @@ class RepositoryContract(unittest.TestCase):
             self.assertIn("Boatstack runtime version mismatch", rejected.stderr)
             self.assertFalse((root / "wrong-home").exists())
             self.assertFalse((root / "wrong-bin").exists())
+
+            old_version = self.run_command(self.old_helper, "version").stdout.strip()
+            old_digest = hashlib.sha256(self.old_helper.read_bytes()).hexdigest()
+            older_runtime = dict(env)
+            older_runtime.update(
+                {
+                    "BOATSTACK_HOME": str(root / "old-home"),
+                    "BOATSTACK_INSTALL_DIR": str(root / "old-bin"),
+                    "BOATSTACK_VERSION": old_version,
+                    "BOATSTACK_BINARY": str(self.old_helper),
+                    "BOATSTACK_BINARY_SHA256": old_digest,
+                    "BOATSTACK_EXPECTED_RUNTIME_SHA256": old_digest,
+                }
+            )
+            self.run_command("bash", REPO / "install.sh", cwd=repository, env=older_runtime)
+            restored = root / "old-home" / "runtimes" / f"{old_version}-{old_digest}" / "boatstack-runtime"
+            self.assertTrue(restored.is_file())
+            self.assertFalse((repository / ".boatstack").exists())
+            self.assertFalse((repository / ".git" / "boatstack").exists())
 
     def test_launcher_renders_missing_runtime_as_text_and_json_before_state(self) -> None:
         # control-law: launcher-diagnostic-precedes-runtime-dispatch-and-managed-state
@@ -1052,7 +1086,8 @@ class RepositoryContract(unittest.TestCase):
                 "sha256": pin["sha256"],
                 "source_revision": pin["source_revision"],
             })
-            self.assertIn("/v9.9.9/install", diagnostic["recovery"]["command"])
+            self.assertIn("/v9.9.10/install", diagnostic["recovery"]["command"])
+            self.assertIn(pin["sha256"], diagnostic["recovery"]["command"])
             self.assertIn("BOATSTACK_MODE=hydrate", diagnostic["recovery"]["command"])
             self.assertNotIn("BOATSTACK_MODE=update", diagnostic["recovery"]["command"])
             self.assertTrue(diagnostic["recovery"]["requires_confirmation"])
@@ -1166,7 +1201,7 @@ class RepositoryContract(unittest.TestCase):
             env["BOATSTACK_ACCEPT_PROGRAM_CHANGE"] = "true"
             self.run_command("bash", REPO / "install.sh", cwd=repository, env=env)
             pin = json.loads((repository / ".boatstack" / "runtime.json").read_text())
-            self.assertEqual(pin["version"], "v0.7.contract-new")
+            self.assertEqual(pin["version"], "v9.9.10")
             self.assertEqual(pin["sha256"], hashlib.sha256(self.helper.read_bytes()).hexdigest())
             self.assertNotIn("path", pin)
             doctor = json.loads(

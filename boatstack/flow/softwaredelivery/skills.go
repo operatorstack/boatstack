@@ -8,6 +8,7 @@ import (
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	"github.com/operatorstack/boatstack/boatstack/flow/skillprojection"
+	"github.com/operatorstack/boatstack/boatstack/internal/buildinfo"
 )
 
 func GenerateSkills(compiled controlprogram.Compiled, hosts []string) (map[string][]byte, error) {
@@ -109,7 +110,7 @@ background while input is missing. Never synthesize authority.
 Stop only when Boatstack reports the marked target, a typed blocker, refusal,
 unresolved recovery, or missing authority. This entry grants no merge or deploy
 authority.
-`, slug, description, title(slug), compiled.Document.Program.ID, entry.ID, entry.Target, skillprojection.BootstrapContract(), compiled.Document.Program.ID, entry.ID, host, delegation, supersession))
+`, slug, description, title(slug), compiled.Document.Program.ID, entry.ID, entry.Target, skillprojection.BootstrapContract(buildinfo.Version), compiled.Document.Program.ID, entry.ID, host, delegation, supersession))
 }
 
 func targetEntrySkill(programID string, entries []controlprogram.Entry, target string) (string, bool) {

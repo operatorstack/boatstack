@@ -24,9 +24,14 @@ exact version-and-digest runtime and launcher without changing repository or
 controller state.
 
 ```sh
-BOATSTACK_MODE=hydrate BOATSTACK_VERSION=<exact-tag> \
-  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/operatorstack/boatstack/<exact-tag>/install.sh)"
+BOATSTACK_MODE=hydrate BOATSTACK_VERSION=<exact-runtime-tag> \
+  BOATSTACK_EXPECTED_RUNTIME_SHA256=<exact-pinned-sha256> \
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/operatorstack/boatstack/<installer-tag>/install.sh)"
 ```
+
+The launcher supplies all three exact values. The installer tag identifies the
+current launcher release that supports hydration; it may restore an older
+pinned runtime tag. The explicit SHA-256 must still match the repository pin.
 
 Display this command and obtain explicit approval before running it. Generated
 Flow skills never run or authorize installation. If the `boatstack` launcher

@@ -78,6 +78,10 @@ fi
   echo "BOATSTACK_RUNTIME_ARTIFACT_CHECKSUM_MISMATCH: version=$version asset=$asset expected=$expected actual=$actual" >&2
   exit 1
 }
+if [[ -n "${BOATSTACK_EXPECTED_RUNTIME_SHA256:-}" && "$actual" != "$BOATSTACK_EXPECTED_RUNTIME_SHA256" ]]; then
+  echo "BOATSTACK_RUNTIME_ARTIFACT_CHECKSUM_MISMATCH: version=$version asset=$asset expected=$BOATSTACK_EXPECTED_RUNTIME_SHA256 actual=$actual" >&2
+  exit 1
+fi
 chmod 0755 "$candidate"
 
 candidate_version="$("$candidate" version)"

@@ -62,6 +62,9 @@ try {
   if ($Actual -ne $Expected) {
     throw "BOATSTACK_RUNTIME_ARTIFACT_CHECKSUM_MISMATCH: version=$Version asset=$Asset expected=$Expected actual=$Actual"
   }
+  if ($env:BOATSTACK_EXPECTED_RUNTIME_SHA256 -and $Actual -ne $env:BOATSTACK_EXPECTED_RUNTIME_SHA256.ToLowerInvariant()) {
+    throw "BOATSTACK_RUNTIME_ARTIFACT_CHECKSUM_MISMATCH: version=$Version asset=$Asset expected=$($env:BOATSTACK_EXPECTED_RUNTIME_SHA256) actual=$Actual"
+  }
 
   $CandidateVersionOutput = & $Candidate version
   if ($LASTEXITCODE -ne 0 -or -not $CandidateVersionOutput) { throw "Boatstack runtime did not report its version identity" }
@@ -77,7 +80,7 @@ try {
   if (Test-Path -LiteralPath $Runtime) {
     $Installed = (Get-FileHash -Algorithm SHA256 -LiteralPath $Runtime).Hash.ToLowerInvariant()
     if ($Installed -ne $Actual) { throw "Boatstack immutable runtime store collision" }
-  } elseif ($Mode -eq "update") {
+  } else {
     $StagedRuntime = Join-Path $RuntimeDirectory (".boatstack-runtime-" + [guid]::NewGuid().ToString("N"))
     try {
       Copy-Item -LiteralPath $Candidate -Destination $StagedRuntime
@@ -110,7 +113,7 @@ try {
       [System.IO.File]::WriteAllText($ConfigSource, $ConfigText, [System.Text.UTF8Encoding]::new($false))
     }
     & $Runtime init --repo $Repository --human $Actor --param "config_path=$ConfigSource" --format text
-  } else {
+  } elseif ($Mode -eq "update") {
     $AcceptProgramChange = @()
     if ($env:BOATSTACK_ACCEPT_PROGRAM_CHANGE -eq "true") {
       $AcceptProgramChange = @("--accept-program-change")
