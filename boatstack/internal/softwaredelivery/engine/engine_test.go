@@ -584,6 +584,57 @@ func TestEngineTraceLeavesDecisionPrescriptionAndEffectsUnchanged(t *testing.T) 
 	}
 }
 
+func TestEngineTracePreservesCallerObjectiveIdentity(t *testing.T) {
+	now := time.Unix(30, 0).UTC()
+
+	t.Run("absent request remains absent", func(t *testing.T) {
+		observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source")}}
+		kernel, err := New(testRegistry(t), syntheticObjectiveContracts(t), syntheticProgram, observer, fixedClock{now}, fakeLocker{&fakeLock{}}, &fakeJournal{}, &fakeEffects{}, &memoryReceipts{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		request := request(t, now).ResolveRequest
+		request.Objective = model.Objective{}
+		request.Trace = true
+		resolution, err := kernel.Resolve(context.Background(), request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resolution.Trace == nil || resolution.Trace.Objective.Binding == nil || resolution.Trace.Objective.Requested != nil {
+			t.Fatalf("objective trace = %#v, want durable binding and no requested objective", resolution.Trace)
+		}
+	})
+
+	t.Run("optional preserve retains ignored request", func(t *testing.T) {
+		transitions := testRegistry(t).All()
+		for index := range transitions {
+			if transitions[index].ID == "test.advance" {
+				transitions[index].Policy.ObjectiveScope = catalog.ObjectiveScopeOptionalPreserve
+			}
+		}
+		registry, err := catalog.New(transitions)
+		if err != nil {
+			t.Fatal(err)
+		}
+		observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source")}}
+		kernel, err := New(registry, syntheticObjectiveContracts(t), syntheticProgram, observer, fixedClock{now}, fakeLocker{&fakeLock{}}, &fakeJournal{}, &fakeEffects{}, &memoryReceipts{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		requested := model.Objective{ID: "caller-objective", TargetID: model.ObjectiveOpenPR, DeliveryID: "caller-delivery"}
+		request := request(t, now).ResolveRequest
+		request.Objective = requested
+		request.Trace = true
+		resolution, err := kernel.Resolve(context.Background(), request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resolution.Objective.ID != "objective" || resolution.Trace == nil || resolution.Trace.Objective.Binding == nil || resolution.Trace.Objective.Binding.ID != "objective" || resolution.Trace.Objective.Requested == nil || resolution.Trace.Objective.Requested.ID != requested.ID {
+			t.Fatalf("objective resolution lost binding/request separation: resolution=%#v", resolution)
+		}
+	})
+}
+
 func TestEngineTraceExplainsRecoveryAndTargetReached(t *testing.T) {
 	now := time.Unix(30, 0).UTC()
 	t.Run("recovery", func(t *testing.T) {

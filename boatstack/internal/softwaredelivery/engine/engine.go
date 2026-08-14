@@ -98,7 +98,7 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 		if fingerprintErr != nil {
 			return Resolution{}, fingerprintErr
 		}
-		decisionTrace = e.decisionTrace(snapshot, objective, authorityFingerprint, request.Requested, decision, candidateTraces)
+		decisionTrace = e.decisionTrace(snapshot, request.Objective, authorityFingerprint, request.Requested, decision, candidateTraces)
 	}
 	if decision.Kind == supervisor.DecisionPrescribed && decision.Transition != nil {
 		objective, err = protocol.ObjectiveForTransition(snapshot, objective, *decision.Transition)
@@ -155,7 +155,7 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 	return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision, Trace: decisionTrace}, nil
 }
 
-func (e Engine) decisionTrace(snapshot model.Snapshot, objective model.Objective, authorityFingerprint string, requested catalog.TransitionID, decision supervisor.Decision, candidates []general.CandidateTrace) *general.DecisionTrace {
+func (e Engine) decisionTrace(snapshot model.Snapshot, requestedObjective model.Objective, authorityFingerprint string, requested catalog.TransitionID, decision supervisor.Decision, candidates []general.CandidateTrace) *general.DecisionTrace {
 	trace := &general.DecisionTrace{
 		SchemaVersion: general.DecisionTraceSchemaVersion, InstanceID: snapshot.Invocation.RepositoryID,
 		StateRevision: snapshot.StateRevision, CurrentMode: string(snapshot.Phase.Value),
@@ -168,9 +168,9 @@ func (e Engine) decisionTrace(snapshot model.Snapshot, objective model.Objective
 		fingerprint, _ := general.Fingerprint(snapshot.Objective.Value)
 		trace.Objective.Binding = &general.ObjectiveIdentity{ID: snapshot.Objective.Value.ID, Fingerprint: fingerprint}
 	}
-	if objective.Validate() == nil {
-		fingerprint, _ := general.Fingerprint(objective)
-		trace.Objective.Requested = &general.ObjectiveIdentity{ID: objective.ID, Fingerprint: fingerprint}
+	if requestedObjective.Validate() == nil {
+		fingerprint, _ := general.Fingerprint(requestedObjective)
+		trace.Objective.Requested = &general.ObjectiveIdentity{ID: requestedObjective.ID, Fingerprint: fingerprint}
 	}
 	if snapshot.Phase.Value == model.PhaseRecovery || (snapshot.Recovery.Status == model.FactKnown && snapshot.Recovery.Value != model.RecoveryNone) {
 		recovery := &general.RecoveryTrace{Active: true, Reason: "software-delivery recovery state is " + string(snapshot.Recovery.Value)}

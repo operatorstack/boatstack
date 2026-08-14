@@ -855,7 +855,7 @@ func renderExplanation(response surfaces.Response) error {
 	if len(others) != 0 {
 		fmt.Println("\nOther candidates:")
 		for _, candidate := range others {
-			reason := candidateReason(candidate)
+			reason := candidateReason(candidate, trace.Decision)
 			fmt.Printf("  %s\n    %s: %s\n", candidate.TransitionID, candidate.Disposition, reason)
 		}
 	}
@@ -863,16 +863,34 @@ func renderExplanation(response surfaces.Response) error {
 	return nil
 }
 
-func candidateReason(candidate general.CandidateTrace) string {
+func candidateReason(candidate general.CandidateTrace, decision general.DecisionTraceValue) string {
+	switch candidate.Disposition {
+	case general.DispositionAuthorityFrontier:
+		return "required authority is missing"
+	case general.DispositionAmbiguous:
+		return "candidate is part of an unresolved canonical ambiguity"
+	case general.DispositionSelected:
+		if decision.Reason != "" {
+			return decision.Reason
+		}
+		return "candidate was selected by the canonical relation"
+	case general.DispositionExplicitlyRefused:
+		if decision.Reason != "" {
+			return decision.Reason
+		}
+		return "candidate was explicitly refused"
+	}
 	for _, evaluation := range []general.EvaluationTrace{candidate.SourceMode, candidate.RecoveryCompatible, candidate.ObjectiveScope, candidate.ObjectiveMutation, candidate.DomainAdmissible, candidate.Selection} {
 		if evaluation.Evaluated && !evaluation.Satisfied && evaluation.Reason != "" {
 			return evaluation.Reason
 		}
 	}
-	if candidate.Disposition == general.DispositionAuthorityFrontier {
-		return "required authority is missing"
+	switch candidate.Disposition {
+	case general.DispositionShadowed:
+		return "another canonical candidate was preferred"
+	default:
+		return "candidate was not selected"
 	}
-	return "another canonical candidate was preferred"
 }
 
 func renderCapabilities(values []general.Capability) string {

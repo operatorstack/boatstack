@@ -132,6 +132,48 @@ func TestExplanationTextPreservesAuthorityAlgebra(t *testing.T) {
 	}
 }
 
+func TestExplanationTextUsesAuthoritativeCandidateOutcomes(t *testing.T) {
+	tests := []struct {
+		name       string
+		decision   kernel.DecisionTraceValue
+		candidates []kernel.CandidateTrace
+		want       string
+	}{
+		{
+			name:     "ambiguity",
+			decision: kernel.DecisionTraceValue{Kind: string(supervisor.DecisionFrontier), Candidates: []string{"one", "two"}, Reason: "multiple candidates remain ambiguous"},
+			candidates: []kernel.CandidateTrace{
+				{TransitionID: "one", Disposition: kernel.DispositionAmbiguous},
+				{TransitionID: "two", Disposition: kernel.DispositionAmbiguous},
+			},
+			want: "candidate is part of an unresolved canonical ambiguity",
+		},
+		{
+			name:     "selected candidate refused by preflight",
+			decision: kernel.DecisionTraceValue{Kind: string(supervisor.DecisionUnresolved), Reason: "transition \"one\" failed deterministic effect preflight: malformed artifact"},
+			candidates: []kernel.CandidateTrace{
+				{TransitionID: "one", Disposition: kernel.DispositionSelected},
+			},
+			want: "failed deterministic effect preflight: malformed artifact",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := surfaces.Response{Operation: surfaces.OperationExplain, Trace: &kernel.DecisionTrace{
+				StateRevision: 1, CurrentMode: string(model.PhaseObserved), Decision: test.decision, Candidates: test.candidates,
+			}}
+			output, err := captureStdout(t, func() error { return renderResponse(response, "text") })
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := string(output)
+			if !strings.Contains(text, test.want) || strings.Contains(text, "another canonical candidate was preferred") {
+				t.Fatalf("candidate explanation is not outcome-bound:\n%s", text)
+			}
+		})
+	}
+}
+
 func bindSharedGitCommon(t *testing.T, repository, gitDirectory, commonDirectory string) {
 	t.Helper()
 	if err := os.Remove(filepath.Join(repository, ".git")); err != nil {
