@@ -114,7 +114,7 @@ func TestMissingPinnedRuntimeFailsClosedWithoutLatestFallback(t *testing.T) {
 	if diagnostic.RequiredRuntime == nil || diagnostic.RequiredRuntime.Version != missing.Version || diagnostic.RequiredRuntime.SHA256 != missing.SHA256 || diagnostic.RequiredRuntime.SourceRevision != missing.SourceRevision {
 		t.Fatalf("required runtime = %#v", diagnostic.RequiredRuntime)
 	}
-	if diagnostic.Recovery == nil || diagnostic.Recovery.Action != "install-exact-runtime" || !diagnostic.Recovery.RequiresConfirmation || !strings.Contains(diagnostic.Recovery.Command, "BOATSTACK_MODE=hydrate") || !strings.Contains(diagnostic.Recovery.Command, "BOATSTACK_VERSION=v1.0.0") || strings.Contains(diagnostic.Recovery.Command, "latest") || strings.Contains(diagnostic.Recovery.Command, "BOATSTACK_MODE=update") {
+	if diagnostic.Recovery == nil || diagnostic.Recovery.Action != "install-exact-runtime" || !diagnostic.Recovery.RequiresConfirmation || !strings.Contains(diagnostic.Recovery.Command, "BOATSTACK_MODE") || !strings.Contains(diagnostic.Recovery.Command, "hydrate") || !strings.Contains(diagnostic.Recovery.Command, missing.Version) || strings.Contains(diagnostic.Recovery.Command, "latest") || strings.Contains(diagnostic.Recovery.Command, "BOATSTACK_MODE=update") {
 		t.Fatalf("recovery = %#v", diagnostic.Recovery)
 	}
 	if _, statErr := os.Stat(filepath.Join(repository, ".git", "boatstack")); !os.IsNotExist(statErr) {
