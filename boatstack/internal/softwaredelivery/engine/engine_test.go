@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"reflect"
@@ -15,6 +16,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/ports"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
+	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
 type fixedClock struct{ now time.Time }
@@ -475,6 +477,145 @@ func TestSyntheticStartVerifyTerminalContractNeedsNoStandardFlowFacet(t *testing
 	if target.Terminal.Value != model.TerminalNonterminal || target.Plan.Value != model.PlanAbsent || target.Publication.Value != model.PublicationNone {
 		t.Fatalf("fixture unexpectedly relied on StandardFlow terminal state: %+v", target)
 	}
+}
+
+func TestSoftwareDecisionTracePreservesAuthorityClausesAndDomainReason(t *testing.T) {
+	// control-law: software-domain-evaluation-feeds-one-kernel-relation
+	transitions := testRegistryWithAdvanceClass(t, catalog.EventOwnedExternal).All()
+	for index := range transitions {
+		if transitions[index].ID == "test.advance" {
+			transitions[index].Authority = []catalog.AuthorityClass{catalog.AuthorityHuman, catalog.AuthorityAutonomy}
+			transitions[index].AuthorityAll = []catalog.AuthorityClass{catalog.AuthorityProvider}
+		}
+	}
+	registry, err := catalog.New(transitions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := model.CanonicalizeForProgram(observation(model.PhaseObserved, "source"), syntheticProgramFingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	control := supervisor.New(registry, syntheticObjectiveContracts(t))
+	decision, trace := control.ResolveWithTrace(snapshot, snapshot.Objective.Value, catalog.AuthoritySet{catalog.AuthorityAutonomy: true}, "")
+	if decision.Kind != supervisor.DecisionFrontier {
+		t.Fatalf("authority decision = %+v", decision)
+	}
+	for _, candidate := range trace {
+		if candidate.TransitionID != "test.advance" {
+			continue
+		}
+		if candidate.Disposition != general.DispositionAuthorityFrontier || !candidate.Authority.AnySatisfied || candidate.Authority.AllSatisfied ||
+			!reflect.DeepEqual(candidate.Authority.MissingAll, []general.Capability{"authority.external-provider"}) {
+			t.Fatalf("authority trace collapsed clauses: %#v", candidate)
+		}
+		return
+	}
+	t.Fatal("publication candidate is absent")
+}
+
+func TestSoftwareDecisionTraceExplainsStaleEvidenceWithoutLeakingUnrelatedFact(t *testing.T) {
+	transitions := testRegistry(t).All()
+	for index := range transitions {
+		if transitions[index].ID == "test.advance" {
+			transitions[index].SourceConditions = append(transitions[index].SourceConditions, catalog.FacetCondition{
+				Facet: model.FacetVerification, Statuses: []model.FactStatus{model.FactKnown}, Values: []string{string(model.VerificationCurrent)},
+			})
+		}
+	}
+	registry, err := catalog.New(transitions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed := observation(model.PhaseObserved, "source")
+	observed.ProgramFacts["test.synthetic.secret"] = model.Known("do-not-print", observed.Phase.Evidence[0])
+	snapshot, err := model.CanonicalizeForProgram(observed, syntheticProgramFingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision, trace := supervisor.New(registry, syntheticObjectiveContracts(t)).ResolveWithTrace(snapshot, snapshot.Objective.Value, catalog.AuthoritySet{catalog.AuthorityRepository: true}, "")
+	if decision.Kind != supervisor.DecisionUnresolved {
+		t.Fatalf("stale evidence decision = %+v", decision)
+	}
+	encoded, err := json.Marshal(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "do-not-print") {
+		t.Fatalf("trace leaked unrelated domain payload: %s", encoded)
+	}
+	for _, candidate := range trace {
+		if candidate.TransitionID == "test.advance" {
+			if candidate.Disposition != general.DispositionSourceModeRejected || !strings.Contains(candidate.SourceMode.Reason, "verification") || !strings.Contains(candidate.SourceMode.Reason, "unverified") {
+				t.Fatalf("stale verification reason = %#v", candidate)
+			}
+			return
+		}
+	}
+	t.Fatal("stale candidate is absent")
+}
+
+func TestEngineTraceLeavesDecisionPrescriptionAndEffectsUnchanged(t *testing.T) {
+	// control-law: controller-observation-cannot-change-controller
+	now := time.Unix(30, 0).UTC()
+	observer := &sequenceObserver{items: []model.Observation{
+		observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source"),
+	}}
+	journal, effects, receipts := &fakeJournal{}, &fakeEffects{}, &memoryReceipts{}
+	kernel, err := New(testRegistry(t), syntheticObjectiveContracts(t), syntheticProgram, observer, fixedClock{now}, fakeLocker{&fakeLock{}}, journal, effects, receipts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := request(t, now).ResolveRequest
+	plain, err := kernel.Resolve(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Trace = true
+	traced, err := kernel.Resolve(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(plain.Decision, traced.Decision) || !reflect.DeepEqual(plain.Prescription, traced.Prescription) {
+		t.Fatalf("trace changed resolution: plain=%#v traced=%#v", plain, traced)
+	}
+	if traced.Trace == nil || effects.executions != 0 || journal.begun != 0 || journal.committed != 0 || len(receipts.values) != 0 {
+		t.Fatalf("trace executed or persisted an effect: trace=%#v effects=%d journal=%+v receipts=%d", traced.Trace, effects.executions, journal, len(receipts.values))
+	}
+}
+
+func TestEngineTraceExplainsRecoveryAndTargetReached(t *testing.T) {
+	now := time.Unix(30, 0).UTC()
+	t.Run("recovery", func(t *testing.T) {
+		observer := &sequenceObserver{items: []model.Observation{recoveryObservation("recovery")}}
+		kernel, err := New(testRegistry(t), syntheticObjectiveContracts(t), syntheticProgram, observer, fixedClock{now}, fakeLocker{&fakeLock{}}, &fakeJournal{}, &fakeEffects{}, &memoryReceipts{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		request := request(t, now).ResolveRequest
+		request.Requested = ""
+		request.Trace = true
+		resolution, err := kernel.Resolve(context.Background(), request)
+		if err != nil || resolution.Trace == nil || resolution.Trace.Recovery == nil || !resolution.Trace.Recovery.Active || resolution.Trace.Recovery.Reason != "software-delivery recovery state is reconcile" || strings.Contains(resolution.Trace.Recovery.Reason, "receipt commit interrupted") {
+			t.Fatalf("recovery explanation = %#v, %v", resolution, err)
+		}
+	})
+
+	t.Run("target-reached", func(t *testing.T) {
+		observed := observation(model.PhaseActive, "target")
+		observer := &sequenceObserver{items: []model.Observation{observed}}
+		kernel, err := New(testRegistry(t), syntheticObjectiveContracts(t), syntheticProgram, observer, fixedClock{now}, fakeLocker{&fakeLock{}}, &fakeJournal{}, &fakeEffects{}, &memoryReceipts{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		request := request(t, now).ResolveRequest
+		request.Requested = ""
+		request.Trace = true
+		resolution, err := kernel.Resolve(context.Background(), request)
+		if err != nil || resolution.Trace == nil || !resolution.Trace.Marked || resolution.Decision.Kind != supervisor.DecisionTerminal {
+			t.Fatalf("target explanation = %#v, %v", resolution, err)
+		}
+	})
 }
 
 func TestExactPermittedRecoveryRemainsReachableAcrossProgramDrift(t *testing.T) {

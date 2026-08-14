@@ -3,6 +3,7 @@ package standard_test
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	. "github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
 	"github.com/operatorstack/boatstack/boatstack/internal/testprogram"
+	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
 func testObjectiveContracts() catalog.ObjectiveContracts {
@@ -273,15 +275,43 @@ func TestUntargetedResolutionStopsAtSelectedProviderBoundary(t *testing.T) {
 	supervisor := New(testprogram.StandardRegistry(), testObjectiveContracts())
 	authority := catalog.AuthoritySet{catalog.AuthorityHuman: true, catalog.AuthorityRepository: true}
 
-	decision := supervisor.Resolve(snapshot, objective, authority, "")
+	decision, trace := supervisor.ResolveWithTrace(snapshot, objective, authority, "")
 	if decision.Kind != DecisionFrontier || len(decision.Candidates) != 1 || decision.Candidates[0] != "publication.execute" {
 		t.Fatalf("provider-free decision = %#v, want publication.execute FRONTIER", decision)
+	}
+	for _, candidate := range trace {
+		if candidate.TransitionID == "publication.execute" {
+			if candidate.Disposition != general.DispositionAuthorityFrontier || !candidate.Authority.AnySatisfied || candidate.Authority.AllSatisfied || len(candidate.Authority.MissingAll) != 1 || candidate.Authority.MissingAll[0] != "authority.external-provider" {
+				t.Fatalf("publication authority diagnosis = %#v", candidate)
+			}
+		}
 	}
 	authority[catalog.AuthorityProvider] = true
 	decision = supervisor.Resolve(snapshot, objective, authority, "")
 	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "publication.execute" {
 		t.Fatalf("provider-authorized decision = %#v, want publication.execute", decision)
 	}
+}
+
+func TestPublicationTraceNamesStaleVerificationEvidence(t *testing.T) {
+	snapshot, objective := openPRSnapshot(t, "build", "test", "review")
+	snapshot.Verification = model.Known(model.VerificationStale, snapshot.Verification.Evidence[0])
+	snapshot = recanonicalize(t, snapshot)
+	decision, trace := New(testprogram.StandardRegistry(), testObjectiveContracts()).ResolveWithTrace(
+		snapshot, objective, catalog.AuthoritySet{catalog.AuthorityHuman: true, catalog.AuthorityProvider: true}, "publication.execute",
+	)
+	if decision.Kind != DecisionRefused {
+		t.Fatalf("stale publication decision = %#v", decision)
+	}
+	for _, candidate := range trace {
+		if candidate.TransitionID == "publication.execute" {
+			if candidate.Disposition != general.DispositionSourceModeRejected || !strings.Contains(candidate.SourceMode.Reason, "verification") || !strings.Contains(candidate.SourceMode.Reason, "stale") {
+				t.Fatalf("stale publication diagnosis = %#v", candidate)
+			}
+			return
+		}
+	}
+	t.Fatal("publication candidate is absent")
 }
 
 func TestRequestedTransitionRequiresExactAuthority(t *testing.T) {

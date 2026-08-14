@@ -40,86 +40,142 @@ func New(registry catalog.Registry, contracts catalog.ObjectiveContracts) Superv
 }
 
 func (s Supervisor) Resolve(snapshot model.Snapshot, objective model.Objective, authority catalog.AuthoritySet, requested catalog.TransitionID) Decision {
+	decision, _ := s.resolve(snapshot, objective, authority, requested)
+	return decision
+}
+
+// ResolveWithTrace exposes the exact domain evaluation supplied to
+// kernel.Relate. Resolve and ResolveWithTrace share this single path.
+func (s Supervisor) ResolveWithTrace(snapshot model.Snapshot, objective model.Objective, authority catalog.AuthoritySet, requested catalog.TransitionID) (Decision, []general.CandidateTrace) {
+	return s.resolve(snapshot, objective, authority, requested)
+}
+
+func (s Supervisor) resolve(snapshot model.Snapshot, objective model.Objective, authority catalog.AuthoritySet, requested catalog.TransitionID) (Decision, []general.CandidateTrace) {
 	base := Decision{SnapshotFingerprint: snapshot.Fingerprint}
+	var traces []general.CandidateTrace
+	finish := func() (Decision, []general.CandidateTrace) { return base, traces }
 	objectiveAbsent := snapshot.Objective.Status == model.FactAbsent
 	objectiveProvided := objective.ID != "" || objective.TargetID != "" || objective.TrustedClass != "" || objective.DeliveryID != ""
 	if (objectiveProvided && objective.Validate() != nil) || (!objectiveProvided && !objectiveAbsent) || snapshot.Fingerprint == "" {
 		base.Kind, base.Reason = DecisionUnresolved, "objective or canonical snapshot is invalid"
-		return base
+		return finish()
 	}
 	if objectiveProvided && !s.contracts.Accepts(objective) {
 		base.Kind, base.Reason = DecisionRefused, "objective target and trusted class do not match the compiled program"
-		return base
+		return finish()
 	}
 	if snapshot.Terminal.Status != model.FactKnown || snapshot.Phase.Status != model.FactKnown {
 		base.Kind, base.Reason = DecisionUnresolved, "terminal or phase evidence is not known"
-		return base
+		return finish()
 	}
 	if snapshot.Program.Status != model.FactKnown {
 		base.Kind, base.Reason = DecisionUnresolved, "compiled control program evidence is not known"
-		return base
+		return finish()
 	}
 	if snapshot.Program.Value == model.ProgramDrift {
 		transition, ok := s.registry.Lookup(requested)
 		if !ok || (!transition.Policy.ReconcilesProgram && !permittedProgramDriftRecovery(snapshot, transition)) {
 			base.Kind, base.Reason = DecisionUnresolved, ReasonProgramDrift
-			return base
+			return finish()
 		}
 	}
 	if snapshot.ConfigurationPolicy.Status == model.FactKnown && !hostEnabled(snapshot.ConfigurationPolicy.Value.Hosts, snapshot.Invocation.Host) {
 		base.Kind, base.Reason = DecisionRefused, fmt.Sprintf("host %q is not enabled by repository policy", snapshot.Invocation.Host)
-		return base
+		return finish()
 	}
 	marked := s.contracts.Matches(snapshot, objective)
-	admissible := s.registry.Admissible(snapshot, objective)
-	if snapshot.Objective.Status == model.FactKnown && snapshot.Objective.Value != objective {
-		filtered := admissible[:0]
-		for _, candidate := range admissible {
-			if candidate.Policy.BindsRequestedObjective {
-				filtered = append(filtered, candidate)
-			}
-		}
-		admissible = filtered
-	}
-	if snapshot.Phase.Value == model.PhaseRecovery {
-		filtered := admissible[:0]
-		for _, candidate := range admissible {
-			if candidate.Class == catalog.EventRecovery {
-				filtered = append(filtered, candidate)
-			}
-		}
-		admissible = filtered
-	}
 	if requested != "" {
 		transition, ok := s.registry.Lookup(requested)
 		if !ok || !transition.Controllable() {
 			base.Kind, base.Reason = DecisionRefused, fmt.Sprintf("transition %q is not a controllable registry event", requested)
-			return base
+			return finish()
 		}
 	}
-	byID := make(map[string]catalog.Transition, len(admissible))
-	candidates := make([]general.RelationCandidate, 0, len(admissible))
-	for _, transition := range admissible {
-		if allowed, _ := policyAllows(snapshot, transition); !allowed {
+	allTransitions := s.registry.All()
+	byID := make(map[string]catalog.Transition, len(allTransitions))
+	candidates := make([]general.RelationCandidate, 0, len(allTransitions))
+	for _, transition := range allTransitions {
+		trace := general.CandidateTrace{
+			TransitionID: string(transition.ID), Rank: transition.SelectionClass.Rank(), Priority: transition.Priority,
+			SelectionClass: string(transition.SelectionClass),
+		}
+		if requested != "" && transition.ID != requested {
+			trace.Disposition = general.DispositionIrrelevantToRequest
+			traces = append(traces, trace)
 			continue
+		}
+		if !transition.Controllable() {
+			trace.DomainAdmissible = general.EvaluationTrace{Evaluated: true, Reason: "observed external events are not controllable candidates"}
+			trace.Disposition = general.DispositionDomainRejected
+			traces = append(traces, trace)
+			continue
+		}
+		sourceAllowed, sourceReason := transition.SourceEvaluation(snapshot)
+		trace.SourceMode = general.EvaluationTrace{Evaluated: true, Satisfied: sourceAllowed, Reason: sourceReason}
+		if !sourceAllowed {
+			trace.Disposition = general.DispositionSourceModeRejected
+			traces = append(traces, trace)
+			continue
+		}
+		trace.RecoveryCompatible = general.EvaluationTrace{Evaluated: true, Satisfied: true, Reason: "recovery state is compatible"}
+		if snapshot.Phase.Value == model.PhaseRecovery && transition.Class != catalog.EventRecovery {
+			trace.RecoveryCompatible = general.EvaluationTrace{Evaluated: true, Reason: "only recovery transitions are compatible with the recovery phase"}
+			trace.Disposition = general.DispositionRecoveryRejected
+			traces = append(traces, trace)
+			continue
+		}
+		objectiveAllowed, objectiveReason := transition.ObjectiveEvaluation(objective)
+		trace.ObjectiveScope = general.EvaluationTrace{Evaluated: true, Satisfied: objectiveAllowed, Reason: objectiveReason}
+		if !objectiveAllowed {
+			trace.Disposition = general.DispositionObjectiveRejected
+			traces = append(traces, trace)
+			continue
+		}
+		trace.ObjectiveMutation = general.EvaluationTrace{Evaluated: true, Satisfied: true, Reason: "objective binding is compatible"}
+		if snapshot.Objective.Status == model.FactKnown && snapshot.Objective.Value != objective && !transition.Policy.BindsRequestedObjective {
+			trace.ObjectiveMutation = general.EvaluationTrace{Evaluated: true, Reason: "transition cannot replace the current objective binding"}
+			trace.Disposition = general.DispositionObjectiveRejected
+			traces = append(traces, trace)
+			continue
+		}
+		allowed, domainReason := policyAllows(snapshot, transition)
+		trace.DomainAdmissible = general.EvaluationTrace{Evaluated: true, Satisfied: allowed, Reason: domainReason}
+		if !allowed {
+			trace.Disposition = general.DispositionDomainRejected
+			traces = append(traces, trace)
+			continue
+		}
+		if trace.DomainAdmissible.Reason == "" {
+			trace.DomainAdmissible.Reason = "software-delivery predicates are satisfied"
 		}
 		all, any := relationAuthority(snapshot, transition)
 		id := string(transition.ID)
 		byID[id] = transition
+		selectable := transition.ImplicitlySelectable() && !targetAlreadySatisfied(snapshot, objective, transition)
+		selectionReason := "transition is selectable for untargeted progress"
+		if !transition.ImplicitlySelectable() {
+			selectionReason = "transition requires an explicit request"
+		} else if targetAlreadySatisfied(snapshot, objective, transition) {
+			selectionReason = "transition target is already satisfied"
+		}
+		trace.Selection = general.EvaluationTrace{Evaluated: true, Satisfied: selectable, Reason: selectionReason}
+		trace.Selectable, trace.Survived, trace.Disposition = selectable, true, general.DispositionShadowed
 		candidates = append(candidates, general.RelationCandidate{
 			ID: id, Rank: transition.SelectionClass.Rank(), Priority: transition.Priority,
-			Selectable:  transition.ImplicitlySelectable() && !targetAlreadySatisfied(snapshot, objective, transition),
+			Selectable:  selectable,
 			RequiredAll: all, RequiredAny: any,
 		})
+		traces = append(traces, trace)
 	}
 	noCandidate := general.Unresolved
 	if snapshot.Phase.Value == model.PhaseRecovery || snapshot.Phase.Value == model.PhaseUnresolved {
 		noCandidate = general.Blocked
 	}
-	relation := general.Relate(general.RelationInput{
+	relation, relationTraces := general.RelateWithTrace(general.RelationInput{
 		Requested: string(requested), Marked: marked, NoCandidate: noCandidate,
 		Candidates: candidates, Available: availableAuthority(authority),
 	})
+	mergeRelationTrace(traces, relationTraces)
 	base.Kind = mapDecisionKind(relation.Kind)
 	base.Reason = relation.Reason
 	for _, candidate := range relation.Candidates {
@@ -129,7 +185,24 @@ func (s Supervisor) Resolve(snapshot model.Snapshot, objective model.Objective, 
 		transition := byID[relation.Transition]
 		base.Transition = &transition
 	}
-	return base
+	return finish()
+}
+
+func mergeRelationTrace(candidates, relation []general.CandidateTrace) {
+	byID := make(map[string]general.CandidateTrace, len(relation))
+	for _, candidate := range relation {
+		byID[candidate.TransitionID] = candidate
+	}
+	for index := range candidates {
+		resolved, ok := byID[candidates[index].TransitionID]
+		if !ok {
+			continue
+		}
+		candidates[index].Selectable = resolved.Selectable
+		candidates[index].Authority = resolved.Authority
+		candidates[index].Survived = resolved.Survived
+		candidates[index].Disposition = resolved.Disposition
+	}
 }
 
 func mapDecisionKind(kind general.DecisionKind) DecisionKind {

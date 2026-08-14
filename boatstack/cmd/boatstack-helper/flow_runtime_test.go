@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -23,6 +25,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
+	"github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
 func flowRepository(t *testing.T) string {
@@ -46,6 +49,61 @@ func runFlowGit(t *testing.T, repository string, arguments ...string) {
 	command := exec.Command("git", append([]string{"-C", repository}, arguments...)...)
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v\n%s", arguments, err, output)
+	}
+}
+
+func captureRunOutput(t *testing.T, arguments ...string) ([]byte, error) {
+	t.Helper()
+	return captureStdout(t, func() error { return run(arguments) })
+}
+
+func captureStdout(t *testing.T, action func() error) ([]byte, error) {
+	t.Helper()
+	oldStdout := os.Stdout
+	readSide, writeSide, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = writeSide
+	runErr := action()
+	_ = writeSide.Close()
+	os.Stdout = oldStdout
+	output, readErr := io.ReadAll(readSide)
+	_ = readSide.Close()
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	return output, runErr
+}
+
+func TestExplanationTextPreservesAuthorityAlgebra(t *testing.T) {
+	response := surfaces.Response{
+		Operation: surfaces.OperationExplain, ProgramID: "product-delivery", EntryID: "run", RunID: "run-fixture",
+		Objective: model.Objective{TargetID: model.ObjectiveOpenPR},
+		Trace: &kernel.DecisionTrace{
+			StateRevision: 7, CurrentMode: string(model.PhaseFrontier),
+			Decision: kernel.DecisionTraceValue{Kind: string(supervisor.DecisionFrontier), Transition: "publication.execute", Reason: "transition requires unavailable capabilities"},
+			Candidates: []kernel.CandidateTrace{{
+				TransitionID: "publication.execute", Disposition: kernel.DispositionAuthorityFrontier,
+				Authority: kernel.AuthorityTrace{
+					RequiredAny: []kernel.Capability{"authority.autonomy", "authority.human"}, RequiredAll: []kernel.Capability{"authority.external-provider"},
+					MissingAll: []kernel.Capability{"authority.external-provider"}, AnySatisfied: true,
+				},
+			}},
+		},
+	}
+	output, err := captureStdout(t, func() error { return renderResponse(response, "text") })
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(output)
+	for _, wanted := range []string{"any-of: autonomy, human", "all-of: external-provider", "Missing:\n  external-provider", "No effect was executed."} {
+		if !strings.Contains(text, wanted) {
+			t.Fatalf("authority explanation lacks %q:\n%s", wanted, text)
+		}
+	}
+	if strings.Contains(strings.ToLower(text), "you should") {
+		t.Fatalf("authority explanation became prescriptive:\n%s", text)
 	}
 }
 
@@ -856,6 +914,68 @@ func TestFlowEntryBindsStableRunAndResumesManagedPlan(t *testing.T) {
 	}
 }
 
+func TestExplainUsesFlowContextAndCreatesNoStateEffectOrReceipt(t *testing.T) {
+	// control-law: controller-observation-cannot-change-controller
+	repository := flowRepository(t)
+	runFlowGit(t, repository, "init")
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("private plan text must not appear"))
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-q", "-m", "fixture")
+	before := repositoryBytes(t, repository)
+	output, runErr := captureRunOutput(t, "explain", "--repo", repository, "--flow", "product-delivery", "--entry", "run", "--host", "codex", "--format", "json")
+	if runErr != nil {
+		t.Fatalf("explain failed: %v\n%s", runErr, output)
+	}
+	var response surfaces.Response
+	if err := json.Unmarshal(output, &response); err != nil {
+		t.Fatalf("decode explain response: %v\n%s", err, output)
+	}
+	if response.Operation != surfaces.OperationExplain || response.Trace == nil || response.RunID == "" || response.ProgramID != "product-delivery" || response.EntryID != "run" {
+		t.Fatalf("explain context = %#v", response)
+	}
+	if response.Snapshot != nil || response.Prescription != nil || response.Admission != nil || response.Receipt != nil {
+		t.Fatalf("explain exposed mutable or raw runtime payloads: %#v", response)
+	}
+	if strings.Contains(string(output), "private plan text must not appear") {
+		t.Fatalf("explain leaked raw repository input: %s", output)
+	}
+	textOutput, textErr := captureRunOutput(t, "explain", "--repo", repository, "--flow", "product-delivery", "--entry", "run", "--host", "codex", "--format", "text")
+	if textErr != nil || !strings.Contains(string(textOutput), "No effect was executed.") || strings.Contains(string(textOutput), "private plan text must not appear") {
+		t.Fatalf("text explanation is unsafe or incomplete: %v\n%s", textErr, textOutput)
+	}
+	after := repositoryBytes(t, repository)
+	if !reflect.DeepEqual(before, after) {
+		t.Fatalf("explain changed repository state:\nbefore=%v\nafter=%v", before, after)
+	}
+}
+
+func repositoryBytes(t *testing.T, root string) map[string]string {
+	t.Helper()
+	result := map[string]string{}
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		result[filepath.ToSlash(relative)] = string(raw)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
 func TestContinuationRebindsOnlyRepositoryResolvedCandidateParameters(t *testing.T) {
 	// control-law: continuation-may-re-resolve-only-one-supervisor-candidate-with-repository-owned-parameters
 	repository := flowRepository(t)
@@ -1212,6 +1332,14 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	if err != nil || lock != nil || suspension == nil || suspension.Delegation == nil || suspension.Delegation.Code != "DELEGATION_REQUIRED" || suspension.Delegation.RequestFingerprint != bound.delegationRequestFingerprint {
 		t.Fatalf("delegation suspension = lock=%v response=%#v err=%v", lock, suspension, err)
 	}
+	explainRequest, err := buildRequest(surfaces.OperationExplain, bound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	explainLock, explainSuspension, err := prepareDelegation(context.Background(), &explainRequest)
+	if err != nil || explainLock != nil || explainSuspension != nil || explainRequest.Authority.Set(time.Now().UTC())[catalog.AuthorityAutonomy] {
+		t.Fatalf("explain created missing delegation authority: lock=%v response=%#v authority=%#v err=%v", explainLock, explainSuspension, explainRequest.Authority, err)
+	}
 
 	resolver, err := plant.NewResolver("")
 	if err != nil {
@@ -1229,10 +1357,29 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := os.Stat(recordPath); !os.IsNotExist(err) {
+		t.Fatalf("explain created a delegation record: %v", err)
+	}
 	now := time.Now().UTC()
 	record := delegation.Record{Schema: delegation.Schema, SchemaRevision: delegation.SchemaRevision, Request: bound.delegationRequest, RequestFingerprint: bound.delegationRequestFingerprint, ReceiptID: "authorization-test", Actor: "human@example.com", AuthorizedAt: now, Revision: 1, Status: "active"}
 	if err := effects.StoreDelegationRecord(recordPath, record); err != nil {
 		t.Fatal(err)
+	}
+	recordBeforeExplain, err := os.ReadFile(recordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	explainRequest, err = buildRequest(surfaces.OperationExplain, bound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	explainLock, explainSuspension, err = prepareDelegation(context.Background(), &explainRequest)
+	if err != nil || explainLock != nil || explainSuspension != nil || !explainRequest.Authority.Set(time.Now().UTC())[catalog.AuthorityAutonomy] {
+		t.Fatalf("explain did not project existing delegation: lock=%v response=%#v authority=%#v err=%v", explainLock, explainSuspension, explainRequest.Authority, err)
+	}
+	recordAfterExplain, err := os.ReadFile(recordPath)
+	if err != nil || !bytes.Equal(recordBeforeExplain, recordAfterExplain) {
+		t.Fatalf("explain changed delegation record: %v", err)
 	}
 	lock, suspension, err = prepareDelegation(context.Background(), &request)
 	if err != nil || lock != nil || suspension != nil || !request.Authority.Set(time.Now().UTC())[catalog.AuthorityAutonomy] {

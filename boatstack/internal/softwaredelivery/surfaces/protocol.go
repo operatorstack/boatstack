@@ -12,9 +12,10 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
+	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
-const SchemaVersion = 7
+const SchemaVersion = 8
 
 var flowContextIdentity = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
@@ -22,6 +23,7 @@ type Operation string
 
 const (
 	OperationResolve Operation = "resolve"
+	OperationExplain Operation = "explain"
 	OperationApply   Operation = "apply"
 	OperationRecover Operation = "recover"
 	OperationDoctor  Operation = "doctor"
@@ -32,7 +34,7 @@ const (
 
 func (o Operation) Valid() bool {
 	switch o {
-	case OperationResolve, OperationApply, OperationRecover, OperationDoctor, OperationCatalog, OperationEvents, OperationGuard:
+	case OperationResolve, OperationExplain, OperationApply, OperationRecover, OperationDoctor, OperationCatalog, OperationEvents, OperationGuard:
 		return true
 	default:
 		return false
@@ -109,6 +111,9 @@ func (r Request) Validate(now time.Time) error {
 			return fmt.Errorf("apply/recover transition does not match prescription")
 		}
 	}
+	if r.Operation == OperationExplain && (r.Prescription.ID != "" || r.IdempotencyKey != "") {
+		return fmt.Errorf("explain request cannot carry a prescription or idempotency key")
+	}
 	if r.Operation == OperationGuard && (strings.TrimSpace(r.Command) == "" || len(r.Command) > 1<<20) {
 		return fmt.Errorf("guard operation requires a bounded command")
 	}
@@ -159,6 +164,7 @@ type Response struct {
 	Objective     model.Objective             `json:"objective,omitempty"`
 	Snapshot      *model.Snapshot             `json:"snapshot,omitempty"`
 	Decision      *supervisor.Decision        `json:"decision,omitempty"`
+	Trace         *general.DecisionTrace      `json:"trace,omitempty"`
 	Question      *Question                   `json:"question,omitempty"`
 	Prescription  *protocol.Prescription      `json:"prescription,omitempty"`
 	Admission     *protocol.Admission         `json:"admission,omitempty"`

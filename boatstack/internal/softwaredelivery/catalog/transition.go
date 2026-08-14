@@ -251,9 +251,16 @@ type FacetCondition struct {
 }
 
 func (c FacetCondition) Matches(snapshot model.Snapshot) bool {
+	matched, _ := c.Evaluate(snapshot)
+	return matched
+}
+
+// Evaluate returns the bounded software-delivery reason for the same source
+// predicate used by Matches. It never includes raw evidence payloads.
+func (c FacetCondition) Evaluate(snapshot model.Snapshot) (bool, string) {
 	status, value, ok := snapshot.Facet(c.Facet)
 	if !ok {
-		return false
+		return false, fmt.Sprintf("source facet %q is unavailable", c.Facet)
 	}
 	statusMatch := false
 	for _, candidate := range c.Statuses {
@@ -263,17 +270,36 @@ func (c FacetCondition) Matches(snapshot model.Snapshot) bool {
 		}
 	}
 	if !statusMatch {
-		return false
+		return false, fmt.Sprintf("source facet %q has status %q; requires one of %v", c.Facet, status, c.Statuses)
 	}
 	if len(c.Values) == 0 {
-		return true
+		return true, fmt.Sprintf("source facet %q has an allowed status", c.Facet)
 	}
+	valueSafe := traceSafeFacetValue(c.Facet)
 	for _, candidate := range c.Values {
 		if candidate == value {
-			return true
+			if !valueSafe {
+				return true, fmt.Sprintf("source facet %q has an allowed value", c.Facet)
+			}
+			return true, fmt.Sprintf("source facet %q has allowed value %q", c.Facet, value)
 		}
 	}
-	return false
+	if !valueSafe {
+		return false, fmt.Sprintf("source facet %q does not match its allowed values", c.Facet)
+	}
+	return false, fmt.Sprintf("source facet %q has value %q; requires one of %v", c.Facet, value, c.Values)
+}
+
+func traceSafeFacetValue(facet model.FacetName) bool {
+	switch facet {
+	case model.FacetPhase, model.FacetProgram, model.FacetTopology, model.FacetEngagement,
+		model.FacetDelivery, model.FacetWorkspace, model.FacetPlan, model.FacetConfiguration,
+		model.FacetRuntime, model.FacetPublication, model.FacetVerification, model.FacetRecovery,
+		model.FacetTransaction, model.FacetTerminal:
+		return true
+	default:
+		return false
+	}
 }
 
 // Transition is both the executable runtime declaration and the source for the
@@ -341,11 +367,17 @@ func (t Transition) ImplicitlySelectable() bool {
 }
 
 func (t Transition) SupportsObjective(objective model.Objective) bool {
+	matched, _ := t.ObjectiveEvaluation(objective)
+	return matched
+}
+
+// ObjectiveEvaluation evaluates the transition's compiled objective scope.
+func (t Transition) ObjectiveEvaluation(objective model.Objective) (bool, string) {
 	if t.Policy.ObjectiveScope == ObjectiveScopeOptionalPreserve {
-		return true
+		return true, "transition preserves the current objective binding"
 	}
 	if len(t.TargetIDs) == 0 {
-		return true
+		return true, "transition is not restricted to an objective target"
 	}
 	targetID := objective.TargetID
 	if t.Origin.Kind == OriginCoreSystem {
@@ -353,10 +385,10 @@ func (t Transition) SupportsObjective(objective model.Objective) bool {
 	}
 	for _, kind := range t.TargetIDs {
 		if kind == targetID {
-			return true
+			return true, fmt.Sprintf("objective target %q is in scope", targetID)
 		}
 	}
-	return false
+	return false, fmt.Sprintf("objective target %q is outside supported targets %v", targetID, t.TargetIDs)
 }
 
 func containsPhase(phases []model.ProtocolPhase, phase model.ProtocolPhase) bool {
@@ -369,18 +401,25 @@ func containsPhase(phases []model.ProtocolPhase, phase model.ProtocolPhase) bool
 }
 
 func (t Transition) SourceMatches(snapshot model.Snapshot) bool {
+	matched, _ := t.SourceEvaluation(snapshot)
+	return matched
+}
+
+// SourceEvaluation evaluates the transition's actual source predicate and
+// returns a bounded reason suitable for a generic decision trace.
+func (t Transition) SourceEvaluation(snapshot model.Snapshot) (bool, string) {
 	if snapshot.Phase.Status != model.FactKnown || !containsPhase(t.SourcePhases, snapshot.Phase.Value) {
-		return false
+		return false, fmt.Sprintf("source phase is %q with status %q; requires one of %v", snapshot.Phase.Value, snapshot.Phase.Status, t.SourcePhases)
 	}
 	for _, condition := range t.SourceConditions {
-		if !condition.Matches(snapshot) {
-			return false
+		if matched, reason := condition.Evaluate(snapshot); !matched {
+			return false, reason
 		}
 	}
 	if t.Policy.ObjectiveScope == ObjectiveScopeOptionalPreserve && snapshot.Objective.Status != model.FactKnown && snapshot.Objective.Status != model.FactAbsent {
-		return false
+		return false, fmt.Sprintf("objective binding status %q cannot be preserved", snapshot.Objective.Status)
 	}
-	return true
+	return true, "source phase and domain facets are satisfied"
 }
 
 func (t Transition) TargetMatches(snapshot model.Snapshot) bool {

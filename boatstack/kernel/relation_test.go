@@ -1,6 +1,9 @@
 package kernel
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestRelationOwnsSelectionAndAuthority(t *testing.T) {
 	candidates := []RelationCandidate{
@@ -31,15 +34,38 @@ func TestRelationTargetedAndUntargetedUseSameCandidates(t *testing.T) {
 }
 
 func TestRelationReportsEqualPreferenceAndMarkedState(t *testing.T) {
-	tied := Relate(RelationInput{Candidates: []RelationCandidate{
+	tied, trace := RelateWithTrace(RelationInput{Candidates: []RelationCandidate{
 		{ID: "a", Priority: 1, Selectable: true},
 		{ID: "b", Priority: 1, Selectable: true},
 	}})
 	if tied.Kind != Frontier || len(tied.Candidates) != 2 {
 		t.Fatalf("tie = %#v", tied)
 	}
+	for _, candidate := range trace {
+		if candidate.Disposition != DispositionAmbiguous {
+			t.Fatalf("tie trace = %#v", trace)
+		}
+	}
 	marked := Relate(RelationInput{Marked: true})
 	if marked.Kind != Marked {
 		t.Fatalf("marked = %#v", marked)
+	}
+}
+
+func TestRelationTracePreservesAnyOfAndAllOfAuthority(t *testing.T) {
+	decision, trace := RelateWithTrace(RelationInput{
+		Candidates: []RelationCandidate{{
+			ID: "publish", Priority: 1, Selectable: true,
+			RequiredAny: []Capability{"authority.autonomy", "authority.human"},
+			RequiredAll: []Capability{"authority.external-provider"},
+		}},
+		Available: []Capability{"authority.autonomy"},
+	})
+	if decision.Kind != Frontier || len(trace) != 1 {
+		t.Fatalf("authority frontier = %#v / %#v", decision, trace)
+	}
+	authority := trace[0].Authority
+	if !authority.AnySatisfied || authority.AllSatisfied || authority.Satisfied || len(authority.MissingAny) != 0 || !reflect.DeepEqual(authority.MissingAll, []Capability{"authority.external-provider"}) {
+		t.Fatalf("authority clauses collapsed: %#v", authority)
 	}
 }

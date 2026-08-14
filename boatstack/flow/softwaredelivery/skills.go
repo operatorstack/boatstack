@@ -56,6 +56,20 @@ func renderSkill(compiled controlprogram.Compiled, entry controlprogram.Entry, s
 	description += " Use only when the user explicitly selects this repository Flow entry."
 	supersession := ""
 	delegation := ""
+	diagnostics := ""
+	if entry.Diagnostics != nil && entry.Diagnostics.ExplainOnSuspend {
+		diagnostics = fmt.Sprintf(`
+If Boatstack suspends this run without reaching the target or prescribing an
+applicable action, invoke the read-only debugger with the exact same context:
+
+`+"`boatstack explain --repo . --flow %s --entry %s --run-id <run-id> --host %s --format json`"+`
+
+Preserve its canonical trace exactly. Use it only to report the factual blocker,
+ask for the exact missing evidence, or perform an action already prescribed by
+Boatstack. An explanation is not authority: never grant authority, fabricate a
+run ID, reconstruct the transition graph, or act on a rejected candidate.
+`, compiled.Document.Program.ID, entry.ID, host)
+	}
 	if entry.Delegation != nil {
 		delegation = fmt.Sprintf(`
 The first `+"`next`"+` returns a typed `+"`DELEGATION_REQUIRED`"+` response before
@@ -106,11 +120,12 @@ answer evidence, and resume the same run ID. Nothing continues in the
 background while input is missing. Never synthesize authority.
 %s
 %s
+%s
 
 Stop only when Boatstack reports the marked target, a typed blocker, refusal,
 unresolved recovery, or missing authority. This entry grants no merge or deploy
 authority.
-`, slug, description, title(slug), compiled.Document.Program.ID, entry.ID, entry.Target, skillprojection.BootstrapContract(buildinfo.Version), compiled.Document.Program.ID, entry.ID, host, delegation, supersession))
+`, slug, description, title(slug), compiled.Document.Program.ID, entry.ID, entry.Target, skillprojection.BootstrapContract(buildinfo.Version), compiled.Document.Program.ID, entry.ID, host, delegation, supersession, diagnostics))
 }
 
 func targetEntrySkill(programID string, entries []controlprogram.Entry, target string) (string, bool) {

@@ -542,6 +542,7 @@ func stripDescriptions(value Document) Document {
 	}
 	for i := range value.Entries {
 		value.Entries[i].Description = ""
+		value.Entries[i].Diagnostics = nil
 	}
 	return value
 }

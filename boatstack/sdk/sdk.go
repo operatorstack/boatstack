@@ -15,6 +15,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
+	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
 const SchemaVersion = surfaces.SchemaVersion
@@ -23,6 +24,7 @@ type Operation = surfaces.Operation
 
 const (
 	OperationResolve = surfaces.OperationResolve
+	OperationExplain = surfaces.OperationExplain
 	OperationApply   = surfaces.OperationApply
 	OperationRecover = surfaces.OperationRecover
 	OperationDoctor  = surfaces.OperationDoctor
@@ -99,6 +101,9 @@ const (
 type Decision = supervisor.Decision
 type DecisionKind = supervisor.DecisionKind
 type GuardDecision = supervisor.GuardDecision
+type DecisionTrace = general.DecisionTrace
+type CandidateTrace = general.CandidateTrace
+type AuthorityTrace = general.AuthorityTrace
 
 const (
 	DecisionPrescribed = supervisor.DecisionPrescribed

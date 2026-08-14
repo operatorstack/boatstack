@@ -30,8 +30,51 @@ type RelationInput struct {
 // decide whether a transition satisfies domain predicates; the kernel alone
 // applies target selection, ordering, ambiguity, and authority.
 func Relate(input RelationInput) Decision {
+	decision, _ := relate(input)
+	return decision
+}
+
+// RelateWithTrace evaluates the same canonical relation as Relate and exposes
+// its domain-neutral ordering and authority projection. The trace is an output
+// of the selector and is never an input to it.
+func RelateWithTrace(input RelationInput) (Decision, []CandidateTrace) {
+	return relate(input)
+}
+
+func relate(input RelationInput) (Decision, []CandidateTrace) {
+	traces := make([]CandidateTrace, len(input.Candidates))
+	for index, candidate := range input.Candidates {
+		traces[index] = CandidateTrace{
+			TransitionID: candidate.ID, Selectable: candidate.Selectable,
+			Rank: candidate.Rank, Priority: candidate.Priority, Survived: true,
+			Disposition: DispositionShadowed,
+			Authority:   authorityTrace(candidate, input.Available),
+		}
+	}
+	finish := func(decision Decision) (Decision, []CandidateTrace) {
+		for index := range traces {
+			trace := &traces[index]
+			if input.Requested == "" && !trace.Selectable {
+				trace.Survived = false
+			}
+			switch {
+			case input.Requested != "" && trace.TransitionID != input.Requested:
+				trace.Disposition = DispositionIrrelevantToRequest
+				trace.Survived = false
+			case decision.Kind == Prescribed && trace.TransitionID == decision.Transition:
+				trace.Disposition = DispositionSelected
+			case decision.Kind == Frontier && decision.Transition == trace.TransitionID:
+				trace.Disposition = DispositionAuthorityFrontier
+			case decision.Kind == Frontier && contains(decision.Candidates, trace.TransitionID):
+				trace.Disposition = DispositionAmbiguous
+			case decision.Kind == Refused && input.Requested == trace.TransitionID:
+				trace.Disposition = DispositionExplicitlyRefused
+			}
+		}
+		return decision, traces
+	}
 	if input.Marked && input.Requested == "" {
-		return Decision{Kind: Marked, Reason: "program-defined marked state is established"}
+		return finish(Decision{Kind: Marked, Reason: "program-defined marked state is established"})
 	}
 	candidates := append([]RelationCandidate(nil), input.Candidates...)
 	if input.Requested != "" {
@@ -45,13 +88,13 @@ func Relate(input RelationInput) Decision {
 	}
 	if len(candidates) == 0 {
 		if input.Requested != "" {
-			return Decision{Kind: Refused, Transition: input.Requested, Reason: "requested transition is not admissible under the canonical relation"}
+			return finish(Decision{Kind: Refused, Transition: input.Requested, Reason: "requested transition is not admissible under the canonical relation"})
 		}
 		kind := input.NoCandidate
 		if kind == "" {
 			kind = Unresolved
 		}
-		return Decision{Kind: kind, Reason: "no transition is admissible under the canonical relation"}
+		return finish(Decision{Kind: kind, Reason: "no transition is admissible under the canonical relation"})
 	}
 	if input.Requested == "" {
 		filtered := candidates[:0]
@@ -66,7 +109,7 @@ func Relate(input RelationInput) Decision {
 			if kind == "" {
 				kind = Unresolved
 			}
-			return Decision{Kind: kind, Reason: "no transition is selectable under the canonical relation"}
+			return finish(Decision{Kind: kind, Reason: "no transition is selectable under the canonical relation"})
 		}
 	}
 	sort.Slice(candidates, func(i, j int) bool {
@@ -86,12 +129,46 @@ func Relate(input RelationInput) Decision {
 		}
 	}
 	if len(equal) > 1 {
-		return Decision{Kind: Frontier, Candidates: equal, Reason: "equally preferred admissible transitions require selection"}
+		return finish(Decision{Kind: Frontier, Candidates: equal, Reason: "equally preferred admissible transitions require selection"})
 	}
 	if missing := missingAuthority(top, input.Available); len(missing) != 0 {
-		return Decision{Kind: Frontier, Transition: top.ID, Candidates: []string{top.ID}, Reason: fmt.Sprintf("transition requires unavailable capabilities: %v", missing)}
+		return finish(Decision{Kind: Frontier, Transition: top.ID, Candidates: []string{top.ID}, Reason: fmt.Sprintf("transition requires unavailable capabilities: %v", missing)})
 	}
-	return Decision{Kind: Prescribed, Transition: top.ID, Reason: "canonical relation admitted one highest-priority transition"}
+	return finish(Decision{Kind: Prescribed, Transition: top.ID, Reason: "canonical relation admitted one highest-priority transition"})
+}
+
+func authorityTrace(candidate RelationCandidate, available []Capability) AuthorityTrace {
+	set := make(map[Capability]bool, len(available))
+	for _, value := range available {
+		set[value] = true
+	}
+	trace := AuthorityTrace{
+		Available:    append([]Capability(nil), available...),
+		RequiredAll:  append([]Capability(nil), candidate.RequiredAll...),
+		RequiredAny:  append([]Capability(nil), candidate.RequiredAny...),
+		AllSatisfied: true, AnySatisfied: len(candidate.RequiredAny) == 0,
+	}
+	for _, value := range candidate.RequiredAll {
+		if !set[value] {
+			trace.MissingAll = append(trace.MissingAll, value)
+			trace.AllSatisfied = false
+		}
+	}
+	for _, value := range candidate.RequiredAny {
+		if set[value] {
+			trace.AnySatisfied = true
+		}
+	}
+	if !trace.AnySatisfied {
+		trace.MissingAny = append(trace.MissingAny, candidate.RequiredAny...)
+	}
+	sort.Slice(trace.Available, func(i, j int) bool { return trace.Available[i] < trace.Available[j] })
+	sort.Slice(trace.RequiredAll, func(i, j int) bool { return trace.RequiredAll[i] < trace.RequiredAll[j] })
+	sort.Slice(trace.RequiredAny, func(i, j int) bool { return trace.RequiredAny[i] < trace.RequiredAny[j] })
+	sort.Slice(trace.MissingAll, func(i, j int) bool { return trace.MissingAll[i] < trace.MissingAll[j] })
+	sort.Slice(trace.MissingAny, func(i, j int) bool { return trace.MissingAny[i] < trace.MissingAny[j] })
+	trace.Satisfied = trace.AllSatisfied && trace.AnySatisfied
+	return trace
 }
 
 func missingAuthority(candidate RelationCandidate, available []Capability) []Capability {

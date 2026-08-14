@@ -115,10 +115,11 @@ type Prescription struct {
 }
 
 type Resolution struct {
-	State        ControlState  `json:"state"`
-	Observation  Observation   `json:"observation"`
-	Decision     Decision      `json:"decision"`
-	Prescription *Prescription `json:"prescription,omitempty"`
+	State        ControlState   `json:"state"`
+	Observation  Observation    `json:"observation"`
+	Decision     Decision       `json:"decision"`
+	Prescription *Prescription  `json:"prescription,omitempty"`
+	Trace        *DecisionTrace `json:"trace,omitempty"`
 }
 
 type ResolveRequest struct {
@@ -126,6 +127,7 @@ type ResolveRequest struct {
 	Objective  *Objective
 	Authority  Authority
 	Requested  string
+	Trace      bool
 }
 
 type ApplyRequest struct {
@@ -192,53 +194,102 @@ func (r Runtime) Resolve(ctx context.Context, request ResolveRequest) (Resolutio
 
 func (r Runtime) resolve(ctx context.Context, state ControlState, observation Observation, request ResolveRequest) (Resolution, error) {
 	base := Resolution{State: state, Observation: observation}
-	if err := state.Validate(); err != nil || observation.Validate() != nil || state.InstanceID != request.InstanceID || state.Program != r.program.Identity() {
-		base.Decision = Decision{Kind: Unresolved, Reason: "control state, domain observation, instance, or program identity is invalid"}
+	trace := newDecisionTrace(state, observation, request, r.program.Identity())
+	trace.Marked = r.program.Marked(state.Mode)
+	finish := func(decision Decision) (Resolution, error) {
+		base.Decision = decision
+		trace.Decision = TraceDecision(decision)
+		if request.Trace {
+			base.Trace = &trace
+		}
 		return base, nil
 	}
+	if err := state.Validate(); err != nil {
+		return finish(Decision{Kind: Unresolved, Reason: "control state is invalid: " + err.Error()})
+	}
+	if err := observation.Validate(); err != nil {
+		return finish(Decision{Kind: Unresolved, Reason: "domain observation is invalid: " + err.Error()})
+	}
+	if state.InstanceID != request.InstanceID {
+		return finish(Decision{Kind: Unresolved, Reason: "control state instance identity does not match the request"})
+	}
+	if state.Program != r.program.Identity() {
+		return finish(Decision{Kind: Unresolved, Reason: "control state program identity is stale for the active program"})
+	}
 	if r.program.Marked(state.Mode) && state.Recovery == nil && request.Requested == "" {
-		base.Decision = Decision{Kind: Marked, Reason: "program-defined marked state is established"}
-		return base, nil
+		return finish(Decision{Kind: Marked, Reason: "program-defined marked state is established"})
 	}
 	authority, err := request.Authority.projection(r.clock.Now())
 	if err != nil {
-		base.Decision = Decision{Kind: Refused, Reason: err.Error()}
-		return base, nil
+		return finish(Decision{Kind: Refused, Reason: err.Error()})
 	}
+	trace.AuthorityFingerprint = authority.Fingerprint
 	transitions := map[string]Transition{}
 	var candidates []RelationCandidate
 	for _, transition := range r.program.Transitions {
+		candidateTrace := CandidateTrace{TransitionID: transition.ID, Priority: transition.Priority}
 		if request.Requested != "" && transition.ID != request.Requested {
+			candidateTrace.Disposition = DispositionIrrelevantToRequest
+			trace.Candidates = append(trace.Candidates, candidateTrace)
 			continue
 		}
 		if !contains(transition.SourceModes, state.Mode) {
+			candidateTrace.SourceMode = EvaluationTrace{Evaluated: true, Reason: fmt.Sprintf("current mode %q is not a declared source mode", state.Mode)}
+			candidateTrace.Disposition = DispositionSourceModeRejected
+			trace.Candidates = append(trace.Candidates, candidateTrace)
 			continue
 		}
+		candidateTrace.SourceMode = EvaluationTrace{Evaluated: true, Satisfied: true, Reason: "current mode is a declared source mode"}
 		if state.Recovery != nil && !contains(transition.Recovers, state.Recovery.TransitionID) {
+			candidateTrace.RecoveryCompatible = EvaluationTrace{Evaluated: true, Reason: fmt.Sprintf("transition does not recover %q", state.Recovery.TransitionID)}
+			candidateTrace.Disposition = DispositionRecoveryRejected
+			trace.Candidates = append(trace.Candidates, candidateTrace)
 			continue
 		}
 		if state.Recovery == nil && len(transition.Recovers) != 0 {
+			candidateTrace.RecoveryCompatible = EvaluationTrace{Evaluated: true, Reason: "recovery transition requires an active recovery state"}
+			candidateTrace.Disposition = DispositionRecoveryRejected
+			trace.Candidates = append(trace.Candidates, candidateTrace)
 			continue
 		}
+		candidateTrace.RecoveryCompatible = EvaluationTrace{Evaluated: true, Satisfied: true, Reason: "recovery state is compatible"}
 		objective, reason := objectiveFor(state, request.Objective, transition)
 		if reason != "" {
+			candidateTrace.ObjectiveScope = EvaluationTrace{Evaluated: true, Reason: reason}
+			candidateTrace.ObjectiveMutation = EvaluationTrace{Evaluated: true, Reason: reason}
+			candidateTrace.Disposition = DispositionObjectiveRejected
+			trace.Candidates = append(trace.Candidates, candidateTrace)
 			continue
 		}
-		allowed, _, evaluationErr := r.domain.Admissible(ctx, Evaluation{State: state, Observation: observation, Objective: objective, Transition: transition})
+		candidateTrace.ObjectiveScope = EvaluationTrace{Evaluated: true, Satisfied: true, Reason: "objective scope is satisfied"}
+		candidateTrace.ObjectiveMutation = EvaluationTrace{Evaluated: true, Satisfied: true, Reason: "objective mutation is admissible"}
+		allowed, domainReason, evaluationErr := r.domain.Admissible(ctx, Evaluation{State: state, Observation: observation, Objective: objective, Transition: transition})
 		if evaluationErr != nil {
 			return Resolution{}, evaluationErr
 		}
-		if allowed {
-			required, capabilityErr := requiredCapabilities(r.classifier, transition)
-			if capabilityErr != nil {
-				return Resolution{}, capabilityErr
-			}
-			transitions[transition.ID] = transition
-			candidates = append(candidates, RelationCandidate{ID: transition.ID, Priority: transition.Priority, Selectable: true, RequiredAll: required})
+		candidateTrace.DomainAdmissible = EvaluationTrace{Evaluated: true, Satisfied: allowed, Reason: boundedTraceReason(domainReason)}
+		if !allowed {
+			candidateTrace.Disposition = DispositionDomainRejected
+			trace.Candidates = append(trace.Candidates, candidateTrace)
+			continue
 		}
+		required, capabilityErr := requiredCapabilities(r.classifier, transition)
+		if capabilityErr != nil {
+			return Resolution{}, capabilityErr
+		}
+		candidateTrace.Selectable, candidateTrace.Survived = true, true
+		transitions[transition.ID] = transition
+		candidates = append(candidates, RelationCandidate{ID: transition.ID, Priority: transition.Priority, Selectable: true, RequiredAll: required})
+		trace.Candidates = append(trace.Candidates, candidateTrace)
 	}
-	base.Decision = Relate(RelationInput{Requested: request.Requested, Candidates: candidates, Available: authority.Capabilities})
+	var relationTraces []CandidateTrace
+	base.Decision, relationTraces = RelateWithTrace(RelationInput{Requested: request.Requested, Candidates: candidates, Available: authority.Capabilities})
+	mergeRelationTraces(trace.Candidates, relationTraces)
+	trace.Decision = TraceDecision(base.Decision)
 	if base.Decision.Kind != Prescribed {
+		if request.Trace {
+			base.Trace = &trace
+		}
 		return base, nil
 	}
 	top := transitions[base.Decision.Transition]
@@ -252,7 +303,57 @@ func (r Runtime) resolve(ctx context.Context, state ControlState, observation Ob
 		return Resolution{}, err
 	}
 	base.Prescription = &prescription
+	if request.Trace {
+		base.Trace = &trace
+	}
 	return base, nil
+}
+
+func newDecisionTrace(state ControlState, observation Observation, request ResolveRequest, program ProgramIdentity) DecisionTrace {
+	stateProgram := state.Program
+	trace := DecisionTrace{
+		SchemaVersion: DecisionTraceSchemaVersion, InstanceID: state.InstanceID,
+		StateRevision: state.Revision, CurrentMode: state.Mode, Program: program, StateProgram: &stateProgram,
+		ObservationFingerprint: observation.Fingerprint, RequestedTransition: request.Requested,
+		Marked: false,
+	}
+	if state.ObjectiveBinding != nil {
+		trace.Objective.Binding = &ObjectiveIdentity{ID: state.ObjectiveBinding.ObjectiveID, Revision: state.ObjectiveBinding.ObjectiveRevision, Fingerprint: state.ObjectiveBinding.ObjectiveFingerprint}
+	}
+	if request.Objective != nil {
+		trace.Objective.Requested = &ObjectiveIdentity{ID: request.Objective.ID, Revision: request.Objective.Revision, Fingerprint: request.Objective.Fingerprint}
+	}
+	if state.Recovery != nil {
+		trace.Recovery = &RecoveryTrace{Active: true, PrescriptionID: state.Recovery.PrescriptionID, TransitionID: state.Recovery.TransitionID, Reason: state.Recovery.Reason}
+	}
+	return trace
+}
+
+func boundedTraceReason(reason string) string {
+	const limit = 1024
+	if len(reason) <= limit {
+		return reason
+	}
+	return reason[:limit]
+}
+
+func mergeRelationTraces(candidates, relation []CandidateTrace) {
+	byID := make(map[string]CandidateTrace, len(relation))
+	for _, candidate := range relation {
+		byID[candidate.TransitionID] = candidate
+	}
+	for index := range candidates {
+		resolved, ok := byID[candidates[index].TransitionID]
+		if !ok {
+			continue
+		}
+		candidates[index].Selectable = resolved.Selectable
+		candidates[index].Rank = resolved.Rank
+		candidates[index].Priority = resolved.Priority
+		candidates[index].Authority = resolved.Authority
+		candidates[index].Survived = resolved.Survived
+		candidates[index].Disposition = resolved.Disposition
+	}
 }
 
 func (r Runtime) Apply(ctx context.Context, request ApplyRequest) (Receipt, error) {
