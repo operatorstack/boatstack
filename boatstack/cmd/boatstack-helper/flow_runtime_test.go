@@ -1410,6 +1410,42 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	if err != nil || lock != nil || suspension != nil || !request.Authority.Set(time.Now().UTC())[catalog.AuthorityAutonomy] {
 		t.Fatalf("authorized resolve = lock=%v response=%#v authority=%#v err=%v", lock, suspension, request.Authority, err)
 	}
+	var replayedReceipt protocol.AuthorityReceipt
+	for _, receipt := range request.Authority.Receipts {
+		if strings.HasPrefix(receipt.ID, "delegation-") {
+			replayedReceipt = receipt
+			break
+		}
+	}
+	if replayedReceipt.ID == "" {
+		t.Fatal("authorized resolve did not materialize a delegation receipt")
+	}
+	if err := os.Remove(recordPath); err != nil {
+		t.Fatal(err)
+	}
+	replayedExplain, err := buildRequest(surfaces.OperationExplain, bound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayedExplain.Authority.Receipts = append(replayedExplain.Authority.Receipts, replayedReceipt)
+	replayedLock, replayedSuspension, err := prepareDelegation(context.Background(), &replayedExplain)
+	if err != nil || replayedLock != nil || replayedSuspension != nil || replayedExplain.Authority.Set(time.Now().UTC())[catalog.AuthorityAutonomy] {
+		t.Fatalf("missing-record explain replayed delegation authority: lock=%v response=%#v authority=%#v err=%v", replayedLock, replayedSuspension, replayedExplain.Authority, err)
+	}
+	replayedKernel, err := standardKernel(context.Background(), replayedExplain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayedResponse, err := replayedKernel.Handle(context.Background(), replayedExplain)
+	if err != nil || replayedResponse.Decision == nil || replayedResponse.Decision.Kind != supervisor.DecisionFrontier {
+		t.Fatalf("missing-record explain decision = %#v, err=%v", replayedResponse.Decision, err)
+	}
+	if _, err := os.Stat(recordPath); !os.IsNotExist(err) {
+		t.Fatalf("missing-record explain recreated delegation: %v", err)
+	}
+	if err := effects.StoreDelegationRecord(recordPath, record); err != nil {
+		t.Fatal(err)
+	}
 	record.ExpiresAt = now.Add(-time.Second)
 	if err := effects.StoreDelegationRecord(recordPath, record); err != nil {
 		t.Fatal(err)

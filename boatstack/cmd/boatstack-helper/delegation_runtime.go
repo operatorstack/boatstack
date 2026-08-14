@@ -55,6 +55,13 @@ func prepareDelegation(ctx context.Context, request *surfaces.Request) (ports.Lo
 		releaseOnError()
 		return nil, nil, err
 	}
+	filtered := request.Authority.Receipts[:0]
+	for _, receipt := range request.Authority.Receipts {
+		if len(receipt.ID) < len("delegation-") || receipt.ID[:len("delegation-")] != "delegation-" {
+			filtered = append(filtered, receipt)
+		}
+	}
+	request.Authority.Receipts = filtered
 	record, err := delegation.Load(recordPath)
 	if os.IsNotExist(err) {
 		releaseOnError()
@@ -85,13 +92,6 @@ func prepareDelegation(ctx context.Context, request *surfaces.Request) (ports.Lo
 		releaseOnError()
 		return nil, nil, fmt.Errorf("DELEGATION_CONTEXT_UNAUTHORIZED: current worktree is not in the verified run lineage")
 	}
-	filtered := request.Authority.Receipts[:0]
-	for _, receipt := range request.Authority.Receipts {
-		if len(receipt.ID) < len("delegation-") || receipt.ID[:len("delegation-")] != "delegation-" {
-			filtered = append(filtered, receipt)
-		}
-	}
-	request.Authority.Receipts = filtered
 	if record.Status == "completed" && (request.Operation == surfaces.OperationResolve || request.Operation == surfaces.OperationExplain) {
 		// A completed delegation carries no authority, but resolving the exact
 		// bound run remains safe and lets restarts replay its terminal state.
