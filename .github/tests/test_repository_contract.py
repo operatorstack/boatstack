@@ -562,8 +562,8 @@ class RepositoryContract(unittest.TestCase):
             REPO / "boatstack" / "internal" / "softwaredelivery" /
             "protocol" / "prescription.go"
         ).read_text()
-        self.assertIn("Relate(RelationInput", runtime)
-        self.assertIn("general.Relate(general.RelationInput", software_relation)
+        self.assertIn("RelateWithTrace(RelationInput", runtime)
+        self.assertIn("general.RelateWithTrace(general.RelationInput", software_relation)
         self.assertIn("general.Freshness", software_prescription)
         self.assertIn("general.NewFreshness", software_prescription)
 
@@ -652,7 +652,7 @@ class RepositoryContract(unittest.TestCase):
             *sorted((REPO / "boatstack" / "references").glob("*.md")),
         ]
         registered = {
-            "status", "next", "next-status", "apply", "recover", "doctor",
+            "status", "next", "next-status", "explain", "apply", "recover", "doctor",
             "events", "catalog", "guard", "rpc", "retro", "version", "init",
             "update", "attach", "detach", "hydrate-runtime", "configure",
             "reconcile-update",

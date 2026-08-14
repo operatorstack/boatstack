@@ -123,6 +123,25 @@ func TestCanonicalFingerprintIgnoresOrderingAndDescriptions(t *testing.T) {
 	}
 }
 
+func TestEntryDiagnosticsAreArtifactBoundButNotExecutableControlLaw(t *testing.T) {
+	document := incidentProgram()
+	without, err := controlprogram.Compile(document, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document.Entries[0].Diagnostics = &controlprogram.EntryDiagnostics{ExplainOnSuspend: true}
+	with, err := controlprogram.Compile(document, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if with.Fingerprint != without.Fingerprint {
+		t.Fatalf("presentation preference changed executable fingerprint: %s != %s", with.Fingerprint, without.Fingerprint)
+	}
+	if bytes.Equal(with.Canonical, without.Canonical) || !bytes.Contains(with.Canonical, []byte(`"explain_on_suspend": true`)) {
+		t.Fatal("diagnostic preference is not preserved in the artifact projection")
+	}
+}
+
 func TestDelegationBindingIsResolvedAndFingerprintBound(t *testing.T) {
 	// control-law: repository-source-can-request-but-cannot-grant-authority
 	document := incidentProgram()

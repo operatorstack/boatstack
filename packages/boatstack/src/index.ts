@@ -1,5 +1,5 @@
 export const CONTROL_PROGRAM_SCHEMA = "control-program" as const;
-export const CONTROL_PROGRAM_SCHEMA_REVISION = 1 as const;
+export const CONTROL_PROGRAM_SCHEMA_REVISION = 2 as const;
 
 export type Predicate =
   | { true: boolean }
@@ -93,6 +93,7 @@ export interface EntryDefinition {
   target: string;
   inputs?: EntryInputDefinition[];
   delegation?: DelegationBindingDefinition;
+  diagnostics?: { explain_on_suspend?: boolean };
   description?: string;
 }
 

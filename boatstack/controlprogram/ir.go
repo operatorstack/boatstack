@@ -7,7 +7,7 @@ import "encoding/json"
 
 const (
 	SchemaName     = "control-program"
-	SchemaRevision = 1
+	SchemaRevision = 2
 )
 
 type Document struct {
@@ -140,7 +140,15 @@ type Entry struct {
 	Target      string             `json:"target"`
 	Inputs      []EntryInput       `json:"inputs,omitempty"`
 	Delegation  *DelegationBinding `json:"delegation,omitempty"`
+	Diagnostics *EntryDiagnostics  `json:"diagnostics,omitempty"`
 	Description string             `json:"description,omitempty"`
+}
+
+// EntryDiagnostics controls generated host UX only. It is excluded from the
+// executable Program fingerprint but remains bound by the source, artifact,
+// and generated-projection digests.
+type EntryDiagnostics struct {
+	ExplainOnSuspend bool `json:"explain_on_suspend,omitempty"`
 }
 
 type DelegationBinding struct {

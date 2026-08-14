@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"sort"
 	"strings"
 	"time"
 
@@ -173,8 +174,10 @@ func run(arguments []string) error {
 		request.Prescription = *resolved.Prescription
 	}
 	response, handleErr := kernel.Handle(context.Background(), request)
-	if settleErr := settleDelegationAtTarget(context.Background(), request, response, kernel.TargetSatisfied(response.Snapshot, request.Objective), delegationLock != nil); settleErr != nil && handleErr == nil {
-		handleErr = settleErr
+	if operation != surfaces.OperationExplain {
+		if settleErr := settleDelegationAtTarget(context.Background(), request, response, kernel.TargetSatisfied(response.Snapshot, request.Objective), delegationLock != nil); settleErr != nil && handleErr == nil {
+			handleErr = settleErr
+		}
 	}
 	if command == "events" && options.follow {
 		if options.format != "jsonl" {
@@ -189,7 +192,7 @@ func run(arguments []string) error {
 }
 
 func usageError() error {
-	return errors.New("usage: boatstack <status|next|apply|recover|doctor|events|catalog|guard|flow|rpc|retro|init|attach|detach|version> [flags]")
+	return errors.New("usage: boatstack <status|next|explain|apply|recover|doctor|events|catalog|guard|flow|rpc|retro|init|attach|detach|version> [flags]")
 }
 
 func runRPC() error {
@@ -229,8 +232,10 @@ func runRPC() error {
 		return err
 	}
 	response, handleErr := kernel.Handle(context.Background(), request)
-	if settleErr := settleDelegationAtTarget(context.Background(), request, response, kernel.TargetSatisfied(response.Snapshot, request.Objective), delegationLock != nil); settleErr != nil && handleErr == nil {
-		handleErr = settleErr
+	if request.Operation != surfaces.OperationExplain {
+		if settleErr := settleDelegationAtTarget(context.Background(), request, response, kernel.TargetSatisfied(response.Snapshot, request.Objective), delegationLock != nil); settleErr != nil && handleErr == nil {
+			handleErr = settleErr
+		}
 	}
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
@@ -288,6 +293,8 @@ func classifyCommand(command string) (surfaces.Operation, catalog.TransitionID, 
 	switch command {
 	case "status", "next", "next-status":
 		return surfaces.OperationResolve, "", nil, nil
+	case "explain":
+		return surfaces.OperationExplain, "", nil, nil
 	case "apply":
 		return surfaces.OperationApply, "", nil, nil
 	case "recover":
@@ -310,7 +317,11 @@ func classifyCommand(command string) (surfaces.Operation, catalog.TransitionID, 
 func parseOptions(command string, arguments []string, transition catalog.TransitionID, defaults map[string]string) (commandOptions, error) {
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
-	options := commandOptions{format: "json", transitionID: string(transition), host: "cli"}
+	defaultFormat := "json"
+	if command == "explain" {
+		defaultFormat = "text"
+	}
+	options := commandOptions{format: defaultFormat, transitionID: string(transition), host: "cli"}
 	if defaults != nil {
 		options.targetID, options.deliveryID, options.objectiveID = defaults["target-id"], defaults["delivery"], defaults["objective-id"]
 	}
@@ -714,6 +725,9 @@ func renderResponse(response surfaces.Response, format string) error {
 		}
 		return encoder.Encode(response)
 	case "text":
+		if response.Operation == surfaces.OperationExplain {
+			return renderExplanation(response)
+		}
 		if response.Error != "" {
 			fmt.Println("UNRESOLVED:", response.Error)
 			if response.ProgramChange != nil {
@@ -759,6 +773,132 @@ func renderResponse(response surfaces.Response, format string) error {
 	default:
 		return fmt.Errorf("unsupported format %q", format)
 	}
+}
+
+func renderExplanation(response surfaces.Response) error {
+	trace := response.Trace
+	if trace == nil {
+		if response.Error != "" {
+			fmt.Println("UNRESOLVED:", response.Error)
+			fmt.Println("No effect was executed.")
+			return nil
+		}
+		return fmt.Errorf("explain response has no decision trace")
+	}
+	if response.RunID != "" {
+		fmt.Println("Run:", response.RunID)
+	}
+	if response.ProgramID != "" {
+		fmt.Println("Flow:", response.ProgramID)
+	}
+	if response.EntryID != "" {
+		fmt.Println("Entry:", response.EntryID)
+	}
+	if response.Objective.TargetID != "" {
+		fmt.Println("Target:", response.Objective.TargetID)
+	}
+	fmt.Printf("State: revision %d, mode %s\n", trace.StateRevision, trace.CurrentMode)
+	fmt.Printf("Decision: %s\n", trace.Decision.Kind)
+	if trace.Decision.Reason != "" {
+		fmt.Println("Reason:", trace.Decision.Reason)
+	}
+	primary := trace.Decision.Transition
+	if primary == "" && len(trace.Decision.Candidates) != 0 {
+		primary = trace.Decision.Candidates[0]
+	}
+	for _, candidate := range trace.Candidates {
+		if candidate.TransitionID != primary {
+			continue
+		}
+		fmt.Println("\nCandidate:", candidate.TransitionID)
+		var satisfied []string
+		for label, evaluation := range map[string]general.EvaluationTrace{
+			"source state": candidate.SourceMode, "recovery compatibility": candidate.RecoveryCompatible,
+			"objective": candidate.ObjectiveScope, "objective binding": candidate.ObjectiveMutation,
+			"domain predicate": candidate.DomainAdmissible,
+		} {
+			if evaluation.Evaluated && evaluation.Satisfied {
+				satisfied = append(satisfied, label)
+			}
+		}
+		sort.Strings(satisfied)
+		if len(satisfied) != 0 {
+			fmt.Println("\nSatisfied:")
+			for _, value := range satisfied {
+				fmt.Println("  " + value)
+			}
+		}
+		if len(candidate.Authority.RequiredAny) != 0 || len(candidate.Authority.RequiredAll) != 0 {
+			fmt.Println("\nAuthority:")
+			if len(candidate.Authority.RequiredAny) != 0 {
+				fmt.Println("  any-of:", renderCapabilities(candidate.Authority.RequiredAny))
+			}
+			if len(candidate.Authority.RequiredAll) != 0 {
+				fmt.Println("  all-of:", renderCapabilities(candidate.Authority.RequiredAll))
+			}
+		}
+		missing := append(append([]general.Capability(nil), candidate.Authority.MissingAll...), candidate.Authority.MissingAny...)
+		if len(missing) != 0 {
+			fmt.Println("\nMissing:")
+			for _, value := range missing {
+				fmt.Println("  " + strings.TrimPrefix(string(value), "authority."))
+			}
+		}
+		break
+	}
+	var others []general.CandidateTrace
+	for _, candidate := range trace.Candidates {
+		if candidate.TransitionID != primary && candidate.Disposition != general.DispositionIrrelevantToRequest {
+			others = append(others, candidate)
+		}
+	}
+	if len(others) != 0 {
+		fmt.Println("\nOther candidates:")
+		for _, candidate := range others {
+			reason := candidateReason(candidate, trace.Decision)
+			fmt.Printf("  %s\n    %s: %s\n", candidate.TransitionID, candidate.Disposition, reason)
+		}
+	}
+	fmt.Println("\nNo effect was executed.")
+	return nil
+}
+
+func candidateReason(candidate general.CandidateTrace, decision general.DecisionTraceValue) string {
+	switch candidate.Disposition {
+	case general.DispositionAuthorityFrontier:
+		return "required authority is missing"
+	case general.DispositionAmbiguous:
+		return "candidate is part of an unresolved canonical ambiguity"
+	case general.DispositionSelected:
+		if decision.Reason != "" {
+			return decision.Reason
+		}
+		return "candidate was selected by the canonical relation"
+	case general.DispositionExplicitlyRefused:
+		if decision.Reason != "" {
+			return decision.Reason
+		}
+		return "candidate was explicitly refused"
+	}
+	for _, evaluation := range []general.EvaluationTrace{candidate.SourceMode, candidate.RecoveryCompatible, candidate.ObjectiveScope, candidate.ObjectiveMutation, candidate.DomainAdmissible, candidate.Selection} {
+		if evaluation.Evaluated && !evaluation.Satisfied && evaluation.Reason != "" {
+			return evaluation.Reason
+		}
+	}
+	switch candidate.Disposition {
+	case general.DispositionShadowed:
+		return "another canonical candidate was preferred"
+	default:
+		return "candidate was not selected"
+	}
+}
+
+func renderCapabilities(values []general.Capability) string {
+	result := make([]string, len(values))
+	for index, value := range values {
+		result[index] = strings.TrimPrefix(string(value), "authority.")
+	}
+	return strings.Join(result, ", ")
 }
 
 func hash(value []byte) string {

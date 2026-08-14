@@ -116,6 +116,7 @@ control graph. The complete list is generated from the registry in the
 | **Transactions** | Prescriptions bind the exact control instance, state revision, program, objective binding, observation, transition, and authority. Apply rechecks that boundary before execution. |
 | **Verification and receipts** | Fresh postcondition verification, atomic state-and-receipt commits, and immutable transition facts. |
 | **Recovery** | A durable effect attempt precedes execution. Interrupted or uncertain outcomes enter explicit recovery instead of blindly repeating an effect. |
+| **Control debugging** | Read-only decision traces explain why a transition was selected, rejected, blocked, ambiguous, or waiting on authority without reconstructing lifecycle logic in the host. |
 | **Conformance** | A reusable, domain-neutral suite verifies objective handling, authority, freshness, recovery, atomic commit, replay isolation, concurrency, and marked-state reachability against any explicitly mapped domain fixture. |
 
 ### Software delivery
@@ -152,6 +153,9 @@ boatstack next --repo . --objective-id <objective> --target-id <kind> \
 # Resolve one repository-owned entry.
 boatstack next --repo . --flow product-delivery --entry run --format json
 
+# Explain the current decision without executing an effect.
+boatstack explain --repo . --flow product-delivery --entry run
+
 # Inspect the exact program and transition surface.
 boatstack doctor --repo . --format text
 boatstack catalog --format json
@@ -165,7 +169,11 @@ boatstack apply --repo . --transition <stable-id> --run-id <run> \
   --expected-snapshot-fingerprint <sha256> --format json
 ```
 
-`status`, `next`, `doctor`, `catalog`, and `events` are read-only. Friendly
+`status`, `next`, `explain`, `doctor`, `catalog`, and `events` are read-only.
+The three Flow surfaces answer different questions: `flow check` verifies that
+the artifact is a valid executable Control Program; `next` and `flow run`
+resolve or execute the controller; `explain` reports why the current controller
+decision occurred. It does not grant authority or recommend a fix. Friendly
 commands such as `plan-create`, `workspace-cut`, `record-test`, and `publish-pr`
 resolve and consume one exact prescription in the same invocation.
 

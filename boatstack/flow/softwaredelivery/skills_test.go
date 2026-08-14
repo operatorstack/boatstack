@@ -83,6 +83,41 @@ func TestGeneratedSkillDescriptionIsQuotedYAML(t *testing.T) {
 	}
 }
 
+func TestGeneratedSkillExplanationIsEntryOptInWithHostParity(t *testing.T) {
+	compiled := controlprogram.Compiled{Document: controlprogram.Document{
+		Program: controlprogram.Program{ID: "product-delivery"},
+		Entries: []controlprogram.Entry{
+			{ID: "run", Target: "published-pr", Diagnostics: &controlprogram.EntryDiagnostics{ExplainOnSuspend: true}},
+			{ID: "quiet", Target: "published-pr"},
+		},
+	}}
+	files, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, host := range []string{"codex", "claude"} {
+		root := ".agents"
+		if host == "claude" {
+			root = ".claude"
+		}
+		run := string(files[root+"/skills/product-delivery-run/SKILL.md"])
+		for _, wanted := range []string{"boatstack explain", "--run-id <run-id>", "An explanation is not authority", "reconstruct the transition graph"} {
+			if !strings.Contains(run, wanted) {
+				t.Fatalf("%s opt-in skill lacks %q", host, wanted)
+			}
+		}
+		quiet := string(files[root+"/skills/product-delivery-quiet/SKILL.md"])
+		if strings.Contains(quiet, "boatstack explain") {
+			t.Fatalf("%s opt-out skill gained explain behavior", host)
+		}
+	}
+	codex := string(files[".agents/skills/product-delivery-run/SKILL.md"])
+	claude := string(files[".claude/skills/product-delivery-run/SKILL.md"])
+	if strings.ReplaceAll(codex, "--host codex", "--host HOST") != strings.ReplaceAll(claude, "--host claude", "--host HOST") {
+		t.Fatal("Codex and Claude diagnostic projections differ")
+	}
+}
+
 func TestGeneratedRunSkillRequiresExplicitAbandonmentBeforeReplacement(t *testing.T) {
 	compiled := controlprogram.Compiled{Document: controlprogram.Document{
 		Program: controlprogram.Program{ID: "product-delivery"},

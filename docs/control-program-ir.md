@@ -6,7 +6,7 @@ Boatstack separates authoring languages from executable semantics:
 TypeScript Flow -> raw Control Program IR -> Go canonicalizer -> committed artifact -> kernel
 ```
 
-The `control-program` schema at revision `1` is domain-neutral. It declares typed facets,
+The `control-program` schema at revision `2` is domain-neutral. It declares typed facets,
 evidence relations, predicate ASTs, operators, capabilities, authority,
 effects, verification, recovery, transitions, marked targets, and entries.
 Software terms such as plans, tests, Git, and pull requests belong to
@@ -40,6 +40,23 @@ boatstack flow authorize --repo . --flow product-delivery --entry run \
 boatstack flow run --repo . --flow product-delivery --entry run --run-id <run-id>
 boatstack flow revoke --repo . --run-id <run-id> --human <actor>
 ```
+
+An entry may opt its generated Codex and Claude projections into factual
+diagnosis when a run suspends:
+
+```ts
+entry({
+  id: "run",
+  target: "published-pr",
+  diagnostics: { explain_on_suspend: true },
+})
+```
+
+This setting changes generated-agent UX, not executable control semantics. It
+is excluded from the executable program fingerprint while the source,
+artifact, and generated-skill hashes still bind it. The generated skill calls
+`boatstack explain` with the same run context and treats the explanation as
+evidence, never as authority.
 
 Compilation sends the exact source bytes to a restricted TypeScript frontend.
 The frontend path is explicit authority: Boatstack never selects or executes a

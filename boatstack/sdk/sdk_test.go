@@ -24,6 +24,13 @@ func TestPublicProtocolCanBeConstructedWithoutInternalPackages(t *testing.T) {
 	}
 }
 
+func TestExplainIsPublicReadOnlyOperation(t *testing.T) {
+	request := sdk.Request{SchemaVersion: sdk.SchemaVersion, Operation: sdk.OperationExplain, Repository: "/repo", Host: sdk.HostIdentity, CorrelationID: "explain"}
+	if request.Operation != sdk.OperationExplain {
+		t.Fatalf("explain operation = %q", request.Operation)
+	}
+}
+
 func TestSDKPreservesCapabilityAdmissionProtocol(t *testing.T) {
 	// control-law: SDK and CLI consume the same versioned prescription fields
 	raw := []byte(`{"schema_version":5,"operation":"apply","repository":"/repo","host":"sdk","correlation_id":"correlation","flow_id":"flow","transition_id":"program/write","prescription":{"schema_version":3,"id":"prx-test","transition_id":"program/write","expected_state_revision":7,"expected_program_fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","expected_snapshot_fingerprint":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","expected_objective_binding_fingerprint":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","authority_fingerprint":"auth-test","required_capabilities":["repository.write"],"effective_capabilities":["repository.write"]}}`)

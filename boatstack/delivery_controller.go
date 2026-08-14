@@ -118,24 +118,31 @@ func (k DeliveryController) Handle(ctx context.Context, request surfaces.Request
 		}
 	}
 	switch request.Operation {
-	case surfaces.OperationResolve:
-		resolution, resolveErr := k.engine.Resolve(ctx, engine.ResolveRequest{Invocation: invocation, Objective: request.Objective, Authority: request.Authority, Parameters: request.Parameters, Requested: request.TransitionID})
-		response.Objective, response.Decision = resolution.Objective, &resolution.Decision
-		if resolution.Prescription.ID != "" {
+	case surfaces.OperationResolve, surfaces.OperationExplain:
+		explain := request.Operation == surfaces.OperationExplain
+		resolution, resolveErr := k.engine.Resolve(ctx, engine.ResolveRequest{Invocation: invocation, Objective: request.Objective, Authority: request.Authority, Parameters: request.Parameters, Requested: request.TransitionID, Trace: explain})
+		response.Objective, response.Decision, response.Trace = resolution.Objective, &resolution.Decision, resolution.Trace
+		if !explain && resolution.Prescription.ID != "" {
 			response.Prescription = &resolution.Prescription
 			response.Admission = &resolution.Admission
 		}
-		if resolution.Snapshot.Fingerprint != "" {
+		if !explain && resolution.Snapshot.Fingerprint != "" {
 			response.Snapshot = &resolution.Snapshot
 		}
-		response.Question = surfaces.QuestionFor(request.FlowID, resolution.Snapshot.Fingerprint, resolution.Decision)
-		if response.Question == nil && request.FlowID != "" && len(resolution.Decision.Candidates) == 1 {
+		if !explain {
+			response.Question = surfaces.QuestionFor(request.FlowID, resolution.Snapshot.Fingerprint, resolution.Decision)
+		}
+		if !explain && response.Question == nil && request.FlowID != "" && len(resolution.Decision.Candidates) == 1 {
 			if transition, ok := k.registry.Lookup(resolution.Decision.Candidates[0]); ok {
 				questionDecision := supervisor.Decision{Kind: supervisor.DecisionCandidate, Transition: &transition}
 				response.Question = surfaces.QuestionFor(request.FlowID, resolution.Snapshot.Fingerprint, questionDecision)
 			}
 		}
-		response.ProgramChange = programChangeFor(response.Snapshot)
+		if explain {
+			response.ProgramChange = programChangeFor(&resolution.Snapshot)
+		} else {
+			response.ProgramChange = programChangeFor(response.Snapshot)
+		}
 		if resolveErr != nil {
 			response.Error = resolveErr.Error()
 			return response, resolveErr

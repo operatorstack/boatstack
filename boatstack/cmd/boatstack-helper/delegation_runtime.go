@@ -55,9 +55,19 @@ func prepareDelegation(ctx context.Context, request *surfaces.Request) (ports.Lo
 		releaseOnError()
 		return nil, nil, err
 	}
+	filtered := request.Authority.Receipts[:0]
+	for _, receipt := range request.Authority.Receipts {
+		if len(receipt.ID) < len("delegation-") || receipt.ID[:len("delegation-")] != "delegation-" {
+			filtered = append(filtered, receipt)
+		}
+	}
+	request.Authority.Receipts = filtered
 	record, err := delegation.Load(recordPath)
 	if os.IsNotExist(err) {
 		releaseOnError()
+		if request.Operation == surfaces.OperationExplain {
+			return nil, nil, nil
+		}
 		return nil, &surfaces.Response{
 			SchemaVersion: surfaces.SchemaVersion, Operation: request.Operation, ProgramID: request.ProgramID, EntryID: request.EntryID, RunID: request.FlowID, Objective: request.Objective,
 			Delegation: &surfaces.DelegationRequired{Code: "DELEGATION_REQUIRED", RunID: request.FlowID, RequestFingerprint: request.DelegationRequestFingerprint, Authorities: append([]catalog.AuthorityClass(nil), request.DelegatedAuthorities...), Description: "Explicitly authorize " + request.ProgramID + "/" + request.EntryID + " for this exact run"},
@@ -82,24 +92,23 @@ func prepareDelegation(ctx context.Context, request *surfaces.Request) (ports.Lo
 		releaseOnError()
 		return nil, nil, fmt.Errorf("DELEGATION_CONTEXT_UNAUTHORIZED: current worktree is not in the verified run lineage")
 	}
-	filtered := request.Authority.Receipts[:0]
-	for _, receipt := range request.Authority.Receipts {
-		if len(receipt.ID) < len("delegation-") || receipt.ID[:len("delegation-")] != "delegation-" {
-			filtered = append(filtered, receipt)
-		}
-	}
-	request.Authority.Receipts = filtered
-	if record.Status == "completed" && request.Operation == surfaces.OperationResolve {
+	if record.Status == "completed" && (request.Operation == surfaces.OperationResolve || request.Operation == surfaces.OperationExplain) {
 		// A completed delegation carries no authority, but resolving the exact
 		// bound run remains safe and lets restarts replay its terminal state.
 		return nil, nil, nil
 	}
 	if record.Status != "active" {
 		releaseOnError()
+		if request.Operation == surfaces.OperationExplain {
+			return nil, nil, nil
+		}
 		return nil, nil, fmt.Errorf("DELEGATION_REVOKED: run authorization is %s", record.Status)
 	}
 	if !record.ExpiresAt.IsZero() && !time.Now().UTC().Before(record.ExpiresAt) {
 		releaseOnError()
+		if request.Operation == surfaces.OperationExplain {
+			return nil, nil, nil
+		}
 		return nil, nil, fmt.Errorf("DELEGATION_EXPIRED: run authorization expired")
 	}
 	for _, authority := range request.DelegatedAuthorities {

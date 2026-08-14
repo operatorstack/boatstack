@@ -31,6 +31,18 @@ func TestSurfaceSchemaIsFlagDayAndApplyRequiresPrescription(t *testing.T) {
 	}
 }
 
+func TestExplainRequestRejectsMutationArtifacts(t *testing.T) {
+	now := time.Now().UTC()
+	request := Request{SchemaVersion: SchemaVersion, Operation: OperationExplain, Repository: "/repo", Host: "cli", CorrelationID: "explain"}
+	if err := request.Validate(now); err != nil {
+		t.Fatal(err)
+	}
+	request.IdempotencyKey = "idem-forbidden"
+	if err := request.Validate(now); err == nil {
+		t.Fatal("explain accepted an apply idempotency key")
+	}
+}
+
 func TestQuestionSuspendsAndBindsOneRunSnapshot(t *testing.T) {
 	// control-law: human-input-suspension-cannot-cross-run-or-snapshot
 	transition := catalog.Transition{

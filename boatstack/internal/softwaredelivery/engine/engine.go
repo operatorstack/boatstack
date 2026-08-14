@@ -44,6 +44,7 @@ type ResolveRequest struct {
 	Authority  protocol.AuthorityBundle
 	Parameters protocol.Parameters
 	Requested  catalog.TransitionID
+	Trace      bool
 }
 
 type Resolution struct {
@@ -52,6 +53,7 @@ type Resolution struct {
 	Decision     supervisor.Decision
 	Prescription protocol.Prescription
 	Admission    protocol.Admission
+	Trace        *general.DecisionTrace
 }
 
 func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution, error) {
@@ -89,14 +91,23 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 			return Resolution{}, fmt.Errorf("no valid requested or configured objective: %w", err)
 		}
 	}
-	decision := e.control.Resolve(snapshot, objective, request.Authority.Set(now), request.Requested)
+	decision, candidateTraces := e.control.ResolveWithTrace(snapshot, objective, request.Authority.Set(now), request.Requested)
+	var decisionTrace *general.DecisionTrace
+	if request.Trace {
+		authorityFingerprint, fingerprintErr := request.Authority.Fingerprint()
+		if fingerprintErr != nil {
+			return Resolution{}, fingerprintErr
+		}
+		decisionTrace = e.decisionTrace(snapshot, request.Objective, authorityFingerprint, request.Requested, decision, candidateTraces)
+	}
 	if decision.Kind == supervisor.DecisionPrescribed && decision.Transition != nil {
 		objective, err = protocol.ObjectiveForTransition(snapshot, objective, *decision.Transition)
 		if err != nil {
 			decision.Kind = supervisor.DecisionRefused
 			decision.Reason = err.Error()
 			decision.Transition = nil
-			return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision}, nil
+			updateDecisionTrace(decisionTrace, decision)
+			return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision, Trace: decisionTrace}, nil
 		}
 		if applicabilityErr := protocol.ValidateApplicability(snapshot, objective, *decision.Transition, request.Authority, request.Parameters, now); applicabilityErr != nil {
 			if protocol.IsMissingParameter(applicabilityErr) {
@@ -114,14 +125,16 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 				decision.Kind = supervisor.DecisionRefused
 				decision.Reason = capabilityErr.Error()
 				decision.Transition = nil
-				return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision}, nil
+				updateDecisionTrace(decisionTrace, decision)
+				return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision, Trace: decisionTrace}, nil
 			}
 			prescription, prescriptionErr := protocol.NewPrescription(snapshot, *decision.Transition, capabilities)
 			if prescriptionErr != nil {
 				decision.Kind = supervisor.DecisionUnresolved
 				decision.Reason = prescriptionErr.Error()
 				decision.Transition = nil
-				return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision}, nil
+				updateDecisionTrace(decisionTrace, decision)
+				return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision, Trace: decisionTrace}, nil
 			}
 			admission, admissionErr := protocol.NewAdmission(snapshot, objective, *decision.Transition, prescription, request.Authority, request.Parameters, now, 2*time.Minute)
 			if admissionErr != nil {
@@ -133,11 +146,57 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 				decision.Reason = fmt.Sprintf("transition %q failed deterministic effect preflight: %v", admission.TransitionID, preflightErr)
 				decision.Transition = nil
 			} else {
-				return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision, Prescription: prescription, Admission: admission}, nil
+				updateDecisionTrace(decisionTrace, decision)
+				return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision, Prescription: prescription, Admission: admission, Trace: decisionTrace}, nil
 			}
 		}
 	}
-	return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision}, nil
+	updateDecisionTrace(decisionTrace, decision)
+	return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision, Trace: decisionTrace}, nil
+}
+
+func (e Engine) decisionTrace(snapshot model.Snapshot, requestedObjective model.Objective, authorityFingerprint string, requested catalog.TransitionID, decision supervisor.Decision, candidates []general.CandidateTrace) *general.DecisionTrace {
+	trace := &general.DecisionTrace{
+		SchemaVersion: general.DecisionTraceSchemaVersion, InstanceID: snapshot.Invocation.RepositoryID,
+		StateRevision: snapshot.StateRevision, CurrentMode: string(snapshot.Phase.Value),
+		Program:                general.ProgramIdentity{ID: e.program.ID, Version: e.program.Version, Fingerprint: e.program.Fingerprint},
+		ObservationFingerprint: snapshot.Fingerprint, AuthorityFingerprint: authorityFingerprint,
+		RequestedTransition: string(requested), Marked: decision.Kind == supervisor.DecisionTerminal,
+		Decision: softwareDecisionTrace(decision), Candidates: candidates,
+	}
+	if snapshot.Objective.Status == model.FactKnown {
+		fingerprint, _ := general.Fingerprint(snapshot.Objective.Value)
+		trace.Objective.Binding = &general.ObjectiveIdentity{ID: snapshot.Objective.Value.ID, Fingerprint: fingerprint}
+	}
+	if requestedObjective.Validate() == nil {
+		fingerprint, _ := general.Fingerprint(requestedObjective)
+		trace.Objective.Requested = &general.ObjectiveIdentity{ID: requestedObjective.ID, Fingerprint: fingerprint}
+	}
+	if snapshot.Phase.Value == model.PhaseRecovery || (snapshot.Recovery.Status == model.FactKnown && snapshot.Recovery.Value != model.RecoveryNone) {
+		recovery := &general.RecoveryTrace{Active: true, Reason: "software-delivery recovery state is " + string(snapshot.Recovery.Value)}
+		if snapshot.TransactionInfo.Status == model.FactKnown {
+			recovery.TransitionID = snapshot.TransactionInfo.Value.TransitionID
+		}
+		trace.Recovery = recovery
+	}
+	return trace
+}
+
+func softwareDecisionTrace(decision supervisor.Decision) general.DecisionTraceValue {
+	value := general.DecisionTraceValue{Kind: string(decision.Kind), Reason: decision.Reason}
+	if decision.Transition != nil {
+		value.Transition = string(decision.Transition.ID)
+	}
+	for _, candidate := range decision.Candidates {
+		value.Candidates = append(value.Candidates, string(candidate))
+	}
+	return value
+}
+
+func updateDecisionTrace(trace *general.DecisionTrace, decision supervisor.Decision) {
+	if trace != nil {
+		trace.Decision = softwareDecisionTrace(decision)
+	}
 }
 
 func unresolvedResolution(objective model.Objective, reason string) Resolution {
