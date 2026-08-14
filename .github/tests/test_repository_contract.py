@@ -979,6 +979,7 @@ class RepositoryContract(unittest.TestCase):
                     "BOATSTACK_VERSION": version,
                     "BOATSTACK_BINARY": str(self.helper),
                     "BOATSTACK_BINARY_SHA256": digest,
+                    "BOATSTACK_EXPECTED_RUNTIME_SHA256": digest,
                 }
             )
 
@@ -993,6 +994,38 @@ class RepositoryContract(unittest.TestCase):
                 self.run_command("git", "status", "--porcelain", cwd=repository).stdout,
                 "",
             )
+
+            launcher = root / "bin" / "boatstack"
+            launcher_before = launcher.read_bytes()
+            self.run_command("git", "checkout", "--detach", cwd=repository)
+            detached = dict(env)
+            detached["BOATSTACK_HOME"] = str(root / "detached-home")
+            self.run_command("bash", REPO / "install.sh", cwd=repository, env=detached)
+            self.assertTrue(
+                (root / "detached-home" / "runtimes" / f"{version}-{digest}" / "boatstack-runtime").is_file()
+            )
+            self.assertEqual(launcher.read_bytes(), launcher_before)
+            self.assertFalse((repository / ".boatstack").exists())
+            self.assertFalse((repository / ".git" / "boatstack").exists())
+            self.assertEqual(
+                self.run_command("git", "status", "--porcelain", cwd=repository).stdout,
+                "",
+            )
+
+            for name, variable in (
+                ("missing-version", "BOATSTACK_VERSION"),
+                ("missing-digest", "BOATSTACK_EXPECTED_RUNTIME_SHA256"),
+            ):
+                incomplete = dict(env)
+                incomplete["BOATSTACK_HOME"] = str(root / f"{name}-home")
+                incomplete["BOATSTACK_INSTALL_DIR"] = str(root / f"{name}-bin")
+                incomplete.pop(variable, None)
+                incomplete_result = self.run_command(
+                    "bash", REPO / "install.sh", cwd=repository, env=incomplete, expected=2,
+                )
+                self.assertIn("BOATSTACK_RUNTIME_PIN_INVALID", incomplete_result.stderr)
+                self.assertFalse((root / f"{name}-home").exists())
+                self.assertFalse((root / f"{name}-bin").exists())
 
             wrong_digest = dict(env)
             wrong_digest.update(
@@ -1030,7 +1063,7 @@ class RepositoryContract(unittest.TestCase):
             older_runtime.update(
                 {
                     "BOATSTACK_HOME": str(root / "old-home"),
-                    "BOATSTACK_INSTALL_DIR": str(root / "old-bin"),
+                    "BOATSTACK_INSTALL_DIR": str(root / "bin"),
                     "BOATSTACK_VERSION": old_version,
                     "BOATSTACK_BINARY": str(self.old_helper),
                     "BOATSTACK_BINARY_SHA256": old_digest,
@@ -1040,6 +1073,7 @@ class RepositoryContract(unittest.TestCase):
             self.run_command("bash", REPO / "install.sh", cwd=repository, env=older_runtime)
             restored = root / "old-home" / "runtimes" / f"{old_version}-{old_digest}" / "boatstack-runtime"
             self.assertTrue(restored.is_file())
+            self.assertEqual(launcher.read_bytes(), launcher_before)
             self.assertFalse((repository / ".boatstack").exists())
             self.assertFalse((repository / ".git" / "boatstack").exists())
 

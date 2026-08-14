@@ -219,6 +219,23 @@ func TestBootstrapDiagnosticRenderingPreservesOneEnvelope(t *testing.T) {
 	if rendered, err := RenderBootstrapDiagnostic(&unrelated, errors.New("ordinary"), nil); err != nil || rendered || unrelated.Len() != 0 {
 		t.Fatalf("ordinary error render = rendered %t, err %v, output %q", rendered, err, unrelated.String())
 	}
+
+	for _, test := range []struct {
+		arguments []string
+		wantJSON  bool
+	}{
+		{arguments: []string{"next", "--format=text", "--format=json"}, wantJSON: true},
+		{arguments: []string{"next", "--format", "json", "--format", "text"}, wantJSON: false},
+	} {
+		var output bytes.Buffer
+		if rendered, err := RenderBootstrapDiagnostic(&output, diagnostic, test.arguments); err != nil || !rendered {
+			t.Fatalf("repeated format rendered=%v err=%v", rendered, err)
+		}
+		gotJSON := strings.HasPrefix(output.String(), "{")
+		if gotJSON != test.wantJSON {
+			t.Fatalf("arguments %v rendered JSON=%v, want %v: %s", test.arguments, gotJSON, test.wantJSON, output.String())
+		}
+	}
 }
 
 func TestUnreleasedRuntimeIdentityHasNoDownloadCommand(t *testing.T) {
