@@ -95,15 +95,18 @@ func releaseInstallCommand(identity Identity, installerVersion string) string {
 }
 
 func requestedJSON(arguments []string) bool {
+	jsonRequested := false
 	for index := 0; index < len(arguments); index++ {
 		if arguments[index] == "--format" && index+1 < len(arguments) {
-			return arguments[index+1] == "json"
+			jsonRequested = arguments[index+1] == "json"
+			index++
+			continue
 		}
 		if strings.TrimPrefix(arguments[index], "--format=") != arguments[index] {
-			return strings.TrimPrefix(arguments[index], "--format=") == "json"
+			jsonRequested = strings.TrimPrefix(arguments[index], "--format=") == "json"
 		}
 	}
-	return false
+	return jsonRequested
 }
 
 func RenderBootstrapDiagnostic(writer io.Writer, err error, arguments []string) (bool, error) {

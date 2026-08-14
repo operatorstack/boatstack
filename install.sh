@@ -18,20 +18,34 @@ case "$mode" in
   *) echo "Boatstack supports BOATSTACK_MODE=install, update, or hydrate" >&2; exit 2 ;;
 esac
 
-repository="$(git -C "$repository" rev-parse --show-toplevel)"
-current_branch="$(git -C "$repository" symbolic-ref --quiet --short HEAD)" || {
-  echo "Boatstack installation requires an attached branch" >&2
-  exit 2
-}
-remote_default="$(git -C "$repository" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
-default_branch="${remote_default#origin/}"
-if [[ -z "$default_branch" ]]; then
-  default_branch="$current_branch"
+if [[ "$mode" == hydrate ]]; then
+  [[ "$version" != latest ]] || {
+    echo "BOATSTACK_RUNTIME_PIN_INVALID: hydrate requires an exact BOATSTACK_VERSION" >&2
+    exit 2
+  }
+  [[ "${BOATSTACK_EXPECTED_RUNTIME_SHA256:-}" =~ ^[0-9a-fA-F]{64}$ ]] || {
+    echo "BOATSTACK_RUNTIME_PIN_INVALID: hydrate requires an exact BOATSTACK_EXPECTED_RUNTIME_SHA256" >&2
+    exit 2
+  }
 fi
-git check-ref-format --branch "$default_branch" >/dev/null || {
-  echo "Boatstack could not resolve a valid default branch" >&2
-  exit 2
-}
+
+repository="$(git -C "$repository" rev-parse --show-toplevel)"
+default_branch=""
+if [[ "$mode" != hydrate ]]; then
+  current_branch="$(git -C "$repository" symbolic-ref --quiet --short HEAD)" || {
+    echo "Boatstack installation requires an attached branch" >&2
+    exit 2
+  }
+  remote_default="$(git -C "$repository" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+  default_branch="${remote_default#origin/}"
+  if [[ -z "$default_branch" ]]; then
+    default_branch="$current_branch"
+  fi
+  git check-ref-format --branch "$default_branch" >/dev/null || {
+    echo "Boatstack could not resolve a valid default branch" >&2
+    exit 2
+  }
+fi
 case "$(uname -s)" in
   Darwin) os=darwin ;;
   Linux) os=linux ;;
@@ -140,9 +154,11 @@ elif [[ "$mode" == update ]]; then
 fi
 
 mkdir -p "$install_dir"
-launcher_staged="$install_dir/.boatstack.$$"
-install -m 0755 "$candidate" "$launcher_staged"
-mv -f "$launcher_staged" "$install_dir/boatstack"
+if [[ "$mode" != hydrate || ! -e "$install_dir/boatstack" ]]; then
+  launcher_staged="$install_dir/.boatstack.$$"
+  install -m 0755 "$candidate" "$launcher_staged"
+  mv -f "$launcher_staged" "$install_dir/boatstack"
+fi
 
 echo "Boatstack installed at $runtime"
 if [[ "$mode" != hydrate ]]; then

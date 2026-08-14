@@ -11,23 +11,32 @@ $InstallDir = if ($env:BOATSTACK_INSTALL_DIR) { $env:BOATSTACK_INSTALL_DIR } els
 $BoatstackHome = if ($env:BOATSTACK_HOME) { $env:BOATSTACK_HOME } else { Join-Path $env:LOCALAPPDATA "Boatstack" }
 
 if ($Mode -notin @("install", "update", "hydrate")) { throw "Boatstack supports BOATSTACK_MODE=install, update, or hydrate" }
+if ($Mode -eq "hydrate") {
+  if ($Version -eq "latest") { throw "BOATSTACK_RUNTIME_PIN_INVALID: hydrate requires an exact BOATSTACK_VERSION" }
+  if (-not $env:BOATSTACK_EXPECTED_RUNTIME_SHA256 -or $env:BOATSTACK_EXPECTED_RUNTIME_SHA256 -notmatch '^[0-9A-Fa-f]{64}$') {
+    throw "BOATSTACK_RUNTIME_PIN_INVALID: hydrate requires an exact BOATSTACK_EXPECTED_RUNTIME_SHA256"
+  }
+}
 $RepositoryOutput = & git -C $Repository rev-parse --show-toplevel
 $RepositoryStatus = $LASTEXITCODE
 if ($RepositoryStatus -ne 0 -or -not $RepositoryOutput) { throw "Boatstack installation requires a Git repository" }
 $Repository = ($RepositoryOutput -join "`n").Trim()
-$CurrentBranchOutput = & git -C $Repository symbolic-ref --quiet --short HEAD
-$CurrentBranchStatus = $LASTEXITCODE
-if ($CurrentBranchStatus -ne 0 -or -not $CurrentBranchOutput) { throw "Boatstack installation requires an attached branch" }
-$CurrentBranch = ($CurrentBranchOutput -join "`n").Trim()
-$RemoteDefaultOutput = & git -C $Repository symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>$null
-$RemoteDefaultStatus = $LASTEXITCODE
-$DefaultBranch = if ($RemoteDefaultStatus -eq 0 -and $RemoteDefaultOutput) {
-  (($RemoteDefaultOutput -join "`n").Trim() -replace '^origin/', '')
-} else {
-  $CurrentBranch
+$DefaultBranch = $null
+if ($Mode -ne "hydrate") {
+  $CurrentBranchOutput = & git -C $Repository symbolic-ref --quiet --short HEAD
+  $CurrentBranchStatus = $LASTEXITCODE
+  if ($CurrentBranchStatus -ne 0 -or -not $CurrentBranchOutput) { throw "Boatstack installation requires an attached branch" }
+  $CurrentBranch = ($CurrentBranchOutput -join "`n").Trim()
+  $RemoteDefaultOutput = & git -C $Repository symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>$null
+  $RemoteDefaultStatus = $LASTEXITCODE
+  $DefaultBranch = if ($RemoteDefaultStatus -eq 0 -and $RemoteDefaultOutput) {
+    (($RemoteDefaultOutput -join "`n").Trim() -replace '^origin/', '')
+  } else {
+    $CurrentBranch
+  }
+  & git check-ref-format --branch $DefaultBranch | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "Boatstack could not resolve a valid default branch" }
 }
-& git check-ref-format --branch $DefaultBranch | Out-Null
-if ($LASTEXITCODE -ne 0) { throw "Boatstack could not resolve a valid default branch" }
 $Architecture = switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()) {
   "x64" { "amd64" }
   "arm64" { "arm64" }
@@ -125,9 +134,11 @@ try {
 
   New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
   $Launcher = Join-Path $InstallDir "boatstack.exe"
-  $StagedLauncher = Join-Path $InstallDir (".boatstack-" + [guid]::NewGuid().ToString("N") + ".exe")
-  Copy-Item -LiteralPath $Candidate -Destination $StagedLauncher
-  Move-Item -LiteralPath $StagedLauncher -Destination $Launcher -Force
+  if ($Mode -ne "hydrate" -or -not (Test-Path -LiteralPath $Launcher)) {
+    $StagedLauncher = Join-Path $InstallDir (".boatstack-" + [guid]::NewGuid().ToString("N") + ".exe")
+    Copy-Item -LiteralPath $Candidate -Destination $StagedLauncher
+    Move-Item -LiteralPath $StagedLauncher -Destination $Launcher -Force
+  }
   Write-Host "Boatstack installed at $Runtime"
   if ($Mode -ne "hydrate") {
     Write-Host "Review and commit $Repository\.boatstack\project.json, $Repository\.boatstack\runtime.json, and the generated host skills"

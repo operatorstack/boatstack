@@ -203,8 +203,18 @@ jobs:
               & git -C $repository add README.md
               & git -C $repository commit -m "Initialize fixture" | Out-Null
 
+              if ($mode -eq "hydrate") {
+                & git -C $repository checkout --detach | Out-Null
+              }
+
               $runtimeHome = Join-Path $root "$mode-home"
               $installDir = Join-Path $root "$mode-bin"
+              $launcher = Join-Path $installDir "boatstack.exe"
+              if ($mode -eq "hydrate") {
+                New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+                [System.IO.File]::WriteAllBytes($launcher, [byte[]](1, 2, 3, 4))
+                $launcherBefore = (Get-FileHash -Algorithm SHA256 -LiteralPath $launcher).Hash
+              }
               $env:BOATSTACK_REPO = $repository
               $env:BOATSTACK_HOME = $runtimeHome
               $env:BOATSTACK_INSTALL_DIR = $installDir
@@ -217,10 +227,10 @@ jobs:
               if ($LASTEXITCODE -ne 0) { throw "$mode installer failed" }
 
               $runtime = Join-Path $runtimeHome "runtimes\$version-$digest\boatstack-runtime.exe"
-              $launcher = Join-Path $installDir "boatstack.exe"
               if (-not (Test-Path -LiteralPath $runtime -PathType Leaf)) { throw "$mode did not stage the runtime" }
               if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) { throw "$mode did not stage the launcher" }
               if ($mode -eq "hydrate") {
+                if ((Get-FileHash -Algorithm SHA256 -LiteralPath $launcher).Hash -ne $launcherBefore) { throw "hydrate replaced the shared launcher" }
                 if (Test-Path -LiteralPath (Join-Path $repository ".boatstack")) { throw "hydrate changed repository state" }
                 if (Test-Path -LiteralPath (Join-Path $repository ".git\boatstack")) { throw "hydrate changed controller state" }
                 if (& git -C $repository status --porcelain) { throw "hydrate changed tracked repository files" }
@@ -228,6 +238,26 @@ jobs:
                 throw "install did not initialize the repository runtime pin"
               }
             }
+
+            $missingEvidenceRepository = Join-Path $root "missing-evidence-repository"
+            New-Item -ItemType Directory -Force -Path $missingEvidenceRepository | Out-Null
+            & git -C $missingEvidenceRepository init --initial-branch=main | Out-Null
+            $missingEvidenceHome = Join-Path $root "missing-evidence-home"
+            $missingEvidenceBin = Join-Path $root "missing-evidence-bin"
+            $env:BOATSTACK_REPO = $missingEvidenceRepository
+            $env:BOATSTACK_HOME = $missingEvidenceHome
+            $env:BOATSTACK_INSTALL_DIR = $missingEvidenceBin
+            $env:BOATSTACK_MODE = "hydrate"
+            $env:BOATSTACK_VERSION = "latest"
+            Remove-Item Env:BOATSTACK_EXPECTED_RUNTIME_SHA256 -ErrorAction SilentlyContinue
+            try {
+              & ./install.ps1
+              throw "hydrate without exact evidence succeeded"
+            } catch {
+              if ($_ -notmatch "BOATSTACK_RUNTIME_PIN_INVALID") { throw }
+            }
+            if (Test-Path -LiteralPath $missingEvidenceHome) { throw "invalid hydrate changed runtime storage" }
+            if (Test-Path -LiteralPath $missingEvidenceBin) { throw "invalid hydrate changed launcher storage" }
           } finally {
             Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
           }
