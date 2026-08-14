@@ -81,7 +81,12 @@ func main() {
 	if boatstackruntime.ShouldDispatch(os.Args[0]) {
 		code, err := boatstackruntime.Dispatch(os.Args[1:])
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "boatstack:", err)
+			rendered, renderErr := boatstackruntime.RenderBootstrapDiagnostic(os.Stderr, err, os.Args[1:])
+			if renderErr != nil {
+				fmt.Fprintln(os.Stderr, "boatstack:", renderErr)
+			} else if !rendered {
+				fmt.Fprintln(os.Stderr, "boatstack:", err)
+			}
 			os.Exit(1)
 		}
 		os.Exit(code)

@@ -162,20 +162,35 @@ func VerifyExecutable(path string, identity Identity) error {
 	info, err := os.Lstat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("pinned Boatstack runtime is not installed: %s", identity.Version+"@"+identity.SHA256)
+			return &runtimeVerificationError{
+				code: CodeRuntimeNotInstalled, identity: identity,
+				cause: fmt.Errorf("pinned Boatstack runtime is not installed: %s", identity.Version+"@"+identity.SHA256),
+			}
 		}
-		return err
+		return &runtimeVerificationError{
+			code: CodeRuntimeInvalid, identity: identity,
+			cause: fmt.Errorf("inspect pinned Boatstack runtime: %w", err),
+		}
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return fmt.Errorf("pinned Boatstack runtime must be an immutable regular file")
+		return &runtimeVerificationError{
+			code: CodeRuntimeInvalid, identity: identity,
+			cause: fmt.Errorf("pinned Boatstack runtime must be an immutable regular file"),
+		}
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return &runtimeVerificationError{
+			code: CodeRuntimeInvalid, identity: identity,
+			cause: fmt.Errorf("read pinned Boatstack runtime: %w", err),
+		}
 	}
 	sum := sha256.Sum256(raw)
 	if actual := hex.EncodeToString(sum[:]); actual != identity.SHA256 {
-		return fmt.Errorf("pinned Boatstack runtime checksum mismatch: got %s, want %s", actual, identity.SHA256)
+		return &runtimeVerificationError{
+			code: CodeRuntimeChecksumMismatch, identity: identity, actual: actual,
+			cause: fmt.Errorf("pinned Boatstack runtime checksum mismatch: got %s, want %s", actual, identity.SHA256),
+		}
 	}
 	return nil
 }

@@ -35,7 +35,10 @@ func TestGeneratedSkillsProjectOnlyDeclaredEntriesWithHostParity(t *testing.T) {
 		t.Fatal("Codex and Claude entry contracts differ")
 	}
 	value := string(codex)
-	for _, contract := range []string{"--flow product-delivery --entry run", "same run ID", "Nothing continues in the\nbackground", "no merge or deploy"} {
+	for _, contract := range []string{
+		"--flow product-delivery --entry run", "same run ID", "Nothing continues in the\nbackground", "no merge or deploy",
+		"BOATSTACK_LAUNCHER_NOT_FOUND", ".boatstack/runtime.json", "Never run it", "creates no\nFlow run ID",
+	} {
 		if !strings.Contains(value, contract) {
 			t.Fatalf("generated skill lacks %q", contract)
 		}
