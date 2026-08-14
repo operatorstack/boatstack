@@ -14,15 +14,25 @@ Malformed or unsupported configuration is not treated as verified.
 
 ## Runtime is absent, stale, or wrong
 
-Use the checksum-verifying installer in update mode. It durably installs the
-exact version-and-digest runtime candidate, requests `installation.update`, and
-changes the repository runtime pin only after the kernel verifies the
-candidate.
+The launcher reports pre-runtime failures before it loads a Flow or creates
+managed state. With `--format json`, the diagnostic uses the versioned
+`boatstack-bootstrap-diagnostic` envelope. Text mode prints the same stable
+code, exact pinned version, and SHA-256.
+
+Use the checksum-verifying installer in `hydrate` mode. It durably restores the
+exact version-and-digest runtime and launcher without changing repository or
+controller state.
 
 ```sh
-BOATSTACK_MODE=update BOATSTACK_VERSION=<tag> \
-  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/operatorstack/boatstack/main/install.sh)"
+BOATSTACK_MODE=hydrate BOATSTACK_VERSION=<exact-tag> \
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/operatorstack/boatstack/<exact-tag>/install.sh)"
 ```
+
+Display this command and obtain explicit approval before running it. Generated
+Flow skills never run or authorize installation. If the `boatstack` launcher
+itself is absent, they read the committed `.boatstack/runtime.json`, report
+`BOATSTACK_LAUNCHER_NOT_FOUND`, and stop. An absent or invalid pin requires a
+maintainer; never substitute `latest`.
 
 Do not copy a helper from another worktree or select a “latest” cache slot. A
 missing pinned runtime fails closed; reinstall that exact release and checksum.

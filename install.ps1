@@ -10,7 +10,7 @@ $Actor = if ($env:BOATSTACK_ACTOR) { $env:BOATSTACK_ACTOR } elseif ($env:USERNAM
 $InstallDir = if ($env:BOATSTACK_INSTALL_DIR) { $env:BOATSTACK_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA "Boatstack\bin" }
 $BoatstackHome = if ($env:BOATSTACK_HOME) { $env:BOATSTACK_HOME } else { Join-Path $env:LOCALAPPDATA "Boatstack" }
 
-if ($Mode -notin @("install", "update")) { throw "Boatstack supports BOATSTACK_MODE=install or update" }
+if ($Mode -notin @("install", "update", "hydrate")) { throw "Boatstack supports BOATSTACK_MODE=install, update, or hydrate" }
 $RepositoryOutput = & git -C $Repository rev-parse --show-toplevel
 $RepositoryStatus = $LASTEXITCODE
 if ($RepositoryStatus -ne 0 -or -not $RepositoryOutput) { throw "Boatstack installation requires a Git repository" }
@@ -49,26 +49,35 @@ try {
     } else {
       "https://github.com/operatorstack/boatstack/releases/download/$Version"
     }
-    Invoke-WebRequest -UseBasicParsing -Uri "$Base/$Asset" -OutFile $Candidate
-    $ChecksumPath = Join-Path $Temporary "$Asset.sha256"
-    Invoke-WebRequest -UseBasicParsing -Uri "$Base/$Asset.sha256" -OutFile $ChecksumPath
+    try {
+      Invoke-WebRequest -UseBasicParsing -Uri "$Base/$Asset" -OutFile $Candidate
+      $ChecksumPath = Join-Path $Temporary "$Asset.sha256"
+      Invoke-WebRequest -UseBasicParsing -Uri "$Base/$Asset.sha256" -OutFile $ChecksumPath
+    } catch {
+      throw "BOATSTACK_RUNTIME_ARTIFACT_UNAVAILABLE: version=$Version asset=$Asset"
+    }
     $Expected = ((Get-Content -LiteralPath $ChecksumPath -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
   }
   $Actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $Candidate).Hash.ToLowerInvariant()
-  if ($Actual -ne $Expected) { throw "Boatstack runtime checksum mismatch" }
+  if ($Actual -ne $Expected) {
+    throw "BOATSTACK_RUNTIME_ARTIFACT_CHECKSUM_MISMATCH: version=$Version asset=$Asset expected=$Expected actual=$Actual"
+  }
 
   $CandidateVersionOutput = & $Candidate version
   if ($LASTEXITCODE -ne 0 -or -not $CandidateVersionOutput) { throw "Boatstack runtime did not report its version identity" }
   $CandidateVersion = ($CandidateVersionOutput -join "`n").Trim()
   $SafeVersion = [regex]::Replace($CandidateVersion, '[^A-Za-z0-9._-]', '-')
   if (-not $SafeVersion -or $SafeVersion -ne $CandidateVersion) { throw "Boatstack runtime reported an invalid version identity" }
+  if ($Mode -eq "hydrate" -and $Version -ne "latest" -and $CandidateVersion -ne $Version) {
+    throw "Boatstack runtime version mismatch: requested=$Version actual=$CandidateVersion"
+  }
   $RuntimeDirectory = Join-Path $BoatstackHome ("runtimes\$SafeVersion-$Actual")
   New-Item -ItemType Directory -Force -Path $RuntimeDirectory | Out-Null
   $Runtime = Join-Path $RuntimeDirectory "boatstack-runtime.exe"
   if (Test-Path -LiteralPath $Runtime) {
     $Installed = (Get-FileHash -Algorithm SHA256 -LiteralPath $Runtime).Hash.ToLowerInvariant()
     if ($Installed -ne $Actual) { throw "Boatstack immutable runtime store collision" }
-  } else {
+  } elseif ($Mode -eq "update") {
     $StagedRuntime = Join-Path $RuntimeDirectory (".boatstack-runtime-" + [guid]::NewGuid().ToString("N"))
     try {
       Copy-Item -LiteralPath $Candidate -Destination $StagedRuntime
@@ -109,7 +118,7 @@ try {
     & $Runtime update --repo $Repository --human $Actor `
       --param "runtime_sha256=$Actual" @AcceptProgramChange --format json
   }
-  if ($LASTEXITCODE -ne 0) { throw "Boatstack kernel rejected installation" }
+  if ($Mode -ne "hydrate" -and $LASTEXITCODE -ne 0) { throw "Boatstack kernel rejected installation" }
 
   New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
   $Launcher = Join-Path $InstallDir "boatstack.exe"
@@ -117,7 +126,9 @@ try {
   Copy-Item -LiteralPath $Candidate -Destination $StagedLauncher
   Move-Item -LiteralPath $StagedLauncher -Destination $Launcher -Force
   Write-Host "Boatstack installed at $Runtime"
-  Write-Host "Review and commit $Repository\.boatstack\project.json, $Repository\.boatstack\runtime.json, and the generated host skills"
+  if ($Mode -ne "hydrate") {
+    Write-Host "Review and commit $Repository\.boatstack\project.json, $Repository\.boatstack\runtime.json, and the generated host skills"
+  }
   Write-Host "Run: $Launcher doctor --repo `"$Repository`" --format text"
 } finally {
   Remove-Item -LiteralPath $Temporary -Recurse -Force -ErrorAction SilentlyContinue

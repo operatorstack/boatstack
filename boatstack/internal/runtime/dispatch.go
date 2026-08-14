@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,11 +32,11 @@ func ResolvePinnedExecutable(repository string) (string, Pin, error) {
 	}
 	raw, err := os.ReadFile(PinPath(repository))
 	if err != nil {
-		return "", Pin{}, fmt.Errorf("read repository runtime pin: %w", err)
+		return "", Pin{}, newBootstrapDiagnostic(CodeRuntimePinInvalid, "The repository Boatstack runtime pin cannot be read.", repository, err)
 	}
 	pin, err := DecodePin(raw)
 	if err != nil {
-		return "", Pin{}, fmt.Errorf("decode repository runtime pin: %w", err)
+		return "", Pin{}, newBootstrapDiagnostic(CodeRuntimePinInvalid, "The repository Boatstack runtime pin is invalid.", repository, err)
 	}
 	home, err := Home("")
 	if err != nil {
@@ -46,6 +47,17 @@ func ResolvePinnedExecutable(repository string) (string, Pin, error) {
 		return "", Pin{}, err
 	}
 	if err := VerifyExecutable(executable, pin.Identity()); err != nil {
+		var verification *runtimeVerificationError
+		if errors.As(err, &verification) {
+			message := "The repository-pinned Boatstack runtime is invalid."
+			switch verification.code {
+			case CodeRuntimeNotInstalled:
+				message = "The repository-pinned Boatstack runtime is not installed."
+			case CodeRuntimeChecksumMismatch:
+				message = "The repository-pinned Boatstack runtime checksum does not match."
+			}
+			return "", Pin{}, runtimeBootstrapDiagnostic(verification.code, message, repository, pin.Identity(), err)
+		}
 		return "", Pin{}, err
 	}
 	return executable, pin, nil
@@ -93,13 +105,13 @@ func findPinnedRepository(start string) (string, error) {
 			return "", err
 		}
 		if _, err := os.Lstat(filepath.Join(current, ".git")); err == nil {
-			return "", fmt.Errorf("repository at %s has no Boatstack runtime pin; initialize it first", current)
+			return "", newBootstrapDiagnostic(CodeRuntimePinMissing, "The repository has no Boatstack runtime pin; a maintainer must initialize it.", current, nil)
 		} else if !os.IsNotExist(err) {
 			return "", err
 		}
 		parent := filepath.Dir(current)
 		if parent == current {
-			return "", fmt.Errorf("no Boatstack runtime pin found from %s; initialize this repository first", start)
+			return "", newBootstrapDiagnostic(CodeRuntimePinMissing, "No Boatstack runtime pin was found; a maintainer must initialize the repository.", start, nil)
 		}
 		current = parent
 	}

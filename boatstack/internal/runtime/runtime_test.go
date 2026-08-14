@@ -1,14 +1,32 @@
 package runtime
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func requireBootstrapDiagnostic(t *testing.T, err error, code string) *BootstrapDiagnostic {
+	t.Helper()
+	var diagnostic *BootstrapDiagnostic
+	if !errors.As(err, &diagnostic) {
+		t.Fatalf("error %v is not a bootstrap diagnostic", err)
+	}
+	if diagnostic.Code != code {
+		t.Fatalf("diagnostic code = %q, want %q", diagnostic.Code, code)
+	}
+	if diagnostic.FlowRunCreated || diagnostic.ManagedStateChanged {
+		t.Fatalf("pre-runtime diagnostic claims mutation: %#v", diagnostic)
+	}
+	return diagnostic
+}
 
 func fixtureIdentity(version, source string, raw []byte) Identity {
 	sum := sha256.Sum256(raw)
@@ -91,8 +109,119 @@ func TestMissingPinnedRuntimeFailsClosedWithoutLatestFallback(t *testing.T) {
 	missing := fixtureIdentity("v1.0.0", "missing-source", []byte("missing"))
 	repository := t.TempDir()
 	writePin(t, repository, missing)
-	if _, _, err := ResolvePinnedExecutable(repository); err == nil || !strings.Contains(err.Error(), "not installed") {
-		t.Fatalf("missing pin resolution error = %v", err)
+	_, _, err := ResolvePinnedExecutable(repository)
+	diagnostic := requireBootstrapDiagnostic(t, err, CodeRuntimeNotInstalled)
+	if diagnostic.RequiredRuntime == nil || diagnostic.RequiredRuntime.Version != missing.Version || diagnostic.RequiredRuntime.SHA256 != missing.SHA256 || diagnostic.RequiredRuntime.SourceRevision != missing.SourceRevision {
+		t.Fatalf("required runtime = %#v", diagnostic.RequiredRuntime)
+	}
+	if diagnostic.Recovery == nil || diagnostic.Recovery.Action != "install-exact-runtime" || !diagnostic.Recovery.RequiresConfirmation || !strings.Contains(diagnostic.Recovery.Command, "BOATSTACK_MODE=hydrate") || !strings.Contains(diagnostic.Recovery.Command, "BOATSTACK_VERSION=v1.0.0") || strings.Contains(diagnostic.Recovery.Command, "latest") || strings.Contains(diagnostic.Recovery.Command, "BOATSTACK_MODE=update") {
+		t.Fatalf("recovery = %#v", diagnostic.Recovery)
+	}
+	if _, statErr := os.Stat(filepath.Join(repository, ".git", "boatstack")); !os.IsNotExist(statErr) {
+		t.Fatalf("missing runtime created managed state: %v", statErr)
+	}
+}
+
+func TestBootstrapDiagnosticsClassifyPinAndRuntimeFailures(t *testing.T) {
+	// control-law: every-pre-runtime-failure-is-typed-and-zero-mutation
+	home := t.TempDir()
+	t.Setenv(HomeEnvironment, home)
+
+	t.Run("missing-pin", func(t *testing.T) {
+		repository := t.TempDir()
+		if err := os.Mkdir(filepath.Join(repository, ".git"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		_, _, err := ResolvePinnedExecutable(repository)
+		requireBootstrapDiagnostic(t, err, CodeRuntimePinMissing)
+	})
+
+	t.Run("invalid-pin", func(t *testing.T) {
+		repository := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(repository, ".boatstack"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(PinPath(repository), []byte(`{"schema_version":1,"version":"latest"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, _, err := ResolvePinnedExecutable(repository)
+		requireBootstrapDiagnostic(t, err, CodeRuntimePinInvalid)
+	})
+
+	for _, test := range []struct {
+		name string
+		code string
+		make func(string) error
+	}{
+		{name: "invalid-type", code: CodeRuntimeInvalid, make: func(path string) error { return os.MkdirAll(path, 0o755) }},
+		{name: "checksum-mismatch", code: CodeRuntimeChecksumMismatch, make: func(path string) error {
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				return err
+			}
+			return os.WriteFile(path, []byte("wrong runtime"), 0o755)
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			identity := fixtureIdentity("v1.2.3-"+test.name, "source", []byte("expected runtime"))
+			repository := t.TempDir()
+			writePin(t, repository, identity)
+			path, err := ExecutablePath(home, identity)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := test.make(path); err != nil {
+				t.Fatal(err)
+			}
+			_, _, err = ResolvePinnedExecutable(repository)
+			diagnostic := requireBootstrapDiagnostic(t, err, test.code)
+			if diagnostic.Recovery != nil {
+				t.Fatalf("unsafe repair command for %s: %#v", test.name, diagnostic.Recovery)
+			}
+		})
+	}
+}
+
+func TestBootstrapDiagnosticRenderingPreservesOneEnvelope(t *testing.T) {
+	// control-law: text-and-json-hosts-receive-the-same-pre-runtime-decision
+	identity := fixtureIdentity("v1.2.3-rc.1", "source", []byte("runtime"))
+	diagnostic := runtimeBootstrapDiagnostic(CodeRuntimeNotInstalled, "The repository-pinned Boatstack runtime is not installed.", "/repo", identity, nil)
+
+	var jsonOutput bytes.Buffer
+	rendered, err := RenderBootstrapDiagnostic(&jsonOutput, diagnostic, []string{"next", "--format", "json"})
+	if err != nil || !rendered {
+		t.Fatalf("JSON render = rendered %t, err %v", rendered, err)
+	}
+	var decoded BootstrapDiagnostic
+	if err := json.Unmarshal(jsonOutput.Bytes(), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Schema != BootstrapDiagnosticSchema || decoded.SchemaRevision != BootstrapDiagnosticSchemaRevision || decoded.Code != CodeRuntimeNotInstalled || decoded.Recovery == nil || !decoded.Recovery.RequiresConfirmation {
+		t.Fatalf("JSON diagnostic = %#v", decoded)
+	}
+
+	var textOutput bytes.Buffer
+	rendered, err = RenderBootstrapDiagnostic(&textOutput, diagnostic, []string{"next", "--format=text"})
+	if err != nil || !rendered {
+		t.Fatalf("text render = rendered %t, err %v", rendered, err)
+	}
+	for _, expected := range []string{"Blocked:", CodeRuntimeNotInstalled, identity.Version, identity.SHA256, "explicit approval", "No Flow run was created"} {
+		if !strings.Contains(textOutput.String(), expected) {
+			t.Fatalf("text diagnostic lacks %q: %s", expected, textOutput.String())
+		}
+	}
+
+	var unrelated bytes.Buffer
+	if rendered, err := RenderBootstrapDiagnostic(&unrelated, errors.New("ordinary"), nil); err != nil || rendered || unrelated.Len() != 0 {
+		t.Fatalf("ordinary error render = rendered %t, err %v, output %q", rendered, err, unrelated.String())
+	}
+}
+
+func TestUnreleasedRuntimeIdentityHasNoDownloadCommand(t *testing.T) {
+	// control-law: repository-pin-cannot-inject-an-installer-command
+	identity := fixtureIdentity("local-development", "source", []byte("runtime"))
+	diagnostic := runtimeBootstrapDiagnostic(CodeRuntimeNotInstalled, "missing", "/repo", identity, nil)
+	if diagnostic.Recovery != nil {
+		t.Fatalf("non-release identity produced recovery command: %#v", diagnostic.Recovery)
 	}
 }
 
@@ -111,9 +240,8 @@ func TestNestedUninitializedRepositoryCannotInheritParentPin(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(nested, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := ResolvePinnedExecutable(nested); err == nil || !strings.Contains(err.Error(), "has no Boatstack runtime pin") {
-		t.Fatalf("nested repository resolution error = %v", err)
-	}
+	_, _, err := ResolvePinnedExecutable(nested)
+	requireBootstrapDiagnostic(t, err, CodeRuntimePinMissing)
 }
 
 func TestRuntimeStoreIsImmutableAndScalesIndependentlyOfSelection(t *testing.T) {

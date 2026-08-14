@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
+	"github.com/operatorstack/boatstack/boatstack/flow/skillprojection"
 )
 
 func GenerateSkills(compiled controlprogram.Compiled, hosts []string) (map[string][]byte, error) {
@@ -91,6 +92,8 @@ description: %q
 Run the repository-owned Flow %q entry %q until its marked target %q is reached.
 Boatstack does not interpret the entry name.
 
+%s
+
 Start with `+"`boatstack next --repo . --flow %s --entry %s --host %s --format json`"+`.
 Preserve the returned program fingerprint, entry, run ID, delivery, repository,
 worktree, host, actor, authority receipts, prescription, and receipts through
@@ -106,7 +109,7 @@ background while input is missing. Never synthesize authority.
 Stop only when Boatstack reports the marked target, a typed blocker, refusal,
 unresolved recovery, or missing authority. This entry grants no merge or deploy
 authority.
-`, slug, description, title(slug), compiled.Document.Program.ID, entry.ID, entry.Target, compiled.Document.Program.ID, entry.ID, host, delegation, supersession))
+`, slug, description, title(slug), compiled.Document.Program.ID, entry.ID, entry.Target, skillprojection.BootstrapContract(), compiled.Document.Program.ID, entry.ID, host, delegation, supersession))
 }
 
 func targetEntrySkill(programID string, entries []controlprogram.Entry, target string) (string, bool) {
