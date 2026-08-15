@@ -12,7 +12,16 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 )
 
-const StateSchemaVersion = 4
+const (
+	StateSchemaVersion      = 6
+	priorStateSchemaVersion = 4
+)
+
+// CanReadStateSchema reports the current schema and its single supported
+// forward-migration predecessor. Older or future schemas remain fail-closed.
+func CanReadStateSchema(version int) bool {
+	return version == StateSchemaVersion || version == priorStateSchemaVersion
+}
 
 type GateEvidence struct {
 	Gate        string `json:"gate"`
@@ -21,56 +30,58 @@ type GateEvidence struct {
 }
 
 type State struct {
-	SchemaVersion         int                      `json:"schema_version"`
-	RepositoryID          string                   `json:"repository_id"`
-	GitCommonID           string                   `json:"git_common_id"`
-	WorktreeID            string                   `json:"worktree_id"`
-	ProgramFingerprint    string                   `json:"program_fingerprint,omitempty"`
-	Revision              uint64                   `json:"revision"`
-	Phase                 model.ProtocolPhase      `json:"phase"`
-	Engagement            model.EngagementState    `json:"engagement"`
-	Delivery              model.DeliveryState      `json:"delivery"`
-	Workspace             model.WorkspaceState     `json:"workspace"`
-	Plan                  model.PlanState          `json:"plan"`
-	Configuration         model.ConfigurationState `json:"configuration"`
-	Runtime               model.RuntimeState       `json:"runtime"`
-	Publication           model.PublicationState   `json:"publication"`
-	Verification          model.VerificationState  `json:"verification"`
-	Recovery              model.RecoveryState      `json:"recovery"`
-	Transaction           model.TransactionState   `json:"transaction"`
-	Terminal              model.TerminalStatus     `json:"terminal"`
-	Objective             model.Objective          `json:"objective"`
-	SourceRevision        string                   `json:"source_revision,omitempty"`
-	WorktreeFingerprint   string                   `json:"worktree_fingerprint,omitempty"`
-	ConfigFingerprint     string                   `json:"config_fingerprint,omitempty"`
-	PlanApprovalPolicy    string                   `json:"plan_approval_policy,omitempty"`
-	VisualEvidencePolicy  string                   `json:"visual_evidence_policy,omitempty"`
-	ExternalEffectPolicy  string                   `json:"external_effect_policy,omitempty"`
-	IndependentReview     bool                     `json:"independent_review_for_high_risk,omitempty"`
-	EnabledHosts          []string                 `json:"enabled_hosts,omitempty"`
-	RuntimeVersion        string                   `json:"runtime_version,omitempty"`
-	RuntimeFingerprint    string                   `json:"runtime_fingerprint,omitempty"`
-	RuntimeSource         string                   `json:"runtime_source_revision,omitempty"`
-	PlanFingerprint       string                   `json:"plan_fingerprint,omitempty"`
-	ApprovalFingerprint   string                   `json:"approval_fingerprint,omitempty"`
-	WorkspaceBranch       string                   `json:"workspace_branch,omitempty"`
-	WorkspacePath         string                   `json:"workspace_path,omitempty"`
-	WorkspaceBaseRef      string                   `json:"workspace_base_ref,omitempty"`
-	WorkspaceSourcePath   string                   `json:"workspace_source_path,omitempty"`
-	WorkspaceSourceID     string                   `json:"workspace_source_worktree_id,omitempty"`
-	WorkspaceSourceRef    string                   `json:"workspace_source_ref,omitempty"`
-	PublicationID         string                   `json:"publication_id,omitempty"`
-	PublicationURL        string                   `json:"publication_url,omitempty"`
-	PreviewFingerprint    string                   `json:"preview_fingerprint,omitempty"`
-	TransactionID         string                   `json:"transaction_id,omitempty"`
-	TransactionTransition string                   `json:"transaction_transition,omitempty"`
-	RecoveryCause         string                   `json:"recovery_cause,omitempty"`
-	RecoverySourcePhase   model.ProtocolPhase      `json:"recovery_source_phase,omitempty"`
-	RecoveryResumption    model.ProtocolPhase      `json:"recovery_resumption,omitempty"`
-	RecoveryBudget        int                      `json:"recovery_budget_remaining,omitempty"`
-	LastTransition        catalog.TransitionID     `json:"last_transition,omitempty"`
-	Gates                 []GateEvidence           `json:"gates,omitempty"`
-	UpdatedAt             time.Time                `json:"updated_at"`
+	SchemaVersion              int                      `json:"schema_version"`
+	RepositoryID               string                   `json:"repository_id"`
+	GitCommonID                string                   `json:"git_common_id"`
+	WorktreeID                 string                   `json:"worktree_id"`
+	ProgramFingerprint         string                   `json:"program_fingerprint,omitempty"`
+	ControlBundleFingerprint   string                   `json:"control_bundle_fingerprint,omitempty"`
+	Revision                   uint64                   `json:"revision"`
+	Phase                      model.ProtocolPhase      `json:"phase"`
+	Engagement                 model.EngagementState    `json:"engagement"`
+	Delivery                   model.DeliveryState      `json:"delivery"`
+	Workspace                  model.WorkspaceState     `json:"workspace"`
+	Plan                       model.PlanState          `json:"plan"`
+	Configuration              model.ConfigurationState `json:"configuration"`
+	Runtime                    model.RuntimeState       `json:"runtime"`
+	Publication                model.PublicationState   `json:"publication"`
+	Verification               model.VerificationState  `json:"verification"`
+	Recovery                   model.RecoveryState      `json:"recovery"`
+	Transaction                model.TransactionState   `json:"transaction"`
+	Terminal                   model.TerminalStatus     `json:"terminal"`
+	Objective                  model.Objective          `json:"objective"`
+	SourceRevision             string                   `json:"source_revision,omitempty"`
+	WorktreeFingerprint        string                   `json:"worktree_fingerprint,omitempty"`
+	ConfigFingerprint          string                   `json:"config_fingerprint,omitempty"`
+	PlanApprovalPolicy         string                   `json:"plan_approval_policy,omitempty"`
+	VisualEvidencePolicy       string                   `json:"visual_evidence_policy,omitempty"`
+	ExternalEffectPolicy       string                   `json:"external_effect_policy,omitempty"`
+	IndependentReview          bool                     `json:"independent_review_for_high_risk,omitempty"`
+	EnabledHosts               []string                 `json:"enabled_hosts,omitempty"`
+	RuntimeVersion             string                   `json:"runtime_version,omitempty"`
+	RuntimeFingerprint         string                   `json:"runtime_fingerprint,omitempty"`
+	RuntimeSource              string                   `json:"runtime_source_revision,omitempty"`
+	PlanFingerprint            string                   `json:"plan_fingerprint,omitempty"`
+	PlanningPackageFingerprint string                   `json:"planning_package_fingerprint,omitempty"`
+	ApprovalFingerprint        string                   `json:"approval_fingerprint,omitempty"`
+	WorkspaceBranch            string                   `json:"workspace_branch,omitempty"`
+	WorkspacePath              string                   `json:"workspace_path,omitempty"`
+	WorkspaceBaseRef           string                   `json:"workspace_base_ref,omitempty"`
+	WorkspaceSourcePath        string                   `json:"workspace_source_path,omitempty"`
+	WorkspaceSourceID          string                   `json:"workspace_source_worktree_id,omitempty"`
+	WorkspaceSourceRef         string                   `json:"workspace_source_ref,omitempty"`
+	PublicationID              string                   `json:"publication_id,omitempty"`
+	PublicationURL             string                   `json:"publication_url,omitempty"`
+	PreviewFingerprint         string                   `json:"preview_fingerprint,omitempty"`
+	TransactionID              string                   `json:"transaction_id,omitempty"`
+	TransactionTransition      string                   `json:"transaction_transition,omitempty"`
+	RecoveryCause              string                   `json:"recovery_cause,omitempty"`
+	RecoverySourcePhase        model.ProtocolPhase      `json:"recovery_source_phase,omitempty"`
+	RecoveryResumption         model.ProtocolPhase      `json:"recovery_resumption,omitempty"`
+	RecoveryBudget             int                      `json:"recovery_budget_remaining,omitempty"`
+	LastTransition             catalog.TransitionID     `json:"last_transition,omitempty"`
+	Gates                      []GateEvidence           `json:"gates,omitempty"`
+	UpdatedAt                  time.Time                `json:"updated_at"`
 }
 
 func Default(invocation model.InvocationContext, now time.Time) State {
@@ -102,6 +113,15 @@ func (s State) Validate() error {
 	}
 	if s.ProgramFingerprint != "" && len(s.ProgramFingerprint) != 64 {
 		return fmt.Errorf("durable state has invalid program fingerprint")
+	}
+	if s.ControlBundleFingerprint != "" && len(s.ControlBundleFingerprint) != 64 {
+		return fmt.Errorf("durable state has invalid control-bundle fingerprint")
+	}
+	if s.PlanningPackageFingerprint != "" && len(s.PlanningPackageFingerprint) != 64 {
+		return fmt.Errorf("durable state has invalid planning package fingerprint")
+	}
+	if s.Plan == model.PlanPackageApproved && s.PlanningPackageFingerprint == "" {
+		return fmt.Errorf("approved planning package requires an exact package fingerprint")
 	}
 	if !s.Phase.Valid() || !s.Engagement.Valid() || !s.Delivery.Valid() || !s.Workspace.Valid() || !s.Plan.Valid() ||
 		!s.Configuration.Valid() || !s.Runtime.Valid() || !s.Publication.Valid() || !s.Verification.Valid() ||
@@ -190,6 +210,16 @@ func DecodeState(value []byte) (State, error) {
 	var trailing any
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return State{}, fmt.Errorf("durable state contains trailing JSON")
+	}
+	if state.SchemaVersion == priorStateSchemaVersion {
+		// The released predecessor is schema 4. Schemas 5 and 6 add planning
+		// package and control-bundle identity; neither may be smuggled into
+		// predecessor bytes. The original bytes remain the journal rollback
+		// source until a transition commits.
+		if state.PlanningPackageFingerprint != "" || state.ControlBundleFingerprint != "" {
+			return State{}, fmt.Errorf("durable state schema %d contains later identity fields", priorStateSchemaVersion)
+		}
+		state.SchemaVersion = StateSchemaVersion
 	}
 	if err := state.Validate(); err != nil {
 		return State{}, err

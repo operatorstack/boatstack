@@ -103,35 +103,59 @@ func scanCommittedReceipts(layout ports.ControllerLayout, visit func(journalReco
 // identity for the current objective. Projected receipt files are deliberately
 // not used because projection is best effort.
 func FindLatestCommittedFlowForObjective(layout ports.ControllerLayout, invocation model.InvocationContext, objective model.Objective, maximumRevision uint64) (protocol.TransitionReceipt, bool, error) {
+	records := []journalRecord{}
+	if err := scanCommittedReceipts(layout, func(record journalRecord) error {
+		records = append(records, record)
+		return nil
+	}); err != nil {
+		return protocol.TransitionReceipt{}, false, err
+	}
+	return findLatestCommittedFlowForObjective(records, invocation, objective, maximumRevision)
+}
+
+func findLatestCommittedFlowForObjective(records []journalRecord, invocation model.InvocationContext, objective model.Objective, maximumRevision uint64) (protocol.TransitionReceipt, bool, error) {
 	var found protocol.TransitionReceipt
-	err := scanCommittedReceipts(layout, func(record journalRecord) error {
+	for _, record := range records {
 		receipt := *record.Receipt
-		if !sameStateLineage(record.Admission.Invocation, invocation) {
-			return nil
+		if !matchesObjectiveBinding(receipt, objective, maximumRevision) {
+			continue
 		}
-		if matchesObjectiveBinding(receipt, objective, maximumRevision) && (found.ID == "" || receipt.ResultingStateRevision > found.ResultingStateRevision) {
+		bindingInvocation := record.Admission.Invocation
+		authorized := sameStateLineage(bindingInvocation, invocation)
+		if !authorized && bindingInvocation.ControllerID == invocation.ControllerID {
+			var err error
+			authorized, err = invocationAuthorizedByRecords(records, receipt.FlowID, bindingInvocation, invocation)
+			if err != nil {
+				return protocol.TransitionReceipt{}, false, err
+			}
+		}
+		if authorized && (found.ID == "" || receipt.ResultingStateRevision > found.ResultingStateRevision) {
 			found = receipt
 		}
-		return nil
-	})
-	return found, found.ID != "", err
+	}
+	return found, found.ID != "", nil
 }
 
 // InvocationAuthorizedByFlow reconstructs worktree lineage only from valid,
 // committed transition receipts. Mutable delegation records cannot invent a
 // context transfer.
 func InvocationAuthorizedByFlow(layout ports.ControllerLayout, flowID string, initial, current model.InvocationContext) (bool, error) {
-	receipts := []protocol.TransitionReceipt{}
+	records := []journalRecord{}
 	if err := scanCommittedReceipts(layout, func(record journalRecord) error {
-		if record.Receipt != nil && record.Receipt.FlowID == flowID {
-			if err := record.Receipt.Validate(); err != nil {
-				return err
-			}
-			receipts = append(receipts, *record.Receipt)
-		}
+		records = append(records, record)
 		return nil
 	}); err != nil {
 		return false, err
+	}
+	return invocationAuthorizedByRecords(records, flowID, initial, current)
+}
+
+func invocationAuthorizedByRecords(records []journalRecord, flowID string, initial, current model.InvocationContext) (bool, error) {
+	receipts := []protocol.TransitionReceipt{}
+	for _, record := range records {
+		if record.Receipt != nil && record.Receipt.FlowID == flowID {
+			receipts = append(receipts, *record.Receipt)
+		}
 	}
 	sort.Slice(receipts, func(i, j int) bool { return receipts[i].Sequence < receipts[j].Sequence })
 	contextKey := func(invocation model.InvocationContext) string {

@@ -37,6 +37,9 @@ func PrescriptionCommand(transition catalog.Transition, prescription protocol.Pr
 	if programID != "" && entryID != "" {
 		arguments = append(arguments, "--flow", programID, "--entry", entryID)
 	}
+	if prescription.WorkResultFingerprint != "" {
+		arguments = append(arguments, "--work-result-fingerprint", prescription.WorkResultFingerprint)
+	}
 	for _, capability := range prescription.RequiredCapabilities {
 		arguments = append(arguments, "--required-capability", string(capability))
 	}

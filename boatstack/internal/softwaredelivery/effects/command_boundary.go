@@ -2,15 +2,19 @@ package effects
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
+	"unicode"
 
-	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
@@ -53,11 +57,98 @@ type pullRequestObservation struct {
 	IsCrossRepository bool   `json:"isCrossRepository"`
 }
 
+type githubAuthorityObservation struct {
+	NameWithOwner    string `json:"nameWithOwner"`
+	URL              string `json:"url"`
+	ViewerPermission string `json:"viewerPermission"`
+}
+
+// ResolveGitHubProviderAuthority derives short-lived provider capability from
+// the trusted GitHub CLI boundary. It is capability evidence, not human
+// approval; run delegation remains the independent approval source.
+func (b NativeBoundary) ResolveGitHubProviderAuthority(ctx context.Context, repository, authorityBinding string, now time.Time) (protocol.AuthorityReceipt, error) {
+	if authorityBinding == "" || len(authorityBinding) > 256 || strings.TrimSpace(authorityBinding) != authorityBinding || strings.IndexFunc(authorityBinding, unicode.IsControl) >= 0 {
+		return protocol.AuthorityReceipt{}, fmt.Errorf("PROVIDER_AUTHORITY_INVALID: authority binding must be non-empty, bounded, and free of control characters")
+	}
+	remoteOutput, err := b.runner.CombinedOutput(ctx, repository, "git", "remote", "get-url", "--push", "origin")
+	if err != nil {
+		return protocol.AuthorityReceipt{}, fmt.Errorf("PROVIDER_AUTHORITY_UNAVAILABLE: origin push repository identity is unavailable")
+	}
+	remoteRepository, err := githubRepositoryFromRemote(strings.TrimSpace(string(remoteOutput)))
+	if err != nil {
+		return protocol.AuthorityReceipt{}, err
+	}
+	output, err := b.runner.CombinedOutput(ctx, repository, "gh", "repo", "view", remoteRepository, "--json", "nameWithOwner,viewerPermission,url")
+	if err != nil {
+		return protocol.AuthorityReceipt{}, fmt.Errorf("PROVIDER_AUTHORITY_UNAVAILABLE: GitHub repository identity or authenticated access is unavailable")
+	}
+	var observed githubAuthorityObservation
+	decoder := json.NewDecoder(strings.NewReader(string(output)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&observed); err != nil {
+		return protocol.AuthorityReceipt{}, fmt.Errorf("PROVIDER_AUTHORITY_INVALID: GitHub authority response is invalid")
+	}
+	var trailing any
+	if decoder.Decode(&trailing) != io.EOF {
+		return protocol.AuthorityReceipt{}, fmt.Errorf("PROVIDER_AUTHORITY_INVALID: GitHub authority response contains trailing JSON")
+	}
+	switch observed.ViewerPermission {
+	case "ADMIN", "MAINTAIN", "WRITE":
+	default:
+		return protocol.AuthorityReceipt{}, fmt.Errorf("PROVIDER_AUTHORITY_DENIED: GitHub identity lacks write permission for the repository")
+	}
+	if observed.NameWithOwner == "" || observed.URL == "" {
+		return protocol.AuthorityReceipt{}, fmt.Errorf("PROVIDER_AUTHORITY_INVALID: GitHub repository identity is incomplete")
+	}
+	if !strings.EqualFold(observed.NameWithOwner, remoteRepository) {
+		return protocol.AuthorityReceipt{}, fmt.Errorf("PROVIDER_AUTHORITY_INVALID: GitHub authority does not match the origin push repository")
+	}
+	issued := now.UTC()
+	subject := "github:" + observed.NameWithOwner
+	digest := sha256.Sum256([]byte(subject + "\x00" + authorityBinding))
+	return protocol.AuthorityReceipt{
+		ID: "provider-" + fmt.Sprintf("%x", digest[:8]), Class: catalog.AuthorityProvider,
+		Subject: subject, Fingerprint: authorityBinding, IssuedAt: issued, ExpiresAt: issued.Add(2 * time.Minute),
+	}, nil
+}
+
+func githubRepositoryFromRemote(remote string) (string, error) {
+	path := ""
+	switch {
+	case strings.HasPrefix(remote, "git@github.com:"):
+		path = strings.TrimPrefix(remote, "git@github.com:")
+	default:
+		parsed, err := url.Parse(remote)
+		if err != nil || !strings.EqualFold(parsed.Hostname(), "github.com") || (parsed.Scheme != "https" && parsed.Scheme != "ssh" && parsed.Scheme != "git") {
+			return "", fmt.Errorf("PROVIDER_AUTHORITY_INVALID: origin push remote is not an exact GitHub repository")
+		}
+		path = strings.TrimPrefix(parsed.Path, "/")
+	}
+	path = strings.TrimSuffix(path, ".git")
+	segments := strings.Split(path, "/")
+	if len(segments) != 2 || segments[0] == "" || segments[1] == "" || strings.ContainsAny(path, "\x00\r\n\t ") {
+		return "", fmt.Errorf("PROVIDER_AUTHORITY_INVALID: origin push remote is not an exact GitHub repository")
+	}
+	return path, nil
+}
+
 func (b NativeBoundary) PrepareObservation(ctx context.Context, admission protocol.Admission, transition catalog.Transition, layout ports.ControllerLayout, state *durable.State) error {
 	if err := protocol.ValidateEffectCapabilities(admission, transition); err != nil {
 		return err
 	}
 	switch transition.ID {
+	case "publication.preview":
+		output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "git", "status", "--porcelain=v1", "-z", "--untracked-files=all")
+		if err != nil {
+			return fmt.Errorf("WORKSPACE_COMMIT_REQUIRED: inspect worktree before publication preview")
+		}
+		if publicationProductStatus(string(output)) != "" {
+			return fmt.Errorf("WORKSPACE_COMMIT_REQUIRED: commit the intended delivery changes before publication preview")
+		}
+		head, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "git", "rev-parse", "--verify", "HEAD^{commit}")
+		if err != nil || strings.TrimSpace(string(head)) != admission.SourceRevision {
+			return fmt.Errorf("WORKSPACE_HEAD_CHANGED: publication preview is not bound to the exact committed HEAD")
+		}
 	case "publication.observe", "publication.reconcile":
 		publicationID, _ := admission.Parameters.Get("publication_id")
 		if state.PublicationID != "" && state.PublicationID != publicationID {
@@ -165,6 +256,10 @@ func (b NativeBoundary) Execute(ctx context.Context, admission protocol.Admissio
 		if err := protocol.ValidateGitReference(baseRef); err != nil {
 			return settled, err
 		}
+		if admission.ControlBundle == nil || admission.ControlBundle.Target == nil || admission.ControlBundle.TargetRevision == "" {
+			return settled, fmt.Errorf("CONTROL_BUNDLE_REQUIRED: workspace.cut has no exact target revision")
+		}
+		baseRevision := admission.ControlBundle.TargetRevision
 		absolute, err := canonicalWorkspaceDestination(admission)
 		if err != nil || absolute == layout.RepositoryRoot {
 			return settled, fmt.Errorf("workspace destination must be an explicit non-primary path")
@@ -174,7 +269,7 @@ func (b NativeBoundary) Execute(ctx context.Context, admission protocol.Admissio
 		} else if !os.IsNotExist(err) {
 			return settled, err
 		}
-		baseConfig, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "git", "show", baseRef+":.boatstack/project.json")
+		baseConfig, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "git", "show", baseRevision+":.boatstack/project.json")
 		if err != nil {
 			return settled, fmt.Errorf("workspace base does not contain the verified Boatstack configuration: %w", err)
 		}
@@ -188,7 +283,7 @@ func (b NativeBoundary) Execute(ctx context.Context, admission protocol.Admissio
 		if output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "git", "check-ref-format", "--branch", branch); err != nil {
 			return settled, fmt.Errorf("invalid workspace branch: %s: %w", strings.TrimSpace(string(output)), err)
 		}
-		arguments := []string{"worktree", "add", "-b", branch, absolute, baseRef}
+		arguments := []string{"-c", "core.autocrlf=false", "-c", "core.eol=lf", "worktree", "add", "-b", branch, absolute, baseRevision}
 		if output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "git", arguments...); err != nil {
 			return ports.EffectResult{Settlement: ports.EffectUnknown, Detail: strings.TrimSpace(string(output))}, nil
 		}
@@ -206,13 +301,6 @@ func (b NativeBoundary) Execute(ctx context.Context, admission protocol.Admissio
 		neutralDirectory := filepath.Dir(state.WorkspacePath)
 		gitPrefix := []string{"--git-dir", layout.GitCommonRoot}
 		removeArguments := append(gitPrefix, "worktree", "remove")
-		managedOnly, managedErr := b.workspaceHasOnlyManagedRuntimePin(ctx, state)
-		if managedErr != nil {
-			return settled, managedErr
-		}
-		if managedOnly {
-			removeArguments = append(removeArguments, "--force")
-		}
 		removeArguments = append(removeArguments, state.WorkspacePath)
 		if output, err := b.runner.CombinedOutput(ctx, neutralDirectory, "git", removeArguments...); err != nil {
 			return ports.EffectResult{Settlement: ports.EffectUnknown, Detail: strings.TrimSpace(string(output))}, nil
@@ -236,7 +324,8 @@ func (b NativeBoundary) Execute(ctx context.Context, admission protocol.Admissio
 		if err := validatePublicationPreviewForAdmission(layout, admission, preview); err != nil {
 			return settled, err
 		}
-		if output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "git", "push", "--set-upstream", "origin", preview.HeadRef); err != nil {
+		refspec := admission.SourceRevision + ":refs/heads/" + preview.HeadRef
+		if output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "git", "push", "origin", refspec); err != nil {
 			return ports.EffectResult{Settlement: ports.EffectUnknown, Detail: strings.TrimSpace(string(output))}, nil
 		}
 		if output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "gh", "pr", "create", "--base", preview.BaseRef, "--head", preview.HeadRef, "--fill-first", "--body-file", preview.BodyPath); err != nil {
@@ -268,33 +357,39 @@ func (b NativeBoundary) Execute(ctx context.Context, admission protocol.Admissio
 	return settled, nil
 }
 
-func (b NativeBoundary) workspaceHasOnlyManagedRuntimePin(ctx context.Context, state durable.State) (bool, error) {
-	output, err := b.runner.CombinedOutput(ctx, state.WorkspacePath, "git", "status", "--porcelain", "--untracked-files=all")
-	if err != nil {
-		return false, fmt.Errorf("inspect workspace before cleanup: %s: %w", strings.TrimSpace(string(output)), err)
+func publicationProductStatus(status string) string {
+	records := strings.Split(status, "\x00")
+	kept := make([]string, 0, len(records))
+	for index := 0; index < len(records); index++ {
+		record := records[index]
+		if len(record) < 4 {
+			continue
+		}
+		code, name := record[:2], filepath.ToSlash(record[3:])
+		prior := ""
+		if (code[0] == 'R' || code[0] == 'C' || code[1] == 'R' || code[1] == 'C') && index+1 < len(records) {
+			index++
+			prior = filepath.ToSlash(records[index])
+		}
+		if publicationGeneratedPath(name) && (prior == "" || publicationGeneratedPath(prior)) {
+			continue
+		}
+		kept = append(kept, record)
+		if prior != "" {
+			kept = append(kept, prior)
+		}
 	}
-	status := strings.TrimSpace(string(output))
-	if status == "" {
-		return false, nil
+	return strings.Join(kept, "\x00")
+}
+
+func publicationGeneratedPath(name string) bool {
+	for _, prefix := range []string{
+		".boatstack/approvals/", ".boatstack/evidence/", ".boatstack/planning-packages/",
+		".boatstack/plans/", ".boatstack/publication/",
+	} {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
 	}
-	if status != "?? .boatstack/runtime.json" {
-		return false, fmt.Errorf("workspace cleanup refuses product or unmanaged changes: %s", status)
-	}
-	raw, err := os.ReadFile(boatstackruntime.PinPath(state.WorkspacePath))
-	if err != nil {
-		return false, err
-	}
-	pin, err := boatstackruntime.DecodePin(raw)
-	if err != nil {
-		return false, err
-	}
-	want := boatstackruntime.NewPin(
-		boatstackruntime.Identity{Version: state.RuntimeVersion, SHA256: state.RuntimeFingerprint, SourceRevision: state.RuntimeSource},
-		state.ProgramFingerprint,
-		durable.StateSchemaVersion,
-	)
-	if pin != want {
-		return false, fmt.Errorf("workspace runtime pin does not match governed state")
-	}
-	return true, nil
+	return false
 }

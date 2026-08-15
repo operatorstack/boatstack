@@ -8,7 +8,6 @@ import (
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	"github.com/operatorstack/boatstack/boatstack/flow/skillprojection"
-	"github.com/operatorstack/boatstack/boatstack/internal/buildinfo"
 )
 
 func GenerateSkills(compiled controlprogram.Compiled, hosts []string) (map[string][]byte, error) {
@@ -57,6 +56,29 @@ func renderSkill(compiled controlprogram.Compiled, entry controlprogram.Entry, s
 	supersession := ""
 	delegation := ""
 	diagnostics := ""
+	workProtocol := ""
+	publication := ""
+	if len(compiled.Document.Work) != 0 {
+		workProtocol = fmt.Sprintf(`
+When a response contains a `+"`work`"+` request, treat it as foreground work for
+the selected transition, not as a second Flow. Read its exact instruction,
+input bindings, output manifest, and staging root. Write only the declared
+outputs beneath that staging root and stay within each media type and size
+bound.
+
+If human input is required, record the typed suspension with:
+
+`+"`boatstack flow work input-required --repo . --flow %s --entry %s --run-id <run-id> --work-id <work-id> --prompt <question> --host %s --format json`"+`
+
+Ask the user and wait. Store the answer as bounded JSON, then submit it with
+`+"`boatstack flow work answer ... --question-id <question-id> --answer <json-path>`"+`.
+An answer is evidence, never authority. If work succeeds, run
+`+"`boatstack flow work complete ...`"+`; if it cannot continue, run
+`+"`boatstack flow work block ... --reason <reason>`"+`. Resume the same entry
+and run ID afterward. Never edit the work record directly or continue in the
+background while a question is open.
+`, compiled.Document.Program.ID, entry.ID, host)
+	}
 	if entry.Diagnostics != nil && entry.Diagnostics.ExplainOnSuspend {
 		diagnostics = fmt.Sprintf(`
 If Boatstack suspends this run without reaching the target or prescribing an
@@ -79,13 +101,22 @@ request, then run:
 
 `+"`boatstack flow authorize --repo . --flow %s --entry %s --run-id <run-id> --request-fingerprint <fingerprint> --human <actor> --host %s`"+`
 
-After authorization, use `+"`boatstack flow run --repo . --flow %s --entry %s --run-id <run-id> --host %s --format json`"+`.
+After authorization, use `+"`boatstack flow run --repo . --flow %s --entry %s --run-id <run-id> --repository-authority --host %s --format json`"+`.
 Do not request approval again after a restart or typed suspension. Resume the
 same run and delegation unless Boatstack reports revocation, expiry, drift, or
 terminal completion. Never authorize on the user's behalf.
 `, compiled.Document.Program.ID, entry.ID, host, compiled.Document.Program.ID, entry.ID, host)
 	}
 	if entry.Target == "published-pr" {
+		publication = `
+If Boatstack reports ` + "`WORKSPACE_COMMIT_REQUIRED`" + `, stay in the same
+managed worktree and run. Commit only the intended delivery changes on the
+current managed branch, excluding generated runtime and publication artifacts
+unless they are deliberately part of the delivery, then resume this entry.
+Never fabricate an external-provider receipt. Boatstack derives provider
+capability through its trusted GitHub boundary and reports a typed blocker when
+that capability is unavailable.
+`
 		abandonmentSkill, ok := targetEntrySkill(compiled.Document.Program.ID, compiled.Document.Entries, "safely-abandoned")
 		if ok {
 			supersession = fmt.Sprintf(`
@@ -109,7 +140,7 @@ Boatstack does not interpret the entry name.
 
 %s
 
-Start with `+"`boatstack next --repo . --flow %s --entry %s --host %s --format json`"+`.
+Start with `+"`boatstack next --repo . --flow %s --entry %s --repository-authority --host %s --format json`"+`.
 Preserve the returned program fingerprint, entry, run ID, delivery, repository,
 worktree, host, actor, authority receipts, prescription, and receipts through
 every `+"`next`"+`, `+"`apply`"+`, recovery, question, and re-resolution.
@@ -121,11 +152,13 @@ background while input is missing. Never synthesize authority.
 %s
 %s
 %s
+%s
+%s
 
 Stop only when Boatstack reports the marked target, a typed blocker, refusal,
 unresolved recovery, or missing authority. This entry grants no merge or deploy
 authority.
-`, slug, description, title(slug), compiled.Document.Program.ID, entry.ID, entry.Target, skillprojection.BootstrapContract(buildinfo.Version), compiled.Document.Program.ID, entry.ID, host, delegation, supersession, diagnostics))
+`, slug, description, title(slug), compiled.Document.Program.ID, entry.ID, entry.Target, skillprojection.BootstrapContract(), compiled.Document.Program.ID, entry.ID, host, delegation, supersession, diagnostics, workProtocol, publication))
 }
 
 func targetEntrySkill(programID string, entries []controlprogram.Entry, target string) (string, bool) {

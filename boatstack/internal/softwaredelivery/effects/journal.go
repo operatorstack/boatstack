@@ -144,6 +144,20 @@ func readJournal(path string) (journalRecord, error) {
 			receipt.DeliveryID != admission.Objective.DeliveryID || receipt.ObjectiveScope != admission.ObjectiveScope || receipt.ObjectiveStatus != admission.ObjectiveStatus {
 			return journalRecord{}, fmt.Errorf("committed transition fact in %s does not match its exact admission", path)
 		}
+		if err := validateReceiptWorkRelation(admission, *receipt); err != nil {
+			return journalRecord{}, fmt.Errorf("committed transition fact in %s: %w", path, err)
+		}
+		if admission.ControlBundle != nil {
+			targetFingerprint := admission.ControlBundle.Source.Fingerprint
+			if admission.ControlBundle.Target != nil {
+				targetFingerprint = admission.ControlBundle.Target.Fingerprint
+			}
+			if receipt.ControlBundleSourceFingerprint != admission.ControlBundle.Source.Fingerprint || receipt.ControlBundleTargetFingerprint != targetFingerprint {
+				return journalRecord{}, fmt.Errorf("committed transition fact in %s does not match its admitted control bundle", path)
+			}
+		} else if receipt.ControlBundleSourceFingerprint != "" || receipt.ControlBundleTargetFingerprint != "" {
+			return journalRecord{}, fmt.Errorf("committed transition fact in %s invents a control bundle", path)
+		}
 		if err := validateCommittedMutationFacts(record.TransitionClass, record.Mutations, receipt.ChangedStateFacets, receipt.CommittedEffects); err != nil {
 			return journalRecord{}, fmt.Errorf("committed transition fact in %s: %w", path, err)
 		}
@@ -152,6 +166,17 @@ func readJournal(path string) (journalRecord, error) {
 		return journalRecord{}, fmt.Errorf("committed transaction journal %s lacks its canonical transition fact", path)
 	}
 	return record, nil
+}
+
+func validateReceiptWorkRelation(admission protocol.Admission, receipt protocol.TransitionReceipt) error {
+	admittedFingerprint := ""
+	if admission.Work != nil {
+		admittedFingerprint = admission.Work.ResultFingerprint
+	}
+	if receipt.WorkResultFingerprint != admittedFingerprint {
+		return fmt.Errorf("foreground-work identity does not match its exact admission")
+	}
+	return nil
 }
 
 func validateCommittedMutationFacts(class catalog.EventClass, mutations []ports.ResourceMutation, receiptFacets []model.StateFacet, facts []protocol.EffectFact) error {

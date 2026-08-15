@@ -154,13 +154,15 @@ Publication uses `publication.preview`, `publication.execute`, and
 `publication.observe`. The external execute step requires both:
 
 - human or autonomy authority; and
-- an unexpired `external-provider` authority receipt supplied with
-  `--authority-receipt`.
+- a current GitHub identity with write, maintain, or admin permission.
 
-Boatstack does not infer provider authority from `gh` being installed or
-authenticated. The provider receipt fingerprint must equal the exact
-`preview_fingerprint` returned by `publication.preview`; correction receipts
-likewise bind the admitted body SHA-256. It never merges a pull request.
+For a repository Flow continuation, Boatstack derives a short-lived provider
+receipt through its trusted `gh repo view` boundary. Callers cannot supply an
+`external-provider` receipt as JSON. The receipt and publication preview bind
+the exact committed HEAD, clean product worktree, and preview fingerprint.
+Boatstack stops with `WORKSPACE_COMMIT_REQUIRED` before preview when intended
+delivery changes are uncommitted. Correction receipts likewise bind the
+admitted body SHA-256. Boatstack never merges a pull request.
 
 ## Inspect receipts
 

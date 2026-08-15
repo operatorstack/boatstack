@@ -110,7 +110,7 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 					return model.Observation{}, readPinErr
 				}
 				pin, decodePinErr := boatstackruntime.DecodePin(pinRaw)
-				if decodePinErr == nil && pin.StateSchemaVersion == durable.StateSchemaVersion &&
+				if decodePinErr == nil && durable.CanReadStateSchema(pin.StateSchemaVersion) &&
 					pin.Version == current.RuntimeVersion && pin.SHA256 == current.RuntimeFingerprint {
 					home, homeErr := boatstackruntime.Home("")
 					if homeErr != nil {
@@ -144,7 +144,7 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 		}
 		pin, decodePinErr := boatstackruntime.DecodePin(pinRaw)
 		identity := boatstackruntime.Identity{Version: state.RuntimeVersion, SHA256: state.RuntimeFingerprint, SourceRevision: state.RuntimeSource}
-		if decodePinErr != nil || pin.Identity() != identity || pin.ProgramFingerprint != state.ProgramFingerprint || pin.StateSchemaVersion != durable.StateSchemaVersion {
+		if decodePinErr != nil || pin.Identity() != identity || pin.ProgramFingerprint != state.ProgramFingerprint || !durable.CanReadStateSchema(pin.StateSchemaVersion) {
 			runtimeState = model.RuntimeConflicting
 		} else {
 			home, homeErr := boatstackruntime.Home("")
@@ -251,6 +251,7 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 	verificationEvidence := append(append([]model.Evidence(nil), deliveryEvidence...), artifactEvidence...)
 	planEvidence = append(append([]model.Evidence(nil), stateEvidence...), planEvidence...)
 	terminalEvidence := append(append([]model.Evidence(nil), stateEvidence...), artifactEvidence...)
+	publication := currentPublicationState(layout, state, head, worktreeFingerprint)
 	configurationEvidence := stateEvidence
 	if configEvidence.Source != "" {
 		configurationEvidence = append(append([]model.Evidence(nil), stateEvidence...), configEvidence)
@@ -269,7 +270,7 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 		Configuration:       model.Fact[model.ConfigurationState]{Status: model.FactKnown, Value: configuration, Evidence: configurationEvidence},
 		ConfigurationPolicy: configurationPolicy,
 		Runtime:             model.Fact[model.RuntimeState]{Status: model.FactKnown, Value: runtimeState, Evidence: runtimeEvidence},
-		Publication:         model.Fact[model.PublicationState]{Status: model.FactKnown, Value: state.Publication, Evidence: stateEvidence},
+		Publication:         model.Fact[model.PublicationState]{Status: model.FactKnown, Value: publication, Evidence: stateEvidence},
 		Verification:        model.Fact[model.VerificationState]{Status: model.FactKnown, Value: verification, Evidence: verificationEvidence},
 		Recovery:            recoveryFact,
 		Transaction:         transactionFact,
@@ -279,6 +280,38 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 		Objective:           objectiveFact,
 		ObservedAt:          now,
 	}, nil
+}
+
+type observedPublicationPreview struct {
+	SchemaVersion       int    `json:"schema_version"`
+	DeliveryID          string `json:"delivery_id"`
+	SourceRevision      string `json:"source_revision"`
+	WorktreeFingerprint string `json:"worktree_fingerprint"`
+}
+
+func currentPublicationState(layout ports.ControllerLayout, state durable.State, head, worktreeFingerprint string) model.PublicationState {
+	if state.Publication != model.PublicationCandidate {
+		return state.Publication
+	}
+	deliveryID := state.Objective.DeliveryID
+	if deliveryID == "" || filepath.Base(deliveryID) != deliveryID || deliveryID == "." || deliveryID == ".." {
+		return model.PublicationNone
+	}
+	raw, err := os.ReadFile(filepath.Join(layout.RepositoryRoot, ".boatstack", "publication", deliveryID+".preview.json"))
+	if err != nil {
+		return model.PublicationNone
+	}
+	var preview observedPublicationPreview
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	if decoder.Decode(&preview) != nil || preview.SchemaVersion != 2 || preview.DeliveryID != deliveryID ||
+		preview.SourceRevision != head || preview.WorktreeFingerprint != worktreeFingerprint {
+		return model.PublicationNone
+	}
+	var trailing any
+	if decoder.Decode(&trailing) != io.EOF {
+		return model.PublicationNone
+	}
+	return state.Publication
 }
 
 func (o Observer) highRiskChange(ctx context.Context, repository, defaultBranch string, patterns []string) (bool, error) {
@@ -429,7 +462,7 @@ func canonicalProductStatus(status string) string {
 
 func generatedBoatstackPath(name string) bool {
 	name = strings.TrimPrefix(filepath.ToSlash(name), "./")
-	for _, prefix := range []string{".boatstack/approvals/", ".boatstack/evidence/", ".boatstack/plans/", ".boatstack/publication/"} {
+	for _, prefix := range []string{".boatstack/approvals/", ".boatstack/evidence/", ".boatstack/planning-packages/", ".boatstack/plans/", ".boatstack/publication/"} {
 		if strings.HasPrefix(name, prefix) {
 			return true
 		}
@@ -460,12 +493,31 @@ func sameConfigurationPolicy(one, two model.ConfigurationPolicy) bool {
 }
 
 type observedApproval struct {
-	SchemaVersion   int       `json:"schema_version"`
-	DeliveryID      string    `json:"delivery_id"`
-	PlanFingerprint string    `json:"plan_fingerprint"`
-	Actor           string    `json:"actor"`
-	AdmissionID     string    `json:"admission_id"`
-	ApprovedAt      time.Time `json:"approved_at"`
+	SchemaVersion      int       `json:"schema_version"`
+	DeliveryID         string    `json:"delivery_id"`
+	PlanFingerprint    string    `json:"plan_fingerprint"`
+	PackageFingerprint string    `json:"package_fingerprint,omitempty"`
+	Actor              string    `json:"actor"`
+	AdmissionID        string    `json:"admission_id"`
+	ApprovedAt         time.Time `json:"approved_at"`
+}
+
+type observedPlanningPackageOutput struct {
+	ID        string `json:"id"`
+	Path      string `json:"path"`
+	MediaType string `json:"media_type"`
+	SHA256    string `json:"sha256"`
+	Size      int64  `json:"size"`
+}
+
+type observedPlanningPackageManifest struct {
+	SchemaVersion          int                             `json:"schema_version"`
+	DeliveryID             string                          `json:"delivery_id"`
+	WorkRequestFingerprint string                          `json:"work_request_fingerprint"`
+	WorkResultFingerprint  string                          `json:"work_result_fingerprint"`
+	PlanFingerprint        string                          `json:"plan_fingerprint"`
+	Outputs                []observedPlanningPackageOutput `json:"outputs"`
+	Fingerprint            string                          `json:"fingerprint"`
 }
 
 type observedGate struct {
@@ -507,7 +559,17 @@ func observeRepositoryArtifacts(layout ports.ControllerLayout, state durable.Sta
 		return plan, verification, terminal, planEvidence, verificationEvidence, nil
 	}
 	deliveryID := state.Objective.DeliveryID
-	if state.Plan != model.PlanAbsent {
+	packagePlan := state.Plan == model.PlanPackageValid || state.Plan == model.PlanPackageApproved
+	if packagePlan {
+		evidence, valid, err := observePlanningPackage(layout, state, now)
+		if err != nil {
+			return plan, verification, terminal, nil, nil, err
+		}
+		planEvidence = append(planEvidence, evidence...)
+		if !valid {
+			plan, terminal = model.PlanStale, model.TerminalStale
+		}
+	} else if state.Plan != model.PlanAbsent {
 		path := filepath.Join(layout.RepositoryRoot, ".boatstack", "plans", deliveryID+".source")
 		evidence, fingerprint, exists, err := fileEvidence(path, "plan", now)
 		if err != nil {
@@ -534,6 +596,7 @@ func observeRepositoryArtifacts(layout ports.ControllerLayout, state durable.Sta
 			var approval observedApproval
 			valid = valid && decodeStrictJSON(raw, &approval) == nil && approval.SchemaVersion == 1 &&
 				approval.DeliveryID == deliveryID && approval.PlanFingerprint == state.PlanFingerprint &&
+				approval.PackageFingerprint == state.PlanningPackageFingerprint &&
 				approval.Actor != "" && approval.AdmissionID != "" && !approval.ApprovedAt.IsZero()
 		}
 		if !valid {
@@ -605,6 +668,83 @@ func observeRepositoryArtifacts(layout ports.ControllerLayout, state durable.Sta
 		verification, terminal = model.VerificationUnresolved, model.TerminalStale
 	}
 	return plan, verification, terminal, planEvidence, verificationEvidence, nil
+}
+
+func observePlanningPackage(layout ports.ControllerLayout, state durable.State, now time.Time) ([]model.Evidence, bool, error) {
+	root := filepath.Join(layout.RepositoryRoot, ".boatstack", "planning-packages", state.Objective.DeliveryID)
+	manifestPath := filepath.Join(root, "manifest.json")
+	manifestEvidence, manifestFileFingerprint, exists, err := fileEvidence(manifestPath, "planning-package", now)
+	evidence := []model.Evidence{manifestEvidence}
+	if err != nil || !exists {
+		return evidence, false, err
+	}
+	manifestRaw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return evidence, false, err
+	}
+	var manifest observedPlanningPackageManifest
+	valid := decodeStrictJSON(manifestRaw, &manifest) == nil && manifest.SchemaVersion == 1 &&
+		manifest.DeliveryID == state.Objective.DeliveryID && len(manifest.WorkRequestFingerprint) == 64 && len(manifest.WorkResultFingerprint) == 64 &&
+		manifest.PlanFingerprint == state.PlanFingerprint && manifest.Fingerprint == state.PlanningPackageFingerprint && len(manifest.Outputs) > 0
+	if valid {
+		identity := manifest
+		identity.Fingerprint = ""
+		identityRaw, encodeErr := json.MarshalIndent(identity, "", "  ")
+		if encodeErr != nil {
+			return evidence, false, encodeErr
+		}
+		identityRaw = append(identityRaw, '\n')
+		valid = hashBytes(identityRaw) == manifest.Fingerprint && manifestFileFingerprint == hashBytes(manifestRaw)
+	}
+	planFound := false
+	seen, seenPaths := map[string]bool{}, map[string]bool{}
+	for _, output := range manifest.Outputs {
+		clean := filepath.Clean(filepath.FromSlash(output.Path))
+		if output.ID == "" || output.Path == "" || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) ||
+			filepath.ToSlash(clean) != output.Path || output.MediaType == "" || len(output.SHA256) != 64 || output.Size < 0 || seen[output.ID] || seenPaths[clean] {
+			valid = false
+			continue
+		}
+		seen[output.ID], seenPaths[clean] = true, true
+		outputPath := filepath.Join(root, clean)
+		outputEvidence, fingerprint, exists, outputErr := fileEvidence(outputPath, "planning-package-output-"+output.ID, now)
+		evidence = append(evidence, outputEvidence)
+		if outputErr != nil {
+			return evidence, false, outputErr
+		}
+		info, statErr := os.Lstat(outputPath)
+		if statErr != nil && !os.IsNotExist(statErr) {
+			return evidence, false, statErr
+		}
+		regular := statErr == nil && info.Mode().IsRegular()
+		sizeMatches := regular && info.Size() == output.Size
+		valid = valid && exists && regular && sizeMatches && fingerprint == output.SHA256
+		if output.ID == "plan" {
+			planFound = true
+			valid = valid && output.SHA256 == manifest.PlanFingerprint
+		}
+	}
+	if !planFound {
+		valid = false
+	}
+	if state.Plan == model.PlanPackageApproved {
+		approvalPath := filepath.Join(root, "approval.json")
+		approvalEvidence, _, approvalExists, approvalErr := fileEvidence(approvalPath, "planning-package-approval", now)
+		evidence = append(evidence, approvalEvidence)
+		if approvalErr != nil {
+			return evidence, false, approvalErr
+		}
+		approvalRaw, readErr := os.ReadFile(approvalPath)
+		if readErr != nil && !os.IsNotExist(readErr) {
+			return evidence, false, readErr
+		}
+		var approval observedApproval
+		valid = valid && approvalExists && decodeStrictJSON(approvalRaw, &approval) == nil && approval.SchemaVersion == 1 &&
+			approval.DeliveryID == state.Objective.DeliveryID && approval.PlanFingerprint == manifest.PlanFingerprint && approval.PackageFingerprint == manifest.Fingerprint &&
+			approval.Actor != "" && approval.AdmissionID != "" && !approval.ApprovedAt.IsZero() &&
+			state.ApprovalFingerprint == hashBytes(append(append([]byte(nil), manifestRaw...), approvalRaw...))
+	}
+	return evidence, valid, nil
 }
 
 type pendingJournalHeader struct {

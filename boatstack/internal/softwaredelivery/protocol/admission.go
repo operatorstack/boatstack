@@ -5,44 +5,55 @@ import (
 	"strings"
 	"time"
 
+	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 )
 
-const AdmissionSchemaVersion = 6
+const AdmissionSchemaVersion = 8
 
 type Admission struct {
-	SchemaVersion                       int                     `json:"schema_version"`
-	ID                                  string                  `json:"id"`
-	PrescriptionID                      string                  `json:"prescription_id"`
-	TransitionID                        catalog.TransitionID    `json:"transition_id"`
-	TransitionVersion                   int                     `json:"transition_version"`
-	ExpectedStateRevision               uint64                  `json:"expected_state_revision"`
-	ExpectedProgramFingerprint          string                  `json:"expected_program_fingerprint"`
-	PriorProgramFingerprint             string                  `json:"prior_program_fingerprint,omitempty"`
-	ProgramDeltaFingerprint             string                  `json:"program_delta_fingerprint,omitempty"`
-	ExpectedSnapshotFingerprint         string                  `json:"expected_snapshot_fingerprint"`
-	ExpectedObjectiveBindingFingerprint string                  `json:"expected_objective_binding_fingerprint"`
-	SourceRevision                      string                  `json:"source_revision,omitempty"`
-	WorktreeFingerprint                 string                  `json:"worktree_fingerprint,omitempty"`
-	SourcePhase                         model.ProtocolPhase     `json:"source_phase"`
-	Invocation                          model.InvocationContext `json:"invocation"`
-	Objective                           model.Objective         `json:"objective"`
-	ObjectiveScope                      catalog.ObjectiveScope  `json:"objective_scope,omitempty"`
-	ObjectiveStatus                     model.FactStatus        `json:"objective_status,omitempty"`
-	Authority                           AuthorityBundle         `json:"authority"`
-	AuthorityFingerprint                string                  `json:"authority_fingerprint"`
-	RequiredCapabilities                []catalog.Capability    `json:"required_capabilities"`
-	GrantedCapabilities                 []catalog.Capability    `json:"granted_capabilities"`
-	EffectiveCapabilities               []catalog.Capability    `json:"effective_capabilities"`
-	Parameters                          Parameters              `json:"parameters,omitempty"`
-	Evidence                            []string                `json:"evidence"`
-	IdempotencyKey                      string                  `json:"idempotency_key"`
-	IssuedAt                            time.Time               `json:"issued_at"`
-	ExpiresAt                           time.Time               `json:"expires_at"`
+	SchemaVersion                       int                                     `json:"schema_version"`
+	ID                                  string                                  `json:"id"`
+	PrescriptionID                      string                                  `json:"prescription_id"`
+	TransitionID                        catalog.TransitionID                    `json:"transition_id"`
+	TransitionVersion                   int                                     `json:"transition_version"`
+	ExpectedStateRevision               uint64                                  `json:"expected_state_revision"`
+	ExpectedProgramFingerprint          string                                  `json:"expected_program_fingerprint"`
+	PriorProgramFingerprint             string                                  `json:"prior_program_fingerprint,omitempty"`
+	ProgramDeltaFingerprint             string                                  `json:"program_delta_fingerprint,omitempty"`
+	ExpectedSnapshotFingerprint         string                                  `json:"expected_snapshot_fingerprint"`
+	ExpectedObjectiveBindingFingerprint string                                  `json:"expected_objective_binding_fingerprint"`
+	SourceRevision                      string                                  `json:"source_revision,omitempty"`
+	WorktreeFingerprint                 string                                  `json:"worktree_fingerprint,omitempty"`
+	SourcePhase                         model.ProtocolPhase                     `json:"source_phase"`
+	Invocation                          model.InvocationContext                 `json:"invocation"`
+	Objective                           model.Objective                         `json:"objective"`
+	ObjectiveScope                      catalog.ObjectiveScope                  `json:"objective_scope,omitempty"`
+	ObjectiveStatus                     model.FactStatus                        `json:"objective_status,omitempty"`
+	Authority                           AuthorityBundle                         `json:"authority"`
+	AuthorityFingerprint                string                                  `json:"authority_fingerprint"`
+	RequiredCapabilities                []catalog.Capability                    `json:"required_capabilities"`
+	GrantedCapabilities                 []catalog.Capability                    `json:"granted_capabilities"`
+	EffectiveCapabilities               []catalog.Capability                    `json:"effective_capabilities"`
+	Parameters                          Parameters                              `json:"parameters,omitempty"`
+	Evidence                            []string                                `json:"evidence"`
+	IdempotencyKey                      string                                  `json:"idempotency_key"`
+	IssuedAt                            time.Time                               `json:"issued_at"`
+	ExpiresAt                           time.Time                               `json:"expires_at"`
+	Work                                *WorkEvidence                           `json:"work,omitempty"`
+	ControlBundle                       *boatstackruntime.ControlBundleContract `json:"control_bundle,omitempty"`
 }
 
 func NewAdmission(snapshot model.Snapshot, objective model.Objective, transition catalog.Transition, prescription Prescription, authority AuthorityBundle, parameters Parameters, now time.Time, lifetime time.Duration) (Admission, error) {
+	return NewAdmissionWithWork(snapshot, objective, transition, prescription, authority, parameters, nil, now, lifetime)
+}
+
+func NewAdmissionWithWork(snapshot model.Snapshot, objective model.Objective, transition catalog.Transition, prescription Prescription, authority AuthorityBundle, parameters Parameters, work *WorkEvidence, now time.Time, lifetime time.Duration) (Admission, error) {
+	return NewAdmissionWithWorkAndBundle(snapshot, objective, transition, prescription, authority, parameters, work, nil, now, lifetime)
+}
+
+func NewAdmissionWithWorkAndBundle(snapshot model.Snapshot, objective model.Objective, transition catalog.Transition, prescription Prescription, authority AuthorityBundle, parameters Parameters, work *WorkEvidence, bundle *boatstackruntime.ControlBundleContract, now time.Time, lifetime time.Duration) (Admission, error) {
 	var err error
 	objective, err = ObjectiveForTransition(snapshot, objective, transition)
 	if err != nil {
@@ -61,6 +72,22 @@ func NewAdmission(snapshot model.Snapshot, objective model.Objective, transition
 	if err := prescription.ValidateCurrent(snapshot, transition, capabilities); err != nil {
 		return Admission{}, err
 	}
+	if err := prescription.ValidateWork(work); err != nil {
+		return Admission{}, err
+	}
+	if err := prescription.ValidateControlBundle(bundle, transition); err != nil {
+		return Admission{}, err
+	}
+	if transition.Work != nil {
+		if work == nil {
+			return Admission{}, fmt.Errorf("transition %q requires foreground work evidence", transition.ID)
+		}
+		if err := work.ValidateCurrent(snapshot, transition); err != nil {
+			return Admission{}, err
+		}
+	} else if work != nil {
+		return Admission{}, fmt.Errorf("transition %q does not accept foreground work evidence", transition.ID)
+	}
 	sourceRevision, worktreeFingerprint := gitBinding(snapshot)
 	a := Admission{
 		SchemaVersion: AdmissionSchemaVersion, PrescriptionID: prescription.ID, TransitionID: transition.ID, TransitionVersion: transition.Version,
@@ -71,6 +98,31 @@ func NewAdmission(snapshot model.Snapshot, objective model.Objective, transition
 		AuthorityFingerprint: capabilities.AuthorityFingerprint, RequiredCapabilities: capabilities.Required,
 		GrantedCapabilities: capabilities.Granted, EffectiveCapabilities: capabilities.Effective,
 		Evidence: append([]string(nil), transition.RequiredEvidence...), Parameters: parameters.Canonical(), IssuedAt: now.UTC(), ExpiresAt: now.Add(lifetime).UTC(),
+	}
+	if work != nil {
+		copy := *work
+		copy.Outputs = append([]WorkOutputEvidence(nil), work.Outputs...)
+		a.Work = &copy
+	}
+	if bundle != nil {
+		copy := *bundle
+		copy.Source.Files = append([]boatstackruntime.ControlBundleFile(nil), bundle.Source.Files...)
+		copy.Source.MemberSets = cloneControlBundleMemberSets(bundle.Source.MemberSets)
+		if bundle.SourceRuntimePin != nil {
+			pin := *bundle.SourceRuntimePin
+			copy.SourceRuntimePin = &pin
+		}
+		if bundle.Target != nil {
+			target := *bundle.Target
+			target.Files = append([]boatstackruntime.ControlBundleFile(nil), bundle.Target.Files...)
+			target.MemberSets = cloneControlBundleMemberSets(bundle.Target.MemberSets)
+			copy.Target = &target
+		}
+		if bundle.TargetRuntimePin != nil {
+			pin := *bundle.TargetRuntimePin
+			copy.TargetRuntimePin = &pin
+		}
+		a.ControlBundle = &copy
 	}
 	if transition.Policy.ObjectiveScope == catalog.ObjectiveScopeOptionalPreserve {
 		a.ObjectiveStatus = snapshot.Objective.Status
@@ -89,7 +141,8 @@ func NewAdmission(snapshot model.Snapshot, objective model.Objective, transition
 		Invocation model.InvocationContext `json:"invocation"`
 		Objective  model.Objective         `json:"objective"`
 		Parameters Parameters              `json:"parameters"`
-	}{transition.ID, snapshot.Fingerprint, snapshot.Invocation, objective, parameters.Canonical()})
+		Work       string                  `json:"work,omitempty"`
+	}{transition.ID, snapshot.Fingerprint, snapshot.Invocation, objective, parameters.Canonical(), prescription.WorkResultFingerprint})
 	if err != nil {
 		return Admission{}, err
 	}
@@ -101,6 +154,15 @@ func NewAdmission(snapshot model.Snapshot, objective model.Objective, transition
 		return Admission{}, err
 	}
 	return a, nil
+}
+
+func cloneControlBundleMemberSets(values []boatstackruntime.ControlBundleMemberSet) []boatstackruntime.ControlBundleMemberSet {
+	result := make([]boatstackruntime.ControlBundleMemberSet, len(values))
+	for index := range values {
+		result[index] = values[index]
+		result[index].Paths = append([]string(nil), values[index].Paths...)
+	}
+	return result
 }
 
 // ObjectiveForTransition binds maintenance to verified durable objective state.
@@ -205,6 +267,16 @@ func (a Admission) ValidateCurrent(snapshot model.Snapshot, objective model.Obje
 	}
 	if a.ExpectedProgramFingerprint != snapshot.ProgramFingerprint {
 		return fmt.Errorf("admission %q is bound to a different control program", a.ID)
+	}
+	if transition.Work != nil {
+		if a.Work == nil {
+			return fmt.Errorf("admission %q is missing foreground work evidence", a.ID)
+		}
+		if err := a.Work.ValidateCurrent(snapshot, transition); err != nil {
+			return fmt.Errorf("admission %q foreground work changed: %w", a.ID, err)
+		}
+	} else if a.Work != nil {
+		return fmt.Errorf("admission %q carries unexpected foreground work evidence", a.ID)
 	}
 	expectedPrior := ""
 	if snapshot.RecordedProgramFingerprint != "" && snapshot.RecordedProgramFingerprint != snapshot.ProgramFingerprint {
@@ -376,6 +448,11 @@ func (a Admission) ValidateIdentity() error {
 	if a.SchemaVersion != AdmissionSchemaVersion || a.ID == "" || a.PrescriptionID == "" || a.TransitionID == "" || a.TransitionVersion < 1 || a.ExpectedStateRevision == 0 || len(a.ExpectedProgramFingerprint) != 64 || len(a.ExpectedSnapshotFingerprint) != 64 || len(a.ExpectedObjectiveBindingFingerprint) != 64 || a.AuthorityFingerprint == "" || len(a.RequiredCapabilities) == 0 || len(a.EffectiveCapabilities) == 0 || !a.SourcePhase.Valid() || a.IdempotencyKey == "" || a.IssuedAt.IsZero() || a.ExpiresAt.Before(a.IssuedAt) {
 		return fmt.Errorf("admission: invalid schema, identity, source, or lifetime")
 	}
+	if a.ControlBundle != nil {
+		if err := a.ControlBundle.Validate(); err != nil {
+			return err
+		}
+	}
 	fingerprint, err := a.Authority.Fingerprint()
 	if err != nil || fingerprint != a.AuthorityFingerprint {
 		return fmt.Errorf("admission has invalid authority identity")
@@ -412,6 +489,11 @@ func (a Admission) ValidateIdentity() error {
 	}
 	if err := a.Invocation.Validate(true); err != nil {
 		return err
+	}
+	if a.Work != nil {
+		if err := a.Work.Validate(); err != nil {
+			return err
+		}
 	}
 	if !a.ObjectiveScope.Valid() {
 		return fmt.Errorf("admission has invalid objective scope %q", a.ObjectiveScope)

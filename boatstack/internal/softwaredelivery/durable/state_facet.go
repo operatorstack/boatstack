@@ -9,8 +9,9 @@ import (
 
 var stateFieldFacets = map[string]model.StateFacet{
 	"SchemaVersion": model.StateFacetControl, "RepositoryID": model.StateFacetControl, "GitCommonID": model.StateFacetControl, "WorktreeID": model.StateFacetControl,
-	"ProgramFingerprint": model.StateFacetProgram,
-	"Revision":           model.StateFacetControl, "Phase": model.StateFacetControl,
+	"ProgramFingerprint":       model.StateFacetProgram,
+	"ControlBundleFingerprint": model.StateFacetControl,
+	"Revision":                 model.StateFacetControl, "Phase": model.StateFacetControl,
 	"Engagement": model.StateFacetProduct, "Delivery": model.StateFacetProduct, "Workspace": model.StateFacetProduct, "Plan": model.StateFacetProduct,
 	"Configuration": model.StateFacetControl,
 	"Runtime":       model.StateFacetInstallation,
@@ -21,7 +22,7 @@ var stateFieldFacets = map[string]model.StateFacet{
 	"ConfigFingerprint": model.StateFacetControl, "PlanApprovalPolicy": model.StateFacetControl, "VisualEvidencePolicy": model.StateFacetControl,
 	"ExternalEffectPolicy": model.StateFacetControl, "IndependentReview": model.StateFacetControl, "EnabledHosts": model.StateFacetControl,
 	"RuntimeVersion": model.StateFacetInstallation, "RuntimeFingerprint": model.StateFacetInstallation, "RuntimeSource": model.StateFacetInstallation,
-	"PlanFingerprint": model.StateFacetProduct, "ApprovalFingerprint": model.StateFacetProduct,
+	"PlanFingerprint": model.StateFacetProduct, "PlanningPackageFingerprint": model.StateFacetProduct, "ApprovalFingerprint": model.StateFacetProduct,
 	"WorkspaceBranch": model.StateFacetProduct, "WorkspacePath": model.StateFacetProduct, "WorkspaceBaseRef": model.StateFacetProduct,
 	"WorkspaceSourcePath": model.StateFacetProduct, "WorkspaceSourceID": model.StateFacetProduct, "WorkspaceSourceRef": model.StateFacetProduct,
 	"PublicationID": model.StateFacetProduct, "PublicationURL": model.StateFacetProduct, "PreviewFingerprint": model.StateFacetProduct,

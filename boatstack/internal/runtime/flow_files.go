@@ -30,6 +30,37 @@ func RunFlowFrontend(ctx context.Context, executable, sourceName string, source 
 	return output, nil
 }
 
+// VerifyFlowProjectionAtRevision proves that a workspace base contains the
+// exact active Flow inputs and generated outputs before authority transfers to
+// a new Git worktree.
+func VerifyFlowProjectionAtRevision(ctx context.Context, repository, revision string, paths []string) error {
+	if !filepath.IsAbs(repository) || filepath.Clean(repository) != repository || revision == "" || len(paths) == 0 {
+		return fmt.Errorf("Flow revision projection requires an exact repository, revision, and path set")
+	}
+	resolvedRepository, err := filepath.EvalSymlinks(repository)
+	if err != nil || resolvedRepository != repository {
+		return fmt.Errorf("Flow revision projection repository is not resolved")
+	}
+	seen := map[string]bool{}
+	for _, relative := range paths {
+		if relative == "" || filepath.IsAbs(relative) || filepath.ToSlash(filepath.Clean(filepath.FromSlash(relative))) != relative || relative == ".." || strings.HasPrefix(relative, "../") || seen[relative] {
+			return fmt.Errorf("Flow revision projection contains an invalid path %q", relative)
+		}
+		seen[relative] = true
+		current, readErr := os.ReadFile(filepath.Join(repository, filepath.FromSlash(relative)))
+		if readErr != nil {
+			return fmt.Errorf("read active Flow projection %s: %w", relative, readErr)
+		}
+		command := exec.CommandContext(ctx, "git", "show", revision+":"+relative)
+		command.Dir = repository
+		committed, showErr := command.Output()
+		if showErr != nil || !bytes.Equal(current, committed) {
+			return fmt.Errorf("Flow projection %s differs from revision %s", relative, revision)
+		}
+	}
+	return nil
+}
+
 type ProjectionWrite struct {
 	Path                   string
 	Content                []byte

@@ -11,7 +11,7 @@
 /** Canonical schema name emitted by {@link defineFlow}. */
 export const CONTROL_PROGRAM_SCHEMA = "control-program" as const;
 /** Current revision of the canonical Control Program schema. */
-export const CONTROL_PROGRAM_SCHEMA_REVISION = 2 as const;
+export const CONTROL_PROGRAM_SCHEMA_REVISION = 3 as const;
 
 /**
  * A declarative condition over runtime state facts.
@@ -101,6 +101,49 @@ export interface OperatorDefinition {
 }
 
 /**
+ * A repository asset resolved and fingerprinted by the trusted compiler.
+ *
+ * Flow source supplies only {@link path}. Compiled artifacts also contain the
+ * exact UTF-8 bytes and SHA-256 used by the runtime; live runs never reread a
+ * mutable instruction or schema file.
+ */
+export interface WorkAssetDefinition {
+  path: string;
+  sha256?: string;
+  content?: string;
+}
+
+/** Binds one foreground-work input to a declared entry input. */
+export interface WorkInputDefinition {
+  id: string;
+  entry_input: string;
+}
+
+/** Declares one bounded staged output of foreground work. */
+export interface WorkArtifactDefinition {
+  id: string;
+  path: string;
+  media_type: string;
+  required: boolean;
+  max_bytes?: number;
+  schema?: WorkAssetDefinition;
+}
+
+/**
+ * A bounded foreground-work requirement used by one or more transitions.
+ *
+ * This contract contains data only. It cannot grant authority, execute code,
+ * install a handler, or advance Flow state independently.
+ */
+export interface WorkContract {
+  id: string;
+  instructions: WorkAssetDefinition;
+  inputs: WorkInputDefinition[];
+  outputs: WorkArtifactDefinition[];
+  description?: string;
+}
+
+/**
  * Selects an operator when its guard is true and records its intended target
  * relation. Higher priority controls deterministic selection among admissible
  * transitions.
@@ -112,6 +155,7 @@ export interface TransitionDefinition {
   target: Predicate;
   priority: number;
   requires?: { authorities?: string[] };
+  work?: string;
   description?: string;
 }
 
@@ -167,6 +211,7 @@ export interface FlowDefinition {
   };
   facets: FacetDefinition[];
   evidence?: EvidenceDefinition[];
+  work?: WorkContract[];
   operators: OperatorDefinition[];
   transitions: TransitionDefinition[];
   targets: TargetDefinition[];
@@ -181,6 +226,7 @@ export interface ControlProgramIR {
   declarations: NonNullable<FlowDefinition["declarations"]>;
   facets: FacetDefinition[];
   evidence: EvidenceDefinition[];
+  work: WorkContract[];
   operators: OperatorDefinition[];
   transitions: TransitionDefinition[];
   targets: TargetDefinition[];
@@ -221,12 +267,46 @@ export function defineFlow(definition: FlowDefinition): ControlProgramIR {
     declarations: definition.declarations ?? {},
     facets: definition.facets,
     evidence: definition.evidence ?? [],
+    work: definition.work ?? [],
     operators: definition.operators,
     transitions: definition.transitions,
     targets: definition.targets,
     entries: definition.entries,
     ...(definition.description ? { description: definition.description } : {}),
   };
+}
+
+/** Declares a repository-owned UTF-8 instruction asset. */
+export function instructionAsset(path: string): WorkAssetDefinition {
+  return { path };
+}
+
+/** Declares a repository-owned strict JSON Schema asset. */
+export function schemaAsset(path: string): WorkAssetDefinition {
+  return { path };
+}
+
+/** Binds a foreground-work input to one entry input ID. */
+export function entryInput(id: string): WorkInputDefinition {
+  return { id, entry_input: id };
+}
+
+/** Declares one bounded foreground-work output artifact. */
+export function workArtifact(
+  definition: WorkArtifactDefinition,
+): WorkArtifactDefinition {
+  return { ...definition };
+}
+
+/**
+ * Declares one foreground-work contract inside a Flow.
+ *
+ * {@link defineFlow} remains the complete controller. This helper only defines
+ * bounded work that a selected transition may require before its trusted
+ * operator can be admitted.
+ */
+export function foregroundWork(definition: WorkContract): WorkContract {
+  return { ...definition };
 }
 
 /**

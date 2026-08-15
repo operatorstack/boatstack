@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/ports"
@@ -39,12 +40,14 @@ func (e Engine) canonicalize(observation model.Observation) (model.Snapshot, err
 }
 
 type ResolveRequest struct {
-	Invocation model.InvocationContext
-	Objective  model.Objective
-	Authority  protocol.AuthorityBundle
-	Parameters protocol.Parameters
-	Requested  catalog.TransitionID
-	Trace      bool
+	Invocation    model.InvocationContext
+	Objective     model.Objective
+	Authority     protocol.AuthorityBundle
+	Parameters    protocol.Parameters
+	Requested     catalog.TransitionID
+	Trace         bool
+	Work          *protocol.WorkEvidence
+	ControlBundle *boatstackruntime.ControlBundleContract
 }
 
 type Resolution struct {
@@ -120,6 +123,28 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 				decision.Transition = nil
 			}
 		} else {
+			if decision.Transition.Work != nil {
+				if request.Work == nil {
+					decision.Kind = supervisor.DecisionCandidate
+					decision.Reason = fmt.Sprintf("transition %q requires foreground work %q", decision.Transition.ID, decision.Transition.Work.ID)
+					decision.Candidates = []catalog.TransitionID{decision.Transition.ID}
+					updateDecisionTrace(decisionTrace, decision)
+					return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision, Trace: decisionTrace}, nil
+				}
+				if workErr := request.Work.ValidateCurrent(snapshot, *decision.Transition); workErr != nil {
+					decision.Kind = supervisor.DecisionRefused
+					decision.Reason = workErr.Error()
+					decision.Transition = nil
+					updateDecisionTrace(decisionTrace, decision)
+					return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision, Trace: decisionTrace}, nil
+				}
+			} else if request.Work != nil {
+				decision.Kind = supervisor.DecisionRefused
+				decision.Reason = fmt.Sprintf("transition %q does not accept foreground work evidence", decision.Transition.ID)
+				decision.Transition = nil
+				updateDecisionTrace(decisionTrace, decision)
+				return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision, Trace: decisionTrace}, nil
+			}
 			capabilities, capabilityErr := protocol.ProjectCapabilities(snapshot, *decision.Transition, request.Authority, now)
 			if capabilityErr != nil {
 				decision.Kind = supervisor.DecisionRefused
@@ -128,7 +153,11 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 				updateDecisionTrace(decisionTrace, decision)
 				return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision, Trace: decisionTrace}, nil
 			}
-			prescription, prescriptionErr := protocol.NewPrescription(snapshot, *decision.Transition, capabilities)
+			bundle, bundleErr := protocol.ProjectControlBundle(snapshot, *decision.Transition, request.Parameters, request.ControlBundle)
+			if bundleErr != nil {
+				return Resolution{}, bundleErr
+			}
+			prescription, prescriptionErr := protocol.NewPrescriptionWithWorkAndBundle(snapshot, *decision.Transition, capabilities, request.Work, bundle)
 			if prescriptionErr != nil {
 				decision.Kind = supervisor.DecisionUnresolved
 				decision.Reason = prescriptionErr.Error()
@@ -136,7 +165,7 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 				updateDecisionTrace(decisionTrace, decision)
 				return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision, Trace: decisionTrace}, nil
 			}
-			admission, admissionErr := protocol.NewAdmission(snapshot, objective, *decision.Transition, prescription, request.Authority, request.Parameters, now, 2*time.Minute)
+			admission, admissionErr := protocol.NewAdmissionWithWorkAndBundle(snapshot, objective, *decision.Transition, prescription, request.Authority, request.Parameters, request.Work, bundle, now, 2*time.Minute)
 			if admissionErr != nil {
 				decision.Kind = supervisor.DecisionUnresolved
 				decision.Reason = admissionErr.Error()
@@ -304,7 +333,7 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 			return result, fmt.Errorf("check supplied idempotency key: %w", err)
 		}
 		if ok {
-			if err := validateReplayRequest(prior, request, e.program.Fingerprint); err != nil {
+			if err := validateReplayRequest(prior, request, e.program.Fingerprint, request.ControlBundle); err != nil {
 				return result, err
 			}
 			observation, observeErr := e.observer.Observe(ctx, ports.ObservationRequest{Invocation: request.Invocation, Capabilities: request.Authority.GrantedCapabilities(e.clock.Now())})
@@ -354,7 +383,11 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 	}
 	transition := *resolution.Decision.Transition
 	now := e.clock.Now()
-	admission, err := protocol.NewAdmission(resolution.Snapshot, request.Objective, transition, request.Prescription, request.Authority, request.Parameters, now, request.AdmissionLifetime)
+	bundle, err := protocol.ProjectControlBundle(resolution.Snapshot, transition, request.Parameters, request.ControlBundle)
+	if err != nil {
+		return result, err
+	}
+	admission, err := protocol.NewAdmissionWithWorkAndBundle(resolution.Snapshot, request.Objective, transition, request.Prescription, request.Authority, request.Parameters, request.Work, bundle, now, request.AdmissionLifetime)
 	if err != nil {
 		return result, err
 	}
@@ -368,7 +401,7 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 			return result, fmt.Errorf("check idempotency: %w", err)
 		}
 		if ok {
-			if err := validateReplayRequest(prior, request, e.program.Fingerprint); err != nil {
+			if err := validateReplayRequest(prior, request, e.program.Fingerprint, admission.ControlBundle); err != nil {
 				return result, err
 			}
 			observation, observeErr := e.observer.Observe(ctx, ports.ObservationRequest{Invocation: request.Invocation, Capabilities: admission.GrantedCapabilities})
@@ -417,7 +450,7 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 			return result, fmt.Errorf("check locked idempotency: %w", findErr)
 		}
 		if ok {
-			if err := validateReplayRequest(prior, request, e.program.Fingerprint); err != nil {
+			if err := validateReplayRequest(prior, request, e.program.Fingerprint, admission.ControlBundle); err != nil {
 				return result, err
 			}
 			if err := validateReplayObjectiveState(prior, lockedSnapshot); err != nil {
@@ -561,7 +594,7 @@ func validatePrescriptionCurrent(prescription protocol.Prescription, snapshot mo
 	}
 }
 
-func validateReplayRequest(prior protocol.TransitionReceipt, request ApplyRequest, programFingerprint string) error {
+func validateReplayRequest(prior protocol.TransitionReceipt, request ApplyRequest, programFingerprint string, bundle *boatstackruntime.ControlBundleContract) error {
 	if prior.Program.Fingerprint != programFingerprint {
 		return fmt.Errorf("idempotency receipt belongs to a different control program")
 	}
@@ -578,6 +611,35 @@ func validateReplayRequest(prior protocol.TransitionReceipt, request ApplyReques
 	}
 	if request.Requested != "" && prior.TransitionID != request.Requested {
 		return fmt.Errorf("idempotency receipt belongs to transition %q, not %q", prior.TransitionID, request.Requested)
+	}
+	workFingerprint := ""
+	if request.Work != nil {
+		workFingerprint = request.Work.ResultFingerprint
+	}
+	if prior.WorkResultFingerprint != workFingerprint {
+		return fmt.Errorf("idempotency receipt belongs to a different foreground work result")
+	}
+	if bundle == nil {
+		if prior.ControlBundleSourceFingerprint != "" || prior.ControlBundleTargetFingerprint != "" {
+			return fmt.Errorf("idempotency receipt belongs to a repository control bundle")
+		}
+	} else {
+		if prior.ControlBundleTargetFingerprint == "" {
+			if prior.ControlBundleSourceFingerprint != bundle.Source.Fingerprint || bundle.Target != nil {
+				return fmt.Errorf("idempotency receipt belongs to a different repository control bundle")
+			}
+			return nil
+		}
+		if prior.ControlBundleSourceFingerprint != bundle.Source.Fingerprint && prior.ControlBundleTargetFingerprint != bundle.Source.Fingerprint {
+			return fmt.Errorf("idempotency receipt belongs to a different repository control bundle")
+		}
+		if bundle.Target == nil {
+			return nil
+		}
+		targetFingerprint := bundle.Target.Fingerprint
+		if prior.ControlBundleTargetFingerprint != targetFingerprint {
+			return fmt.Errorf("idempotency receipt belongs to a different repository control-bundle target: receipt %s request %s", prior.ControlBundleTargetFingerprint, targetFingerprint)
+		}
 	}
 	return nil
 }

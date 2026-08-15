@@ -3,38 +3,47 @@ package surfaces
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
 	"time"
 
+	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/foregroundwork"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
 	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
-const SchemaVersion = 8
+const SchemaVersion = 10
 
 var flowContextIdentity = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 type Operation string
 
 const (
-	OperationResolve Operation = "resolve"
-	OperationExplain Operation = "explain"
-	OperationApply   Operation = "apply"
-	OperationRecover Operation = "recover"
-	OperationDoctor  Operation = "doctor"
-	OperationCatalog Operation = "catalog"
-	OperationEvents  Operation = "events"
-	OperationGuard   Operation = "guard"
+	OperationResolve           Operation = "resolve"
+	OperationExplain           Operation = "explain"
+	OperationApply             Operation = "apply"
+	OperationRecover           Operation = "recover"
+	OperationDoctor            Operation = "doctor"
+	OperationCatalog           Operation = "catalog"
+	OperationEvents            Operation = "events"
+	OperationGuard             Operation = "guard"
+	OperationWorkShow          Operation = "work-show"
+	OperationWorkInputRequired Operation = "work-input-required"
+	OperationWorkAnswer        Operation = "work-answer"
+	OperationWorkComplete      Operation = "work-complete"
+	OperationWorkBlock         Operation = "work-block"
 )
 
 func (o Operation) Valid() bool {
 	switch o {
-	case OperationResolve, OperationExplain, OperationApply, OperationRecover, OperationDoctor, OperationCatalog, OperationEvents, OperationGuard:
+	case OperationResolve, OperationExplain, OperationApply, OperationRecover, OperationDoctor, OperationCatalog, OperationEvents, OperationGuard,
+		OperationWorkShow, OperationWorkInputRequired, OperationWorkAnswer, OperationWorkComplete, OperationWorkBlock:
 		return true
 	default:
 		return false
@@ -42,26 +51,35 @@ func (o Operation) Valid() bool {
 }
 
 type Request struct {
-	SchemaVersion                int                      `json:"schema_version"`
-	Operation                    Operation                `json:"operation"`
-	Repository                   string                   `json:"repository"`
-	Host                         string                   `json:"host"`
-	CorrelationID                string                   `json:"correlation_id"`
-	ProgramID                    string                   `json:"program_id,omitempty"`
-	ProgramFingerprint           string                   `json:"program_fingerprint,omitempty"`
-	EntryID                      string                   `json:"entry_id,omitempty"`
-	FlowID                       string                   `json:"flow_id,omitempty"`
-	Objective                    model.Objective          `json:"objective,omitempty"`
-	TransitionID                 catalog.TransitionID     `json:"transition_id,omitempty"`
-	Prescription                 protocol.Prescription    `json:"prescription,omitempty"`
-	Authority                    protocol.AuthorityBundle `json:"authority,omitempty"`
-	RepositoryAuthority          bool                     `json:"repository_authority,omitempty"`
-	Parameters                   protocol.Parameters      `json:"parameters,omitempty"`
-	IdempotencyKey               string                   `json:"idempotency_key,omitempty"`
-	Command                      string                   `json:"command,omitempty"`
-	DelegationBindingFingerprint string                   `json:"delegation_binding_fingerprint,omitempty"`
-	DelegationRequestFingerprint string                   `json:"delegation_request_fingerprint,omitempty"`
-	DelegatedAuthorities         []catalog.AuthorityClass `json:"delegated_authorities,omitempty"`
+	SchemaVersion                int                                     `json:"schema_version"`
+	Operation                    Operation                               `json:"operation"`
+	Repository                   string                                  `json:"repository"`
+	Host                         string                                  `json:"host"`
+	CorrelationID                string                                  `json:"correlation_id"`
+	ProgramID                    string                                  `json:"program_id,omitempty"`
+	ProgramFingerprint           string                                  `json:"program_fingerprint,omitempty"`
+	EntryID                      string                                  `json:"entry_id,omitempty"`
+	FlowID                       string                                  `json:"flow_id,omitempty"`
+	Objective                    model.Objective                         `json:"objective,omitempty"`
+	TransitionID                 catalog.TransitionID                    `json:"transition_id,omitempty"`
+	Prescription                 protocol.Prescription                   `json:"prescription,omitempty"`
+	Authority                    protocol.AuthorityBundle                `json:"authority,omitempty"`
+	RepositoryAuthority          bool                                    `json:"repository_authority,omitempty"`
+	Parameters                   protocol.Parameters                     `json:"parameters,omitempty"`
+	IdempotencyKey               string                                  `json:"idempotency_key,omitempty"`
+	Command                      string                                  `json:"command,omitempty"`
+	DelegationBindingFingerprint string                                  `json:"delegation_binding_fingerprint,omitempty"`
+	DelegationRequestFingerprint string                                  `json:"delegation_request_fingerprint,omitempty"`
+	DelegatedAuthorities         []catalog.AuthorityClass                `json:"delegated_authorities,omitempty"`
+	WorkInputs                   map[string]protocol.WorkInputValue      `json:"work_inputs,omitempty"`
+	WorkID                       string                                  `json:"work_id,omitempty"`
+	WorkQuestionPrompt           string                                  `json:"work_question_prompt,omitempty"`
+	WorkQuestionSchema           []byte                                  `json:"work_question_schema,omitempty"`
+	WorkQuestionID               string                                  `json:"work_question_id,omitempty"`
+	WorkAnswer                   []byte                                  `json:"work_answer,omitempty"`
+	WorkBlockReason              string                                  `json:"work_block_reason,omitempty"`
+	ControlBundle                *boatstackruntime.ControlBundleContract `json:"control_bundle,omitempty"`
+	ControlBundleFingerprint     string                                  `json:"control_bundle_fingerprint,omitempty"`
 }
 
 func (r Request) Validate(now time.Time) error {
@@ -80,12 +98,30 @@ func (r Request) Validate(now time.Time) error {
 	if r.ProgramID == "" && r.ProgramFingerprint != "" {
 		return fmt.Errorf("surface request cannot carry a program fingerprint without a program")
 	}
+	if r.ControlBundle != nil {
+		if err := r.ControlBundle.Validate(); err != nil {
+			return err
+		}
+		if r.ControlBundleFingerprint != r.ControlBundle.Source.Fingerprint {
+			return fmt.Errorf("CONTROL_BUNDLE_INVALID: request fingerprint does not match trusted source bundle")
+		}
+	} else if r.ControlBundleFingerprint != "" {
+		return fmt.Errorf("CONTROL_BUNDLE_INVALID: request fingerprint has no trusted bundle")
+	}
 	if len(r.DelegatedAuthorities) != 0 && (r.ProgramID == "" || len(r.DelegationBindingFingerprint) != 64 || len(r.DelegationRequestFingerprint) != 64) {
 		return fmt.Errorf("surface delegated Flow request requires exact binding and request fingerprints")
 	}
 	for _, authority := range r.DelegatedAuthorities {
 		if !authority.Valid() || authority == catalog.AuthorityNone {
 			return fmt.Errorf("surface delegated Flow request has invalid authority %q", authority)
+		}
+	}
+	for id, input := range r.WorkInputs {
+		if !flowContextIdentity.MatchString(id) {
+			return fmt.Errorf("surface foreground work input has invalid identity %q", id)
+		}
+		if err := input.Validate(); err != nil {
+			return fmt.Errorf("surface foreground work input %q: %w", id, err)
 		}
 	}
 	if r.Operation != OperationCatalog {
@@ -116,6 +152,29 @@ func (r Request) Validate(now time.Time) error {
 	}
 	if r.Operation == OperationGuard && (strings.TrimSpace(r.Command) == "" || len(r.Command) > 1<<20) {
 		return fmt.Errorf("guard operation requires a bounded command")
+	}
+	if strings.HasPrefix(string(r.Operation), "work-") {
+		if r.FlowID == "" || !flowContextIdentity.MatchString(r.WorkID) {
+			return fmt.Errorf("foreground work operation requires semantic run and work identity")
+		}
+		switch r.Operation {
+		case OperationWorkShow, OperationWorkComplete:
+			if r.WorkQuestionPrompt != "" || len(r.WorkQuestionSchema) != 0 || r.WorkQuestionID != "" || len(r.WorkAnswer) != 0 || r.WorkBlockReason != "" {
+				return fmt.Errorf("foreground work %s cannot carry mutation payload", r.Operation)
+			}
+		case OperationWorkInputRequired:
+			if strings.TrimSpace(r.WorkQuestionPrompt) == "" || r.WorkQuestionID != "" || len(r.WorkAnswer) != 0 || r.WorkBlockReason != "" {
+				return fmt.Errorf("foreground work input-required requires only a question prompt and optional schema")
+			}
+		case OperationWorkAnswer:
+			if !flowContextIdentity.MatchString(r.WorkQuestionID) || len(r.WorkAnswer) == 0 || !json.Valid(r.WorkAnswer) || r.WorkQuestionPrompt != "" || len(r.WorkQuestionSchema) != 0 || r.WorkBlockReason != "" {
+				return fmt.Errorf("foreground work answer requires the exact question and bounded JSON answer")
+			}
+		case OperationWorkBlock:
+			if strings.TrimSpace(r.WorkBlockReason) == "" || r.WorkQuestionPrompt != "" || len(r.WorkQuestionSchema) != 0 || r.WorkQuestionID != "" || len(r.WorkAnswer) != 0 {
+				return fmt.Errorf("foreground work block requires only a reason")
+			}
+		}
 	}
 	if r.IdempotencyKey != "" && !strings.HasPrefix(r.IdempotencyKey, "idem-") {
 		return fmt.Errorf("surface idempotency key has invalid identity")
@@ -177,6 +236,7 @@ type Response struct {
 	Guard         *supervisor.GuardDecision   `json:"guard,omitempty"`
 	Error         string                      `json:"error,omitempty"`
 	Delegation    *DelegationRequired         `json:"delegation,omitempty"`
+	Work          *foregroundwork.Record      `json:"work,omitempty"`
 }
 
 type DelegationRequired struct {

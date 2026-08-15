@@ -1,6 +1,7 @@
 package surfaces
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -28,6 +29,55 @@ func TestSurfaceSchemaIsFlagDayAndApplyRequiresPrescription(t *testing.T) {
 	apply.TransitionID = "engagement.begin"
 	if err := apply.Validate(time.Now()); err == nil {
 		t.Fatal("apply without an exact prescription was accepted")
+	}
+}
+
+func TestForegroundWorkSurfaceRejectsAmbiguousMutationPayloads(t *testing.T) {
+	// control-law: each foreground-work mutation crosses one typed operation boundary
+	base := Request{
+		SchemaVersion: SchemaVersion, Repository: "/repository", Host: "cli", CorrelationID: "work",
+		ProgramID: "incident-response", ProgramFingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		EntryID: "respond", FlowID: "run-1", WorkID: "diagnose",
+	}
+	valid := []Request{
+		func() Request { value := base; value.Operation = OperationWorkShow; return value }(),
+		func() Request { value := base; value.Operation = OperationWorkComplete; return value }(),
+		func() Request {
+			value := base
+			value.Operation = OperationWorkInputRequired
+			value.WorkQuestionPrompt = "Which service?"
+			value.WorkQuestionSchema = []byte(`{"type":"string"}`)
+			return value
+		}(),
+		func() Request {
+			value := base
+			value.Operation = OperationWorkAnswer
+			value.WorkQuestionID = "question-1"
+			value.WorkAnswer = json.RawMessage(`"api"`)
+			return value
+		}(),
+		func() Request {
+			value := base
+			value.Operation = OperationWorkBlock
+			value.WorkBlockReason = "input unavailable"
+			return value
+		}(),
+	}
+	for _, request := range valid {
+		if err := request.Validate(time.Now()); err != nil {
+			t.Fatalf("valid %s request: %v", request.Operation, err)
+		}
+	}
+	invalid := []Request{valid[0], valid[1], valid[2], valid[3], valid[4]}
+	invalid[0].WorkBlockReason = "hidden mutation"
+	invalid[1].WorkAnswer = []byte(`true`)
+	invalid[2].WorkQuestionPrompt = ""
+	invalid[3].WorkQuestionID = ""
+	invalid[4].WorkQuestionID = "question-1"
+	for _, request := range invalid {
+		if err := request.Validate(time.Now()); err == nil {
+			t.Fatalf("ambiguous %s request was accepted", request.Operation)
+		}
 	}
 }
 

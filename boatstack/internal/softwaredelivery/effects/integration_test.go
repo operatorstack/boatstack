@@ -20,6 +20,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/flow/standard"
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/engine"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
@@ -61,6 +62,7 @@ func testProgram() delivery.ControlProgram {
 
 func prescribeEngine(t *testing.T, ctx context.Context, kernel engine.Engine, request engine.ApplyRequest) engine.ApplyRequest {
 	t.Helper()
+	request.ControlBundle = testControlBundle(t, request.Invocation.InvokingPath, request.Requested, request.Parameters)
 	resolve := request.ResolveRequest
 	resolve.Parameters = request.Parameters
 	resolution, err := kernel.Resolve(ctx, resolve)
@@ -76,6 +78,8 @@ func prescribeEngine(t *testing.T, ctx context.Context, kernel engine.Engine, re
 
 func prescribeSurface(t *testing.T, ctx context.Context, kernel boatstack.DeliveryController, request surfaces.Request) surfaces.Request {
 	t.Helper()
+	request.ControlBundle = testControlBundle(t, request.Repository, request.TransitionID, request.Parameters)
+	request.ControlBundleFingerprint = request.ControlBundle.Source.Fingerprint
 	resolve := request
 	resolve.Operation = surfaces.OperationResolve
 	resolve.FlowID = ""
@@ -89,6 +93,57 @@ func prescribeSurface(t *testing.T, ctx context.Context, kernel boatstack.Delive
 	}
 	request.Prescription = *response.Prescription
 	return request
+}
+
+func testControlBundle(t *testing.T, repository string, transitionID catalog.TransitionID, parameters protocol.Parameters) *boatstackruntime.ControlBundleContract {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(repository, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[string][]byte{"README.md": raw}
+	var sourcePin *boatstackruntime.Pin
+	if pinRaw, readErr := os.ReadFile(boatstackruntime.PinPath(repository)); readErr == nil {
+		files[".boatstack/runtime.json"] = pinRaw
+		pin, decodeErr := boatstackruntime.DecodePin(pinRaw)
+		if decodeErr != nil {
+			t.Fatal(decodeErr)
+		}
+		sourcePin = &pin
+	} else if !os.IsNotExist(readErr) {
+		t.Fatal(readErr)
+	}
+	source, err := boatstackruntime.NewControlBundleSnapshot(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var target *boatstackruntime.ControlBundleSnapshot
+	targetRevision := ""
+	switch transitionID {
+	case "workspace.cut":
+		baseRef, _ := parameters.Get("base_ref")
+		command := exec.Command("git", "rev-parse", "--verify", baseRef+"^{commit}")
+		command.Dir = repository
+		output, resolveErr := command.Output()
+		if resolveErr != nil {
+			t.Fatal(resolveErr)
+		}
+		targetRevision = strings.TrimSpace(string(output))
+		copy := source
+		target = &copy
+	case "workspace.cleanup", "workspace.reap", "workspace.reconcile":
+		copy := source
+		target = &copy
+	}
+	var targetPin *boatstackruntime.Pin
+	if target != nil {
+		targetPin = sourcePin
+	}
+	contract, err := boatstackruntime.NewControlBundleContractWithPins(source, target, targetRevision, sourcePin, targetPin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &contract
 }
 
 func (c fixedClock) Now() time.Time { return c.value }
@@ -125,6 +180,78 @@ func testRepository(t *testing.T) string {
 	run(t, repository, "git", "add", "README.md")
 	run(t, repository, "git", "commit", "-q", "-m", "fixture")
 	return repository
+}
+
+func TestStaleControlBundleStopsBeforeManagedStateOrRuntimePin(t *testing.T) {
+	// control-law: control bundle mismatch is a pre-effect blocker
+	ctx := context.Background()
+	repository := testRepository(t)
+	externalRoot := t.TempDir()
+	kernel, err := boatstack.NewDeliveryController(externalRoot, testProgram())
+	if err != nil {
+		t.Fatal(err)
+	}
+	readme, err := os.ReadFile(filepath.Join(repository, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := boatstackruntime.NewControlBundleSnapshot(map[string][]byte{"README.md": readme})
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := boatstackruntime.NewControlBundleContract(snapshot, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, "README.md"), []byte("changed after binding\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	executable, _ := os.Executable()
+	executable, _ = filepath.Abs(executable)
+	executable, _ = filepath.EvalSymlinks(executable)
+	runtimeRaw, _ := os.ReadFile(executable)
+	runtimeVersion := installTestRuntime(t, executable, runtimeRaw)
+	configPath := filepath.Join(t.TempDir(), "project.json")
+	configRaw := []byte("{\"schema_version\":2,\"project\":{\"name\":\"bundle\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
+	if err := os.WriteFile(configPath, configRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	request := surfaces.Request{
+		SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationResolve, Repository: repository, Host: "cli", CorrelationID: "stale-bundle",
+		FlowID: "flow-stale-bundle", TransitionID: "installation.initialize",
+		Authority: protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{ID: "human", Class: catalog.AuthorityHuman, Subject: "operator", Fingerprint: "human-proof", IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)}}},
+		Parameters: protocol.Parameters{
+			{Name: "source_revision", Value: "fixture"}, {Name: "runtime_version", Value: runtimeVersion}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
+			{Name: "config_path", Value: configPath}, {Name: "config_sha256", Value: configFingerprint(t, configRaw)},
+		},
+		ControlBundle: &contract, ControlBundleFingerprint: contract.Source.Fingerprint,
+	}
+	response, handleErr := kernel.Handle(ctx, request)
+	if handleErr != nil {
+		t.Fatal(handleErr)
+	}
+	if response.Decision == nil || response.Decision.Kind != supervisor.DecisionUnresolved || !strings.Contains(response.Decision.Reason, "CONTROL_BUNDLE_STALE") {
+		t.Fatalf("stale bundle decision = %#v", response.Decision)
+	}
+	resolver, err := plant.NewResolver(externalRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, err := resolver.ResolveInvocation(ctx, repository, "cli", "stale-bundle-check")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, _, err := resolver.ResolveLayout(ctx, invocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(layout.StatePath); !os.IsNotExist(statErr) {
+		t.Fatalf("stale bundle created managed state: %v", statErr)
+	}
+	if _, statErr := os.Stat(boatstackruntime.PinPath(repository)); !os.IsNotExist(statErr) {
+		t.Fatalf("stale bundle created runtime pin: %v", statErr)
+	}
 }
 
 func TestConcreteBoundaryAppliesAndReceiptsOneTransition(t *testing.T) {
@@ -282,6 +409,10 @@ func TestExternalConfigurationAuthorityTransfersAcrossAttachAndDetach(t *testing
 		ID: "external-config-human", Class: catalog.AuthorityHuman, Subject: "integration", Fingerprint: "explicit-human",
 		IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
 	}}}
+	autonomy := protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{
+		ID: "external-config-autonomy", Class: catalog.AuthorityAutonomy, Subject: "integration", Fingerprint: "explicit-delegation",
+		IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
+	}}}
 	apply := func(id catalog.TransitionID, authority protocol.AuthorityBundle, repositoryAuthority bool, parameters protocol.Parameters) surfaces.Response {
 		t.Helper()
 		request := surfaces.Request{
@@ -305,7 +436,11 @@ func TestExternalConfigurationAuthorityTransfersAcrossAttachAndDetach(t *testing
 	if err := os.WriteFile(initialPath, initialConfig, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	apply("installation.initialize", human, false, protocol.Parameters{
+	// A continuation may request repository authority before fresh-state
+	// initialization. The controller must preserve delegated autonomy without
+	// fabricating repository authority, then derive repository authority from
+	// the configuration evidence committed by this transition on later steps.
+	apply("installation.initialize", autonomy, true, protocol.Parameters{
 		{Name: "source_revision", Value: "external-config-fixture"}, {Name: "runtime_version", Value: runtimeVersion}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
 		{Name: "config_path", Value: initialPath}, {Name: "config_sha256", Value: configFingerprint(t, initialConfig)},
 	})
@@ -503,6 +638,42 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 	if !bytes.Equal(afterSuccess, afterReplay) {
 		t.Fatal("rejected repeated reconciliation mutated durable state")
 	}
+	priorState, err := durable.DecodeState(afterSuccess)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var legacyState map[string]any
+	if err := json.Unmarshal(afterSuccess, &legacyState); err != nil {
+		t.Fatal(err)
+	}
+	legacyState["schema_version"] = float64(durable.StateSchemaVersion - 2)
+	delete(legacyState, "planning_package_fingerprint")
+	delete(legacyState, "control_bundle_fingerprint")
+	legacyRaw, err := json.MarshalIndent(legacyState, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyRaw = append(legacyRaw, '\n')
+	if err := os.WriteFile(layout.StatePath, legacyRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	legacyPinPath := boatstackruntime.PinPath(repository)
+	legacyPinRaw, err := os.ReadFile(legacyPinPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyPin, err := boatstackruntime.DecodePin(legacyPinRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyPin.StateSchemaVersion = durable.StateSchemaVersion - 2
+	legacyPinRaw, err = boatstackruntime.EncodePin(legacyPin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacyPinPath, legacyPinRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	updateRequest := surfaces.Request{
 		SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationApply, Repository: repository, Host: "cli", CorrelationID: "program-current-update",
 		FlowID: "flow-program-drift", Objective: model.Objective{ID: "ignored-command-objective", TargetID: model.ObjectiveOpenPR, DeliveryID: "ignored"},
@@ -517,6 +688,31 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 	}
 	if updated.Snapshot == nil || updated.Snapshot.Objective.Status != model.FactAbsent || updated.Receipt == nil || updated.Receipt.ObjectiveStatus != model.FactAbsent || updated.Receipt.ObjectiveID != "" {
 		t.Fatalf("reconcile to update composition invented product intent: %#v", updated)
+	}
+	updatedRaw, err := os.ReadFile(layout.StatePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedState, err := durable.DecodeState(updatedRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updatedState.SchemaVersion != durable.StateSchemaVersion || updatedState.Objective != priorState.Objective || updatedState.Engagement != priorState.Engagement ||
+		updatedState.Delivery != priorState.Delivery || updatedState.Workspace != priorState.Workspace || updatedState.Plan != priorState.Plan ||
+		updatedState.Configuration != priorState.Configuration || updatedState.Publication != priorState.Publication || updatedState.Verification != priorState.Verification ||
+		updatedState.Terminal != priorState.Terminal || updatedState.PlanFingerprint != priorState.PlanFingerprint || updatedState.ApprovalFingerprint != priorState.ApprovalFingerprint {
+		t.Fatalf("schema-4 update changed existing product facets: before=%#v after=%#v", priorState, updatedState)
+	}
+	updatedPinRaw, err := os.ReadFile(legacyPinPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedPin, err := boatstackruntime.DecodePin(updatedPinRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updatedPin.StateSchemaVersion != durable.StateSchemaVersion {
+		t.Fatalf("runtime update left prior state schema in the pin: %#v", updatedPin)
 	}
 }
 
@@ -851,7 +1047,7 @@ func TestWorkspaceCutTransfersAuthorityToExactDestinationWorktree(t *testing.T) 
 		{Name: "config_path", Value: configSource}, {Name: "config_sha256", Value: configFingerprint(t, configRaw)},
 	})
 	apply(sourceInvocation, "objective.bind", human, protocol.Parameters{{Name: "target_id", Value: string(objective.TargetID)}, {Name: "delivery_id", Value: objective.DeliveryID}})
-	run(t, repository, "git", "add", ".boatstack/project.json")
+	run(t, repository, "git", "add", ".boatstack/project.json", ".boatstack/runtime.json")
 	run(t, repository, "git", "commit", "-q", "-m", "install Boatstack configuration")
 	repositoryAuthority := func(path string) protocol.AuthorityBundle {
 		raw, readErr := os.ReadFile(filepath.Join(path, ".boatstack", "project.json"))

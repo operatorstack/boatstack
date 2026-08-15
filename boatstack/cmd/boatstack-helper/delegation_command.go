@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/operatorstack/boatstack/boatstack/flow/standard"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/delegation"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
@@ -18,6 +19,26 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
 )
+
+var resolveGitHubProviderAuthority = func(ctx context.Context, repository, previewFingerprint string, now time.Time) (protocol.AuthorityReceipt, error) {
+	return effects.NewNativeBoundary().ResolveGitHubProviderAuthority(ctx, repository, previewFingerprint, now)
+}
+
+func trustedProviderAuthorityParameter(ctx context.Context, transitionID string) (string, error) {
+	if transitionID == "" {
+		return "", nil
+	}
+	manifest, err := standard.Definition().RuntimeManifest(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, transition := range manifest.Transitions {
+		if string(transition.ID) == transitionID {
+			return transition.AuthorityFingerprintParameter, nil
+		}
+	}
+	return "", nil
+}
 
 func runFlowAuthorize(arguments []string) error {
 	flags := flag.NewFlagSet("flow authorize", flag.ContinueOnError)
@@ -250,7 +271,16 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 	if err != nil {
 		return surfaces.Response{}, err
 	}
+	resolveLease, err := acquireFlowExecutionLease(resolveRequest)
+	if err != nil {
+		return surfaces.Response{}, err
+	}
+	if err := verifyTrustedRequestControlBundle(resolveRequest); err != nil {
+		resolveLease.Release()
+		return surfaces.Response{}, err
+	}
 	resolved, err := kernel.Handle(ctx, resolveRequest)
+	resolveLease.Release()
 	if settleErr := settleDelegationAtTarget(ctx, resolveRequest, resolved, kernel.TargetSatisfied(resolved.Snapshot, resolveRequest.Objective), false); settleErr != nil && err == nil {
 		err = settleErr
 	}
@@ -258,7 +288,13 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 		if err != nil {
 			return resolved, err
 		}
-		rebound, changed, rebindErr := bindContinuationCandidate(ctx, bound, resolved)
+		rebound, changed, rebindErr := bindTrustedProviderCandidate(ctx, bound, resolved)
+		if rebindErr != nil {
+			return surfaces.Response{}, rebindErr
+		}
+		if !changed {
+			rebound, changed, rebindErr = bindContinuationCandidate(ctx, bound, resolved)
+		}
 		if rebindErr != nil {
 			return surfaces.Response{}, rebindErr
 		}
@@ -280,7 +316,16 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 		if err != nil {
 			return surfaces.Response{}, err
 		}
+		resolveLease, err = acquireFlowExecutionLease(resolveRequest)
+		if err != nil {
+			return surfaces.Response{}, err
+		}
+		if err := verifyTrustedRequestControlBundle(resolveRequest); err != nil {
+			resolveLease.Release()
+			return surfaces.Response{}, err
+		}
 		resolved, err = kernel.Handle(ctx, resolveRequest)
+		resolveLease.Release()
 		if settleErr := settleDelegationAtTarget(ctx, resolveRequest, resolved, kernel.TargetSatisfied(resolved.Snapshot, resolveRequest.Objective), false); settleErr != nil && err == nil {
 			err = settleErr
 		}
@@ -310,6 +355,9 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 		return surfaces.Response{}, err
 	}
 	defer lease.Release()
+	if err := verifyTrustedRequestControlBundle(applyRequest); err != nil {
+		return surfaces.Response{}, err
+	}
 	applied, err := kernel.Handle(ctx, applyRequest)
 	targetSatisfied := kernel.TargetSatisfied(applied.Snapshot, applyRequest.Objective)
 	if settleErr := settleDelegationAtTarget(ctx, applyRequest, applied, targetSatisfied, delegationLock != nil); settleErr != nil && err == nil {
@@ -333,6 +381,36 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 		applied.Prescription = &protocol.Prescription{SchemaVersion: protocol.PrescriptionSchemaVersion, ID: "continued", TransitionID: catalog.TransitionID(applyRequest.TransitionID)}
 	}
 	return applied, nil
+}
+
+func bindTrustedProviderCandidate(ctx context.Context, bound commandOptions, response surfaces.Response) (commandOptions, bool, error) {
+	if bound.transitionID != "" || response.Prescription != nil || response.Decision == nil ||
+		(response.Decision.Kind != supervisor.DecisionFrontier && response.Decision.Kind != supervisor.DecisionCandidate) ||
+		len(response.Decision.Candidates) != 1 {
+		return bound, false, nil
+	}
+	candidate := string(response.Decision.Candidates[0])
+	authorityParameter, err := trustedProviderAuthorityParameter(ctx, candidate)
+	if err != nil {
+		return commandOptions{}, false, err
+	}
+	if authorityParameter == "" {
+		return bound, false, nil
+	}
+	rebound := bound
+	rebound.transitionID = candidate
+	rebound, err = bindFlowEntry(ctx, rebound)
+	if err != nil {
+		return commandOptions{}, false, err
+	}
+	parameters, err := parseParameters(rebound.parameters)
+	if err != nil {
+		return commandOptions{}, false, err
+	}
+	if fingerprint, ok := parameters.Get(authorityParameter); !ok || fingerprint == "" {
+		return bound, false, nil
+	}
+	return rebound, true, nil
 }
 
 func bindContinuationCandidate(ctx context.Context, bound commandOptions, response surfaces.Response) (commandOptions, bool, error) {
@@ -381,5 +459,6 @@ func advanceContinuation(options *commandOptions, response surfaces.Response) er
 	options.requiredCapabilities = nil
 	options.effectiveCapabilities = nil
 	options.idempotencyKey = ""
+	options.trustedAuthorityReceipts = nil
 	return nil
 }

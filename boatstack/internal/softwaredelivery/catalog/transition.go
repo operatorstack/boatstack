@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	general "github.com/operatorstack/boatstack/boatstack/kernel"
@@ -163,6 +164,35 @@ type ParameterSpec struct {
 	Name     string `json:"name"`
 	Required bool   `json:"required"`
 	Secret   bool   `json:"secret"`
+}
+
+// WorkContract is a bounded foreground-work requirement attached to one
+// trusted transition. It can request and verify evidence, but it does not own
+// domain effects or define a second transition graph.
+type WorkContract struct {
+	ID                 string       `json:"id"`
+	Fingerprint        string       `json:"fingerprint"`
+	InstructionPath    string       `json:"instruction_path"`
+	InstructionSHA256  string       `json:"instruction_sha256"`
+	InstructionContent string       `json:"instruction_content"`
+	Inputs             []WorkInput  `json:"inputs,omitempty"`
+	Outputs            []WorkOutput `json:"outputs"`
+}
+
+type WorkInput struct {
+	ID         string `json:"id"`
+	EntryInput string `json:"entry_input"`
+}
+
+type WorkOutput struct {
+	ID            string `json:"id"`
+	Path          string `json:"path"`
+	MediaType     string `json:"media_type"`
+	Required      bool   `json:"required"`
+	MaxBytes      int64  `json:"max_bytes"`
+	SchemaPath    string `json:"schema_path,omitempty"`
+	SchemaSHA256  string `json:"schema_sha256,omitempty"`
+	SchemaContent string `json:"schema_content,omitempty"`
 }
 
 // StateEffectKind selects the software-delivery domain's durable-state
@@ -349,6 +379,7 @@ type Transition struct {
 	ExecutionContext              string                `json:"execution_context,omitempty"`
 	BindsSourceRevision           bool                  `json:"binds_source_revision,omitempty"`
 	AuthorityFingerprintParameter string                `json:"authority_fingerprint_parameter,omitempty"`
+	Work                          *WorkContract         `json:"work,omitempty"`
 }
 
 func (t Transition) Controllable() bool { return t.Class.Controllable() }
@@ -640,6 +671,53 @@ func validateTransition(t Transition) error {
 	if t.Priority < 1 {
 		return fmt.Errorf("%s: priority must be positive", t.ID)
 	}
+	if err := validateWorkContract(t); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateWorkContract(t Transition) error {
+	if t.Work == nil {
+		return nil
+	}
+	work := t.Work
+	if !t.Controllable() || work.ID == "" || !semanticID.MatchString(work.ID) || len(work.Fingerprint) != 64 ||
+		work.InstructionPath == "" || len(work.InstructionSHA256) != 64 || strings.TrimSpace(work.InstructionContent) == "" || len(work.Outputs) == 0 {
+		return fmt.Errorf("%s: foreground work contract is incomplete", t.ID)
+	}
+	if fingerprint, err := general.Fingerprint(struct {
+		ID                 string       `json:"id"`
+		InstructionPath    string       `json:"instruction_path"`
+		InstructionSHA256  string       `json:"instruction_sha256"`
+		InstructionContent string       `json:"instruction_content"`
+		Inputs             []WorkInput  `json:"inputs,omitempty"`
+		Outputs            []WorkOutput `json:"outputs"`
+	}{work.ID, work.InstructionPath, work.InstructionSHA256, work.InstructionContent, work.Inputs, work.Outputs}); err != nil || fingerprint != work.Fingerprint {
+		return fmt.Errorf("%s: foreground work contract fingerprint is invalid", t.ID)
+	}
+	inputs := map[string]bool{}
+	for _, input := range work.Inputs {
+		if !semanticID.MatchString(input.ID) || !semanticID.MatchString(input.EntryInput) || inputs[input.ID] {
+			return fmt.Errorf("%s: foreground work inputs must be semantic and unique", t.ID)
+		}
+		inputs[input.ID] = true
+	}
+	outputs := map[string]bool{}
+	paths := map[string]bool{}
+	for _, output := range work.Outputs {
+		if !semanticID.MatchString(output.ID) || output.Path == "" || outputs[output.ID] || paths[output.Path] || output.MaxBytes < 1 || output.MaxBytes > 16<<20 {
+			return fmt.Errorf("%s: foreground work outputs must be bounded and unique", t.ID)
+		}
+		if output.MediaType != "text/markdown" && output.MediaType != "text/plain" && output.MediaType != "application/json" {
+			return fmt.Errorf("%s: foreground work output %q has unsupported media type", t.ID, output.ID)
+		}
+		hasSchema := output.SchemaPath != "" || output.SchemaSHA256 != "" || output.SchemaContent != ""
+		if hasSchema && (output.SchemaPath == "" || len(output.SchemaSHA256) != 64 || output.SchemaContent == "" || output.MediaType != "application/json") {
+			return fmt.Errorf("%s: foreground work output %q has invalid schema binding", t.ID, output.ID)
+		}
+		outputs[output.ID], paths[output.Path] = true, true
+	}
 	return nil
 }
 
@@ -752,6 +830,12 @@ func cloneTransition(value Transition) Transition {
 	value.Interruption.Points = append([]string(nil), value.Interruption.Points...)
 	value.Interruption.PartialState = append([]string(nil), value.Interruption.PartialState...)
 	value.Policy.ManagedOperations = append([]string(nil), value.Policy.ManagedOperations...)
+	if value.Work != nil {
+		work := *value.Work
+		work.Inputs = append([]WorkInput(nil), value.Work.Inputs...)
+		work.Outputs = append([]WorkOutput(nil), value.Work.Outputs...)
+		value.Work = &work
+	}
 	return value
 }
 

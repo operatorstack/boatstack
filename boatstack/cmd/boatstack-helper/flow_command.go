@@ -21,7 +21,7 @@ import (
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 )
 
-const flowCompilerVersion = "control-program.compiler.1"
+const flowCompilerVersion = "control-program.compiler.3"
 
 type flowCommandOptions struct {
 	repository string
@@ -33,7 +33,7 @@ type flowCommandOptions struct {
 
 func runFlowCommand(arguments []string) error {
 	if len(arguments) == 0 {
-		return fmt.Errorf("usage: boatstack flow <compile|check|authorize|revoke|run> [flags]")
+		return fmt.Errorf("usage: boatstack flow <compile|check|authorize|revoke|run|work> [flags]")
 	}
 	action := arguments[0]
 	if action == "authorize" {
@@ -44,6 +44,9 @@ func runFlowCommand(arguments []string) error {
 	}
 	if action == "run" {
 		return runFlowContinuation(arguments[1:])
+	}
+	if action == "work" {
+		return runFlowWork(arguments[1:])
 	}
 	flags := flag.NewFlagSet("flow "+action, flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
@@ -116,7 +119,7 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 	if err != nil {
 		return err
 	}
-	compiled, err := controlprogram.Load(bytes.NewReader(rawIR), resolver)
+	compiled, err := controlprogram.LoadWithAssets(bytes.NewReader(rawIR), resolver, controlprogram.RepositoryAssetResolver{Repository: options.repository})
 	if err != nil {
 		return err
 	}
@@ -162,12 +165,28 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 	writes = append(writes, boatstackruntime.ProjectionWrite{
 		Path: artifactPath, Content: artifactRaw, Mode: 0o644, ExpectedPreviousSHA256: artifactPrevious, PublishLast: true,
 	})
-	if err := rejectProjectionInputOverlap(lockPath, writes, removals); err != nil {
-		return err
-	}
 	expectations := []boatstackruntime.ProjectionExpectation{
 		{Path: source, Exists: true, ExpectedSHA256: fileDigest(sourceRaw)},
 		{Path: lockPath, Exists: true, ExpectedSHA256: fileDigest(lockRaw)},
+	}
+	compileInputs := []string{source, lockPath}
+	assetPaths := make([]string, 0, len(artifact.Assets))
+	for relative := range artifact.Assets {
+		assetPaths = append(assetPaths, relative)
+	}
+	sort.Strings(assetPaths)
+	for _, relative := range assetPaths {
+		absolute, pathErr := exactRepositoryPath(options.repository, relative)
+		if pathErr != nil {
+			return pathErr
+		}
+		compileInputs = append(compileInputs, absolute)
+		expectations = append(expectations, boatstackruntime.ProjectionExpectation{
+			Path: absolute, Exists: true, ExpectedSHA256: artifact.Assets[relative],
+		})
+	}
+	if err := rejectProjectionInputOverlap(compileInputs, writes, removals); err != nil {
+		return err
 	}
 	artifactRelative, _ := filepath.Rel(options.repository, artifactPath)
 	nextOwnership := boatstackruntime.NewFlowProjectionOwnership(filepath.ToSlash(sourceRelative), filepath.ToSlash(artifactRelative), artifactRaw, skills)
@@ -177,16 +196,19 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 	return renderFlowResult("compiled", artifactPath, artifact)
 }
 
-func rejectProjectionInputOverlap(lockPath string, writes []boatstackruntime.ProjectionWrite, removals []boatstackruntime.ProjectionRemoval) error {
-	lockPath = filepath.Clean(lockPath)
+func rejectProjectionInputOverlap(inputs []string, writes []boatstackruntime.ProjectionWrite, removals []boatstackruntime.ProjectionRemoval) error {
+	bound := make(map[string]bool, len(inputs))
+	for _, input := range inputs {
+		bound[filepath.Clean(input)] = true
+	}
 	for _, write := range writes {
-		if filepath.Clean(write.Path) == lockPath {
-			return fmt.Errorf("FLOW_COMPILE_INPUT_OVERLAP: dependency lock is a projection output")
+		if bound[filepath.Clean(write.Path)] {
+			return fmt.Errorf("FLOW_COMPILE_INPUT_OVERLAP: compile input %s is a projection output", write.Path)
 		}
 	}
 	for _, removal := range removals {
-		if filepath.Clean(removal.Path) == lockPath {
-			return fmt.Errorf("FLOW_COMPILE_INPUT_OVERLAP: dependency lock is a retired projection output")
+		if bound[filepath.Clean(removal.Path)] {
+			return fmt.Errorf("FLOW_COMPILE_INPUT_OVERLAP: compile input %s is a retired projection output", removal.Path)
 		}
 	}
 	return nil

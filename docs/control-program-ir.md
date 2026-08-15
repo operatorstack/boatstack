@@ -6,9 +6,10 @@ Boatstack separates authoring languages from executable semantics:
 TypeScript Flow -> raw Control Program IR -> Go canonicalizer -> committed artifact -> kernel
 ```
 
-The `control-program` schema at revision `2` is domain-neutral. It declares typed facets,
-evidence relations, predicate ASTs, operators, capabilities, authority,
-effects, verification, recovery, transitions, marked targets, and entries.
+The `control-program` schema at revision `3` is domain-neutral. It declares
+typed facets, evidence relations, predicate ASTs, operators, capabilities,
+authority, effects, verification, recovery, bounded foreground work,
+transitions, marked targets, and entries.
 Software terms such as plans, tests, Git, and pull requests belong to
 `@operatorstack/boatstack-software-delivery`, not the base SDK.
 
@@ -70,10 +71,43 @@ execute `flow.ts`. The artifact filename comes from the declared program ID,
 not the source filename.
 
 The artifact binds the source hash, compiler version, dependency-lock hash,
-trusted operator fingerprints, canonical program fingerprint, and generated
-skill hashes. Unknown fields, duplicate declarations, invalid references,
+foreground-work instruction and schema assets, trusted operator fingerprints,
+canonical program fingerprint, and generated skill hashes. Unknown fields,
+duplicate declarations, invalid references,
 undeclared inline effects, missing recovery, binding drift, and generated-file
-drift fail closed. A source or lock change during compilation also fails closed.
+drift fail closed. A source, lock, instruction, or schema change during
+compilation also fails closed.
+
+## Foreground work
+
+A Flow may require bounded human or agent work before a trusted transition can
+be prescribed. The repository declares an instruction asset, exact entry
+inputs, and an output manifest. Boatstack resolves the assets during compile,
+creates a runtime-owned work request for the selected transition, and verifies
+the staged outputs before it admits the trusted operator.
+
+Foreground work cannot change Flow state, grant authority, or install an
+effect handler. Its result is immutable evidence bound to one run, program,
+transition, state revision, repository, and worktree. Questions suspend the
+same run; answers are evidence rather than authority. A program or state change
+invalidates the result before any trusted effect.
+
+The foreground-work commands are explicit and foreground-only:
+
+```sh
+boatstack flow work show --repo . --flow <flow> --entry <entry> \
+  --run-id <run-id> --work-id <work-id> --format json
+boatstack flow work input-required ... --prompt "<question>"
+boatstack flow work answer ... --question-id <question-id> --answer <json-file>
+boatstack flow work complete ...
+boatstack flow work block ... --reason "<reason>"
+```
+
+`complete` reads only the declared regular files below the request's staging
+root. It checks paths, media types, size limits, JSON syntax and declared JSON
+Schemas, then seals the exact bytes into the work result. The following
+`next` call can prescribe the transition only with that exact result
+fingerprint.
 
 Trusted software-delivery bindings fix capabilities, authority, effects,
 verifiers, recovery, and state effects. A repository may select and order those

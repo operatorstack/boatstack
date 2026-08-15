@@ -435,7 +435,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         self.assertEqual(bound["decision"]["kind"], "PRESCRIBED")
         self.assertEqual(bound["decision"]["transition"]["id"], "plan.create")
 
-    def test_repository_authority_rematerialization_fails_closed_without_verified_config(self) -> None:
+    def test_repository_authority_rematerialization_waits_for_verified_config(self) -> None:
         # control-law: repository-authority-requires-exact-verified-fingerprint
         root = Path(self.work.name) / "unverified"
         root.mkdir()
@@ -446,19 +446,18 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         self._git(root, "add", "README.md")
         self._git(root, "commit", "-m", "fixture")
         before = self.porcelain(root)
-        result = self.run_helper(
+        result = self.helper_json(
             "next", "--repo", root,
             "--objective-id", "unverified-authority",
             "--target-id", "open-or-updated-pr",
             "--delivery", "unverified-authority",
             "--run-id", "flow-unverified-authority",
             "--human", "contract", "--repository-authority",
-            cwd=root, expected=1,
+            cwd=root,
         )
-        self.assertIn(
-            "repository authority requires current verified configuration evidence",
-            result.stderr,
-        )
+        self.assertEqual(result["decision"]["kind"], "CANDIDATE")
+        self.assertEqual(result["decision"]["transition"]["id"], "installation.initialize")
+        self.assertNotIn('"repository-policy"', json.dumps(result))
         self.assertEqual(self.porcelain(root), before)
 
 

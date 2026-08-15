@@ -68,6 +68,7 @@ type commandOptions struct {
 	acceptProgramChange                 bool
 	parameters                          stringList
 	authorityReceipts                   stringList
+	trustedAuthorityReceipts            []protocol.AuthorityReceipt
 	follow                              bool
 	host                                string
 	command                             string
@@ -76,6 +77,16 @@ type commandOptions struct {
 	delegationAuthorities               stringList
 	delegationDescription               string
 	delegationRequest                   delegation.Request
+	workInputs                          map[string]protocol.WorkInputValue
+	workID                              string
+	workQuestionPrompt                  string
+	workQuestionSchemaPath              string
+	workQuestionID                      string
+	workAnswerPath                      string
+	workBlockReason                     string
+	workResultFingerprint               string
+	controlBundle                       *boatstackruntime.ControlBundleContract
+	controlBundleFingerprint            string
 }
 
 func main() {
@@ -132,6 +143,11 @@ func run(arguments []string) error {
 	if err != nil {
 		return err
 	}
+	if request.ProgramID == "" {
+		if err := bindTrustedRequestControlBundle(context.Background(), &request); err != nil {
+			return err
+		}
+	}
 	delegationLock, delegationResponse, err := prepareDelegation(context.Background(), &request)
 	if err != nil {
 		return err
@@ -147,6 +163,9 @@ func run(arguments []string) error {
 		return err
 	}
 	defer lease.Release()
+	if err := verifyTrustedRequestControlBundle(request); err != nil {
+		return err
+	}
 	kernel, err := standardKernel(context.Background(), request)
 	if err != nil {
 		return err
@@ -210,6 +229,11 @@ func runRPC() error {
 	if err != nil {
 		return err
 	}
+	if request.ProgramID == "" {
+		if err := bindTrustedRequestControlBundle(context.Background(), &request); err != nil {
+			return err
+		}
+	}
 	delegationLock, delegationResponse, err := prepareDelegation(context.Background(), &request)
 	if err != nil {
 		return err
@@ -227,6 +251,9 @@ func runRPC() error {
 		return err
 	}
 	defer lease.Release()
+	if err := verifyTrustedRequestControlBundle(request); err != nil {
+		return err
+	}
 	kernel, err := standardKernel(context.Background(), request)
 	if err != nil {
 		return err
@@ -353,6 +380,13 @@ func parseOptions(command string, arguments []string, transition catalog.Transit
 	flags.BoolVar(&options.follow, "follow", false, "follow passive process events (events with jsonl only)")
 	flags.StringVar(&options.host, "host", options.host, "cli, sdk, cursor, codex, claude, gemini, or mcp")
 	flags.StringVar(&options.command, "command", "", "raw command to classify at the guard boundary")
+	flags.StringVar(&options.workID, "work-id", "", "foreground work contract identity")
+	flags.StringVar(&options.workQuestionPrompt, "prompt", "", "bounded foreground work question")
+	flags.StringVar(&options.workQuestionSchemaPath, "question-schema", "", "JSON Schema path for a foreground work answer")
+	flags.StringVar(&options.workQuestionID, "question-id", "", "exact foreground work question identity")
+	flags.StringVar(&options.workAnswerPath, "answer", "", "JSON answer path")
+	flags.StringVar(&options.workBlockReason, "reason", "", "foreground work blocker")
+	flags.StringVar(&options.workResultFingerprint, "work-result-fingerprint", "", "exact foreground work result from resolution")
 	if err := flags.Parse(arguments); err != nil {
 		return commandOptions{}, err
 	}
@@ -412,7 +446,7 @@ func standardKernel(ctx context.Context, request surfaces.Request) (boatstack.De
 }
 
 func acquireFlowExecutionLease(request surfaces.Request) (*boatstackruntime.FlowProjectionLease, error) {
-	if request.ProgramID == "" || (request.Operation != surfaces.OperationApply && request.Operation != surfaces.OperationRecover) {
+	if request.ProgramID == "" && request.ControlBundle == nil {
 		return &boatstackruntime.FlowProjectionLease{}, nil
 	}
 	return boatstackruntime.AcquireFlowProjectionLease(request.Repository)
@@ -556,6 +590,20 @@ func buildRequest(operation surfaces.Operation, options commandOptions) (surface
 	if err != nil {
 		return surfaces.Request{}, err
 	}
+	authorityParameter, resolveErr := trustedProviderAuthorityParameter(context.Background(), options.transitionID)
+	if resolveErr != nil {
+		return surfaces.Request{}, resolveErr
+	}
+	if authorityParameter != "" {
+		fingerprint, ok := parameters.Get(authorityParameter)
+		if ok && fingerprint != "" {
+			receipt, resolveErr := resolveGitHubProviderAuthority(context.Background(), options.repository, fingerprint, now)
+			if resolveErr != nil {
+				return surfaces.Request{}, resolveErr
+			}
+			options.trustedAuthorityReceipts = append(options.trustedAuthorityReceipts, receipt)
+		}
+	}
 	authority, err := loadAuthority(options, correlation, objective, parameters, now)
 	if err != nil {
 		return surfaces.Request{}, err
@@ -583,11 +631,18 @@ func buildRequest(operation surfaces.Operation, options commandOptions) (surface
 				ExpectedInstanceID: options.expectedInstanceID, ExpectedStateRevision: options.expectedStateRevision, ExpectedProgramFingerprint: options.expectedProgramFingerprint,
 				ExpectedSnapshotFingerprint: options.expectedSnapshotFingerprint, ExpectedObjectiveBindingFingerprint: options.expectedObjectiveBindingFingerprint,
 				AuthorityFingerprint: options.authorityFingerprint,
-			}, RequiredCapabilities: requiredCapabilities, EffectiveCapabilities: effectiveCapabilities},
+			}, RequiredCapabilities: requiredCapabilities, EffectiveCapabilities: effectiveCapabilities, WorkResultFingerprint: options.workResultFingerprint},
 		RepositoryAuthority: options.repositoryPolicy, IdempotencyKey: options.idempotencyKey, Command: options.command,
 		DelegationBindingFingerprint: options.delegationBindingFingerprint,
 		DelegationRequestFingerprint: options.delegationRequestFingerprint,
 		DelegatedAuthorities:         delegationClasses(options.delegationAuthorities),
+		WorkInputs:                   options.workInputs,
+		WorkID:                       options.workID,
+		WorkQuestionPrompt:           options.workQuestionPrompt,
+		WorkQuestionID:               options.workQuestionID,
+		WorkBlockReason:              options.workBlockReason,
+		ControlBundle:                options.controlBundle,
+		ControlBundleFingerprint:     options.controlBundleFingerprint,
 	}, nil
 }
 
@@ -663,6 +718,15 @@ func loadAuthority(options commandOptions, correlation string, objective model.O
 		var trailing any
 		if err := decoder.Decode(&trailing); err != io.EOF {
 			return protocol.AuthorityBundle{}, fmt.Errorf("authority receipt contains trailing JSON")
+		}
+		if receipt.Class == catalog.AuthorityProvider {
+			return protocol.AuthorityBundle{}, fmt.Errorf("PROVIDER_AUTHORITY_UNTRUSTED: external-provider authority must be derived by the trusted provider boundary")
+		}
+		bundle.Receipts = append(bundle.Receipts, receipt)
+	}
+	for _, receipt := range options.trustedAuthorityReceipts {
+		if receipt.Class != catalog.AuthorityProvider {
+			return protocol.AuthorityBundle{}, fmt.Errorf("trusted authority channel accepts only external-provider receipts")
 		}
 		bundle.Receipts = append(bundle.Receipts, receipt)
 	}
@@ -759,6 +823,15 @@ func renderResponse(response surfaces.Response, format string) error {
 			fmt.Printf("prescription=%s state_revision=%d program=%s snapshot=%s correlation=%s\n", response.Prescription.ID,
 				response.Prescription.ExpectedStateRevision, response.Prescription.ExpectedProgramFingerprint,
 				response.Prescription.ExpectedSnapshotFingerprint, correlation)
+		}
+		if response.Work != nil {
+			fmt.Printf("work=%s status=%s revision=%d staging=%s\n", response.Work.Request.Contract.ID, response.Work.Status, response.Work.Revision, response.Work.Request.StagingRoot)
+			if response.Work.Question != nil {
+				fmt.Printf("question=%s %s\n", response.Work.Question.ID, response.Work.Question.Prompt)
+			}
+			if response.Work.BlockReason != "" {
+				fmt.Println("blocker:", response.Work.BlockReason)
+			}
 		}
 		if response.Receipt != nil {
 			fmt.Println("receipt:", response.Receipt.ID)

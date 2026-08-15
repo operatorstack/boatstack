@@ -19,6 +19,7 @@ type boundaryCall func(context.Context) (ports.EffectResult, error)
 type preparedEffect struct {
 	mutations             []ports.ResourceMutation
 	boundary              boundaryCall
+	postVerify            func(context.Context) error
 	verifyInvocation      *model.InvocationContext
 	applied               []ports.ResourceMutation
 	boundarySettled       bool
@@ -138,6 +139,11 @@ func (p *preparedEffect) Execute(ctx context.Context) (ports.EffectResult, error
 			return result, fmt.Errorf("install managed resource %s: %w", mutation.Path, err)
 		}
 		p.applied = append(p.applied, mutation)
+	}
+	if p.postVerify != nil {
+		if err := p.postVerify(ctx); err != nil {
+			return result, err
+		}
 	}
 	return result, nil
 }

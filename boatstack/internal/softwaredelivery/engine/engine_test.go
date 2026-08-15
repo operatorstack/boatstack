@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"path/filepath"
@@ -357,6 +359,96 @@ func TestResolutionDoesNotPrescribeBeforeRequiredParametersAreBound(t *testing.T
 	}
 	if prescribed.Decision.Kind != supervisor.DecisionPrescribed || prescribed.Decision.Transition == nil || prescribed.Decision.Transition.ID != "test.advance" {
 		t.Fatalf("complete resolution = %+v, want PRESCRIBED", prescribed.Decision)
+	}
+}
+
+func mustWorkContextFingerprint(t *testing.T, snapshot model.Snapshot) string {
+	t.Helper()
+	fingerprint, err := model.ForegroundWorkContextFingerprint(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fingerprint
+}
+
+func TestResolutionBindsForegroundWorkBeforeTrustedAdmission(t *testing.T) {
+	// control-law: foreground-work-produces-evidence-but-cannot-bypass-trusted-admission
+	now := time.Unix(30, 0).UTC()
+	transitions := testRegistry(t).All()
+	var work *catalog.WorkContract
+	for index := range transitions {
+		if transitions[index].ID != "test.advance" {
+			continue
+		}
+		instructionDigest := sha256.Sum256([]byte("Inspect the incident."))
+		work = &catalog.WorkContract{ID: "diagnose", InstructionPath: "instructions.md", InstructionSHA256: hex.EncodeToString(instructionDigest[:]), InstructionContent: "Inspect the incident.", Outputs: []catalog.WorkOutput{{ID: "diagnosis", Path: "diagnosis.md", MediaType: "text/markdown", Required: true, MaxBytes: 1024}}}
+		fingerprint, err := general.Fingerprint(struct {
+			ID                 string               `json:"id"`
+			InstructionPath    string               `json:"instruction_path"`
+			InstructionSHA256  string               `json:"instruction_sha256"`
+			InstructionContent string               `json:"instruction_content"`
+			Inputs             []catalog.WorkInput  `json:"inputs,omitempty"`
+			Outputs            []catalog.WorkOutput `json:"outputs"`
+		}{work.ID, work.InstructionPath, work.InstructionSHA256, work.InstructionContent, work.Inputs, work.Outputs})
+		if err != nil {
+			t.Fatal(err)
+		}
+		work.Fingerprint = fingerprint
+		transitions[index].Work = work
+		transitions[index].OwnedResources = append(transitions[index].OwnedResources, "foreground-work-diagnose")
+	}
+	registry, err := catalog.New(transitions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observer := &sequenceObserver{items: []model.Observation{
+		observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source"),
+	}}
+	kernel, err := New(registry, syntheticObjectiveContracts(t), syntheticProgram, observer, fixedClock{now}, fakeLocker{&fakeLock{}}, &fakeJournal{}, &fakeEffects{}, &memoryReceipts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := request(t, now).ResolveRequest
+	candidate, err := kernel.Resolve(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if candidate.Decision.Kind != supervisor.DecisionCandidate || candidate.Decision.Transition == nil || candidate.Prescription.ID != "" {
+		t.Fatalf("workless resolution = %#v", candidate)
+	}
+	content := "Cause: overload."
+	contentDigest := sha256.Sum256([]byte(content))
+	evidence, err := protocol.SealWorkEvidence(protocol.WorkEvidence{
+		SchemaVersion: protocol.WorkEvidenceSchemaVersion, RequestID: "work-request", RequestFingerprint: strings.Repeat("e", 64),
+		ContractID: work.ID, ContractFingerprint: work.Fingerprint, TransitionID: "test.advance",
+		ProgramFingerprint: candidate.Snapshot.ProgramFingerprint, ContextFingerprint: mustWorkContextFingerprint(t, candidate.Snapshot), StateRevision: candidate.Snapshot.StateRevision,
+		RepositoryID: candidate.Snapshot.Invocation.RepositoryID, WorktreeID: candidate.Snapshot.Invocation.WorktreeID,
+		Outputs: []protocol.WorkOutputEvidence{{ID: "diagnosis", Path: "diagnosis.md", MediaType: "text/markdown", SHA256: hex.EncodeToString(contentDigest[:]), Size: int64(len(content)), Content: content}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Work = &evidence
+	prescribed, err := kernel.Resolve(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prescribed.Decision.Kind != supervisor.DecisionPrescribed || prescribed.Prescription.WorkResultFingerprint != evidence.ResultFingerprint || prescribed.Admission.Work == nil {
+		t.Fatalf("work-bound resolution = %#v", prescribed)
+	}
+	stale := evidence
+	stale.ContextFingerprint = strings.Repeat("f", 64)
+	stale, err = protocol.SealWorkEvidence(stale)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Work = &stale
+	refused, err := kernel.Resolve(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refused.Decision.Kind != supervisor.DecisionRefused || refused.Prescription.ID != "" {
+		t.Fatalf("stale work resolution = %#v", refused)
 	}
 }
 

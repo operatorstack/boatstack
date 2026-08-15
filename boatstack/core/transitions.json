@@ -2285,7 +2285,8 @@
       "correlation-id"
     ],
     "authority": [
-      "human"
+      "human",
+      "autonomy"
     ],
     "required_evidence": [
       "invocation-context",
