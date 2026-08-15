@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -69,7 +70,15 @@ func (b NativeBoundary) ResolveGitHubProviderAuthority(ctx context.Context, repo
 	if authorityBinding == "" || len(authorityBinding) > 256 || strings.TrimSpace(authorityBinding) != authorityBinding || strings.IndexFunc(authorityBinding, unicode.IsControl) >= 0 {
 		return protocol.AuthorityReceipt{}, fmt.Errorf("PROVIDER_AUTHORITY_INVALID: authority binding must be non-empty, bounded, and free of control characters")
 	}
-	output, err := b.runner.CombinedOutput(ctx, repository, "gh", "repo", "view", "--json", "nameWithOwner,viewerPermission,url")
+	remoteOutput, err := b.runner.CombinedOutput(ctx, repository, "git", "remote", "get-url", "--push", "origin")
+	if err != nil {
+		return protocol.AuthorityReceipt{}, fmt.Errorf("PROVIDER_AUTHORITY_UNAVAILABLE: origin push repository identity is unavailable")
+	}
+	remoteRepository, err := githubRepositoryFromRemote(strings.TrimSpace(string(remoteOutput)))
+	if err != nil {
+		return protocol.AuthorityReceipt{}, err
+	}
+	output, err := b.runner.CombinedOutput(ctx, repository, "gh", "repo", "view", remoteRepository, "--json", "nameWithOwner,viewerPermission,url")
 	if err != nil {
 		return protocol.AuthorityReceipt{}, fmt.Errorf("PROVIDER_AUTHORITY_UNAVAILABLE: GitHub repository identity or authenticated access is unavailable")
 	}
@@ -91,6 +100,9 @@ func (b NativeBoundary) ResolveGitHubProviderAuthority(ctx context.Context, repo
 	if observed.NameWithOwner == "" || observed.URL == "" {
 		return protocol.AuthorityReceipt{}, fmt.Errorf("PROVIDER_AUTHORITY_INVALID: GitHub repository identity is incomplete")
 	}
+	if !strings.EqualFold(observed.NameWithOwner, remoteRepository) {
+		return protocol.AuthorityReceipt{}, fmt.Errorf("PROVIDER_AUTHORITY_INVALID: GitHub authority does not match the origin push repository")
+	}
 	issued := now.UTC()
 	subject := "github:" + observed.NameWithOwner
 	digest := sha256.Sum256([]byte(subject + "\x00" + authorityBinding))
@@ -98,6 +110,26 @@ func (b NativeBoundary) ResolveGitHubProviderAuthority(ctx context.Context, repo
 		ID: "provider-" + fmt.Sprintf("%x", digest[:8]), Class: catalog.AuthorityProvider,
 		Subject: subject, Fingerprint: authorityBinding, IssuedAt: issued, ExpiresAt: issued.Add(2 * time.Minute),
 	}, nil
+}
+
+func githubRepositoryFromRemote(remote string) (string, error) {
+	path := ""
+	switch {
+	case strings.HasPrefix(remote, "git@github.com:"):
+		path = strings.TrimPrefix(remote, "git@github.com:")
+	default:
+		parsed, err := url.Parse(remote)
+		if err != nil || !strings.EqualFold(parsed.Hostname(), "github.com") || (parsed.Scheme != "https" && parsed.Scheme != "ssh" && parsed.Scheme != "git") {
+			return "", fmt.Errorf("PROVIDER_AUTHORITY_INVALID: origin push remote is not an exact GitHub repository")
+		}
+		path = strings.TrimPrefix(parsed.Path, "/")
+	}
+	path = strings.TrimSuffix(path, ".git")
+	segments := strings.Split(path, "/")
+	if len(segments) != 2 || segments[0] == "" || segments[1] == "" || strings.ContainsAny(path, "\x00\r\n\t ") {
+		return "", fmt.Errorf("PROVIDER_AUTHORITY_INVALID: origin push remote is not an exact GitHub repository")
+	}
+	return path, nil
 }
 
 func (b NativeBoundary) PrepareObservation(ctx context.Context, admission protocol.Admission, transition catalog.Transition, layout ports.ControllerLayout, state *durable.State) error {

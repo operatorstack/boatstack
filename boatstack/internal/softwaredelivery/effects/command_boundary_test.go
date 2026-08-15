@@ -65,7 +65,8 @@ func boundaryAdmission(transition catalog.Transition) protocol.Admission {
 
 func TestGitHubProviderAuthorityIsDerivedFromWriteCapability(t *testing.T) {
 	now := time.Unix(100, 0).UTC()
-	runner := &boundaryRunner{output: []byte(`{"nameWithOwner":"owner/repository","url":"https://github.com/owner/repository","viewerPermission":"WRITE"}`)}
+	observation := []byte(`{"nameWithOwner":"owner/repository","url":"https://github.com/owner/repository","viewerPermission":"WRITE"}`)
+	runner := &boundaryRunner{outputs: [][]byte{[]byte("git@github.com:owner/repository.git\n"), observation, []byte("git@github.com:owner/repository.git\n"), observation}}
 	boundary, err := NewNativeBoundaryWithRunner(runner)
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +79,7 @@ func TestGitHubProviderAuthorityIsDerivedFromWriteCapability(t *testing.T) {
 	if receipt.Class != catalog.AuthorityProvider || receipt.Subject != "github:owner/repository" || receipt.Fingerprint != fingerprint || !receipt.ExpiresAt.Equal(now.Add(2*time.Minute)) {
 		t.Fatalf("provider receipt = %#v", receipt)
 	}
-	if runner.name != "gh" || strings.Join(runner.arguments, " ") != "repo view --json nameWithOwner,viewerPermission,url" {
+	if runner.name != "gh" || strings.Join(runner.arguments, " ") != "repo view owner/repository --json nameWithOwner,viewerPermission,url" || strings.Join(runner.history[0], " ") != "git remote get-url --push origin" {
 		t.Fatalf("provider observation command = %s %v", runner.name, runner.arguments)
 	}
 	renewed, err := boundary.ResolveGitHubProviderAuthority(context.Background(), t.TempDir(), fingerprint, now.Add(time.Minute))
@@ -88,7 +89,7 @@ func TestGitHubProviderAuthorityIsDerivedFromWriteCapability(t *testing.T) {
 }
 
 func TestGitHubProviderAuthorityAcceptsOpaqueTrustedTransitionBinding(t *testing.T) {
-	runner := &boundaryRunner{output: []byte(`{"nameWithOwner":"owner/repository","url":"https://github.com/owner/repository","viewerPermission":"WRITE"}`)}
+	runner := &boundaryRunner{outputs: [][]byte{[]byte("https://github.com/owner/repository.git\n"), []byte(`{"nameWithOwner":"owner/repository","url":"https://github.com/owner/repository","viewerPermission":"WRITE"}`)}}
 	boundary, _ := NewNativeBoundaryWithRunner(runner)
 	receipt, err := boundary.ResolveGitHubProviderAuthority(context.Background(), t.TempDir(), "123", time.Unix(100, 0).UTC())
 	if err != nil {
@@ -108,8 +109,20 @@ func TestGitHubProviderAuthorityRejectsUnsafeBinding(t *testing.T) {
 	}
 }
 
+func TestGitHubProviderAuthorityRejectsRepositoryDifferentFromOrigin(t *testing.T) {
+	runner := &boundaryRunner{outputs: [][]byte{
+		[]byte("git@github.com:owner/destination.git\n"),
+		[]byte(`{"nameWithOwner":"owner/ambient","url":"https://github.com/owner/ambient","viewerPermission":"WRITE"}`),
+	}}
+	boundary, _ := NewNativeBoundaryWithRunner(runner)
+	_, err := boundary.ResolveGitHubProviderAuthority(context.Background(), t.TempDir(), "binding", time.Unix(100, 0).UTC())
+	if err == nil || !strings.Contains(err.Error(), "does not match the origin") || runner.calls != 2 {
+		t.Fatalf("mismatched provider authority error=%v calls=%d", err, runner.calls)
+	}
+}
+
 func TestGitHubProviderAuthorityRejectsReadOnlyIdentity(t *testing.T) {
-	runner := &boundaryRunner{output: []byte(`{"nameWithOwner":"owner/repository","url":"https://github.com/owner/repository","viewerPermission":"READ"}`)}
+	runner := &boundaryRunner{outputs: [][]byte{[]byte("git@github.com:owner/repository.git\n"), []byte(`{"nameWithOwner":"owner/repository","url":"https://github.com/owner/repository","viewerPermission":"READ"}`)}}
 	boundary, _ := NewNativeBoundaryWithRunner(runner)
 	_, err := boundary.ResolveGitHubProviderAuthority(context.Background(), t.TempDir(), strings.Repeat("a", 64), time.Unix(100, 0).UTC())
 	if err == nil || !strings.Contains(err.Error(), "PROVIDER_AUTHORITY_DENIED") {
