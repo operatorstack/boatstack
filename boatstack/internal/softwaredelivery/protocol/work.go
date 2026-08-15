@@ -13,6 +13,21 @@ import (
 
 const WorkEvidenceSchemaVersion = 2
 
+// WorkInputValue binds the value presented to foreground work to the exact
+// bytes selected by the trusted entry-input resolver. Value is an ergonomic
+// locator or label; Fingerprint is the immutable execution identity.
+type WorkInputValue struct {
+	Value       string `json:"value"`
+	Fingerprint string `json:"fingerprint"`
+}
+
+func (v WorkInputValue) Validate() error {
+	if v.Value == "" || !validSHA256(v.Fingerprint) {
+		return fmt.Errorf("foreground work input requires a value and exact fingerprint")
+	}
+	return nil
+}
+
 // WorkOutputEvidence is a verified, bounded foreground-work output. Content is
 // carried into admission so effects never trust a mutable staging path.
 type WorkOutputEvidence struct {

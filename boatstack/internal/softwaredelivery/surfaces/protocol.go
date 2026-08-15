@@ -50,33 +50,33 @@ func (o Operation) Valid() bool {
 }
 
 type Request struct {
-	SchemaVersion                int                      `json:"schema_version"`
-	Operation                    Operation                `json:"operation"`
-	Repository                   string                   `json:"repository"`
-	Host                         string                   `json:"host"`
-	CorrelationID                string                   `json:"correlation_id"`
-	ProgramID                    string                   `json:"program_id,omitempty"`
-	ProgramFingerprint           string                   `json:"program_fingerprint,omitempty"`
-	EntryID                      string                   `json:"entry_id,omitempty"`
-	FlowID                       string                   `json:"flow_id,omitempty"`
-	Objective                    model.Objective          `json:"objective,omitempty"`
-	TransitionID                 catalog.TransitionID     `json:"transition_id,omitempty"`
-	Prescription                 protocol.Prescription    `json:"prescription,omitempty"`
-	Authority                    protocol.AuthorityBundle `json:"authority,omitempty"`
-	RepositoryAuthority          bool                     `json:"repository_authority,omitempty"`
-	Parameters                   protocol.Parameters      `json:"parameters,omitempty"`
-	IdempotencyKey               string                   `json:"idempotency_key,omitempty"`
-	Command                      string                   `json:"command,omitempty"`
-	DelegationBindingFingerprint string                   `json:"delegation_binding_fingerprint,omitempty"`
-	DelegationRequestFingerprint string                   `json:"delegation_request_fingerprint,omitempty"`
-	DelegatedAuthorities         []catalog.AuthorityClass `json:"delegated_authorities,omitempty"`
-	WorkInputs                   map[string]string        `json:"work_inputs,omitempty"`
-	WorkID                       string                   `json:"work_id,omitempty"`
-	WorkQuestionPrompt           string                   `json:"work_question_prompt,omitempty"`
-	WorkQuestionSchema           []byte                   `json:"work_question_schema,omitempty"`
-	WorkQuestionID               string                   `json:"work_question_id,omitempty"`
-	WorkAnswer                   []byte                   `json:"work_answer,omitempty"`
-	WorkBlockReason              string                   `json:"work_block_reason,omitempty"`
+	SchemaVersion                int                                `json:"schema_version"`
+	Operation                    Operation                          `json:"operation"`
+	Repository                   string                             `json:"repository"`
+	Host                         string                             `json:"host"`
+	CorrelationID                string                             `json:"correlation_id"`
+	ProgramID                    string                             `json:"program_id,omitempty"`
+	ProgramFingerprint           string                             `json:"program_fingerprint,omitempty"`
+	EntryID                      string                             `json:"entry_id,omitempty"`
+	FlowID                       string                             `json:"flow_id,omitempty"`
+	Objective                    model.Objective                    `json:"objective,omitempty"`
+	TransitionID                 catalog.TransitionID               `json:"transition_id,omitempty"`
+	Prescription                 protocol.Prescription              `json:"prescription,omitempty"`
+	Authority                    protocol.AuthorityBundle           `json:"authority,omitempty"`
+	RepositoryAuthority          bool                               `json:"repository_authority,omitempty"`
+	Parameters                   protocol.Parameters                `json:"parameters,omitempty"`
+	IdempotencyKey               string                             `json:"idempotency_key,omitempty"`
+	Command                      string                             `json:"command,omitempty"`
+	DelegationBindingFingerprint string                             `json:"delegation_binding_fingerprint,omitempty"`
+	DelegationRequestFingerprint string                             `json:"delegation_request_fingerprint,omitempty"`
+	DelegatedAuthorities         []catalog.AuthorityClass           `json:"delegated_authorities,omitempty"`
+	WorkInputs                   map[string]protocol.WorkInputValue `json:"work_inputs,omitempty"`
+	WorkID                       string                             `json:"work_id,omitempty"`
+	WorkQuestionPrompt           string                             `json:"work_question_prompt,omitempty"`
+	WorkQuestionSchema           []byte                             `json:"work_question_schema,omitempty"`
+	WorkQuestionID               string                             `json:"work_question_id,omitempty"`
+	WorkAnswer                   []byte                             `json:"work_answer,omitempty"`
+	WorkBlockReason              string                             `json:"work_block_reason,omitempty"`
 }
 
 func (r Request) Validate(now time.Time) error {
@@ -101,6 +101,14 @@ func (r Request) Validate(now time.Time) error {
 	for _, authority := range r.DelegatedAuthorities {
 		if !authority.Valid() || authority == catalog.AuthorityNone {
 			return fmt.Errorf("surface delegated Flow request has invalid authority %q", authority)
+		}
+	}
+	for id, input := range r.WorkInputs {
+		if !flowContextIdentity.MatchString(id) {
+			return fmt.Errorf("surface foreground work input has invalid identity %q", id)
+		}
+		if err := input.Validate(); err != nil {
+			return fmt.Errorf("surface foreground work input %q: %w", id, err)
 		}
 	}
 	if r.Operation != OperationCatalog {

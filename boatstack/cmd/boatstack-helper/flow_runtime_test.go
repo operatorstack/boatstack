@@ -1316,17 +1316,19 @@ func TestStateOwnedTransitionParametersDoNotRequireHumanAnswers(t *testing.T) {
 		WorkspaceBranch:    "feat/exact-branch",
 		PreviewFingerprint: strings.Repeat("a", 64),
 		PublicationID:      "123",
+		TransactionID:      "adm-123",
 	}
-	for transition, expected := range map[string]string{
-		"workspace.activate":  "branch=feat/exact-branch",
-		"workspace.sync":      "branch=feat/exact-branch",
-		"workspace.publish":   "branch=feat/exact-branch",
-		"publication.execute": "preview_fingerprint=" + strings.Repeat("a", 64),
-		"publication.observe": "publication_id=123",
+	for transition, expected := range map[string][]string{
+		"workspace.activate":    {"branch=feat/exact-branch"},
+		"workspace.sync":        {"branch=feat/exact-branch"},
+		"workspace.publish":     {"branch=feat/exact-branch"},
+		"publication.execute":   {"preview_fingerprint=" + strings.Repeat("a", 64)},
+		"publication.observe":   {"publication_id=123"},
+		"publication.reconcile": {"publication_id=123", "transaction_id=adm-123"},
 	} {
 		t.Run(transition, func(t *testing.T) {
 			bound, err := bindStateOwnedTransitionParameters(commandOptions{transitionID: transition}, state)
-			if err != nil || len(bound.parameters) != 1 || bound.parameters[0] != expected {
+			if err != nil || strings.Join(bound.parameters, "\x00") != strings.Join(expected, "\x00") {
 				t.Fatalf("state-owned binding = %#v, %v", bound.parameters, err)
 			}
 		})

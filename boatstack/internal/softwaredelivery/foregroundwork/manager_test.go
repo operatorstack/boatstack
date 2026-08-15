@@ -14,6 +14,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/foregroundwork"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/ports"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
@@ -32,6 +33,10 @@ func (c clock) Now() time.Time { return c.at }
 
 func invocation() model.InvocationContext {
 	return model.InvocationContext{RepositoryID: "repository", GitCommonID: "common", WorktreeID: "worktree", Ref: "refs/heads/main"}
+}
+
+func workInputs(value, fingerprint string) map[string]protocol.WorkInputValue {
+	return map[string]protocol.WorkInputValue{"incident": {Value: value, Fingerprint: fingerprint}}
 }
 
 func fixture(t *testing.T) (foregroundwork.Manager, model.Snapshot, catalog.Transition, string) {
@@ -74,7 +79,7 @@ func TestForegroundWorkQuestionCompletionAndDrift(t *testing.T) {
 	manager, snapshot, transition, _ := fixture(t)
 	ctx := context.Background()
 	objective := model.Objective{ID: "incident-1", TargetID: "mitigated", DeliveryID: "incident-1"}
-	record, err := manager.Ensure(ctx, invocation(), "run-1", "incident-response", "respond", objective, snapshot, transition, map[string]string{"incident": "incident.json"})
+	record, err := manager.Ensure(ctx, invocation(), "run-1", "incident-response", "respond", objective, snapshot, transition, workInputs("incident.json", strings.Repeat("e", 64)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +109,7 @@ func TestForegroundWorkQuestionCompletionAndDrift(t *testing.T) {
 		t.Fatalf("completion = %#v err=%v", record, err)
 	}
 	snapshot.StateRevision++
-	record, err = manager.Ensure(ctx, invocation(), "run-1", "incident-response", "respond", objective, snapshot, transition, map[string]string{"incident": "incident.json"})
+	record, err = manager.Ensure(ctx, invocation(), "run-1", "incident-response", "respond", objective, snapshot, transition, workInputs("incident.json", strings.Repeat("e", 64)))
 	if err != nil || record.Status != foregroundwork.StatusRequested || len(record.Events) < 4 || record.Events[len(record.Events)-2].Kind != "work.invalidated" {
 		t.Fatalf("drift reset = %#v err=%v", record, err)
 	}
@@ -115,7 +120,7 @@ func TestForegroundWorkSurvivesInvocationLocalRestartIdentity(t *testing.T) {
 	manager, snapshot, transition, _ := fixture(t)
 	ctx := context.Background()
 	objective := model.Objective{ID: "incident-1", TargetID: "mitigated", DeliveryID: "incident-1"}
-	first, err := manager.Ensure(ctx, invocation(), "run-1", "incident-response", "respond", objective, snapshot, transition, map[string]string{"incident": "incident.json"})
+	first, err := manager.Ensure(ctx, invocation(), "run-1", "incident-response", "respond", objective, snapshot, transition, workInputs("incident.json", strings.Repeat("e", 64)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +130,7 @@ func TestForegroundWorkSurvivesInvocationLocalRestartIdentity(t *testing.T) {
 	restarted.Invocation.Correlation = "correlation-after-restart"
 	restarted.Invocation.RuntimePath = "/different/immutable/runtime/location"
 	restarted.Fingerprint = strings.Repeat("e", 64)
-	second, err := manager.Ensure(ctx, invocation(), "run-1", "incident-response", "respond", objective, restarted, transition, map[string]string{"incident": "incident.json"})
+	second, err := manager.Ensure(ctx, invocation(), "run-1", "incident-response", "respond", objective, restarted, transition, workInputs("incident.json", strings.Repeat("e", 64)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +138,7 @@ func TestForegroundWorkSurvivesInvocationLocalRestartIdentity(t *testing.T) {
 		t.Fatalf("restart invalidated stable work: before=%#v after=%#v", first.Request, second.Request)
 	}
 	restarted.Invocation.Ref = "refs/heads/other"
-	third, err := manager.Ensure(ctx, invocation(), "run-1", "incident-response", "respond", objective, restarted, transition, map[string]string{"incident": "incident.json"})
+	third, err := manager.Ensure(ctx, invocation(), "run-1", "incident-response", "respond", objective, restarted, transition, workInputs("incident.json", strings.Repeat("e", 64)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,12 +147,39 @@ func TestForegroundWorkSurvivesInvocationLocalRestartIdentity(t *testing.T) {
 	}
 }
 
+func TestForegroundWorkInputFingerprintInvalidatesOutputsAndStaging(t *testing.T) {
+	// control-law: same-locator input changes cannot reuse foreground-work outputs
+	manager, snapshot, transition, _ := fixture(t)
+	ctx := context.Background()
+	objective := model.Objective{ID: "incident-1", TargetID: "mitigated", DeliveryID: "incident-1"}
+	first, err := manager.Ensure(ctx, invocation(), "run-1", "incident-response", "respond", objective, snapshot, transition, workInputs("incident.json", strings.Repeat("1", 64)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(first.Request.StagingRoot, "diagnosis.json"), []byte(`{"cause":"first input"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Complete(ctx, invocation(), "run-1", "diagnose"); err != nil {
+		t.Fatal(err)
+	}
+	second, err := manager.Ensure(ctx, invocation(), "run-1", "incident-response", "respond", objective, snapshot, transition, workInputs("incident.json", strings.Repeat("2", 64)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Status != foregroundwork.StatusRequested || second.Request.Fingerprint == first.Request.Fingerprint || second.Request.StagingRoot == first.Request.StagingRoot {
+		t.Fatalf("input change reused request identity or staging: first=%#v second=%#v", first.Request, second.Request)
+	}
+	if _, err := manager.Complete(ctx, invocation(), "run-1", "diagnose"); err == nil || !strings.Contains(err.Error(), "no such file") {
+		t.Fatalf("invalidated output completed new request: %v", err)
+	}
+}
+
 func TestForegroundWorkRejectsMissingInvalidAndEscapingOutputs(t *testing.T) {
 	// control-law: only declared bounded regular staged outputs become work evidence
 	manager, snapshot, transition, root := fixture(t)
 	ctx := context.Background()
 	objective := model.Objective{ID: "incident-1", TargetID: "mitigated", DeliveryID: "incident-1"}
-	record, err := manager.Ensure(ctx, invocation(), "run-1", "incident-response", "respond", objective, snapshot, transition, map[string]string{"incident": "incident.json"})
+	record, err := manager.Ensure(ctx, invocation(), "run-1", "incident-response", "respond", objective, snapshot, transition, workInputs("incident.json", strings.Repeat("e", 64)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +212,7 @@ func TestForegroundWorkConcurrentCompletionIsSerialized(t *testing.T) {
 	manager, snapshot, transition, _ := fixture(t)
 	ctx := context.Background()
 	objective := model.Objective{ID: "incident-1", TargetID: "mitigated", DeliveryID: "incident-1"}
-	record, err := manager.Ensure(ctx, invocation(), "run-1", "incident-response", "respond", objective, snapshot, transition, map[string]string{"incident": "incident.json"})
+	record, err := manager.Ensure(ctx, invocation(), "run-1", "incident-response", "respond", objective, snapshot, transition, workInputs("incident.json", strings.Repeat("e", 64)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +247,7 @@ func TestForegroundWorkRejectsTamperedRuntimeRecord(t *testing.T) {
 	manager, snapshot, transition, root := fixture(t)
 	ctx := context.Background()
 	objective := model.Objective{ID: "incident-1", TargetID: "mitigated", DeliveryID: "incident-1"}
-	if _, err := manager.Ensure(ctx, invocation(), "run-1", "incident-response", "respond", objective, snapshot, transition, map[string]string{"incident": "incident.json"}); err != nil {
+	if _, err := manager.Ensure(ctx, invocation(), "run-1", "incident-response", "respond", objective, snapshot, transition, workInputs("incident.json", strings.Repeat("e", 64))); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(root, "flow", "work", "run-1", "diagnose", "record.json")

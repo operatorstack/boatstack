@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/operatorstack/boatstack/boatstack/flow/standard"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/delegation"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
@@ -21,6 +22,22 @@ import (
 
 var resolveGitHubProviderAuthority = func(ctx context.Context, repository, previewFingerprint string, now time.Time) (protocol.AuthorityReceipt, error) {
 	return effects.NewNativeBoundary().ResolveGitHubProviderAuthority(ctx, repository, previewFingerprint, now)
+}
+
+func trustedProviderAuthorityParameter(ctx context.Context, transitionID string) (string, error) {
+	if transitionID == "" {
+		return "", nil
+	}
+	manifest, err := standard.Definition().RuntimeManifest(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, transition := range manifest.Transitions {
+		if string(transition.ID) == transitionID {
+			return transition.AuthorityFingerprintParameter, nil
+		}
+	}
+	return "", nil
 }
 
 func runFlowAuthorize(arguments []string) error {
@@ -348,14 +365,29 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 func bindTrustedProviderCandidate(ctx context.Context, bound commandOptions, response surfaces.Response) (commandOptions, bool, error) {
 	if bound.transitionID != "" || response.Prescription != nil || response.Decision == nil ||
 		(response.Decision.Kind != supervisor.DecisionFrontier && response.Decision.Kind != supervisor.DecisionCandidate) ||
-		len(response.Decision.Candidates) != 1 || response.Decision.Candidates[0] != "publication.execute" {
+		len(response.Decision.Candidates) != 1 {
+		return bound, false, nil
+	}
+	candidate := string(response.Decision.Candidates[0])
+	authorityParameter, err := trustedProviderAuthorityParameter(ctx, candidate)
+	if err != nil {
+		return commandOptions{}, false, err
+	}
+	if authorityParameter == "" {
 		return bound, false, nil
 	}
 	rebound := bound
-	rebound.transitionID = "publication.execute"
-	rebound, err := bindFlowEntry(ctx, rebound)
+	rebound.transitionID = candidate
+	rebound, err = bindFlowEntry(ctx, rebound)
 	if err != nil {
 		return commandOptions{}, false, err
+	}
+	parameters, err := parseParameters(rebound.parameters)
+	if err != nil {
+		return commandOptions{}, false, err
+	}
+	if fingerprint, ok := parameters.Get(authorityParameter); !ok || fingerprint == "" {
+		return bound, false, nil
 	}
 	return rebound, true, nil
 }

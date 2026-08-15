@@ -81,12 +81,6 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	if err != nil {
 		return commandOptions{}, err
 	}
-	options.workInputs = map[string]string{}
-	for _, input := range entry.Inputs {
-		if plan != "" {
-			options.workInputs[input.ID] = plan
-		}
-	}
 	planFingerprint := ""
 	if plan != "" {
 		planRaw, readErr := os.ReadFile(plan)
@@ -101,6 +95,12 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		}
 	} else if options.runID == "" {
 		return commandOptions{}, fmt.Errorf("FLOW_ACTIVE_RUN_INVALID: active abandonment has no committed run identity")
+	}
+	options.workInputs = map[string]protocol.WorkInputValue{}
+	for _, input := range entry.Inputs {
+		if plan != "" {
+			options.workInputs[input.ID] = protocol.WorkInputValue{Value: plan, Fingerprint: planFingerprint}
+		}
 	}
 	options.repository = repository
 	if options.targetID == "" {
@@ -430,20 +430,27 @@ func bindStateOwnedTransitionParameters(options commandOptions, state durable.St
 	if err != nil {
 		return commandOptions{}, err
 	}
-	var name, value string
+	bindings := [][2]string{}
 	switch options.transitionID {
 	case "workspace.activate", "workspace.sync", "workspace.publish":
-		name, value = "branch", state.WorkspaceBranch
+		bindings = append(bindings, [2]string{"branch", state.WorkspaceBranch})
 	case "publication.execute":
-		name, value = "preview_fingerprint", state.PreviewFingerprint
+		bindings = append(bindings, [2]string{"preview_fingerprint", state.PreviewFingerprint})
 	case "publication.observe":
-		name, value = "publication_id", state.PublicationID
+		bindings = append(bindings, [2]string{"publication_id", state.PublicationID})
+	case "publication.reconcile":
+		bindings = append(bindings,
+			[2]string{"publication_id", state.PublicationID},
+			[2]string{"transaction_id", state.TransactionID},
+		)
 	}
-	if name == "" || value == "" {
-		return options, nil
-	}
-	if err := bindResolvedParameter(&options, parameters, name, value); err != nil {
-		return commandOptions{}, err
+	for _, binding := range bindings {
+		if binding[1] == "" {
+			continue
+		}
+		if err := bindResolvedParameter(&options, parameters, binding[0], binding[1]); err != nil {
+			return commandOptions{}, err
+		}
 	}
 	return options, nil
 }

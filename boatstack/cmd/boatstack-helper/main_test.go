@@ -105,7 +105,7 @@ func TestCallerCannotSupplyExternalProviderAuthority(t *testing.T) {
 	}
 }
 
-func TestPublicationRequestDerivesStableTrustedProviderAuthority(t *testing.T) {
+func TestPublicationRequestsDeriveTrustedProviderAuthorityFromCatalogBinding(t *testing.T) {
 	prior := resolveGitHubProviderAuthority
 	resolveGitHubProviderAuthority = func(_ context.Context, _ string, fingerprint string, now time.Time) (protocol.AuthorityReceipt, error) {
 		return protocol.AuthorityReceipt{
@@ -114,22 +114,36 @@ func TestPublicationRequestDerivesStableTrustedProviderAuthority(t *testing.T) {
 		}, nil
 	}
 	t.Cleanup(func() { resolveGitHubProviderAuthority = prior })
-	options := commandOptions{
-		repository: ".", transitionID: "publication.execute",
-		parameters: stringList{"preview_fingerprint=" + strings.Repeat("a", 64)},
+	for transition, parameter := range map[string]string{
+		"publication.execute":   "preview_fingerprint=" + strings.Repeat("a", 64),
+		"publication.correct":   "body_sha256=" + strings.Repeat("b", 64),
+		"publication.reconcile": "publication_id=123",
+	} {
+		t.Run(transition, func(t *testing.T) {
+			options := commandOptions{repository: ".", transitionID: transition, parameters: stringList{parameter}}
+			one, err := buildRequest(surfaces.OperationResolve, options)
+			if err != nil {
+				t.Fatal(err)
+			}
+			two, err := buildRequest(surfaces.OperationApply, options)
+			if err != nil {
+				t.Fatal(err)
+			}
+			oneFingerprint, _ := one.Authority.Fingerprint()
+			twoFingerprint, _ := two.Authority.Fingerprint()
+			if len(one.Authority.Receipts) != 1 || one.Authority.Receipts[0].Class != catalog.AuthorityProvider || one.Authority.Receipts[0].Fingerprint != strings.SplitN(parameter, "=", 2)[1] || oneFingerprint != twoFingerprint {
+				t.Fatalf("provider authority was not catalog-bound and stable: one=%#v two=%#v", one.Authority, two.Authority)
+			}
+		})
 	}
-	one, err := buildRequest(surfaces.OperationResolve, options)
+	request, err := buildRequest(surfaces.OperationResolve, commandOptions{
+		repository: ".", transitionID: "publication.observe", parameters: stringList{"publication_id=123"},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	two, err := buildRequest(surfaces.OperationApply, options)
-	if err != nil {
-		t.Fatal(err)
-	}
-	oneFingerprint, _ := one.Authority.Fingerprint()
-	twoFingerprint, _ := two.Authority.Fingerprint()
-	if len(one.Authority.Receipts) != 1 || one.Authority.Receipts[0].Class != catalog.AuthorityProvider || oneFingerprint != twoFingerprint {
-		t.Fatalf("provider authority was not stable: one=%#v two=%#v", one.Authority, two.Authority)
+	if len(request.Authority.Receipts) != 0 {
+		t.Fatalf("transition without a trusted provider binding derived authority: %#v", request.Authority)
 	}
 }
 

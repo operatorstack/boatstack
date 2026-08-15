@@ -77,7 +77,7 @@ type commandOptions struct {
 	delegationAuthorities               stringList
 	delegationDescription               string
 	delegationRequest                   delegation.Request
-	workInputs                          map[string]string
+	workInputs                          map[string]protocol.WorkInputValue
 	workID                              string
 	workQuestionPrompt                  string
 	workQuestionSchemaPath              string
@@ -572,10 +572,14 @@ func buildRequest(operation surfaces.Operation, options commandOptions) (surface
 	if err != nil {
 		return surfaces.Request{}, err
 	}
-	if options.transitionID == "publication.execute" {
-		previewFingerprint, ok := parameters.Get("preview_fingerprint")
-		if ok && previewFingerprint != "" {
-			receipt, resolveErr := resolveGitHubProviderAuthority(context.Background(), options.repository, previewFingerprint, now)
+	authorityParameter, resolveErr := trustedProviderAuthorityParameter(context.Background(), options.transitionID)
+	if resolveErr != nil {
+		return surfaces.Request{}, resolveErr
+	}
+	if authorityParameter != "" {
+		fingerprint, ok := parameters.Get(authorityParameter)
+		if ok && fingerprint != "" {
+			receipt, resolveErr := resolveGitHubProviderAuthority(context.Background(), options.repository, fingerprint, now)
 			if resolveErr != nil {
 				return surfaces.Request{}, resolveErr
 			}

@@ -111,7 +111,7 @@ func NewManager(resolver ports.InvocationResolver, locker ports.Locker, clock po
 	return Manager{resolver: resolver, locker: locker, clock: clock, store: store}, nil
 }
 
-func (m Manager) Ensure(ctx context.Context, invocation model.InvocationContext, runID, programID, entryID string, objective model.Objective, snapshot model.Snapshot, transition catalog.Transition, values map[string]string) (Record, error) {
+func (m Manager) Ensure(ctx context.Context, invocation model.InvocationContext, runID, programID, entryID string, objective model.Objective, snapshot model.Snapshot, transition catalog.Transition, values map[string]protocol.WorkInputValue) (Record, error) {
 	if transition.Work == nil || runID == "" || programID == "" || entryID == "" {
 		return Record{}, fmt.Errorf("foreground work request requires run, program, entry, and contract")
 	}
@@ -285,18 +285,17 @@ func (m Manager) mutate(ctx context.Context, invocation model.InvocationContext,
 	return next, nil
 }
 
-func newRequest(store ports.RuntimeStore, layout ports.ControllerLayout, now time.Time, runID, programID, entryID string, objective model.Objective, snapshot model.Snapshot, transition catalog.Transition, values map[string]string) (Request, error) {
+func newRequest(store ports.RuntimeStore, layout ports.ControllerLayout, now time.Time, runID, programID, entryID string, objective model.Objective, snapshot model.Snapshot, transition catalog.Transition, values map[string]protocol.WorkInputValue) (Request, error) {
 	work := *transition.Work
 	bindings := make([]InputBinding, 0, len(work.Inputs))
 	for _, input := range work.Inputs {
 		value, ok := values[input.EntryInput]
-		if !ok || strings.TrimSpace(value) == "" {
+		if !ok || value.Validate() != nil {
 			return Request{}, fmt.Errorf("foreground work input %q is not bound by entry input %q", input.ID, input.EntryInput)
 		}
-		bindings = append(bindings, InputBinding{ID: input.ID, EntryInput: input.EntryInput, Value: value, Fingerprint: digest([]byte(value))})
+		bindings = append(bindings, InputBinding{ID: input.ID, EntryInput: input.EntryInput, Value: value.Value, Fingerprint: value.Fingerprint})
 	}
 	sort.Slice(bindings, func(i, j int) bool { return bindings[i].ID < bindings[j].ID })
-	staging := filepath.Join(layout.FlowRoot, "work", runID, work.ID, "staging")
 	contextFingerprint, err := model.ForegroundWorkContextFingerprint(snapshot)
 	if err != nil {
 		return Request{}, fmt.Errorf("foreground work context fingerprint: %w", err)
@@ -305,15 +304,17 @@ func newRequest(store ports.RuntimeStore, layout ports.ControllerLayout, now tim
 		RunID: runID, ProgramID: programID, EntryID: entryID, Objective: objective, TransitionID: transition.ID, Contract: work, Inputs: bindings,
 		RepositoryID: snapshot.Invocation.RepositoryID, GitCommonID: snapshot.Invocation.GitCommonID, WorktreeID: snapshot.Invocation.WorktreeID, Ref: snapshot.Invocation.Ref,
 		ProgramFingerprint: snapshot.ProgramFingerprint, ContextFingerprint: contextFingerprint, StateRevision: snapshot.StateRevision,
-		InstructionContent: work.InstructionContent, StagingRoot: staging, CreatedAt: now.UTC(),
+		InstructionContent: work.InstructionContent, CreatedAt: now.UTC(),
 	}
 	identity := request
-	identity.ID, identity.Fingerprint, identity.CreatedAt = "", "", time.Time{}
+	identity.ID, identity.Fingerprint, identity.StagingRoot, identity.CreatedAt = "", "", "", time.Time{}
 	fingerprint, err := general.Fingerprint(identity)
 	if err != nil {
 		return Request{}, err
 	}
 	request.Fingerprint, request.ID = fingerprint, "work-"+fingerprint[:24]
+	staging := filepath.Join(layout.FlowRoot, "work", runID, work.ID, "requests", fingerprint, "staging")
+	request.StagingRoot = staging
 	if err := store.EnsureDirectory(staging, 0o700); err != nil {
 		return Request{}, err
 	}
@@ -444,9 +445,10 @@ func load(path string) (Record, error) {
 	}
 	identity := record.Request
 	wantID, wantFingerprint := identity.ID, identity.Fingerprint
-	identity.ID, identity.Fingerprint, identity.CreatedAt = "", "", time.Time{}
+	identity.ID, identity.Fingerprint, identity.StagingRoot, identity.CreatedAt = "", "", "", time.Time{}
 	fingerprint, err := general.Fingerprint(identity)
-	if err != nil || fingerprint != wantFingerprint || wantID != "work-"+fingerprint[:24] {
+	expectedStaging := filepath.Join(filepath.Dir(path), "requests", fingerprint, "staging")
+	if err != nil || fingerprint != wantFingerprint || wantID != "work-"+fingerprint[:24] || record.Request.StagingRoot != expectedStaging {
 		return Record{}, fmt.Errorf("foreground work request fingerprint is invalid")
 	}
 	if record.Result != nil {
