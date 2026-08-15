@@ -522,7 +522,8 @@ func planningPackageOutputPath(root, relative string) (string, error) {
 }
 
 func loadPlanningPackageManifest(artifactRoot, deliveryID string) (planningPackageManifest, []byte, error) {
-	path := filepath.Join(artifactRoot, "planning-packages", deliveryID, "manifest.json")
+	packageRoot := filepath.Join(artifactRoot, "planning-packages", deliveryID)
+	path := filepath.Join(packageRoot, "manifest.json")
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return planningPackageManifest{}, nil, fmt.Errorf("read planning package manifest: %w", err)
@@ -537,7 +538,42 @@ func loadPlanningPackageManifest(artifactRoot, deliveryID string) (planningPacka
 	if err != nil || sha256Bytes(identityRaw) != manifest.Fingerprint {
 		return planningPackageManifest{}, nil, fmt.Errorf("planning package manifest fingerprint is invalid")
 	}
+	if err := validatePlanningPackageOutputs(packageRoot, manifest); err != nil {
+		return planningPackageManifest{}, nil, err
+	}
 	return manifest, raw, nil
+}
+
+func validatePlanningPackageOutputs(packageRoot string, manifest planningPackageManifest) error {
+	seenIDs, seenPaths := map[string]bool{}, map[string]bool{}
+	planFound := false
+	for _, output := range manifest.Outputs {
+		if output.ID == "" || output.MediaType == "" || len(output.SHA256) != 64 || output.Size < 0 || seenIDs[output.ID] || seenPaths[output.Path] {
+			return fmt.Errorf("planning package manifest output is invalid")
+		}
+		seenIDs[output.ID], seenPaths[output.Path] = true, true
+		path, err := planningPackageOutputPath(packageRoot, output.Path)
+		if err != nil {
+			return err
+		}
+		raw, err := readRegularWorkspacePlanArtifact(path)
+		if err != nil {
+			return fmt.Errorf("planning package output %q: %w", output.ID, err)
+		}
+		if int64(len(raw)) != output.Size || sha256Bytes(raw) != output.SHA256 {
+			return fmt.Errorf("planning package output %q changed after admission", output.ID)
+		}
+		if output.ID == "plan" {
+			planFound = true
+			if output.SHA256 != manifest.PlanFingerprint {
+				return fmt.Errorf("planning package plan does not match the manifest")
+			}
+		}
+	}
+	if !planFound {
+		return fmt.Errorf("planning package manifest has no plan output")
+	}
+	return nil
 }
 
 func authorityActor(admission protocol.Admission) string {

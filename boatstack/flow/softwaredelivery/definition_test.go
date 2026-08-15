@@ -2,6 +2,8 @@ package softwaredelivery_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"testing"
 
@@ -234,6 +236,36 @@ func TestRepositoryTransitionMustMatchTrustedBindingIdentity(t *testing.T) {
 	}
 	if err == nil || !strings.Contains(err.Error(), "does not match trusted binding identity") {
 		t.Fatalf("transition alias result = %v", err)
+	}
+}
+
+func TestForegroundWorkInputsMustExistOnEveryReachableEntry(t *testing.T) {
+	// control-law: a selected entry cannot reach work whose inputs it cannot bind
+	truth := true
+	compiled, resolver := compiledFlow(t, controlprogram.Predicate{True: &truth})
+	document := compiled.Document
+	document.Entries = []controlprogram.Entry{
+		{ID: "run", Target: "published-pr", Inputs: []controlprogram.EntryInput{{ID: "plan", Type: "markdown-file"}}},
+		{ID: "retry", Target: "published-pr"},
+	}
+	instructions := "Inspect the exact repository plan."
+	digest := sha256.Sum256([]byte(instructions))
+	document.Work = []controlprogram.WorkContract{{
+		ID: "planning", Instructions: controlprogram.WorkAsset{Path: "planning.md", SHA256: hex.EncodeToString(digest[:]), Content: instructions},
+		Inputs:  []controlprogram.WorkInput{{ID: "plan", EntryInput: "plan"}},
+		Outputs: []controlprogram.WorkOutput{{ID: "result", Path: "result.md", MediaType: "text/markdown", Required: true}},
+	}}
+	document.Transitions[0].Work = "planning"
+	unsafe, err := controlprogram.Compile(document, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, err := softwareflow.NewDefinition(unsafe, resolver)
+	if err == nil {
+		_, err = definition.RuntimeManifest(context.Background())
+	}
+	if err == nil || !strings.Contains(err.Error(), `reachable entry "retry" does not declare it`) {
+		t.Fatalf("reachable missing input result = %v", err)
 	}
 }
 

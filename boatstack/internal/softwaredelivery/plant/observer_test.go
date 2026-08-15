@@ -30,10 +30,15 @@ func TestObserverValidatesAdmittedPlanningPackageWithoutPrematurePlanPromotion(t
 		t.Fatal(err)
 	}
 	plan := []byte("# Proposed plan\n")
+	feature := []byte("# Feature specification\n")
 	planFingerprint := hashBytes(plan)
+	featureFingerprint := hashBytes(feature)
 	manifest := observedPlanningPackageManifest{
 		SchemaVersion: 1, DeliveryID: deliveryID, WorkRequestFingerprint: strings.Repeat("a", 64), WorkResultFingerprint: strings.Repeat("b", 64),
-		PlanFingerprint: planFingerprint, Outputs: []observedPlanningPackageOutput{{ID: "plan", Path: "plan.md", MediaType: "text/markdown", SHA256: planFingerprint, Size: int64(len(plan))}},
+		PlanFingerprint: planFingerprint, Outputs: []observedPlanningPackageOutput{
+			{ID: "plan", Path: "plan.md", MediaType: "text/markdown", SHA256: planFingerprint, Size: int64(len(plan))},
+			{ID: "feature-spec", Path: "feature-spec.md", MediaType: "text/markdown", SHA256: featureFingerprint, Size: int64(len(feature))},
+		},
 	}
 	identityRaw, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -48,6 +53,9 @@ func TestObserverValidatesAdmittedPlanningPackageWithoutPrematurePlanPromotion(t
 	if err := os.WriteFile(filepath.Join(root, "plan.md"), plan, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(root, "feature-spec.md"), feature, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(root, "manifest.json"), manifestRaw, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -56,13 +64,13 @@ func TestObserverValidatesAdmittedPlanningPackageWithoutPrematurePlanPromotion(t
 		Objective: model.Objective{ID: "objective", TargetID: model.ObjectiveOpenPR, DeliveryID: deliveryID},
 	}
 	evidence, valid, err := observePlanningPackage(ports.ControllerLayout{RepositoryRoot: repository}, state, time.Unix(100, 0).UTC())
-	if err != nil || !valid || len(evidence) != 2 {
+	if err != nil || !valid || len(evidence) != 3 {
 		t.Fatalf("planning package observation valid=%t evidence=%#v err=%v", valid, evidence, err)
 	}
 	if _, err := os.Stat(filepath.Join(repository, ".boatstack", "plans", deliveryID+".source")); !os.IsNotExist(err) {
 		t.Fatalf("admission prematurely created a canonical plan: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "plan.md"), []byte("tampered"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "feature-spec.md"), []byte("tampered"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, valid, err := observePlanningPackage(ports.ControllerLayout{RepositoryRoot: repository}, state, time.Unix(101, 0).UTC()); err != nil || valid {

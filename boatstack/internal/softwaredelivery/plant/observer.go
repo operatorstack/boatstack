@@ -110,7 +110,7 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 					return model.Observation{}, readPinErr
 				}
 				pin, decodePinErr := boatstackruntime.DecodePin(pinRaw)
-				if decodePinErr == nil && pin.StateSchemaVersion == durable.StateSchemaVersion &&
+				if decodePinErr == nil && durable.CanReadStateSchema(pin.StateSchemaVersion) &&
 					pin.Version == current.RuntimeVersion && pin.SHA256 == current.RuntimeFingerprint {
 					home, homeErr := boatstackruntime.Home("")
 					if homeErr != nil {
@@ -144,7 +144,7 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 		}
 		pin, decodePinErr := boatstackruntime.DecodePin(pinRaw)
 		identity := boatstackruntime.Identity{Version: state.RuntimeVersion, SHA256: state.RuntimeFingerprint, SourceRevision: state.RuntimeSource}
-		if decodePinErr != nil || pin.Identity() != identity || pin.ProgramFingerprint != state.ProgramFingerprint || pin.StateSchemaVersion != durable.StateSchemaVersion {
+		if decodePinErr != nil || pin.Identity() != identity || pin.ProgramFingerprint != state.ProgramFingerprint || !durable.CanReadStateSchema(pin.StateSchemaVersion) {
 			runtimeState = model.RuntimeConflicting
 		} else {
 			home, homeErr := boatstackruntime.Home("")
@@ -696,29 +696,36 @@ func observePlanningPackage(layout ports.ControllerLayout, state durable.State, 
 		identityRaw = append(identityRaw, '\n')
 		valid = hashBytes(identityRaw) == manifest.Fingerprint && manifestFileFingerprint == hashBytes(manifestRaw)
 	}
-	planPath := ""
-	seen := map[string]bool{}
+	planFound := false
+	seen, seenPaths := map[string]bool{}, map[string]bool{}
 	for _, output := range manifest.Outputs {
 		clean := filepath.Clean(filepath.FromSlash(output.Path))
 		if output.ID == "" || output.Path == "" || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) ||
-			output.MediaType == "" || len(output.SHA256) != 64 || output.Size < 0 || seen[output.ID] {
+			filepath.ToSlash(clean) != output.Path || output.MediaType == "" || len(output.SHA256) != 64 || output.Size < 0 || seen[output.ID] || seenPaths[clean] {
 			valid = false
 			continue
 		}
-		seen[output.ID] = true
+		seen[output.ID], seenPaths[clean] = true, true
+		outputPath := filepath.Join(root, clean)
+		outputEvidence, fingerprint, exists, outputErr := fileEvidence(outputPath, "planning-package-output-"+output.ID, now)
+		evidence = append(evidence, outputEvidence)
+		if outputErr != nil {
+			return evidence, false, outputErr
+		}
+		info, statErr := os.Lstat(outputPath)
+		if statErr != nil && !os.IsNotExist(statErr) {
+			return evidence, false, statErr
+		}
+		regular := statErr == nil && info.Mode().IsRegular()
+		sizeMatches := regular && info.Size() == output.Size
+		valid = valid && exists && regular && sizeMatches && fingerprint == output.SHA256
 		if output.ID == "plan" {
-			planPath = clean
+			planFound = true
+			valid = valid && output.SHA256 == manifest.PlanFingerprint
 		}
 	}
-	if planPath == "" {
+	if !planFound {
 		valid = false
-	} else {
-		planEvidence, fingerprint, planExists, planErr := fileEvidence(filepath.Join(root, planPath), "planning-package-plan", now)
-		evidence = append(evidence, planEvidence)
-		if planErr != nil {
-			return evidence, false, planErr
-		}
-		valid = valid && planExists && fingerprint == manifest.PlanFingerprint
 	}
 	if state.Plan == model.PlanPackageApproved {
 		approvalPath := filepath.Join(root, "approval.json")

@@ -12,7 +12,16 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 )
 
-const StateSchemaVersion = 5
+const (
+	StateSchemaVersion      = 5
+	priorStateSchemaVersion = 4
+)
+
+// CanReadStateSchema reports the current schema and its single supported
+// forward-migration predecessor. Older or future schemas remain fail-closed.
+func CanReadStateSchema(version int) bool {
+	return version == StateSchemaVersion || version == priorStateSchemaVersion
+}
 
 type GateEvidence struct {
 	Gate        string `json:"gate"`
@@ -197,6 +206,16 @@ func DecodeState(value []byte) (State, error) {
 	var trailing any
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return State{}, fmt.Errorf("durable state contains trailing JSON")
+	}
+	if state.SchemaVersion == priorStateSchemaVersion {
+		// Schema 5 adds only planning-package state. Promote a genuine schema-4
+		// value in memory so observation can select the transactional runtime
+		// update. The prior bytes remain the journal rollback source until that
+		// update commits.
+		if state.PlanningPackageFingerprint != "" || state.Plan == model.PlanPackageApproved {
+			return State{}, fmt.Errorf("durable state schema %d contains schema %d planning-package fields", priorStateSchemaVersion, StateSchemaVersion)
+		}
+		state.SchemaVersion = StateSchemaVersion
 	}
 	if err := state.Validate(); err != nil {
 		return State{}, err

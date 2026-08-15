@@ -6,6 +6,11 @@ validates the result as evidence, and still admits effects only through trusted
 operators. The software-delivery adapter also provides optional planning-package
 admission, approval, and promotion operations.
 
+The runtime performs a one-step, transactional schema-4 state upgrade and
+verifies every declared planning-package output before approval. Trusted
+software-delivery lowering also rejects work inputs that any reachable entry
+cannot bind.
+
 Fresh delegated runs now bootstrap verified runtime and configuration state
 before deriving repository-policy authority. An exact autonomy delegation may
 perform that local initialization, while transitions requiring repository

@@ -53,6 +53,16 @@ func TestPlanningPackageAdmitApprovePromoteUsesExactWorkEvidence(t *testing.T) {
 		ID: "adm-approve", Objective: objective, IssuedAt: now.Add(time.Minute), Parameters: protocol.Parameters{{Name: "package_fingerprint", Value: manifest.Fingerprint}},
 		Authority: protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{ID: "auth", Class: catalog.AuthorityHuman, Subject: "reviewer"}}},
 	}
+	featurePath := filepath.Join(repository, ".boatstack", "planning-packages", "delivery", "feature-spec.md")
+	if err := os.WriteFile(featurePath, []byte("tampered"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := prepareArtifacts(layout, admission, approve, &state); err == nil || !strings.Contains(err.Error(), `output "feature-spec" changed after admission`) {
+		t.Fatalf("changed non-plan output approval result = %v", err)
+	}
+	if err := os.WriteFile(featurePath, []byte(feature), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := applyStateTransition(&state, admission, approve); err != nil {
 		t.Fatal(err)
 	}
@@ -91,11 +101,16 @@ func TestPlanningPackageApprovalRejectsFingerprintDrift(t *testing.T) {
 	if err := os.MkdirAll(manifestRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	manifest := planningPackageManifest{SchemaVersion: 1, DeliveryID: "delivery", WorkRequestFingerprint: strings.Repeat("a", 64), WorkResultFingerprint: strings.Repeat("b", 64), PlanFingerprint: strings.Repeat("c", 64), Outputs: []planningPackageOutput{{ID: "plan", Path: "plan.md", MediaType: "text/markdown", SHA256: strings.Repeat("c", 64), Size: 1}}}
+	plan := []byte("p")
+	planFingerprint := sha256Bytes(plan)
+	manifest := planningPackageManifest{SchemaVersion: 1, DeliveryID: "delivery", WorkRequestFingerprint: strings.Repeat("a", 64), WorkResultFingerprint: strings.Repeat("b", 64), PlanFingerprint: planFingerprint, Outputs: []planningPackageOutput{{ID: "plan", Path: "plan.md", MediaType: "text/markdown", SHA256: planFingerprint, Size: int64(len(plan))}}}
 	identityRaw, _ := encodeJSON(manifest)
 	manifest.Fingerprint = sha256Bytes(identityRaw)
 	raw, _ := encodeJSON(manifest)
 	if err := os.WriteFile(filepath.Join(manifestRoot, "manifest.json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(manifestRoot, "plan.md"), plan, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	state := durable.State{Plan: model.PlanPackageApproved}

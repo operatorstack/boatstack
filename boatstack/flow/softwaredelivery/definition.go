@@ -53,12 +53,14 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 	}
 	objectives := map[model.TargetID]EntryObjective{}
 	contracts := map[model.TargetID]delivery.ObjectiveContract{}
+	entriesByTarget := map[model.TargetID][]controlprogram.Entry{}
 	for _, entry := range d.compiled.Document.Entries {
 		objective, objectiveErr := objectiveContractForEntry(d.compiled, base, entry.ID)
 		if objectiveErr != nil {
 			return delivery.ProgramRuntimeManifest{}, objectiveErr
 		}
 		objectives[objective.TargetID], contracts[objective.TargetID] = objective, objective.Contract
+		entriesByTarget[objective.TargetID] = append(entriesByTarget[objective.TargetID], entry)
 	}
 
 	selected := make([]delivery.Transition, 0, len(d.compiled.Document.Transitions))
@@ -123,6 +125,9 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 			transition.SelectionClass = delivery.SelectionProgramProgress
 		}
 		sort.Slice(transition.TargetIDs, func(i, j int) bool { return transition.TargetIDs[i] < transition.TargetIDs[j] })
+		if err := requireReachableEntryInputs(transition, entriesByTarget); err != nil {
+			return delivery.ProgramRuntimeManifest{}, err
+		}
 		selected = append(selected, transition)
 	}
 	if len(selected) == 0 {
@@ -149,6 +154,26 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 	base.Transitions, base.OwnedResources, base.Effects, base.Verifiers = selected, resources, effects, verifiers
 	base.Capabilities, base.RecoveryTransitions, base.Settings = capabilities, recoveries, settings
 	return base, nil
+}
+
+func requireReachableEntryInputs(transition delivery.Transition, entriesByTarget map[model.TargetID][]controlprogram.Entry) error {
+	if transition.Work == nil || len(transition.Work.Inputs) == 0 {
+		return nil
+	}
+	for _, targetID := range transition.TargetIDs {
+		for _, entry := range entriesByTarget[targetID] {
+			declared := map[string]bool{}
+			for _, input := range entry.Inputs {
+				declared[input.ID] = true
+			}
+			for _, input := range transition.Work.Inputs {
+				if !declared[input.EntryInput] {
+					return fmt.Errorf("transition %q foreground work %q requires entry input %q, but reachable entry %q does not declare it", transition.ID, transition.Work.ID, input.EntryInput, entry.ID)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func runtimeWorkContract(declaration controlprogram.WorkContract) (*delivery.WorkContract, error) {
