@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	StateSchemaVersion      = 5
-	priorStateSchemaVersion = 4
+	StateSchemaVersion      = 6
+	priorStateSchemaVersion = 5
 )
 
 // CanReadStateSchema reports the current schema and its single supported
@@ -35,6 +35,7 @@ type State struct {
 	GitCommonID                string                   `json:"git_common_id"`
 	WorktreeID                 string                   `json:"worktree_id"`
 	ProgramFingerprint         string                   `json:"program_fingerprint,omitempty"`
+	ControlBundleFingerprint   string                   `json:"control_bundle_fingerprint,omitempty"`
 	Revision                   uint64                   `json:"revision"`
 	Phase                      model.ProtocolPhase      `json:"phase"`
 	Engagement                 model.EngagementState    `json:"engagement"`
@@ -112,6 +113,9 @@ func (s State) Validate() error {
 	}
 	if s.ProgramFingerprint != "" && len(s.ProgramFingerprint) != 64 {
 		return fmt.Errorf("durable state has invalid program fingerprint")
+	}
+	if s.ControlBundleFingerprint != "" && len(s.ControlBundleFingerprint) != 64 {
+		return fmt.Errorf("durable state has invalid control-bundle fingerprint")
 	}
 	if s.PlanningPackageFingerprint != "" && len(s.PlanningPackageFingerprint) != 64 {
 		return fmt.Errorf("durable state has invalid planning package fingerprint")
@@ -208,12 +212,10 @@ func DecodeState(value []byte) (State, error) {
 		return State{}, fmt.Errorf("durable state contains trailing JSON")
 	}
 	if state.SchemaVersion == priorStateSchemaVersion {
-		// Schema 5 adds only planning-package state. Promote a genuine schema-4
-		// value in memory so observation can select the transactional runtime
-		// update. The prior bytes remain the journal rollback source until that
-		// update commits.
-		if state.PlanningPackageFingerprint != "" || state.Plan == model.PlanPackageApproved {
-			return State{}, fmt.Errorf("durable state schema %d contains schema %d planning-package fields", priorStateSchemaVersion, StateSchemaVersion)
+		// Schema 6 adds only the optional control-bundle identity. The prior
+		// bytes remain the journal rollback source until a transition commits.
+		if state.ControlBundleFingerprint != "" {
+			return State{}, fmt.Errorf("durable state schema %d contains schema %d control-bundle fields", priorStateSchemaVersion, StateSchemaVersion)
 		}
 		state.SchemaVersion = StateSchemaVersion
 	}

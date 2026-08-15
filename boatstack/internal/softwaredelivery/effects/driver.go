@@ -69,6 +69,11 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 	if currentInvocation.RepositoryID != admission.Invocation.RepositoryID || currentInvocation.GitCommonID != admission.Invocation.GitCommonID || currentInvocation.WorktreeID != admission.Invocation.WorktreeID {
 		return nil, fmt.Errorf("effect invocation identity changed before preparation")
 	}
+	if admission.ControlBundle != nil {
+		if err := boatstackruntime.VerifyControlBundleRoot(layout.RepositoryRoot, admission.ControlBundle.Source); err != nil {
+			return nil, err
+		}
+	}
 	if transition.ID == "recovery.resume" || transition.ID == "recovery.rollback" || transition.ID == "workspace.reconcile" {
 		prepared, prepareErr := d.prepareRecoveryReplay(ctx, layout, admission, transition)
 		if prepareErr != nil {
@@ -109,10 +114,21 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 	if err := d.verifyClearedWorkspaceDestination(ctx, state, admission, transition); err != nil {
 		return nil, err
 	}
+	if admission.ControlBundle != nil && admission.ControlBundle.Target != nil && (transition.ID == "workspace.cleanup" || transition.ID == "workspace.reap") {
+		if err := boatstackruntime.VerifyControlBundleRoot(state.WorkspaceSourcePath, *admission.ControlBundle.Target); err != nil {
+			return nil, fmt.Errorf("CONTROL_BUNDLE_TARGET_STALE: preserved source checkout: %w", err)
+		}
+	}
 	if err := verifyRuntimeParameters(admission, transition); err != nil {
 		return nil, err
 	}
 	next := state
+	if admission.ControlBundle != nil {
+		next.ControlBundleFingerprint = admission.ControlBundle.Source.Fingerprint
+		if admission.ControlBundle.Target != nil {
+			next.ControlBundleFingerprint = admission.ControlBundle.Target.Fingerprint
+		}
+	}
 	if next.ProgramFingerprint == "" {
 		next.ProgramFingerprint = admission.ExpectedProgramFingerprint
 	}
@@ -178,12 +194,6 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 	}
 	if transitionSetsRuntimePin(transition.ID) || transition.ID == "catalog.reconcile" {
 		pinMutation, pinErr := prepareRuntimePinMutation(layout.RepositoryRoot, next)
-		if pinErr != nil {
-			return nil, pinErr
-		}
-		mutations = append(mutations, pinMutation)
-	} else if transition.ID == "workspace.cut" {
-		pinMutation, pinErr := prepareRuntimePinMutation(next.WorkspacePath, next)
 		if pinErr != nil {
 			return nil, pinErr
 		}
@@ -294,6 +304,23 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 	}
 	mutations = annotateStateFacetMutations(mutations, changedFacets)
 	prepared := &preparedEffect{mutations: mutations, verifyInvocation: verificationInvocation, changedStateFacets: changedFacets}
+	if admission.ControlBundle != nil && admission.ControlBundle.Target != nil {
+		targetRoot := layout.RepositoryRoot
+		switch transition.ID {
+		case "workspace.cut":
+			targetRoot = next.WorkspacePath
+		case "workspace.cleanup", "workspace.reap":
+			targetRoot = state.WorkspaceSourcePath
+		}
+		target := *admission.ControlBundle.Target
+		targetRevision := admission.ControlBundle.TargetRevision
+		prepared.postVerify = func(ctx context.Context) error {
+			if transition.ID == "workspace.cut" {
+				return boatstackruntime.VerifyControlBundleHead(ctx, targetRoot, targetRevision, target)
+			}
+			return boatstackruntime.VerifyControlBundleRoot(targetRoot, target)
+		}
+	}
 	if err := bindPreparedCapabilities(prepared, admission, transition); err != nil {
 		return nil, err
 	}

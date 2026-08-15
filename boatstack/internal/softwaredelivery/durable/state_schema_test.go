@@ -37,7 +37,7 @@ func TestStateSchemaPermitsLegacyApprovedStateWithoutApprovalFingerprint(t *test
 	}
 }
 
-func TestDecodeStatePromotesSchemaFourWithoutChangingPriorBytes(t *testing.T) {
+func TestDecodeStatePromotesSchemaFiveWithoutChangingPriorBytes(t *testing.T) {
 	// control-law: forward state migration is read-only until a transaction commits
 	state := State{
 		SchemaVersion: StateSchemaVersion, RepositoryID: "repo", GitCommonID: "common", WorktreeID: "worktree", Revision: 7,
@@ -55,7 +55,7 @@ func TestDecodeStatePromotesSchemaFourWithoutChangingPriorBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 	legacy["schema_version"] = float64(priorStateSchemaVersion)
-	delete(legacy, "planning_package_fingerprint")
+	delete(legacy, "control_bundle_fingerprint")
 	prior, err := json.MarshalIndent(legacy, "", "  ")
 	if err != nil {
 		t.Fatal(err)
@@ -75,9 +75,9 @@ func TestDecodeStatePromotesSchemaFourWithoutChangingPriorBytes(t *testing.T) {
 	}
 }
 
-func TestDecodeStateRejectsSchemaFourWithSchemaFivePlanningState(t *testing.T) {
-	raw := []byte(`{"schema_version":4,"repository_id":"repo","git_common_id":"common","worktree_id":"worktree","revision":1,"phase":"ACTIVE","engagement":"active","delivery":"approved","workspace":"absent","plan":"package-approved","configuration":"unsupported","runtime":"absent","publication":"none","verification":"unverified","recovery":"none","transaction":"none","terminal":"nonterminal","objective":{},"planning_package_fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","updated_at":"1970-01-01T00:00:01Z"}`)
+func TestDecodeStateRejectsSchemaFiveWithSchemaSixControlBundle(t *testing.T) {
+	raw := []byte(`{"schema_version":5,"repository_id":"repo","git_common_id":"common","worktree_id":"worktree","program_fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","control_bundle_fingerprint":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","revision":1,"phase":"ACTIVE","engagement":"active","delivery":"approved","workspace":"absent","plan":"approved","configuration":"unsupported","runtime":"absent","publication":"none","verification":"unverified","recovery":"none","transaction":"none","terminal":"nonterminal","objective":{},"updated_at":"1970-01-01T00:00:01Z"}`)
 	if _, err := DecodeState(raw); err == nil {
-		t.Fatal("schema-4 state smuggled schema-5 planning fields")
+		t.Fatal("schema-5 state smuggled schema-6 control-bundle fields")
 	}
 }

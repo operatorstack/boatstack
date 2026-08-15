@@ -126,7 +126,7 @@ func (k DeliveryController) Handle(ctx context.Context, request surfaces.Request
 	switch request.Operation {
 	case surfaces.OperationResolve, surfaces.OperationExplain:
 		explain := request.Operation == surfaces.OperationExplain
-		resolveRequest := engine.ResolveRequest{Invocation: invocation, Objective: request.Objective, Authority: request.Authority, Parameters: request.Parameters, Requested: request.TransitionID, Trace: explain}
+		resolveRequest := engine.ResolveRequest{Invocation: invocation, Objective: request.Objective, Authority: request.Authority, Parameters: request.Parameters, Requested: request.TransitionID, Trace: explain, ControlBundle: request.ControlBundle}
 		resolution, resolveErr := k.engine.Resolve(ctx, resolveRequest)
 		if !explain && resolveErr == nil && resolution.Decision.Kind == supervisor.DecisionCandidate && resolution.Decision.Transition != nil && resolution.Decision.Transition.Work != nil {
 			record, workErr := k.work.Ensure(ctx, invocation, request.FlowID, request.ProgramID, request.EntryID, resolution.Objective, resolution.Snapshot, *resolution.Decision.Transition, request.WorkInputs)
@@ -183,7 +183,7 @@ func (k DeliveryController) Handle(ctx context.Context, request surfaces.Request
 			work, response.Work = record.Result, &record
 		}
 		result, applyErr := k.engine.Apply(ctx, engine.ApplyRequest{
-			ResolveRequest: engine.ResolveRequest{Invocation: invocation, Objective: request.Objective, Authority: request.Authority, Requested: request.TransitionID, Work: work},
+			ResolveRequest: engine.ResolveRequest{Invocation: invocation, Objective: request.Objective, Authority: request.Authority, Requested: request.TransitionID, Work: work, ControlBundle: request.ControlBundle},
 			FlowID:         request.FlowID, Prescription: request.Prescription, Parameters: request.Parameters, IdempotencyKey: request.IdempotencyKey, AdmissionLifetime: 2 * time.Minute,
 		})
 		response.Prescription = &request.Prescription

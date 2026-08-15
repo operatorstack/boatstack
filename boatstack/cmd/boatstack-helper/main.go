@@ -85,6 +85,8 @@ type commandOptions struct {
 	workAnswerPath                      string
 	workBlockReason                     string
 	workResultFingerprint               string
+	controlBundle                       *boatstackruntime.ControlBundleContract
+	controlBundleFingerprint            string
 }
 
 func main() {
@@ -141,6 +143,11 @@ func run(arguments []string) error {
 	if err != nil {
 		return err
 	}
+	if request.ProgramID == "" {
+		if err := bindTrustedRequestControlBundle(context.Background(), &request); err != nil {
+			return err
+		}
+	}
 	delegationLock, delegationResponse, err := prepareDelegation(context.Background(), &request)
 	if err != nil {
 		return err
@@ -156,6 +163,9 @@ func run(arguments []string) error {
 		return err
 	}
 	defer lease.Release()
+	if err := verifyTrustedRequestControlBundle(request); err != nil {
+		return err
+	}
 	kernel, err := standardKernel(context.Background(), request)
 	if err != nil {
 		return err
@@ -219,6 +229,11 @@ func runRPC() error {
 	if err != nil {
 		return err
 	}
+	if request.ProgramID == "" {
+		if err := bindTrustedRequestControlBundle(context.Background(), &request); err != nil {
+			return err
+		}
+	}
 	delegationLock, delegationResponse, err := prepareDelegation(context.Background(), &request)
 	if err != nil {
 		return err
@@ -236,6 +251,9 @@ func runRPC() error {
 		return err
 	}
 	defer lease.Release()
+	if err := verifyTrustedRequestControlBundle(request); err != nil {
+		return err
+	}
 	kernel, err := standardKernel(context.Background(), request)
 	if err != nil {
 		return err
@@ -428,7 +446,7 @@ func standardKernel(ctx context.Context, request surfaces.Request) (boatstack.De
 }
 
 func acquireFlowExecutionLease(request surfaces.Request) (*boatstackruntime.FlowProjectionLease, error) {
-	if request.ProgramID == "" || (request.Operation != surfaces.OperationApply && request.Operation != surfaces.OperationRecover) {
+	if request.ProgramID == "" && request.ControlBundle == nil {
 		return &boatstackruntime.FlowProjectionLease{}, nil
 	}
 	return boatstackruntime.AcquireFlowProjectionLease(request.Repository)
@@ -623,6 +641,8 @@ func buildRequest(operation surfaces.Operation, options commandOptions) (surface
 		WorkQuestionPrompt:           options.workQuestionPrompt,
 		WorkQuestionID:               options.workQuestionID,
 		WorkBlockReason:              options.workBlockReason,
+		ControlBundle:                options.controlBundle,
+		ControlBundleFingerprint:     options.controlBundleFingerprint,
 	}, nil
 }
 

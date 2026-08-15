@@ -17,31 +17,32 @@ import (
 
 const (
 	Schema         = "run-delegation"
-	SchemaRevision = 1
+	SchemaRevision = 2
 )
 
 var identity = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 type Request struct {
-	RunID                string   `json:"run_id"`
-	ProgramID            string   `json:"program_id"`
-	ProgramFingerprint   string   `json:"program_fingerprint"`
-	EntryID              string   `json:"entry_id"`
-	TargetID             string   `json:"target_id"`
-	ObjectiveID          string   `json:"objective_id"`
-	DeliveryID           string   `json:"delivery_id"`
-	InputFingerprints    []string `json:"input_fingerprints"`
-	RepositoryID         string   `json:"repository_id"`
-	GitCommonID          string   `json:"git_common_id"`
-	InitialWorktreeID    string   `json:"initial_worktree_id"`
-	InitialRef           string   `json:"initial_ref"`
-	BindingFingerprint   string   `json:"binding_fingerprint"`
-	RequestedAuthorities []string `json:"requested_authorities"`
-	Description          string   `json:"description"`
+	RunID                    string   `json:"run_id"`
+	ProgramID                string   `json:"program_id"`
+	ProgramFingerprint       string   `json:"program_fingerprint"`
+	ControlBundleFingerprint string   `json:"control_bundle_fingerprint"`
+	EntryID                  string   `json:"entry_id"`
+	TargetID                 string   `json:"target_id"`
+	ObjectiveID              string   `json:"objective_id"`
+	DeliveryID               string   `json:"delivery_id"`
+	InputFingerprints        []string `json:"input_fingerprints"`
+	RepositoryID             string   `json:"repository_id"`
+	GitCommonID              string   `json:"git_common_id"`
+	InitialWorktreeID        string   `json:"initial_worktree_id"`
+	InitialRef               string   `json:"initial_ref"`
+	BindingFingerprint       string   `json:"binding_fingerprint"`
+	RequestedAuthorities     []string `json:"requested_authorities"`
+	Description              string   `json:"description"`
 }
 
 func (r Request) Fingerprint() (string, error) {
-	if !identity.MatchString(r.RunID) || !identity.MatchString(r.ProgramID) || len(r.ProgramFingerprint) != 64 || !identity.MatchString(r.EntryID) || !identity.MatchString(r.TargetID) || r.ObjectiveID == "" || r.DeliveryID == "" || r.RepositoryID == "" || r.GitCommonID == "" || r.InitialWorktreeID == "" || r.InitialRef == "" || len(r.BindingFingerprint) != 64 || len(r.RequestedAuthorities) == 0 || r.Description == "" {
+	if !identity.MatchString(r.RunID) || !identity.MatchString(r.ProgramID) || len(r.ProgramFingerprint) != 64 || len(r.ControlBundleFingerprint) != 64 || !identity.MatchString(r.EntryID) || !identity.MatchString(r.TargetID) || r.ObjectiveID == "" || r.DeliveryID == "" || r.RepositoryID == "" || r.GitCommonID == "" || r.InitialWorktreeID == "" || r.InitialRef == "" || len(r.BindingFingerprint) != 64 || len(r.RequestedAuthorities) == 0 || r.Description == "" {
 		return "", fmt.Errorf("DELEGATION_REQUEST_INVALID: request is incomplete")
 	}
 	r.InputFingerprints = append([]string(nil), r.InputFingerprints...)

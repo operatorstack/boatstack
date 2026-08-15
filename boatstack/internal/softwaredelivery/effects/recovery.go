@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
@@ -85,6 +86,12 @@ func (d Driver) prepareWorkspaceCutReconciliation(ctx context.Context, layout po
 	resume := false
 	var verificationInvocation *model.InvocationContext
 	if _, statErr := os.Stat(destination); statErr == nil {
+		if record.Admission.ControlBundle == nil || record.Admission.ControlBundle.Target == nil || record.Admission.ControlBundle.TargetRevision == "" {
+			return nil, fmt.Errorf("workspace reconciliation has no exact interrupted target bundle")
+		}
+		if verifyErr := boatstackruntime.VerifyControlBundleHead(ctx, destination, record.Admission.ControlBundle.TargetRevision, *record.Admission.ControlBundle.Target); verifyErr != nil {
+			return nil, fmt.Errorf("CONTROL_BUNDLE_TARGET_STALE: partially created workspace: %w", verifyErr)
+		}
 		current, resolveErr := d.resolver.ResolveInvocation(ctx, destination, admission.Invocation.Host, admission.Invocation.Correlation)
 		if resolveErr != nil {
 			return nil, fmt.Errorf("resolve partially created workspace: %w", resolveErr)
@@ -139,7 +146,15 @@ func (d Driver) prepareWorkspaceCutReconciliation(ctx context.Context, layout po
 		return nil, err
 	}
 	mutations = annotateStateFacetMutations(mutations, changed)
-	return &preparedEffect{mutations: mutations, verifyInvocation: verificationInvocation, changedStateFacets: changed}, nil
+	prepared := &preparedEffect{mutations: mutations, verifyInvocation: verificationInvocation, changedStateFacets: changed}
+	if record.Admission.ControlBundle != nil && record.Admission.ControlBundle.Target != nil {
+		target := *record.Admission.ControlBundle.Target
+		targetRevision := record.Admission.ControlBundle.TargetRevision
+		prepared.postVerify = func(ctx context.Context) error {
+			return boatstackruntime.VerifyControlBundleHead(ctx, destination, targetRevision, target)
+		}
+	}
+	return prepared, nil
 }
 
 func recoveryStateFacets(record journalRecord, recovery catalog.TransitionID, invocation model.InvocationContext, mutations []ports.ResourceMutation) ([]model.StateFacet, error) {
@@ -169,6 +184,12 @@ func (d Driver) advanceRecoveredState(layout ports.ControllerLayout, admission p
 		if mutation.Delete && mutation.TargetLink == "" && filepath.Clean(mutation.Path) == filepath.Clean(layout.StatePath) {
 			state := durable.Default(admission.Invocation, d.clock.Now())
 			state.ProgramFingerprint = admission.ExpectedProgramFingerprint
+			if admission.ControlBundle != nil {
+				state.ControlBundleFingerprint = admission.ControlBundle.Source.Fingerprint
+				if admission.ControlBundle.Target != nil {
+					state.ControlBundleFingerprint = admission.ControlBundle.Target.Fingerprint
+				}
+			}
 			state.Revision = resultingRevision
 			state.LastTransition = transition
 			state.UpdatedAt = d.clock.Now().UTC()
@@ -189,6 +210,12 @@ func (d Driver) advanceRecoveredState(layout ports.ControllerLayout, admission p
 			continue
 		}
 		state.Revision = resultingRevision
+		if admission.ControlBundle != nil {
+			state.ControlBundleFingerprint = admission.ControlBundle.Source.Fingerprint
+			if admission.ControlBundle.Target != nil {
+				state.ControlBundleFingerprint = admission.ControlBundle.Target.Fingerprint
+			}
+		}
 		state.LastTransition = transition
 		state.UpdatedAt = d.clock.Now().UTC()
 		mutation.Target, err = durable.EncodeState(state)
@@ -208,6 +235,12 @@ func (d Driver) advanceRecoveredState(layout ports.ControllerLayout, admission p
 		return nil, fmt.Errorf("recovery state revision changed after admission")
 	}
 	state.Revision = resultingRevision
+	if admission.ControlBundle != nil {
+		state.ControlBundleFingerprint = admission.ControlBundle.Source.Fingerprint
+		if admission.ControlBundle.Target != nil {
+			state.ControlBundleFingerprint = admission.ControlBundle.Target.Fingerprint
+		}
+	}
 	state.LastTransition = transition
 	state.UpdatedAt = d.clock.Now().UTC()
 	raw, err := durable.EncodeState(state)
@@ -235,6 +268,22 @@ func loadInterruptedJournal(layout ports.ControllerLayout, transactionID string)
 		return journalRecord{}, "", fmt.Errorf("interrupted transaction identity mismatch")
 	}
 	return record, path, nil
+}
+
+// InterruptedWorkspaceTarget exposes only the immutable target bundle needed
+// to admit workspace reconciliation. Journal mutation details remain private
+// to the effect boundary.
+func InterruptedWorkspaceTarget(layout ports.ControllerLayout, transactionID string) (boatstackruntime.ControlBundleSnapshot, string, error) {
+	record, _, err := loadInterruptedJournal(layout, transactionID)
+	if err != nil {
+		return boatstackruntime.ControlBundleSnapshot{}, "", err
+	}
+	if record.TransitionID != "workspace.cut" || record.Admission.ControlBundle == nil || record.Admission.ControlBundle.Target == nil || record.Admission.ControlBundle.TargetRevision == "" {
+		return boatstackruntime.ControlBundleSnapshot{}, "", fmt.Errorf("workspace reconciliation has no exact interrupted target bundle")
+	}
+	target := *record.Admission.ControlBundle.Target
+	target.Files = append([]boatstackruntime.ControlBundleFile(nil), target.Files...)
+	return target, record.Admission.ControlBundle.TargetRevision, nil
 }
 
 func prepareJournalClosure(layout ports.ControllerLayout, transactionID, outcome string, now time.Time, excludeAdmissionID string) ([]ports.ResourceMutation, error) {

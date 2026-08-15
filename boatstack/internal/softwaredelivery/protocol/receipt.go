@@ -12,7 +12,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 )
 
-const ReceiptSchemaVersion = 11
+const ReceiptSchemaVersion = 12
 
 type TransitionFactKind string
 
@@ -90,51 +90,53 @@ func (v VerificationFact) Validate() error {
 // TransitionReceipt is the immutable fact for one committed transition. It is
 // not a request, prescription, admission, refusal, or recovery authorization.
 type TransitionReceipt struct {
-	SchemaVersion               int                      `json:"schema_version"`
-	Kind                        TransitionFactKind       `json:"kind"`
-	ID                          string                   `json:"id"`
-	FlowID                      string                   `json:"flow_id"`
-	Sequence                    uint64                   `json:"sequence"`
-	Program                     ProgramIdentity          `json:"program"`
-	TransitionID                catalog.TransitionID     `json:"transition_id"`
-	TransitionVersion           int                      `json:"transition_version"`
-	PriorProgramFingerprint     string                   `json:"prior_program_fingerprint,omitempty"`
-	ProgramDeltaFingerprint     string                   `json:"program_delta_fingerprint,omitempty"`
-	ProgramChangeAccepted       bool                     `json:"program_change_accepted,omitempty"`
-	RuntimeVersion              string                   `json:"runtime_version,omitempty"`
-	RuntimeFingerprint          string                   `json:"runtime_fingerprint,omitempty"`
-	RuntimeSourceRevision       string                   `json:"runtime_source_revision,omitempty"`
-	PrescriptionID              string                   `json:"prescription_id"`
-	AdmissionID                 string                   `json:"admission_id"`
-	PriorStateRevision          uint64                   `json:"prior_state_revision"`
-	ResultingStateRevision      uint64                   `json:"resulting_state_revision"`
-	ObjectiveID                 string                   `json:"objective_id"`
-	TargetID                    model.TargetID           `json:"target_id"`
-	TrustedClass                model.TargetID           `json:"trusted_class,omitempty"`
-	DeliveryID                  string                   `json:"delivery_id"`
-	ObjectiveScope              catalog.ObjectiveScope   `json:"objective_scope,omitempty"`
-	ObjectiveStatus             model.FactStatus         `json:"objective_status,omitempty"`
-	ObjectiveBindingFingerprint string                   `json:"objective_binding_fingerprint"`
-	SourceFingerprint           string                   `json:"source_fingerprint"`
-	TargetFingerprint           string                   `json:"target_fingerprint"`
-	AuthorityFingerprint        string                   `json:"authority_fingerprint"`
-	AuthoritySources            []AuthoritySource        `json:"authority_sources"`
-	RequiredCapabilities        []catalog.Capability     `json:"required_capabilities"`
-	GrantedCapabilities         []catalog.Capability     `json:"granted_capabilities"`
-	ExercisedCapabilities       []catalog.Capability     `json:"exercised_capabilities,omitempty"`
-	CommittedEffects            []EffectFact             `json:"committed_effects"`
-	ChangedStateFacets          []model.StateFacet       `json:"changed_state_facets"`
-	Verification                VerificationFact         `json:"verification"`
-	IdempotencyKey              string                   `json:"idempotency_key"`
-	Recovery                    catalog.TransitionID     `json:"recovery,omitempty"`
-	Terminal                    model.TerminalStatus     `json:"terminal"`
-	StartedAt                   time.Time                `json:"started_at"`
-	CommittedAt                 time.Time                `json:"committed_at"`
-	DurationNanoseconds         int64                    `json:"duration_nanoseconds"`
-	ExecutionContext            string                   `json:"execution_context,omitempty"`
-	PriorInvocation             *model.InvocationContext `json:"prior_invocation,omitempty"`
-	ResultingInvocation         *model.InvocationContext `json:"resulting_invocation,omitempty"`
-	WorkResultFingerprint       string                   `json:"work_result_fingerprint,omitempty"`
+	SchemaVersion                  int                      `json:"schema_version"`
+	Kind                           TransitionFactKind       `json:"kind"`
+	ID                             string                   `json:"id"`
+	FlowID                         string                   `json:"flow_id"`
+	Sequence                       uint64                   `json:"sequence"`
+	Program                        ProgramIdentity          `json:"program"`
+	TransitionID                   catalog.TransitionID     `json:"transition_id"`
+	TransitionVersion              int                      `json:"transition_version"`
+	PriorProgramFingerprint        string                   `json:"prior_program_fingerprint,omitempty"`
+	ProgramDeltaFingerprint        string                   `json:"program_delta_fingerprint,omitempty"`
+	ProgramChangeAccepted          bool                     `json:"program_change_accepted,omitempty"`
+	RuntimeVersion                 string                   `json:"runtime_version,omitempty"`
+	RuntimeFingerprint             string                   `json:"runtime_fingerprint,omitempty"`
+	RuntimeSourceRevision          string                   `json:"runtime_source_revision,omitempty"`
+	PrescriptionID                 string                   `json:"prescription_id"`
+	AdmissionID                    string                   `json:"admission_id"`
+	PriorStateRevision             uint64                   `json:"prior_state_revision"`
+	ResultingStateRevision         uint64                   `json:"resulting_state_revision"`
+	ObjectiveID                    string                   `json:"objective_id"`
+	TargetID                       model.TargetID           `json:"target_id"`
+	TrustedClass                   model.TargetID           `json:"trusted_class,omitempty"`
+	DeliveryID                     string                   `json:"delivery_id"`
+	ObjectiveScope                 catalog.ObjectiveScope   `json:"objective_scope,omitempty"`
+	ObjectiveStatus                model.FactStatus         `json:"objective_status,omitempty"`
+	ObjectiveBindingFingerprint    string                   `json:"objective_binding_fingerprint"`
+	SourceFingerprint              string                   `json:"source_fingerprint"`
+	TargetFingerprint              string                   `json:"target_fingerprint"`
+	AuthorityFingerprint           string                   `json:"authority_fingerprint"`
+	AuthoritySources               []AuthoritySource        `json:"authority_sources"`
+	RequiredCapabilities           []catalog.Capability     `json:"required_capabilities"`
+	GrantedCapabilities            []catalog.Capability     `json:"granted_capabilities"`
+	ExercisedCapabilities          []catalog.Capability     `json:"exercised_capabilities,omitempty"`
+	CommittedEffects               []EffectFact             `json:"committed_effects"`
+	ChangedStateFacets             []model.StateFacet       `json:"changed_state_facets"`
+	Verification                   VerificationFact         `json:"verification"`
+	IdempotencyKey                 string                   `json:"idempotency_key"`
+	Recovery                       catalog.TransitionID     `json:"recovery,omitempty"`
+	Terminal                       model.TerminalStatus     `json:"terminal"`
+	StartedAt                      time.Time                `json:"started_at"`
+	CommittedAt                    time.Time                `json:"committed_at"`
+	DurationNanoseconds            int64                    `json:"duration_nanoseconds"`
+	ExecutionContext               string                   `json:"execution_context,omitempty"`
+	PriorInvocation                *model.InvocationContext `json:"prior_invocation,omitempty"`
+	ResultingInvocation            *model.InvocationContext `json:"resulting_invocation,omitempty"`
+	WorkResultFingerprint          string                   `json:"work_result_fingerprint,omitempty"`
+	ControlBundleSourceFingerprint string                   `json:"control_bundle_source_fingerprint,omitempty"`
+	ControlBundleTargetFingerprint string                   `json:"control_bundle_target_fingerprint,omitempty"`
 }
 
 type AuthoritySource struct {
@@ -203,6 +205,14 @@ func NewReceipt(flowID string, sequence uint64, program ProgramIdentity, admissi
 	if admission.Work != nil {
 		receipt.WorkResultFingerprint = admission.Work.ResultFingerprint
 	}
+	if admission.ControlBundle != nil {
+		receipt.ControlBundleSourceFingerprint = admission.ControlBundle.Source.Fingerprint
+		if admission.ControlBundle.Target != nil {
+			receipt.ControlBundleTargetFingerprint = admission.ControlBundle.Target.Fingerprint
+		} else {
+			receipt.ControlBundleTargetFingerprint = admission.ControlBundle.Source.Fingerprint
+		}
+	}
 	if transition.ExecutionContext == "advance" {
 		prior, resulting := admission.Invocation, target.Invocation
 		if err := prior.Validate(true); err != nil {
@@ -238,6 +248,10 @@ func NewReceipt(flowID string, sequence uint64, program ProgramIdentity, admissi
 func (r TransitionReceipt) Validate() error {
 	if r.SchemaVersion != ReceiptSchemaVersion || r.Kind != TransitionCommitted || r.ID == "" || r.FlowID == "" || r.Sequence == 0 || r.TransitionID == "" || r.TransitionVersion < 1 || r.PrescriptionID == "" || r.AdmissionID == "" || r.PriorStateRevision == 0 || r.PriorStateRevision == ^uint64(0) || r.ResultingStateRevision != r.PriorStateRevision+1 || !validSHA256(r.SourceFingerprint) || !validSHA256(r.TargetFingerprint) || !validSHA256(r.ObjectiveBindingFingerprint) || r.AuthorityFingerprint == "" || len(r.RequiredCapabilities) == 0 || r.IdempotencyKey == "" || len(r.CommittedEffects) == 0 || len(r.ChangedStateFacets) == 0 {
 		return fmt.Errorf("receipt has incomplete committed-transition identity or evidence")
+	}
+	if (r.ControlBundleSourceFingerprint == "") != (r.ControlBundleTargetFingerprint == "") ||
+		(r.ControlBundleSourceFingerprint != "" && (len(r.ControlBundleSourceFingerprint) != 64 || len(r.ControlBundleTargetFingerprint) != 64)) {
+		return fmt.Errorf("receipt has incomplete repository control-bundle identity")
 	}
 	if r.ExecutionContext != "" {
 		if r.ExecutionContext != "advance" || r.PriorInvocation == nil || r.ResultingInvocation == nil {

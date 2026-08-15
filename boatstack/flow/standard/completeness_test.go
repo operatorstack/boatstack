@@ -147,7 +147,7 @@ func TestSourceInventoryHasNoWriterOrLifecycleAuthorityOutsideOwnedPackages(t *t
 				t.Errorf("managed writer os.%s escaped effects package in %s", selector.Sel.Name, relative)
 			}
 			if importPath == "os/exec" && (selector.Sel.Name == "Command" || selector.Sel.Name == "CommandContext") {
-				if relative != "internal/softwaredelivery/effects/command_boundary.go" && relative != "internal/softwaredelivery/plant/resolver.go" && relative != "extension/subprocess/subprocess.go" && relative != "internal/runtime/exec_windows.go" && relative != "internal/runtime/flow_files.go" {
+				if relative != "internal/softwaredelivery/effects/command_boundary.go" && relative != "internal/softwaredelivery/plant/resolver.go" && relative != "extension/subprocess/subprocess.go" && relative != "internal/runtime/exec_windows.go" && relative != "internal/runtime/flow_files.go" && relative != "internal/runtime/control_bundle.go" {
 					t.Errorf("unclassified command boundary in %s", relative)
 				}
 			}

@@ -14,7 +14,7 @@ import (
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
-	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/delegation"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
@@ -119,6 +119,32 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	if options.targetID != string(objective.TargetID) || options.trustedObjectiveClass != string(objective.TrustedClass) || options.deliveryID != deliveryID || options.objectiveID != expectedObjectiveID {
 		return commandOptions{}, fmt.Errorf("FLOW_CONTEXT_MISMATCH: objective or delivery changed across the run")
 	}
+	if options.transitionID == "installation.initialize" {
+		configPath := filepath.Join(repository, ".boatstack", "project.json")
+		initialParameters, parseErr := parseParameters(options.parameters)
+		if parseErr != nil {
+			return commandOptions{}, parseErr
+		}
+		if err := bindResolvedParameter(&options, initialParameters, "config_path", configPath); err != nil {
+			return commandOptions{}, err
+		}
+		if err := populateProjectConfigFingerprint(&options); err != nil {
+			return commandOptions{}, fmt.Errorf("FLOW_INPUT_REQUIRED: bind verified project configuration: %w", err)
+		}
+		if err := populateRuntimeParameters(&options); err != nil {
+			return commandOptions{}, fmt.Errorf("FLOW_INPUT_REQUIRED: bind exact runtime identity: %w", err)
+		}
+	}
+	parameters, err := parseParameters(options.parameters)
+	if err != nil {
+		return commandOptions{}, err
+	}
+	bundle, bundleFingerprint, err := bindControlBundle(ctx, repository, catalog.TransitionID(options.transitionID), parameters)
+	if err != nil {
+		return commandOptions{}, err
+	}
+	options.controlBundle = bundle
+	options.controlBundleFingerprint = bundleFingerprint
 	if entry.Delegation != nil {
 		contextResolver, resolverErr := plant.NewResolver("")
 		if resolverErr != nil {
@@ -138,7 +164,8 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		}
 		delegationRequest := delegation.Request{
 			RunID: options.runID, ProgramID: options.programID, ProgramFingerprint: compiled.Fingerprint,
-			EntryID: options.entryID, TargetID: string(objective.TargetID), ObjectiveID: options.objectiveID, DeliveryID: deliveryID,
+			ControlBundleFingerprint: bundleFingerprint,
+			EntryID:                  options.entryID, TargetID: string(objective.TargetID), ObjectiveID: options.objectiveID, DeliveryID: deliveryID,
 			InputFingerprints: []string{planFingerprint}, RepositoryID: invocation.RepositoryID, GitCommonID: invocation.GitCommonID,
 			InitialWorktreeID: invocation.WorktreeID, InitialRef: invocation.Ref,
 			BindingFingerprint: entry.Delegation.Fingerprint, RequestedAuthorities: append([]string(nil), entry.Delegation.Authorities...),
@@ -155,8 +182,8 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		if record, loadErr := delegation.Load(recordPath); loadErr == nil {
 			bound := record.Request
 			inputDrift := !options.activeFlowBound && strings.Join(bound.InputFingerprints, "\x00") != strings.Join(delegationRequest.InputFingerprints, "\x00")
-			if bound.RunID != delegationRequest.RunID || bound.ProgramID != delegationRequest.ProgramID || bound.ProgramFingerprint != delegationRequest.ProgramFingerprint || bound.EntryID != delegationRequest.EntryID || bound.TargetID != delegationRequest.TargetID || bound.ObjectiveID != delegationRequest.ObjectiveID || bound.DeliveryID != delegationRequest.DeliveryID || inputDrift || bound.RepositoryID != delegationRequest.RepositoryID || bound.GitCommonID != delegationRequest.GitCommonID || bound.BindingFingerprint != delegationRequest.BindingFingerprint || strings.Join(bound.RequestedAuthorities, "\x00") != strings.Join(delegationRequest.RequestedAuthorities, "\x00") || bound.Description != delegationRequest.Description {
-				return commandOptions{}, fmt.Errorf("DELEGATION_DRIFT: current Flow context does not match the authorized request")
+			if bound.RunID != delegationRequest.RunID || bound.ProgramID != delegationRequest.ProgramID || bound.ProgramFingerprint != delegationRequest.ProgramFingerprint || bound.ControlBundleFingerprint != delegationRequest.ControlBundleFingerprint || bound.EntryID != delegationRequest.EntryID || bound.TargetID != delegationRequest.TargetID || bound.ObjectiveID != delegationRequest.ObjectiveID || bound.DeliveryID != delegationRequest.DeliveryID || inputDrift || bound.RepositoryID != delegationRequest.RepositoryID || bound.GitCommonID != delegationRequest.GitCommonID || bound.BindingFingerprint != delegationRequest.BindingFingerprint || strings.Join(bound.RequestedAuthorities, "\x00") != strings.Join(delegationRequest.RequestedAuthorities, "\x00") || bound.Description != delegationRequest.Description {
+				return commandOptions{}, fmt.Errorf("DELEGATION_DRIFT: current Flow context does not match the authorized request (bundle %s, authorized %s)", delegationRequest.ControlBundleFingerprint, bound.ControlBundleFingerprint)
 			}
 			delegationRequest = bound
 		} else if !os.IsNotExist(loadErr) {
@@ -172,10 +199,6 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		options.delegationDescription = description
 		options.delegationRequest = delegationRequest
 	}
-	parameters, err := parseParameters(options.parameters)
-	if err != nil {
-		return commandOptions{}, err
-	}
 	for name, expected := range map[string]string{
 		"target_id":          string(objective.TargetID),
 		"delivery_id":        deliveryID,
@@ -187,17 +210,6 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		}
 	}
 	switch options.transitionID {
-	case "installation.initialize":
-		configPath := filepath.Join(repository, ".boatstack", "project.json")
-		if err := bindResolvedParameter(&options, parameters, "config_path", configPath); err != nil {
-			return commandOptions{}, err
-		}
-		if err := populateProjectConfigFingerprint(&options); err != nil {
-			return commandOptions{}, fmt.Errorf("FLOW_INPUT_REQUIRED: bind verified project configuration: %w", err)
-		}
-		if err := populateRuntimeParameters(&options); err != nil {
-			return commandOptions{}, fmt.Errorf("FLOW_INPUT_REQUIRED: bind exact runtime identity: %w", err)
-		}
 	case "objective.bind":
 		if err := bindResolvedParameter(&options, parameters, "target_id", string(objective.TargetID)); err != nil {
 			return commandOptions{}, err
@@ -225,14 +237,6 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		}
 	case "publication.preview":
 		if err := bindPublicationPreviewParameters(ctx, repository, deliveryID, options.host, &options, parameters); err != nil {
-			return commandOptions{}, err
-		}
-	case "workspace.cut":
-		baseRef, exists := parameters.Get("base_ref")
-		if !exists {
-			return commandOptions{}, fmt.Errorf("WORKSPACE_CONTROL_BUNDLE_UNCOMMITTED: workspace.cut requires an exact base_ref")
-		}
-		if err := verifyWorkspaceControlBundleAtRevision(ctx, repository, artifactPath, artifact, baseRef); err != nil {
 			return commandOptions{}, err
 		}
 	}
@@ -279,36 +283,6 @@ func bindPublicationPreviewParameters(ctx context.Context, repository, deliveryI
 		if err := bindResolvedParameter(options, parameters, name, value); err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-func verifyWorkspaceControlBundleAtRevision(ctx context.Context, repository, artifactPath string, artifact controlprogram.Artifact, revision string) error {
-	if err := protocol.ValidateGitReference(revision); err != nil {
-		return fmt.Errorf("WORKSPACE_CONTROL_BUNDLE_UNCOMMITTED: invalid workspace base_ref: %w", err)
-	}
-	artifactRelative, err := filepath.Rel(repository, artifactPath)
-	if err != nil {
-		return fmt.Errorf("WORKSPACE_CONTROL_BUNDLE_UNCOMMITTED: resolve compiled artifact path: %w", err)
-	}
-	paths := map[string]struct{}{
-		filepath.ToSlash(artifactRelative): {},
-		artifact.SourcePath:                {},
-		artifact.DependencyLockPath:        {},
-	}
-	for path := range artifact.Assets {
-		paths[path] = struct{}{}
-	}
-	for path := range artifact.GeneratedSkills {
-		paths[path] = struct{}{}
-	}
-	ordered := make([]string, 0, len(paths))
-	for path := range paths {
-		ordered = append(ordered, path)
-	}
-	sort.Strings(ordered)
-	if err := boatstackruntime.VerifyFlowProjectionAtRevision(ctx, repository, revision, ordered); err != nil {
-		return fmt.Errorf("WORKSPACE_CONTROL_BUNDLE_UNCOMMITTED: workspace base %q does not contain the active control bundle; commit or regenerate the Flow bundle before workspace.cut: %w", revision, err)
 	}
 	return nil
 }
@@ -516,6 +490,8 @@ func bindRPCFlowEntry(ctx context.Context, request surfaces.Request) (surfaces.R
 	request.DelegationRequestFingerprint = bound.delegationRequestFingerprint
 	request.DelegatedAuthorities = delegationClasses(bound.delegationAuthorities)
 	request.WorkInputs = bound.workInputs
+	request.ControlBundle = bound.controlBundle
+	request.ControlBundleFingerprint = bound.controlBundleFingerprint
 	return request, nil
 }
 

@@ -271,7 +271,16 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 	if err != nil {
 		return surfaces.Response{}, err
 	}
+	resolveLease, err := acquireFlowExecutionLease(resolveRequest)
+	if err != nil {
+		return surfaces.Response{}, err
+	}
+	if err := verifyTrustedRequestControlBundle(resolveRequest); err != nil {
+		resolveLease.Release()
+		return surfaces.Response{}, err
+	}
 	resolved, err := kernel.Handle(ctx, resolveRequest)
+	resolveLease.Release()
 	if settleErr := settleDelegationAtTarget(ctx, resolveRequest, resolved, kernel.TargetSatisfied(resolved.Snapshot, resolveRequest.Objective), false); settleErr != nil && err == nil {
 		err = settleErr
 	}
@@ -307,7 +316,16 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 		if err != nil {
 			return surfaces.Response{}, err
 		}
+		resolveLease, err = acquireFlowExecutionLease(resolveRequest)
+		if err != nil {
+			return surfaces.Response{}, err
+		}
+		if err := verifyTrustedRequestControlBundle(resolveRequest); err != nil {
+			resolveLease.Release()
+			return surfaces.Response{}, err
+		}
 		resolved, err = kernel.Handle(ctx, resolveRequest)
+		resolveLease.Release()
 		if settleErr := settleDelegationAtTarget(ctx, resolveRequest, resolved, kernel.TargetSatisfied(resolved.Snapshot, resolveRequest.Objective), false); settleErr != nil && err == nil {
 			err = settleErr
 		}
@@ -337,6 +355,9 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 		return surfaces.Response{}, err
 	}
 	defer lease.Release()
+	if err := verifyTrustedRequestControlBundle(applyRequest); err != nil {
+		return surfaces.Response{}, err
+	}
 	applied, err := kernel.Handle(ctx, applyRequest)
 	targetSatisfied := kernel.TargetSatisfied(applied.Snapshot, applyRequest.Objective)
 	if settleErr := settleDelegationAtTarget(ctx, applyRequest, applied, targetSatisfied, delegationLock != nil); settleErr != nil && err == nil {

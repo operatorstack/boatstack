@@ -120,15 +120,31 @@ func TestRestartRecoveryRestoresPriorStateAndCommitsRecoveryRevision(t *testing.
 		{Name: "source_revision", Value: "recovery-fixture"}, {Name: "runtime_version", Value: runtimeIdentity.Version}, {Name: "runtime_sha256", Value: sha256Bytes(runtimeRaw)},
 		{Name: "config_path", Value: configPath}, {Name: "config_sha256", Value: configFingerprint},
 	}
+	controlRaw, err := os.ReadFile(filepath.Join(repository, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	controlSnapshot, err := boatstackruntime.NewControlBundleSnapshot(map[string][]byte{"README.md": controlRaw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	controlBundle, err := boatstackruntime.NewControlBundleContract(controlSnapshot, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectedBundle, err := protocol.ProjectControlBundle(initial, transition, parameters, &controlBundle)
+	if err != nil {
+		t.Fatal(err)
+	}
 	capabilities, err := protocol.ProjectCapabilities(initial, transition, authority, clock.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	prescription, err := protocol.NewPrescription(initial, transition, capabilities)
+	prescription, err := protocol.NewPrescriptionWithWorkAndBundle(initial, transition, capabilities, nil, projectedBundle)
 	if err != nil {
 		t.Fatal(err)
 	}
-	admission, err := protocol.NewAdmission(initial, objective, transition, prescription, authority, parameters, clock.Now(), time.Minute)
+	admission, err := protocol.NewAdmissionWithWorkAndBundle(initial, objective, transition, prescription, authority, parameters, nil, projectedBundle, clock.Now(), time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}

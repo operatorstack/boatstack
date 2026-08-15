@@ -52,6 +52,14 @@ func runFlowWork(arguments []string) error {
 			return fmt.Errorf("foreground work answer file is not JSON")
 		}
 	}
+	lease, err := acquireFlowExecutionLease(request)
+	if err != nil {
+		return err
+	}
+	defer lease.Release()
+	if err := verifyTrustedRequestControlBundle(request); err != nil {
+		return err
+	}
 	kernel, err := standardKernel(context.Background(), request)
 	if err != nil {
 		return err

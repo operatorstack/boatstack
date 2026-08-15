@@ -207,6 +207,10 @@ func bindSharedGitCommon(t *testing.T, repository, gitDirectory, commonDirectory
 
 func writeFlowArtifact(t *testing.T, repository string, document controlprogram.Document, sourcePath string, source []byte, lockPath string, lock []byte) {
 	t.Helper()
+	projectPath := filepath.Join(repository, ".boatstack", "project.json")
+	if _, err := os.Stat(projectPath); os.IsNotExist(err) {
+		writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":2,"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude"]}`))
+	}
 	resolver, err := softwareflow.NewResolver(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -421,7 +425,11 @@ func TestWorkspaceCutRejectsControlBundleThatIsNotInBaseRevision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyWorkspaceControlBundleAtRevision(context.Background(), repository, artifactPath, artifact, "HEAD"); err != nil {
+	bundle, err := buildRepositoryControlBundle(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := boatstackruntime.VerifyControlBundleRevision(context.Background(), repository, "HEAD", bundle); err != nil {
 		t.Fatalf("committed control bundle rejected: %v", err)
 	}
 
@@ -436,10 +444,100 @@ func TestWorkspaceCutRejectsControlBundleThatIsNotInBaseRevision(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repository, filepath.FromSlash(skillPath)), []byte("regenerated but uncommitted\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	err = verifyWorkspaceControlBundleAtRevision(context.Background(), repository, artifactPath, artifact, "HEAD")
-	if err == nil || !strings.Contains(err.Error(), "WORKSPACE_CONTROL_BUNDLE_UNCOMMITTED") || !strings.Contains(err.Error(), skillPath) {
+	_, err = buildRepositoryControlBundle(context.Background(), repository)
+	if err == nil || !strings.Contains(err.Error(), skillPath) {
 		t.Fatalf("uncommitted generated skill result = %v", err)
 	}
+}
+
+func TestWorkspaceCutRejectsUncommittedRuntimePinBeforeEffect(t *testing.T) {
+	// control-law: a runtime pin cannot outrun the committed Flow projection
+	repository := flowRepository(t)
+	repository, err := filepath.EvalSymlinks(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runFlowGit(t, repository, "init", "-q")
+	runFlowGit(t, repository, "config", "user.name", "Boatstack Tests")
+	runFlowGit(t, repository, "config", "user.email", "boatstack@example.invalid")
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "control bundle")
+	pinRaw, err := boatstackruntime.EncodePin(boatstackruntime.NewPin(
+		boatstackruntime.Identity{Version: "v-test", SHA256: strings.Repeat("a", 64), SourceRevision: "test-revision"},
+		strings.Repeat("b", 64), durable.StateSchemaVersion,
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, ".boatstack", "runtime.json"), pinRaw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(t.TempDir(), "workspace")
+	_, _, err = bindControlBundle(context.Background(), repository, "workspace.cut", protocol.Parameters{
+		{Name: "base_ref", Value: "HEAD"}, {Name: "branch", Value: "feature/bundle"}, {Name: "destination", Value: destination},
+	})
+	if err == nil || !strings.Contains(err.Error(), "WORKSPACE_CONTROL_BUNDLE_UNCOMMITTED") || !strings.Contains(err.Error(), ".boatstack/runtime.json") {
+		t.Fatalf("uncommitted runtime pin result = %v", err)
+	}
+	if _, statErr := os.Stat(destination); !os.IsNotExist(statErr) {
+		t.Fatalf("workspace was created before bundle admission: %v", statErr)
+	}
+}
+
+func TestWorkspaceCutFreezesMovingBaseReference(t *testing.T) {
+	// control-law: a moving branch cannot change an already admitted workspace base
+	repository := flowRepository(t)
+	repository, err := filepath.EvalSymlinks(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runFlowGit(t, repository, "init", "-q")
+	runFlowGit(t, repository, "config", "user.name", "Boatstack Tests")
+	runFlowGit(t, repository, "config", "user.email", "boatstack@example.invalid")
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "control bundle")
+	want := strings.TrimSpace(runFlowGitOutput(t, repository, "rev-parse", "HEAD"))
+	contract, _, err := bindControlBundle(context.Background(), repository, "workspace.cut", protocol.Parameters{{Name: "base_ref", Value: "HEAD"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, repository, "README.md", []byte("move branch\n"))
+	runFlowGit(t, repository, "add", "README.md")
+	runFlowGit(t, repository, "commit", "-q", "-m", "move branch")
+	if contract.TargetRevision != want {
+		t.Fatalf("target revision changed with branch: got %s want %s", contract.TargetRevision, want)
+	}
+}
+
+func TestOneStaleFlowBlocksMultiFlowControlBundle(t *testing.T) {
+	// control-law: a repository control bundle is complete across every Flow
+	repository := flowRepository(t)
+	document := productDeliveryDocument("secondary-delivery")
+	sourcePath := ".boatstack/flows/secondary-delivery.flow.ts"
+	source := []byte("secondary source")
+	lockPath := "package-lock.json"
+	lockRaw, err := os.ReadFile(filepath.Join(repository, lockPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, repository, sourcePath, source)
+	writeFlowArtifact(t, repository, document, sourcePath, source, lockPath, lockRaw)
+	artifactRaw, err := os.ReadFile(filepath.Join(repository, ".boatstack", "flows", "secondary-delivery.flow.ir.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := controlprogram.LoadArtifact(bytes.NewReader(artifactRaw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path := range artifact.GeneratedSkills {
+		writeFixture(t, repository, path, []byte("stale secondary projection\n"))
+		if _, bundleErr := buildRepositoryControlBundle(context.Background(), repository); bundleErr == nil || !strings.Contains(bundleErr.Error(), path) {
+			t.Fatalf("stale secondary Flow did not block complete bundle: %v", bundleErr)
+		}
+		return
+	}
+	t.Fatal("secondary Flow generated no entry skill")
 }
 
 func TestFlowEntryRejectsCallerOverridesOfResolvedInputs(t *testing.T) {
@@ -1761,17 +1859,8 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	}
 	otherWorktree := filepath.Join(t.TempDir(), "other-worktree")
 	runFlowGit(t, repository, "worktree", "add", "-q", "-b", "other-worktree", otherWorktree)
-	otherBound, err := bindFlowEntry(context.Background(), commandOptions{repository: otherWorktree, programID: "product-delivery", entryID: "run", runID: bound.runID, deliveryID: bound.deliveryID, host: "codex"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	otherRequest, err := buildRequest(surfaces.OperationResolve, otherBound)
-	if err != nil {
-		t.Fatal(err)
-	}
-	otherLock, otherSuspension, otherErr := prepareDelegation(context.Background(), &otherRequest)
-	if otherLock != nil || otherSuspension != nil || otherErr == nil || !strings.Contains(otherErr.Error(), "DELEGATION_CONTEXT_UNAUTHORIZED") {
-		t.Fatalf("unauthorized worktree = lock=%v response=%#v err=%v", otherLock, otherSuspension, otherErr)
+	if _, otherErr := bindFlowEntry(context.Background(), commandOptions{repository: otherWorktree, programID: "product-delivery", entryID: "run", runID: bound.runID, deliveryID: bound.deliveryID, host: "codex"}); otherErr == nil || !strings.Contains(otherErr.Error(), "DELEGATION_DRIFT") {
+		t.Fatalf("unauthorized worktree bundle was not rejected: %v", otherErr)
 	}
 	runFlowGit(t, repository, "checkout", "-q", "-b", "changed-ref")
 	refBound, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", runID: bound.runID, deliveryID: bound.deliveryID, host: "codex"})

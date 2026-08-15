@@ -29,7 +29,7 @@ func TestMaintenanceReplayBindsDurableObjectiveState(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			test.receipt.FlowID = request.FlowID
 			test.receipt.Program = syntheticProgram
-			if err := validateReplayRequest(test.receipt, request, syntheticProgramFingerprint); err != nil {
+			if err := validateReplayRequest(test.receipt, request, syntheticProgramFingerprint, nil); err != nil {
 				t.Fatalf("command objective affected maintenance replay identity: %v", err)
 			}
 			err := validateReplayObjectiveState(test.receipt, model.Snapshot{Observation: model.Observation{Objective: test.fact}})

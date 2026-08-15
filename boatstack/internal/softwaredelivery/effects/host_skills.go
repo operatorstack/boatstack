@@ -130,6 +130,21 @@ func desiredHostSkillFiles(hosts []string) map[string][]byte {
 	return desired
 }
 
+// ProjectedHostSkillFiles returns the exact runtime-owned host projection and
+// manifest bytes without mutating a repository.
+func ProjectedHostSkillFiles(hosts []string) (map[string][]byte, []byte, error) {
+	desired := desiredHostSkillFiles(hosts)
+	manifest := hostSkillManifest{SchemaVersion: hostSkillManifestSchema, Files: map[string]string{}}
+	for path, raw := range desired {
+		manifest.Files[path] = sha256Bytes(raw)
+	}
+	manifestRaw, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return nil, nil, err
+	}
+	return desired, append(manifestRaw, '\n'), nil
+}
+
 func prepareHostSkillMutations(repository string, hosts []string) ([]ports.ResourceMutation, error) {
 	desired := desiredHostSkillFiles(hosts)
 	manifestPath := filepath.Join(repository, ".boatstack", "host-skills.json")

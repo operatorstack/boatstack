@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/foregroundwork"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
@@ -17,7 +18,7 @@ import (
 	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
-const SchemaVersion = 9
+const SchemaVersion = 10
 
 var flowContextIdentity = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
@@ -50,33 +51,35 @@ func (o Operation) Valid() bool {
 }
 
 type Request struct {
-	SchemaVersion                int                                `json:"schema_version"`
-	Operation                    Operation                          `json:"operation"`
-	Repository                   string                             `json:"repository"`
-	Host                         string                             `json:"host"`
-	CorrelationID                string                             `json:"correlation_id"`
-	ProgramID                    string                             `json:"program_id,omitempty"`
-	ProgramFingerprint           string                             `json:"program_fingerprint,omitempty"`
-	EntryID                      string                             `json:"entry_id,omitempty"`
-	FlowID                       string                             `json:"flow_id,omitempty"`
-	Objective                    model.Objective                    `json:"objective,omitempty"`
-	TransitionID                 catalog.TransitionID               `json:"transition_id,omitempty"`
-	Prescription                 protocol.Prescription              `json:"prescription,omitempty"`
-	Authority                    protocol.AuthorityBundle           `json:"authority,omitempty"`
-	RepositoryAuthority          bool                               `json:"repository_authority,omitempty"`
-	Parameters                   protocol.Parameters                `json:"parameters,omitempty"`
-	IdempotencyKey               string                             `json:"idempotency_key,omitempty"`
-	Command                      string                             `json:"command,omitempty"`
-	DelegationBindingFingerprint string                             `json:"delegation_binding_fingerprint,omitempty"`
-	DelegationRequestFingerprint string                             `json:"delegation_request_fingerprint,omitempty"`
-	DelegatedAuthorities         []catalog.AuthorityClass           `json:"delegated_authorities,omitempty"`
-	WorkInputs                   map[string]protocol.WorkInputValue `json:"work_inputs,omitempty"`
-	WorkID                       string                             `json:"work_id,omitempty"`
-	WorkQuestionPrompt           string                             `json:"work_question_prompt,omitempty"`
-	WorkQuestionSchema           []byte                             `json:"work_question_schema,omitempty"`
-	WorkQuestionID               string                             `json:"work_question_id,omitempty"`
-	WorkAnswer                   []byte                             `json:"work_answer,omitempty"`
-	WorkBlockReason              string                             `json:"work_block_reason,omitempty"`
+	SchemaVersion                int                                     `json:"schema_version"`
+	Operation                    Operation                               `json:"operation"`
+	Repository                   string                                  `json:"repository"`
+	Host                         string                                  `json:"host"`
+	CorrelationID                string                                  `json:"correlation_id"`
+	ProgramID                    string                                  `json:"program_id,omitempty"`
+	ProgramFingerprint           string                                  `json:"program_fingerprint,omitempty"`
+	EntryID                      string                                  `json:"entry_id,omitempty"`
+	FlowID                       string                                  `json:"flow_id,omitempty"`
+	Objective                    model.Objective                         `json:"objective,omitempty"`
+	TransitionID                 catalog.TransitionID                    `json:"transition_id,omitempty"`
+	Prescription                 protocol.Prescription                   `json:"prescription,omitempty"`
+	Authority                    protocol.AuthorityBundle                `json:"authority,omitempty"`
+	RepositoryAuthority          bool                                    `json:"repository_authority,omitempty"`
+	Parameters                   protocol.Parameters                     `json:"parameters,omitempty"`
+	IdempotencyKey               string                                  `json:"idempotency_key,omitempty"`
+	Command                      string                                  `json:"command,omitempty"`
+	DelegationBindingFingerprint string                                  `json:"delegation_binding_fingerprint,omitempty"`
+	DelegationRequestFingerprint string                                  `json:"delegation_request_fingerprint,omitempty"`
+	DelegatedAuthorities         []catalog.AuthorityClass                `json:"delegated_authorities,omitempty"`
+	WorkInputs                   map[string]protocol.WorkInputValue      `json:"work_inputs,omitempty"`
+	WorkID                       string                                  `json:"work_id,omitempty"`
+	WorkQuestionPrompt           string                                  `json:"work_question_prompt,omitempty"`
+	WorkQuestionSchema           []byte                                  `json:"work_question_schema,omitempty"`
+	WorkQuestionID               string                                  `json:"work_question_id,omitempty"`
+	WorkAnswer                   []byte                                  `json:"work_answer,omitempty"`
+	WorkBlockReason              string                                  `json:"work_block_reason,omitempty"`
+	ControlBundle                *boatstackruntime.ControlBundleContract `json:"control_bundle,omitempty"`
+	ControlBundleFingerprint     string                                  `json:"control_bundle_fingerprint,omitempty"`
 }
 
 func (r Request) Validate(now time.Time) error {
@@ -94,6 +97,16 @@ func (r Request) Validate(now time.Time) error {
 	}
 	if r.ProgramID == "" && r.ProgramFingerprint != "" {
 		return fmt.Errorf("surface request cannot carry a program fingerprint without a program")
+	}
+	if r.ControlBundle != nil {
+		if err := r.ControlBundle.Validate(); err != nil {
+			return err
+		}
+		if r.ControlBundleFingerprint != r.ControlBundle.Source.Fingerprint {
+			return fmt.Errorf("CONTROL_BUNDLE_INVALID: request fingerprint does not match trusted source bundle")
+		}
+	} else if r.ControlBundleFingerprint != "" {
+		return fmt.Errorf("CONTROL_BUNDLE_INVALID: request fingerprint has no trusted bundle")
 	}
 	if len(r.DelegatedAuthorities) != 0 && (r.ProgramID == "" || len(r.DelegationBindingFingerprint) != 64 || len(r.DelegationRequestFingerprint) != 64) {
 		return fmt.Errorf("surface delegated Flow request requires exact binding and request fingerprints")

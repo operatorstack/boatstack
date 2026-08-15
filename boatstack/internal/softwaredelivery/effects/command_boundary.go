@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
@@ -224,6 +223,10 @@ func (b NativeBoundary) Execute(ctx context.Context, admission protocol.Admissio
 		if err := protocol.ValidateGitReference(baseRef); err != nil {
 			return settled, err
 		}
+		if admission.ControlBundle == nil || admission.ControlBundle.Target == nil || admission.ControlBundle.TargetRevision == "" {
+			return settled, fmt.Errorf("CONTROL_BUNDLE_REQUIRED: workspace.cut has no exact target revision")
+		}
+		baseRevision := admission.ControlBundle.TargetRevision
 		absolute, err := canonicalWorkspaceDestination(admission)
 		if err != nil || absolute == layout.RepositoryRoot {
 			return settled, fmt.Errorf("workspace destination must be an explicit non-primary path")
@@ -233,7 +236,7 @@ func (b NativeBoundary) Execute(ctx context.Context, admission protocol.Admissio
 		} else if !os.IsNotExist(err) {
 			return settled, err
 		}
-		baseConfig, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "git", "show", baseRef+":.boatstack/project.json")
+		baseConfig, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "git", "show", baseRevision+":.boatstack/project.json")
 		if err != nil {
 			return settled, fmt.Errorf("workspace base does not contain the verified Boatstack configuration: %w", err)
 		}
@@ -247,7 +250,7 @@ func (b NativeBoundary) Execute(ctx context.Context, admission protocol.Admissio
 		if output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "git", "check-ref-format", "--branch", branch); err != nil {
 			return settled, fmt.Errorf("invalid workspace branch: %s: %w", strings.TrimSpace(string(output)), err)
 		}
-		arguments := []string{"worktree", "add", "-b", branch, absolute, baseRef}
+		arguments := []string{"worktree", "add", "-b", branch, absolute, baseRevision}
 		if output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "git", arguments...); err != nil {
 			return ports.EffectResult{Settlement: ports.EffectUnknown, Detail: strings.TrimSpace(string(output))}, nil
 		}
@@ -265,13 +268,6 @@ func (b NativeBoundary) Execute(ctx context.Context, admission protocol.Admissio
 		neutralDirectory := filepath.Dir(state.WorkspacePath)
 		gitPrefix := []string{"--git-dir", layout.GitCommonRoot}
 		removeArguments := append(gitPrefix, "worktree", "remove")
-		managedOnly, managedErr := b.workspaceHasOnlyManagedRuntimePin(ctx, state)
-		if managedErr != nil {
-			return settled, managedErr
-		}
-		if managedOnly {
-			removeArguments = append(removeArguments, "--force")
-		}
 		removeArguments = append(removeArguments, state.WorkspacePath)
 		if output, err := b.runner.CombinedOutput(ctx, neutralDirectory, "git", removeArguments...); err != nil {
 			return ports.EffectResult{Settlement: ports.EffectUnknown, Detail: strings.TrimSpace(string(output))}, nil
@@ -363,35 +359,4 @@ func publicationGeneratedPath(name string) bool {
 		}
 	}
 	return false
-}
-
-func (b NativeBoundary) workspaceHasOnlyManagedRuntimePin(ctx context.Context, state durable.State) (bool, error) {
-	output, err := b.runner.CombinedOutput(ctx, state.WorkspacePath, "git", "status", "--porcelain", "--untracked-files=all")
-	if err != nil {
-		return false, fmt.Errorf("inspect workspace before cleanup: %s: %w", strings.TrimSpace(string(output)), err)
-	}
-	status := strings.TrimSpace(string(output))
-	if status == "" {
-		return false, nil
-	}
-	if status != "?? .boatstack/runtime.json" {
-		return false, fmt.Errorf("workspace cleanup refuses product or unmanaged changes: %s", status)
-	}
-	raw, err := os.ReadFile(boatstackruntime.PinPath(state.WorkspacePath))
-	if err != nil {
-		return false, err
-	}
-	pin, err := boatstackruntime.DecodePin(raw)
-	if err != nil {
-		return false, err
-	}
-	want := boatstackruntime.NewPin(
-		boatstackruntime.Identity{Version: state.RuntimeVersion, SHA256: state.RuntimeFingerprint, SourceRevision: state.RuntimeSource},
-		state.ProgramFingerprint,
-		durable.StateSchemaVersion,
-	)
-	if pin != want {
-		return false, fmt.Errorf("workspace runtime pin does not match governed state")
-	}
-	return true, nil
 }
