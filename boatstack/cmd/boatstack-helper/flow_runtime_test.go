@@ -1023,12 +1023,15 @@ func repositoryBytes(t *testing.T, root string) map[string]string {
 		if err != nil {
 			return err
 		}
-		if entry.IsDir() {
-			return nil
-		}
 		relative, err := filepath.Rel(root, path)
 		if err != nil {
 			return err
+		}
+		if entry.IsDir() && relative == ".git" {
+			return filepath.SkipDir
+		}
+		if entry.IsDir() {
+			return nil
 		}
 		raw, err := os.ReadFile(path)
 		if err != nil {
@@ -1041,6 +1044,21 @@ func repositoryBytes(t *testing.T, root string) map[string]string {
 		t.Fatal(err)
 	}
 	return result
+}
+
+func TestRepositoryBytesExcludesGitInternals(t *testing.T) {
+	repository := t.TempDir()
+	writeFixture(t, repository, ".git/objects/maintenance.lock", []byte("transient"))
+	writeFixture(t, repository, ".boatstack/controller.json", []byte("managed"))
+	writeFixture(t, repository, "README.md", []byte("repository"))
+
+	snapshot := repositoryBytes(t, repository)
+	if _, exists := snapshot[".git/objects/maintenance.lock"]; exists {
+		t.Fatal("repository snapshot included transient Git internals")
+	}
+	if snapshot[".boatstack/controller.json"] != "managed" || snapshot["README.md"] != "repository" {
+		t.Fatalf("repository snapshot omitted managed or ordinary files: %#v", snapshot)
+	}
 }
 
 func TestContinuationRebindsOnlyRepositoryResolvedCandidateParameters(t *testing.T) {
