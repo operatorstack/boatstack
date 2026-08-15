@@ -24,11 +24,20 @@ type ControlBundleFile struct {
 	Absent bool   `json:"absent,omitempty"`
 }
 
+// ControlBundleMemberSet binds the complete direct-child membership of one
+// executable control directory, not only the files discovered at projection.
+type ControlBundleMemberSet struct {
+	Root   string   `json:"root"`
+	Suffix string   `json:"suffix"`
+	Paths  []string `json:"paths"`
+}
+
 // ControlBundleSnapshot is the canonical executable control projection at one
 // repository root.
 type ControlBundleSnapshot struct {
-	Fingerprint string              `json:"fingerprint"`
-	Files       []ControlBundleFile `json:"files"`
+	Fingerprint string                   `json:"fingerprint"`
+	Files       []ControlBundleFile      `json:"files"`
+	MemberSets  []ControlBundleMemberSet `json:"member_sets,omitempty"`
 }
 
 // ControlBundleContract binds the source projection and, for execution-context
@@ -48,6 +57,10 @@ func NewControlBundleSnapshot(files map[string][]byte) (ControlBundleSnapshot, e
 }
 
 func NewControlBundleSnapshotWithAbsent(files map[string][]byte, absent []string) (ControlBundleSnapshot, error) {
+	return NewControlBundleSnapshotWithMemberSets(files, absent, nil)
+}
+
+func NewControlBundleSnapshotWithMemberSets(files map[string][]byte, absent []string, memberSets []ControlBundleMemberSet) (ControlBundleSnapshot, error) {
 	bindings := make([]ControlBundleFile, 0, len(files))
 	for path, raw := range files {
 		if !safeProjectionRelative(path) {
@@ -71,11 +84,15 @@ func NewControlBundleSnapshotWithAbsent(files map[string][]byte, absent []string
 			return ControlBundleSnapshot{}, fmt.Errorf("CONTROL_BUNDLE_INVALID: duplicate path %q", bindings[index].Path)
 		}
 	}
-	fingerprint, err := controlBundleDigest(bindings)
+	canonicalSets, err := canonicalControlBundleMemberSets(memberSets, bindings)
 	if err != nil {
 		return ControlBundleSnapshot{}, err
 	}
-	return ControlBundleSnapshot{Fingerprint: fingerprint, Files: bindings}, nil
+	fingerprint, err := controlBundleSnapshotDigest(bindings, canonicalSets)
+	if err != nil {
+		return ControlBundleSnapshot{}, err
+	}
+	return ControlBundleSnapshot{Fingerprint: fingerprint, Files: bindings, MemberSets: canonicalSets}, nil
 }
 
 // ReplaceControlBundleFile derives a target snapshot without trusting a
@@ -101,11 +118,15 @@ func ReplaceControlBundleFile(snapshot ControlBundleSnapshot, path string, raw [
 		files = append(files, binding)
 		sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	}
-	fingerprint, err := controlBundleDigest(files)
+	memberSets, err := canonicalControlBundleMemberSets(snapshot.MemberSets, files)
 	if err != nil {
 		return ControlBundleSnapshot{}, err
 	}
-	return ControlBundleSnapshot{Fingerprint: fingerprint, Files: files}, nil
+	fingerprint, err := controlBundleSnapshotDigest(files, memberSets)
+	if err != nil {
+		return ControlBundleSnapshot{}, err
+	}
+	return ControlBundleSnapshot{Fingerprint: fingerprint, Files: files, MemberSets: memberSets}, nil
 }
 
 func NewControlBundleContract(source ControlBundleSnapshot, target *ControlBundleSnapshot, targetRevision string) (ControlBundleContract, error) {
@@ -210,11 +231,139 @@ func (s ControlBundleSnapshot) validate() error {
 		}
 		prior = file.Path
 	}
-	fingerprint, err := controlBundleDigest(s.Files)
+	memberSets, err := canonicalControlBundleMemberSets(s.MemberSets, s.Files)
+	if err != nil || !equalControlBundleMemberSets(memberSets, s.MemberSets) {
+		return fmt.Errorf("CONTROL_BUNDLE_INVALID: member sets are not canonical")
+	}
+	fingerprint, err := controlBundleSnapshotDigest(s.Files, s.MemberSets)
 	if err != nil || fingerprint != s.Fingerprint {
 		return fmt.Errorf("CONTROL_BUNDLE_INVALID: snapshot fingerprint mismatch")
 	}
 	return nil
+}
+
+func canonicalControlBundleMemberSets(values []ControlBundleMemberSet, files []ControlBundleFile) ([]ControlBundleMemberSet, error) {
+	sets := make([]ControlBundleMemberSet, len(values))
+	copy(sets, values)
+	bound := make(map[string]bool, len(files))
+	for _, file := range files {
+		if !file.Absent {
+			bound[file.Path] = true
+		}
+	}
+	for index := range sets {
+		memberSet := &sets[index]
+		if !safeProjectionRelative(memberSet.Root) || strings.Contains(memberSet.Suffix, "/") || strings.Contains(memberSet.Suffix, "\\") || memberSet.Suffix == "" {
+			return nil, fmt.Errorf("CONTROL_BUNDLE_INVALID: unsafe member set")
+		}
+		memberSet.Root = strings.TrimSuffix(memberSet.Root, "/")
+		memberSet.Paths = append([]string(nil), memberSet.Paths...)
+		sort.Strings(memberSet.Paths)
+		for pathIndex, memberPath := range memberSet.Paths {
+			if !safeProjectionRelative(memberPath) || filepath.ToSlash(filepath.Dir(filepath.FromSlash(memberPath))) != memberSet.Root || !strings.HasSuffix(memberPath, memberSet.Suffix) || !bound[memberPath] {
+				return nil, fmt.Errorf("CONTROL_BUNDLE_INVALID: member set path %q is not a bound direct child", memberPath)
+			}
+			if pathIndex > 0 && memberSet.Paths[pathIndex-1] == memberPath {
+				return nil, fmt.Errorf("CONTROL_BUNDLE_INVALID: duplicate member set path %q", memberPath)
+			}
+		}
+	}
+	sort.Slice(sets, func(i, j int) bool {
+		if sets[i].Root != sets[j].Root {
+			return sets[i].Root < sets[j].Root
+		}
+		return sets[i].Suffix < sets[j].Suffix
+	})
+	for index := 1; index < len(sets); index++ {
+		if sets[index-1].Root == sets[index].Root && sets[index-1].Suffix == sets[index].Suffix {
+			return nil, fmt.Errorf("CONTROL_BUNDLE_INVALID: duplicate member set")
+		}
+	}
+	return sets, nil
+}
+
+func controlBundleSnapshotDigest(files []ControlBundleFile, memberSets []ControlBundleMemberSet) (string, error) {
+	return controlBundleDigest(struct {
+		Files      []ControlBundleFile      `json:"files"`
+		MemberSets []ControlBundleMemberSet `json:"member_sets,omitempty"`
+	}{Files: files, MemberSets: memberSets})
+}
+
+func equalControlBundleMemberSets(left, right []ControlBundleMemberSet) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index].Root != right[index].Root || left[index].Suffix != right[index].Suffix || !equalStrings(left[index].Paths, right[index].Paths) {
+			return false
+		}
+	}
+	return true
+}
+
+func equalStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func rootMemberSet(repository string, memberSet ControlBundleMemberSet) ([]string, error) {
+	entries, err := os.ReadDir(filepath.Join(repository, filepath.FromSlash(memberSet.Root)))
+	if os.IsNotExist(err) {
+		return []string{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("CONTROL_BUNDLE_STALE: read member set %s: %w", memberSet.Root, err)
+	}
+	paths := []string{}
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), memberSet.Suffix) {
+			continue
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil || entry.Type()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("CONTROL_BUNDLE_STALE: member set path %s/%s is not a regular file", memberSet.Root, entry.Name())
+		}
+		paths = append(paths, memberSet.Root+"/"+entry.Name())
+	}
+	sort.Strings(paths)
+	return paths, nil
+}
+
+func revisionMemberSet(ctx context.Context, repository, revision string, memberSet ControlBundleMemberSet) ([]string, error) {
+	command := exec.CommandContext(ctx, "git", "ls-tree", "-r", "-z", revision, "--", memberSet.Root)
+	command.Dir = repository
+	output, err := command.Output()
+	if err != nil {
+		return nil, fmt.Errorf("CONTROL_BUNDLE_STALE: inspect revision %s member set %s: %w", revision, memberSet.Root, err)
+	}
+	paths := []string{}
+	for _, record := range bytes.Split(output, []byte{0}) {
+		if len(record) == 0 {
+			continue
+		}
+		fields := bytes.SplitN(record, []byte{'\t'}, 2)
+		metadata := strings.Fields(string(fields[0]))
+		if len(fields) != 2 || len(metadata) < 1 {
+			return nil, fmt.Errorf("CONTROL_BUNDLE_STALE: revision member set response is malformed")
+		}
+		memberPath := string(fields[1])
+		if filepath.ToSlash(filepath.Dir(filepath.FromSlash(memberPath))) != memberSet.Root || !strings.HasSuffix(memberPath, memberSet.Suffix) {
+			continue
+		}
+		if metadata[0] != "100644" && metadata[0] != "100755" {
+			return nil, fmt.Errorf("CONTROL_BUNDLE_STALE: revision member set path %s is not a regular file", memberPath)
+		}
+		paths = append(paths, memberPath)
+	}
+	sort.Strings(paths)
+	return paths, nil
 }
 
 func validControlDigest(value string) bool {
@@ -241,6 +390,15 @@ func VerifyControlBundleRoot(repository string, snapshot ControlBundleSnapshot) 
 	if err != nil || !filepath.IsAbs(repository) || filepath.Clean(repository) != repository {
 		return fmt.Errorf("CONTROL_BUNDLE_INVALID: repository root is not exact")
 	}
+	for _, memberSet := range snapshot.MemberSets {
+		observed, observeErr := rootMemberSet(repository, memberSet)
+		if observeErr != nil {
+			return observeErr
+		}
+		if !equalStrings(observed, memberSet.Paths) {
+			return fmt.Errorf("CONTROL_BUNDLE_STALE: member set %s/*%s does not match the admitted bundle", memberSet.Root, memberSet.Suffix)
+		}
+	}
 	for _, file := range snapshot.Files {
 		if file.Absent {
 			if _, statErr := os.Lstat(filepath.Join(repository, filepath.FromSlash(file.Path))); !os.IsNotExist(statErr) {
@@ -266,6 +424,15 @@ func VerifyControlBundleRevision(ctx context.Context, repository, revision strin
 	}
 	if repository == "" || !filepath.IsAbs(repository) || revision == "" {
 		return fmt.Errorf("CONTROL_BUNDLE_INVALID: revision verification is incomplete")
+	}
+	for _, memberSet := range snapshot.MemberSets {
+		observed, observeErr := revisionMemberSet(ctx, repository, revision, memberSet)
+		if observeErr != nil {
+			return observeErr
+		}
+		if !equalStrings(observed, memberSet.Paths) {
+			return fmt.Errorf("CONTROL_BUNDLE_STALE: revision %s member set %s/*%s does not match the admitted bundle", revision, memberSet.Root, memberSet.Suffix)
+		}
 	}
 	for _, file := range snapshot.Files {
 		if file.Absent {

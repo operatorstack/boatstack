@@ -102,6 +102,11 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 			if err != nil {
 				return delivery.ProgramRuntimeManifest{}, fmt.Errorf("transition %q foreground work: %w", declaration.ID, err)
 			}
+			if transition.ID == PlanningPackageAdmit {
+				if err := validatePlanningPackageWorkContract(*transition.Work); err != nil {
+					return delivery.ProgramRuntimeManifest{}, fmt.Errorf("transition %q foreground work: %w", declaration.ID, err)
+				}
+			}
 			transition.OwnedResources = append(transition.OwnedResources, "foreground-work-"+transition.Work.ID)
 		}
 		for _, authority := range declaration.Requires.Authorities {

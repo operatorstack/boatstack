@@ -559,7 +559,7 @@ func observeRepositoryArtifacts(layout ports.ControllerLayout, state durable.Sta
 		return plan, verification, terminal, planEvidence, verificationEvidence, nil
 	}
 	deliveryID := state.Objective.DeliveryID
-	packagePlan := (state.Plan == model.PlanValid && state.PlanningPackageFingerprint != "") || state.Plan == model.PlanPackageApproved
+	packagePlan := state.Plan == model.PlanPackageValid || state.Plan == model.PlanPackageApproved
 	if packagePlan {
 		evidence, valid, err := observePlanningPackage(layout, state, now)
 		if err != nil {

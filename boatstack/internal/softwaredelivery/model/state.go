@@ -132,6 +132,7 @@ const (
 	PlanAbsent            PlanState = "absent"
 	PlanDraft             PlanState = "draft"
 	PlanValid             PlanState = "valid"
+	PlanPackageValid      PlanState = "package-valid"
 	PlanPackageApproved   PlanState = "package-approved"
 	PlanApproved          PlanState = "approved"
 	PlanLocked            PlanState = "locked"
@@ -142,7 +143,7 @@ const (
 
 func (s PlanState) Valid() bool {
 	switch s {
-	case PlanAbsent, PlanDraft, PlanValid, PlanPackageApproved, PlanApproved, PlanLocked, PlanStale, PlanInvalid, PlanAmendmentRequired:
+	case PlanAbsent, PlanDraft, PlanValid, PlanPackageValid, PlanPackageApproved, PlanApproved, PlanLocked, PlanStale, PlanInvalid, PlanAmendmentRequired:
 		return true
 	default:
 		return false

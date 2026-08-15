@@ -73,6 +73,40 @@ func TestControlBundleVerifiesRootRevisionAndExactHead(t *testing.T) {
 	}
 }
 
+func TestControlBundleBindsCompleteExecutableDirectoryMembership(t *testing.T) {
+	repository := t.TempDir()
+	runBundleGit(t, repository, "init", "-q")
+	runBundleGit(t, repository, "config", "user.email", "bundle@example.invalid")
+	runBundleGit(t, repository, "config", "user.name", "Bundle Test")
+	flows := filepath.Join(repository, ".boatstack", "flows")
+	if err := os.MkdirAll(flows, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(flows, "primary.flow.ir.json"), []byte("primary\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := NewControlBundleSnapshotWithMemberSets(map[string][]byte{
+		".boatstack/flows/primary.flow.ir.json": []byte("primary\n"),
+	}, nil, []ControlBundleMemberSet{{Root: ".boatstack/flows", Suffix: ".flow.ir.json", Paths: []string{".boatstack/flows/primary.flow.ir.json"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runBundleGit(t, repository, "add", ".boatstack/flows")
+	runBundleGit(t, repository, "commit", "-q", "-m", "primary")
+	if err := os.WriteFile(filepath.Join(flows, "secondary.flow.ir.json"), []byte("secondary\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyControlBundleRoot(repository, snapshot); err == nil || !strings.Contains(err.Error(), "member set") {
+		t.Fatalf("extra executable member was accepted at root: %v", err)
+	}
+	runBundleGit(t, repository, "add", ".boatstack/flows/secondary.flow.ir.json")
+	runBundleGit(t, repository, "commit", "-q", "-m", "secondary")
+	revision := strings.TrimSpace(runBundleGit(t, repository, "rev-parse", "HEAD"))
+	if err := VerifyControlBundleRevision(context.Background(), repository, revision, snapshot); err == nil || !strings.Contains(err.Error(), "member set") {
+		t.Fatalf("extra executable member was accepted at revision: %v", err)
+	}
+}
+
 func runBundleGit(t *testing.T, directory string, arguments ...string) string {
 	t.Helper()
 	command := exec.Command("git", arguments...)

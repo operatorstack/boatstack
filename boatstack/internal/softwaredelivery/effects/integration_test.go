@@ -646,7 +646,8 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 	if err := json.Unmarshal(afterSuccess, &legacyState); err != nil {
 		t.Fatal(err)
 	}
-	legacyState["schema_version"] = float64(durable.StateSchemaVersion - 1)
+	legacyState["schema_version"] = float64(durable.StateSchemaVersion - 2)
+	delete(legacyState, "planning_package_fingerprint")
 	delete(legacyState, "control_bundle_fingerprint")
 	legacyRaw, err := json.MarshalIndent(legacyState, "", "  ")
 	if err != nil {
@@ -665,7 +666,7 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacyPin.StateSchemaVersion = durable.StateSchemaVersion - 1
+	legacyPin.StateSchemaVersion = durable.StateSchemaVersion - 2
 	legacyPinRaw, err = boatstackruntime.EncodePin(legacyPin)
 	if err != nil {
 		t.Fatal(err)

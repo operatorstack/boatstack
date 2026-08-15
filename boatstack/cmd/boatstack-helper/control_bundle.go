@@ -93,6 +93,7 @@ func buildRepositoryControlBundleAllowingInitialization(ctx context.Context, rep
 		return boatstackruntime.ControlBundleSnapshot{}, err
 	}
 	sort.Strings(artifacts)
+	artifactPaths := make([]string, 0, len(artifacts))
 	resolver, err := softwareflow.NewResolver(ctx)
 	if err != nil {
 		return boatstackruntime.ControlBundleSnapshot{}, err
@@ -113,7 +114,9 @@ func buildRepositoryControlBundleAllowingInitialization(ctx context.Context, rep
 		if relErr != nil {
 			return boatstackruntime.ControlBundleSnapshot{}, relErr
 		}
-		paths[filepath.ToSlash(relative)] = struct{}{}
+		relative = filepath.ToSlash(relative)
+		artifactPaths = append(artifactPaths, relative)
+		paths[relative] = struct{}{}
 		paths[artifact.SourcePath] = struct{}{}
 		paths[artifact.DependencyLockPath] = struct{}{}
 		for path := range artifact.Assets {
@@ -139,7 +142,9 @@ func buildRepositoryControlBundleAllowingInitialization(ctx context.Context, rep
 		}
 		files[filepath.ToSlash(path)] = raw
 	}
-	return boatstackruntime.NewControlBundleSnapshotWithAbsent(files, absent)
+	return boatstackruntime.NewControlBundleSnapshotWithMemberSets(files, absent, []boatstackruntime.ControlBundleMemberSet{{
+		Root: ".boatstack/flows", Suffix: ".flow.ir.json", Paths: artifactPaths,
+	}})
 }
 
 func controlBundleRequired(id catalog.TransitionID) bool {

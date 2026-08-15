@@ -390,7 +390,7 @@ func applyPlanApprove(state *durable.State, admission protocol.Admission, _ cata
 }
 
 func applyPlanningPackageAdmit(state *durable.State, _ protocol.Admission, _ catalog.Transition) error {
-	state.Plan, state.Delivery, state.Phase, state.Terminal = model.PlanValid, model.DeliveryPlanning, model.PhaseActive, model.TerminalNonterminal
+	state.Plan, state.Delivery, state.Phase, state.Terminal = model.PlanPackageValid, model.DeliveryPlanning, model.PhaseActive, model.TerminalNonterminal
 	return nil
 }
 

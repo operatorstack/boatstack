@@ -44,7 +44,7 @@ func TestPlanningPackageAdmitApprovePromoteUsesExactWorkEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.Plan != model.PlanValid || state.PlanFingerprint != sha256Bytes([]byte(plan)) || manifest.WorkResultFingerprint != work.ResultFingerprint {
+	if state.Plan != model.PlanPackageValid || state.PlanFingerprint != sha256Bytes([]byte(plan)) || manifest.WorkResultFingerprint != work.ResultFingerprint {
 		t.Fatalf("admitted state=%#v manifest=%#v", state, manifest)
 	}
 

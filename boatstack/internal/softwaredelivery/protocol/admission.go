@@ -107,6 +107,7 @@ func NewAdmissionWithWorkAndBundle(snapshot model.Snapshot, objective model.Obje
 	if bundle != nil {
 		copy := *bundle
 		copy.Source.Files = append([]boatstackruntime.ControlBundleFile(nil), bundle.Source.Files...)
+		copy.Source.MemberSets = cloneControlBundleMemberSets(bundle.Source.MemberSets)
 		if bundle.SourceRuntimePin != nil {
 			pin := *bundle.SourceRuntimePin
 			copy.SourceRuntimePin = &pin
@@ -114,6 +115,7 @@ func NewAdmissionWithWorkAndBundle(snapshot model.Snapshot, objective model.Obje
 		if bundle.Target != nil {
 			target := *bundle.Target
 			target.Files = append([]boatstackruntime.ControlBundleFile(nil), bundle.Target.Files...)
+			target.MemberSets = cloneControlBundleMemberSets(bundle.Target.MemberSets)
 			copy.Target = &target
 		}
 		if bundle.TargetRuntimePin != nil {
@@ -152,6 +154,15 @@ func NewAdmissionWithWorkAndBundle(snapshot model.Snapshot, objective model.Obje
 		return Admission{}, err
 	}
 	return a, nil
+}
+
+func cloneControlBundleMemberSets(values []boatstackruntime.ControlBundleMemberSet) []boatstackruntime.ControlBundleMemberSet {
+	result := make([]boatstackruntime.ControlBundleMemberSet, len(values))
+	for index := range values {
+		result[index] = values[index]
+		result[index].Paths = append([]string(nil), values[index].Paths...)
+	}
+	return result
 }
 
 // ObjectiveForTransition binds maintenance to verified durable objective state.

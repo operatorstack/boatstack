@@ -60,7 +60,7 @@ func TestObserverValidatesAdmittedPlanningPackageWithoutPrematurePlanPromotion(t
 		t.Fatal(err)
 	}
 	state := durable.State{
-		Plan: model.PlanValid, PlanFingerprint: planFingerprint, PlanningPackageFingerprint: manifest.Fingerprint,
+		Plan: model.PlanPackageValid, PlanFingerprint: planFingerprint, PlanningPackageFingerprint: manifest.Fingerprint,
 		Objective: model.Objective{ID: "objective", TargetID: model.ObjectiveOpenPR, DeliveryID: deliveryID},
 	}
 	evidence, valid, err := observePlanningPackage(ports.ControllerLayout{RepositoryRoot: repository}, state, time.Unix(100, 0).UTC())

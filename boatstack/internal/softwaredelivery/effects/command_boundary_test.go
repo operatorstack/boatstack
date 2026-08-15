@@ -87,6 +87,27 @@ func TestGitHubProviderAuthorityIsDerivedFromWriteCapability(t *testing.T) {
 	}
 }
 
+func TestGitHubProviderAuthorityAcceptsOpaqueTrustedTransitionBinding(t *testing.T) {
+	runner := &boundaryRunner{output: []byte(`{"nameWithOwner":"owner/repository","url":"https://github.com/owner/repository","viewerPermission":"WRITE"}`)}
+	boundary, _ := NewNativeBoundaryWithRunner(runner)
+	receipt, err := boundary.ResolveGitHubProviderAuthority(context.Background(), t.TempDir(), "123", time.Unix(100, 0).UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.Fingerprint != "123" {
+		t.Fatalf("provider binding = %q", receipt.Fingerprint)
+	}
+}
+
+func TestGitHubProviderAuthorityRejectsUnsafeBinding(t *testing.T) {
+	boundary, _ := NewNativeBoundaryWithRunner(&boundaryRunner{})
+	for _, binding := range []string{"", " publication", "publication\n"} {
+		if _, err := boundary.ResolveGitHubProviderAuthority(context.Background(), t.TempDir(), binding, time.Unix(100, 0).UTC()); err == nil || !strings.Contains(err.Error(), "PROVIDER_AUTHORITY_INVALID") {
+			t.Fatalf("unsafe binding %q error = %v", binding, err)
+		}
+	}
+}
+
 func TestGitHubProviderAuthorityRejectsReadOnlyIdentity(t *testing.T) {
 	runner := &boundaryRunner{output: []byte(`{"nameWithOwner":"owner/repository","url":"https://github.com/owner/repository","viewerPermission":"READ"}`)}
 	boundary, _ := NewNativeBoundaryWithRunner(runner)

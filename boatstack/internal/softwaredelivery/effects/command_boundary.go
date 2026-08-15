@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/durable"
@@ -64,9 +65,9 @@ type githubAuthorityObservation struct {
 // ResolveGitHubProviderAuthority derives short-lived provider capability from
 // the trusted GitHub CLI boundary. It is capability evidence, not human
 // approval; run delegation remains the independent approval source.
-func (b NativeBoundary) ResolveGitHubProviderAuthority(ctx context.Context, repository, previewFingerprint string, now time.Time) (protocol.AuthorityReceipt, error) {
-	if len(previewFingerprint) != 64 || strings.Trim(previewFingerprint, "0123456789abcdef") != "" {
-		return protocol.AuthorityReceipt{}, fmt.Errorf("PROVIDER_AUTHORITY_INVALID: preview fingerprint must be lowercase SHA-256")
+func (b NativeBoundary) ResolveGitHubProviderAuthority(ctx context.Context, repository, authorityBinding string, now time.Time) (protocol.AuthorityReceipt, error) {
+	if authorityBinding == "" || len(authorityBinding) > 256 || strings.TrimSpace(authorityBinding) != authorityBinding || strings.IndexFunc(authorityBinding, unicode.IsControl) >= 0 {
+		return protocol.AuthorityReceipt{}, fmt.Errorf("PROVIDER_AUTHORITY_INVALID: authority binding must be non-empty, bounded, and free of control characters")
 	}
 	output, err := b.runner.CombinedOutput(ctx, repository, "gh", "repo", "view", "--json", "nameWithOwner,viewerPermission,url")
 	if err != nil {
@@ -92,10 +93,10 @@ func (b NativeBoundary) ResolveGitHubProviderAuthority(ctx context.Context, repo
 	}
 	issued := now.UTC()
 	subject := "github:" + observed.NameWithOwner
-	digest := sha256.Sum256([]byte(subject + "\x00" + previewFingerprint))
+	digest := sha256.Sum256([]byte(subject + "\x00" + authorityBinding))
 	return protocol.AuthorityReceipt{
 		ID: "provider-" + fmt.Sprintf("%x", digest[:8]), Class: catalog.AuthorityProvider,
-		Subject: subject, Fingerprint: previewFingerprint, IssuedAt: issued, ExpiresAt: issued.Add(2 * time.Minute),
+		Subject: subject, Fingerprint: authorityBinding, IssuedAt: issued, ExpiresAt: issued.Add(2 * time.Minute),
 	}, nil
 }
 
@@ -250,7 +251,7 @@ func (b NativeBoundary) Execute(ctx context.Context, admission protocol.Admissio
 		if output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "git", "check-ref-format", "--branch", branch); err != nil {
 			return settled, fmt.Errorf("invalid workspace branch: %s: %w", strings.TrimSpace(string(output)), err)
 		}
-		arguments := []string{"worktree", "add", "-b", branch, absolute, baseRevision}
+		arguments := []string{"-c", "core.autocrlf=false", "-c", "core.eol=lf", "worktree", "add", "-b", branch, absolute, baseRevision}
 		if output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "git", arguments...); err != nil {
 			return ports.EffectResult{Settlement: ports.EffectUnknown, Detail: strings.TrimSpace(string(output))}, nil
 		}

@@ -624,11 +624,21 @@ func validateReplayRequest(prior protocol.TransitionReceipt, request ApplyReques
 			return fmt.Errorf("idempotency receipt belongs to a repository control bundle")
 		}
 	} else {
-		if prior.ControlBundleSourceFingerprint != bundle.Source.Fingerprint {
+		if prior.ControlBundleTargetFingerprint == "" {
+			if prior.ControlBundleSourceFingerprint != bundle.Source.Fingerprint || bundle.Target != nil {
+				return fmt.Errorf("idempotency receipt belongs to a different repository control bundle")
+			}
+			return nil
+		}
+		if prior.ControlBundleSourceFingerprint != bundle.Source.Fingerprint && prior.ControlBundleTargetFingerprint != bundle.Source.Fingerprint {
 			return fmt.Errorf("idempotency receipt belongs to a different repository control bundle")
 		}
-		if bundle.Target != nil && prior.ControlBundleTargetFingerprint != bundle.Target.Fingerprint {
-			return fmt.Errorf("idempotency receipt belongs to a different repository control-bundle target")
+		if bundle.Target == nil {
+			return nil
+		}
+		targetFingerprint := bundle.Target.Fingerprint
+		if prior.ControlBundleTargetFingerprint != targetFingerprint {
+			return fmt.Errorf("idempotency receipt belongs to a different repository control-bundle target: receipt %s request %s", prior.ControlBundleTargetFingerprint, targetFingerprint)
 		}
 	}
 	return nil

@@ -14,7 +14,7 @@ import (
 
 const (
 	StateSchemaVersion      = 6
-	priorStateSchemaVersion = 5
+	priorStateSchemaVersion = 4
 )
 
 // CanReadStateSchema reports the current schema and its single supported
@@ -212,10 +212,12 @@ func DecodeState(value []byte) (State, error) {
 		return State{}, fmt.Errorf("durable state contains trailing JSON")
 	}
 	if state.SchemaVersion == priorStateSchemaVersion {
-		// Schema 6 adds only the optional control-bundle identity. The prior
-		// bytes remain the journal rollback source until a transition commits.
-		if state.ControlBundleFingerprint != "" {
-			return State{}, fmt.Errorf("durable state schema %d contains schema %d control-bundle fields", priorStateSchemaVersion, StateSchemaVersion)
+		// The released predecessor is schema 4. Schemas 5 and 6 add planning
+		// package and control-bundle identity; neither may be smuggled into
+		// predecessor bytes. The original bytes remain the journal rollback
+		// source until a transition commits.
+		if state.PlanningPackageFingerprint != "" || state.ControlBundleFingerprint != "" {
+			return State{}, fmt.Errorf("durable state schema %d contains later identity fields", priorStateSchemaVersion)
 		}
 		state.SchemaVersion = StateSchemaVersion
 	}
