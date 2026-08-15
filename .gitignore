@@ -1,6 +1,7 @@
 boatstack/boatstack-helper
 boatstack/boatstack-helper.exe
 dist/
+build/docs/
 node_modules/
 *.tsbuildinfo
 .DS_Store
