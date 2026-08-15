@@ -1054,7 +1054,9 @@ func repositoryBytes(t *testing.T, root string) map[string]string {
 		t.Fatal(err)
 	}
 	result[".git/@semantic/HEAD"] = runFlowGitOutput(t, root, "rev-parse", "--verify", "HEAD")
+	result[".git/@semantic/symbolic-HEAD"] = runFlowGitOutput(t, root, "symbolic-ref", "--quiet", "HEAD")
 	result[".git/@semantic/refs"] = runFlowGitOutput(t, root, "for-each-ref", "--format=%(refname)%09%(objectname)")
+	result[".git/@semantic/index"] = runFlowGitOutput(t, root, "ls-files", "--stage")
 	return result
 }
 
@@ -1074,7 +1076,7 @@ func TestRepositoryBytesExcludesGitInternals(t *testing.T) {
 	if snapshot[".boatstack/controller.json"] != "managed" || snapshot["README.md"] != "repository" {
 		t.Fatalf("repository snapshot omitted managed or ordinary files: %#v", snapshot)
 	}
-	if snapshot[".git/@semantic/HEAD"] == "" || snapshot[".git/@semantic/refs"] == "" {
+	if snapshot[".git/@semantic/HEAD"] == "" || snapshot[".git/@semantic/symbolic-HEAD"] == "" || snapshot[".git/@semantic/refs"] == "" || snapshot[".git/@semantic/index"] == "" {
 		t.Fatalf("repository snapshot omitted semantic Git state: %#v", snapshot)
 	}
 }
@@ -1091,6 +1093,39 @@ func TestRepositoryBytesDetectsSemanticGitMutation(t *testing.T) {
 	after := repositoryBytes(t, repository)
 	if reflect.DeepEqual(before, after) {
 		t.Fatal("repository snapshot missed semantic Git ref mutation")
+	}
+}
+
+func TestRepositoryBytesDetectsSymbolicHeadMutation(t *testing.T) {
+	repository := t.TempDir()
+	runFlowGit(t, repository, "init")
+	writeFixture(t, repository, "README.md", []byte("repository"))
+	runFlowGit(t, repository, "add", "README.md")
+	runFlowGit(t, repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-q", "-m", "fixture")
+	runFlowGit(t, repository, "branch", "same-commit")
+
+	before := repositoryBytes(t, repository)
+	runFlowGit(t, repository, "symbolic-ref", "HEAD", "refs/heads/same-commit")
+	after := repositoryBytes(t, repository)
+	if reflect.DeepEqual(before, after) {
+		t.Fatal("repository snapshot missed symbolic HEAD mutation")
+	}
+}
+
+func TestRepositoryBytesDetectsIndexOnlyMutation(t *testing.T) {
+	repository := t.TempDir()
+	runFlowGit(t, repository, "init")
+	writeFixture(t, repository, "README.md", []byte("repository"))
+	runFlowGit(t, repository, "add", "README.md")
+	runFlowGit(t, repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-q", "-m", "fixture")
+
+	before := repositoryBytes(t, repository)
+	writeFixture(t, repository, "README.md", []byte("staged"))
+	runFlowGit(t, repository, "add", "README.md")
+	writeFixture(t, repository, "README.md", []byte("repository"))
+	after := repositoryBytes(t, repository)
+	if reflect.DeepEqual(before, after) {
+		t.Fatal("repository snapshot missed index-only mutation")
 	}
 }
 
