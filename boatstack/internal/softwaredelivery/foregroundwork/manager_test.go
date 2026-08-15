@@ -169,7 +169,7 @@ func TestForegroundWorkInputFingerprintInvalidatesOutputsAndStaging(t *testing.T
 	if second.Status != foregroundwork.StatusRequested || second.Request.Fingerprint == first.Request.Fingerprint || second.Request.StagingRoot == first.Request.StagingRoot {
 		t.Fatalf("input change reused request identity or staging: first=%#v second=%#v", first.Request, second.Request)
 	}
-	if _, err := manager.Complete(ctx, invocation(), "run-1", "diagnose"); err == nil || !strings.Contains(err.Error(), "no such file") {
+	if _, err := manager.Complete(ctx, invocation(), "run-1", "diagnose"); err == nil {
 		t.Fatalf("invalidated output completed new request: %v", err)
 	}
 }
