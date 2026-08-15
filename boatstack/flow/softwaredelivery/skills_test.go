@@ -39,6 +39,10 @@ func TestGeneratedSkillsProjectOnlyDeclaredEntriesWithHostParity(t *testing.T) {
 		"--flow product-delivery --entry run", "--repository-authority", "same run ID", "Nothing continues in the\nbackground", "no merge or deploy",
 		"BOATSTACK_LAUNCHER_NOT_FOUND", ".boatstack/runtime.json", "Never run it", "creates no\nFlow run ID",
 		"WORKSPACE_COMMIT_REQUIRED", "Commit only the intended delivery changes", "Never fabricate an external-provider receipt",
+		"installation-authority\nsuspension before product work", "installation.reconcile-update", "--accept-program-change",
+		"boatstack reconcile-update --repo . --flow product-delivery --entry run --run-id <run-id>",
+		"do not request or reuse product delegation before reconciliation", "commit\nthose exact files separately before product work",
+		"Ask\nfor product delegation only after Boatstack returns the new exact delegation",
 	} {
 		if !strings.Contains(value, contract) {
 			t.Fatalf("generated skill lacks %q", contract)
@@ -48,6 +52,38 @@ func TestGeneratedSkillsProjectOnlyDeclaredEntriesWithHostParity(t *testing.T) {
 		if strings.Contains(path, "autoplan") || strings.Contains(path, "boatstack-run") {
 			t.Fatalf("undeclared entry generated: %s", path)
 		}
+	}
+}
+
+func TestGeneratedSoftwareDeliverySkillMakesProgramDriftCoreachableWithoutImplicitAcceptance(t *testing.T) {
+	// control-law: generated-driver-program-drift-has-an-exact-human-authorized-resumption
+	truth := true
+	compiled := controlprogram.Compiled{Fingerprint: strings.Repeat("a", 64), Document: controlprogram.Document{
+		Program: controlprogram.Program{ID: "incident-response"},
+		Operators: []controlprogram.Operator{{
+			ID: "respond", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/respond", Version: "1"},
+		}},
+		Targets: []controlprogram.Target{{ID: "mitigated", Predicate: controlprogram.Predicate{True: &truth}}},
+		Entries: []controlprogram.Entry{{ID: "respond", Target: "mitigated"}},
+	}}
+	files, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	codex := string(files[".agents/skills/incident-response-respond/SKILL.md"])
+	claude := string(files[".claude/skills/incident-response-respond/SKILL.md"])
+	for _, contract := range []string{
+		"UNRESOLVED", "solely because the selected compiled\nprogram differs", "exact prior program fingerprint",
+		"candidate program fingerprint", "program-delta fingerprint", "Ask for\nexplicit human acceptance",
+		"Never infer acceptance", "installation.reconcile-update", "--accept-program-change",
+		"--human <actor>", "program-change acceptance is true", "bound to the accepted bundle", "stop without\nperforming product effects",
+	} {
+		if !strings.Contains(codex, contract) {
+			t.Fatalf("generated program-reconciliation protocol lacks %q", contract)
+		}
+	}
+	if strings.ReplaceAll(codex, "--host codex", "--host HOST") != strings.ReplaceAll(claude, "--host claude", "--host HOST") {
+		t.Fatal("Codex and Claude program-reconciliation projections differ")
 	}
 }
 

@@ -45,6 +45,32 @@ func flowRepository(t *testing.T) string {
 	return repository
 }
 
+func TestFlowEntryCanonicalizesRepositoryRoot(t *testing.T) {
+	repository := flowRepository(t)
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	relative, err := filepath.Rel(workingDirectory, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound, err := bindFlowEntry(context.Background(), commandOptions{
+		repository: relative, programID: "product-delivery", entryID: "run", host: "codex",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exact, err := filepath.EvalSymlinks(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bound.repository != exact {
+		t.Fatalf("repository = %q, want exact root %q", bound.repository, exact)
+	}
+}
+
 func runFlowGit(t *testing.T, repository string, arguments ...string) {
 	t.Helper()
 	command := exec.Command("git", append([]string{"-C", repository}, arguments...)...)
@@ -61,6 +87,34 @@ func runFlowGitOutput(t *testing.T, repository string, arguments ...string) stri
 		t.Fatalf("git %v: %v\n%s", arguments, err, output)
 	}
 	return strings.TrimSpace(string(output))
+}
+
+func writeAdmittedFlowProgramState(t *testing.T, repository, programFingerprint string) {
+	t.Helper()
+	resolver, err := plant.NewResolver("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	invoking, err := resolver.ResolveInvocation(context.Background(), repository, "codex", "fixture-program-state")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, invoking, err := resolver.ResolveLayout(context.Background(), invoking)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := durable.Default(invoking, time.Now().UTC())
+	state.ProgramFingerprint = programFingerprint
+	raw, err := durable.EncodeState(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(layout.StatePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(layout.StatePath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func captureRunOutput(t *testing.T, arguments ...string) ([]byte, error) {
@@ -246,8 +300,13 @@ func productDeliveryDocument(programID string) controlprogram.Document {
 			{ID: "publication", Kind: "string"}, {ID: "verification", Kind: "string"},
 			{ID: "configuration", Kind: "string"}, {ID: "runtime", Kind: "string"},
 		},
-		Operators:   []controlprogram.Operator{{ID: "publication.observe", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/publication.observe", Version: "1"}}},
-		Transitions: []controlprogram.Transition{{ID: "publication.observe", Operator: "publication.observe", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 77}},
+		Operators: []controlprogram.Operator{{ID: "publication.observe", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/publication.observe", Version: "1"}}},
+		Transitions: []controlprogram.Transition{{
+			ID: "publication.observe", Operator: "publication.observe", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 77,
+			Parameters: []controlprogram.TransitionParameterBinding{{Parameter: "publication_id", Producer: controlprogram.ParameterProducer{
+				Kind: controlprogram.ParameterSourceHostInput, Request: &controlprogram.HostInputRequest{ID: "publication-id", Description: "publication id", Authorities: []string{"human"}, Scope: "transition"},
+			}}},
+		}},
 		Targets: []controlprogram.Target{{ID: "published-pr", Predicate: controlprogram.Predicate{All: []controlprogram.Predicate{
 			flowFact("verification", "current"), flowFact("configuration", "verified"), flowFact("runtime", "verified"), flowFact("publication", "open"),
 		}}}},
@@ -325,6 +384,55 @@ func TestRPCFlowEntryRejectsUnknownEntryAndInvalidInboxBeforeManagedState(t *tes
 	}
 }
 
+func TestPrescribedRepositoryTransitionRebindsBeforeExposure(t *testing.T) {
+	// control-law: a-selected-repository-transition-cannot-return-or-apply-an-unbound-prescription
+	repository := flowRepository(t)
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
+	if err := os.RemoveAll(filepath.Join(repository, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	runFlowGit(t, repository, "init", "-q")
+	runFlowGit(t, repository, "config", "user.email", "fixture@example.invalid")
+	runFlowGit(t, repository, "config", "user.name", "Fixture")
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "fixture")
+	writeAdmittedFlowProgramState(t, repository, strings.Repeat("f", 64))
+	bound, err := bindFlowEntry(context.Background(), commandOptions{
+		repository: repository, programID: "product-delivery", entryID: "run", host: "codex",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := buildRequest(surfaces.OperationResolve, bound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := surfaces.Response{Prescription: &protocol.Prescription{
+		SchemaVersion: protocol.PrescriptionSchemaVersion,
+		TransitionID:  "publication.observe",
+	}}
+	rebound, changed, err := bindPrescribedRepositoryInvocation(context.Background(), request, response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed || rebound.TransitionID != "publication.observe" || rebound.Prescription.ID != "" {
+		t.Fatalf("selected prescription was not rebound: changed=%t request=%#v", changed, rebound)
+	}
+	if rebound.InputRequest == nil || rebound.InvocationEvidence != nil {
+		t.Fatalf("host-input transition crossed selection without its exact input request: request=%#v evidence=%#v", rebound.InputRequest, rebound.InvocationEvidence)
+	}
+	if rebound.InputRequest.ProgramFingerprint != rebound.ProgramFingerprint || rebound.InputRequest.ExecutionProgramFingerprint != strings.Repeat("f", 64) || rebound.InputRequest.ProgramFingerprint == rebound.InputRequest.ExecutionProgramFingerprint {
+		t.Fatalf("input request collapsed definition and executable program identities: %#v", rebound.InputRequest)
+	}
+	_, suspended, changed, err := stabilizeRepositoryPrescription(context.Background(), request, response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed || suspended.InputRequest == nil || suspended.Prescription != nil {
+		t.Fatalf("unstabilized prescription escaped the shared resolution boundary: changed=%t response=%#v", changed, suspended)
+	}
+}
+
 func TestRPCFlowEntryPreservesObjectiveEvidenceAndStopContext(t *testing.T) {
 	// control-law: entry-binding-preserves-nonidentity-objective-context
 	repository := flowRepository(t)
@@ -365,7 +473,6 @@ func TestFlowRunIdentitySurvivesWorkspaceTransfer(t *testing.T) {
 		repository: destination, programID: "product-delivery", entryID: "run", host: "codex",
 		flowProgramFingerprint: initial.flowProgramFingerprint, runID: initial.runID,
 		deliveryID: initial.deliveryID, targetID: initial.targetID, objectiveID: initial.objectiveID,
-		transitionID: "plan.create",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -373,12 +480,8 @@ func TestFlowRunIdentitySurvivesWorkspaceTransfer(t *testing.T) {
 	if resumed.runID != initial.runID {
 		t.Fatalf("workspace transfer changed Flow run identity: %q != %q", resumed.runID, initial.runID)
 	}
-	parameters, err := parseParameters(resumed.parameters)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if sourcePath, ok := parameters.Get("source_path"); !ok || sourcePath != filepath.Join(resumed.repository, ".boatstack", "plans", "delivery-one.source") {
-		t.Fatalf("destination plan binding = %q, %t", sourcePath, ok)
+	if source, ok := resumed.workInputs["plan"]; !ok || source.Value != filepath.Join(resumed.repository, ".boatstack", "plans", "delivery-one.source") {
+		t.Fatalf("destination entry input = %#v, %t", source, ok)
 	}
 
 	continuation := commandOptions{
@@ -553,7 +656,7 @@ func TestFlowEntryRejectsCallerOverridesOfResolvedInputs(t *testing.T) {
 					repository: repository, programID: "product-delivery", entryID: "run", host: "codex",
 					transitionID: "plan.create", parameters: []string{"source_path=" + other},
 				})
-				if err == nil || !strings.Contains(err.Error(), "FLOW_INPUT_MISMATCH") {
+				if err == nil || !strings.Contains(err.Error(), "FLOW_PARAMETER_BYPASS") {
 					t.Fatalf("CLI override result = %v", err)
 				}
 				return
@@ -563,7 +666,7 @@ func TestFlowEntryRejectsCallerOverridesOfResolvedInputs(t *testing.T) {
 				Host: "claude", CorrelationID: "rpc-override", ProgramID: "product-delivery", EntryID: "run",
 				TransitionID: "plan.create", Parameters: protocol.Parameters{{Name: "source_path", Value: other}},
 			})
-			if err == nil || !strings.Contains(err.Error(), "FLOW_INPUT_MISMATCH") {
+			if err == nil || !strings.Contains(err.Error(), "FLOW_PARAMETER_BYPASS") {
 				t.Fatalf("RPC override result = %v", err)
 			}
 		})
@@ -580,8 +683,104 @@ func TestFlowEntryRejectsCallerOverridesDuringUntargetedResolution(t *testing.T)
 		repository: repository, programID: "product-delivery", entryID: "run", host: "codex",
 		parameters: []string{"source_path=" + other},
 	})
-	if err == nil || !strings.Contains(err.Error(), "FLOW_INPUT_MISMATCH") {
+	if err == nil || !strings.Contains(err.Error(), "FLOW_PARAMETER_BYPASS") {
 		t.Fatalf("untargeted override result = %v", err)
+	}
+}
+
+func TestFlowEntryDoesNotMaterializeInternalKernelTransition(t *testing.T) {
+	// control-law: repository invocation contracts govern only transitions in
+	// canonical Flow IR; internal kernel transitions retain their trusted path.
+	repository := flowRepository(t)
+	runFlowGit(t, repository, "init", "-q")
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-q", "-m", "fixture")
+
+	bound, err := bindFlowEntry(context.Background(), commandOptions{
+		repository: repository, programID: "product-delivery", entryID: "run", host: "codex", transitionID: "objective.bind",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bound.invocationEvidence != nil || bound.inputRequest != nil {
+		t.Fatalf("internal transition acquired repository invocation state: evidence=%#v request=%#v", bound.invocationEvidence, bound.inputRequest)
+	}
+	parameters, err := parseParameters(bound.parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target, ok := parameters.Get("target_id"); !ok || target != "published-pr" {
+		t.Fatalf("target context = %q, %t", target, ok)
+	}
+	if delivery, ok := parameters.Get("delivery_id"); !ok || delivery != "delivery-one" {
+		t.Fatalf("delivery context = %q, %t", delivery, ok)
+	}
+}
+
+func TestFlowRefreshPreservesTrustedMaintenanceParameters(t *testing.T) {
+	// control-law: Flow refresh rematerializes repository transition values but
+	// preserves parameters already bound by a trusted maintenance command.
+	repository := flowRepository(t)
+	document := productDeliveryDocument("product-delivery")
+	document.Entries[0].Delegation = &controlprogram.DelegationBinding{Reference: "software-delivery/delegation/autonomy", Version: "1"}
+	writeFlowArtifact(t, repository, document, ".boatstack/flows/product-delivery.flow.ts", []byte("flow source"), "package-lock.json", []byte("lock"))
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
+	parameters := []string{
+		"source_revision=exact-source",
+		"runtime_version=v-test",
+		"runtime_sha256=" + strings.Repeat("a", 64),
+		"accept_obligation_change=true",
+	}
+	options, err := bindFlowEntry(context.Background(), commandOptions{
+		repository: repository, programID: "product-delivery", entryID: "run", host: "codex",
+		transitionID: "installation.reconcile-update", parameters: parameters,
+		maintenanceParameterSurface: true, humanActor: "operator",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(options.delegationAuthorities) != 0 || options.delegationRequestFingerprint != "" {
+		t.Fatalf("program reconciliation acquired product delegation: authorities=%v request=%q", options.delegationAuthorities, options.delegationRequestFingerprint)
+	}
+	prior, err := buildRequest(surfaces.OperationApply, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refreshed, _, err := refreshFlowInvocation(context.Background(), surfaces.OperationApply, prior, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"source_revision", "runtime_version", "runtime_sha256", "accept_obligation_change"} {
+		if _, ok := refreshed.Parameters.Get(name); !ok {
+			t.Fatalf("CLI refresh dropped trusted maintenance parameter %q", name)
+		}
+	}
+	rpc, err := refreshRPCFlowInvocation(context.Background(), prior)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(rpc.Parameters, refreshed.Parameters) {
+		t.Fatalf("RPC and CLI maintenance refresh differ:\nRPC: %#v\nCLI: %#v", rpc.Parameters, refreshed.Parameters)
+	}
+}
+
+func TestProgramChangePreflightRequiresExactTypedRecoverySurface(t *testing.T) {
+	// control-law: product delegation is delayed only for a complete, exact
+	// program-drift suspension with an explicit reconciliation transition.
+	response := surfaces.Response{
+		Decision: &supervisor.Decision{Kind: supervisor.DecisionUnresolved, Reason: supervisor.ReasonProgramDrift},
+		ProgramChange: &surfaces.ProgramChange{
+			PriorProgramFingerprint: strings.Repeat("a", 64), CandidateProgramFingerprint: strings.Repeat("b", 64),
+			ProgramDeltaFingerprint: strings.Repeat("c", 64), RequiredTransition: "installation.reconcile-update", AcceptanceFlag: "--accept-program-change",
+		},
+	}
+	if !isExactProgramChangeSuspension(response) {
+		t.Fatal("complete program-drift suspension was not recognized")
+	}
+	response.ProgramChange.AcceptanceFlag = "--implicit"
+	if isExactProgramChangeSuspension(response) {
+		t.Fatal("noncanonical acceptance surface delayed delegation")
 	}
 }
 
@@ -878,7 +1077,12 @@ func TestFlowValidationRejectsMissingProductionRecoveryClosure(t *testing.T) {
 	// control-law: published-flows-close-recovery-in-the-production-composition
 	document := productDeliveryDocument("product-delivery")
 	document.Operators[0] = controlprogram.Operator{ID: "publication.execute", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/publication.execute", Version: "1"}}
-	document.Transitions[0] = controlprogram.Transition{ID: "publication.execute", Operator: "publication.execute", Guard: document.Transitions[0].Guard, Target: document.Transitions[0].Target, Priority: 77}
+	document.Transitions[0] = controlprogram.Transition{
+		ID: "publication.execute", Operator: "publication.execute", Guard: document.Transitions[0].Guard, Target: document.Transitions[0].Target, Priority: 77,
+		Parameters: []controlprogram.TransitionParameterBinding{{Parameter: "preview_fingerprint", Producer: controlprogram.ParameterProducer{
+			Kind: controlprogram.ParameterSourceHostInput, Request: &controlprogram.HostInputRequest{ID: "preview-fingerprint", Description: "preview fingerprint", Authorities: []string{"human"}, Scope: "transition"},
+		}}},
+	}
 	resolver, err := softwareflow.NewResolver(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -1093,30 +1297,11 @@ func TestFlowEntryBindsStableRunAndResumesManagedPlan(t *testing.T) {
 	if !strings.HasPrefix(initial.runID, "run-") || initial.deliveryID != "delivery-one" || initial.targetID != "published-pr" || initial.trustedObjectiveClass != "open-or-updated-pr" || len(initial.parameters) != 0 {
 		t.Fatalf("initial Flow context = %#v", initial)
 	}
-	for _, transitionID := range []string{"objective.bind", "plan.create"} {
-		preManaged, err := bindFlowEntry(context.Background(), commandOptions{
-			repository: repository, programID: "product-delivery", entryID: "run", runID: initial.runID, host: "codex",
-			deliveryID: initial.deliveryID, targetID: initial.targetID, objectiveID: initial.objectiveID, transitionID: transitionID,
-		})
-		if err != nil {
-			t.Fatalf("pre-materialization %s binding failed: %v", transitionID, err)
-		}
-		if transitionID == "plan.create" {
-			parameters, parseErr := parseParameters(preManaged.parameters)
-			if parseErr != nil {
-				t.Fatal(parseErr)
-			}
-			expected := filepath.Join(initial.repository, ".boatstack", "plans", "inbox", "delivery-one.md")
-			if source, ok := parameters.Get("source_path"); !ok || source != expected {
-				t.Fatalf("pre-materialization source = %q, present=%t", source, ok)
-			}
-		}
-	}
 	writeFixture(t, repository, ".boatstack/plans/delivery-one.source", []byte("exact plan"))
 	writeFixture(t, repository, ".boatstack/plans/inbox/unrelated.md", []byte("other plan"))
 	resumed, err := bindFlowEntry(context.Background(), commandOptions{
 		repository: repository, programID: "product-delivery", entryID: "run", runID: initial.runID, host: "codex",
-		deliveryID: initial.deliveryID, targetID: initial.targetID, objectiveID: initial.objectiveID, transitionID: "plan.create",
+		deliveryID: initial.deliveryID, targetID: initial.targetID, objectiveID: initial.objectiveID,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1124,12 +1309,8 @@ func TestFlowEntryBindsStableRunAndResumesManagedPlan(t *testing.T) {
 	if resumed.runID != initial.runID {
 		t.Fatalf("run identity changed: %s != %s", resumed.runID, initial.runID)
 	}
-	parameters, err := parseParameters(resumed.parameters)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if source, ok := parameters.Get("source_path"); !ok || source != filepath.Join(resumed.repository, ".boatstack", "plans", "delivery-one.source") {
-		t.Fatalf("resumed source = %q, present=%t", source, ok)
+	if source, ok := resumed.workInputs["plan"]; !ok || source.Value != filepath.Join(resumed.repository, ".boatstack", "plans", "delivery-one.source") {
+		t.Fatalf("resumed entry input = %#v, present=%t", source, ok)
 	}
 }
 
@@ -1271,174 +1452,8 @@ func TestRepositoryBytesDetectsIndexOnlyMutation(t *testing.T) {
 	}
 }
 
-func TestContinuationRebindsOnlyRepositoryResolvedCandidateParameters(t *testing.T) {
-	// control-law: continuation-may-re-resolve-only-one-supervisor-candidate-with-repository-owned-parameters
-	repository := flowRepository(t)
-	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("exact plan"))
-	bound, err := bindFlowEntry(context.Background(), commandOptions{
-		repository: repository, programID: "product-delivery", entryID: "run", host: "codex",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	objectiveBind := catalog.Transition{ID: "objective.bind", Parameters: []catalog.ParameterSpec{{Name: "target_id", Required: true}, {Name: "delivery_id", Required: true}}}
-	rebound, changed, err := bindContinuationCandidate(context.Background(), bound, surfaces.Response{Decision: &supervisor.Decision{
-		Kind: supervisor.DecisionCandidate, Transition: &objectiveBind, Candidates: []catalog.TransitionID{"objective.bind"},
-	}})
-	if err != nil || !changed || rebound.transitionID != "objective.bind" {
-		t.Fatalf("repository candidate rebind = options=%#v changed=%t err=%v", rebound, changed, err)
-	}
-	parameters, err := parseParameters(rebound.parameters)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if target, ok := parameters.Get("target_id"); !ok || target != "published-pr" {
-		t.Fatalf("bound target = %q, %t", target, ok)
-	}
-	if delivery, ok := parameters.Get("delivery_id"); !ok || delivery != "delivery-one" {
-		t.Fatalf("bound delivery = %q, %t", delivery, ok)
-	}
-	planCreate := catalog.Transition{ID: "plan.create", Parameters: []catalog.ParameterSpec{{Name: "source_path", Required: true}, {Name: "source_fingerprint", Required: true}, {Name: "delivery_id", Required: true}}}
-	planBound, planChanged, err := bindContinuationCandidate(context.Background(), bound, surfaces.Response{Decision: &supervisor.Decision{
-		Kind: supervisor.DecisionCandidate, Transition: &planCreate, Candidates: []catalog.TransitionID{"plan.create"},
-	}})
-	if err != nil || !planChanged || planBound.transitionID != "plan.create" {
-		t.Fatalf("plan candidate rebind = options=%#v changed=%t err=%v", planBound, planChanged, err)
-	}
-	planParameters, err := parseParameters(planBound.parameters)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"source_path", "source_fingerprint", "delivery_id"} {
-		if _, ok := planParameters.Get(name); !ok {
-			t.Fatalf("plan parameter %q was not bound", name)
-		}
-	}
-
-	projectConfig := []byte(`{"schema_version":2,"project":{"name":"fresh-flow","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex"]}`)
-	writeFixture(t, repository, ".boatstack/project.json", projectConfig)
-	installationInitialize := catalog.Transition{ID: "installation.initialize", Parameters: []catalog.ParameterSpec{
-		{Name: "config_path", Required: true}, {Name: "config_sha256", Required: true}, {Name: "runtime_version", Required: true}, {Name: "runtime_sha256", Required: true}, {Name: "source_revision", Required: true},
-	}}
-	installationBound, installationChanged, err := bindContinuationCandidate(context.Background(), bound, surfaces.Response{Decision: &supervisor.Decision{
-		Kind: supervisor.DecisionCandidate, Transition: &installationInitialize, Candidates: []catalog.TransitionID{"installation.initialize"},
-	}})
-	if err != nil || !installationChanged || installationBound.transitionID != "installation.initialize" {
-		t.Fatalf("installation candidate rebind = options=%#v changed=%t err=%v", installationBound, installationChanged, err)
-	}
-	installationParameters, err := parseParameters(installationBound.parameters)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"config_path", "config_sha256", "runtime_version", "runtime_sha256", "source_revision"} {
-		if value, ok := installationParameters.Get(name); !ok || value == "" {
-			t.Fatalf("installation parameter %q = %q, %t", name, value, ok)
-		}
-	}
-	_, expectedConfigFingerprint, err := protocol.ProjectConfigFingerprint(projectConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if actual, _ := installationParameters.Get("config_sha256"); actual != expectedConfigFingerprint {
-		t.Fatalf("installation config fingerprint = %q, want semantic fingerprint %q", actual, expectedConfigFingerprint)
-	}
-
-	for name, decision := range map[string]supervisor.Decision{
-		"ambiguous": {
-			Kind: supervisor.DecisionCandidate, Transition: &objectiveBind,
-			Candidates: []catalog.TransitionID{"objective.bind", "plan.create"},
-		},
-		"mismatched": {
-			Kind: supervisor.DecisionCandidate, Transition: &objectiveBind,
-			Candidates: []catalog.TransitionID{"plan.create"},
-		},
-		"human-question": {
-			Kind:       supervisor.DecisionCandidate,
-			Transition: &catalog.Transition{ID: "plan.approve", Parameters: []catalog.ParameterSpec{{Name: "plan_fingerprint", Required: true}}, Prescription: catalog.Prescription{AuthorityPrompt: "Approve exact plan bytes"}},
-			Candidates: []catalog.TransitionID{"plan.approve"},
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			result, reboundChanged, reboundErr := bindContinuationCandidate(context.Background(), bound, surfaces.Response{Decision: &decision})
-			if reboundErr != nil || reboundChanged || result.transitionID != "" || len(result.parameters) != 0 {
-				t.Fatalf("unsafe candidate rebound = options=%#v changed=%t err=%v", result, reboundChanged, reboundErr)
-			}
-		})
-	}
-
-	explicit := bound
-	explicit.transitionID = "objective.bind"
-	if _, changed, err := bindContinuationCandidate(context.Background(), explicit, surfaces.Response{Decision: &supervisor.Decision{
-		Kind: supervisor.DecisionCandidate, Transition: &objectiveBind, Candidates: []catalog.TransitionID{"objective.bind"},
-	}}); err != nil || changed {
-		t.Fatalf("explicit transition rebound changed=%t err=%v", changed, err)
-	}
-	if _, changed, err := bindContinuationCandidate(context.Background(), bound, surfaces.Response{
-		Decision:     &supervisor.Decision{Kind: supervisor.DecisionCandidate, Transition: &objectiveBind, Candidates: []catalog.TransitionID{"objective.bind"}},
-		Prescription: &protocol.Prescription{TransitionID: "objective.bind"},
-	}); err != nil || changed {
-		t.Fatalf("prescribed response rebound changed=%t err=%v", changed, err)
-	}
-}
-
-func TestPublicationPreviewParametersAreRepositoryResolved(t *testing.T) {
-	repository := t.TempDir()
-	runFlowGit(t, repository, "init", "-q")
-	runFlowGit(t, repository, "checkout", "-q", "-b", "feature/publication")
-	writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":2,"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli"]}`))
-	bodyPath := filepath.Join(repository, ".boatstack", "evidence", "delivery-pr-body.md")
-	writeFixture(t, repository, ".boatstack/evidence/delivery-pr-body.md", []byte("# Pull request\n"))
-	runFlowGit(t, repository, "add", ".")
-	runFlowGit(t, repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-q", "-m", "fixture")
-	options := commandOptions{repository: repository, transitionID: "publication.preview", host: "cli"}
-	if err := bindPublicationPreviewParameters(context.Background(), repository, "delivery", "cli", &options, nil); err != nil {
-		t.Fatal(err)
-	}
-	parameters, err := parseParameters(options.parameters)
-	if err != nil {
-		t.Fatal(err)
-	}
-	canonicalBodyPath, err := filepath.EvalSymlinks(bodyPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for name, want := range map[string]string{"base_ref": "main", "head_ref": "feature/publication", "body_path": canonicalBodyPath} {
-		if got, ok := parameters.Get(name); !ok || got != want {
-			t.Fatalf("publication parameter %s = %q, present=%t, want %q", name, got, ok, want)
-		}
-	}
-}
-
-func TestStateOwnedTransitionParametersDoNotRequireHumanAnswers(t *testing.T) {
-	state := durable.State{
-		WorkspaceBranch:    "feat/exact-branch",
-		PreviewFingerprint: strings.Repeat("a", 64),
-		PublicationID:      "123",
-		TransactionID:      "adm-123",
-	}
-	for transition, expected := range map[string][]string{
-		"workspace.activate":    {"branch=feat/exact-branch"},
-		"workspace.sync":        {"branch=feat/exact-branch"},
-		"workspace.publish":     {"branch=feat/exact-branch"},
-		"publication.execute":   {"preview_fingerprint=" + strings.Repeat("a", 64)},
-		"publication.observe":   {"publication_id=123"},
-		"publication.reconcile": {"publication_id=123", "transaction_id=adm-123"},
-	} {
-		t.Run(transition, func(t *testing.T) {
-			bound, err := bindStateOwnedTransitionParameters(commandOptions{transitionID: transition}, state)
-			if err != nil || strings.Join(bound.parameters, "\x00") != strings.Join(expected, "\x00") {
-				t.Fatalf("state-owned binding = %#v, %v", bound.parameters, err)
-			}
-		})
-	}
-
-	_, err := bindStateOwnedTransitionParameters(commandOptions{
-		transitionID: "workspace.activate", parameters: []string{"branch=feat/other"},
-	}, state)
-	if err == nil || !strings.Contains(err.Error(), "FLOW_INPUT_MISMATCH") {
-		t.Fatalf("caller override was not rejected: %v", err)
-	}
-}
+// Legacy transition-specific parameter rebinding was removed. Repository Flows now
+// materialize only compiled producer declarations.
 
 func TestCommittedActiveRunRehydratesExactDeliveryWhenRunIDIsSupplied(t *testing.T) {
 	// control-law: a resumed run resolves inputs from its committed delivery before selecting work
@@ -1495,7 +1510,7 @@ func TestFlowEntryRejectsSelectedPlanContentSubstitution(t *testing.T) {
 	writeFixture(t, repository, planPath, []byte("plan B"))
 	_, err = bindFlowEntry(context.Background(), commandOptions{
 		repository: repository, programID: "product-delivery", entryID: "run", runID: initial.runID, host: "codex",
-		deliveryID: initial.deliveryID, targetID: initial.targetID, objectiveID: initial.objectiveID, transitionID: "plan.create",
+		deliveryID: initial.deliveryID, targetID: initial.targetID, objectiveID: initial.objectiveID,
 	})
 	if err == nil || !strings.Contains(err.Error(), "FLOW_RUN_MISMATCH") {
 		t.Fatalf("plan substitution result = %v", err)
@@ -1515,18 +1530,14 @@ func TestFlowEntryPreservesSelectedPlanFilenameBeforeMaterialization(t *testing.
 	}
 	resumed, err := bindFlowEntry(context.Background(), commandOptions{
 		repository: repository, programID: "product-delivery", entryID: "run", runID: initial.runID, host: "codex",
-		deliveryID: initial.deliveryID, targetID: initial.targetID, objectiveID: initial.objectiveID, transitionID: "plan.create",
+		deliveryID: initial.deliveryID, targetID: initial.targetID, objectiveID: initial.objectiveID,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	parameters, err := parseParameters(resumed.parameters)
-	if err != nil {
-		t.Fatal(err)
-	}
 	expected := filepath.Join(initial.repository, ".boatstack", "plans", "inbox", "delivery.MD")
-	if source, ok := parameters.Get("source_path"); !ok || source != expected {
-		t.Fatalf("resumed source = %q, present=%t; want %q", source, ok, expected)
+	if source, ok := resumed.workInputs["plan"]; !ok || source.Value != expected {
+		t.Fatalf("resumed entry input = %#v, present=%t; want %q", source, ok, expected)
 	}
 }
 
@@ -1548,7 +1559,7 @@ func TestFlowEntryRejectsAmbiguousPlanFilenameOnResume(t *testing.T) {
 	}
 	_, err = bindFlowEntry(context.Background(), commandOptions{
 		repository: repository, programID: "product-delivery", entryID: "run", runID: initial.runID, host: "codex",
-		deliveryID: initial.deliveryID, targetID: initial.targetID, objectiveID: initial.objectiveID, transitionID: "plan.create",
+		deliveryID: initial.deliveryID, targetID: initial.targetID, objectiveID: initial.objectiveID,
 	})
 	if err == nil || !strings.Contains(err.Error(), "FLOW_INPUT_INVALID") {
 		t.Fatalf("ambiguous resume result = %v", err)
@@ -1566,7 +1577,7 @@ func TestFlowEntryRejectsObjectiveSubstitutionWithinRun(t *testing.T) {
 	_, err = bindFlowEntry(context.Background(), commandOptions{
 		repository: repository, programID: "product-delivery", entryID: "run", host: "codex",
 		runID: initial.runID, deliveryID: initial.deliveryID, targetID: initial.targetID,
-		objectiveID: "objective-substituted", transitionID: "objective.bind",
+		objectiveID: "objective-substituted",
 	})
 	if err == nil || !strings.Contains(err.Error(), "FLOW_CONTEXT_MISMATCH") {
 		t.Fatalf("objective substitution result = %v", err)

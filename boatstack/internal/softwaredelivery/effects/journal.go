@@ -138,6 +138,7 @@ func readJournal(path string) (journalRecord, error) {
 		receipt := record.Receipt
 		admission := record.Admission
 		if receipt.PrescriptionID != admission.PrescriptionID || receipt.TransitionVersion != admission.TransitionVersion || receipt.Program.Fingerprint != admission.ExpectedProgramFingerprint ||
+			receipt.InvocationFingerprint != admission.InvocationFingerprint ||
 			receipt.PriorStateRevision != admission.ExpectedStateRevision || receipt.SourceFingerprint != admission.ExpectedSnapshotFingerprint ||
 			receipt.AuthorityFingerprint != admission.AuthorityFingerprint || !slices.Equal(receipt.RequiredCapabilities, admission.RequiredCapabilities) ||
 			!slices.Equal(receipt.GrantedCapabilities, admission.GrantedCapabilities) || receipt.ObjectiveID != admission.Objective.ID || receipt.TargetID != admission.Objective.TargetID || receipt.TrustedClass != admission.Objective.TrustedClass ||

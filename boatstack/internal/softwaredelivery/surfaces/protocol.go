@@ -15,10 +15,11 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
+	"github.com/operatorstack/boatstack/boatstack/invocation"
 	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
-const SchemaVersion = 10
+const SchemaVersion = 12
 
 var flowContextIdentity = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
@@ -80,6 +81,8 @@ type Request struct {
 	WorkBlockReason              string                                  `json:"work_block_reason,omitempty"`
 	ControlBundle                *boatstackruntime.ControlBundleContract `json:"control_bundle,omitempty"`
 	ControlBundleFingerprint     string                                  `json:"control_bundle_fingerprint,omitempty"`
+	InvocationEvidence           *invocation.Evidence                    `json:"invocation_evidence,omitempty"`
+	InputRequest                 *invocation.InputRequest                `json:"input_request,omitempty"`
 }
 
 func (r Request) Validate(now time.Time) error {
@@ -97,6 +100,19 @@ func (r Request) Validate(now time.Time) error {
 	}
 	if r.ProgramID == "" && r.ProgramFingerprint != "" {
 		return fmt.Errorf("surface request cannot carry a program fingerprint without a program")
+	}
+	if r.InputRequest != nil && r.InvocationEvidence != nil {
+		return fmt.Errorf("surface request cannot carry both an input request and ready invocation evidence")
+	}
+	if r.InputRequest != nil {
+		if r.Operation != OperationResolve || r.InputRequest.Validate() != nil || r.InputRequest.RunID != r.FlowID || r.InputRequest.ProgramFingerprint != r.ProgramFingerprint || r.InputRequest.EntryID != r.EntryID || r.InputRequest.TransitionID != string(r.TransitionID) {
+			return fmt.Errorf("surface input request does not match the selected Flow transition")
+		}
+	}
+	if r.InvocationEvidence != nil {
+		if err := r.InvocationEvidence.Validate(); err != nil || r.InvocationEvidence.RunID != r.FlowID || r.InvocationEvidence.ProgramFingerprint != r.ProgramFingerprint || r.InvocationEvidence.EntryID != r.EntryID || r.InvocationEvidence.TransitionID != string(r.TransitionID) {
+			return fmt.Errorf("surface invocation evidence does not match the selected Flow transition")
+		}
 	}
 	if r.ControlBundle != nil {
 		if err := r.ControlBundle.Validate(); err != nil {
@@ -237,6 +253,8 @@ type Response struct {
 	Error         string                      `json:"error,omitempty"`
 	Delegation    *DelegationRequired         `json:"delegation,omitempty"`
 	Work          *foregroundwork.Record      `json:"work,omitempty"`
+	InputRequest  *invocation.InputRequest    `json:"input_request,omitempty"`
+	Invocation    *invocation.Evidence        `json:"invocation_evidence,omitempty"`
 }
 
 type DelegationRequired struct {

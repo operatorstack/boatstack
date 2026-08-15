@@ -1,4 +1,4 @@
-import { all, defineFlow, entry, fact, marked } from "@operatorstack/boatstack";
+import { all, defineFlow, entry, fact, hostParameter, marked } from "@operatorstack/boatstack";
 import {
   inbox,
   planInboxResolver,
@@ -6,7 +6,7 @@ import {
   softwareDeliveryFacets,
   trustedOperators,
   trustedDelegation,
-  trustedTransitions,
+  trustedTransition,
   type TrustedStep,
 } from "@operatorstack/boatstack-software-delivery";
 
@@ -21,7 +21,9 @@ export default defineFlow({
   facets: softwareDeliveryFacets,
   evidence: softwareDeliveryEvidence,
   operators: trustedOperators(lifecycle),
-  transitions: trustedTransitions(lifecycle),
+  transitions: [trustedTransition({ id: "publication.observe", priority: 77 }, {
+    parameters: { publication_id: hostParameter({ id: "publication-id", description: "publication-id", authorities: ["human"], scope: "transition" }) },
+  })],
   targets: [marked("published-pr", all(
     fact("verification", ["current"]),
     fact("configuration", ["verified"]),

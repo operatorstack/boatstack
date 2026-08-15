@@ -7,7 +7,7 @@ import "encoding/json"
 
 const (
 	SchemaName     = "control-program"
-	SchemaRevision = 3
+	SchemaRevision = 4
 )
 
 type Document struct {
@@ -112,6 +112,75 @@ type AuthorityRequirement struct {
 	AllOf []string `json:"all_of,omitempty"`
 }
 
+type ParameterSourceKind string
+
+const (
+	ParameterSourceEntryInput      ParameterSourceKind = "entry-input"
+	ParameterSourceState           ParameterSourceKind = "state"
+	ParameterSourceReceipt         ParameterSourceKind = "receipt"
+	ParameterSourceWorkOutput      ParameterSourceKind = "work-output"
+	ParameterSourceTrustedResolver ParameterSourceKind = "trusted-resolver"
+	ParameterSourceHostInput       ParameterSourceKind = "host-input"
+)
+
+type TrustedValidatorBinding struct {
+	Reference   string `json:"reference"`
+	Version     string `json:"version"`
+	Fingerprint string `json:"fingerprint"`
+}
+
+// ValueTypeDefinition is the closed canonical parameter value-type model.
+// Only fields owned by the selected kind may be populated.
+type ValueTypeDefinition struct {
+	Kind      string                   `json:"kind"`
+	Validator *TrustedValidatorBinding `json:"validator,omitempty"`
+	Minimum   *int64                   `json:"minimum,omitempty"`
+	Maximum   *int64                   `json:"maximum,omitempty"`
+	Schema    *TrustedValidatorBinding `json:"schema,omitempty"`
+}
+
+type OperatorParameter struct {
+	ID             string                `json:"id"`
+	Type           ValueTypeDefinition   `json:"type"`
+	Required       bool                  `json:"required"`
+	Secret         bool                  `json:"secret"`
+	AllowedSources []ParameterSourceKind `json:"allowed_sources"`
+	Authority      AuthorityRequirement  `json:"authority"`
+}
+
+type ParameterResolverBinding struct {
+	Reference   string `json:"reference"`
+	Version     string `json:"version"`
+	Fingerprint string `json:"fingerprint,omitempty"`
+}
+
+type HostInputRequest struct {
+	ID          string   `json:"id"`
+	Description string   `json:"description"`
+	Authorities []string `json:"authorities"`
+	Scope       string   `json:"scope"`
+}
+
+// ParameterProducer is a closed tagged union. The compiler rejects fields
+// that do not belong to Kind and resolves trusted bindings before publication.
+type ParameterProducer struct {
+	Kind          ParameterSourceKind       `json:"kind"`
+	Input         string                    `json:"input,omitempty"`
+	Facet         string                    `json:"facet,omitempty"`
+	AvailableWhen *Predicate                `json:"available_when,omitempty"`
+	Transition    string                    `json:"transition,omitempty"`
+	Field         string                    `json:"field,omitempty"`
+	Work          string                    `json:"work,omitempty"`
+	Output        string                    `json:"output,omitempty"`
+	Binding       *ParameterResolverBinding `json:"binding,omitempty"`
+	Request       *HostInputRequest         `json:"request,omitempty"`
+}
+
+type TransitionParameterBinding struct {
+	Parameter string            `json:"parameter"`
+	Producer  ParameterProducer `json:"producer"`
+}
+
 type Operator struct {
 	ID               string               `json:"id"`
 	Binding          *OperatorBinding     `json:"binding,omitempty"`
@@ -122,6 +191,7 @@ type Operator struct {
 	Recovery         string               `json:"recovery,omitempty"`
 	StateEffect      *StateEffect         `json:"state_effect,omitempty"`
 	ExecutionContext string               `json:"execution_context"`
+	Parameters       []OperatorParameter  `json:"parameters,omitempty"`
 	Description      string               `json:"description,omitempty"`
 }
 
@@ -150,14 +220,15 @@ type ValueReference struct {
 }
 
 type Transition struct {
-	ID          string                 `json:"id"`
-	Operator    string                 `json:"operator"`
-	Guard       Predicate              `json:"guard"`
-	Target      Predicate              `json:"target"`
-	Priority    int                    `json:"priority"`
-	Requires    TransitionRequirements `json:"requires,omitempty"`
-	Work        string                 `json:"work,omitempty"`
-	Description string                 `json:"description,omitempty"`
+	ID          string                       `json:"id"`
+	Operator    string                       `json:"operator"`
+	Guard       Predicate                    `json:"guard"`
+	Target      Predicate                    `json:"target"`
+	Priority    int                          `json:"priority"`
+	Requires    TransitionRequirements       `json:"requires,omitempty"`
+	Work        string                       `json:"work,omitempty"`
+	Parameters  []TransitionParameterBinding `json:"parameters,omitempty"`
+	Description string                       `json:"description,omitempty"`
 }
 
 type TransitionRequirements struct {
@@ -207,6 +278,8 @@ type EntryInput struct {
 type BindingResolver interface {
 	ResolveOperator(reference, version string) (ResolvedOperator, error)
 	ResolveDelegation(reference, version string) (ResolvedDelegation, error)
+	ResolveParameterResolver(reference, version string) (ResolvedParameterResolver, error)
+	ResolveValueValidator(reference, version string) (ResolvedValueValidator, error)
 }
 
 type ResolvedOperator struct {
@@ -218,6 +291,22 @@ type ResolvedOperator struct {
 	Recovery         string
 	StateEffect      StateEffect
 	ExecutionContext string
+	Parameters       []OperatorParameter
+}
+
+type ResolvedParameterResolver struct {
+	Fingerprint    string
+	OutputType     ValueTypeDefinition
+	SourceKind     ParameterSourceKind
+	Authority      AuthorityRequirement
+	Dependencies   []string
+	StabilityScope string
+	MaySuspend     bool
+}
+
+type ResolvedValueValidator struct {
+	Fingerprint string
+	Type        ValueTypeDefinition
 }
 
 type ResolvedDelegation struct {

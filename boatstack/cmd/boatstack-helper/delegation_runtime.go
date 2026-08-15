@@ -121,6 +121,55 @@ func prepareDelegation(ctx context.Context, request *surfaces.Request) (ports.Lo
 	return lock, nil, nil
 }
 
+// preflightDelegatedProgramChange observes the selected program before any
+// product delegation is requested. Reconciliation changes the control bundle,
+// so authorizing against the prior bundle would create an authorization that
+// must be rejected immediately after the accepted maintenance transition.
+func preflightDelegatedProgramChange(ctx context.Context, request surfaces.Request) (*surfaces.Response, error) {
+	if request.ProgramID == "" || len(request.DelegatedAuthorities) == 0 || request.Operation == surfaces.OperationExplain {
+		return nil, nil
+	}
+	probe := request
+	probe.Operation = surfaces.OperationExplain
+	probe.Prescription = protocol.Prescription{}
+	probe.IdempotencyKey = ""
+	probe.InvocationEvidence = nil
+	probe.InputRequest = nil
+	lease, err := acquireFlowExecutionLease(probe)
+	if err != nil {
+		return nil, err
+	}
+	defer lease.Release()
+	if err := verifyTrustedRequestControlBundle(probe); err != nil {
+		return nil, err
+	}
+	kernel, err := standardKernel(ctx, probe)
+	if err != nil {
+		return nil, err
+	}
+	response, err := kernel.Handle(ctx, probe)
+	if err != nil {
+		return nil, err
+	}
+	if !isExactProgramChangeSuspension(response) {
+		return nil, nil
+	}
+	response.Operation = request.Operation
+	return &response, nil
+}
+
+func isExactProgramChangeSuspension(response surfaces.Response) bool {
+	return response.Decision != nil &&
+		response.Decision.Kind == supervisor.DecisionUnresolved &&
+		response.Decision.Reason == supervisor.ReasonProgramDrift &&
+		response.ProgramChange != nil &&
+		response.ProgramChange.PriorProgramFingerprint != "" &&
+		response.ProgramChange.CandidateProgramFingerprint != "" &&
+		response.ProgramChange.ProgramDeltaFingerprint != "" &&
+		response.ProgramChange.RequiredTransition == "installation.reconcile-update" &&
+		response.ProgramChange.AcceptanceFlag == "--accept-program-change"
+}
+
 func settleDelegationAtTarget(ctx context.Context, request surfaces.Request, response surfaces.Response, targetSatisfied, lockHeld bool) error {
 	terminalDecision := response.Decision != nil && response.Decision.Kind == supervisor.DecisionTerminal
 	committedTarget := response.Receipt != nil && targetSatisfied

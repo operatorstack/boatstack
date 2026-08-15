@@ -12,7 +12,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 )
 
-const ReceiptSchemaVersion = 12
+const ReceiptSchemaVersion = 13
 
 type TransitionFactKind string
 
@@ -137,6 +137,7 @@ type TransitionReceipt struct {
 	WorkResultFingerprint          string                   `json:"work_result_fingerprint,omitempty"`
 	ControlBundleSourceFingerprint string                   `json:"control_bundle_source_fingerprint,omitempty"`
 	ControlBundleTargetFingerprint string                   `json:"control_bundle_target_fingerprint,omitempty"`
+	InvocationFingerprint          string                   `json:"invocation_fingerprint,omitempty"`
 }
 
 type AuthoritySource struct {
@@ -201,6 +202,7 @@ func NewReceipt(flowID string, sequence uint64, program ProgramIdentity, admissi
 		Verification:          VerificationFact{Verifier: transition.Verifier, ExpectedPostcondition: transition.TargetPredicate, Result: VerificationSatisfied, EvidenceFingerprint: target.Fingerprint, VerifiedAt: committedAt.UTC()},
 		IdempotencyKey:        admission.IdempotencyKey, Recovery: transition.Interruption.Recovery, Terminal: terminal,
 		StartedAt: startedAt.UTC(), CommittedAt: committedAt.UTC(), DurationNanoseconds: committedAt.Sub(startedAt).Nanoseconds(),
+		InvocationFingerprint: admission.InvocationFingerprint,
 	}
 	if admission.Work != nil {
 		receipt.WorkResultFingerprint = admission.Work.ResultFingerprint
@@ -252,6 +254,9 @@ func (r TransitionReceipt) Validate() error {
 	if (r.ControlBundleSourceFingerprint == "") != (r.ControlBundleTargetFingerprint == "") ||
 		(r.ControlBundleSourceFingerprint != "" && (len(r.ControlBundleSourceFingerprint) != 64 || len(r.ControlBundleTargetFingerprint) != 64)) {
 		return fmt.Errorf("receipt has incomplete repository control-bundle identity")
+	}
+	if r.InvocationFingerprint != "" && !validSHA256(r.InvocationFingerprint) {
+		return fmt.Errorf("receipt has invalid invocation identity")
 	}
 	if r.ExecutionContext != "" {
 		if r.ExecutionContext != "advance" || r.PriorInvocation == nil || r.ResultingInvocation == nil {

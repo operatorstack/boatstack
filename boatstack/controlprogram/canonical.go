@@ -144,6 +144,9 @@ func compile(document Document, resolver BindingResolver, assets AssetResolver) 
 	if err := normalizeTransitions(&document, facets, operators, work); err != nil {
 		return Compiled{}, err
 	}
+	if err := normalizeInvocationCompleteness(&document, operators, work, facets, resolver); err != nil {
+		return Compiled{}, err
+	}
 
 	semantic := stripDescriptions(document)
 	canonical, err := json.Marshal(semantic)
@@ -308,12 +311,12 @@ func normalizeOperators(document *Document, facets map[string]Facet, resolver Bi
 				if op.Binding.Fingerprint != resolved.Fingerprint {
 					return nil, invalid("operators."+op.ID+".binding", "binding fingerprint drift")
 				}
-				expected := Operator{ID: op.ID, Binding: &OperatorBinding{Reference: op.Binding.Reference, Version: op.Binding.Version, Fingerprint: resolved.Fingerprint}, Capabilities: resolved.Capabilities, Authority: resolved.Authority, Effects: resolved.Effects, Verifier: resolved.Verifier, Recovery: resolved.Recovery, StateEffect: &resolved.StateEffect, ExecutionContext: resolved.ExecutionContext}
+				expected := Operator{ID: op.ID, Binding: &OperatorBinding{Reference: op.Binding.Reference, Version: op.Binding.Version, Fingerprint: resolved.Fingerprint}, Capabilities: resolved.Capabilities, Authority: resolved.Authority, Effects: resolved.Effects, Verifier: resolved.Verifier, Recovery: resolved.Recovery, StateEffect: &resolved.StateEffect, ExecutionContext: resolved.ExecutionContext, Parameters: resolved.Parameters}
 				expectedBinding = &expected
 			} else {
 				op.Binding.Fingerprint = resolved.Fingerprint
 				op.Capabilities, op.Authority, op.Effects = resolved.Capabilities, resolved.Authority, resolved.Effects
-				op.Verifier, op.Recovery, op.StateEffect, op.ExecutionContext = resolved.Verifier, resolved.Recovery, &resolved.StateEffect, resolved.ExecutionContext
+				op.Verifier, op.Recovery, op.StateEffect, op.ExecutionContext, op.Parameters = resolved.Verifier, resolved.Recovery, &resolved.StateEffect, resolved.ExecutionContext, resolved.Parameters
 			}
 		}
 		var err error
@@ -324,6 +327,9 @@ func normalizeOperators(document *Document, facets map[string]Facet, resolver Bi
 			return nil, err
 		}
 		if op.Authority.AllOf, err = normalizedReferenceSet("operators."+op.ID+".authority.all_of", op.Authority.AllOf); err != nil {
+			return nil, err
+		}
+		if err := normalizeOperatorParameters(op, resolver); err != nil {
 			return nil, err
 		}
 		if op.ExecutionContext != "preserve" && op.ExecutionContext != "advance" {
@@ -341,6 +347,10 @@ func normalizeOperators(document *Document, facets map[string]Facet, resolver Bi
 			document.Declarations.Authorities = union(document.Declarations.Authorities, op.Authority.AllOf)
 			document.Declarations.Effects = union(document.Declarations.Effects, op.Effects)
 			document.Declarations.Verifiers = union(document.Declarations.Verifiers, []string{op.Verifier})
+			for _, parameter := range op.Parameters {
+				document.Declarations.Authorities = union(document.Declarations.Authorities, parameter.Authority.AnyOf)
+				document.Declarations.Authorities = union(document.Declarations.Authorities, parameter.Authority.AllOf)
+			}
 		}
 		if missing := firstUndeclared(op.Capabilities, document.Declarations.Capabilities); missing != "" {
 			return nil, invalid("operators."+op.ID+".capabilities", "undeclared "+missing)
@@ -371,6 +381,7 @@ func normalizeOperators(document *Document, facets map[string]Facet, resolver Bi
 			expectedBinding.Authority.AnyOf, _ = normalizedReferenceSet("binding.authority.any_of", expectedBinding.Authority.AnyOf)
 			expectedBinding.Authority.AllOf, _ = normalizedReferenceSet("binding.authority.all_of", expectedBinding.Authority.AllOf)
 			expectedBinding.Effects, _ = normalizedReferenceSet("binding.effects", expectedBinding.Effects)
+			_ = normalizeOperatorParameters(expectedBinding, resolver)
 			_ = normalizeStateEffect(expectedBinding.StateEffect, facets)
 			if !sameOperatorSemantics(*op, *expectedBinding) {
 				return nil, invalid("operators."+op.ID, "compiled binding semantics drift")
@@ -699,7 +710,7 @@ func stripDescriptions(value Document) Document {
 }
 
 func hasInlineSemantics(value Operator) bool {
-	return len(value.Capabilities) != 0 || len(value.Authority.AnyOf) != 0 || len(value.Authority.AllOf) != 0 || len(value.Effects) != 0 || value.Verifier != "" || value.Recovery != "" || value.StateEffect != nil || value.ExecutionContext != ""
+	return len(value.Capabilities) != 0 || len(value.Authority.AnyOf) != 0 || len(value.Authority.AllOf) != 0 || len(value.Effects) != 0 || value.Verifier != "" || value.Recovery != "" || value.StateEffect != nil || value.ExecutionContext != "" || len(value.Parameters) != 0
 }
 func sameOperatorSemantics(left, right Operator) bool {
 	left.Description, right.Description = "", ""

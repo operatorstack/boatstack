@@ -451,6 +451,7 @@ func TestPackageImportsPreserveControlProgramDependencyDirection(t *testing.T) {
 func classifiedProductionFile(relative string) bool {
 	return relative == "delivery_controller.go" || relative == "program_effects.go" || relative == "program_observer.go" || strings.HasPrefix(relative, "cmd/boatstack-helper/") ||
 		strings.HasPrefix(relative, "controlprogram/") ||
+		strings.HasPrefix(relative, "invocation/") ||
 		strings.HasPrefix(relative, "delivery/") || strings.HasPrefix(relative, "core/") ||
 		strings.HasPrefix(relative, "flow/") || strings.HasPrefix(relative, "distribution/") || strings.HasPrefix(relative, "extension/") ||
 		strings.HasPrefix(relative, "internal/softwaredelivery/") ||

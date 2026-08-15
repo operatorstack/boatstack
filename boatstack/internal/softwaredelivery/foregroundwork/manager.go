@@ -104,6 +104,15 @@ type Manager struct {
 	store    ports.RuntimeStore
 }
 
+// LoadRecord reads one exact runtime-owned foreground-work record for generic
+// invocation materialization. It does not mutate or advance the work state.
+func LoadRecord(layout ports.ControllerLayout, runID, workID string) (Record, error) {
+	if !segment(runID) || !segment(workID) {
+		return Record{}, fmt.Errorf("foreground work requires semantic run and work identities")
+	}
+	return load(recordPath(layout, runID, workID))
+}
+
 func NewManager(resolver ports.InvocationResolver, locker ports.Locker, clock ports.Clock, store ports.RuntimeStore) (Manager, error) {
 	if resolver == nil || locker == nil || clock == nil || store == nil {
 		return Manager{}, fmt.Errorf("foreground work manager requires resolver, locker, clock, and runtime store")

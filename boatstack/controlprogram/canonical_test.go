@@ -19,6 +19,34 @@ type delegationResolver struct {
 	delegable   bool
 }
 
+type invocationResolver struct {
+	delegationResolver
+	parameterResolvers map[string]controlprogram.ResolvedParameterResolver
+	validators         map[string]controlprogram.ResolvedValueValidator
+}
+
+func (r invocationResolver) ResolveParameterResolver(reference, version string) (controlprogram.ResolvedParameterResolver, error) {
+	if version != "1" {
+		return controlprogram.ResolvedParameterResolver{}, os.ErrNotExist
+	}
+	value, ok := r.parameterResolvers[reference]
+	if !ok {
+		return controlprogram.ResolvedParameterResolver{}, os.ErrNotExist
+	}
+	return value, nil
+}
+
+func (r invocationResolver) ResolveValueValidator(reference, version string) (controlprogram.ResolvedValueValidator, error) {
+	if version != "1" {
+		return controlprogram.ResolvedValueValidator{}, os.ErrNotExist
+	}
+	value, ok := r.validators[reference]
+	if !ok {
+		return controlprogram.ResolvedValueValidator{}, os.ErrNotExist
+	}
+	return value, nil
+}
+
 func (r delegationResolver) ResolveOperator(string, string) (controlprogram.ResolvedOperator, error) {
 	return controlprogram.ResolvedOperator{}, nil
 }
@@ -28,6 +56,14 @@ func (r delegationResolver) ResolveDelegation(reference, version string) (contro
 		return controlprogram.ResolvedDelegation{}, os.ErrNotExist
 	}
 	return controlprogram.ResolvedDelegation{Fingerprint: r.fingerprint, Authorities: r.authorities, Delegable: r.delegable}, nil
+}
+
+func (r delegationResolver) ResolveParameterResolver(string, string) (controlprogram.ResolvedParameterResolver, error) {
+	return controlprogram.ResolvedParameterResolver{}, os.ErrNotExist
+}
+
+func (r delegationResolver) ResolveValueValidator(string, string) (controlprogram.ResolvedValueValidator, error) {
+	return controlprogram.ResolvedValueValidator{}, os.ErrNotExist
 }
 
 func incidentProgram() controlprogram.Document {
@@ -57,6 +93,147 @@ func incidentProgram() controlprogram.Document {
 		}},
 		Targets: []controlprogram.Target{{ID: "mitigated", Predicate: fact("incident", "mitigated"), Description: "incident mitigated"}},
 		Entries: []controlprogram.Entry{{ID: "respond", Target: "mitigated", Description: "respond to incident", Inputs: []controlprogram.EntryInput{{ID: "incident", Type: "json", Required: true, Resolver: "incident.input", Config: json.RawMessage(`{"b":2,"a":1}`)}}}},
+	}
+}
+
+func parameterProgram() controlprogram.Document {
+	document := incidentProgram()
+	document.Declarations.Authorities = append(document.Declarations.Authorities, "human")
+	document.Operators[0].Parameters = []controlprogram.OperatorParameter{{
+		ID: "channel", Type: controlprogram.ValueTypeDefinition{Kind: "string"}, Required: true,
+		AllowedSources: []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceHostInput},
+		Authority:      controlprogram.AuthorityRequirement{AnyOf: []string{"human"}},
+	}}
+	document.Transitions[0].Parameters = []controlprogram.TransitionParameterBinding{{
+		Parameter: "channel",
+		Producer: controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceHostInput, Request: &controlprogram.HostInputRequest{
+			ID: "channel", Description: "Select the response channel.", Authorities: []string{"human"}, Scope: "transition",
+		}},
+	}}
+	return document
+}
+
+func TestInvocationCompletenessRequiresExactlyOneAdmissibleProducer(t *testing.T) {
+	// control-law: required-transition-parameters-have-exactly-one-admissible-producer-before-publication
+	if _, err := controlprogram.Compile(parameterProgram(), nil); err != nil {
+		t.Fatal(err)
+	}
+	for name, test := range map[string]struct {
+		mutate  func(*controlprogram.Document)
+		witness string
+	}{
+		"missing": {func(value *controlprogram.Document) { value.Transitions[0].Parameters = nil }, "has no producer"},
+		"duplicate": {func(value *controlprogram.Document) {
+			value.Transitions[0].Parameters = append(value.Transitions[0].Parameters, value.Transitions[0].Parameters[0])
+		}, "multiple producers"},
+		"unknown-parameter": {func(value *controlprogram.Document) { value.Transitions[0].Parameters[0].Parameter = "missing" }, "not declared"},
+		"disallowed-kind": {func(value *controlprogram.Document) {
+			value.Transitions[0].Parameters[0].Producer = controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceEntryInput, Input: "incident"}
+		}, "does not allow producer kind"},
+		"wrong-source-type": {func(value *controlprogram.Document) {
+			value.Operators[0].Parameters[0].Type = controlprogram.ValueTypeDefinition{Kind: "integer"}
+			value.Operators[0].Parameters[0].AllowedSources = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceEntryInput}
+			value.Transitions[0].Parameters[0].Producer = controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceEntryInput, Input: "incident"}
+		}, "unavailable or incompatible"},
+		"authority-weakening": {func(value *controlprogram.Document) {
+			value.Transitions[0].Parameters[0].Producer.Request.Authorities = nil
+		}, "weakens parameter authority"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			value := parameterProgram()
+			test.mutate(&value)
+			if _, err := controlprogram.Compile(value, nil); err == nil || !strings.Contains(err.Error(), test.witness) {
+				t.Fatalf("result = %v, want %q", err, test.witness)
+			}
+		})
+	}
+}
+
+func TestInvocationCompletenessRejectsUnguaranteedReceiptAndUnknownResolver(t *testing.T) {
+	receiptBound := parameterProgram()
+	receiptBound.Operators[0].Parameters[0].AllowedSources = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceReceipt}
+	priorOperator := receiptBound.Operators[0]
+	priorOperator.ID, priorOperator.Parameters = "observe-channel", nil
+	receiptBound.Operators = append(receiptBound.Operators, priorOperator)
+	truth := true
+	receiptBound.Transitions = append([]controlprogram.Transition{{
+		ID: "observe-channel", Operator: "observe-channel", Guard: controlprogram.Predicate{True: &truth}, Target: fact("service", "healthy"), Priority: 1,
+	}}, receiptBound.Transitions...)
+	receiptBound.Transitions[1].Parameters[0].Producer = controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceReceipt, Transition: "observe-channel", Field: "channel"}
+	if _, err := controlprogram.Compile(receiptBound, nil); err == nil || !strings.Contains(err.Error(), "receipt is not guaranteed") {
+		t.Fatalf("unguaranteed receipt result = %v", err)
+	}
+
+	unknown := parameterProgram()
+	unknown.Operators[0].Parameters[0].AllowedSources = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceTrustedResolver}
+	unknown.Transitions[0].Parameters[0].Producer = controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceTrustedResolver, Binding: &controlprogram.ParameterResolverBinding{Reference: "incident/missing", Version: "1"}}
+	if _, err := controlprogram.Compile(unknown, invocationResolver{}); err == nil || !strings.Contains(err.Error(), "trusted resolver is unknown") {
+		t.Fatalf("unknown resolver result = %v", err)
+	}
+}
+
+func TestInvocationCompletenessChecksEntryAndStateAvailabilityPerEntry(t *testing.T) {
+	entryBound := parameterProgram()
+	entryBound.Entries[0].Inputs[0].Type = "string"
+	entryBound.Operators[0].Parameters[0].AllowedSources = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceEntryInput}
+	entryBound.Transitions[0].Parameters[0].Producer = controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceEntryInput, Input: "incident"}
+	if _, err := controlprogram.Compile(entryBound, nil); err != nil {
+		t.Fatal(err)
+	}
+	missing := clone(t, entryBound)
+	missing.Entries = append(missing.Entries, controlprogram.Entry{ID: "alternate", Target: "mitigated"})
+	if _, err := controlprogram.Compile(missing, nil); err == nil || !strings.Contains(err.Error(), `reachable entry "alternate"`) {
+		t.Fatalf("missing reachable input result = %v", err)
+	}
+
+	stateBound := parameterProgram()
+	stateBound.Operators[0].Parameters[0].AllowedSources = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceState}
+	availability := fact("service", "degraded")
+	stateBound.Transitions[0].Parameters[0].Producer = controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceState, Facet: "service", AvailableWhen: &availability}
+	if _, err := controlprogram.Compile(stateBound, nil); err == nil || !strings.Contains(err.Error(), "state availability is not implied") {
+		t.Fatalf("unimplied state producer result = %v", err)
+	}
+	stateBound.Transitions[0].Guard = controlprogram.Predicate{All: []controlprogram.Predicate{stateBound.Transitions[0].Guard, availability}}
+	if _, err := controlprogram.Compile(stateBound, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInvocationCompletenessRejectsResolverDriftCyclesAndValidatorOverride(t *testing.T) {
+	fingerprintA, fingerprintB := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	resolver := invocationResolver{
+		parameterResolvers: map[string]controlprogram.ResolvedParameterResolver{
+			"incident/channel": {Fingerprint: fingerprintA, OutputType: controlprogram.ValueTypeDefinition{Kind: "string"}, SourceKind: controlprogram.ParameterSourceTrustedResolver, Authority: controlprogram.AuthorityRequirement{AnyOf: []string{"human"}}, Dependencies: []string{"channel"}, StabilityScope: "invocation"},
+		},
+		validators: map[string]controlprogram.ResolvedValueValidator{
+			"incident/channel-validator": {Fingerprint: fingerprintB, Type: controlprogram.ValueTypeDefinition{Kind: "string"}},
+		},
+	}
+	value := parameterProgram()
+	value.Operators[0].Parameters[0].AllowedSources = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceTrustedResolver}
+	value.Transitions[0].Parameters[0].Producer = controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceTrustedResolver, Binding: &controlprogram.ParameterResolverBinding{Reference: "incident/channel", Version: "1"}}
+	if _, err := controlprogram.Compile(value, resolver); err == nil || !strings.Contains(err.Error(), "dependency cycle") {
+		t.Fatalf("resolver cycle result = %v", err)
+	}
+	resolver.parameterResolvers["incident/channel"] = controlprogram.ResolvedParameterResolver{Fingerprint: fingerprintA, OutputType: controlprogram.ValueTypeDefinition{Kind: "string"}, SourceKind: controlprogram.ParameterSourceTrustedResolver, Authority: controlprogram.AuthorityRequirement{AnyOf: []string{"human"}}, StabilityScope: "invocation"}
+	compiled, err := controlprogram.Compile(value, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiled.Document.Transitions[0].Parameters[0].Producer.Binding.Fingerprint = fingerprintB
+	if _, err := controlprogram.Compile(compiled.Document, resolver); err == nil || !strings.Contains(err.Error(), "fingerprint drift") {
+		t.Fatalf("resolver drift result = %v", err)
+	}
+
+	validated := parameterProgram()
+	validated.Operators[0].Parameters[0].Type.Validator = &controlprogram.TrustedValidatorBinding{Reference: "incident/channel-validator", Version: "1"}
+	compiled, err = controlprogram.Compile(validated, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiled.Document.Operators[0].Parameters[0].Type.Validator.Fingerprint = fingerprintA
+	if _, err := controlprogram.Compile(compiled.Document, resolver); err == nil || !strings.Contains(err.Error(), "fingerprint drift") {
+		t.Fatalf("validator override result = %v", err)
 	}
 }
 

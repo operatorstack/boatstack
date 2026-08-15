@@ -9,7 +9,7 @@ import (
 	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
-const PrescriptionSchemaVersion = 6
+const PrescriptionSchemaVersion = 7
 
 // Prescription is the immutable compare-and-swap binding emitted by
 // resolution and required by apply. It carries no reusable authority or
@@ -23,6 +23,7 @@ type Prescription struct {
 	EffectiveCapabilities    []catalog.Capability `json:"effective_capabilities"`
 	WorkResultFingerprint    string               `json:"work_result_fingerprint,omitempty"`
 	ControlBundleFingerprint string               `json:"control_bundle_fingerprint,omitempty"`
+	InvocationFingerprint    string               `json:"invocation_fingerprint,omitempty"`
 }
 
 func NewPrescription(snapshot model.Snapshot, transition catalog.Transition, capabilities CapabilityProjection) (Prescription, error) {
@@ -34,6 +35,10 @@ func NewPrescriptionWithWork(snapshot model.Snapshot, transition catalog.Transit
 }
 
 func NewPrescriptionWithWorkAndBundle(snapshot model.Snapshot, transition catalog.Transition, capabilities CapabilityProjection, work *WorkEvidence, bundle *boatstackruntime.ControlBundleContract) (Prescription, error) {
+	return NewPrescriptionWithInvocation(snapshot, transition, capabilities, work, bundle, "")
+}
+
+func NewPrescriptionWithInvocation(snapshot model.Snapshot, transition catalog.Transition, capabilities CapabilityProjection, work *WorkEvidence, bundle *boatstackruntime.ControlBundleContract, invocationFingerprint string) (Prescription, error) {
 	objectiveBindingFingerprint, err := ObjectiveBindingFingerprint(snapshot)
 	if err != nil {
 		return Prescription{}, err
@@ -48,6 +53,12 @@ func NewPrescriptionWithWorkAndBundle(snapshot model.Snapshot, transition catalo
 		Freshness:             freshness,
 		RequiredCapabilities:  append([]catalog.Capability(nil), capabilities.Required...),
 		EffectiveCapabilities: append([]catalog.Capability(nil), capabilities.Effective...),
+	}
+	if invocationFingerprint != "" {
+		if len(invocationFingerprint) != 64 {
+			return Prescription{}, fmt.Errorf("invocation fingerprint is invalid")
+		}
+		prescription.InvocationFingerprint = invocationFingerprint
 	}
 	if err := ValidateControlBundleForTransition(bundle, transition); err != nil {
 		return Prescription{}, err
@@ -73,6 +84,13 @@ func NewPrescriptionWithWorkAndBundle(snapshot model.Snapshot, transition catalo
 	return prescription, nil
 }
 
+func (p Prescription) ValidateInvocation(fingerprint string) error {
+	if p.InvocationFingerprint != fingerprint {
+		return fmt.Errorf("INVOCATION_DRIFT: prescription is bound to a different transition invocation")
+	}
+	return nil
+}
+
 func (p Prescription) Validate() error {
 	if err := p.validateFields(); err != nil {
 		return err
@@ -92,7 +110,7 @@ func (p Prescription) Validate() error {
 
 func (p Prescription) validateFields() error {
 	if p.SchemaVersion != PrescriptionSchemaVersion || p.TransitionID == "" || p.Freshness.Validate() != nil ||
-		len(p.RequiredCapabilities) == 0 || len(p.EffectiveCapabilities) == 0 || (p.ControlBundleFingerprint != "" && len(p.ControlBundleFingerprint) != 64) {
+		len(p.RequiredCapabilities) == 0 || len(p.EffectiveCapabilities) == 0 || (p.ControlBundleFingerprint != "" && len(p.ControlBundleFingerprint) != 64) || (p.InvocationFingerprint != "" && len(p.InvocationFingerprint) != 64) {
 		return fmt.Errorf("prescription has invalid schema, transition, state revision, program, or snapshot identity")
 	}
 	return nil

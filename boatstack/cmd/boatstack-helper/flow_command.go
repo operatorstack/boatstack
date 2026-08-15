@@ -21,7 +21,7 @@ import (
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 )
 
-const flowCompilerVersion = "control-program.compiler.3"
+const flowCompilerVersion = "control-program.compiler.4"
 
 type flowCommandOptions struct {
 	repository string
@@ -33,7 +33,7 @@ type flowCommandOptions struct {
 
 func runFlowCommand(arguments []string) error {
 	if len(arguments) == 0 {
-		return fmt.Errorf("usage: boatstack flow <compile|check|authorize|revoke|run|work> [flags]")
+		return fmt.Errorf("usage: boatstack flow <compile|check|authorize|revoke|run|work|input> [flags]")
 	}
 	action := arguments[0]
 	if action == "authorize" {
@@ -47,6 +47,9 @@ func runFlowCommand(arguments []string) error {
 	}
 	if action == "work" {
 		return runFlowWork(arguments[1:])
+	}
+	if action == "input" {
+		return runFlowInput(arguments[1:])
 	}
 	flags := flag.NewFlagSet("flow "+action, flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
@@ -123,7 +126,7 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := validateSoftwareFlow(ctx, options.repository, compiled, resolver); err != nil {
+	if err := validateCompiledFlow(ctx, options.repository, compiled, resolver); err != nil {
 		return err
 	}
 	artifactPath, err := resolveArtifactPath(options.repository, options.artifact, compiled.Document.Program.ID)
@@ -280,10 +283,66 @@ func checkFlow(ctx context.Context, options flowCommandOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := validateSoftwareFlow(ctx, options.repository, compiled, resolver); err != nil {
+	if err := validateCompiledFlow(ctx, options.repository, compiled, resolver); err != nil {
 		return err
 	}
 	return renderFlowResult("valid", artifactPath, artifact)
+}
+
+func validateCompiledFlow(ctx context.Context, repository string, compiled controlprogram.Compiled, resolver softwareflow.Resolver) error {
+	declarative, err := declarativeFlow(compiled.Document)
+	if err != nil {
+		return fmt.Errorf("FLOW_RUNTIME_INVALID: %w", err)
+	}
+	if declarative {
+		return validateDeclarativeFlow(compiled)
+	}
+	return validateSoftwareFlow(ctx, repository, compiled, resolver)
+}
+
+func declarativeFlow(document controlprogram.Document) (bool, error) {
+	inline, bound := 0, 0
+	for _, operator := range document.Operators {
+		if operator.Binding == nil {
+			inline++
+		} else {
+			bound++
+		}
+	}
+	if inline != 0 && bound != 0 {
+		return false, fmt.Errorf("a Flow cannot mix inline and adapter-bound operators")
+	}
+	return inline != 0, nil
+}
+
+// validateDeclarativeFlow admits the smallest domain-neutral executable
+// adapter: repository-independent, assignment-only state transitions. The
+// generic Control Program compiler remains broader; a domain adapter must
+// explicitly own every additional producer or effect mechanism.
+func validateDeclarativeFlow(compiled controlprogram.Compiled) error {
+	for _, entry := range compiled.Document.Entries {
+		if entry.Delegation != nil || entry.Diagnostics != nil {
+			return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative entries do not support delegation or domain diagnostics")
+		}
+	}
+	for _, work := range compiled.Document.Work {
+		return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative runtime has no foreground-work adapter for %q", work.ID)
+	}
+	for _, operator := range compiled.Document.Operators {
+		if len(operator.Effects) != 0 || operator.StateEffect == nil || operator.StateEffect.Kind != "assignments" || operator.ExecutionContext != "preserve" {
+			return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative operator %q must be effect-free, assignment-only, and preserve context", operator.ID)
+		}
+	}
+	for _, transition := range compiled.Document.Transitions {
+		for _, binding := range transition.Parameters {
+			switch binding.Producer.Kind {
+			case controlprogram.ParameterSourceEntryInput, controlprogram.ParameterSourceState, controlprogram.ParameterSourceHostInput:
+			default:
+				return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative transition %q requires an adapter for producer %q", transition.ID, binding.Producer.Kind)
+			}
+		}
+	}
+	return nil
 }
 
 func validateSoftwareFlow(ctx context.Context, _ string, compiled controlprogram.Compiled, resolver softwareflow.Resolver) error {

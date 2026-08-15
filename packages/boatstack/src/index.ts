@@ -11,7 +11,7 @@
 /** Canonical schema name emitted by {@link defineFlow}. */
 export const CONTROL_PROGRAM_SCHEMA = "control-program" as const;
 /** Current revision of the canonical Control Program schema. */
-export const CONTROL_PROGRAM_SCHEMA_REVISION = 3 as const;
+export const CONTROL_PROGRAM_SCHEMA_REVISION = 4 as const;
 
 /**
  * A declarative condition over runtime state facts.
@@ -97,7 +97,67 @@ export interface OperatorDefinition {
   recovery?: string;
   state_effect?: StateEffectDefinition;
   execution_context?: "preserve" | "advance";
+  parameters?: OperatorParameterDefinition[];
   description?: string;
+}
+
+/** Closed producer vocabulary accepted by invocation-completeness analysis. */
+export type ParameterSourceKind =
+  | "entry-input"
+  | "state"
+  | "receipt"
+  | "work-output"
+  | "trusted-resolver"
+  | "host-input";
+
+/** Immutable trusted validator reference resolved by the compiler. */
+export interface TrustedValidatorBinding {
+  reference: string;
+  version: string;
+  fingerprint: string;
+}
+
+/** Canonical value contract for one operator parameter. */
+export type ValueTypeDefinition =
+  | { kind: "string"; validator?: TrustedValidatorBinding }
+  | { kind: "boolean" }
+  | { kind: "integer"; minimum?: number; maximum?: number }
+  | { kind: "json"; schema?: TrustedValidatorBinding };
+
+/** Trusted operator-owned requirements for one invocation parameter. */
+export interface OperatorParameterDefinition {
+  id: string;
+  type: ValueTypeDefinition;
+  required: boolean;
+  secret: boolean;
+  allowed_sources: ParameterSourceKind[];
+  authority: { any_of?: string[]; all_of?: string[] };
+}
+
+/** Exactly one repository-selected source for a transition parameter. */
+export type ParameterProducer =
+  | { kind: "entry-input"; input: string }
+  | { kind: "state"; facet: string; available_when: Predicate }
+  | { kind: "receipt"; transition: string; field: string }
+  | { kind: "work-output"; work: string; output: string }
+  | {
+      kind: "trusted-resolver";
+      binding: { reference: string; version: string; fingerprint?: string };
+    }
+  | {
+      kind: "host-input";
+      request: {
+        id: string;
+        description: string;
+        authorities: string[];
+        scope: "transition";
+      };
+    };
+
+/** Binds one trusted operator parameter to its declared producer. */
+export interface TransitionParameterBinding {
+  parameter: string;
+  producer: ParameterProducer;
 }
 
 /**
@@ -156,6 +216,7 @@ export interface TransitionDefinition {
   priority: number;
   requires?: { authorities?: string[] };
   work?: string;
+  parameters?: TransitionParameterBinding[];
   description?: string;
 }
 
@@ -307,6 +368,57 @@ export function workArtifact(
  */
 export function foregroundWork(definition: WorkContract): WorkContract {
   return { ...definition };
+}
+
+/** Resolves a transition parameter from one declared entry input. */
+export function fromEntryInput(input: string): ParameterProducer {
+  return { kind: "entry-input", input };
+}
+
+/** Resolves a transition parameter from a state facet under an exact availability condition. */
+export function fromState(definition: {
+  facet: string;
+  availableWhen: Predicate;
+}): ParameterProducer {
+  return {
+    kind: "state",
+    facet: definition.facet,
+    available_when: definition.availableWhen,
+  };
+}
+
+/** Resolves a transition parameter from an earlier transition receipt. */
+export function fromReceipt(definition: {
+  transition: string;
+  field: string;
+}): ParameterProducer {
+  return { kind: "receipt", ...definition };
+}
+
+/** Resolves a transition parameter from exact run-scoped foreground-work output. */
+export function fromWorkOutput(definition: {
+  work: string;
+  output: string;
+}): ParameterProducer {
+  return { kind: "work-output", ...definition };
+}
+
+/** Requests one trusted runtime-owned parameter resolver binding. */
+export function trustedParameterResolver(
+  reference: string,
+  version: string,
+): ParameterProducer {
+  return { kind: "trusted-resolver", binding: { reference, version } };
+}
+
+/** Declares a typed, resumable host-input request for a transition parameter. */
+export function hostParameter(definition: {
+  id: string;
+  description: string;
+  authorities: string[];
+  scope: "transition";
+}): ParameterProducer {
+  return { kind: "host-input", request: { ...definition } };
 }
 
 /**

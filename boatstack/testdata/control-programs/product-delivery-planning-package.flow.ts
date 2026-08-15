@@ -5,6 +5,7 @@ import {
   entryInput,
   fact,
   foregroundWork,
+  hostParameter,
   instructionAsset,
   marked,
   schemaAsset,
@@ -16,6 +17,9 @@ import {
   planningPackageAdmit,
   planningPackageApprove,
   planningPackagePromote,
+  repositoryDefaultBranch,
+  deliveryBranch,
+  managedWorktreeDestination,
   softwareDeliveryEvidence,
   softwareDeliveryFacets,
   trustedDelegation,
@@ -66,7 +70,7 @@ const lifecycle = [
 ];
 
 export default defineFlow({
-  id: "product-delivery-planning-package",
+  id: "product-delivery",
   version: "1",
   declarations: { input_resolvers: [planInboxResolver] },
   facets: softwareDeliveryFacets,
@@ -75,26 +79,60 @@ export default defineFlow({
   operators: trustedOperators(lifecycle),
   transitions: [
     trustedTransition(planningPackageAdmit, { work: planning }),
-    trustedTransition(planningPackageApprove),
+    trustedTransition(planningPackageApprove, { parameters: {
+      package_fingerprint: hostParameter({ id: "package-fingerprint", description: "package-fingerprint", authorities: ["human"], scope: "transition" }),
+    }}),
     trustedTransition(planningPackagePromote),
     trustedTransition({ id: "plan.activate", priority: 50 }),
-    trustedTransition({ id: "workspace.cut", priority: 52 }),
-    trustedTransition({ id: "workspace.activate", priority: 53 }),
-    trustedTransition({ id: "workspace.sync", priority: 58 }),
-    trustedTransition({ id: "gate.build.record", priority: 61 }),
-    trustedTransition({ id: "gate.test.record", priority: 62 }),
-    trustedTransition({ id: "gate.review.record", priority: 63 }),
-    trustedTransition({ id: "gate.change.record", priority: 64 }),
-    trustedTransition({ id: "gate.journey.record", priority: 64 }),
-    trustedTransition({ id: "evidence.visual.attach", priority: 66 }),
-    trustedTransition({ id: "delivery.slice.advance", priority: 68 }),
-    trustedTransition({ id: "publication.preview", priority: 72 }),
-    trustedTransition({ id: "workspace.publish", priority: 75 }),
-    trustedTransition({ id: "publication.execute", priority: 76 }),
-    trustedTransition({ id: "publication.observe", priority: 77 }),
-    trustedTransition({ id: "publication.correct", priority: 80 }),
-    trustedTransition({ id: "workspace.reconcile", priority: 2 }),
-    trustedTransition({ id: "publication.reconcile", priority: 1 }),
+    trustedTransition({ id: "workspace.cut", priority: 52 }, { parameters: {
+      branch: deliveryBranch(), base_ref: repositoryDefaultBranch(), destination: managedWorktreeDestination(),
+    }}),
+    trustedTransition({ id: "workspace.activate", priority: 53 }, { parameters: { branch: hostParameter({ id: "branch", description: "branch", authorities: ["human"], scope: "transition" }) }}),
+    trustedTransition({ id: "workspace.sync", priority: 58 }, { parameters: { branch: hostParameter({ id: "branch", description: "branch", authorities: ["human"], scope: "transition" }) }}),
+    trustedTransition({ id: "gate.build.record", priority: 61 }, { parameters: {
+      source_revision: hostParameter({ id: "source-revision", description: "source-revision", authorities: ["human"], scope: "transition" }),
+      evidence_path: hostParameter({ id: "evidence-path", description: "evidence-path", authorities: ["human"], scope: "transition" }),
+      evidence_fingerprint: hostParameter({ id: "evidence-fingerprint", description: "evidence-fingerprint", authorities: ["human"], scope: "transition" }),
+    }}),
+    trustedTransition({ id: "gate.test.record", priority: 62 }, { parameters: {
+      source_revision: hostParameter({ id: "source-revision", description: "source-revision", authorities: ["human"], scope: "transition" }), evidence_path: hostParameter({ id: "evidence-path", description: "evidence-path", authorities: ["human"], scope: "transition" }), evidence_fingerprint: hostParameter({ id: "evidence-fingerprint", description: "evidence-fingerprint", authorities: ["human"], scope: "transition" }),
+    }}),
+    trustedTransition({ id: "gate.review.record", priority: 63 }, { parameters: {
+      source_revision: hostParameter({ id: "source-revision", description: "source-revision", authorities: ["human"], scope: "transition" }), evidence_path: hostParameter({ id: "evidence-path", description: "evidence-path", authorities: ["human"], scope: "transition" }), evidence_fingerprint: hostParameter({ id: "evidence-fingerprint", description: "evidence-fingerprint", authorities: ["human"], scope: "transition" }),
+    }}),
+    trustedTransition({ id: "gate.change.record", priority: 64 }, { parameters: {
+      source_revision: hostParameter({ id: "source-revision", description: "source-revision", authorities: ["human"], scope: "transition" }), evidence_path: hostParameter({ id: "evidence-path", description: "evidence-path", authorities: ["human"], scope: "transition" }), evidence_fingerprint: hostParameter({ id: "evidence-fingerprint", description: "evidence-fingerprint", authorities: ["human"], scope: "transition" }),
+    }}),
+    trustedTransition({ id: "gate.journey.record", priority: 64 }, { parameters: {
+      source_revision: hostParameter({ id: "source-revision", description: "source-revision", authorities: ["human"], scope: "transition" }), evidence_path: hostParameter({ id: "evidence-path", description: "evidence-path", authorities: ["human"], scope: "transition" }), evidence_fingerprint: hostParameter({ id: "evidence-fingerprint", description: "evidence-fingerprint", authorities: ["human"], scope: "transition" }),
+    }}),
+    trustedTransition({ id: "evidence.visual.attach", priority: 66 }, { parameters: {
+      manifest_path: hostParameter({ id: "manifest-path", description: "manifest-path", authorities: ["human"], scope: "transition" }),
+      privacy_receipt: hostParameter({ id: "privacy-receipt", description: "privacy-receipt", authorities: ["human"], scope: "transition" }),
+      source_revision: hostParameter({ id: "source-revision", description: "source-revision", authorities: ["human"], scope: "transition" }),
+    }}),
+    trustedTransition({ id: "delivery.slice.advance", priority: 68 }, { parameters: {
+      slice_id: hostParameter({ id: "slice-id", description: "slice-id", authorities: ["human"], scope: "transition" }),
+      source_revision: hostParameter({ id: "source-revision", description: "source-revision", authorities: ["human"], scope: "transition" }),
+    }}),
+    trustedTransition({ id: "publication.preview", priority: 72 }, { parameters: {
+      base_ref: repositoryDefaultBranch(),
+      head_ref: hostParameter({ id: "head-ref", description: "head-ref", authorities: ["human"], scope: "transition" }),
+      body_path: hostParameter({ id: "body-path", description: "body-path", authorities: ["human"], scope: "transition" }),
+    }}),
+    trustedTransition({ id: "workspace.publish", priority: 75 }, { parameters: { branch: hostParameter({ id: "branch", description: "branch", authorities: ["human"], scope: "transition" }) }}),
+    trustedTransition({ id: "publication.execute", priority: 76 }, { parameters: { preview_fingerprint: hostParameter({ id: "preview-fingerprint", description: "preview-fingerprint", authorities: ["human"], scope: "transition" }) }}),
+    trustedTransition({ id: "publication.observe", priority: 77 }, { parameters: { publication_id: hostParameter({ id: "publication-id", description: "publication-id", authorities: ["human"], scope: "transition" }) }}),
+    trustedTransition({ id: "publication.correct", priority: 80 }, { parameters: {
+      publication_id: hostParameter({ id: "publication-id", description: "publication-id", authorities: ["human"], scope: "transition" }),
+      body_path: hostParameter({ id: "body-path", description: "body-path", authorities: ["human"], scope: "transition" }),
+      body_sha256: hostParameter({ id: "body-sha256", description: "body-sha256", authorities: ["human"], scope: "transition" }),
+    }}),
+    trustedTransition({ id: "workspace.reconcile", priority: 2 }, { parameters: { transaction_id: hostParameter({ id: "transaction-id", description: "transaction-id", authorities: ["human"], scope: "transition" }) }}),
+    trustedTransition({ id: "publication.reconcile", priority: 1 }, { parameters: {
+      publication_id: hostParameter({ id: "publication-id", description: "publication-id", authorities: ["human"], scope: "transition" }),
+      transaction_id: hostParameter({ id: "transaction-id", description: "transaction-id", authorities: ["human"], scope: "transition" }),
+    }}),
   ],
   targets: [marked("published-pr", all(
     fact("verification", ["current"]),

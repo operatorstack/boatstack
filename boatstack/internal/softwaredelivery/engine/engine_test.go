@@ -18,6 +18,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/ports"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
+	"github.com/operatorstack/boatstack/boatstack/invocation"
 	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
@@ -321,6 +322,80 @@ func TestRequiredObserverFailureReturnsTypedUnresolvedDecision(t *testing.T) {
 	}
 	if effects.executions != 0 || journal.begun != 0 || len(receipts.values) != 0 {
 		t.Fatalf("observer failure crossed mutation boundary: effects=%d journal=%d receipts=%d", effects.executions, journal.begun, len(receipts.values))
+	}
+}
+
+func TestApplyRejectsInvocationDriftBeforePrepareOrEffect(t *testing.T) {
+	// control-law: an old prescription cannot cross the effect boundary after
+	// effect-time invocation rematerialization produces a different identity.
+	now := time.Unix(30, 0).UTC()
+	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{}, &memoryReceipts{}, &fakeLock{}
+	kernel, err := New(
+		testRegistry(t), syntheticObjectiveContracts(t), syntheticProgram,
+		&sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source")}}, fixedClock{now},
+		fakeLocker{lock}, journal, effects, receipts,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apply := request(t, now)
+	snapshot, err := model.CanonicalizeForProgram(observation(model.PhaseObserved, "source"), syntheticProgramFingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transition, _ := testRegistry(t).Lookup("test.advance")
+	capabilities, err := protocol.ProjectCapabilities(snapshot, transition, apply.Authority, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apply.Prescription, err = protocol.NewPrescriptionWithInvocation(snapshot, transition, capabilities, nil, nil, strings.Repeat("a", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	apply.InvocationEvidence = &invocation.Evidence{
+		ProgramFingerprint: strings.Repeat("a", 64), ExecutionProgramFingerprint: syntheticProgramFingerprint,
+		TransitionID: "test.advance", StateRevision: snapshot.StateRevision, InvocationFingerprint: strings.Repeat("c", 64),
+	}
+
+	if _, err := kernel.Apply(context.Background(), apply); err == nil || !strings.Contains(err.Error(), "INVOCATION_DRIFT") {
+		t.Fatalf("drift result = %v", err)
+	}
+	if effects.transition.ID != "" || effects.executions != 0 || journal.begun != 0 || len(receipts.values) != 0 || lock.released {
+		t.Fatalf("invocation drift crossed the effect boundary: prepared=%q effects=%d journal=%d receipts=%d lock=%t", effects.transition.ID, effects.executions, journal.begun, len(receipts.values), lock.released)
+	}
+}
+
+func TestResolutionSeparatesDefinitionAndExecutableProgramIdentity(t *testing.T) {
+	// control-law: repository definition identity and executable control-program
+	// identity are both bound, but only the latter is compared to the engine.
+	now := time.Unix(30, 0).UTC()
+	kernel, err := New(
+		testRegistry(t), syntheticObjectiveContracts(t), syntheticProgram,
+		&sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source")}}, fixedClock{now},
+		fakeLocker{&fakeLock{}}, &fakeJournal{}, &fakeEffects{}, &memoryReceipts{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := request(t, now).ResolveRequest
+	request.InvocationEvidence = &invocation.Evidence{
+		ProgramFingerprint: strings.Repeat("a", 64), ExecutionProgramFingerprint: syntheticProgramFingerprint,
+		TransitionID: "test.advance", StateRevision: 1, InvocationFingerprint: strings.Repeat("d", 64),
+	}
+	resolution, err := kernel.Resolve(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolution.Prescription.ID == "" || resolution.Prescription.InvocationFingerprint != request.InvocationEvidence.InvocationFingerprint {
+		t.Fatalf("distinct definition and executable identities were not prescribed: %#v", resolution)
+	}
+	request.InvocationEvidence.ExecutionProgramFingerprint = strings.Repeat("e", 64)
+	refused, err := kernel.Resolve(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refused.Decision.Kind != supervisor.DecisionRefused || !strings.Contains(refused.Decision.Reason, "executable program") {
+		t.Fatalf("wrong executable identity was not refused: %#v", refused.Decision)
 	}
 }
 

@@ -148,6 +148,44 @@ func TestDomainNeutralFrontendDeclaresForegroundWorkWithoutSoftwareDelivery(t *t
 	}
 }
 
+func TestDomainNeutralInvocationFixtureCompilesAndMissingProducerFails(t *testing.T) {
+	// control-law: generic invocation completeness does not depend on the
+	// software-delivery authoring package.
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("cannot locate invocation fixtures")
+	}
+	moduleRoot := filepath.Clean(filepath.Join(filepath.Dir(file), ".."))
+	frontend := filepath.Join(filepath.Dir(moduleRoot), "node_modules", ".bin", "boatstack-flow-frontend")
+	if runtime.GOOS == "windows" {
+		frontend += ".cmd"
+	}
+	if _, err := os.Stat(frontend); err != nil {
+		t.Skip("Flow frontend dependencies are not installed")
+	}
+	compile := func(name string) ([]byte, error) {
+		return exec.Command(frontend, filepath.Join(moduleRoot, "testdata", "control-programs", name)).CombinedOutput()
+	}
+	raw, err := compile("incident-response-invocation.flow.ts")
+	if err != nil {
+		t.Fatalf("compile domain-neutral fixture: %v\n%s", err, raw)
+	}
+	compiled, err := controlprogram.Load(bytes.NewReader(raw), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"}); err != nil {
+		t.Fatalf("generate domain-neutral entry drivers: %v", err)
+	}
+	missingRaw, err := compile("incident-response-invocation-missing.flow.ts")
+	if err != nil {
+		t.Fatalf("lower negative fixture: %v\n%s", err, missingRaw)
+	}
+	if _, err := controlprogram.Load(bytes.NewReader(missingRaw), nil); err == nil || !strings.Contains(err.Error(), "CONTROL_PROGRAM_INVOCATION_INCOMPLETE") {
+		t.Fatalf("missing producer result = %v", err)
+	}
+}
+
 func TestTypeScriptFrontendRejectsRepositoryCodeWithoutExecutingIt(t *testing.T) {
 	// control-law: authoring-frontends-parse-repository-declarations-without-module-execution
 	_, file, _, ok := runtime.Caller(0)

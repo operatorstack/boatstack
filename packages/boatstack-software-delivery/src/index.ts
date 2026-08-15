@@ -13,11 +13,13 @@ import {
   always,
   facet,
   operator,
+  trustedParameterResolver,
   transition,
   type EntryInputDefinition,
   type EvidenceDefinition,
   type FacetDefinition,
   type OperatorDefinition,
+  type ParameterProducer,
   type TransitionDefinition,
   type DelegationBindingDefinition,
   type WorkContract,
@@ -104,6 +106,29 @@ export interface TrustedTransitionOptions {
   requires?: { authorities?: string[] };
   /** Foreground work that must complete before this transition is admitted. */
   work?: WorkContract;
+  /** One repository-selected producer for each trusted operator parameter. */
+  parameters?: Record<string, ParameterProducer>;
+}
+
+/** Reads the exact verified repository default branch. */
+export function repositoryDefaultBranch(): ParameterProducer {
+  return trustedParameterResolver(
+    "software-delivery/repository-default-branch",
+    "1",
+  );
+}
+
+/** Derives a non-conflicting managed branch from the exact delivery context. */
+export function deliveryBranch(): ParameterProducer {
+  return trustedParameterResolver("software-delivery/delivery-branch", "1");
+}
+
+/** Derives the managed destination within Boatstack's trusted worktree root. */
+export function managedWorktreeDestination(): ParameterProducer {
+  return trustedParameterResolver(
+    "software-delivery/managed-worktree-destination",
+    "1",
+  );
 }
 
 /**
@@ -174,6 +199,13 @@ export function trustedTransition(
     priority: step.priority,
     ...(options.requires ? { requires: options.requires } : {}),
     ...(options.work ? { work: options.work.id } : {}),
+    ...(options.parameters
+      ? {
+          parameters: Object.entries(options.parameters).map(
+            ([parameter, producer]) => ({ parameter, producer }),
+          ),
+        }
+      : {}),
   });
 }
 

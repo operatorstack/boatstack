@@ -1,0 +1,118 @@
+package main
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/operatorstack/boatstack/boatstack/controlprogram"
+)
+
+func declarativeInvocationDocument() controlprogram.Document {
+	truth := true
+	mitigated := "mitigated"
+	return controlprogram.Document{
+		Schema: controlprogram.SchemaName, SchemaRevision: controlprogram.SchemaRevision,
+		Program:      controlprogram.Program{ID: "incident-response-invocation", Version: "1"},
+		Declarations: controlprogram.Declarations{Authorities: []string{"human"}, Verifiers: []string{"healthcheck"}},
+		Facets:       []controlprogram.Facet{{ID: "incident", Kind: "enum", Values: []string{"open", "mitigated"}}},
+		Evidence:     []controlprogram.Evidence{{ID: "healthcheck", Subject: "incident", Kind: "observation"}},
+		Operators: []controlprogram.Operator{{
+			ID: "restart", Authority: controlprogram.AuthorityRequirement{}, Verifier: "healthcheck", ExecutionContext: "preserve",
+			Parameters: []controlprogram.OperatorParameter{
+				{ID: "incident", Type: controlprogram.ValueTypeDefinition{Kind: "string"}, Required: true, AllowedSources: []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceEntryInput}},
+				{ID: "channel", Type: controlprogram.ValueTypeDefinition{Kind: "string"}, Required: true, AllowedSources: []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceHostInput}, Authority: controlprogram.AuthorityRequirement{AnyOf: []string{"human"}}},
+			},
+			StateEffect: &controlprogram.StateEffect{Kind: "assignments", Assignments: []controlprogram.StateAssignment{{Facet: "incident", Value: &mitigated}}},
+		}},
+		Transitions: []controlprogram.Transition{{
+			ID: "restart", Operator: "restart", Guard: controlprogram.Predicate{True: &truth}, Target: flowFact("incident", "mitigated"), Priority: 10,
+			Parameters: []controlprogram.TransitionParameterBinding{
+				{Parameter: "incident", Producer: controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceEntryInput, Input: "incident"}},
+				{Parameter: "channel", Producer: controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceHostInput, Request: &controlprogram.HostInputRequest{ID: "channel", Description: "Select the response channel.", Authorities: []string{"human"}, Scope: "transition"}}},
+			},
+		}},
+		Targets: []controlprogram.Target{{ID: "mitigated", Predicate: flowFact("incident", "mitigated")}},
+		Entries: []controlprogram.Entry{{ID: "respond", Target: "mitigated", Inputs: []controlprogram.EntryInput{{ID: "incident", Type: "string", Required: true}}}},
+	}
+}
+
+func declarativeFlowRepository(t *testing.T) string {
+	t.Helper()
+	repository := t.TempDir()
+	runFlowGit(t, repository, "init", "-b", "main")
+	runFlowGit(t, repository, "config", "user.email", "fixture@example.invalid")
+	runFlowGit(t, repository, "config", "user.name", "Fixture")
+	sourcePath, lockPath := ".boatstack/flows/incident-response-invocation.flow.ts", "package-lock.json"
+	source, lock := []byte("declarative flow source\n"), []byte("lock\n")
+	writeFixture(t, repository, sourcePath, source)
+	writeFixture(t, repository, lockPath, lock)
+	writeFlowArtifact(t, repository, declarativeInvocationDocument(), sourcePath, source, lockPath, lock)
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-m", "fixture")
+	return repository
+}
+
+func decodeObject(t *testing.T, raw []byte) map[string]any {
+	t.Helper()
+	var value map[string]any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, raw)
+	}
+	return value
+}
+
+func TestGeneratedDeclarativeDriverSuspendsAnswersRestartsAndExecutes(t *testing.T) {
+	// control-law: a non-domain adapter generated driver crosses the same
+	// typed invocation boundary and resumes one exact run after restart.
+	t.Setenv("BOATSTACK_STATE_ROOT", t.TempDir())
+	repository := declarativeFlowRepository(t)
+	skillPath := filepath.Join(repository, ".agents", "skills", "incident-response-invocation-respond", "SKILL.md")
+	skill, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(skill), "boatstack flow run --repo . --flow incident-response-invocation --entry respond --host codex --format json") || !strings.Contains(string(skill), "--input name=value") {
+		t.Fatalf("generated driver lacks declarative invocation protocol:\n%s", skill)
+	}
+
+	suspendedRaw, err := captureStdout(t, func() error {
+		return runFlowContinuation([]string{"--repo", repository, "--flow", "incident-response-invocation", "--entry", "respond", "--input", "incident=INC-7", "--host", "codex", "--format", "json"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	suspended := decodeObject(t, suspendedRaw)
+	if suspended["kind"] != "suspended" || suspended["code"] != "TRANSITION_INPUT_REQUIRED" {
+		t.Fatalf("first driver result = %s", suspendedRaw)
+	}
+	runID, _ := suspended["run_id"].(string)
+	request, _ := suspended["request"].(map[string]any)
+	requestFingerprint, _ := request["fingerprint"].(string)
+	if !strings.HasPrefix(runID, "run-") || len(requestFingerprint) != 64 {
+		t.Fatalf("suspension identity = %#v", suspended)
+	}
+
+	answer := filepath.Join(t.TempDir(), "answer.json")
+	if err := os.WriteFile(answer, []byte(`{"channel":"incident-room"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := captureStdout(t, func() error {
+		return runFlowInput([]string{"answer", "--repo", repository, "--flow", "incident-response-invocation", "--entry", "respond", "--run-id", runID, "--request-fingerprint", requestFingerprint, "--answer", answer, "--human", "boateng", "--host", "codex", "--format", "json"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	completedRaw, err := captureStdout(t, func() error {
+		return runFlowContinuation([]string{"--repo", repository, "--flow", "incident-response-invocation", "--entry", "respond", "--run-id", runID, "--host", "codex", "--format", "json"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	completed := decodeObject(t, completedRaw)
+	if completed["kind"] != "terminal" || completed["run_id"] != runID || completed["transition_id"] != "restart" || completed["invocation"] == nil || completed["receipt"] == nil {
+		t.Fatalf("resumed driver result = %s", completedRaw)
+	}
+}

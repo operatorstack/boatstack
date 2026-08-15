@@ -13,6 +13,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/ports"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
+	"github.com/operatorstack/boatstack/boatstack/invocation"
 	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
@@ -40,14 +41,15 @@ func (e Engine) canonicalize(observation model.Observation) (model.Snapshot, err
 }
 
 type ResolveRequest struct {
-	Invocation    model.InvocationContext
-	Objective     model.Objective
-	Authority     protocol.AuthorityBundle
-	Parameters    protocol.Parameters
-	Requested     catalog.TransitionID
-	Trace         bool
-	Work          *protocol.WorkEvidence
-	ControlBundle *boatstackruntime.ControlBundleContract
+	Invocation         model.InvocationContext
+	Objective          model.Objective
+	Authority          protocol.AuthorityBundle
+	Parameters         protocol.Parameters
+	Requested          catalog.TransitionID
+	Trace              bool
+	Work               *protocol.WorkEvidence
+	ControlBundle      *boatstackruntime.ControlBundleContract
+	InvocationEvidence *invocation.Evidence
 }
 
 type Resolution struct {
@@ -157,7 +159,16 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 			if bundleErr != nil {
 				return Resolution{}, bundleErr
 			}
-			prescription, prescriptionErr := protocol.NewPrescriptionWithWorkAndBundle(snapshot, *decision.Transition, capabilities, request.Work, bundle)
+			invocationFingerprint := ""
+			if request.InvocationEvidence != nil {
+				if request.InvocationEvidence.TransitionID != string(decision.Transition.ID) || request.InvocationEvidence.ExecutionProgramFingerprint != e.program.Fingerprint || request.InvocationEvidence.StateRevision != snapshot.StateRevision {
+					decision.Kind, decision.Reason, decision.Transition = supervisor.DecisionRefused, "INVOCATION_DRIFT: invocation evidence does not match the selected transition, executable program, or state", nil
+					updateDecisionTrace(decisionTrace, decision)
+					return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision, Trace: decisionTrace}, nil
+				}
+				invocationFingerprint = request.InvocationEvidence.InvocationFingerprint
+			}
+			prescription, prescriptionErr := protocol.NewPrescriptionWithInvocation(snapshot, *decision.Transition, capabilities, request.Work, bundle, invocationFingerprint)
 			if prescriptionErr != nil {
 				decision.Kind = supervisor.DecisionUnresolved
 				decision.Reason = prescriptionErr.Error()
@@ -326,6 +337,13 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 	}
 	if request.Requested != request.Prescription.TransitionID {
 		return result, fmt.Errorf("apply transition does not match prescription")
+	}
+	invocationFingerprint := ""
+	if request.InvocationEvidence != nil {
+		invocationFingerprint = request.InvocationEvidence.InvocationFingerprint
+	}
+	if err := request.Prescription.ValidateInvocation(invocationFingerprint); err != nil {
+		return result, err
 	}
 	if request.IdempotencyKey != "" {
 		prior, ok, err := e.receipts.FindByIdempotency(ctx, request.Invocation, request.IdempotencyKey)
