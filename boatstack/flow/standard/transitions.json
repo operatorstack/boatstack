@@ -5519,6 +5519,15 @@
     "source_predicate": "predicate:source-phase:publication.preview",
     "source_conditions": [
       {
+        "facet": "publication",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
         "facet": "plan",
         "statuses": [
           "known"

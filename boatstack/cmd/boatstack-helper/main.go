@@ -80,6 +80,7 @@ type commandOptions struct {
 	delegationAuthorities               stringList
 	delegationDescription               string
 	delegationRequest                   delegation.Request
+	delegationReprojection              bool
 	workInputs                          map[string]protocol.WorkInputValue
 	workID                              string
 	workQuestionPrompt                  string

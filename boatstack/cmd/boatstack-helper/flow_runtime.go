@@ -137,10 +137,11 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	}
 	options.controlBundle = bundle
 	options.controlBundleFingerprint = bundleFingerprint
-	// Program reconciliation is an installation-authority transition. It must
-	// not consume or create product delegation because its accepted effect
-	// changes the exact bundle to which product delegation is bound.
-	if entry.Delegation != nil && options.transitionID != "installation.reconcile-update" {
+	// Installation authority transitions must not consume or create product
+	// delegation. Their accepted effects establish or change the exact bundle
+	// to which later product delegation is bound.
+	installationAuthority := options.transitionID == "installation.initialize" || options.transitionID == "installation.update" || options.transitionID == "installation.reconcile-update"
+	if entry.Delegation != nil && !installationAuthority {
 		contextResolver, resolverErr := plant.NewResolver("")
 		if resolverErr != nil {
 			return commandOptions{}, resolverErr
@@ -178,9 +179,18 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 			bound := record.Request
 			inputDrift := !options.activeFlowBound && strings.Join(bound.InputFingerprints, "\x00") != strings.Join(delegationRequest.InputFingerprints, "\x00")
 			if bound.RunID != delegationRequest.RunID || bound.ProgramID != delegationRequest.ProgramID || bound.ProgramFingerprint != delegationRequest.ProgramFingerprint || bound.ControlBundleFingerprint != delegationRequest.ControlBundleFingerprint || bound.EntryID != delegationRequest.EntryID || bound.TargetID != delegationRequest.TargetID || bound.ObjectiveID != delegationRequest.ObjectiveID || bound.DeliveryID != delegationRequest.DeliveryID || inputDrift || bound.RepositoryID != delegationRequest.RepositoryID || bound.GitCommonID != delegationRequest.GitCommonID || bound.BindingFingerprint != delegationRequest.BindingFingerprint || strings.Join(bound.RequestedAuthorities, "\x00") != strings.Join(delegationRequest.RequestedAuthorities, "\x00") || bound.Description != delegationRequest.Description {
-				return commandOptions{}, fmt.Errorf("DELEGATION_DRIFT: current Flow context does not match the authorized request (bundle %s, authorized %s)", delegationRequest.ControlBundleFingerprint, bound.ControlBundleFingerprint)
+				runtimeObjective := model.Objective{ID: options.objectiveID, TargetID: objective.TargetID, TrustedClass: objective.TrustedClass, DeliveryID: deliveryID}
+				reprojected, reprojectErr := canReprojectDelegation(layout, invocation, runtimeObjective, bound, delegationRequest)
+				if reprojectErr != nil {
+					return commandOptions{}, reprojectErr
+				}
+				if !reprojected {
+					return commandOptions{}, fmt.Errorf("DELEGATION_DRIFT: current Flow context does not match the authorized request (bundle %s, authorized %s)", delegationRequest.ControlBundleFingerprint, bound.ControlBundleFingerprint)
+				}
+				options.delegationReprojection = true
+			} else {
+				delegationRequest = bound
 			}
-			delegationRequest = bound
 		} else if !os.IsNotExist(loadErr) {
 			return commandOptions{}, loadErr
 		}
@@ -351,14 +361,19 @@ func materializeFlowInvocation(ctx context.Context, compiled controlprogram.Comp
 	}
 	stateValues := softwareflow.StateParameterValues(state)
 	receiptValues := map[string]invocation.Value{}
-	if value, ok := stateValues["preview_fingerprint"]; ok {
-		receiptValues["publication.preview/preview_fingerprint"] = value
-	}
-	if value, ok := stateValues["publication_id"]; ok {
-		receiptValues["publication.observe/publication_id"] = value
-	}
-	if value, ok := stateValues["transaction_id"]; ok {
-		receiptValues["publication.execute/transaction_id"] = value
+	for _, binding := range transition.Parameters {
+		if binding.Producer.Kind != controlprogram.ParameterSourceReceipt {
+			continue
+		}
+		value, receiptID, found, lookupErr := effects.FindLatestCommittedTransitionOutput(layout, options.runID, invocationContext, catalog.TransitionID(binding.Producer.Transition), binding.Producer.Field, state.Revision)
+		if lookupErr != nil {
+			return commandOptions{}, lookupErr
+		}
+		if found {
+			receiptValues[binding.Producer.Transition+"/"+binding.Producer.Field] = invocation.Value{
+				Type: controlprogram.ValueTypeDefinition{Kind: "string"}, Canonical: value, Provenance: "transition-receipt:" + receiptID,
+			}
+		}
 	}
 	workOutputs := map[string]invocation.Value{}
 	workByID := map[string]controlprogram.WorkContract{}
@@ -418,11 +433,21 @@ func materializeFlowInvocation(ctx context.Context, compiled controlprogram.Comp
 		ExecutionScopeFingerprint: executionScopeFingerprint,
 		EntryInputs:               entryInputs, State: stateValues, Receipts: receiptValues, WorkOutputs: workOutputs, InputReceipts: inputReceipts,
 	}
+	if latest, found, latestErr := store.LatestRequest(materializationContext); latestErr != nil {
+		return commandOptions{}, latestErr
+	} else if found {
+		materializationContext.InputRequestGeneration = latest.Generation
+		materializationContext.InputRequestSupersession = latest.Supersession
+	}
 	bindingResolver, err := softwareflow.NewResolver(ctx)
 	if err != nil {
 		return commandOptions{}, err
 	}
-	result, err := invocation.Materialize(operator.Parameters, transition.Parameters, materializationContext, softwareflow.RuntimeParameterResolver{Context: ctx, Repository: options.repository, DeliveryID: options.deliveryID, Binding: bindingResolver})
+	sourceRevision, err := plantResolver.ResolveSourceRevision(ctx, options.repository)
+	if err != nil {
+		return commandOptions{}, err
+	}
+	result, err := invocation.Materialize(operator.Parameters, transition.Parameters, materializationContext, softwareflow.RuntimeParameterResolver{Context: ctx, Repository: options.repository, DeliveryID: options.deliveryID, SourceRevision: sourceRevision, Binding: bindingResolver})
 	if err != nil {
 		return commandOptions{}, err
 	}
@@ -530,7 +555,7 @@ func bindSelectedPlanRun(options commandOptions, repository, programFingerprint,
 	}
 	runID := flowRunID(repositoryIdentity, programFingerprint, options.entryID, deliveryID, planFingerprint)
 	if options.runID != "" && options.runID != runID {
-		return commandOptions{}, fmt.Errorf("FLOW_RUN_MISMATCH: run ID does not identify the selected plan and repository")
+		return commandOptions{}, fmt.Errorf("FLOW_RUN_MISMATCH: run ID %s does not identify the selected plan and repository (expected %s)", options.runID, runID)
 	}
 	options.runID = runID
 	return options, nil

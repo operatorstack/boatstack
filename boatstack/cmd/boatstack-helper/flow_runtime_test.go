@@ -16,6 +16,7 @@ import (
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
+	"github.com/operatorstack/boatstack/boatstack/internal/buildinfo"
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/delegation"
@@ -23,6 +24,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/plant"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/ports"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
@@ -36,6 +38,55 @@ func flowRepository(t *testing.T) string {
 		t.Fatal(err)
 	}
 	document := productDeliveryDocument("product-delivery")
+	sourcePath, lockPath := ".boatstack/flows/product-delivery.flow.ts", "package-lock.json"
+	source, lock := []byte("flow source"), []byte("lock")
+	for path, content := range map[string][]byte{sourcePath: source, lockPath: lock} {
+		writeFixture(t, repository, path, content)
+	}
+	writeFlowArtifact(t, repository, document, sourcePath, source, lockPath, lock)
+	return repository
+}
+
+func flowRepositoryWithHumanSlice(t *testing.T) string {
+	t.Helper()
+	repository := t.TempDir()
+	if err := os.Mkdir(filepath.Join(repository, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	document := productDeliveryDocument("product-delivery")
+	truth := true
+	document.Operators = append(document.Operators, controlprogram.Operator{ID: "delivery.slice.advance", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/delivery.slice.advance", Version: "1"}})
+	document.Transitions = append(document.Transitions, controlprogram.Transition{
+		ID: "delivery.slice.advance", Operator: "delivery.slice.advance", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 76,
+		Parameters: []controlprogram.TransitionParameterBinding{
+			{Parameter: "slice_id", Producer: controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceHostInput, Request: &controlprogram.HostInputRequest{ID: "delivery-slice", Description: "Select the next bounded delivery slice.", Authorities: []string{"human", "autonomy"}, Scope: "transition"}}},
+			{Parameter: "source_revision", Producer: controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceTrustedResolver, Binding: &controlprogram.ParameterResolverBinding{Reference: softwareflow.ParameterResolverPrefix + "current-source-revision", Version: "1"}}},
+		},
+	})
+	resolver, err := softwareflow.NewResolver(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := resolver.ResolveOperator("software-delivery/delivery.slice.advance", "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared := map[string]bool{}
+	for _, facet := range document.Facets {
+		declared[facet.ID] = true
+	}
+	for _, condition := range resolved.StateEffect.Preconditions {
+		if !declared[condition.Facet] {
+			document.Facets = append(document.Facets, controlprogram.Facet{ID: condition.Facet, Kind: "string"})
+			declared[condition.Facet] = true
+		}
+	}
+	for _, assignment := range resolved.StateEffect.Assignments {
+		if !declared[assignment.Facet] {
+			document.Facets = append(document.Facets, controlprogram.Facet{ID: assignment.Facet, Kind: "string"})
+			declared[assignment.Facet] = true
+		}
+	}
 	sourcePath, lockPath := ".boatstack/flows/product-delivery.flow.ts", "package-lock.json"
 	source, lock := []byte("flow source"), []byte("lock")
 	for path, content := range map[string][]byte{sourcePath: source, lockPath: lock} {
@@ -299,12 +350,13 @@ func productDeliveryDocument(programID string) controlprogram.Document {
 		Facets: []controlprogram.Facet{
 			{ID: "publication", Kind: "string"}, {ID: "verification", Kind: "string"},
 			{ID: "configuration", Kind: "string"}, {ID: "runtime", Kind: "string"},
+			{ID: "preview_fingerprint", Kind: "string"},
 		},
 		Operators: []controlprogram.Operator{{ID: "publication.observe", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/publication.observe", Version: "1"}}},
 		Transitions: []controlprogram.Transition{{
 			ID: "publication.observe", Operator: "publication.observe", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 77,
 			Parameters: []controlprogram.TransitionParameterBinding{{Parameter: "publication_id", Producer: controlprogram.ParameterProducer{
-				Kind: controlprogram.ParameterSourceHostInput, Request: &controlprogram.HostInputRequest{ID: "publication-id", Description: "publication id", Authorities: []string{"human"}, Scope: "transition"},
+				Kind: controlprogram.ParameterSourceState, Facet: "publication", AvailableWhen: &controlprogram.Predicate{True: &truth},
 			}}},
 		}},
 		Targets: []controlprogram.Target{{ID: "published-pr", Predicate: controlprogram.Predicate{All: []controlprogram.Predicate{
@@ -386,7 +438,7 @@ func TestRPCFlowEntryRejectsUnknownEntryAndInvalidInboxBeforeManagedState(t *tes
 
 func TestPrescribedRepositoryTransitionRebindsBeforeExposure(t *testing.T) {
 	// control-law: a-selected-repository-transition-cannot-return-or-apply-an-unbound-prescription
-	repository := flowRepository(t)
+	repository := flowRepositoryWithHumanSlice(t)
 	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
 	if err := os.RemoveAll(filepath.Join(repository, ".git")); err != nil {
 		t.Fatal(err)
@@ -409,13 +461,13 @@ func TestPrescribedRepositoryTransitionRebindsBeforeExposure(t *testing.T) {
 	}
 	response := surfaces.Response{Prescription: &protocol.Prescription{
 		SchemaVersion: protocol.PrescriptionSchemaVersion,
-		TransitionID:  "publication.observe",
+		TransitionID:  "delivery.slice.advance",
 	}}
 	rebound, changed, err := bindPrescribedRepositoryInvocation(context.Background(), request, response)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !changed || rebound.TransitionID != "publication.observe" || rebound.Prescription.ID != "" {
+	if !changed || rebound.TransitionID != "delivery.slice.advance" || rebound.Prescription.ID != "" {
 		t.Fatalf("selected prescription was not rebound: changed=%t request=%#v", changed, rebound)
 	}
 	if rebound.InputRequest == nil || rebound.InvocationEvidence != nil {
@@ -784,6 +836,85 @@ func TestProgramChangePreflightRequiresExactTypedRecoverySurface(t *testing.T) {
 	}
 }
 
+func TestAcceptedProgramReconciliationReprojectsSameFlowRun(t *testing.T) {
+	// control-law: an accepted program mutation is a hard reprojection boundary;
+	// the next product resolution uses the new program and preserves the run.
+	t.Setenv("BOATSTACK_STATE_ROOT", t.TempDir())
+	runtimeHome := t.TempDir()
+	t.Setenv(boatstackruntime.HomeEnvironment, runtimeHome)
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeRaw, err := os.ReadFile(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := boatstackruntime.InstallExecutable(executable, runtimeHome, boatstackruntime.Identity{Version: buildinfo.Version, SHA256: hash(runtimeRaw), SourceRevision: buildRevision()}); err != nil {
+		t.Fatal(err)
+	}
+	repository := flowRepository(t)
+	runFlowGit(t, repository, "init", "-q")
+	runFlowGit(t, repository, "config", "user.email", "fixture@example.invalid")
+	runFlowGit(t, repository, "config", "user.name", "Fixture")
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "fixture")
+	output, err := captureRunOutput(t,
+		"init", "--repo", repository, "--flow", "product-delivery", "--entry", "run",
+		"--param", "config_path="+filepath.Join(repository, ".boatstack", "project.json"), "--human", "operator", "--host", "codex", "--format", "json",
+	)
+	if err != nil {
+		t.Fatalf("initialize old program: %v\n%s", err, output)
+	}
+	bound, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err = captureRunOutput(t,
+		"objective-bind", "--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", bound.runID,
+		"--human", "operator", "--host", "codex", "--format", "json",
+	)
+	if err != nil {
+		t.Fatalf("bind old-program objective: %v\n%s", err, output)
+	}
+	document := productDeliveryDocument("product-delivery")
+	document.Program.Version = "2"
+	writeFlowArtifact(t, repository, document, ".boatstack/flows/product-delivery.flow.ts", []byte("flow source"), "package-lock.json", []byte("lock"))
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "update flow")
+
+	output, err = captureRunOutput(t,
+		"reconcile-update", "--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", bound.runID,
+		"--accept-program-change", "--human", "operator", "--host", "codex", "--format", "json",
+	)
+	if err != nil {
+		t.Fatalf("accepted reconciliation: %v\n%s", err, output)
+	}
+	var reconciled surfaces.Response
+	if err := json.Unmarshal(output, &reconciled); err != nil {
+		t.Fatal(err)
+	}
+	if reconciled.Receipt == nil || reconciled.Receipt.TransitionID != "installation.reconcile-update" || reconciled.RunID != bound.runID {
+		t.Fatalf("reconciliation response = %#v", reconciled)
+	}
+
+	output, err = captureRunOutput(t,
+		"next", "--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", bound.runID,
+		"--host", "codex", "--format", "json",
+	)
+	if err != nil && strings.Contains(err.Error(), "INVOCATION_DRIFT") {
+		t.Fatalf("post-reconciliation resolution reused stale invocation: %v\n%s", err, output)
+	}
+	var projected surfaces.Response
+	if decodeErr := json.Unmarshal(output, &projected); decodeErr != nil {
+		t.Fatal(decodeErr)
+	}
+	if projected.RunID != bound.runID || projected.ProgramID != "product-delivery" || projected.ProgramChange != nil {
+		t.Fatalf("post-reconciliation projection changed run or Flow program: %#v", projected)
+	}
+}
+
 func TestFlowCompileRejectsSourceChangedDuringFrontend(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixture is Unix-only")
@@ -1076,11 +1207,12 @@ func TestFlowExecutionLeaseSerializesProjectionPublicationThroughEffect(t *testi
 func TestFlowValidationRejectsMissingProductionRecoveryClosure(t *testing.T) {
 	// control-law: published-flows-close-recovery-in-the-production-composition
 	document := productDeliveryDocument("product-delivery")
+	available := document.Transitions[0].Guard
 	document.Operators[0] = controlprogram.Operator{ID: "publication.execute", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/publication.execute", Version: "1"}}
 	document.Transitions[0] = controlprogram.Transition{
 		ID: "publication.execute", Operator: "publication.execute", Guard: document.Transitions[0].Guard, Target: document.Transitions[0].Target, Priority: 77,
 		Parameters: []controlprogram.TransitionParameterBinding{{Parameter: "preview_fingerprint", Producer: controlprogram.ParameterProducer{
-			Kind: controlprogram.ParameterSourceHostInput, Request: &controlprogram.HostInputRequest{ID: "preview-fingerprint", Description: "preview fingerprint", Authorities: []string{"human"}, Scope: "transition"},
+			Kind: controlprogram.ParameterSourceState, Facet: "preview_fingerprint", AvailableWhen: &available,
 		}}},
 	}
 	resolver, err := softwareflow.NewResolver(context.Background())
@@ -1850,14 +1982,14 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 		t.Fatalf("expired delegation = lock=%v response=%#v err=%v", expiredLock, expiredSuspension, expiredErr)
 	}
 	renewedAt := time.Now().UTC()
-	renewed, changed, err := authorizeDelegation(&record, bound.delegationRequest, bound.delegationRequestFingerprint, record.Actor, time.Hour, renewedAt)
+	renewed, changed, err := authorizeDelegation(&record, bound.delegationRequest, bound.delegationRequestFingerprint, record.Actor, time.Hour, renewedAt, false)
 	if err != nil || !changed || renewed.Revision != record.Revision+1 || renewed.ReceiptID == record.ReceiptID || !renewed.ExpiresAt.Equal(renewedAt.Add(time.Hour)) {
 		t.Fatalf("renewed delegation = record=%#v changed=%v err=%v", renewed, changed, err)
 	}
-	if idempotent, changedAgain, idempotentErr := authorizeDelegation(&renewed, bound.delegationRequest, bound.delegationRequestFingerprint, record.Actor, time.Hour, renewedAt.Add(time.Second)); idempotentErr != nil || changedAgain || idempotent.ReceiptID != renewed.ReceiptID {
+	if idempotent, changedAgain, idempotentErr := authorizeDelegation(&renewed, bound.delegationRequest, bound.delegationRequestFingerprint, record.Actor, time.Hour, renewedAt.Add(time.Second), false); idempotentErr != nil || changedAgain || idempotent.ReceiptID != renewed.ReceiptID {
 		t.Fatalf("idempotent renewal = record=%#v changed=%v err=%v", idempotent, changedAgain, idempotentErr)
 	}
-	if _, _, conflictErr := authorizeDelegation(&renewed, bound.delegationRequest, bound.delegationRequestFingerprint, "other-actor", time.Hour, renewedAt); conflictErr == nil || !strings.Contains(conflictErr.Error(), "DELEGATION_CONFLICT") {
+	if _, _, conflictErr := authorizeDelegation(&renewed, bound.delegationRequest, bound.delegationRequestFingerprint, "other-actor", time.Hour, renewedAt, false); conflictErr == nil || !strings.Contains(conflictErr.Error(), "DELEGATION_CONFLICT") {
 		t.Fatalf("conflicting renewal = %v", conflictErr)
 	}
 	if err := effects.StoreDelegationRecord(recordPath, renewed); err != nil {
@@ -1936,5 +2068,54 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	lock, suspension, err = prepareDelegation(context.Background(), &request)
 	if lock != nil || suspension != nil || err == nil || !strings.Contains(err.Error(), "DELEGATION_REVOKED") {
 		t.Fatalf("post-target apply preflight = lock=%v response=%#v err=%v", lock, suspension, err)
+	}
+}
+
+func TestExplicitAuthorizationCanReplaceRevokedPreReconciliationRequest(t *testing.T) {
+	// control-law: revocation remains effective for its exact request, while an
+	// explicitly authorized post-installation request creates new authority.
+	prior := delegation.Request{
+		RunID: "run-example", ProgramID: "product-delivery", ProgramFingerprint: strings.Repeat("a", 64), ControlBundleFingerprint: strings.Repeat("b", 64),
+		EntryID: "run", TargetID: "published-pr", ObjectiveID: "objective", DeliveryID: "delivery", InputFingerprints: []string{"plan"},
+		RepositoryID: "repository", GitCommonID: "common", InitialWorktreeID: "worktree", InitialRef: "refs/heads/main",
+		BindingFingerprint: strings.Repeat("c", 64), RequestedAuthorities: []string{"autonomy"}, Description: "Run product delivery",
+	}
+	priorFingerprint, err := prior.Fingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing := delegation.Record{
+		Schema: delegation.Schema, SchemaRevision: delegation.SchemaRevision, Request: prior, RequestFingerprint: priorFingerprint,
+		ReceiptID: "authorization-prior", Actor: "operator", AuthorizedAt: time.Unix(1_700_000_000, 0).UTC(), Revision: 3, Status: "revoked",
+	}
+	current := prior
+	current.ProgramFingerprint, current.ControlBundleFingerprint = strings.Repeat("d", 64), strings.Repeat("e", 64)
+	currentFingerprint, err := current.Fingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1_700_000_100, 0).UTC()
+	refreshed, changed, err := authorizeDelegation(&existing, current, currentFingerprint, "operator", 0, now, true)
+	if err != nil || !changed || refreshed.Status != "active" || refreshed.Revision != 4 || refreshed.RequestFingerprint != currentFingerprint || refreshed.ReceiptID == existing.ReceiptID {
+		t.Fatalf("reprojected authorization = %#v changed=%t err=%v", refreshed, changed, err)
+	}
+	if _, _, err := authorizeDelegation(&existing, current, currentFingerprint, "operator", 0, now, false); err == nil {
+		t.Fatal("revoked authority was replaced without an admitted reprojection")
+	}
+}
+
+func TestDelegationReprojectionRequiresAChangedControlBundle(t *testing.T) {
+	// control-law: ordinary input or context drift cannot be relabeled as an
+	// installation reprojection when the installed control bundle is unchanged.
+	request := delegation.Request{
+		RunID: "run-example", ProgramID: "product-delivery", ProgramFingerprint: strings.Repeat("a", 64), ControlBundleFingerprint: strings.Repeat("b", 64),
+		EntryID: "run", TargetID: "published-pr", ObjectiveID: "objective", DeliveryID: "delivery",
+		RepositoryID: "repository", GitCommonID: "common",
+	}
+	changedInput := request
+	changedInput.InputFingerprints = []string{"changed-plan"}
+	admitted, err := canReprojectDelegation(ports.ControllerLayout{}, model.InvocationContext{}, model.Objective{}, request, changedInput)
+	if err != nil || admitted {
+		t.Fatalf("unchanged-bundle reprojection admitted=%t err=%v", admitted, err)
 	}
 }

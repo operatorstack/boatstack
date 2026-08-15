@@ -1,6 +1,7 @@
 package delegation_test
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,6 +14,20 @@ func request() delegation.Request {
 		TargetID: "done", ObjectiveID: "objective", DeliveryID: "delivery", InputFingerprints: []string{"b", "a"},
 		RepositoryID: "repository", GitCommonID: "common", InitialWorktreeID: "worktree", InitialRef: "refs/heads/main",
 		BindingFingerprint: strings.Repeat("b", 64), RequestedAuthorities: []string{"human", "autonomy"}, Description: "Run the program",
+	}
+}
+
+func TestSupersededPathBindsRunAndExactRequest(t *testing.T) {
+	fingerprint := strings.Repeat("a", 64)
+	path, err := delegation.SupersededPath("/controller", "run-example", fingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != filepath.Join("/controller", "delegations", "run-example.superseded-aaaaaaaaaaaa.json") {
+		t.Fatalf("superseded path = %q", path)
+	}
+	if _, err := delegation.SupersededPath("/controller", "../run", fingerprint); err == nil {
+		t.Fatal("unsafe run identity produced a supersession path")
 	}
 }
 

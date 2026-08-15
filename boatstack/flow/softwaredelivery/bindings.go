@@ -99,13 +99,35 @@ func (r Resolver) ResolveParameterResolver(reference, version string) (controlpr
 		SourceKind:     controlprogram.ParameterSourceTrustedResolver,
 		StabilityScope: "invocation",
 	}
-	switch reference {
-	case ParameterResolverPrefix + "repository-default-branch":
+	switch {
+	case reference == ParameterResolverPrefix+"admitted-planning-package-fingerprint":
+		value.Dependencies = []string{"repository", "delivery_id", "admitted-planning-package-manifest"}
+	case reference == ParameterResolverPrefix+"repository-default-branch":
 		value.Dependencies = []string{"repository", "verified-configuration"}
-	case ParameterResolverPrefix + "delivery-branch":
+	case reference == ParameterResolverPrefix+"delivery-branch":
 		value.Dependencies = []string{"repository", "delivery_id", "repository-policy"}
-	case ParameterResolverPrefix + "managed-worktree-destination":
+	case reference == ParameterResolverPrefix+"managed-worktree-destination":
 		value.Dependencies = []string{"repository", "git-common", "run_id", "delivery_id", "source-worktree"}
+	case reference == ParameterResolverPrefix+"current-source-revision":
+		value.Dependencies = []string{"repository", "committed-head"}
+	case strings.HasPrefix(reference, ParameterResolverPrefix+"gate-evidence-path/"):
+		if gateEvidenceInputPath(strings.TrimPrefix(reference, ParameterResolverPrefix+"gate-evidence-path/")) == "" {
+			return controlprogram.ResolvedParameterResolver{}, fmt.Errorf("unknown software-delivery parameter resolver %q", reference)
+		}
+		value.Dependencies = []string{"repository", "delivery_id", "gate-evidence"}
+	case strings.HasPrefix(reference, ParameterResolverPrefix+"gate-evidence-fingerprint/"):
+		if gateEvidenceInputPath(strings.TrimPrefix(reference, ParameterResolverPrefix+"gate-evidence-fingerprint/")) == "" {
+			return controlprogram.ResolvedParameterResolver{}, fmt.Errorf("unknown software-delivery parameter resolver %q", reference)
+		}
+		value.Dependencies = []string{"repository", "delivery_id", "gate-evidence"}
+	case reference == ParameterResolverPrefix+"visual-evidence-manifest-path":
+		value.Dependencies = []string{"repository", "delivery_id", "visual-evidence"}
+	case reference == ParameterResolverPrefix+"visual-evidence-privacy-receipt":
+		value.Dependencies = []string{"repository", "delivery_id", "visual-evidence"}
+	case reference == ParameterResolverPrefix+"publication-body-path":
+		value.Dependencies = []string{"repository", "delivery_id", "publication-body"}
+	case reference == ParameterResolverPrefix+"publication-body-sha256":
+		value.Dependencies = []string{"repository", "delivery_id", "publication-body"}
 	default:
 		return controlprogram.ResolvedParameterResolver{}, fmt.Errorf("unknown software-delivery parameter resolver %q", reference)
 	}
@@ -199,16 +221,34 @@ func projectOperatorParameters(transition delivery.Transition) []controlprogram.
 	for _, parameter := range transition.Parameters {
 		allowed := []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceHostInput}
 		switch {
+		case transition.ID == PlanningPackageApprove && parameter.Name == "package_fingerprint":
+			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceTrustedResolver}
 		case transition.ID == "workspace.cut":
 			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceTrustedResolver}
-		case parameter.Name == "branch":
-			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceState, controlprogram.ParameterSourceHostInput}
-		case transition.ID == PlanningPackageApprove && parameter.Name == "package_fingerprint":
-			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceWorkOutput, controlprogram.ParameterSourceHostInput}
-		case parameter.Name == "preview_fingerprint" || parameter.Name == "publication_id" || parameter.Name == "transaction_id":
-			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceState, controlprogram.ParameterSourceReceipt, controlprogram.ParameterSourceHostInput}
-		case transition.ID == "publication.preview" && parameter.Name == "base_ref":
+		case strings.HasPrefix(string(transition.ID), "gate.") && strings.HasSuffix(string(transition.ID), ".record"):
 			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceTrustedResolver}
+		case transition.ID == "evidence.visual.attach":
+			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceTrustedResolver}
+		case transition.ID == "delivery.slice.advance" && parameter.Name == "source_revision":
+			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceTrustedResolver}
+		case transition.ID == "publication.preview" && (parameter.Name == "base_ref" || parameter.Name == "body_path"):
+			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceTrustedResolver}
+		case transition.ID == "publication.preview" && parameter.Name == "head_ref":
+			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceState}
+		case transition.ID == "publication.execute" && parameter.Name == "preview_fingerprint":
+			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceState}
+		case transition.ID == "publication.observe" && parameter.Name == "publication_id":
+			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceReceipt, controlprogram.ParameterSourceState}
+		case transition.ID == "publication.correct" && parameter.Name == "publication_id":
+			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceState}
+		case transition.ID == "publication.correct" && (parameter.Name == "body_path" || parameter.Name == "body_sha256"):
+			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceTrustedResolver}
+		case (transition.ID == "workspace.reconcile" || transition.ID == "publication.reconcile") && parameter.Name == "transaction_id":
+			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceState}
+		case transition.ID == "publication.reconcile" && parameter.Name == "publication_id":
+			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceState}
+		case parameter.Name == "branch":
+			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceState}
 		}
 		result = append(result, controlprogram.OperatorParameter{
 			ID: parameter.Name, Type: controlprogram.ValueTypeDefinition{Kind: "string"}, Required: parameter.Required, Secret: parameter.Secret,

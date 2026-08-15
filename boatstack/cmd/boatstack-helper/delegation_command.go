@@ -102,11 +102,20 @@ func runFlowAuthorize(arguments []string) error {
 		return loadErr
 	}
 	now := time.Now().UTC()
-	record, changed, err := authorizeDelegation(existing, bound.delegationRequest, requestFingerprint, options.humanActor, expiresIn, now)
+	record, changed, err := authorizeDelegation(existing, bound.delegationRequest, requestFingerprint, options.humanActor, expiresIn, now, bound.delegationReprojection)
 	if err != nil {
 		return err
 	}
 	if changed {
+		if existing != nil && existing.RequestFingerprint != record.RequestFingerprint {
+			archivePath, archivePathErr := delegation.SupersededPath(layout.FlowRoot, bound.runID, existing.RequestFingerprint)
+			if archivePathErr != nil {
+				return archivePathErr
+			}
+			if archiveErr := effects.ArchiveDelegationRecord(archivePath, *existing); archiveErr != nil {
+				return archiveErr
+			}
+		}
 		if err := effects.StoreDelegationRecord(recordPath, record); err != nil {
 			return err
 		}
@@ -114,11 +123,30 @@ func runFlowAuthorize(arguments []string) error {
 	return printDelegationRecord(record)
 }
 
-func authorizeDelegation(existing *delegation.Record, request delegation.Request, requestFingerprint, actor string, expiresIn time.Duration, now time.Time) (delegation.Record, bool, error) {
+func authorizeDelegation(existing *delegation.Record, request delegation.Request, requestFingerprint, actor string, expiresIn time.Duration, now time.Time, allowReprojection bool) (delegation.Record, bool, error) {
 	if expiresIn < 0 {
 		return delegation.Record{}, false, fmt.Errorf("flow authorize --expires-in cannot be negative")
 	}
+	computedFingerprint, err := request.Fingerprint()
+	if err != nil || computedFingerprint != requestFingerprint {
+		return delegation.Record{}, false, fmt.Errorf("DELEGATION_REQUEST_MISMATCH: authorization does not match the exact current request")
+	}
 	if existing != nil {
+		if allowReprojection && existing.RequestFingerprint != requestFingerprint {
+			if existing.Status != "active" && existing.Status != "revoked" {
+				return delegation.Record{}, false, fmt.Errorf("DELEGATION_CONFLICT: reconciled run authorization is %s", existing.Status)
+			}
+			record := delegation.Record{
+				Schema: delegation.Schema, SchemaRevision: delegation.SchemaRevision,
+				Request: request, RequestFingerprint: requestFingerprint,
+				ReceiptID: authorizationReceiptID(requestFingerprint, actor, existing.Revision+1, now), Actor: actor,
+				AuthorizedAt: now, Revision: existing.Revision + 1, Status: "active",
+			}
+			if expiresIn > 0 {
+				record.ExpiresAt = now.Add(expiresIn)
+			}
+			return record, true, nil
+		}
 		if existing.RequestFingerprint != requestFingerprint || existing.Actor != actor || existing.Status != "active" {
 			return delegation.Record{}, false, fmt.Errorf("DELEGATION_CONFLICT: run already has a different authorization, actor, or status")
 		}

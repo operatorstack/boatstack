@@ -277,7 +277,7 @@ func TestPublicationPreviewRejectsFieldTamperingUnderAnOldFingerprint(t *testing
 }
 
 func TestPublicationExecutionUsesBoundBodyAndNoninteractiveTitle(t *testing.T) {
-	runner := &boundaryRunner{}
+	runner := &boundaryRunner{outputs: [][]byte{[]byte("push complete"), []byte("https://github.com/operatorstack/boatstack/pull/222\n")}}
 	boundary, err := NewNativeBoundaryWithRunner(runner)
 	if err != nil {
 		t.Fatal(err)
@@ -318,8 +318,12 @@ func TestPublicationExecutionUsesBoundBodyAndNoninteractiveTitle(t *testing.T) {
 	}
 	admission.RequiredCapabilities = catalog.RequiredCapabilities(transition)
 	admission.EffectiveCapabilities = admission.RequiredCapabilities
-	if _, err := boundary.Execute(context.Background(), admission, transition, layout, durable.State{}); err != nil {
+	result, err := boundary.Execute(context.Background(), admission, transition, layout, durable.State{})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if publicationID, ok := result.Outputs.Get("publication_id"); !ok || publicationID != "222" {
+		t.Fatalf("publication effect outputs = %#v", result.Outputs)
 	}
 	want := []string{"pr", "create", "--base", "main", "--head", "feature", "--fill-first", "--body-file", bodyPath}
 	if runner.name != "gh" || strings.Join(runner.arguments, "\x00") != strings.Join(want, "\x00") {

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
@@ -28,11 +29,12 @@ type flowInputOptions struct {
 	human              string
 	host               string
 	format             string
+	reason             string
 }
 
 func runFlowInput(arguments []string) error {
 	if len(arguments) == 0 {
-		return fmt.Errorf("usage: boatstack flow input <show|answer|block> [flags]")
+		return fmt.Errorf("usage: boatstack flow input <show|answer|supersede|block> [flags]")
 	}
 	action := arguments[0]
 	flags := flag.NewFlagSet("flow input "+action, flag.ContinueOnError)
@@ -47,6 +49,7 @@ func runFlowInput(arguments []string) error {
 	flags.StringVar(&options.human, "human", "", "human actor recording the answer")
 	flags.StringVar(&options.host, "host", options.host, "driver host identity")
 	flags.StringVar(&options.format, "format", options.format, "json")
+	flags.StringVar(&options.reason, "reason", "", "semantic rejection reason for a new immutable request generation")
 	if err := flags.Parse(arguments[1:]); err != nil {
 		return err
 	}
@@ -56,7 +59,7 @@ func runFlowInput(arguments []string) error {
 	if action == "block" {
 		return fmt.Errorf("TRANSITION_INPUT_BLOCKED: no input receipt was recorded")
 	}
-	if action != "show" && action != "answer" {
+	if action != "show" && action != "answer" && action != "supersede" {
 		return fmt.Errorf("unknown flow input action %q", action)
 	}
 	if options.programID == "" || options.entryID == "" || options.runID == "" || options.requestFingerprint == "" {
@@ -94,6 +97,45 @@ func runFlowInput(arguments []string) error {
 			return loadErr
 		}
 		return encodeFlowInputResult(map[string]any{"request": request, "receipts": receipts}, options.format)
+	}
+	if action == "supersede" {
+		if options.reason == "" || options.human == "" || options.host == "" {
+			return fmt.Errorf("--reason, --human, and --host are required")
+		}
+		if runtimeContext.executionScopeFingerprint != request.ExecutionScopeFingerprint {
+			return fmt.Errorf("FLOW_INPUT_REQUEST_MISMATCH: execution scope changed after suspension")
+		}
+		requestContext := invocation.Context{
+			RunID: request.RunID, ProgramFingerprint: request.ProgramFingerprint, ExecutionProgramFingerprint: request.ExecutionProgramFingerprint,
+			EntryID: request.EntryID, TargetID: request.TargetID, TransitionID: request.TransitionID, StateRevision: request.StateRevision,
+			ContextFingerprint: request.ContextFingerprint, ControlBundleFingerprint: request.ControlBundleFingerprint, ExecutionScopeFingerprint: request.ExecutionScopeFingerprint,
+		}
+		latest, found, latestErr := store.LatestRequest(requestContext)
+		if latestErr != nil {
+			return latestErr
+		}
+		if !found || latest.Fingerprint != request.Fingerprint {
+			return fmt.Errorf("FLOW_INPUT_REQUEST_SUPERSEDED: only the latest request generation can be superseded")
+		}
+		receipts, loadErr := store.LoadReceipts(request.RunID, request.TransitionID)
+		if loadErr != nil {
+			return loadErr
+		}
+		for _, parameter := range request.Parameters {
+			if _, answered := receipts[parameter.ID+"@"+request.Fingerprint]; !answered {
+				return fmt.Errorf("FLOW_INPUT_SUPERSESSION_UNANSWERED: request has no immutable answer for parameter %s", parameter.ID)
+			}
+		}
+		next, supersedeErr := invocation.SupersedeRequest(request, options.reason, options.human, options.host, time.Now().UTC())
+		if supersedeErr != nil {
+			return supersedeErr
+		}
+		if saveErr := store.SaveRequest(next); saveErr != nil {
+			return saveErr
+		}
+		return encodeFlowInputResult(map[string]any{
+			"prior_request_fingerprint": request.Fingerprint, "request": next, "status": "superseded",
+		}, options.format)
 	}
 	if options.answerPath == "" || options.human == "" || options.host == "" {
 		return fmt.Errorf("--answer, --human, and --host are required")

@@ -25,10 +25,11 @@ var managedBranchSegment = regexp.MustCompile(`[^a-z0-9._-]+`)
 // bindings copied into canonical IR. Repository Flow source cannot provide
 // executable resolver code through this boundary.
 type RuntimeParameterResolver struct {
-	Context    context.Context
-	Repository string
-	DeliveryID string
-	Binding    Resolver
+	Context        context.Context
+	Repository     string
+	DeliveryID     string
+	SourceRevision string
+	Binding        Resolver
 }
 
 // StateParameterValues projects software-delivery durable fields into the
@@ -58,8 +59,14 @@ func (r RuntimeParameterResolver) ResolveParameter(binding controlprogram.Parame
 		return invocation.Value{}, fmt.Errorf("trusted parameter resolver fingerprint drift")
 	}
 	value := invocation.Value{Type: resolved.OutputType, ProducerFingerprint: resolved.Fingerprint}
-	switch binding.Reference {
-	case ParameterResolverPrefix + "repository-default-branch":
+	switch {
+	case binding.Reference == ParameterResolverPrefix+"admitted-planning-package-fingerprint":
+		fingerprint, fingerprintErr := PlanningPackageFingerprint(r.Repository, r.DeliveryID)
+		if fingerprintErr != nil {
+			return invocation.Value{}, fingerprintErr
+		}
+		value.Canonical, value.Provenance = fingerprint, "planning-package-manifest:"+fingerprint
+	case binding.Reference == ParameterResolverPrefix+"repository-default-branch":
 		configPath := filepath.Join(r.Repository, ".boatstack", "project.json")
 		raw, readErr := os.ReadFile(configPath)
 		if readErr != nil {
@@ -74,7 +81,7 @@ func (r RuntimeParameterResolver) ResolveParameter(binding controlprogram.Parame
 			return invocation.Value{}, fmt.Errorf("repository default branch configuration is missing or unverified")
 		}
 		value.Canonical, value.Provenance = config.Project.DefaultBranch, "project-config:"+configFingerprint
-	case ParameterResolverPrefix + "delivery-branch":
+	case binding.Reference == ParameterResolverPrefix+"delivery-branch":
 		segment := strings.Trim(managedBranchSegment.ReplaceAllString(strings.ToLower(r.DeliveryID), "-"), "-.")
 		if segment == "" || r.DeliveryID == "" {
 			return invocation.Value{}, fmt.Errorf("delivery identity cannot produce a managed branch")
@@ -92,7 +99,7 @@ func (r RuntimeParameterResolver) ResolveParameter(binding controlprogram.Parame
 			return invocation.Value{}, fmt.Errorf("managed branch %q already exists and cannot be silently reused", branch)
 		}
 		value.Canonical, value.Provenance = branch, "delivery:"+r.DeliveryID
-	case ParameterResolverPrefix + "managed-worktree-destination":
+	case binding.Reference == ParameterResolverPrefix+"managed-worktree-destination":
 		repository, canonicalErr := filepath.Abs(r.Repository)
 		if canonicalErr != nil {
 			return invocation.Value{}, canonicalErr
@@ -134,8 +141,102 @@ func (r RuntimeParameterResolver) ResolveParameter(binding controlprogram.Parame
 		}
 		identity := sha256.Sum256(bytes.Join([][]byte{[]byte(invoking.RepositoryID), []byte(invoking.GitCommonID), []byte(materialization.RunID), []byte(r.DeliveryID), []byte(invoking.WorktreeID), []byte(invoking.Ref)}, []byte{0}))
 		value.Canonical, value.Provenance = destination, "workspace-layout:"+hex.EncodeToString(identity[:])
+	case binding.Reference == ParameterResolverPrefix+"current-source-revision":
+		if (len(r.SourceRevision) != 40 && len(r.SourceRevision) != 64) || strings.Trim(r.SourceRevision, "0123456789abcdef") != "" {
+			return invocation.Value{}, fmt.Errorf("current committed source revision is unavailable")
+		}
+		value.Canonical, value.Provenance = r.SourceRevision, "repository-head"
+	case strings.HasPrefix(binding.Reference, ParameterResolverPrefix+"gate-evidence-path/"):
+		gate := strings.TrimPrefix(binding.Reference, ParameterResolverPrefix+"gate-evidence-path/")
+		path, _, readErr := readCanonicalParameterArtifact(r.Repository, r.DeliveryID, gateEvidenceInputPath(gate))
+		if readErr != nil {
+			return invocation.Value{}, readErr
+		}
+		value.Canonical, value.Provenance = path, "gate-evidence:"+gate
+	case strings.HasPrefix(binding.Reference, ParameterResolverPrefix+"gate-evidence-fingerprint/"):
+		gate := strings.TrimPrefix(binding.Reference, ParameterResolverPrefix+"gate-evidence-fingerprint/")
+		_, raw, readErr := readCanonicalParameterArtifact(r.Repository, r.DeliveryID, gateEvidenceInputPath(gate))
+		if readErr != nil {
+			return invocation.Value{}, readErr
+		}
+		digest := sha256.Sum256(raw)
+		value.Canonical, value.Provenance = hex.EncodeToString(digest[:]), "gate-evidence:"+gate
+	case binding.Reference == ParameterResolverPrefix+"visual-evidence-manifest-path":
+		path, _, readErr := readCanonicalParameterArtifact(r.Repository, r.DeliveryID, "visual-manifest.input.json")
+		if readErr != nil {
+			return invocation.Value{}, readErr
+		}
+		value.Canonical, value.Provenance = path, "visual-evidence-manifest"
+	case binding.Reference == ParameterResolverPrefix+"visual-evidence-privacy-receipt":
+		_, raw, readErr := readCanonicalParameterArtifact(r.Repository, r.DeliveryID, "visual-manifest.input.json")
+		if readErr != nil {
+			return invocation.Value{}, readErr
+		}
+		digest := sha256.Sum256(raw)
+		value.Canonical, value.Provenance = hex.EncodeToString(digest[:]), "visual-evidence-manifest"
+	case binding.Reference == ParameterResolverPrefix+"publication-body-path":
+		path, _, readErr := readCanonicalPublicationBody(r.Repository, r.DeliveryID)
+		if readErr != nil {
+			return invocation.Value{}, readErr
+		}
+		value.Canonical, value.Provenance = path, "publication-body"
+	case binding.Reference == ParameterResolverPrefix+"publication-body-sha256":
+		_, raw, readErr := readCanonicalPublicationBody(r.Repository, r.DeliveryID)
+		if readErr != nil {
+			return invocation.Value{}, readErr
+		}
+		digest := sha256.Sum256(raw)
+		value.Canonical, value.Provenance = hex.EncodeToString(digest[:]), "publication-body"
 	default:
 		return invocation.Value{}, fmt.Errorf("unknown runtime parameter resolver %q", binding.Reference)
 	}
 	return value, nil
+}
+
+func gateEvidenceInputPath(gate string) string {
+	switch gate {
+	case "build", "test", "review", "change", "journey":
+		return gate + ".input.json"
+	default:
+		return ""
+	}
+}
+
+func readCanonicalParameterArtifact(repository, deliveryID, name string) (string, []byte, error) {
+	if !planningPackageSegment.MatchString(deliveryID) || name == "" || filepath.Base(name) != name {
+		return "", nil, fmt.Errorf("canonical parameter artifact identity is invalid")
+	}
+	return readRegularParameterArtifact(repository, filepath.Join(".boatstack", "evidence", deliveryID, name))
+}
+
+func readCanonicalPublicationBody(repository, deliveryID string) (string, []byte, error) {
+	if !planningPackageSegment.MatchString(deliveryID) {
+		return "", nil, fmt.Errorf("publication body delivery identity is invalid")
+	}
+	return readRegularParameterArtifact(repository, filepath.Join(".boatstack", "publication", deliveryID+".body.md"))
+}
+
+func readRegularParameterArtifact(repository, relative string) (string, []byte, error) {
+	root, err := filepath.Abs(repository)
+	if err != nil {
+		return "", nil, err
+	}
+	path := filepath.Join(root, relative)
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return "", nil, fmt.Errorf("canonical parameter artifact is unavailable: %s", path)
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", nil, err
+	}
+	rel, err := filepath.Rel(root, resolved)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", nil, fmt.Errorf("canonical parameter artifact escapes the repository")
+	}
+	raw, err := os.ReadFile(resolved)
+	if err != nil || len(raw) == 0 {
+		return "", nil, fmt.Errorf("canonical parameter artifact is empty or unreadable: %s", resolved)
+	}
+	return resolved, raw, nil
 }

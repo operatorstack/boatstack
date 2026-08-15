@@ -146,7 +146,16 @@ JSON answer object outside repository-tracked paths and submit it only with:
 
 Resume the same run after the receipt is recorded. Never guess a value, pass a
 Flow `+"`--param`"+`, reuse `+"`flow work answer`"+`, or edit runtime input receipts.
-`, compiled.Document.Program.ID, entry.ID, host, compiled.Document.Program.ID, entry.ID, host)
+
+If transition preflight semantically rejects an already recorded free-form
+answer, preserve that request and receipt. Ask the user for the corrected value,
+then create a new immutable request generation with:
+
+`+"`boatstack flow input supersede --repo . --flow %s --entry %s --run-id <run-id> --request-fingerprint <fingerprint> --reason <semantic-rejection> --human <actor> --host %s --format json`"+`
+
+Answer only the new request fingerprint. Never overwrite or delete the rejected
+generation.
+`, compiled.Document.Program.ID, entry.ID, host, compiled.Document.Program.ID, entry.ID, host, compiled.Document.Program.ID, entry.ID, host)
 	}
 	if entry.Diagnostics != nil && entry.Diagnostics.ExplainOnSuspend {
 		diagnostics = fmt.Sprintf(`

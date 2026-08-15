@@ -29,7 +29,7 @@ func compiledFlow(t *testing.T, guard controlprogram.Predicate) (controlprogram.
 			{ID: "configuration", Kind: "string"}, {ID: "runtime", Kind: "string"},
 		},
 		Operators:   []controlprogram.Operator{{ID: "publication.observe", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/publication.observe", Version: "1"}}},
-		Transitions: []controlprogram.Transition{{ID: "publication.observe", Operator: "publication.observe", Guard: guard, Target: controlprogram.Predicate{True: &truth}, Priority: 77, Parameters: hostParameters("publication_id")}},
+		Transitions: []controlprogram.Transition{{ID: "publication.observe", Operator: "publication.observe", Guard: guard, Target: controlprogram.Predicate{True: &truth}, Priority: 77, Parameters: publicationIDStateParameter(guard)}},
 		Targets: []controlprogram.Target{{ID: "published-pr", Predicate: controlprogram.Predicate{All: []controlprogram.Predicate{
 			fact("verification", "current"), fact("configuration", "verified"), fact("runtime", "verified"), fact("publication", "open"),
 		}}}},
@@ -42,15 +42,10 @@ func compiledFlow(t *testing.T, guard controlprogram.Predicate) (controlprogram.
 	return compiled, resolver
 }
 
-func hostParameters(ids ...string) []controlprogram.TransitionParameterBinding {
-	result := make([]controlprogram.TransitionParameterBinding, 0, len(ids))
-	for _, id := range ids {
-		result = append(result, controlprogram.TransitionParameterBinding{Parameter: id, Producer: controlprogram.ParameterProducer{
-			Kind:    controlprogram.ParameterSourceHostInput,
-			Request: &controlprogram.HostInputRequest{ID: id, Description: "Provide " + id + ".", Scope: "transition"},
-		}})
-	}
-	return result
+func publicationIDStateParameter(available controlprogram.Predicate) []controlprogram.TransitionParameterBinding {
+	return []controlprogram.TransitionParameterBinding{{Parameter: "publication_id", Producer: controlprogram.ParameterProducer{
+		Kind: controlprogram.ParameterSourceState, Facet: "publication", AvailableWhen: &available,
+	}}}
 }
 
 func fact(facet, value string) controlprogram.Predicate {
@@ -106,6 +101,7 @@ func TestRepositoryGuardCanOnlyStrengthenTrustedBinding(t *testing.T) {
 	}
 	invalid := compiled.Document
 	invalid.Transitions[0].Guard = controlprogram.Predicate{Any: []controlprogram.Predicate{fact("publication", "candidate"), fact("publication", "open")}}
+	invalid.Transitions[0].Parameters = publicationIDStateParameter(invalid.Transitions[0].Guard)
 	nonConjunctive, err := controlprogram.Compile(invalid, resolver)
 	if err != nil {
 		t.Fatal(err)
@@ -319,7 +315,7 @@ func TestAbandonmentEntryMakesTrustedAbandonmentObjectiveProgress(t *testing.T) 
 			{ID: "plan.abandon", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/plan.abandon", Version: "1"}},
 		},
 		Transitions: []controlprogram.Transition{
-			{ID: "publication.observe", Operator: "publication.observe", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 77, Parameters: hostParameters("publication_id")},
+			{ID: "publication.observe", Operator: "publication.observe", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 77, Parameters: publicationIDStateParameter(controlprogram.Predicate{True: &truth})},
 			{ID: "plan.abandon", Operator: "plan.abandon", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 31},
 		},
 		Targets: []controlprogram.Target{

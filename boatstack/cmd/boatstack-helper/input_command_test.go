@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,19 +11,20 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
+	"github.com/operatorstack/boatstack/boatstack/invocation"
 )
 
 func TestFlowInputAnswerResumesSameRunAndConflictsFailClosed(t *testing.T) {
 	// control-law: a missing declared host value suspends and only an exact
 	// runtime-owned receipt resumes the same invocation.
-	repository := flowRepository(t)
+	repository := flowRepositoryWithHumanSlice(t)
 	runFlowGit(t, repository, "init", "-q")
 	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
 	runFlowGit(t, repository, "add", ".")
 	runFlowGit(t, repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-q", "-m", "fixture")
 	writeAdmittedFlowProgramState(t, repository, strings.Repeat("f", 64))
 
-	base := commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex", transitionID: "publication.observe"}
+	base := commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex", transitionID: "delivery.slice.advance"}
 	suspended, err := bindFlowEntry(context.Background(), base)
 	if err != nil {
 		t.Fatal(err)
@@ -31,7 +33,7 @@ func TestFlowInputAnswerResumesSameRunAndConflictsFailClosed(t *testing.T) {
 		t.Fatalf("suspension = %#v", suspended.inputRequest)
 	}
 	answerPath := filepath.Join(t.TempDir(), "answer.json")
-	if err := os.WriteFile(answerPath, []byte(`{"publication_id":"123"}`), 0o600); err != nil {
+	if err := os.WriteFile(answerPath, []byte(`{"slice_id":"slice-one"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	arguments := []string{
@@ -43,17 +45,17 @@ func TestFlowInputAnswerResumesSameRunAndConflictsFailClosed(t *testing.T) {
 	}
 
 	resumed, err := bindFlowEntry(context.Background(), commandOptions{
-		repository: repository, programID: "product-delivery", entryID: "run", host: "codex", transitionID: "publication.observe",
+		repository: repository, programID: "product-delivery", entryID: "run", host: "codex", transitionID: "delivery.slice.advance",
 		runID: suspended.runID, deliveryID: suspended.deliveryID, targetID: suspended.targetID, objectiveID: suspended.objectiveID,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resumed.invocationEvidence == nil || resumed.inputRequest != nil || strings.Join(resumed.parameters, "") != "publication_id=123" {
+	if resumed.invocationEvidence == nil || resumed.inputRequest != nil || !strings.Contains(strings.Join(resumed.parameters, ","), "slice_id=slice-one") {
 		t.Fatalf("resumed invocation = evidence %#v request %#v parameters %#v", resumed.invocationEvidence, resumed.inputRequest, resumed.parameters)
 	}
 
-	if err := os.WriteFile(answerPath, []byte(`{"publication_id":"456"}`), 0o600); err != nil {
+	if err := os.WriteFile(answerPath, []byte(`{"slice_id":"slice-two"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := captureStdout(t, func() error { return runFlowInput(arguments) }); err == nil || !strings.Contains(err.Error(), "FLOW_INPUT_ANSWER_CONFLICT") {
@@ -61,10 +63,100 @@ func TestFlowInputAnswerResumesSameRunAndConflictsFailClosed(t *testing.T) {
 	}
 }
 
+func TestRejectedHostAnswerCanBeSupersededWithoutMutation(t *testing.T) {
+	// control-law: semantic rejection preserves the original request and receipt
+	// while a fresh request generation can collect a corrected free-form value.
+	stateRoot := t.TempDir()
+	t.Setenv("BOATSTACK_STATE_ROOT", stateRoot)
+	repository := flowRepositoryWithHumanSlice(t)
+	runFlowGit(t, repository, "init", "-q")
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-q", "-m", "fixture")
+	writeAdmittedFlowProgramState(t, repository, strings.Repeat("f", 64))
+
+	base := commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex", transitionID: "delivery.slice.advance"}
+	first, err := bindFlowEntry(context.Background(), base)
+	if err != nil || first.inputRequest == nil {
+		t.Fatalf("first request = %#v, %v", first.inputRequest, err)
+	}
+	answerPath := filepath.Join(t.TempDir(), "answer.json")
+	if err := os.WriteFile(answerPath, []byte(`{"slice_id":"rejected-slice"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	answer := func(fingerprint string) error {
+		_, answerErr := captureStdout(t, func() error {
+			return runFlowInput([]string{
+				"answer", "--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", first.runID,
+				"--request-fingerprint", fingerprint, "--answer", answerPath, "--human", "operator", "--host", "codex", "--format", "json",
+			})
+		})
+		return answerErr
+	}
+	if err := answer(first.inputRequest.Fingerprint); err != nil {
+		t.Fatal(err)
+	}
+
+	output, err := captureStdout(t, func() error {
+		return runFlowInput([]string{
+			"supersede", "--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", first.runID,
+			"--request-fingerprint", first.inputRequest.Fingerprint, "--reason", "slice is outside the accepted plan", "--human", "operator", "--host", "codex", "--format", "json",
+		})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var superseded struct {
+		Request invocation.InputRequest `json:"request"`
+	}
+	if err := json.Unmarshal(output, &superseded); err != nil {
+		t.Fatal(err)
+	}
+	second := superseded.Request
+	if second.EffectiveGeneration() != 2 || second.Fingerprint == first.inputRequest.Fingerprint || second.Supersession == nil || second.Supersession.PreviousRequestFingerprint != first.inputRequest.Fingerprint {
+		t.Fatalf("superseded request = %#v", second)
+	}
+	resuspended, err := bindFlowEntry(context.Background(), commandOptions{
+		repository: repository, programID: "product-delivery", entryID: "run", host: "codex", transitionID: "delivery.slice.advance",
+		runID: first.runID, deliveryID: first.deliveryID, targetID: first.targetID, objectiveID: first.objectiveID,
+	})
+	if err != nil || resuspended.inputRequest == nil || resuspended.inputRequest.Fingerprint != second.Fingerprint || resuspended.invocationEvidence != nil {
+		t.Fatalf("new generation did not suspend: %#v evidence=%#v err=%v", resuspended.inputRequest, resuspended.invocationEvidence, err)
+	}
+	if err := os.WriteFile(answerPath, []byte(`{"slice_id":"accepted-slice"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := answer(second.Fingerprint); err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := bindFlowEntry(context.Background(), commandOptions{
+		repository: repository, programID: "product-delivery", entryID: "run", host: "codex", transitionID: "delivery.slice.advance",
+		runID: first.runID, deliveryID: first.deliveryID, targetID: first.targetID, objectiveID: first.objectiveID,
+	})
+	if err != nil || resumed.invocationEvidence == nil || resumed.inputRequest != nil || !strings.Contains(strings.Join(resumed.parameters, ","), "slice_id=accepted-slice") {
+		t.Fatalf("corrected generation did not resume: parameters=%#v evidence=%#v request=%#v err=%v", resumed.parameters, resumed.invocationEvidence, resumed.inputRequest, err)
+	}
+	receiptCount := 0
+	if err := filepath.WalkDir(stateRoot, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".receipt.json") {
+			receiptCount++
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if receiptCount != 2 {
+		t.Fatalf("immutable receipt count = %d, want rejected and corrected generations", receiptCount)
+	}
+}
+
 func TestCLIAndRPCBindingsCreateTheSameInputSuspension(t *testing.T) {
 	// control-law: transport selection cannot change the typed invocation
 	// request for one exact Flow context.
-	repository := flowRepository(t)
+	repository := flowRepositoryWithHumanSlice(t)
 	runFlowGit(t, repository, "init", "-q")
 	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
 	runFlowGit(t, repository, "add", ".")
@@ -73,7 +165,7 @@ func TestCLIAndRPCBindingsCreateTheSameInputSuspension(t *testing.T) {
 
 	cli, err := bindFlowEntry(context.Background(), commandOptions{
 		repository: repository, programID: "product-delivery", entryID: "run", host: "codex",
-		correlationID: "transport-parity", transitionID: "publication.observe",
+		correlationID: "transport-parity", transitionID: "delivery.slice.advance",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +181,7 @@ func TestCLIAndRPCBindingsCreateTheSameInputSuspension(t *testing.T) {
 			ID: cli.objectiveID, TargetID: model.TargetID(cli.targetID),
 			TrustedClass: model.TargetID(cli.trustedObjectiveClass), DeliveryID: cli.deliveryID,
 		},
-		TransitionID: "publication.observe",
+		TransitionID: "delivery.slice.advance",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -107,7 +199,7 @@ func TestApplyAndRecoveryDiscardRevokedInvocationEvidence(t *testing.T) {
 	// neither can reuse evidence after its receipt is revoked.
 	stateRoot := t.TempDir()
 	t.Setenv("BOATSTACK_STATE_ROOT", stateRoot)
-	repository := flowRepository(t)
+	repository := flowRepositoryWithHumanSlice(t)
 	runFlowGit(t, repository, "init", "-q")
 	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
 	runFlowGit(t, repository, "add", ".")
@@ -116,13 +208,13 @@ func TestApplyAndRecoveryDiscardRevokedInvocationEvidence(t *testing.T) {
 
 	suspended, err := bindFlowEntry(context.Background(), commandOptions{
 		repository: repository, programID: "product-delivery", entryID: "run", host: "codex",
-		correlationID: "revocation", transitionID: "publication.observe",
+		correlationID: "revocation", transitionID: "delivery.slice.advance",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	answerPath := filepath.Join(t.TempDir(), "answer.json")
-	if err := os.WriteFile(answerPath, []byte(`{"publication_id":"123"}`), 0o600); err != nil {
+	if err := os.WriteFile(answerPath, []byte(`{"slice_id":"slice-one"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := captureStdout(t, func() error {
@@ -135,7 +227,7 @@ func TestApplyAndRecoveryDiscardRevokedInvocationEvidence(t *testing.T) {
 	}
 	resumed, err := bindFlowEntry(context.Background(), commandOptions{
 		repository: repository, programID: "product-delivery", entryID: "run", host: "codex", correlationID: "revocation",
-		transitionID: "publication.observe", runID: suspended.runID, deliveryID: suspended.deliveryID,
+		transitionID: "delivery.slice.advance", runID: suspended.runID, deliveryID: suspended.deliveryID,
 		targetID: suspended.targetID, objectiveID: suspended.objectiveID,
 	})
 	if err != nil || resumed.invocationEvidence == nil {

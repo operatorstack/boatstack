@@ -12,6 +12,9 @@
 import {
   always,
   facet,
+  fromReceipt,
+  fromState,
+  hostParameter,
   operator,
   trustedParameterResolver,
   transition,
@@ -52,6 +55,8 @@ export const softwareDeliveryFacets: FacetDefinition[] = [
   "recovery_resumption",
   "recovery_source_phase",
   "source_revision",
+  "preview_fingerprint",
+  "publication_id",
   "transaction_id",
   "transaction_transition",
   "workspace_base_ref",
@@ -131,6 +136,133 @@ export function managedWorktreeDestination(): ParameterProducer {
   );
 }
 
+/** Reads the exact fingerprint of the planning-package manifest admitted for this delivery. */
+export function admittedPlanningPackageFingerprint(): ParameterProducer {
+  return trustedParameterResolver(
+    "software-delivery/admitted-planning-package-fingerprint",
+    "1",
+  );
+}
+
+/** Reads the exact committed revision of the invoking worktree. */
+export function currentSourceRevision(): ParameterProducer {
+  return trustedParameterResolver("software-delivery/current-source-revision", "1");
+}
+
+/** Reads one canonical gate-evidence input path prepared for this delivery. */
+export function gateEvidencePath(gate: "build" | "test" | "review" | "change" | "journey"): ParameterProducer {
+  return trustedParameterResolver(`software-delivery/gate-evidence-path/${gate}`, "1");
+}
+
+/** Hashes the exact canonical gate-evidence input prepared for this delivery. */
+export function gateEvidenceFingerprint(gate: "build" | "test" | "review" | "change" | "journey"): ParameterProducer {
+  return trustedParameterResolver(`software-delivery/gate-evidence-fingerprint/${gate}`, "1");
+}
+
+/** Reads the canonical visual-evidence manifest path for this delivery. */
+export function visualEvidenceManifestPath(): ParameterProducer {
+  return trustedParameterResolver("software-delivery/visual-evidence-manifest-path", "1");
+}
+
+/** Hashes the canonical visual-evidence manifest for its privacy receipt. */
+export function visualEvidencePrivacyReceipt(): ParameterProducer {
+  return trustedParameterResolver("software-delivery/visual-evidence-privacy-receipt", "1");
+}
+
+/** Reads the canonical pull-request body path for this delivery. */
+export function publicationBodyPath(): ParameterProducer {
+  return trustedParameterResolver("software-delivery/publication-body-path", "1");
+}
+
+/** Hashes the canonical pull-request body for a correction. */
+export function publicationBodyFingerprint(): ParameterProducer {
+  return trustedParameterResolver("software-delivery/publication-body-sha256", "1");
+}
+
+function durableValue(facet: string): ParameterProducer {
+  return fromState({ facet, availableWhen: always });
+}
+
+function canonicalGateParameters(gate: "build" | "test" | "review" | "change" | "journey"): Record<string, ParameterProducer> {
+  return {
+    source_revision: currentSourceRevision(),
+    evidence_path: gateEvidencePath(gate),
+    evidence_fingerprint: gateEvidenceFingerprint(gate),
+  };
+}
+
+/**
+ * Returns the standard explicit producer bindings for one trusted lifecycle step.
+ * This helper declares data ownership only; it does not infer values at runtime.
+ */
+export function standardSoftwareDeliveryParameters(step: TrustedStep): Record<string, ParameterProducer> {
+  switch (step.id) {
+    case "planning.package.approve":
+      return { package_fingerprint: admittedPlanningPackageFingerprint() };
+    case "workspace.cut":
+      return {
+        branch: deliveryBranch(),
+        base_ref: repositoryDefaultBranch(),
+        destination: managedWorktreeDestination(),
+      };
+    case "workspace.activate":
+    case "workspace.sync":
+    case "workspace.publish":
+      return { branch: durableValue("workspace_branch") };
+    case "gate.build.record":
+      return canonicalGateParameters("build");
+    case "gate.test.record":
+      return canonicalGateParameters("test");
+    case "gate.review.record":
+      return canonicalGateParameters("review");
+    case "gate.change.record":
+      return canonicalGateParameters("change");
+    case "gate.journey.record":
+      return canonicalGateParameters("journey");
+    case "evidence.visual.attach":
+      return {
+        manifest_path: visualEvidenceManifestPath(),
+        privacy_receipt: visualEvidencePrivacyReceipt(),
+        source_revision: currentSourceRevision(),
+      };
+    case "delivery.slice.advance":
+      return {
+        slice_id: hostParameter({
+          id: "delivery-slice",
+          description: "Select the next bounded delivery slice.",
+          authorities: ["human", "autonomy"],
+          scope: "transition",
+        }),
+        source_revision: currentSourceRevision(),
+      };
+    case "publication.preview":
+      return {
+        base_ref: repositoryDefaultBranch(),
+        head_ref: durableValue("workspace_branch"),
+        body_path: publicationBodyPath(),
+      };
+    case "publication.execute":
+      return { preview_fingerprint: durableValue("preview_fingerprint") };
+    case "publication.observe":
+      return { publication_id: fromReceipt({ transition: "publication.execute", field: "publication_id" }) };
+    case "publication.correct":
+      return {
+        publication_id: durableValue("publication_id"),
+        body_path: publicationBodyPath(),
+        body_sha256: publicationBodyFingerprint(),
+      };
+    case "workspace.reconcile":
+      return { transaction_id: durableValue("transaction_id") };
+    case "publication.reconcile":
+      return {
+        publication_id: durableValue("publication_id"),
+        transaction_id: durableValue("transaction_id"),
+      };
+    default:
+      return {};
+  }
+}
+
 /**
  * Requests trusted run-scoped autonomy delegation for an entry.
  *
@@ -207,6 +339,35 @@ export function trustedTransition(
         }
       : {}),
   });
+}
+
+/**
+ * Declares one standard software-delivery transition with its canonical,
+ * explicit producer bindings. Authority remains owned by the trusted operator.
+ */
+export function trustedSoftwareDeliveryTransition(
+  step: TrustedStep,
+  options: Omit<TrustedTransitionOptions, "parameters"> = {},
+): TransitionDefinition {
+  const parameters = standardSoftwareDeliveryParameters(step);
+  return trustedTransition(step, {
+    ...options,
+    ...(Object.keys(parameters).length !== 0 ? { parameters } : {}),
+  });
+}
+
+/** Expands a standard lifecycle into transitions with explicit canonical producers. */
+export function trustedSoftwareDeliveryTransitions(
+  steps: TrustedStep[],
+  options: { planningPackageWork?: WorkContract } = {},
+): TransitionDefinition[] {
+  return steps.map((step) =>
+    trustedSoftwareDeliveryTransition(step, {
+      ...(step.id === planningPackageAdmit.id && options.planningPackageWork
+        ? { work: options.planningPackageWork }
+        : {}),
+    }),
+  );
 }
 
 /**

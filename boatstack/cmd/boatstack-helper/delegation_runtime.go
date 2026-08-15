@@ -11,12 +11,25 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/delegation"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/plant"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/ports"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
 )
+
+func canReprojectDelegation(layout ports.ControllerLayout, invocation model.InvocationContext, objective model.Objective, prior, current delegation.Request) (bool, error) {
+	if prior.RunID != current.RunID || prior.ProgramID != current.ProgramID || prior.EntryID != current.EntryID ||
+		prior.TargetID != current.TargetID || prior.ObjectiveID != current.ObjectiveID || prior.DeliveryID != current.DeliveryID ||
+		prior.RepositoryID != current.RepositoryID || prior.GitCommonID != current.GitCommonID {
+		return false, nil
+	}
+	if prior.ControlBundleFingerprint == current.ControlBundleFingerprint {
+		return false, nil
+	}
+	return effects.InstallationReprojectionAdmits(layout, current.RunID, invocation, objective, current.ControlBundleFingerprint)
+}
 
 func prepareDelegation(ctx context.Context, request *surfaces.Request) (ports.Lock, *surfaces.Response, error) {
 	if request.ProgramID == "" || len(request.DelegatedAuthorities) == 0 {
@@ -68,17 +81,28 @@ func prepareDelegation(ctx context.Context, request *surfaces.Request) (ports.Lo
 		if request.Operation == surfaces.OperationExplain {
 			return nil, nil, nil
 		}
-		return nil, &surfaces.Response{
-			SchemaVersion: surfaces.SchemaVersion, Operation: request.Operation, ProgramID: request.ProgramID, EntryID: request.EntryID, RunID: request.FlowID, Objective: request.Objective,
-			Delegation: &surfaces.DelegationRequired{Code: "DELEGATION_REQUIRED", RunID: request.FlowID, RequestFingerprint: request.DelegationRequestFingerprint, Authorities: append([]catalog.AuthorityClass(nil), request.DelegatedAuthorities...), Description: "Explicitly authorize " + request.ProgramID + "/" + request.EntryID + " for this exact run"},
-		}, nil
+		return nil, delegationRequiredResponse(*request), nil
 	}
 	if err != nil {
 		releaseOnError()
 		return nil, nil, err
 	}
 	if record.RequestFingerprint != request.DelegationRequestFingerprint || record.Request.RunID != request.FlowID || record.Request.ProgramID != request.ProgramID || record.Request.ProgramFingerprint != request.ProgramFingerprint || record.Request.ControlBundleFingerprint != request.ControlBundleFingerprint || record.Request.EntryID != request.EntryID || record.Request.TargetID != string(request.Objective.TargetID) || record.Request.ObjectiveID != request.Objective.ID || record.Request.DeliveryID != request.Objective.DeliveryID || record.Request.RepositoryID != invocation.RepositoryID || record.Request.GitCommonID != invocation.GitCommonID || record.Request.BindingFingerprint != request.DelegationBindingFingerprint {
+		reprojected, reprojectErr := canReprojectDelegation(layout, invocation, request.Objective, record.Request, delegation.Request{
+			RunID: request.FlowID, ProgramID: request.ProgramID, ProgramFingerprint: request.ProgramFingerprint, ControlBundleFingerprint: request.ControlBundleFingerprint,
+			EntryID: request.EntryID, TargetID: string(request.Objective.TargetID), ObjectiveID: request.Objective.ID, DeliveryID: request.Objective.DeliveryID,
+			RepositoryID: invocation.RepositoryID, GitCommonID: invocation.GitCommonID, BindingFingerprint: request.DelegationBindingFingerprint,
+		})
 		releaseOnError()
+		if reprojectErr != nil {
+			return nil, nil, reprojectErr
+		}
+		if reprojected {
+			if request.Operation == surfaces.OperationExplain {
+				return nil, nil, nil
+			}
+			return nil, delegationRequiredResponse(*request), nil
+		}
 		return nil, nil, fmt.Errorf("DELEGATION_DRIFT: authorization does not match the current run context")
 	}
 	initial := invocation
@@ -119,6 +143,13 @@ func prepareDelegation(ctx context.Context, request *surfaces.Request) (ports.Lo
 		})
 	}
 	return lock, nil, nil
+}
+
+func delegationRequiredResponse(request surfaces.Request) *surfaces.Response {
+	return &surfaces.Response{
+		SchemaVersion: surfaces.SchemaVersion, Operation: request.Operation, ProgramID: request.ProgramID, EntryID: request.EntryID, RunID: request.FlowID, Objective: request.Objective,
+		Delegation: &surfaces.DelegationRequired{Code: "DELEGATION_REQUIRED", RunID: request.FlowID, RequestFingerprint: request.DelegationRequestFingerprint, Authorities: append([]catalog.AuthorityClass(nil), request.DelegatedAuthorities...), Description: "Explicitly authorize " + request.ProgramID + "/" + request.EntryID + " for this exact run"},
+	}
 }
 
 // preflightDelegatedProgramChange observes the selected program before any

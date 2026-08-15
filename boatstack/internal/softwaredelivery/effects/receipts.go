@@ -136,6 +136,88 @@ func findLatestCommittedFlowForObjective(records []journalRecord, invocation mod
 	return found, found.ID != "", nil
 }
 
+// FindLatestCommittedTransitionOutput returns one effect output only from a
+// committed receipt in the current Flow lineage. It never infers an output
+// from durable state or provider state.
+func FindLatestCommittedTransitionOutput(layout ports.ControllerLayout, flowID string, invocation model.InvocationContext, transitionID catalog.TransitionID, field string, maximumRevision uint64) (string, string, bool, error) {
+	records := []journalRecord{}
+	if err := scanCommittedReceipts(layout, func(record journalRecord) error {
+		records = append(records, record)
+		return nil
+	}); err != nil {
+		return "", "", false, err
+	}
+	return findLatestCommittedTransitionOutput(records, flowID, invocation, transitionID, field, maximumRevision)
+}
+
+func findLatestCommittedTransitionOutput(records []journalRecord, flowID string, invocation model.InvocationContext, transitionID catalog.TransitionID, field string, maximumRevision uint64) (string, string, bool, error) {
+	var found protocol.TransitionReceipt
+	var value string
+	for _, record := range records {
+		receipt := *record.Receipt
+		if receipt.FlowID != flowID || receipt.TransitionID != transitionID || receipt.ResultingStateRevision > maximumRevision {
+			continue
+		}
+		output, exists := receipt.EffectOutputs.Get(field)
+		if !exists {
+			continue
+		}
+		authorized := sameStateLineage(record.Admission.Invocation, invocation)
+		if !authorized && record.Admission.Invocation.ControllerID == invocation.ControllerID {
+			var err error
+			authorized, err = invocationAuthorizedByRecords(records, flowID, record.Admission.Invocation, invocation)
+			if err != nil {
+				return "", "", false, err
+			}
+		}
+		if !authorized {
+			continue
+		}
+		if found.ID == "" || receipt.Sequence > found.Sequence {
+			found, value = receipt, output
+		}
+	}
+	return value, found.ID, found.ID != "", nil
+}
+
+// InstallationReprojectionAdmits reports whether the exact current control
+// bundle was committed by an installation transition in this Flow lineage.
+// The bundle binds the Flow artifact and runtime program together. This permits
+// a fresh delegation request; it never carries prior delegation authority.
+func InstallationReprojectionAdmits(layout ports.ControllerLayout, flowID string, invocation model.InvocationContext, objective model.Objective, controlBundleFingerprint string) (bool, error) {
+	records := []journalRecord{}
+	if err := scanCommittedReceipts(layout, func(record journalRecord) error {
+		records = append(records, record)
+		return nil
+	}); err != nil {
+		return false, err
+	}
+	return installationReprojectionAdmits(records, flowID, invocation, objective, controlBundleFingerprint)
+}
+
+func installationReprojectionAdmits(records []journalRecord, flowID string, invocation model.InvocationContext, objective model.Objective, controlBundleFingerprint string) (bool, error) {
+	for _, record := range records {
+		receipt := *record.Receipt
+		installationTransition := receipt.TransitionID == "installation.update" || (receipt.TransitionID == "installation.reconcile-update" && receipt.ProgramChangeAccepted)
+		if !installationTransition || receipt.FlowID != flowID || receipt.ControlBundleTargetFingerprint != controlBundleFingerprint ||
+			receipt.ObjectiveID != objective.ID || receipt.TargetID != objective.TargetID || receipt.TrustedClass != objective.TrustedObjectiveClass() || receipt.DeliveryID != objective.DeliveryID {
+			continue
+		}
+		authorized := sameStateLineage(record.Admission.Invocation, invocation)
+		if !authorized && record.Admission.Invocation.ControllerID == invocation.ControllerID {
+			var err error
+			authorized, err = invocationAuthorizedByRecords(records, flowID, record.Admission.Invocation, invocation)
+			if err != nil {
+				return false, err
+			}
+		}
+		if authorized {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // InvocationAuthorizedByFlow reconstructs worktree lineage only from valid,
 // committed transition receipts. Mutable delegation records cannot invent a
 // context transfer.
@@ -248,6 +330,7 @@ type processEvent struct {
 	RequiredCapabilities   []catalog.Capability      `json:"required_capabilities"`
 	GrantedCapabilities    []catalog.Capability      `json:"granted_capabilities"`
 	CommittedEffects       []protocol.EffectFact     `json:"committed_effects"`
+	EffectOutputs          protocol.Parameters       `json:"effect_outputs,omitempty"`
 	ChangedStateFacets     []model.StateFacet        `json:"changed_state_facets"`
 	Verification           protocol.VerificationFact `json:"verification"`
 	Recovery               string                    `json:"recovery,omitempty"`
@@ -300,6 +383,7 @@ func (s *ReceiptStore) Project(ctx context.Context, receipt protocol.TransitionR
 		RequiredCapabilities: append([]catalog.Capability(nil), receipt.RequiredCapabilities...),
 		GrantedCapabilities:  append([]catalog.Capability(nil), receipt.GrantedCapabilities...),
 		CommittedEffects:     append([]protocol.EffectFact(nil), receipt.CommittedEffects...),
+		EffectOutputs:        append(protocol.Parameters(nil), receipt.EffectOutputs...),
 		ChangedStateFacets:   append([]model.StateFacet(nil), receipt.ChangedStateFacets...),
 		Verification:         receipt.Verification,
 	}

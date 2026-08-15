@@ -111,6 +111,26 @@ func TestRepositoryOwnedSoftwareDeliveryFlowsShareOneRuntime(t *testing.T) {
 				t.Fatalf("entries=%d transitions=%d", len(compiled.Document.Entries), len(manifest.Transitions))
 			}
 			if test.fixture == "product-delivery-planning-package.flow.ts" {
+				var packageProducer, publicationProducer controlprogram.ParameterProducer
+				for _, transition := range compiled.Document.Transitions {
+					for _, parameter := range transition.Parameters {
+						if parameter.Producer.Kind == controlprogram.ParameterSourceHostInput && (transition.ID != "delivery.slice.advance" || parameter.Parameter != "slice_id") {
+							t.Fatalf("deterministic parameter requires human text input: %s/%s", transition.ID, parameter.Parameter)
+						}
+						if transition.ID == "planning.package.approve" && parameter.Parameter == "package_fingerprint" {
+							packageProducer = parameter.Producer
+						}
+						if transition.ID == "publication.observe" && parameter.Parameter == "publication_id" {
+							publicationProducer = parameter.Producer
+						}
+					}
+				}
+				if packageProducer.Kind != controlprogram.ParameterSourceTrustedResolver || packageProducer.Binding == nil || packageProducer.Binding.Reference != "software-delivery/admitted-planning-package-fingerprint" {
+					t.Fatalf("planning package producer = %#v", packageProducer)
+				}
+				if publicationProducer.Kind != controlprogram.ParameterSourceReceipt || publicationProducer.Transition != "publication.execute" || publicationProducer.Field != "publication_id" {
+					t.Fatalf("publication identity producer = %#v", publicationProducer)
+				}
 				if _, compileErr := delivery.Compile(context.Background(), delivery.CompileRequest{KernelVersion: boatstack.Version, Core: core.System(), Runtime: definition, Settings: map[string]string{"fixture": test.fixture}}); compileErr != nil {
 					t.Fatalf("compile repository Flow runtime: %v", compileErr)
 				}

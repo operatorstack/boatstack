@@ -118,6 +118,69 @@ func (s Store) FindRequest(runID, requestFingerprint string) (InputRequest, erro
 	return *found, nil
 }
 
+// LatestRequest returns the current immutable request generation for one exact
+// invocation context and verifies the complete supersession chain.
+func (s Store) LatestRequest(context Context) (InputRequest, bool, error) {
+	if err := validSegment(context.RunID); err != nil {
+		return InputRequest{}, false, err
+	}
+	if err := validSegment(context.TransitionID); err != nil {
+		return InputRequest{}, false, err
+	}
+	root := filepath.Join(s.Root, "inputs", context.RunID, context.TransitionID)
+	entries, err := os.ReadDir(root)
+	if os.IsNotExist(err) {
+		return InputRequest{}, false, nil
+	}
+	if err != nil {
+		return InputRequest{}, false, err
+	}
+	byGeneration := map[uint64]InputRequest{}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".request.json") {
+			continue
+		}
+		var request InputRequest
+		if err := decodeStrict(filepath.Join(root, entry.Name()), &request); err != nil {
+			return InputRequest{}, false, err
+		}
+		if err := request.Validate(); err != nil {
+			return InputRequest{}, false, err
+		}
+		if !requestMatchesContext(request, context) {
+			continue
+		}
+		generation := request.EffectiveGeneration()
+		if prior, exists := byGeneration[generation]; exists && prior.Fingerprint != request.Fingerprint {
+			return InputRequest{}, false, fmt.Errorf("input request generation %d is ambiguous", generation)
+		}
+		byGeneration[generation] = request
+	}
+	if len(byGeneration) == 0 {
+		return InputRequest{}, false, nil
+	}
+	var latest InputRequest
+	for generation := uint64(1); generation <= uint64(len(byGeneration)); generation++ {
+		request, exists := byGeneration[generation]
+		if !exists {
+			return InputRequest{}, false, fmt.Errorf("input request supersession chain skips generation %d", generation)
+		}
+		if generation > 1 && (request.Supersession == nil || request.Supersession.PreviousRequestFingerprint != latest.Fingerprint) {
+			return InputRequest{}, false, fmt.Errorf("input request supersession chain is invalid at generation %d", generation)
+		}
+		latest = request
+	}
+	return latest, true, nil
+}
+
+func requestMatchesContext(request InputRequest, context Context) bool {
+	return request.RunID == context.RunID && request.ProgramFingerprint == context.ProgramFingerprint &&
+		request.ExecutionProgramFingerprint == context.ExecutionProgramFingerprint && request.EntryID == context.EntryID &&
+		request.TargetID == context.TargetID && request.TransitionID == context.TransitionID &&
+		request.StateRevision == context.StateRevision && request.ContextFingerprint == context.ContextFingerprint &&
+		request.ControlBundleFingerprint == context.ControlBundleFingerprint && request.ExecutionScopeFingerprint == context.ExecutionScopeFingerprint
+}
+
 func (s Store) SaveReceipt(receipt InputReceipt) error {
 	path, err := s.ReceiptPath(receipt.RunID, receipt.TransitionID, receipt.RequestFingerprint, receipt.ParameterID)
 	if err != nil {

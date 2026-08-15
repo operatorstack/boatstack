@@ -38,7 +38,7 @@ func committedReceiptFixture(t *testing.T) (TransitionReceipt, Admission, catalo
 		{Kind: EffectResourceMutation, EffectID: transition.Effect, Owner: transition.Owner, Resource: "product-delivery.state", Target: "/repo/.boatstack/state.json", Operation: "update", PriorFingerprint: strings.Repeat("1", 64), ResultingFingerprint: strings.Repeat("2", 64)},
 		{Kind: EffectResourceMutation, EffectID: transition.Effect, Owner: transition.Owner, Resource: "product-delivery.evidence", Target: "/repo/.boatstack/build.json", Operation: "create", PriorFingerprint: strings.Repeat("3", 64), ResultingFingerprint: strings.Repeat("4", 64)},
 	}
-	receipt, err := NewReceipt("flow", 7, ProgramIdentity{ID: "product-delivery", Version: "2.1.0", Fingerprint: admission.ExpectedProgramFingerprint}, admission, transition, target, []model.StateFacet{model.StateFacetControl, model.StateFacetProduct}, effects, nil, now, now.Add(time.Second))
+	receipt, err := NewReceipt("flow", 7, ProgramIdentity{ID: "product-delivery", Version: "2.1.0", Fingerprint: admission.ExpectedProgramFingerprint}, admission, transition, target, []model.StateFacet{model.StateFacetControl, model.StateFacetProduct}, effects, nil, nil, now, now.Add(time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,6 +87,23 @@ func TestCommittedTransitionFactBindsProgramTransitionStateAuthorityEffectsAndVe
 	}
 }
 
+func TestCommittedTransitionFactPreservesCanonicalEffectOutputs(t *testing.T) {
+	_, admission, transition, target, now := committedReceiptFixture(t)
+	effects := []EffectFact{{Kind: EffectResourceMutation, EffectID: transition.Effect, Owner: transition.Owner, Resource: "state", Target: "/state", Operation: "update", PriorFingerprint: strings.Repeat("1", 64), ResultingFingerprint: strings.Repeat("2", 64)}}
+	receipt, err := NewReceipt("flow", 9, ProgramIdentity{ID: "product-delivery", Version: "2.1.0", Fingerprint: admission.ExpectedProgramFingerprint}, admission, transition, target, []model.StateFacet{model.StateFacetControl}, effects, Parameters{{Name: "publication_id", Value: "222"}}, nil, now, now.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value, ok := receipt.EffectOutputs.Get("publication_id"); !ok || value != "222" {
+		t.Fatalf("effect outputs = %#v", receipt.EffectOutputs)
+	}
+	tampered := receipt
+	tampered.EffectOutputs = Parameters{{Name: "publication_id", Value: "223"}}
+	if err := tampered.Validate(); err == nil || !strings.Contains(err.Error(), "content identity") {
+		t.Fatalf("tampered effect output validation = %v", err)
+	}
+}
+
 func TestObjectiveBindReceiptRecordsResultingObjectiveBinding(t *testing.T) {
 	_, admission, transition, target, now := committedReceiptFixture(t)
 	transition.ID = "objective.bind"
@@ -97,7 +114,7 @@ func TestObjectiveBindReceiptRecordsResultingObjectiveBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 	effects := []EffectFact{{Kind: EffectResourceMutation, EffectID: transition.Effect, Owner: transition.Owner, Resource: "objective", Target: "/state", Operation: "update", PriorFingerprint: strings.Repeat("1", 64), ResultingFingerprint: strings.Repeat("2", 64)}}
-	receipt, err := NewReceipt("flow", 8, ProgramIdentity{ID: "product-delivery", Version: "2.1.0", Fingerprint: admission.ExpectedProgramFingerprint}, admission, transition, target, []model.StateFacet{model.StateFacetControl, model.StateFacetProduct}, effects, nil, now, now.Add(time.Second))
+	receipt, err := NewReceipt("flow", 8, ProgramIdentity{ID: "product-delivery", Version: "2.1.0", Fingerprint: admission.ExpectedProgramFingerprint}, admission, transition, target, []model.StateFacet{model.StateFacetControl, model.StateFacetProduct}, effects, nil, nil, now, now.Add(time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +135,7 @@ func TestCommittedTransitionFactRejectsNonSuccessSemantics(t *testing.T) {
 func TestCommittedTransitionFactRejectsProgramMismatchAtConstruction(t *testing.T) {
 	_, admission, transition, target, now := committedReceiptFixture(t)
 	effect := []EffectFact{{Kind: EffectResourceMutation, EffectID: transition.Effect, Owner: transition.Owner, Resource: "state", Target: "/state", Operation: "update", PriorFingerprint: strings.Repeat("1", 64), ResultingFingerprint: strings.Repeat("2", 64)}}
-	_, err := NewReceipt("flow", 1, ProgramIdentity{ID: "other", Version: "1", Fingerprint: strings.Repeat("b", 64)}, admission, transition, target, []model.StateFacet{model.StateFacetControl}, effect, nil, now, now)
+	_, err := NewReceipt("flow", 1, ProgramIdentity{ID: "other", Version: "1", Fingerprint: strings.Repeat("b", 64)}, admission, transition, target, []model.StateFacet{model.StateFacetControl}, effect, nil, nil, now, now)
 	if err == nil || !strings.Contains(err.Error(), "differs from admitted program") {
 		t.Fatalf("program mismatch error = %v", err)
 	}
@@ -128,7 +145,7 @@ func TestCommittedTransitionFactRejectsWrongRevision(t *testing.T) {
 	_, admission, transition, target, now := committedReceiptFixture(t)
 	target.StateRevision = 43
 	effect := []EffectFact{{Kind: EffectResourceMutation, EffectID: transition.Effect, Owner: transition.Owner, Resource: "state", Target: "/state", Operation: "update", PriorFingerprint: strings.Repeat("1", 64), ResultingFingerprint: strings.Repeat("2", 64)}}
-	_, err := NewReceipt("flow", 1, ProgramIdentity{ID: "product-delivery", Version: "2.1.0", Fingerprint: admission.ExpectedProgramFingerprint}, admission, transition, target, []model.StateFacet{model.StateFacetControl}, effect, nil, now, now)
+	_, err := NewReceipt("flow", 1, ProgramIdentity{ID: "product-delivery", Version: "2.1.0", Fingerprint: admission.ExpectedProgramFingerprint}, admission, transition, target, []model.StateFacet{model.StateFacetControl}, effect, nil, nil, now, now)
 	if err == nil || !strings.Contains(err.Error(), "advance exactly once") {
 		t.Fatalf("revision mismatch error = %v", err)
 	}

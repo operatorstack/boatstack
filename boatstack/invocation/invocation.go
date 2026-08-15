@@ -35,6 +35,8 @@ type Context struct {
 	ContextFingerprint          string
 	ControlBundleFingerprint    string
 	ExecutionScopeFingerprint   string
+	InputRequestGeneration      uint64
+	InputRequestSupersession    *InputRequestSupersession
 	EntryInputs                 map[string]Value
 	State                       map[string]Value
 	Receipts                    map[string]Value
@@ -91,22 +93,35 @@ type RequestedParameter struct {
 }
 
 type InputRequest struct {
-	Schema                      string               `json:"schema"`
-	SchemaRevision              int                  `json:"schema_revision"`
-	ID                          string               `json:"id"`
-	Code                        string               `json:"code"`
-	RunID                       string               `json:"run_id"`
-	ProgramFingerprint          string               `json:"program_fingerprint"`
-	ExecutionProgramFingerprint string               `json:"execution_program_fingerprint"`
-	EntryID                     string               `json:"entry_id"`
-	TargetID                    string               `json:"target_id"`
-	TransitionID                string               `json:"transition_id"`
-	Fingerprint                 string               `json:"fingerprint"`
-	StateRevision               uint64               `json:"state_revision"`
-	ContextFingerprint          string               `json:"context_fingerprint"`
-	ControlBundleFingerprint    string               `json:"control_bundle_fingerprint,omitempty"`
-	ExecutionScopeFingerprint   string               `json:"execution_scope_fingerprint"`
-	Parameters                  []RequestedParameter `json:"parameters"`
+	Schema                      string                    `json:"schema"`
+	SchemaRevision              int                       `json:"schema_revision"`
+	ID                          string                    `json:"id"`
+	Code                        string                    `json:"code"`
+	RunID                       string                    `json:"run_id"`
+	ProgramFingerprint          string                    `json:"program_fingerprint"`
+	ExecutionProgramFingerprint string                    `json:"execution_program_fingerprint"`
+	EntryID                     string                    `json:"entry_id"`
+	TargetID                    string                    `json:"target_id"`
+	TransitionID                string                    `json:"transition_id"`
+	Fingerprint                 string                    `json:"fingerprint"`
+	StateRevision               uint64                    `json:"state_revision"`
+	ContextFingerprint          string                    `json:"context_fingerprint"`
+	ControlBundleFingerprint    string                    `json:"control_bundle_fingerprint,omitempty"`
+	ExecutionScopeFingerprint   string                    `json:"execution_scope_fingerprint"`
+	Generation                  uint64                    `json:"generation,omitempty"`
+	Supersession                *InputRequestSupersession `json:"supersession,omitempty"`
+	Parameters                  []RequestedParameter      `json:"parameters"`
+}
+
+// InputRequestSupersession binds a new immutable request generation to the
+// rejected answer generation it replaces. The prior request and its receipts
+// remain unchanged.
+type InputRequestSupersession struct {
+	PreviousRequestFingerprint string    `json:"previous_request_fingerprint"`
+	Reason                     string    `json:"reason"`
+	Actor                      string    `json:"actor"`
+	Host                       string    `json:"host"`
+	CreatedAt                  time.Time `json:"created_at"`
 }
 
 type InputReceipt struct {
@@ -154,12 +169,30 @@ func (r InputRequest) Validate() error {
 	if r.Schema != RequestSchema || r.SchemaRevision != RequestSchemaRevision || r.ID == "" || r.Code != "TRANSITION_INPUT_REQUIRED" || r.RunID == "" || len(r.ProgramFingerprint) != 64 || len(r.ExecutionProgramFingerprint) != 64 || r.EntryID == "" || r.TargetID == "" || r.TransitionID == "" || len(r.ContextFingerprint) != 64 || len(r.ExecutionScopeFingerprint) != 64 || r.Fingerprint == "" || len(r.Parameters) == 0 {
 		return fmt.Errorf("input request envelope is invalid")
 	}
+	generation := r.EffectiveGeneration()
+	if generation == 1 && r.Supersession != nil {
+		return fmt.Errorf("first input request generation cannot supersede another request")
+	}
+	if generation > 1 {
+		if r.Supersession == nil || len(r.Supersession.PreviousRequestFingerprint) != 64 || strings.TrimSpace(r.Supersession.Reason) == "" || strings.TrimSpace(r.Supersession.Actor) == "" || strings.TrimSpace(r.Supersession.Host) == "" || r.Supersession.CreatedAt.IsZero() {
+			return fmt.Errorf("superseding input request has invalid lineage")
+		}
+	}
 	identity := r
 	identity.Fingerprint = ""
 	if fingerprint(identity) != r.Fingerprint {
 		return fmt.Errorf("input request failed content identity verification")
 	}
 	return nil
+}
+
+// EffectiveGeneration treats legacy requests without an explicit generation
+// as the first immutable generation.
+func (r InputRequest) EffectiveGeneration() uint64 {
+	if r.Generation == 0 {
+		return 1
+	}
+	return r.Generation
 }
 
 func (e Evidence) Validate() error {
@@ -319,10 +352,35 @@ func inputRequestForHostBindings(contracts []controlprogram.OperatorParameter, p
 		return nil
 	}
 	sort.Slice(requested, func(i, j int) bool { return requested[i].ID < requested[j].ID })
-	request := InputRequest{Schema: RequestSchema, SchemaRevision: RequestSchemaRevision, Code: "TRANSITION_INPUT_REQUIRED", RunID: context.RunID, ProgramFingerprint: context.ProgramFingerprint, ExecutionProgramFingerprint: context.ExecutionProgramFingerprint, EntryID: context.EntryID, TargetID: context.TargetID, TransitionID: context.TransitionID, StateRevision: context.StateRevision, ContextFingerprint: context.ContextFingerprint, ControlBundleFingerprint: context.ControlBundleFingerprint, ExecutionScopeFingerprint: context.ExecutionScopeFingerprint, Parameters: requested}
+	request := InputRequest{Schema: RequestSchema, SchemaRevision: RequestSchemaRevision, Code: "TRANSITION_INPUT_REQUIRED", RunID: context.RunID, ProgramFingerprint: context.ProgramFingerprint, ExecutionProgramFingerprint: context.ExecutionProgramFingerprint, EntryID: context.EntryID, TargetID: context.TargetID, TransitionID: context.TransitionID, StateRevision: context.StateRevision, ContextFingerprint: context.ContextFingerprint, ControlBundleFingerprint: context.ControlBundleFingerprint, ExecutionScopeFingerprint: context.ExecutionScopeFingerprint, Generation: context.InputRequestGeneration, Supersession: context.InputRequestSupersession, Parameters: requested}
 	request.ID = "input-" + fingerprintWithoutField(request, "Fingerprint")[:24]
 	request.Fingerprint = fingerprintWithoutField(request, "Fingerprint")
 	return &request
+}
+
+// SupersedeRequest creates the next immutable request generation after a
+// semantic rejection. It never modifies the prior request or any answer
+// receipt bound to it.
+func SupersedeRequest(prior InputRequest, reason, actor, host string, now time.Time) (InputRequest, error) {
+	if err := prior.Validate(); err != nil {
+		return InputRequest{}, err
+	}
+	if strings.TrimSpace(reason) == "" || strings.TrimSpace(actor) == "" || strings.TrimSpace(host) == "" || now.IsZero() {
+		return InputRequest{}, fmt.Errorf("input request supersession requires reason, actor, host, and time")
+	}
+	next := prior
+	next.ID, next.Fingerprint = "", ""
+	next.Generation = prior.EffectiveGeneration() + 1
+	next.Supersession = &InputRequestSupersession{
+		PreviousRequestFingerprint: prior.Fingerprint,
+		Reason:                     strings.TrimSpace(reason), Actor: strings.TrimSpace(actor), Host: strings.TrimSpace(host), CreatedAt: now.UTC(),
+	}
+	next.ID = "input-" + fingerprintWithoutField(next, "Fingerprint")[:24]
+	next.Fingerprint = fingerprintWithoutField(next, "Fingerprint")
+	if err := next.Validate(); err != nil {
+		return InputRequest{}, err
+	}
+	return next, nil
 }
 
 func SealReceipt(receipt InputReceipt) (InputReceipt, error) {
