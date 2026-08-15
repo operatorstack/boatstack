@@ -19,6 +19,7 @@ import (
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/delegation"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/plant"
@@ -395,6 +396,49 @@ func TestFlowRunIdentitySurvivesWorkspaceTransfer(t *testing.T) {
 	}
 	if continuation.repository != destination || continuation.transitionID != "" || len(continuation.parameters) != 0 || continuation.prescriptionID != "" || continuation.idempotencyKey != "" || len(continuation.requiredCapabilities) != 0 || len(continuation.effectiveCapabilities) != 0 {
 		t.Fatalf("continuation retained source context or transition parameters: %#v", continuation)
+	}
+}
+
+func TestWorkspaceCutRejectsControlBundleThatIsNotInBaseRevision(t *testing.T) {
+	// control-law: workspace-cut-preserves-the-exact-active-control-bundle
+	repository := flowRepository(t)
+	repository, err := filepath.EvalSymlinks(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runFlowGit(t, repository, "init", "-q")
+	runFlowGit(t, repository, "config", "user.name", "Boatstack Tests")
+	runFlowGit(t, repository, "config", "user.email", "boatstack@example.invalid")
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "control bundle")
+
+	artifactPath := filepath.Join(repository, ".boatstack", "flows", "product-delivery.flow.ir.json")
+	raw, err := os.ReadFile(artifactPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := controlprogram.LoadArtifact(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyWorkspaceControlBundleAtRevision(context.Background(), repository, artifactPath, artifact, "HEAD"); err != nil {
+		t.Fatalf("committed control bundle rejected: %v", err)
+	}
+
+	var skillPath string
+	for path := range artifact.GeneratedSkills {
+		skillPath = path
+		break
+	}
+	if skillPath == "" {
+		t.Fatal("fixture generated no skills")
+	}
+	if err := os.WriteFile(filepath.Join(repository, filepath.FromSlash(skillPath)), []byte("regenerated but uncommitted\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err = verifyWorkspaceControlBundleAtRevision(context.Background(), repository, artifactPath, artifact, "HEAD")
+	if err == nil || !strings.Contains(err.Error(), "WORKSPACE_CONTROL_BUNDLE_UNCOMMITTED") || !strings.Contains(err.Error(), skillPath) {
+		t.Fatalf("uncommitted generated skill result = %v", err)
 	}
 }
 
@@ -1173,6 +1217,34 @@ func TestContinuationRebindsOnlyRepositoryResolvedCandidateParameters(t *testing
 		}
 	}
 
+	projectConfig := []byte(`{"schema_version":2,"project":{"name":"fresh-flow","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex"]}`)
+	writeFixture(t, repository, ".boatstack/project.json", projectConfig)
+	installationInitialize := catalog.Transition{ID: "installation.initialize", Parameters: []catalog.ParameterSpec{
+		{Name: "config_path", Required: true}, {Name: "config_sha256", Required: true}, {Name: "runtime_version", Required: true}, {Name: "runtime_sha256", Required: true}, {Name: "source_revision", Required: true},
+	}}
+	installationBound, installationChanged, err := bindContinuationCandidate(context.Background(), bound, surfaces.Response{Decision: &supervisor.Decision{
+		Kind: supervisor.DecisionCandidate, Transition: &installationInitialize, Candidates: []catalog.TransitionID{"installation.initialize"},
+	}})
+	if err != nil || !installationChanged || installationBound.transitionID != "installation.initialize" {
+		t.Fatalf("installation candidate rebind = options=%#v changed=%t err=%v", installationBound, installationChanged, err)
+	}
+	installationParameters, err := parseParameters(installationBound.parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"config_path", "config_sha256", "runtime_version", "runtime_sha256", "source_revision"} {
+		if value, ok := installationParameters.Get(name); !ok || value == "" {
+			t.Fatalf("installation parameter %q = %q, %t", name, value, ok)
+		}
+	}
+	_, expectedConfigFingerprint, err := protocol.ProjectConfigFingerprint(projectConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual, _ := installationParameters.Get("config_sha256"); actual != expectedConfigFingerprint {
+		t.Fatalf("installation config fingerprint = %q, want semantic fingerprint %q", actual, expectedConfigFingerprint)
+	}
+
 	for name, decision := range map[string]supervisor.Decision{
 		"ambiguous": {
 			Kind: supervisor.DecisionCandidate, Transition: &objectiveBind,
@@ -1208,6 +1280,91 @@ func TestContinuationRebindsOnlyRepositoryResolvedCandidateParameters(t *testing
 		Prescription: &protocol.Prescription{TransitionID: "objective.bind"},
 	}); err != nil || changed {
 		t.Fatalf("prescribed response rebound changed=%t err=%v", changed, err)
+	}
+}
+
+func TestPublicationPreviewParametersAreRepositoryResolved(t *testing.T) {
+	repository := t.TempDir()
+	runFlowGit(t, repository, "init", "-q")
+	runFlowGit(t, repository, "checkout", "-q", "-b", "feature/publication")
+	writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":2,"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli"]}`))
+	bodyPath := filepath.Join(repository, ".boatstack", "evidence", "delivery-pr-body.md")
+	writeFixture(t, repository, ".boatstack/evidence/delivery-pr-body.md", []byte("# Pull request\n"))
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-q", "-m", "fixture")
+	options := commandOptions{repository: repository, transitionID: "publication.preview", host: "cli"}
+	if err := bindPublicationPreviewParameters(context.Background(), repository, "delivery", "cli", &options, nil); err != nil {
+		t.Fatal(err)
+	}
+	parameters, err := parseParameters(options.parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalBodyPath, err := filepath.EvalSymlinks(bodyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{"base_ref": "main", "head_ref": "feature/publication", "body_path": canonicalBodyPath} {
+		if got, ok := parameters.Get(name); !ok || got != want {
+			t.Fatalf("publication parameter %s = %q, present=%t, want %q", name, got, ok, want)
+		}
+	}
+}
+
+func TestStateOwnedTransitionParametersDoNotRequireHumanAnswers(t *testing.T) {
+	state := durable.State{
+		WorkspaceBranch:    "feat/exact-branch",
+		PreviewFingerprint: strings.Repeat("a", 64),
+		PublicationID:      "123",
+	}
+	for transition, expected := range map[string]string{
+		"workspace.activate":  "branch=feat/exact-branch",
+		"workspace.sync":      "branch=feat/exact-branch",
+		"workspace.publish":   "branch=feat/exact-branch",
+		"publication.execute": "preview_fingerprint=" + strings.Repeat("a", 64),
+		"publication.observe": "publication_id=123",
+	} {
+		t.Run(transition, func(t *testing.T) {
+			bound, err := bindStateOwnedTransitionParameters(commandOptions{transitionID: transition}, state)
+			if err != nil || len(bound.parameters) != 1 || bound.parameters[0] != expected {
+				t.Fatalf("state-owned binding = %#v, %v", bound.parameters, err)
+			}
+		})
+	}
+
+	_, err := bindStateOwnedTransitionParameters(commandOptions{
+		transitionID: "workspace.activate", parameters: []string{"branch=feat/other"},
+	}, state)
+	if err == nil || !strings.Contains(err.Error(), "FLOW_INPUT_MISMATCH") {
+		t.Fatalf("caller override was not rejected: %v", err)
+	}
+}
+
+func TestCommittedActiveRunRehydratesExactDeliveryWhenRunIDIsSupplied(t *testing.T) {
+	// control-law: a resumed run resolves inputs from its committed delivery before selecting work
+	active := model.Objective{
+		ID: "objective-product-delivery-run-delivery-one", TargetID: "published-pr",
+		TrustedClass: model.ObjectiveOpenPR, DeliveryID: "delivery-one",
+	}
+	receipt := protocol.TransitionReceipt{FlowID: "run-committed"}
+	bound, err := bindCommittedActiveRun(commandOptions{runID: "run-committed"}, active, receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bound.activeFlowBound || bound.deliveryID != "delivery-one" || bound.objectiveID != active.ID || bound.targetID != "published-pr" || bound.trustedObjectiveClass != string(model.ObjectiveOpenPR) {
+		t.Fatalf("active run was not rehydrated: %#v", bound)
+	}
+	if _, err := bindCommittedActiveRun(commandOptions{runID: "run-other"}, active, receipt); err == nil || !strings.Contains(err.Error(), "FLOW_RUN_MISMATCH") {
+		t.Fatalf("conflicting run identity result = %v", err)
+	}
+}
+
+func TestCommittedActiveRunIdentitySurvivesApprovedPlanTransformation(t *testing.T) {
+	// control-law: trusted plan transformation cannot rename the already-committed run
+	active := commandOptions{entryID: "run", runID: "run-committed", activeFlowBound: true}
+	bound, err := bindSelectedPlanRun(active, filepath.Join(t.TempDir(), "not-a-repository"), strings.Repeat("a", 64), "delivery", strings.Repeat("b", 64))
+	if err != nil || bound.runID != "run-committed" {
+		t.Fatalf("active run transformation result = %#v err=%v", bound, err)
 	}
 }
 

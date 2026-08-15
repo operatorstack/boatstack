@@ -1,0 +1,17 @@
+### Let repository Flows require bounded foreground work
+
+Flows can now declare exact instruction assets, entry inputs, and staged output
+contracts for human or agent work. Boatstack suspends and resumes the same run,
+validates the result as evidence, and still admits effects only through trusted
+operators. The software-delivery adapter also provides optional planning-package
+admission, approval, and promotion operations.
+
+Fresh delegated runs now bootstrap verified runtime and configuration state
+before deriving repository-policy authority. An exact autonomy delegation may
+perform that local initialization, while transitions requiring repository
+authority remain unavailable until verified configuration evidence exists.
+
+Published-PR entries now stop until intended delivery changes are committed,
+bind the preview and push to that exact commit, and derive short-lived GitHub
+provider capability through the trusted runtime boundary. Caller-provided
+provider receipts are rejected.

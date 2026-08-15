@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"bufio"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +10,39 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestVerifyFlowProjectionAtRevisionBindsActiveBytesToWorkspaceBase(t *testing.T) {
+	// control-law: workspace-base-contains-the-active-flow-projection
+	repository, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, arguments := range [][]string{{"init", "-q"}, {"config", "user.name", "Boatstack Tests"}, {"config", "user.email", "boatstack@example.invalid"}} {
+		command := exec.Command("git", append([]string{"-C", repository}, arguments...)...)
+		if output, commandErr := command.CombinedOutput(); commandErr != nil {
+			t.Fatalf("git %v: %v\n%s", arguments, commandErr, output)
+		}
+	}
+	path := filepath.Join(repository, "generated.txt")
+	if err := os.WriteFile(path, []byte("committed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, arguments := range [][]string{{"add", "generated.txt"}, {"commit", "-q", "-m", "projection"}} {
+		command := exec.Command("git", append([]string{"-C", repository}, arguments...)...)
+		if output, commandErr := command.CombinedOutput(); commandErr != nil {
+			t.Fatalf("git %v: %v\n%s", arguments, commandErr, output)
+		}
+	}
+	if err := VerifyFlowProjectionAtRevision(context.Background(), repository, "HEAD", []string{"generated.txt"}); err != nil {
+		t.Fatalf("exact projection rejected: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("regenerated\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyFlowProjectionAtRevision(context.Background(), repository, "HEAD", []string{"generated.txt"}); err == nil || !strings.Contains(err.Error(), "generated.txt differs") {
+		t.Fatalf("uncommitted projection result = %v", err)
+	}
+}
 
 func resolvedTemporaryRepository(t *testing.T) string {
 	t.Helper()

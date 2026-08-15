@@ -20,6 +20,7 @@ import {
   type OperatorDefinition,
   type TransitionDefinition,
   type DelegationBindingDefinition,
+  type WorkContract,
 } from "@operatorstack/boatstack";
 
 const bindingPrefix = "software-delivery/";
@@ -76,6 +77,22 @@ export interface TrustedStep {
   priority: number;
 }
 
+/** Admits a completed planning package into the delivery lifecycle. */
+export const planningPackageAdmit: TrustedStep = {
+  id: "planning.package.admit",
+  priority: 43,
+};
+/** Records approval of the exact admitted planning package. */
+export const planningPackageApprove: TrustedStep = {
+  id: "planning.package.approve",
+  priority: 44,
+};
+/** Promotes an approved planning package into the active delivery plan. */
+export const planningPackagePromote: TrustedStep = {
+  id: "planning.package.promote",
+  priority: 45,
+};
+
 /**
  * Repository-owned strengthening applied to a trusted transition.
  *
@@ -85,6 +102,8 @@ export interface TrustedStep {
  */
 export interface TrustedTransitionOptions {
   requires?: { authorities?: string[] };
+  /** Foreground work that must complete before this transition is admitted. */
+  work?: WorkContract;
 }
 
 /**
@@ -154,6 +173,7 @@ export function trustedTransition(
     target: always,
     priority: step.priority,
     ...(options.requires ? { requires: options.requires } : {}),
+    ...(options.work ? { work: options.work.id } : {}),
   });
 }
 

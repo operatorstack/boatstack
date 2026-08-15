@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
@@ -36,12 +37,31 @@ func prepareAttachBinding(layout ports.ControllerLayout, admission protocol.Admi
 }
 
 type approvalArtifact struct {
-	SchemaVersion   int       `json:"schema_version"`
-	DeliveryID      string    `json:"delivery_id"`
-	PlanFingerprint string    `json:"plan_fingerprint"`
-	Actor           string    `json:"actor"`
-	AdmissionID     string    `json:"admission_id"`
-	ApprovedAt      time.Time `json:"approved_at"`
+	SchemaVersion      int       `json:"schema_version"`
+	DeliveryID         string    `json:"delivery_id"`
+	PlanFingerprint    string    `json:"plan_fingerprint"`
+	PackageFingerprint string    `json:"package_fingerprint,omitempty"`
+	Actor              string    `json:"actor"`
+	AdmissionID        string    `json:"admission_id"`
+	ApprovedAt         time.Time `json:"approved_at"`
+}
+
+type planningPackageOutput struct {
+	ID        string `json:"id"`
+	Path      string `json:"path"`
+	MediaType string `json:"media_type"`
+	SHA256    string `json:"sha256"`
+	Size      int64  `json:"size"`
+}
+
+type planningPackageManifest struct {
+	SchemaVersion          int                     `json:"schema_version"`
+	DeliveryID             string                  `json:"delivery_id"`
+	WorkRequestFingerprint string                  `json:"work_request_fingerprint"`
+	WorkResultFingerprint  string                  `json:"work_result_fingerprint"`
+	PlanFingerprint        string                  `json:"plan_fingerprint"`
+	Outputs                []planningPackageOutput `json:"outputs"`
+	Fingerprint            string                  `json:"fingerprint"`
 }
 
 type gateArtifact struct {
@@ -77,14 +97,16 @@ func decodeStrictArtifact(raw []byte, value any) error {
 }
 
 type publicationPreview struct {
-	SchemaVersion int       `json:"schema_version"`
-	DeliveryID    string    `json:"delivery_id"`
-	BaseRef       string    `json:"base_ref"`
-	HeadRef       string    `json:"head_ref"`
-	BodyPath      string    `json:"body_path"`
-	BodySHA256    string    `json:"body_sha256"`
-	Fingerprint   string    `json:"fingerprint"`
-	CreatedAt     time.Time `json:"created_at"`
+	SchemaVersion       int       `json:"schema_version"`
+	DeliveryID          string    `json:"delivery_id"`
+	BaseRef             string    `json:"base_ref"`
+	HeadRef             string    `json:"head_ref"`
+	SourceRevision      string    `json:"source_revision"`
+	WorktreeFingerprint string    `json:"worktree_fingerprint"`
+	BodyPath            string    `json:"body_path"`
+	BodySHA256          string    `json:"body_sha256"`
+	Fingerprint         string    `json:"fingerprint"`
+	CreatedAt           time.Time `json:"created_at"`
 }
 
 func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admission, transition catalog.Transition, state *durable.State) ([]ports.ResourceMutation, error) {
@@ -151,7 +173,112 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		}
 		mutations = append(mutations, approvalMutation)
 		state.PlanFingerprint = fingerprint
+		state.PlanningPackageFingerprint = ""
 		state.ApprovalFingerprint = ""
+	case "planning.package.admit":
+		if admission.Work == nil || len(admission.Work.Outputs) == 0 {
+			return nil, fmt.Errorf("planning package admission requires exact foreground work evidence")
+		}
+		packageRoot := filepath.Join(artifactRoot, "planning-packages", deliveryID)
+		manifest := planningPackageManifest{SchemaVersion: 1, DeliveryID: deliveryID, WorkRequestFingerprint: admission.Work.RequestFingerprint, WorkResultFingerprint: admission.Work.ResultFingerprint}
+		for _, output := range admission.Work.Outputs {
+			destination, pathErr := planningPackageOutputPath(packageRoot, output.Path)
+			if pathErr != nil {
+				return nil, pathErr
+			}
+			mutation, mutationErr := mutationFor(destination, []byte(output.Content), 0o644, false, false)
+			if mutationErr != nil {
+				return nil, mutationErr
+			}
+			mutations = append(mutations, mutation)
+			manifest.Outputs = append(manifest.Outputs, planningPackageOutput{ID: output.ID, Path: output.Path, MediaType: output.MediaType, SHA256: output.SHA256, Size: output.Size})
+			if output.ID == "plan" {
+				manifest.PlanFingerprint = output.SHA256
+			}
+		}
+		if manifest.PlanFingerprint == "" {
+			return nil, fmt.Errorf("planning package requires a declared output with id plan")
+		}
+		identity := manifest
+		identity.Fingerprint = ""
+		identityRaw, encodeErr := encodeJSON(identity)
+		if encodeErr != nil {
+			return nil, encodeErr
+		}
+		manifest.Fingerprint = sha256Bytes(identityRaw)
+		manifestRaw, encodeErr := encodeJSON(manifest)
+		if encodeErr != nil {
+			return nil, encodeErr
+		}
+		manifestMutation, mutationErr := mutationFor(filepath.Join(packageRoot, "manifest.json"), manifestRaw, 0o644, false, false)
+		if mutationErr != nil {
+			return nil, mutationErr
+		}
+		mutations = append(mutations, manifestMutation)
+		state.PlanFingerprint, state.PlanningPackageFingerprint, state.ApprovalFingerprint = manifest.PlanFingerprint, manifest.Fingerprint, ""
+	case "planning.package.approve":
+		manifest, manifestRaw, loadErr := loadPlanningPackageManifest(artifactRoot, deliveryID)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		expected, _ := admission.Parameters.Get("package_fingerprint")
+		if expected == "" || expected != manifest.Fingerprint {
+			return nil, fmt.Errorf("planning package approval fingerprint is stale")
+		}
+		if state.PlanningPackageFingerprint != manifest.Fingerprint {
+			return nil, fmt.Errorf("planning package state fingerprint is stale")
+		}
+		actor := authorityActor(admission)
+		artifact := approvalArtifact{SchemaVersion: 1, DeliveryID: deliveryID, PlanFingerprint: manifest.PlanFingerprint, PackageFingerprint: manifest.Fingerprint, Actor: actor, AdmissionID: admission.ID, ApprovedAt: admission.IssuedAt.UTC()}
+		raw, encodeErr := encodeJSON(artifact)
+		if encodeErr != nil {
+			return nil, encodeErr
+		}
+		mutation, mutationErr := mutationFor(filepath.Join(artifactRoot, "planning-packages", deliveryID, "approval.json"), raw, 0o644, false, false)
+		if mutationErr != nil {
+			return nil, mutationErr
+		}
+		mutations = append(mutations, mutation)
+		state.PlanFingerprint, state.PlanningPackageFingerprint, state.ApprovalFingerprint = manifest.PlanFingerprint, manifest.Fingerprint, sha256Bytes(append(manifestRaw, raw...))
+	case "planning.package.promote":
+		manifest, _, loadErr := loadPlanningPackageManifest(artifactRoot, deliveryID)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		approvalPath := filepath.Join(artifactRoot, "planning-packages", deliveryID, "approval.json")
+		approvalRaw, readErr := os.ReadFile(approvalPath)
+		if readErr != nil {
+			return nil, fmt.Errorf("read planning package approval: %w", readErr)
+		}
+		var approval approvalArtifact
+		if decodeErr := decodeStrictArtifact(approvalRaw, &approval); decodeErr != nil || approval.SchemaVersion != 1 || approval.DeliveryID != deliveryID || approval.PackageFingerprint != manifest.Fingerprint || approval.PlanFingerprint != manifest.PlanFingerprint || approval.Actor == "" || approval.AdmissionID == "" || approval.ApprovedAt.IsZero() {
+			return nil, fmt.Errorf("planning package approval does not bind the exact package")
+		}
+		planPath := ""
+		for _, output := range manifest.Outputs {
+			if output.ID == "plan" {
+				planPath = output.Path
+				break
+			}
+		}
+		planArtifact, pathErr := planningPackageOutputPath(filepath.Join(artifactRoot, "planning-packages", deliveryID), planPath)
+		if pathErr != nil {
+			return nil, pathErr
+		}
+		planRaw, readErr := readRegularWorkspacePlanArtifact(planArtifact)
+		if readErr != nil || sha256Bytes(planRaw) != manifest.PlanFingerprint {
+			return nil, fmt.Errorf("planning package plan changed after approval")
+		}
+		planMutation, mutationErr := mutationFor(filepath.Join(artifactRoot, "plans", deliveryID+".source"), planRaw, 0o644, false, false)
+		if mutationErr != nil {
+			return nil, mutationErr
+		}
+		approvalMutation, mutationErr := mutationFor(filepath.Join(artifactRoot, "approvals", deliveryID+".json"), approvalRaw, 0o644, false, false)
+		if mutationErr != nil {
+			return nil, mutationErr
+		}
+		mutations = append(mutations, planMutation, approvalMutation)
+		state.PlanFingerprint, state.PlanningPackageFingerprint, state.ApprovalFingerprint = manifest.PlanFingerprint, manifest.Fingerprint, sha256Bytes(approvalRaw)
 	case "plan.validate":
 		path := filepath.Join(artifactRoot, "plans", deliveryID+".source")
 		raw, readErr := os.ReadFile(path)
@@ -159,6 +286,7 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 			return nil, fmt.Errorf("validate source plan %s: %w", path, readErr)
 		}
 		state.PlanFingerprint = sha256Bytes(raw)
+		state.PlanningPackageFingerprint = ""
 	case "plan.approve", "plan.approve-amendment":
 		fingerprint, _ := admission.Parameters.Get("plan_fingerprint")
 		actor, _ := admission.Parameters.Get("actor")
@@ -258,7 +386,14 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		if readErr != nil {
 			return nil, readErr
 		}
-		preview := publicationPreview{SchemaVersion: 1, DeliveryID: deliveryID, BaseRef: baseRef, HeadRef: headRef, BodyPath: bodyPath, BodySHA256: sha256Bytes(body), CreatedAt: admission.IssuedAt.UTC()}
+		if admission.SourceRevision == "" || admission.WorktreeFingerprint == "" {
+			return nil, fmt.Errorf("publication preview requires an exact committed source and worktree identity")
+		}
+		preview := publicationPreview{
+			SchemaVersion: 2, DeliveryID: deliveryID, BaseRef: baseRef, HeadRef: headRef,
+			SourceRevision: admission.SourceRevision, WorktreeFingerprint: admission.WorktreeFingerprint,
+			BodyPath: bodyPath, BodySHA256: sha256Bytes(body), CreatedAt: admission.IssuedAt.UTC(),
+		}
 		identity := preview
 		identity.Fingerprint, identity.CreatedAt = "", time.Time{}
 		identityRaw, encodeErr := json.Marshal(identity)
@@ -369,6 +504,7 @@ func readRegularWorkspacePlanArtifact(path string) ([]byte, error) {
 func transitionUsesDeliveryArtifacts(id catalog.TransitionID) bool {
 	switch id {
 	case "plan.create", "plan.amend", "plan.validate", "plan.approve", "plan.approve-amendment",
+		"planning.package.admit", "planning.package.approve", "planning.package.promote",
 		"evidence.approval.revoke", "gate.build.record", "gate.test.record", "gate.review.record",
 		"gate.change.record", "gate.journey.record", "evidence.visual.attach", "publication.preview",
 		"publication.execute", "publication.correct":
@@ -376,6 +512,41 @@ func transitionUsesDeliveryArtifacts(id catalog.TransitionID) bool {
 	default:
 		return false
 	}
+}
+
+func planningPackageOutputPath(root, relative string) (string, error) {
+	if relative == "" || filepath.IsAbs(relative) || filepath.Clean(relative) != relative || relative == "." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("planning package output path is unsafe")
+	}
+	return filepath.Join(root, relative), nil
+}
+
+func loadPlanningPackageManifest(artifactRoot, deliveryID string) (planningPackageManifest, []byte, error) {
+	path := filepath.Join(artifactRoot, "planning-packages", deliveryID, "manifest.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return planningPackageManifest{}, nil, fmt.Errorf("read planning package manifest: %w", err)
+	}
+	var manifest planningPackageManifest
+	if err := decodeStrictArtifact(raw, &manifest); err != nil || manifest.SchemaVersion != 1 || manifest.DeliveryID != deliveryID || manifest.WorkRequestFingerprint == "" || manifest.WorkResultFingerprint == "" || manifest.PlanFingerprint == "" || len(manifest.Outputs) == 0 || manifest.Fingerprint == "" {
+		return planningPackageManifest{}, nil, fmt.Errorf("planning package manifest is invalid")
+	}
+	identity := manifest
+	identity.Fingerprint = ""
+	identityRaw, err := encodeJSON(identity)
+	if err != nil || sha256Bytes(identityRaw) != manifest.Fingerprint {
+		return planningPackageManifest{}, nil, fmt.Errorf("planning package manifest fingerprint is invalid")
+	}
+	return manifest, raw, nil
+}
+
+func authorityActor(admission protocol.Admission) string {
+	for _, receipt := range admission.Authority.Receipts {
+		if receipt.Subject != "" {
+			return receipt.Subject
+		}
+	}
+	return "authorized-actor"
 }
 
 func loadPublicationPreview(path string) (publicationPreview, error) {
@@ -387,7 +558,7 @@ func loadPublicationPreview(path string) (publicationPreview, error) {
 	if err := decodeStrictArtifact(raw, &preview); err != nil {
 		return publicationPreview{}, err
 	}
-	if preview.SchemaVersion != 1 || preview.DeliveryID == "" || preview.BaseRef == "" || preview.HeadRef == "" || preview.BodyPath == "" || preview.BodySHA256 == "" || preview.Fingerprint == "" || preview.CreatedAt.IsZero() {
+	if preview.SchemaVersion != 2 || preview.DeliveryID == "" || preview.BaseRef == "" || preview.HeadRef == "" || preview.SourceRevision == "" || preview.WorktreeFingerprint == "" || preview.BodyPath == "" || preview.BodySHA256 == "" || preview.Fingerprint == "" || preview.CreatedAt.IsZero() {
 		return publicationPreview{}, fmt.Errorf("invalid publication preview")
 	}
 	if err := protocol.ValidateGitReference(preview.BaseRef); err != nil {
@@ -429,6 +600,9 @@ func validatePublicationPreviewForAdmission(layout ports.ControllerLayout, admis
 	}
 	if admission.Invocation.Ref != "refs/heads/"+preview.HeadRef {
 		return fmt.Errorf("publication preview head does not match the exact invoking branch")
+	}
+	if admission.SourceRevision != preview.SourceRevision || admission.WorktreeFingerprint != preview.WorktreeFingerprint {
+		return fmt.Errorf("publication preview does not match the exact committed HEAD and worktree")
 	}
 	configRaw, err := os.ReadFile(layout.ConfigPath)
 	if err != nil {

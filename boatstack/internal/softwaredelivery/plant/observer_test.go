@@ -21,6 +21,55 @@ type observerClock struct{ now time.Time }
 
 func (c observerClock) Now() time.Time { return c.now }
 
+func TestObserverValidatesAdmittedPlanningPackageWithoutPrematurePlanPromotion(t *testing.T) {
+	// control-law: an admitted package is verified from its exact manifest while the canonical approved plan remains absent
+	repository := t.TempDir()
+	deliveryID := "delivery"
+	root := filepath.Join(repository, ".boatstack", "planning-packages", deliveryID)
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	plan := []byte("# Proposed plan\n")
+	planFingerprint := hashBytes(plan)
+	manifest := observedPlanningPackageManifest{
+		SchemaVersion: 1, DeliveryID: deliveryID, WorkRequestFingerprint: strings.Repeat("a", 64), WorkResultFingerprint: strings.Repeat("b", 64),
+		PlanFingerprint: planFingerprint, Outputs: []observedPlanningPackageOutput{{ID: "plan", Path: "plan.md", MediaType: "text/markdown", SHA256: planFingerprint, Size: int64(len(plan))}},
+	}
+	identityRaw, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Fingerprint = hashBytes(append(identityRaw, '\n'))
+	manifestRaw, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestRaw = append(manifestRaw, '\n')
+	if err := os.WriteFile(filepath.Join(root, "plan.md"), plan, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "manifest.json"), manifestRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state := durable.State{
+		Plan: model.PlanValid, PlanFingerprint: planFingerprint, PlanningPackageFingerprint: manifest.Fingerprint,
+		Objective: model.Objective{ID: "objective", TargetID: model.ObjectiveOpenPR, DeliveryID: deliveryID},
+	}
+	evidence, valid, err := observePlanningPackage(ports.ControllerLayout{RepositoryRoot: repository}, state, time.Unix(100, 0).UTC())
+	if err != nil || !valid || len(evidence) != 2 {
+		t.Fatalf("planning package observation valid=%t evidence=%#v err=%v", valid, evidence, err)
+	}
+	if _, err := os.Stat(filepath.Join(repository, ".boatstack", "plans", deliveryID+".source")); !os.IsNotExist(err) {
+		t.Fatalf("admission prematurely created a canonical plan: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "plan.md"), []byte("tampered"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, valid, err := observePlanningPackage(ports.ControllerLayout{RepositoryRoot: repository}, state, time.Unix(101, 0).UTC()); err != nil || valid {
+		t.Fatalf("tampered planning package valid=%t err=%v", valid, err)
+	}
+}
+
 func runGit(t *testing.T, directory string, arguments ...string) {
 	t.Helper()
 	command := exec.Command("git", append([]string{"-C", directory}, arguments...)...)
@@ -440,4 +489,34 @@ func mustRead(t *testing.T, path string) []byte {
 		t.Fatal(err)
 	}
 	return value
+}
+
+func TestPublicationCandidateRequiresCurrentCommittedPreviewIdentity(t *testing.T) {
+	repository := t.TempDir()
+	layout := ports.ControllerLayout{RepositoryRoot: repository}
+	state := durable.State{
+		Publication: model.PublicationCandidate,
+		Objective:   model.Objective{DeliveryID: "delivery"},
+	}
+	path := filepath.Join(repository, ".boatstack", "publication", "delivery.preview.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	oldPreview := []byte(`{"schema_version":1,"delivery_id":"delivery","source_revision":"head","worktree_fingerprint":"worktree"}`)
+	if err := os.WriteFile(path, oldPreview, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := currentPublicationState(layout, state, "head", "worktree"); got != model.PublicationNone {
+		t.Fatalf("old preview projected as %s", got)
+	}
+	currentPreview := []byte(`{"schema_version":2,"delivery_id":"delivery","source_revision":"head","worktree_fingerprint":"worktree"}`)
+	if err := os.WriteFile(path, currentPreview, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := currentPublicationState(layout, state, "head", "worktree"); got != model.PublicationCandidate {
+		t.Fatalf("current preview projected as %s", got)
+	}
+	if got := currentPublicationState(layout, state, "new-head", "worktree"); got != model.PublicationNone {
+		t.Fatalf("stale source preview projected as %s", got)
+	}
 }

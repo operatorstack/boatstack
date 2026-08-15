@@ -2,13 +2,16 @@ package effects
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
@@ -53,11 +56,67 @@ type pullRequestObservation struct {
 	IsCrossRepository bool   `json:"isCrossRepository"`
 }
 
+type githubAuthorityObservation struct {
+	NameWithOwner    string `json:"nameWithOwner"`
+	URL              string `json:"url"`
+	ViewerPermission string `json:"viewerPermission"`
+}
+
+// ResolveGitHubProviderAuthority derives short-lived provider capability from
+// the trusted GitHub CLI boundary. It is capability evidence, not human
+// approval; run delegation remains the independent approval source.
+func (b NativeBoundary) ResolveGitHubProviderAuthority(ctx context.Context, repository, previewFingerprint string, now time.Time) (protocol.AuthorityReceipt, error) {
+	if len(previewFingerprint) != 64 || strings.Trim(previewFingerprint, "0123456789abcdef") != "" {
+		return protocol.AuthorityReceipt{}, fmt.Errorf("PROVIDER_AUTHORITY_INVALID: preview fingerprint must be lowercase SHA-256")
+	}
+	output, err := b.runner.CombinedOutput(ctx, repository, "gh", "repo", "view", "--json", "nameWithOwner,viewerPermission,url")
+	if err != nil {
+		return protocol.AuthorityReceipt{}, fmt.Errorf("PROVIDER_AUTHORITY_UNAVAILABLE: GitHub repository identity or authenticated access is unavailable")
+	}
+	var observed githubAuthorityObservation
+	decoder := json.NewDecoder(strings.NewReader(string(output)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&observed); err != nil {
+		return protocol.AuthorityReceipt{}, fmt.Errorf("PROVIDER_AUTHORITY_INVALID: GitHub authority response is invalid")
+	}
+	var trailing any
+	if decoder.Decode(&trailing) != io.EOF {
+		return protocol.AuthorityReceipt{}, fmt.Errorf("PROVIDER_AUTHORITY_INVALID: GitHub authority response contains trailing JSON")
+	}
+	switch observed.ViewerPermission {
+	case "ADMIN", "MAINTAIN", "WRITE":
+	default:
+		return protocol.AuthorityReceipt{}, fmt.Errorf("PROVIDER_AUTHORITY_DENIED: GitHub identity lacks write permission for the repository")
+	}
+	if observed.NameWithOwner == "" || observed.URL == "" {
+		return protocol.AuthorityReceipt{}, fmt.Errorf("PROVIDER_AUTHORITY_INVALID: GitHub repository identity is incomplete")
+	}
+	issued := now.UTC()
+	subject := "github:" + observed.NameWithOwner
+	digest := sha256.Sum256([]byte(subject + "\x00" + previewFingerprint))
+	return protocol.AuthorityReceipt{
+		ID: "provider-" + fmt.Sprintf("%x", digest[:8]), Class: catalog.AuthorityProvider,
+		Subject: subject, Fingerprint: previewFingerprint, IssuedAt: issued, ExpiresAt: issued.Add(2 * time.Minute),
+	}, nil
+}
+
 func (b NativeBoundary) PrepareObservation(ctx context.Context, admission protocol.Admission, transition catalog.Transition, layout ports.ControllerLayout, state *durable.State) error {
 	if err := protocol.ValidateEffectCapabilities(admission, transition); err != nil {
 		return err
 	}
 	switch transition.ID {
+	case "publication.preview":
+		output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "git", "status", "--porcelain=v1", "-z", "--untracked-files=all")
+		if err != nil {
+			return fmt.Errorf("WORKSPACE_COMMIT_REQUIRED: inspect worktree before publication preview")
+		}
+		if publicationProductStatus(string(output)) != "" {
+			return fmt.Errorf("WORKSPACE_COMMIT_REQUIRED: commit the intended delivery changes before publication preview")
+		}
+		head, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "git", "rev-parse", "--verify", "HEAD^{commit}")
+		if err != nil || strings.TrimSpace(string(head)) != admission.SourceRevision {
+			return fmt.Errorf("WORKSPACE_HEAD_CHANGED: publication preview is not bound to the exact committed HEAD")
+		}
 	case "publication.observe", "publication.reconcile":
 		publicationID, _ := admission.Parameters.Get("publication_id")
 		if state.PublicationID != "" && state.PublicationID != publicationID {
@@ -236,7 +295,8 @@ func (b NativeBoundary) Execute(ctx context.Context, admission protocol.Admissio
 		if err := validatePublicationPreviewForAdmission(layout, admission, preview); err != nil {
 			return settled, err
 		}
-		if output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "git", "push", "--set-upstream", "origin", preview.HeadRef); err != nil {
+		refspec := admission.SourceRevision + ":refs/heads/" + preview.HeadRef
+		if output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "git", "push", "origin", refspec); err != nil {
 			return ports.EffectResult{Settlement: ports.EffectUnknown, Detail: strings.TrimSpace(string(output))}, nil
 		}
 		if output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "gh", "pr", "create", "--base", preview.BaseRef, "--head", preview.HeadRef, "--fill-first", "--body-file", preview.BodyPath); err != nil {
@@ -266,6 +326,43 @@ func (b NativeBoundary) Execute(ctx context.Context, admission protocol.Admissio
 		}
 	}
 	return settled, nil
+}
+
+func publicationProductStatus(status string) string {
+	records := strings.Split(status, "\x00")
+	kept := make([]string, 0, len(records))
+	for index := 0; index < len(records); index++ {
+		record := records[index]
+		if len(record) < 4 {
+			continue
+		}
+		code, name := record[:2], filepath.ToSlash(record[3:])
+		prior := ""
+		if (code[0] == 'R' || code[0] == 'C' || code[1] == 'R' || code[1] == 'C') && index+1 < len(records) {
+			index++
+			prior = filepath.ToSlash(records[index])
+		}
+		if publicationGeneratedPath(name) && (prior == "" || publicationGeneratedPath(prior)) {
+			continue
+		}
+		kept = append(kept, record)
+		if prior != "" {
+			kept = append(kept, prior)
+		}
+	}
+	return strings.Join(kept, "\x00")
+}
+
+func publicationGeneratedPath(name string) bool {
+	for _, prefix := range []string{
+		".boatstack/approvals/", ".boatstack/evidence/", ".boatstack/planning-packages/",
+		".boatstack/plans/", ".boatstack/publication/",
+	} {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (b NativeBoundary) workspaceHasOnlyManagedRuntimePin(ctx context.Context, state durable.State) (bool, error) {

@@ -83,6 +83,19 @@ func (b AuthorityBundle) GrantedCapabilities(now time.Time) []catalog.Capability
 	return catalog.AuthorityCapabilities(b.Set(now)).Sorted()
 }
 
+// DeriveRepositoryAuthorityWhenAvailable treats repository authority as a
+// requested continuation capability, never as caller-supplied evidence. A
+// fresh or drifted repository preserves the existing authority bundle so
+// trusted bootstrap and repair transitions can establish verified
+// configuration. Transitions that require repository authority remain
+// inadmissible until a later continuation step can derive it exactly.
+func DeriveRepositoryAuthorityWhenAvailable(snapshot model.Snapshot, bundle AuthorityBundle, now time.Time) (AuthorityBundle, error) {
+	if snapshot.Configuration.Status != model.FactKnown || snapshot.Configuration.Value != model.ConfigurationVerified {
+		return bundle, nil
+	}
+	return DeriveRepositoryAuthority(snapshot, bundle, now)
+}
+
 func DeriveRepositoryAuthority(snapshot model.Snapshot, bundle AuthorityBundle, now time.Time) (AuthorityBundle, error) {
 	for _, receipt := range bundle.Receipts {
 		if receipt.Class == catalog.AuthorityRepository {

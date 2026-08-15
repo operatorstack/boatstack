@@ -15,7 +15,7 @@ import (
 
 const (
 	ArtifactSchemaName     = "control-program-artifact"
-	ArtifactSchemaRevision = 1
+	ArtifactSchemaRevision = 2
 )
 
 type Artifact struct {
@@ -28,6 +28,7 @@ type Artifact struct {
 	DependencyLockSHA256 string            `json:"dependency_lock_sha256"`
 	ProgramFingerprint   string            `json:"program_fingerprint"`
 	GeneratedSkills      map[string]string `json:"generated_skills"`
+	Assets               map[string]string `json:"assets"`
 	Program              Document          `json:"program"`
 }
 
@@ -60,7 +61,7 @@ func NewArtifact(compiled Compiled, input ArtifactInput) (Artifact, []byte, erro
 		Schema: ArtifactSchemaName, SchemaRevision: ArtifactSchemaRevision, CompilerVersion: input.CompilerVersion,
 		SourcePath: filepath.ToSlash(input.SourcePath), SourceSHA256: digest(input.Source),
 		DependencyLockPath: filepath.ToSlash(input.DependencyLockPath), DependencyLockSHA256: digest(input.DependencyLock),
-		ProgramFingerprint: compiled.Fingerprint, GeneratedSkills: skills, Program: compiled.Document,
+		ProgramFingerprint: compiled.Fingerprint, GeneratedSkills: skills, Assets: workAssetBindings(compiled.Document), Program: compiled.Document,
 	}
 	encoded, err := json.MarshalIndent(artifact, "", "  ")
 	if err != nil {
@@ -86,12 +87,17 @@ func LoadArtifact(source io.Reader) (Artifact, error) {
 	if err := requireEOF(decoder); err != nil {
 		return Artifact{}, err
 	}
-	if artifact.Schema != ArtifactSchemaName || artifact.SchemaRevision != ArtifactSchemaRevision || artifact.CompilerVersion == "" || !safeRelative(artifact.SourcePath) || !safeRelative(artifact.DependencyLockPath) || len(artifact.ProgramFingerprint) != 64 || artifact.GeneratedSkills == nil {
+	if artifact.Schema != ArtifactSchemaName || artifact.SchemaRevision != ArtifactSchemaRevision || artifact.CompilerVersion == "" || !safeRelative(artifact.SourcePath) || !safeRelative(artifact.DependencyLockPath) || len(artifact.ProgramFingerprint) != 64 || artifact.GeneratedSkills == nil || artifact.Assets == nil {
 		return Artifact{}, fmt.Errorf("CONTROL_PROGRAM_ARTIFACT_INVALID: artifact envelope is incomplete")
 	}
 	for path, fingerprint := range artifact.GeneratedSkills {
 		if !safeGeneratedSkillPath(path) || len(fingerprint) != 64 {
 			return Artifact{}, fmt.Errorf("CONTROL_PROGRAM_ARTIFACT_INVALID: invalid generated skill binding")
+		}
+	}
+	for path, fingerprint := range artifact.Assets {
+		if !safeRelative(path) || len(fingerprint) != 64 {
+			return Artifact{}, fmt.Errorf("CONTROL_PROGRAM_ARTIFACT_INVALID: invalid asset binding")
 		}
 	}
 	return artifact, nil
@@ -136,6 +142,12 @@ func CheckArtifact(repository string, artifact Artifact, compilerVersion string,
 			return Compiled{}, fmt.Errorf("CONTROL_PROGRAM_STALE: %s does not match artifact", check.label)
 		}
 	}
+	for path, expected := range artifact.Assets {
+		raw, readErr := readRepositoryFile(repository, path)
+		if readErr != nil || digest(raw) != expected {
+			return Compiled{}, fmt.Errorf("CONTROL_PROGRAM_STALE: work asset %s does not match artifact", path)
+		}
+	}
 	compiled, err := Compile(artifact.Program, resolver)
 	if err != nil {
 		return Compiled{}, err
@@ -168,6 +180,45 @@ func CheckArtifact(repository string, artifact Artifact, compilerVersion string,
 		}
 	}
 	return compiled, nil
+}
+
+func workAssetBindings(document Document) map[string]string {
+	result := map[string]string{}
+	for _, contract := range document.Work {
+		result[contract.Instructions.Path] = contract.Instructions.SHA256
+		for _, output := range contract.Outputs {
+			if output.Schema != nil {
+				result[output.Schema.Path] = output.Schema.SHA256
+			}
+		}
+	}
+	return result
+}
+
+// RepositoryAssetResolver resolves exact bounded regular files below one
+// canonical repository root.
+type RepositoryAssetResolver struct{ Repository string }
+
+func (r RepositoryAssetResolver) ResolveAsset(path string, maxBytes int64) ([]byte, error) {
+	if !safeRelative(path) || maxBytes <= 0 {
+		return nil, fmt.Errorf("asset path or bound is invalid")
+	}
+	root, err := filepath.Abs(r.Repository)
+	if err != nil {
+		return nil, err
+	}
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := readRepositoryFile(root, path)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(raw)) > maxBytes {
+		return nil, fmt.Errorf("asset exceeds %d bytes", maxBytes)
+	}
+	return raw, nil
 }
 
 func digest(value []byte) string { sum := sha256.Sum256(value); return hex.EncodeToString(sum[:]) }

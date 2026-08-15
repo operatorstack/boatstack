@@ -282,6 +282,10 @@ func TestExternalConfigurationAuthorityTransfersAcrossAttachAndDetach(t *testing
 		ID: "external-config-human", Class: catalog.AuthorityHuman, Subject: "integration", Fingerprint: "explicit-human",
 		IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
 	}}}
+	autonomy := protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{
+		ID: "external-config-autonomy", Class: catalog.AuthorityAutonomy, Subject: "integration", Fingerprint: "explicit-delegation",
+		IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
+	}}}
 	apply := func(id catalog.TransitionID, authority protocol.AuthorityBundle, repositoryAuthority bool, parameters protocol.Parameters) surfaces.Response {
 		t.Helper()
 		request := surfaces.Request{
@@ -305,7 +309,11 @@ func TestExternalConfigurationAuthorityTransfersAcrossAttachAndDetach(t *testing
 	if err := os.WriteFile(initialPath, initialConfig, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	apply("installation.initialize", human, false, protocol.Parameters{
+	// A continuation may request repository authority before fresh-state
+	// initialization. The controller must preserve delegated autonomy without
+	// fabricating repository authority, then derive repository authority from
+	// the configuration evidence committed by this transition on later steps.
+	apply("installation.initialize", autonomy, true, protocol.Parameters{
 		{Name: "source_revision", Value: "external-config-fixture"}, {Name: "runtime_version", Value: runtimeVersion}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
 		{Name: "config_path", Value: initialPath}, {Name: "config_sha256", Value: configFingerprint(t, initialConfig)},
 	})

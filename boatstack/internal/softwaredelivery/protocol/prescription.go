@@ -8,7 +8,7 @@ import (
 	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
-const PrescriptionSchemaVersion = 4
+const PrescriptionSchemaVersion = 5
 
 // Prescription is the immutable compare-and-swap binding emitted by
 // resolution and required by apply. It carries no reusable authority or
@@ -20,9 +20,14 @@ type Prescription struct {
 	general.Freshness
 	RequiredCapabilities  []catalog.Capability `json:"required_capabilities"`
 	EffectiveCapabilities []catalog.Capability `json:"effective_capabilities"`
+	WorkResultFingerprint string               `json:"work_result_fingerprint,omitempty"`
 }
 
 func NewPrescription(snapshot model.Snapshot, transition catalog.Transition, capabilities CapabilityProjection) (Prescription, error) {
+	return NewPrescriptionWithWork(snapshot, transition, capabilities, nil)
+}
+
+func NewPrescriptionWithWork(snapshot model.Snapshot, transition catalog.Transition, capabilities CapabilityProjection, work *WorkEvidence) (Prescription, error) {
 	objectiveBindingFingerprint, err := ObjectiveBindingFingerprint(snapshot)
 	if err != nil {
 		return Prescription{}, err
@@ -37,6 +42,12 @@ func NewPrescription(snapshot model.Snapshot, transition catalog.Transition, cap
 		Freshness:             freshness,
 		RequiredCapabilities:  append([]catalog.Capability(nil), capabilities.Required...),
 		EffectiveCapabilities: append([]catalog.Capability(nil), capabilities.Effective...),
+	}
+	if work != nil {
+		if err := work.ValidateCurrent(snapshot, transition); err != nil {
+			return Prescription{}, err
+		}
+		prescription.WorkResultFingerprint = work.ResultFingerprint
 	}
 	if err := prescription.validateFields(); err != nil {
 		return Prescription{}, err
@@ -97,6 +108,19 @@ func (p Prescription) ValidateCurrent(snapshot model.Snapshot, transition catalo
 		!sameCapabilities(p.RequiredCapabilities, capabilities.Required) ||
 		!sameCapabilities(p.EffectiveCapabilities, capabilities.Effective) {
 		return fmt.Errorf("prescription %q is bound to a different authority or capability context", p.ID)
+	}
+	return nil
+}
+
+func (p Prescription) ValidateWork(work *WorkEvidence) error {
+	if p.WorkResultFingerprint == "" {
+		if work != nil {
+			return fmt.Errorf("prescription is not bound to foreground work")
+		}
+		return nil
+	}
+	if work == nil || work.ResultFingerprint != p.WorkResultFingerprint {
+		return fmt.Errorf("prescription is bound to a different foreground work result")
 	}
 	return nil
 }

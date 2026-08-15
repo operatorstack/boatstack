@@ -13,6 +13,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/engine"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/foregroundwork"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/plant"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/ports"
@@ -37,6 +38,7 @@ type DeliveryController struct {
 	observer ports.Observer
 	engine   engine.Engine
 	clock    effects.Clock
+	work     foregroundwork.Manager
 }
 
 // TargetSatisfied reports whether the exact compiled program marks the
@@ -65,6 +67,10 @@ func NewDeliveryController(externalStateRoot string, program delivery.ControlPro
 	if err != nil {
 		return DeliveryController{}, err
 	}
+	workManager, err := foregroundwork.NewManager(resolver, locker, clock, effects.NewRuntimeStore())
+	if err != nil {
+		return DeliveryController{}, err
+	}
 	journal, err := effects.NewJournal(resolver, clock)
 	if err != nil {
 		return DeliveryController{}, err
@@ -84,7 +90,7 @@ func NewDeliveryController(externalStateRoot string, program delivery.ControlPro
 	if err != nil {
 		return DeliveryController{}, err
 	}
-	return DeliveryController{program: program, registry: registry, resolver: resolver, observer: observer, engine: runtimeEngine, clock: clock}, nil
+	return DeliveryController{program: program, registry: registry, resolver: resolver, observer: observer, engine: runtimeEngine, clock: clock, work: workManager}, nil
 }
 
 func (k DeliveryController) Handle(ctx context.Context, request surfaces.Request) (surfaces.Response, error) {
@@ -120,7 +126,20 @@ func (k DeliveryController) Handle(ctx context.Context, request surfaces.Request
 	switch request.Operation {
 	case surfaces.OperationResolve, surfaces.OperationExplain:
 		explain := request.Operation == surfaces.OperationExplain
-		resolution, resolveErr := k.engine.Resolve(ctx, engine.ResolveRequest{Invocation: invocation, Objective: request.Objective, Authority: request.Authority, Parameters: request.Parameters, Requested: request.TransitionID, Trace: explain})
+		resolveRequest := engine.ResolveRequest{Invocation: invocation, Objective: request.Objective, Authority: request.Authority, Parameters: request.Parameters, Requested: request.TransitionID, Trace: explain}
+		resolution, resolveErr := k.engine.Resolve(ctx, resolveRequest)
+		if !explain && resolveErr == nil && resolution.Decision.Kind == supervisor.DecisionCandidate && resolution.Decision.Transition != nil && resolution.Decision.Transition.Work != nil {
+			record, workErr := k.work.Ensure(ctx, invocation, request.FlowID, request.ProgramID, request.EntryID, resolution.Objective, resolution.Snapshot, *resolution.Decision.Transition, request.WorkInputs)
+			if workErr != nil {
+				response.Error = workErr.Error()
+				return response, workErr
+			}
+			response.Work = &record
+			if record.Status == foregroundwork.StatusCompleted && record.Result != nil {
+				resolveRequest.Work = record.Result
+				resolution, resolveErr = k.engine.Resolve(ctx, resolveRequest)
+			}
+		}
 		response.Objective, response.Decision, response.Trace = resolution.Objective, &resolution.Decision, resolution.Trace
 		if !explain && resolution.Prescription.ID != "" {
 			response.Prescription = &resolution.Prescription
@@ -129,10 +148,10 @@ func (k DeliveryController) Handle(ctx context.Context, request surfaces.Request
 		if !explain && resolution.Snapshot.Fingerprint != "" {
 			response.Snapshot = &resolution.Snapshot
 		}
-		if !explain {
+		if !explain && response.Work == nil {
 			response.Question = surfaces.QuestionFor(request.FlowID, resolution.Snapshot.Fingerprint, resolution.Decision)
 		}
-		if !explain && response.Question == nil && request.FlowID != "" && len(resolution.Decision.Candidates) == 1 {
+		if !explain && response.Work == nil && response.Question == nil && request.FlowID != "" && len(resolution.Decision.Candidates) == 1 {
 			if transition, ok := k.registry.Lookup(resolution.Decision.Candidates[0]); ok {
 				questionDecision := supervisor.Decision{Kind: supervisor.DecisionCandidate, Transition: &transition}
 				response.Question = surfaces.QuestionFor(request.FlowID, resolution.Snapshot.Fingerprint, questionDecision)
@@ -149,8 +168,22 @@ func (k DeliveryController) Handle(ctx context.Context, request surfaces.Request
 		}
 		return response, nil
 	case surfaces.OperationApply, surfaces.OperationRecover:
+		var work *protocol.WorkEvidence
+		if transition, ok := k.registry.Lookup(request.TransitionID); ok && transition.Work != nil {
+			record, workErr := k.work.Show(ctx, invocation, request.FlowID, transition.Work.ID)
+			if workErr != nil {
+				response.Error = workErr.Error()
+				return response, workErr
+			}
+			if record.Status != foregroundwork.StatusCompleted || record.Result == nil {
+				err := fmt.Errorf("transition %q requires completed foreground work %q", transition.ID, transition.Work.ID)
+				response.Error = err.Error()
+				return response, err
+			}
+			work, response.Work = record.Result, &record
+		}
 		result, applyErr := k.engine.Apply(ctx, engine.ApplyRequest{
-			ResolveRequest: engine.ResolveRequest{Invocation: invocation, Objective: request.Objective, Authority: request.Authority, Requested: request.TransitionID},
+			ResolveRequest: engine.ResolveRequest{Invocation: invocation, Objective: request.Objective, Authority: request.Authority, Requested: request.TransitionID, Work: work},
 			FlowID:         request.FlowID, Prescription: request.Prescription, Parameters: request.Parameters, IdempotencyKey: request.IdempotencyKey, AdmissionLifetime: 2 * time.Minute,
 		})
 		response.Prescription = &request.Prescription
@@ -175,6 +208,27 @@ func (k DeliveryController) Handle(ctx context.Context, request surfaces.Request
 			response.Error = applyErr.Error()
 			return response, applyErr
 		}
+		return response, nil
+	case surfaces.OperationWorkShow, surfaces.OperationWorkInputRequired, surfaces.OperationWorkAnswer, surfaces.OperationWorkComplete, surfaces.OperationWorkBlock:
+		var record foregroundwork.Record
+		var workErr error
+		switch request.Operation {
+		case surfaces.OperationWorkShow:
+			record, workErr = k.work.Show(ctx, invocation, request.FlowID, request.WorkID)
+		case surfaces.OperationWorkInputRequired:
+			record, workErr = k.work.InputRequired(ctx, invocation, request.FlowID, request.WorkID, request.WorkQuestionPrompt, request.WorkQuestionSchema)
+		case surfaces.OperationWorkAnswer:
+			record, workErr = k.work.Answer(ctx, invocation, request.FlowID, request.WorkID, request.WorkQuestionID, request.WorkAnswer)
+		case surfaces.OperationWorkComplete:
+			record, workErr = k.work.Complete(ctx, invocation, request.FlowID, request.WorkID)
+		case surfaces.OperationWorkBlock:
+			record, workErr = k.work.Block(ctx, invocation, request.FlowID, request.WorkID, request.WorkBlockReason)
+		}
+		if workErr != nil {
+			response.Error = workErr.Error()
+			return response, workErr
+		}
+		response.Work = &record
 		return response, nil
 	case surfaces.OperationDoctor:
 		summary := k.program.Summary()
@@ -288,7 +342,7 @@ func (k DeliveryController) deriveRepositoryAuthority(ctx context.Context, invoc
 	if err != nil {
 		return protocol.AuthorityBundle{}, err
 	}
-	return protocol.DeriveRepositoryAuthority(snapshot, bundle, k.clock.Now())
+	return protocol.DeriveRepositoryAuthorityWhenAvailable(snapshot, bundle, k.clock.Now())
 }
 
 func readEvents(path string) ([]map[string]any, error) {

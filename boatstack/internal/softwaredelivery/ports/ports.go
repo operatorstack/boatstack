@@ -52,6 +52,14 @@ type Locker interface {
 	Acquire(context.Context, model.InvocationContext, []string) (Lock, error)
 }
 
+// RuntimeStore is the effects-owned mutation boundary for runtime records that
+// are not product effects. Callers decide record content; only this port may
+// create directories or atomically replace bytes.
+type RuntimeStore interface {
+	EnsureDirectory(string, uint32) error
+	WriteAtomic(string, []byte, uint32) error
+}
+
 type Journal interface {
 	Begin(context.Context, protocol.Admission, catalog.Transition) error
 	Stage(context.Context, string, []ResourceMutation) error

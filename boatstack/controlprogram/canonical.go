@@ -9,6 +9,10 @@ import (
 	"io"
 	"regexp"
 	"sort"
+	"strings"
+	"unicode/utf8"
+
+	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 var semanticID = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$`)
@@ -20,7 +24,25 @@ type Compiled struct {
 	Fingerprint string
 }
 
+const (
+	maxInstructionBytes = 256 << 10
+	maxSchemaBytes      = 1 << 20
+	defaultOutputBytes  = 1 << 20
+	maxOutputBytes      = 16 << 20
+)
+
+// AssetResolver reads one exact repository-owned asset through a trusted,
+// symlink-safe boundary. The restricted TypeScript frontend never reads it.
+type AssetResolver interface {
+	ResolveAsset(path string, maxBytes int64) ([]byte, error)
+}
+
 func Load(source io.Reader, resolver BindingResolver) (Compiled, error) {
+	return LoadWithAssets(source, resolver, nil)
+}
+
+// LoadWithAssets strictly decodes raw IR and resolves its declared work assets.
+func LoadWithAssets(source io.Reader, resolver BindingResolver, assets AssetResolver) (Compiled, error) {
 	raw, err := readLimited(source, 16<<20, "CONTROL_PROGRAM_INVALID: input exceeds 16 MiB")
 	if err != nil {
 		return Compiled{}, err
@@ -37,7 +59,7 @@ func Load(source io.Reader, resolver BindingResolver) (Compiled, error) {
 	if err := requireEOF(decoder); err != nil {
 		return Compiled{}, err
 	}
-	return Compile(document, resolver)
+	return compile(document, resolver, assets)
 }
 
 func readLimited(source io.Reader, limit int64, oversized string) ([]byte, error) {
@@ -52,6 +74,10 @@ func readLimited(source io.Reader, limit int64, oversized string) ([]byte, error
 }
 
 func Compile(document Document, resolver BindingResolver) (Compiled, error) {
+	return compile(document, resolver, nil)
+}
+
+func compile(document Document, resolver BindingResolver, assets AssetResolver) (Compiled, error) {
 	if document.Schema != SchemaName || document.SchemaRevision != SchemaRevision {
 		return Compiled{}, invalid("schema", "unsupported schema or revision")
 	}
@@ -111,7 +137,11 @@ func Compile(document Document, resolver BindingResolver) (Compiled, error) {
 	if err := normalizeTargetsAndEntries(&document, facets, resolver); err != nil {
 		return Compiled{}, err
 	}
-	if err := normalizeTransitions(&document, facets, operators); err != nil {
+	work, err := normalizeWork(&document, assets)
+	if err != nil {
+		return Compiled{}, err
+	}
+	if err := normalizeTransitions(&document, facets, operators, work); err != nil {
 		return Compiled{}, err
 	}
 
@@ -128,6 +158,111 @@ func Compile(document Document, resolver BindingResolver) (Compiled, error) {
 	}
 	pretty = append(pretty, '\n')
 	return Compiled{Document: document, Canonical: pretty, Fingerprint: fingerprint}, nil
+}
+
+func normalizeWork(document *Document, assets AssetResolver) (map[string]WorkContract, error) {
+	entryInputs := map[string]bool{}
+	for _, entry := range document.Entries {
+		for _, input := range entry.Inputs {
+			entryInputs[input.ID] = true
+		}
+	}
+	seen := map[string]WorkContract{}
+	for i := range document.Work {
+		contract := &document.Work[i]
+		if !validID(contract.ID) || seen[contract.ID].ID != "" {
+			return nil, invalid(fmt.Sprintf("work[%d].id", i), "invalid or duplicate work id")
+		}
+		if err := resolveWorkAsset(&contract.Instructions, assets, maxInstructionBytes, "work."+contract.ID+".instructions"); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(contract.Instructions.Content) == "" {
+			return nil, invalid("work."+contract.ID+".instructions", "instruction asset must not be empty")
+		}
+		inputIDs := map[string]bool{}
+		for j := range contract.Inputs {
+			input := &contract.Inputs[j]
+			if !validID(input.ID) || !validID(input.EntryInput) || inputIDs[input.ID] || !entryInputs[input.EntryInput] {
+				return nil, invalid(fmt.Sprintf("work.%s.inputs[%d]", contract.ID, j), "invalid or duplicate work input")
+			}
+			inputIDs[input.ID] = true
+		}
+		sort.Slice(contract.Inputs, func(i, j int) bool { return contract.Inputs[i].ID < contract.Inputs[j].ID })
+		outputIDs, outputPaths := map[string]bool{}, map[string]bool{}
+		for j := range contract.Outputs {
+			output := &contract.Outputs[j]
+			if !validID(output.ID) || !safeRelative(output.Path) || outputIDs[output.ID] || outputPaths[output.Path] {
+				return nil, invalid(fmt.Sprintf("work.%s.outputs[%d]", contract.ID, j), "invalid or duplicate output id/path")
+			}
+			if output.MediaType != "text/markdown" && output.MediaType != "text/plain" && output.MediaType != "application/json" {
+				return nil, invalid("work."+contract.ID+".outputs."+output.ID+".media_type", "must be text/markdown, text/plain, or application/json")
+			}
+			if output.MaxBytes == 0 {
+				output.MaxBytes = defaultOutputBytes
+			}
+			if output.MaxBytes < 1 || output.MaxBytes > maxOutputBytes {
+				return nil, invalid("work."+contract.ID+".outputs."+output.ID+".max_bytes", "must be between 1 and 16 MiB")
+			}
+			if output.Schema != nil {
+				if output.MediaType != "application/json" {
+					return nil, invalid("work."+contract.ID+".outputs."+output.ID+".schema", "schemas require application/json")
+				}
+				if err := resolveWorkAsset(output.Schema, assets, maxSchemaBytes, "work."+contract.ID+".outputs."+output.ID+".schema"); err != nil {
+					return nil, err
+				}
+				var schemaValue any
+				decoder := json.NewDecoder(strings.NewReader(output.Schema.Content))
+				decoder.UseNumber()
+				if err := decoder.Decode(&schemaValue); err != nil {
+					return nil, invalid("work."+contract.ID+".outputs."+output.ID+".schema", err.Error())
+				}
+				if err := requireEOF(decoder); err != nil {
+					return nil, invalid("work."+contract.ID+".outputs."+output.ID+".schema", "schema contains trailing JSON")
+				}
+				compiler := jsonschema.NewCompiler()
+				compiler.DefaultDraft(jsonschema.Draft2020)
+				if err := compiler.AddResource(output.Schema.Path, schemaValue); err != nil {
+					return nil, invalid("work."+contract.ID+".outputs."+output.ID+".schema", err.Error())
+				}
+				if _, err := compiler.Compile(output.Schema.Path); err != nil {
+					return nil, invalid("work."+contract.ID+".outputs."+output.ID+".schema", err.Error())
+				}
+			}
+			outputIDs[output.ID], outputPaths[output.Path] = true, true
+		}
+		if len(contract.Outputs) == 0 {
+			return nil, invalid("work."+contract.ID+".outputs", "at least one output is required")
+		}
+		sort.Slice(contract.Outputs, func(i, j int) bool { return contract.Outputs[i].ID < contract.Outputs[j].ID })
+		seen[contract.ID] = *contract
+	}
+	sort.Slice(document.Work, func(i, j int) bool { return document.Work[i].ID < document.Work[j].ID })
+	return seen, nil
+}
+
+func resolveWorkAsset(asset *WorkAsset, resolver AssetResolver, limit int64, field string) error {
+	if !safeRelative(asset.Path) {
+		return invalid(field+".path", "must be a canonical repository-relative path")
+	}
+	compiled := asset.SHA256 != "" || asset.Content != ""
+	if compiled {
+		if asset.SHA256 == "" || len(asset.SHA256) != 64 || digest([]byte(asset.Content)) != asset.SHA256 || int64(len(asset.Content)) > limit {
+			return invalid(field, "compiled asset bytes or fingerprint are invalid")
+		}
+		return nil
+	}
+	if resolver == nil {
+		return invalid(field, "unresolved asset requires a trusted repository resolver")
+	}
+	raw, err := resolver.ResolveAsset(asset.Path, limit)
+	if err != nil {
+		return invalid(field, err.Error())
+	}
+	if !utf8.Valid(raw) {
+		return invalid(field, "asset must be UTF-8")
+	}
+	asset.Content, asset.SHA256 = string(raw), digest(raw)
+	return nil
 }
 
 func normalizeEvidence(document *Document, facets map[string]Facet) error {
@@ -263,8 +398,9 @@ func normalizeOperators(document *Document, facets map[string]Facet, resolver Bi
 	return seen, nil
 }
 
-func normalizeTransitions(document *Document, facets map[string]Facet, operators map[string]Operator) error {
+func normalizeTransitions(document *Document, facets map[string]Facet, operators map[string]Operator, work map[string]WorkContract) error {
 	seen := map[string]bool{}
+	workRefs := map[string]bool{}
 	for i := range document.Transitions {
 		value := &document.Transitions[i]
 		var err error
@@ -272,6 +408,12 @@ func normalizeTransitions(document *Document, facets map[string]Facet, operators
 			return invalid(fmt.Sprintf("transitions[%d]", i), "invalid transition or operator reference")
 		}
 		seen[value.ID] = true
+		if value.Work != "" {
+			if work[value.Work].ID == "" {
+				return invalid("transitions."+value.ID+".work", "unknown work reference "+value.Work)
+			}
+			workRefs[value.Work] = true
+		}
 		if err := normalizePredicate(&value.Guard, facets); err != nil {
 			return invalid("transitions."+value.ID+".guard", err.Error())
 		}
@@ -284,6 +426,11 @@ func normalizeTransitions(document *Document, facets map[string]Facet, operators
 		}
 		if missing := firstUndeclared(value.Requires.Authorities, document.Declarations.Authorities); missing != "" {
 			return invalid("transitions."+value.ID+".requires.authorities", "undeclared "+missing)
+		}
+	}
+	for id := range work {
+		if !workRefs[id] {
+			return invalid("work."+id, "work contract is not referenced by a transition")
 		}
 	}
 	if len(seen) == 0 {
@@ -520,6 +667,7 @@ func sortPredicates(values []Predicate) {
 func stripDescriptions(value Document) Document {
 	value.Facets = append([]Facet(nil), value.Facets...)
 	value.Evidence = append([]Evidence(nil), value.Evidence...)
+	value.Work = append([]WorkContract(nil), value.Work...)
 	value.Operators = append([]Operator(nil), value.Operators...)
 	value.Transitions = append([]Transition(nil), value.Transitions...)
 	value.Targets = append([]Target(nil), value.Targets...)
@@ -530,6 +678,9 @@ func stripDescriptions(value Document) Document {
 	}
 	for i := range value.Evidence {
 		value.Evidence[i].Description = ""
+	}
+	for i := range value.Work {
+		value.Work[i].Description = ""
 	}
 	for i := range value.Operators {
 		value.Operators[i].Description = ""

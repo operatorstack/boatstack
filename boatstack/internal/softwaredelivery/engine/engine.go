@@ -45,6 +45,7 @@ type ResolveRequest struct {
 	Parameters protocol.Parameters
 	Requested  catalog.TransitionID
 	Trace      bool
+	Work       *protocol.WorkEvidence
 }
 
 type Resolution struct {
@@ -120,6 +121,28 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 				decision.Transition = nil
 			}
 		} else {
+			if decision.Transition.Work != nil {
+				if request.Work == nil {
+					decision.Kind = supervisor.DecisionCandidate
+					decision.Reason = fmt.Sprintf("transition %q requires foreground work %q", decision.Transition.ID, decision.Transition.Work.ID)
+					decision.Candidates = []catalog.TransitionID{decision.Transition.ID}
+					updateDecisionTrace(decisionTrace, decision)
+					return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision, Trace: decisionTrace}, nil
+				}
+				if workErr := request.Work.ValidateCurrent(snapshot, *decision.Transition); workErr != nil {
+					decision.Kind = supervisor.DecisionRefused
+					decision.Reason = workErr.Error()
+					decision.Transition = nil
+					updateDecisionTrace(decisionTrace, decision)
+					return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision, Trace: decisionTrace}, nil
+				}
+			} else if request.Work != nil {
+				decision.Kind = supervisor.DecisionRefused
+				decision.Reason = fmt.Sprintf("transition %q does not accept foreground work evidence", decision.Transition.ID)
+				decision.Transition = nil
+				updateDecisionTrace(decisionTrace, decision)
+				return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision, Trace: decisionTrace}, nil
+			}
 			capabilities, capabilityErr := protocol.ProjectCapabilities(snapshot, *decision.Transition, request.Authority, now)
 			if capabilityErr != nil {
 				decision.Kind = supervisor.DecisionRefused
@@ -128,7 +151,7 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 				updateDecisionTrace(decisionTrace, decision)
 				return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision, Trace: decisionTrace}, nil
 			}
-			prescription, prescriptionErr := protocol.NewPrescription(snapshot, *decision.Transition, capabilities)
+			prescription, prescriptionErr := protocol.NewPrescriptionWithWork(snapshot, *decision.Transition, capabilities, request.Work)
 			if prescriptionErr != nil {
 				decision.Kind = supervisor.DecisionUnresolved
 				decision.Reason = prescriptionErr.Error()
@@ -136,7 +159,7 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 				updateDecisionTrace(decisionTrace, decision)
 				return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision, Trace: decisionTrace}, nil
 			}
-			admission, admissionErr := protocol.NewAdmission(snapshot, objective, *decision.Transition, prescription, request.Authority, request.Parameters, now, 2*time.Minute)
+			admission, admissionErr := protocol.NewAdmissionWithWork(snapshot, objective, *decision.Transition, prescription, request.Authority, request.Parameters, request.Work, now, 2*time.Minute)
 			if admissionErr != nil {
 				decision.Kind = supervisor.DecisionUnresolved
 				decision.Reason = admissionErr.Error()
@@ -354,7 +377,7 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 	}
 	transition := *resolution.Decision.Transition
 	now := e.clock.Now()
-	admission, err := protocol.NewAdmission(resolution.Snapshot, request.Objective, transition, request.Prescription, request.Authority, request.Parameters, now, request.AdmissionLifetime)
+	admission, err := protocol.NewAdmissionWithWork(resolution.Snapshot, request.Objective, transition, request.Prescription, request.Authority, request.Parameters, request.Work, now, request.AdmissionLifetime)
 	if err != nil {
 		return result, err
 	}
@@ -578,6 +601,13 @@ func validateReplayRequest(prior protocol.TransitionReceipt, request ApplyReques
 	}
 	if request.Requested != "" && prior.TransitionID != request.Requested {
 		return fmt.Errorf("idempotency receipt belongs to transition %q, not %q", prior.TransitionID, request.Requested)
+	}
+	workFingerprint := ""
+	if request.Work != nil {
+		workFingerprint = request.Work.ResultFingerprint
+	}
+	if prior.WorkResultFingerprint != workFingerprint {
+		return fmt.Errorf("idempotency receipt belongs to a different foreground work result")
 	}
 	return nil
 }

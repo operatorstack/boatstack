@@ -33,6 +33,13 @@ func NewResolver(ctx context.Context) (Resolver, error) {
 	for _, transition := range manifest.Transitions {
 		transitions[string(transition.ID)] = transition
 	}
+	planning, err := planningPackageTransitions(transitions)
+	if err != nil {
+		return Resolver{}, err
+	}
+	for _, transition := range planning {
+		transitions[string(transition.ID)] = transition
+	}
 	return Resolver{transitions: transitions}, nil
 }
 

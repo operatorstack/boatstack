@@ -12,7 +12,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 )
 
-const ReceiptSchemaVersion = 10
+const ReceiptSchemaVersion = 11
 
 type TransitionFactKind string
 
@@ -134,6 +134,7 @@ type TransitionReceipt struct {
 	ExecutionContext            string                   `json:"execution_context,omitempty"`
 	PriorInvocation             *model.InvocationContext `json:"prior_invocation,omitempty"`
 	ResultingInvocation         *model.InvocationContext `json:"resulting_invocation,omitempty"`
+	WorkResultFingerprint       string                   `json:"work_result_fingerprint,omitempty"`
 }
 
 type AuthoritySource struct {
@@ -199,6 +200,9 @@ func NewReceipt(flowID string, sequence uint64, program ProgramIdentity, admissi
 		IdempotencyKey:        admission.IdempotencyKey, Recovery: transition.Interruption.Recovery, Terminal: terminal,
 		StartedAt: startedAt.UTC(), CommittedAt: committedAt.UTC(), DurationNanoseconds: committedAt.Sub(startedAt).Nanoseconds(),
 	}
+	if admission.Work != nil {
+		receipt.WorkResultFingerprint = admission.Work.ResultFingerprint
+	}
 	if transition.ExecutionContext == "advance" {
 		prior, resulting := admission.Invocation, target.Invocation
 		if err := prior.Validate(true); err != nil {
@@ -247,6 +251,9 @@ func (r TransitionReceipt) Validate() error {
 		}
 	} else if r.PriorInvocation != nil || r.ResultingInvocation != nil {
 		return fmt.Errorf("receipt has invocation lineage without an execution context advance")
+	}
+	if r.WorkResultFingerprint != "" && !validSHA256(r.WorkResultFingerprint) {
+		return fmt.Errorf("receipt has invalid foreground work identity")
 	}
 	canonicalFacets, err := model.NormalizeStateFacets("receipt.changed_state_facets", r.ChangedStateFacets)
 	if err != nil || !slices.Equal(canonicalFacets, r.ChangedStateFacets) {

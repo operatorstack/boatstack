@@ -26,10 +26,11 @@ func TestShellRenderersConsumeOneCommandAST(t *testing.T) {
 		ID: "prx-fixture", Freshness: general.Freshness{ExpectedInstanceID: "repo-fixture", ExpectedStateRevision: 41, ExpectedProgramFingerprint: strings.Repeat("a", 64), ExpectedSnapshotFingerprint: strings.Repeat("b", 64), ExpectedObjectiveBindingFingerprint: strings.Repeat("c", 64), AuthorityFingerprint: "auth-fixture"},
 		RequiredCapabilities:  []catalog.Capability{catalog.CapabilityRepositoryWrite, catalog.CapabilityCommandExecute},
 		EffectiveCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite, catalog.CapabilityCommandExecute},
+		WorkResultFingerprint: strings.Repeat("d", 64),
 	}
 	command := PrescriptionCommand(transition, prescription, "corr-1", "/repo with space", objective, "run-1", "product-delivery", "run", parameters)
 	joined := strings.Join(command.Arguments, " ")
-	for _, binding := range []string{"--correlation corr-1", "--prescription-id prx-fixture", "--expected-instance-id repo-fixture", "--expected-state-revision 41", "--expected-program-fingerprint", "--expected-snapshot-fingerprint", "--expected-objective-binding-fingerprint", "--authority-fingerprint auth-fixture", "--required-capability repository.write", "--required-capability command.execute", "--effective-capability repository.write", "--effective-capability command.execute"} {
+	for _, binding := range []string{"--correlation corr-1", "--prescription-id prx-fixture", "--expected-instance-id repo-fixture", "--expected-state-revision 41", "--expected-program-fingerprint", "--expected-snapshot-fingerprint", "--expected-objective-binding-fingerprint", "--authority-fingerprint auth-fixture", "--required-capability repository.write", "--required-capability command.execute", "--effective-capability repository.write", "--effective-capability command.execute", "--work-result-fingerprint " + strings.Repeat("d", 64)} {
 		if !strings.Contains(joined, binding) {
 			t.Fatalf("prescription command omitted CAS binding %q: %s", binding, joined)
 		}

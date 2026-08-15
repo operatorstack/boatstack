@@ -7,21 +7,22 @@ import "encoding/json"
 
 const (
 	SchemaName     = "control-program"
-	SchemaRevision = 2
+	SchemaRevision = 3
 )
 
 type Document struct {
-	Schema         string       `json:"schema"`
-	SchemaRevision int          `json:"schema_revision"`
-	Program        Program      `json:"program"`
-	Declarations   Declarations `json:"declarations"`
-	Facets         []Facet      `json:"facets"`
-	Evidence       []Evidence   `json:"evidence,omitempty"`
-	Operators      []Operator   `json:"operators"`
-	Transitions    []Transition `json:"transitions"`
-	Targets        []Target     `json:"targets"`
-	Entries        []Entry      `json:"entries"`
-	Description    string       `json:"description,omitempty"`
+	Schema         string         `json:"schema"`
+	SchemaRevision int            `json:"schema_revision"`
+	Program        Program        `json:"program"`
+	Declarations   Declarations   `json:"declarations"`
+	Facets         []Facet        `json:"facets"`
+	Evidence       []Evidence     `json:"evidence,omitempty"`
+	Work           []WorkContract `json:"work,omitempty"`
+	Operators      []Operator     `json:"operators"`
+	Transitions    []Transition   `json:"transitions"`
+	Targets        []Target       `json:"targets"`
+	Entries        []Entry        `json:"entries"`
+	Description    string         `json:"description,omitempty"`
 }
 
 type Program struct {
@@ -50,6 +51,39 @@ type Evidence struct {
 	Subject     string `json:"subject"`
 	Kind        string `json:"kind"`
 	Description string `json:"description,omitempty"`
+}
+
+// WorkAsset is a repository asset declaration in raw IR and an exact
+// content-bound asset in compiled IR. The trusted compiler supplies SHA256 and
+// Content; repository Flow source may supply only Path.
+type WorkAsset struct {
+	Path    string `json:"path"`
+	SHA256  string `json:"sha256,omitempty"`
+	Content string `json:"content,omitempty"`
+}
+
+type WorkInput struct {
+	ID         string `json:"id"`
+	EntryInput string `json:"entry_input"`
+}
+
+type WorkOutput struct {
+	ID        string     `json:"id"`
+	Path      string     `json:"path"`
+	MediaType string     `json:"media_type"`
+	Required  bool       `json:"required"`
+	MaxBytes  int64      `json:"max_bytes,omitempty"`
+	Schema    *WorkAsset `json:"schema,omitempty"`
+}
+
+// WorkContract declares bounded foreground work. It contains no executable
+// code, capabilities, authority, effects, or native handlers.
+type WorkContract struct {
+	ID           string       `json:"id"`
+	Instructions WorkAsset    `json:"instructions"`
+	Inputs       []WorkInput  `json:"inputs"`
+	Outputs      []WorkOutput `json:"outputs"`
+	Description  string       `json:"description,omitempty"`
 }
 
 // Predicate is a closed AST. Exactly one node variant must be present.
@@ -122,6 +156,7 @@ type Transition struct {
 	Target      Predicate              `json:"target"`
 	Priority    int                    `json:"priority"`
 	Requires    TransitionRequirements `json:"requires,omitempty"`
+	Work        string                 `json:"work,omitempty"`
 	Description string                 `json:"description,omitempty"`
 }
 

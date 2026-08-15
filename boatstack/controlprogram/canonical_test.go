@@ -2,6 +2,8 @@ package controlprogram_test
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -89,6 +91,68 @@ func TestDomainNeutralIncidentProgramCompiles(t *testing.T) {
 		compiled.Document.Operators[0].Description == "" || compiled.Document.Transitions[0].Description == "" ||
 		compiled.Document.Targets[0].Description == "" || compiled.Document.Entries[0].Description == "" {
 		t.Fatalf("compilation removed declared descriptions: %#v", compiled.Document)
+	}
+}
+
+func incidentWorkProgram() controlprogram.Document {
+	document := incidentProgram()
+	instructions := "Inspect the incident and produce the declared diagnosis."
+	digest := sha256.Sum256([]byte(instructions))
+	document.Work = []controlprogram.WorkContract{{
+		ID: "diagnose", Instructions: controlprogram.WorkAsset{Path: "instructions.md", SHA256: hex.EncodeToString(digest[:]), Content: instructions},
+		Inputs:      []controlprogram.WorkInput{{ID: "incident", EntryInput: "incident"}},
+		Outputs:     []controlprogram.WorkOutput{{ID: "diagnosis", Path: "diagnosis.md", MediaType: "text/markdown", Required: true, MaxBytes: 4096}},
+		Description: "presentation only",
+	}}
+	document.Transitions[0].Work = "diagnose"
+	return document
+}
+
+func TestForegroundWorkIsDomainNeutralAndFingerprintBound(t *testing.T) {
+	// control-law: exact foreground-work semantics contribute to canonical program identity
+	base, err := controlprogram.Compile(incidentWorkProgram(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(base.Document.Work) != 1 || base.Document.Transitions[0].Work != "diagnose" {
+		t.Fatalf("compiled work = %#v", base.Document.Work)
+	}
+	description := incidentWorkProgram()
+	description.Work[0].Description = "different prose"
+	equivalent, err := controlprogram.Compile(description, nil)
+	if err != nil || equivalent.Fingerprint != base.Fingerprint {
+		t.Fatalf("work description changed executable identity: %v %s != %s", err, equivalent.Fingerprint, base.Fingerprint)
+	}
+	changed := incidentWorkProgram()
+	changed.Work[0].Instructions.Content += " Verify recovery."
+	digest := sha256.Sum256([]byte(changed.Work[0].Instructions.Content))
+	changed.Work[0].Instructions.SHA256 = hex.EncodeToString(digest[:])
+	semantic, err := controlprogram.Compile(changed, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if semantic.Fingerprint == base.Fingerprint {
+		t.Fatal("instruction asset change preserved executable identity")
+	}
+}
+
+func TestForegroundWorkRejectsUnboundAssetsInputsAndTransitions(t *testing.T) {
+	// control-law: every foreground-work dependency is declared and exactly referenced
+	for name, mutate := range map[string]func(*controlprogram.Document){
+		"unresolved-asset": func(value *controlprogram.Document) {
+			value.Work[0].Instructions.Content, value.Work[0].Instructions.SHA256 = "", ""
+		},
+		"unknown-entry-input": func(value *controlprogram.Document) { value.Work[0].Inputs[0].EntryInput = "missing" },
+		"unreferenced-work":   func(value *controlprogram.Document) { value.Transitions[0].Work = "" },
+		"unknown-work":        func(value *controlprogram.Document) { value.Transitions[0].Work = "missing" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			document := incidentWorkProgram()
+			mutate(&document)
+			if _, err := controlprogram.Compile(document, nil); err == nil {
+				t.Fatalf("%s was accepted", name)
+			}
+		})
 	}
 }
 
@@ -337,5 +401,41 @@ func TestArtifactRejectsGeneratedPathsOutsideHostSkillRoots(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("artifact accepted an arbitrary generated deletion path")
+	}
+}
+
+func TestArtifactBindsExactForegroundWorkAssets(t *testing.T) {
+	// control-law: runtime admits only the instruction and schema assets compiled into the artifact
+	repository := t.TempDir()
+	document := incidentWorkProgram()
+	files := map[string][]byte{
+		"flow.ts":           []byte("source"),
+		"package-lock.json": []byte("lock"),
+		"instructions.md":   []byte(document.Work[0].Instructions.Content),
+	}
+	for path, raw := range files {
+		if err := os.WriteFile(filepath.Join(repository, path), raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	compiled, err := controlprogram.Compile(document, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact, _, err := controlprogram.NewArtifact(compiled, controlprogram.ArtifactInput{
+		CompilerVersion: "compiler-1", SourcePath: "flow.ts", Source: files["flow.ts"],
+		DependencyLockPath: "package-lock.json", DependencyLock: files["package-lock.json"], GeneratedSkills: map[string][]byte{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := controlprogram.CheckArtifact(repository, artifact, "compiler-1", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, "instructions.md"), []byte("different instructions"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := controlprogram.CheckArtifact(repository, artifact, "compiler-1", nil, nil); err == nil || !strings.Contains(err.Error(), "work asset") {
+		t.Fatalf("changed work asset result = %v", err)
 	}
 }

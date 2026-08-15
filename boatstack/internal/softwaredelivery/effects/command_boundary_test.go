@@ -22,9 +22,11 @@ type boundaryRunner struct {
 	calls     int
 	err       error
 	output    []byte
+	outputs   [][]byte
 	directory string
 	name      string
 	arguments []string
+	history   [][]string
 }
 
 func (r *boundaryRunner) CombinedOutput(_ context.Context, directory, name string, arguments ...string) ([]byte, error) {
@@ -32,6 +34,10 @@ func (r *boundaryRunner) CombinedOutput(_ context.Context, directory, name strin
 	r.directory = directory
 	r.name = name
 	r.arguments = append([]string(nil), arguments...)
+	r.history = append(r.history, append([]string{name}, arguments...))
+	if len(r.outputs) >= r.calls {
+		return append([]byte(nil), r.outputs[r.calls-1]...), r.err
+	}
 	if r.output != nil {
 		return append([]byte(nil), r.output...), r.err
 	}
@@ -55,6 +61,65 @@ func writeBoundaryConfig(t *testing.T, command string) ports.ControllerLayout {
 func boundaryAdmission(transition catalog.Transition) protocol.Admission {
 	required := catalog.RequiredCapabilities(transition)
 	return protocol.Admission{RequiredCapabilities: required, EffectiveCapabilities: required}
+}
+
+func TestGitHubProviderAuthorityIsDerivedFromWriteCapability(t *testing.T) {
+	now := time.Unix(100, 0).UTC()
+	runner := &boundaryRunner{output: []byte(`{"nameWithOwner":"owner/repository","url":"https://github.com/owner/repository","viewerPermission":"WRITE"}`)}
+	boundary, err := NewNativeBoundaryWithRunner(runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fingerprint := strings.Repeat("a", 64)
+	receipt, err := boundary.ResolveGitHubProviderAuthority(context.Background(), t.TempDir(), fingerprint, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.Class != catalog.AuthorityProvider || receipt.Subject != "github:owner/repository" || receipt.Fingerprint != fingerprint || !receipt.ExpiresAt.Equal(now.Add(2*time.Minute)) {
+		t.Fatalf("provider receipt = %#v", receipt)
+	}
+	if runner.name != "gh" || strings.Join(runner.arguments, " ") != "repo view --json nameWithOwner,viewerPermission,url" {
+		t.Fatalf("provider observation command = %s %v", runner.name, runner.arguments)
+	}
+	renewed, err := boundary.ResolveGitHubProviderAuthority(context.Background(), t.TempDir(), fingerprint, now.Add(time.Minute))
+	if err != nil || renewed.ID != receipt.ID {
+		t.Fatalf("provider identity changed across renewal: first=%q renewed=%q err=%v", receipt.ID, renewed.ID, err)
+	}
+}
+
+func TestGitHubProviderAuthorityRejectsReadOnlyIdentity(t *testing.T) {
+	runner := &boundaryRunner{output: []byte(`{"nameWithOwner":"owner/repository","url":"https://github.com/owner/repository","viewerPermission":"READ"}`)}
+	boundary, _ := NewNativeBoundaryWithRunner(runner)
+	_, err := boundary.ResolveGitHubProviderAuthority(context.Background(), t.TempDir(), strings.Repeat("a", 64), time.Unix(100, 0).UTC())
+	if err == nil || !strings.Contains(err.Error(), "PROVIDER_AUTHORITY_DENIED") {
+		t.Fatalf("read-only provider authority error = %v", err)
+	}
+}
+
+func TestPublicationPreviewRequiresCommittedProductWorktree(t *testing.T) {
+	transition, _ := testprogram.StandardRegistry().Lookup("publication.preview")
+	admission := boundaryAdmission(transition)
+	admission.SourceRevision = "revision"
+	runner := &boundaryRunner{output: []byte(" M product.go\x00")}
+	boundary, _ := NewNativeBoundaryWithRunner(runner)
+	err := boundary.PrepareObservation(context.Background(), admission, transition, writeBoundaryConfig(t, "go test ./..."), &durable.State{})
+	if err == nil || !strings.Contains(err.Error(), "WORKSPACE_COMMIT_REQUIRED") || runner.calls != 1 {
+		t.Fatalf("dirty publication preview error=%v calls=%d", err, runner.calls)
+	}
+}
+
+func TestPublicationPreviewAcceptsExactCleanCommittedHead(t *testing.T) {
+	transition, _ := testprogram.StandardRegistry().Lookup("publication.preview")
+	admission := boundaryAdmission(transition)
+	admission.SourceRevision = "revision"
+	runner := &boundaryRunner{outputs: [][]byte{[]byte("?? .boatstack/publication/delivery.md\x00"), []byte("revision\n")}}
+	boundary, _ := NewNativeBoundaryWithRunner(runner)
+	if err := boundary.PrepareObservation(context.Background(), admission, transition, writeBoundaryConfig(t, "go test ./..."), &durable.State{}); err != nil {
+		t.Fatal(err)
+	}
+	if runner.calls != 2 {
+		t.Fatalf("publication preflight calls = %d", runner.calls)
+	}
 }
 
 func TestConfiguredBuildCommandMustPassBeforeGateInstallation(t *testing.T) {
@@ -152,7 +217,8 @@ func TestPublicationPreviewRejectsFieldTamperingUnderAnOldFingerprint(t *testing
 		t.Fatal(err)
 	}
 	preview := publicationPreview{
-		SchemaVersion: 1, DeliveryID: "delivery", BaseRef: "main", HeadRef: "feature",
+		SchemaVersion: 2, DeliveryID: "delivery", BaseRef: "main", HeadRef: "feature",
+		SourceRevision: "revision", WorktreeFingerprint: "worktree",
 		BodyPath: bodyPath, BodySHA256: sha256Bytes([]byte("reviewed body")), CreatedAt: time.Unix(10, 0).UTC(),
 	}
 	identity := preview
@@ -189,7 +255,11 @@ func TestPublicationExecutionUsesBoundBodyAndNoninteractiveTitle(t *testing.T) {
 	if err := os.WriteFile(bodyPath, body, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	preview := publicationPreview{SchemaVersion: 1, DeliveryID: "delivery", BaseRef: "main", HeadRef: "feature", BodyPath: bodyPath, BodySHA256: sha256Bytes(body), CreatedAt: time.Unix(10, 0).UTC()}
+	preview := publicationPreview{
+		SchemaVersion: 2, DeliveryID: "delivery", BaseRef: "main", HeadRef: "feature",
+		SourceRevision: "revision", WorktreeFingerprint: "worktree",
+		BodyPath: bodyPath, BodySHA256: sha256Bytes(body), CreatedAt: time.Unix(10, 0).UTC(),
+	}
 	identity := preview
 	identity.CreatedAt = time.Time{}
 	raw, err := json.Marshal(identity)
@@ -209,9 +279,8 @@ func TestPublicationExecutionUsesBoundBodyAndNoninteractiveTitle(t *testing.T) {
 		t.Fatal(err)
 	}
 	admission := protocol.Admission{
-		Invocation: model.InvocationContext{Ref: "refs/heads/feature"},
-		Objective:  model.Objective{DeliveryID: "delivery"},
-		Parameters: protocol.Parameters{{Name: "preview_fingerprint", Value: preview.Fingerprint}},
+		Invocation: model.InvocationContext{Ref: "refs/heads/feature"}, SourceRevision: "revision", WorktreeFingerprint: "worktree",
+		Objective: model.Objective{DeliveryID: "delivery"}, Parameters: protocol.Parameters{{Name: "preview_fingerprint", Value: preview.Fingerprint}},
 	}
 	admission.RequiredCapabilities = catalog.RequiredCapabilities(transition)
 	admission.EffectiveCapabilities = admission.RequiredCapabilities
@@ -221,6 +290,34 @@ func TestPublicationExecutionUsesBoundBodyAndNoninteractiveTitle(t *testing.T) {
 	want := []string{"pr", "create", "--base", "main", "--head", "feature", "--fill-first", "--body-file", bodyPath}
 	if runner.name != "gh" || strings.Join(runner.arguments, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("publication command = %s %q, want gh %q", runner.name, runner.arguments, want)
+	}
+	if len(runner.history) != 2 || strings.Join(runner.history[0], " ") != "git push origin revision:refs/heads/feature" {
+		t.Fatalf("publication push history = %v", runner.history)
+	}
+}
+
+func TestPublicationExecutionRejectsCommittedHeadDrift(t *testing.T) {
+	layout := writeBoundaryConfig(t, "go test ./...")
+	bodyPath := filepath.Join(layout.RepositoryRoot, "body.md")
+	body := []byte("reviewed body")
+	if err := os.WriteFile(bodyPath, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	preview := publicationPreview{
+		SchemaVersion: 2, DeliveryID: "delivery", BaseRef: "main", HeadRef: "feature",
+		SourceRevision: "old-revision", WorktreeFingerprint: "worktree",
+		BodyPath: bodyPath, BodySHA256: sha256Bytes(body), CreatedAt: time.Unix(10, 0).UTC(),
+	}
+	identity := preview
+	identity.CreatedAt = time.Time{}
+	raw, _ := json.Marshal(identity)
+	preview.Fingerprint = sha256Bytes(raw)
+	admission := protocol.Admission{
+		Invocation: model.InvocationContext{Ref: "refs/heads/feature"}, SourceRevision: "new-revision", WorktreeFingerprint: "worktree",
+		Objective: model.Objective{DeliveryID: "delivery"}, Parameters: protocol.Parameters{{Name: "preview_fingerprint", Value: preview.Fingerprint}},
+	}
+	if err := validatePublicationPreviewForAdmission(layout, admission, preview); err == nil || !strings.Contains(err.Error(), "exact committed HEAD") {
+		t.Fatalf("committed-head drift error = %v", err)
 	}
 }
 

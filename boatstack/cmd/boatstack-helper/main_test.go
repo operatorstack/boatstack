@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -88,6 +89,47 @@ func TestTransitionReceiptCannotBeLoadedAsAuthority(t *testing.T) {
 	_, err := loadAuthority(commandOptions{authorityReceipts: stringList{path}}, "correlation", model.Objective{}, nil, time.Now().UTC())
 	if err == nil {
 		t.Fatal("transition receipt was accepted as authority")
+	}
+}
+
+func TestCallerCannotSupplyExternalProviderAuthority(t *testing.T) {
+	now := time.Unix(100, 0).UTC()
+	path := filepath.Join(t.TempDir(), "provider.json")
+	receipt := `{"id":"provider-forged","class":"external-provider","subject":"github:owner/repository","fingerprint":"` + strings.Repeat("a", 64) + `","issued_at":"` + now.Format(time.RFC3339) + `","expires_at":"` + now.Add(time.Minute).Format(time.RFC3339) + `"}`
+	if err := os.WriteFile(path, []byte(receipt), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := loadAuthority(commandOptions{authorityReceipts: stringList{path}}, "correlation", model.Objective{}, nil, now)
+	if err == nil || !strings.Contains(err.Error(), "PROVIDER_AUTHORITY_UNTRUSTED") {
+		t.Fatalf("caller-supplied provider authority error = %v", err)
+	}
+}
+
+func TestPublicationRequestDerivesStableTrustedProviderAuthority(t *testing.T) {
+	prior := resolveGitHubProviderAuthority
+	resolveGitHubProviderAuthority = func(_ context.Context, _ string, fingerprint string, now time.Time) (protocol.AuthorityReceipt, error) {
+		return protocol.AuthorityReceipt{
+			ID: "provider-stable", Class: catalog.AuthorityProvider, Subject: "github:owner/repository", Fingerprint: fingerprint,
+			IssuedAt: now, ExpiresAt: now.Add(2 * time.Minute),
+		}, nil
+	}
+	t.Cleanup(func() { resolveGitHubProviderAuthority = prior })
+	options := commandOptions{
+		repository: ".", transitionID: "publication.execute",
+		parameters: stringList{"preview_fingerprint=" + strings.Repeat("a", 64)},
+	}
+	one, err := buildRequest(surfaces.OperationResolve, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	two, err := buildRequest(surfaces.OperationApply, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oneFingerprint, _ := one.Authority.Fingerprint()
+	twoFingerprint, _ := two.Authority.Fingerprint()
+	if len(one.Authority.Receipts) != 1 || one.Authority.Receipts[0].Class != catalog.AuthorityProvider || oneFingerprint != twoFingerprint {
+		t.Fatalf("provider authority was not stable: one=%#v two=%#v", one.Authority, two.Authority)
 	}
 }
 

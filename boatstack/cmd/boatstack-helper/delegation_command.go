@@ -19,6 +19,10 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
 )
 
+var resolveGitHubProviderAuthority = func(ctx context.Context, repository, previewFingerprint string, now time.Time) (protocol.AuthorityReceipt, error) {
+	return effects.NewNativeBoundary().ResolveGitHubProviderAuthority(ctx, repository, previewFingerprint, now)
+}
+
 func runFlowAuthorize(arguments []string) error {
 	flags := flag.NewFlagSet("flow authorize", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
@@ -258,7 +262,13 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 		if err != nil {
 			return resolved, err
 		}
-		rebound, changed, rebindErr := bindContinuationCandidate(ctx, bound, resolved)
+		rebound, changed, rebindErr := bindTrustedProviderCandidate(ctx, bound, resolved)
+		if rebindErr != nil {
+			return surfaces.Response{}, rebindErr
+		}
+		if !changed {
+			rebound, changed, rebindErr = bindContinuationCandidate(ctx, bound, resolved)
+		}
 		if rebindErr != nil {
 			return surfaces.Response{}, rebindErr
 		}
@@ -335,6 +345,21 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 	return applied, nil
 }
 
+func bindTrustedProviderCandidate(ctx context.Context, bound commandOptions, response surfaces.Response) (commandOptions, bool, error) {
+	if bound.transitionID != "" || response.Prescription != nil || response.Decision == nil ||
+		(response.Decision.Kind != supervisor.DecisionFrontier && response.Decision.Kind != supervisor.DecisionCandidate) ||
+		len(response.Decision.Candidates) != 1 || response.Decision.Candidates[0] != "publication.execute" {
+		return bound, false, nil
+	}
+	rebound := bound
+	rebound.transitionID = "publication.execute"
+	rebound, err := bindFlowEntry(ctx, rebound)
+	if err != nil {
+		return commandOptions{}, false, err
+	}
+	return rebound, true, nil
+}
+
 func bindContinuationCandidate(ctx context.Context, bound commandOptions, response surfaces.Response) (commandOptions, bool, error) {
 	if bound.transitionID != "" || response.Prescription != nil || response.Decision == nil || response.Decision.Kind != supervisor.DecisionCandidate || response.Decision.Transition == nil || len(response.Decision.Candidates) != 1 {
 		return bound, false, nil
@@ -381,5 +406,6 @@ func advanceContinuation(options *commandOptions, response surfaces.Response) er
 	options.requiredCapabilities = nil
 	options.effectiveCapabilities = nil
 	options.idempotencyKey = ""
+	options.trustedAuthorityReceipts = nil
 	return nil
 }

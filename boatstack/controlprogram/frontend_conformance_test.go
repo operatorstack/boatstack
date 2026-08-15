@@ -11,7 +11,10 @@ import (
 	"strings"
 	"testing"
 
+	boatstack "github.com/operatorstack/boatstack/boatstack"
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
+	"github.com/operatorstack/boatstack/boatstack/core"
+	"github.com/operatorstack/boatstack/boatstack/delivery"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
 )
 
@@ -83,6 +86,7 @@ func TestRepositoryOwnedSoftwareDeliveryFlowsShareOneRuntime(t *testing.T) {
 		{"product-delivery-a.flow.ts", 1, 1},
 		{"product-delivery-b.flow.ts", 2, 2},
 		{"product-delivery-c.flow.ts", 1, 6},
+		{"product-delivery-planning-package.flow.ts", 1, 21},
 	}
 	for _, test := range cases {
 		t.Run(test.fixture, func(t *testing.T) {
@@ -91,7 +95,7 @@ func TestRepositoryOwnedSoftwareDeliveryFlowsShareOneRuntime(t *testing.T) {
 			if commandErr != nil {
 				t.Fatalf("compile repository Flow: %v\n%s", commandErr, frontendRaw)
 			}
-			compiled, compileErr := controlprogram.Load(bytes.NewReader(frontendRaw), resolver)
+			compiled, compileErr := controlprogram.LoadWithAssets(bytes.NewReader(frontendRaw), resolver, controlprogram.RepositoryAssetResolver{Repository: filepath.Dir(moduleRoot)})
 			if compileErr != nil {
 				t.Fatal(compileErr)
 			}
@@ -106,7 +110,41 @@ func TestRepositoryOwnedSoftwareDeliveryFlowsShareOneRuntime(t *testing.T) {
 			if len(compiled.Document.Entries) != test.entries || len(manifest.Transitions) != test.transitions {
 				t.Fatalf("entries=%d transitions=%d", len(compiled.Document.Entries), len(manifest.Transitions))
 			}
+			if test.fixture == "product-delivery-planning-package.flow.ts" {
+				if _, compileErr := delivery.Compile(context.Background(), delivery.CompileRequest{KernelVersion: boatstack.Version, Core: core.System(), Runtime: definition, Settings: map[string]string{"fixture": test.fixture}}); compileErr != nil {
+					t.Fatalf("compile repository Flow runtime: %v", compileErr)
+				}
+			}
 		})
+	}
+}
+
+func TestDomainNeutralFrontendDeclaresForegroundWorkWithoutSoftwareDelivery(t *testing.T) {
+	// control-law: foreground work is a domain-neutral requirement rather than a delivery effect
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("cannot locate foreground work fixture")
+	}
+	moduleRoot := filepath.Clean(filepath.Join(filepath.Dir(file), ".."))
+	repositoryRoot := filepath.Dir(moduleRoot)
+	frontend := filepath.Join(repositoryRoot, "node_modules", ".bin", "boatstack-flow-frontend")
+	if runtime.GOOS == "windows" {
+		frontend += ".cmd"
+	}
+	if _, err := os.Stat(frontend); err != nil {
+		t.Skip("Flow frontend dependencies are not installed")
+	}
+	source := filepath.Join(moduleRoot, "testdata", "control-programs", "incident-response-work.flow.ts")
+	raw, err := exec.Command(frontend, source).CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile foreground work fixture: %v\n%s", err, raw)
+	}
+	compiled, err := controlprogram.LoadWithAssets(bytes.NewReader(raw), nil, controlprogram.RepositoryAssetResolver{Repository: repositoryRoot})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(compiled.Document.Work) != 1 || compiled.Document.Transitions[0].Work != "diagnose" || compiled.Document.Work[0].Instructions.Content == "" || compiled.Document.Work[0].Outputs[0].Schema.Content == "" {
+		t.Fatalf("compiled foreground work = %#v", compiled.Document.Work)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/delivery"
 	"github.com/operatorstack/boatstack/boatstack/flow/standard"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
+	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
 // Definition is a trusted adapter. Repository IR selects bindings and adds
@@ -45,6 +46,10 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 	operatorByID := map[string]controlprogram.Operator{}
 	for _, operator := range d.compiled.Document.Operators {
 		operatorByID[operator.ID] = operator
+	}
+	workByID := map[string]controlprogram.WorkContract{}
+	for _, work := range d.compiled.Document.Work {
+		workByID[work.ID] = work
 	}
 	objectives := map[model.TargetID]EntryObjective{}
 	contracts := map[model.TargetID]delivery.ObjectiveContract{}
@@ -86,6 +91,17 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 		transition.TargetConditions = append(transition.TargetConditions, target...)
 		transition.Priority = declaration.Priority
 		transition.ExecutionContext = operator.ExecutionContext
+		if declaration.Work != "" {
+			work, exists := workByID[declaration.Work]
+			if !exists {
+				return delivery.ProgramRuntimeManifest{}, fmt.Errorf("transition %q references unknown foreground work %q", declaration.ID, declaration.Work)
+			}
+			transition.Work, err = runtimeWorkContract(work)
+			if err != nil {
+				return delivery.ProgramRuntimeManifest{}, fmt.Errorf("transition %q foreground work: %w", declaration.ID, err)
+			}
+			transition.OwnedResources = append(transition.OwnedResources, "foreground-work-"+transition.Work.ID)
+		}
 		for _, authority := range declaration.Requires.Authorities {
 			transition.AuthorityAll = append(transition.AuthorityAll, delivery.AuthorityClass(authority))
 		}
@@ -133,6 +149,36 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 	base.Transitions, base.OwnedResources, base.Effects, base.Verifiers = selected, resources, effects, verifiers
 	base.Capabilities, base.RecoveryTransitions, base.Settings = capabilities, recoveries, settings
 	return base, nil
+}
+
+func runtimeWorkContract(declaration controlprogram.WorkContract) (*delivery.WorkContract, error) {
+	work := &delivery.WorkContract{
+		ID: declaration.ID, InstructionPath: declaration.Instructions.Path,
+		InstructionSHA256: declaration.Instructions.SHA256, InstructionContent: declaration.Instructions.Content,
+	}
+	for _, input := range declaration.Inputs {
+		work.Inputs = append(work.Inputs, delivery.WorkInput{ID: input.ID, EntryInput: input.EntryInput})
+	}
+	for _, output := range declaration.Outputs {
+		runtimeOutput := delivery.WorkOutput{ID: output.ID, Path: output.Path, MediaType: output.MediaType, Required: output.Required, MaxBytes: output.MaxBytes}
+		if output.Schema != nil {
+			runtimeOutput.SchemaPath, runtimeOutput.SchemaSHA256, runtimeOutput.SchemaContent = output.Schema.Path, output.Schema.SHA256, output.Schema.Content
+		}
+		work.Outputs = append(work.Outputs, runtimeOutput)
+	}
+	fingerprint, err := general.Fingerprint(struct {
+		ID                 string                `json:"id"`
+		InstructionPath    string                `json:"instruction_path"`
+		InstructionSHA256  string                `json:"instruction_sha256"`
+		InstructionContent string                `json:"instruction_content"`
+		Inputs             []delivery.WorkInput  `json:"inputs,omitempty"`
+		Outputs            []delivery.WorkOutput `json:"outputs"`
+	}{work.ID, work.InstructionPath, work.InstructionSHA256, work.InstructionContent, work.Inputs, work.Outputs})
+	if err != nil {
+		return nil, err
+	}
+	work.Fingerprint = fingerprint
+	return work, nil
 }
 
 func uniqueAuthorities(values []delivery.AuthorityClass) []delivery.AuthorityClass {

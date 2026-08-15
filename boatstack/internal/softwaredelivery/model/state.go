@@ -11,6 +11,8 @@ import (
 
 const SnapshotSchemaVersion = 5
 
+const foregroundWorkContextIdentity = "foreground-work-context"
+
 type ProtocolPhase string
 
 const (
@@ -130,6 +132,7 @@ const (
 	PlanAbsent            PlanState = "absent"
 	PlanDraft             PlanState = "draft"
 	PlanValid             PlanState = "valid"
+	PlanPackageApproved   PlanState = "package-approved"
 	PlanApproved          PlanState = "approved"
 	PlanLocked            PlanState = "locked"
 	PlanStale             PlanState = "stale"
@@ -139,7 +142,7 @@ const (
 
 func (s PlanState) Valid() bool {
 	switch s {
-	case PlanAbsent, PlanDraft, PlanValid, PlanApproved, PlanLocked, PlanStale, PlanInvalid, PlanAmendmentRequired:
+	case PlanAbsent, PlanDraft, PlanValid, PlanPackageApproved, PlanApproved, PlanLocked, PlanStale, PlanInvalid, PlanAmendmentRequired:
 		return true
 	default:
 		return false
@@ -590,6 +593,29 @@ func Canonicalize(observation Observation) (Snapshot, error) {
 		}
 	}
 	snapshot := Snapshot{Observation: observation}
+	fingerprint, err := observationFingerprint(observation)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	snapshot.Fingerprint = fingerprint
+	return snapshot, nil
+}
+
+// ForegroundWorkContextFingerprint binds long-running work to the durable and
+// admission-relevant observation while excluding invocation-local driver IDs.
+// A restart may change controller, host, correlation, or the executable's
+// installation path without changing the repository, runtime, program, or
+// control state that the work was authorized to inspect.
+func ForegroundWorkContextFingerprint(snapshot Snapshot) (string, error) {
+	projection := snapshot.Observation
+	projection.Invocation.ControllerID = foregroundWorkContextIdentity
+	projection.Invocation.Host = foregroundWorkContextIdentity
+	projection.Invocation.Correlation = foregroundWorkContextIdentity
+	projection.Invocation.RuntimePath = ""
+	return observationFingerprint(projection)
+}
+
+func observationFingerprint(observation Observation) (string, error) {
 	projection := observation
 	projection.ObservedAt = time.Time{}
 	zeroEvidenceTimes(&projection.Program)
@@ -619,11 +645,10 @@ func Canonicalize(observation Observation) (Snapshot, error) {
 	}
 	raw, err := json.Marshal(Snapshot{Observation: projection})
 	if err != nil {
-		return Snapshot{}, fmt.Errorf("snapshot: canonical encoding: %w", err)
+		return "", fmt.Errorf("snapshot: canonical encoding: %w", err)
 	}
 	digest := sha256.Sum256(raw)
-	snapshot.Fingerprint = hex.EncodeToString(digest[:])
-	return snapshot, nil
+	return hex.EncodeToString(digest[:]), nil
 }
 
 func zeroEvidenceTimes[T any](fact *Fact[T]) {

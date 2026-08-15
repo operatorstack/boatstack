@@ -36,8 +36,9 @@ func TestGeneratedSkillsProjectOnlyDeclaredEntriesWithHostParity(t *testing.T) {
 	}
 	value := string(codex)
 	for _, contract := range []string{
-		"--flow product-delivery --entry run", "same run ID", "Nothing continues in the\nbackground", "no merge or deploy",
+		"--flow product-delivery --entry run", "--repository-authority", "same run ID", "Nothing continues in the\nbackground", "no merge or deploy",
 		"BOATSTACK_LAUNCHER_NOT_FOUND", ".boatstack/runtime.json", "Never run it", "creates no\nFlow run ID",
+		"WORKSPACE_COMMIT_REQUIRED", "Commit only the intended delivery changes", "Never fabricate an external-provider receipt",
 	} {
 		if !strings.Contains(value, contract) {
 			t.Fatalf("generated skill lacks %q", contract)
@@ -115,6 +116,29 @@ func TestGeneratedSkillExplanationIsEntryOptInWithHostParity(t *testing.T) {
 	claude := string(files[".claude/skills/product-delivery-run/SKILL.md"])
 	if strings.ReplaceAll(codex, "--host codex", "--host HOST") != strings.ReplaceAll(claude, "--host claude", "--host HOST") {
 		t.Fatal("Codex and Claude diagnostic projections differ")
+	}
+}
+
+func TestGeneratedSkillsProjectForegroundWorkProtocolWithHostParity(t *testing.T) {
+	// control-law: every supported agent host projects the same foreground-work boundary
+	compiled := controlprogram.Compiled{Document: controlprogram.Document{
+		Program: controlprogram.Program{ID: "incident-response"},
+		Work:    []controlprogram.WorkContract{{ID: "diagnose"}},
+		Entries: []controlprogram.Entry{{ID: "respond", Target: "mitigated"}},
+	}}
+	files, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	codex := string(files[".agents/skills/incident-response-respond/SKILL.md"])
+	claude := string(files[".claude/skills/incident-response-respond/SKILL.md"])
+	for _, contract := range []string{"not as a second Flow", "flow work input-required", "flow work answer", "flow work complete", "flow work block", "An answer is evidence, never authority", "Never edit the work record directly"} {
+		if !strings.Contains(codex, contract) {
+			t.Fatalf("generated foreground-work skill lacks %q", contract)
+		}
+	}
+	if strings.ReplaceAll(codex, "--host codex", "--host HOST") != strings.ReplaceAll(claude, "--host claude", "--host HOST") {
+		t.Fatal("Codex and Claude foreground-work projections differ")
 	}
 }
 
