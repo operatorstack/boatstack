@@ -271,7 +271,20 @@ class RepositoryContract(unittest.TestCase):
         ci_name = re.search(r"(?m)^name:\s*(.+?)\s*$", ci)
         self.assertIsNotNone(ci_name)
         self.assertEqual(ci_name.group(1), "CI")
-        self.assertIn(f'workflows: ["{ci_name.group(1)}"]', automatic)
+        self.assertNotIn("workflow_run:", automatic)
+        self.assertIn('cron: "0 2 * * *"', automatic)
+        self.assertIn("workflow_dispatch:", automatic)
+        self.assertIn("actions: read", automatic)
+        self.assertIn('--workflow .github/workflows/ci.yml', automatic)
+        self.assertIn('--event push', automatic)
+        self.assertIn('--commit "$RELEASE_SOURCE"', automatic)
+        self.assertIn('git ls-remote origin refs/heads/main', automatic)
+        self.assertGreaterEqual(automatic.count('git ls-remote origin refs/heads/main'), 2)
+        self.assertIn("git fetch --force --tags origin", automatic)
+        self.assertIn('git ls-remote --exit-code --tags origin "refs/tags/$next_tag"', automatic)
+        self.assertIn("release_candidate.py", automatic)
+        self.assertIn("cancel-in-progress: false", automatic)
+        self.assertIn("no verified unreleased changes; no release was created", automatic)
 
     def test_manual_release_is_prerelease_only_and_exact_source_bound(self) -> None:
         # control-law: branch-prerelease-publishes-only-an-exact-new-rc-source
