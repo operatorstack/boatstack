@@ -306,6 +306,13 @@ go build ./...
 Every pull request that changes Boatstack adds an append-only release note. See
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
+### TypeScript SDK documentation
+
+The [TypeScript Flow authoring reference](https://operatorstack.github.io/boatstack/)
+documents both `@operatorstack/boatstack` and
+`@operatorstack/boatstack-software-delivery`. Build the same site locally with
+`npm run docs:build`, then open `build/docs/html/index.html`.
+
 ## Status
 
 Boatstack is being built in public and is not ready to promise compatibility.

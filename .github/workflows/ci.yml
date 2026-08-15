@@ -27,8 +27,8 @@ jobs:
         with:
           go-version-file: boatstack/go.mod
           cache-dependency-path: boatstack/go.sum
-      - name: Build TypeScript frontends
-        run: npm ci && npm run build:flow-sdk
+      - name: Build TypeScript frontends and documentation
+        run: npm ci && npm run docs:check
       - name: Prove frontend canonical equivalence
         working-directory: boatstack
         env:

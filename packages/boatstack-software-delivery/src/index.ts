@@ -1,3 +1,14 @@
+/**
+ * Trusted software-delivery bindings for repository-owned Boatstack Flows.
+ *
+ * Repositories choose lifecycle membership, priorities, targets, entries, and
+ * additional mandatory authority. Boatstack's trusted binding registry owns
+ * effects, handlers, minimum capability, authority, verification, and recovery
+ * semantics.
+ *
+ * @packageDocumentation
+ */
+
 import {
   always,
   facet,
@@ -12,8 +23,10 @@ import {
 } from "@operatorstack/boatstack";
 
 const bindingPrefix = "software-delivery/";
+/** Trusted resolver reference used by {@link inbox}. */
 export const planInboxResolver = "software-delivery.plan-inbox";
 
+/** State facets declared by the trusted software-delivery domain adapter. */
 export const softwareDeliveryFacets: FacetDefinition[] = [
   "phase",
   "program",
@@ -47,6 +60,7 @@ export const softwareDeliveryFacets: FacetDefinition[] = [
   "worktree_fingerprint",
 ].map((id) => facet(id, "string"));
 
+/** Evidence relations declared by the software-delivery domain adapter. */
 export const softwareDeliveryEvidence: EvidenceDefinition[] = [
   { id: "plan-evidence", subject: "plan", kind: "artifact" },
   {
@@ -56,15 +70,38 @@ export const softwareDeliveryEvidence: EvidenceDefinition[] = [
   },
 ];
 
+/** Selects a trusted software-delivery operation and its repository priority. */
 export interface TrustedStep {
   id: string;
   priority: number;
 }
 
+/**
+ * Repository-owned strengthening applied to a trusted transition.
+ *
+ * Authorities listed here are additional mandatory requirements. They cannot
+ * replace trusted alternatives, weaken provider requirements, or grant
+ * authority.
+ */
 export interface TrustedTransitionOptions {
   requires?: { authorities?: string[] };
 }
 
+/**
+ * Requests trusted run-scoped autonomy delegation for an entry.
+ *
+ * This declaration does not grant authority. Boatstack materializes authority
+ * only from a runtime-owned authorization bound to the exact run.
+ *
+ * @example
+ * ```ts
+ * entry({
+ *   id: "run",
+ *   target: "published-pr",
+ *   delegation: trustedDelegation("autonomy"),
+ * })
+ * ```
+ */
 export function trustedDelegation(
   authority: "autonomy",
 ): DelegationBindingDefinition {
@@ -74,6 +111,12 @@ export function trustedDelegation(
   };
 }
 
+/**
+ * Requires exactly one regular Markdown plan from a repository inbox.
+ *
+ * Input selection happens before managed run state is created. Zero or several
+ * eligible plans produce a typed blocker rather than an arbitrary choice.
+ */
 export function inbox(path: string): EntryInputDefinition {
   return {
     id: "plan",
@@ -84,16 +127,24 @@ export function inbox(path: string): EntryInputDefinition {
   };
 }
 
+/** Resolves one lifecycle step through the trusted operator registry. */
 export function trustedOperator(step: TrustedStep): OperatorDefinition {
   return operator(step.id, {
     binding: { reference: `${bindingPrefix}${step.id}`, version: "1" },
   });
 }
 
+/** Resolves a lifecycle list through the trusted operator registry. */
 export function trustedOperators(steps: TrustedStep[]): OperatorDefinition[] {
   return steps.map(trustedOperator);
 }
 
+/**
+ * Declares one repository-selected transition backed by a trusted operation.
+ *
+ * The repository may set priority and add mandatory authority through
+ * `options.requires`. It cannot override the trusted effect or handler.
+ */
 export function trustedTransition(
   step: TrustedStep,
   options: TrustedTransitionOptions = {},
@@ -106,6 +157,12 @@ export function trustedTransition(
   });
 }
 
+/**
+ * Declares trusted transitions for a lifecycle list.
+ *
+ * Pass the same lifecycle used by {@link trustedOperators}; compilation rejects
+ * unresolved operator references, but authors should keep this pairing explicit.
+ */
 export function trustedTransitions(
   steps: TrustedStep[],
   options: TrustedTransitionOptions = {},

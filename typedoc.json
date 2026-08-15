@@ -1,0 +1,41 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "name": "Boatstack TypeScript SDK",
+  "entryPoints": [
+    "packages/boatstack",
+    "packages/boatstack-software-delivery"
+  ],
+  "entryPointStrategy": "packages",
+  "packageOptions": {
+    "entryPoints": ["src/index.ts"],
+    "entryPointStrategy": "resolve",
+    "excludeInternal": true,
+    "readme": "none",
+    "validation": {
+      "invalidLink": true,
+      "notExported": true,
+      "notDocumented": true
+    },
+    "requiredToBeDocumented": ["Function", "Interface", "TypeAlias", "Variable"]
+  },
+  "readme": "docs/product-delivery/index.md",
+  "projectDocuments": [
+    "docs/product-delivery/writing-a-flow.md",
+    "docs/product-delivery/targets-and-entries.md",
+    "docs/product-delivery/authority-and-delegation.md",
+    "docs/product-delivery/diagnostics.md",
+    "docs/product-delivery/documentation-architecture.md"
+  ],
+  "out": "build/docs/html",
+  "json": "build/docs/api.json",
+  "cleanOutputDir": true,
+  "githubPages": true,
+  "includeVersion": false,
+  "searchInComments": true,
+  "searchInDocuments": true,
+  "treatWarningsAsErrors": true,
+  "treatValidationWarningsAsErrors": true,
+  "navigationLinks": {
+    "Repository": "https://github.com/operatorstack/boatstack"
+  }
+}
