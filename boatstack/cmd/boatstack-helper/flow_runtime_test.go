@@ -52,6 +52,16 @@ func runFlowGit(t *testing.T, repository string, arguments ...string) {
 	}
 }
 
+func runFlowGitOutput(t *testing.T, repository string, arguments ...string) string {
+	t.Helper()
+	command := exec.Command("git", append([]string{"-C", repository}, arguments...)...)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", arguments, err, output)
+	}
+	return strings.TrimSpace(string(output))
+}
+
 func captureRunOutput(t *testing.T, arguments ...string) ([]byte, error) {
 	t.Helper()
 	return captureStdout(t, func() error { return run(arguments) })
@@ -1043,14 +1053,19 @@ func repositoryBytes(t *testing.T, root string) map[string]string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	result[".git/@semantic/HEAD"] = runFlowGitOutput(t, root, "rev-parse", "--verify", "HEAD")
+	result[".git/@semantic/refs"] = runFlowGitOutput(t, root, "for-each-ref", "--format=%(refname)%09%(objectname)")
 	return result
 }
 
 func TestRepositoryBytesExcludesGitInternals(t *testing.T) {
 	repository := t.TempDir()
+	runFlowGit(t, repository, "init")
 	writeFixture(t, repository, ".git/objects/maintenance.lock", []byte("transient"))
 	writeFixture(t, repository, ".boatstack/controller.json", []byte("managed"))
 	writeFixture(t, repository, "README.md", []byte("repository"))
+	runFlowGit(t, repository, "add", ".boatstack/controller.json", "README.md")
+	runFlowGit(t, repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-q", "-m", "fixture")
 
 	snapshot := repositoryBytes(t, repository)
 	if _, exists := snapshot[".git/objects/maintenance.lock"]; exists {
@@ -1058,6 +1073,24 @@ func TestRepositoryBytesExcludesGitInternals(t *testing.T) {
 	}
 	if snapshot[".boatstack/controller.json"] != "managed" || snapshot["README.md"] != "repository" {
 		t.Fatalf("repository snapshot omitted managed or ordinary files: %#v", snapshot)
+	}
+	if snapshot[".git/@semantic/HEAD"] == "" || snapshot[".git/@semantic/refs"] == "" {
+		t.Fatalf("repository snapshot omitted semantic Git state: %#v", snapshot)
+	}
+}
+
+func TestRepositoryBytesDetectsSemanticGitMutation(t *testing.T) {
+	repository := t.TempDir()
+	runFlowGit(t, repository, "init")
+	writeFixture(t, repository, "README.md", []byte("repository"))
+	runFlowGit(t, repository, "add", "README.md")
+	runFlowGit(t, repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-q", "-m", "fixture")
+
+	before := repositoryBytes(t, repository)
+	runFlowGit(t, repository, "update-ref", "refs/heads/semantic-test", "HEAD")
+	after := repositoryBytes(t, repository)
+	if reflect.DeepEqual(before, after) {
+		t.Fatal("repository snapshot missed semantic Git ref mutation")
 	}
 }
 

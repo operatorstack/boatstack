@@ -8,7 +8,7 @@
     "build:flow-sdk": "tsc -b packages/boatstack packages/boatstack-software-delivery",
     "test:flow-sdk": "npm run build:flow-sdk",
     "docs:build": "npm run build:flow-sdk && typedoc",
-    "docs:check": "npm run docs:build && node scripts/check-docs-api.mjs"
+    "docs:check": "npm run docs:build && node --test scripts/check-docs-api.test.mjs && node scripts/check-docs-api.mjs"
   },
   "devDependencies": {
     "typedoc": "0.28.20",

@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 
-const model = JSON.parse(await readFile("build/docs/api.json", "utf8"));
 const required = new Map([
   ["@operatorstack/boatstack", ["defineFlow", "entry", "marked"]],
   [
@@ -9,37 +9,43 @@ const required = new Map([
   ],
 ]);
 
-function reflectionNames(node, names = new Set()) {
-  if (Array.isArray(node)) {
-    for (const value of node) reflectionNames(value, names);
-  } else if (node && typeof node === "object") {
-    if (typeof node.name === "string") names.add(node.name);
-    for (const value of Object.values(node)) reflectionNames(value, names);
-  }
-  return names;
-}
+const FUNCTION_REFLECTION = 64;
 
-const packages = new Map(
-  (model.children ?? []).map((child) => [child.name, reflectionNames(child)]),
-);
-const failures = [];
+export function documentationFailures(model) {
+  const packages = new Map(
+    (model.children ?? []).map((child) => [
+      child.name,
+      new Set(
+        (child.children ?? [])
+          .filter((reflection) => reflection.kind === FUNCTION_REFLECTION)
+          .map((reflection) => reflection.name),
+      ),
+    ]),
+  );
+  const failures = [];
 
-for (const [packageName, exports] of required) {
-  const names = packages.get(packageName);
-  if (!names) {
-    failures.push(`missing documented package ${packageName}`);
-    continue;
-  }
-  for (const exportName of exports) {
-    if (!names.has(exportName)) {
-      failures.push(`missing documented export ${packageName}.${exportName}`);
+  for (const [packageName, exports] of required) {
+    const names = packages.get(packageName);
+    if (!names) {
+      failures.push(`missing documented package ${packageName}`);
+      continue;
+    }
+    for (const exportName of exports) {
+      if (!names.has(exportName)) {
+        failures.push(`missing documented export ${packageName}.${exportName}`);
+      }
     }
   }
+  return failures;
 }
 
-if (failures.length > 0) {
-  console.error(failures.join("\n"));
-  process.exit(1);
-}
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const model = JSON.parse(await readFile("build/docs/api.json", "utf8"));
+  const failures = documentationFailures(model);
+  if (failures.length > 0) {
+    console.error(failures.join("\n"));
+    process.exit(1);
+  }
 
-console.log("required public TypeScript SDK exports are documented");
+  console.log("required public TypeScript SDK exports are documented");
+}
