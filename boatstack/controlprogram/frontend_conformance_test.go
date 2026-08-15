@@ -111,6 +111,17 @@ func TestRepositoryOwnedSoftwareDeliveryFlowsShareOneRuntime(t *testing.T) {
 				t.Fatalf("entries=%d transitions=%d", len(compiled.Document.Entries), len(manifest.Transitions))
 			}
 			if test.fixture == "product-delivery-planning-package.flow.ts" {
+				referenceRaw, readErr := os.ReadFile(filepath.Join(moduleRoot, "testdata", "control-programs", "product-delivery-planning-package.raw.json"))
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				reference, referenceErr := controlprogram.LoadWithAssets(bytes.NewReader(referenceRaw), resolver, controlprogram.RepositoryAssetResolver{Repository: filepath.Dir(moduleRoot)})
+				if referenceErr != nil {
+					t.Fatal(referenceErr)
+				}
+				if compiled.Fingerprint != reference.Fingerprint {
+					t.Fatalf("checked product-delivery IR is stale: frontend=%s checked=%s", compiled.Fingerprint, reference.Fingerprint)
+				}
 				var packageProducer, publicationProducer controlprogram.ParameterProducer
 				for _, transition := range compiled.Document.Transitions {
 					for _, parameter := range transition.Parameters {

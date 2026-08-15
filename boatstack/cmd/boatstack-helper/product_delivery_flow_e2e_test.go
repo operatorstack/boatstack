@@ -33,6 +33,9 @@ func TestExactProductDeliveryFlowReachesPublishedPRWithFakeProvider(t *testing.T
 	// control-law: the exact reference product-delivery Flow can advance from
 	// one inbox plan to its marked target without human-produced deterministic
 	// parameters. Provider authority is exercised unchanged through a fake CLI.
+	if runtime.GOOS == "windows" {
+		t.Skip("the POSIX fake publication provider is exercised by the Linux and macOS jobs")
+	}
 	stateRoot, runtimeHome := t.TempDir(), t.TempDir()
 	t.Setenv("BOATSTACK_STATE_ROOT", stateRoot)
 	t.Setenv(boatstackruntime.HomeEnvironment, runtimeHome)
@@ -334,11 +337,10 @@ func exactProductDeliveryFixture(t *testing.T) (controlprogram.Document, []byte,
 	}
 	moduleRoot := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
 	repositoryRoot := filepath.Dir(moduleRoot)
-	frontend := filepath.Join(repositoryRoot, "node_modules", ".bin", "boatstack-flow-frontend")
 	source := filepath.Join(moduleRoot, "testdata", "control-programs", "product-delivery-planning-package.flow.ts")
-	raw, err := exec.Command(frontend, source).CombinedOutput()
+	raw, err := os.ReadFile(filepath.Join(moduleRoot, "testdata", "control-programs", "product-delivery-planning-package.raw.json"))
 	if err != nil {
-		t.Fatalf("compile exact product-delivery fixture: %v\n%s", err, raw)
+		t.Fatalf("read checked exact product-delivery fixture: %v", err)
 	}
 	resolver, err := softwareflow.NewResolver(context.Background())
 	if err != nil {

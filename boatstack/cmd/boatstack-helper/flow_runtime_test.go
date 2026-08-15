@@ -99,16 +99,9 @@ func flowRepositoryWithHumanSlice(t *testing.T) string {
 func TestFlowEntryCanonicalizesRepositoryRoot(t *testing.T) {
 	repository := flowRepository(t)
 	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
-	workingDirectory, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	relative, err := filepath.Rel(workingDirectory, repository)
-	if err != nil {
-		t.Fatal(err)
-	}
+	noncanonical := repository + string(os.PathSeparator) + "."
 	bound, err := bindFlowEntry(context.Background(), commandOptions{
-		repository: relative, programID: "product-delivery", entryID: "run", host: "codex",
+		repository: noncanonical, programID: "product-delivery", entryID: "run", host: "codex",
 	})
 	if err != nil {
 		t.Fatal(err)
