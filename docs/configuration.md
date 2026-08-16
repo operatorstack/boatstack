@@ -78,6 +78,13 @@ proposed. It does not prove approval, identity ownership, provider permission,
 or external-provider authority. In particular, resolving an actor through
 `gh` does not create a GitHub provider receipt.
 
+Before initialization, or while `configuration.mutate` or
+`configuration.reconcile` repairs unverified configuration, no trusted
+descriptor is available. Boatstack preserves the human authority question but
+omits `human_identity`. The host must ask for an explicit actor and must not
+infer one. A missing identity on any other human authority boundary is an
+error.
+
 The canonical snapshot carries this policy projection as controlling evidence.
 `human` plan approval rejects autonomy receipts. `human-or-autonomy` accepts
 either class. When independent high-risk review is enabled, the observer derives

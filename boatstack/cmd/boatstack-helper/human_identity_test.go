@@ -119,12 +119,39 @@ func TestHumanIdentityIsAttachedOnlyToHumanAuthorityQuestions(t *testing.T) {
 
 func TestPreconfigurationInitializationUsesOnlyExplicitActorBootstrap(t *testing.T) {
 	response := surfaces.Response{Question: &surfaces.Question{TransitionID: "installation.initialize", Authority: []catalog.AuthorityClass{catalog.AuthorityHuman}}}
-	if err := attachHumanIdentity(surfaces.Request{}, &response); err != nil || response.Question.HumanIdentity != nil {
+	if err := attachHumanIdentity(surfaces.Request{ControlBundle: &boatstackruntime.ControlBundleContract{}}, &response); err != nil || response.Question.HumanIdentity != nil {
 		t.Fatalf("preconfiguration bootstrap identity = %#v err=%v", response.Question.HumanIdentity, err)
 	}
 	response.Question.TransitionID = "plan.approve"
 	if err := attachHumanIdentity(surfaces.Request{}, &response); err == nil || !strings.Contains(err.Error(), "HUMAN_IDENTITY_UNBOUND") {
 		t.Fatalf("configured human boundary did not fail closed: %v", err)
+	}
+}
+
+func TestUnverifiedConfigurationRepairPreservesExplicitActorQuestion(t *testing.T) {
+	stale := &model.Snapshot{Observation: model.Observation{Configuration: model.Known(model.ConfigurationStale, model.Evidence{
+		Source: "configuration:test", Fingerprint: strings.Repeat("a", 64),
+	})}}
+	for _, transitionID := range []catalog.TransitionID{"configuration.mutate", "configuration.reconcile"} {
+		response := surfaces.Response{Snapshot: stale, Question: &surfaces.Question{
+			TransitionID: transitionID, Authority: []catalog.AuthorityClass{catalog.AuthorityHuman},
+		}}
+		if err := attachHumanIdentity(surfaces.Request{}, &response); err != nil || response.Question.HumanIdentity != nil {
+			t.Fatalf("%s repair question = %#v, err=%v", transitionID, response.Question, err)
+		}
+	}
+
+	response := surfaces.Response{Snapshot: stale, Question: &surfaces.Question{
+		TransitionID: "plan.approve", Authority: []catalog.AuthorityClass{catalog.AuthorityHuman},
+	}}
+	if err := attachHumanIdentity(surfaces.Request{}, &response); err == nil || !strings.Contains(err.Error(), "HUMAN_IDENTITY_UNBOUND") {
+		t.Fatalf("ordinary stale-config question did not fail closed: %v", err)
+	}
+
+	response.Question.TransitionID = "configuration.mutate"
+	response.ProgramChange = &surfaces.ProgramChange{}
+	if err := attachHumanIdentity(surfaces.Request{}, &response); err == nil || !strings.Contains(err.Error(), "HUMAN_IDENTITY_UNBOUND") {
+		t.Fatalf("program change escaped identity binding through repair question: %v", err)
 	}
 }
 

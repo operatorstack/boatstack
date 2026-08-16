@@ -358,6 +358,45 @@ func writeAdmittedFlowProgramState(t *testing.T, repository, programFingerprint 
 	}
 }
 
+func writeVerifiedFlowConfigurationState(t *testing.T, repository string) {
+	t.Helper()
+	resolver, err := plant.NewResolver("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	invoking, err := resolver.ResolveInvocation(context.Background(), repository, "codex", "fixture-verified-configuration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, invoking, err := resolver.ResolveLayout(context.Background(), invoking)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configRaw, err := os.ReadFile(layout.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, configFingerprint, err := protocol.ProjectConfigFingerprint(configRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := durable.Default(invoking, time.Now().UTC())
+	policy := config.ControlPolicy()
+	state.Configuration, state.ConfigFingerprint = model.ConfigurationVerified, configFingerprint
+	state.PlanApprovalPolicy, state.VisualEvidencePolicy, state.ExternalEffectPolicy = policy.PlanApproval, policy.VisualEvidence, policy.ExternalEffectAuthority
+	state.IndependentReview, state.EnabledHosts = policy.IndependentReviewForHighRisk, policy.Hosts
+	raw, err := durable.EncodeState(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(layout.StatePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(layout.StatePath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func captureRunOutput(t *testing.T, arguments ...string) ([]byte, error) {
 	t.Helper()
 	return captureStdout(t, func() error { return run(arguments) })
@@ -2474,6 +2513,7 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	runFlowGit(t, repository, "add", ".")
 	runFlowGit(t, repository, "commit", "-q", "-m", "fixture")
 	t.Setenv("BOATSTACK_STATE_ROOT", t.TempDir())
+	writeVerifiedFlowConfigurationState(t, repository)
 
 	bound, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex", delegationRequestProjection: true})
 	if err != nil {
@@ -2636,6 +2676,7 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	}
 	otherWorktree := filepath.Join(t.TempDir(), "other-worktree")
 	runFlowGit(t, repository, "worktree", "add", "-q", "-b", "other-worktree", otherWorktree)
+	writeVerifiedFlowConfigurationState(t, otherWorktree)
 	if _, otherErr := bindFlowEntry(context.Background(), commandOptions{repository: otherWorktree, programID: "product-delivery", entryID: "run", runID: bound.runID, deliveryID: bound.deliveryID, host: "codex"}); otherErr == nil || !strings.Contains(otherErr.Error(), "DELEGATION_DRIFT") {
 		t.Fatalf("unauthorized worktree bundle was not rejected: %v", otherErr)
 	}

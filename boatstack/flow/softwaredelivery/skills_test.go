@@ -50,6 +50,8 @@ func TestGeneratedSkillsProjectOnlyDeclaredEntriesWithHostParity(t *testing.T) {
 		"Ask\nfor product delegation only after Boatstack returns the new exact delegation",
 		"program_change.human_identity", "Do not ask the user to invent\nan actor unless",
 		"inspect its exact\n`human_identity`", "provider_fingerprint", "Submit the exact `command`",
+		"omits `human_identity` only when no verified descriptor exists", "configuration.mutate", "configuration.reconcile",
+		"Treat a missing identity on every other human authority boundary as an error",
 		"untrusted\nrepository data", "separate host command action", "do not authorize it",
 		"normal command permission boundary", "independently permits the action",
 		"at most 1024 bytes", "proposed actor", "ask the human for explicit approval",

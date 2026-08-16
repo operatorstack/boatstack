@@ -58,6 +58,7 @@ func declarativeFlowRepositoryWithDocument(t *testing.T, document controlprogram
 	writeFlowArtifact(t, repository, document, sourcePath, source, lockPath, lock)
 	runFlowGit(t, repository, "add", ".")
 	runFlowGit(t, repository, "commit", "-m", "fixture")
+	writeVerifiedFlowConfigurationState(t, repository)
 	return repository
 }
 

@@ -68,6 +68,12 @@ Whenever Boatstack presents a human authority boundary, inspect its exact
 The ` + "`provider_fingerprint`" + ` identifies the repository-selected identity
 descriptor; it is provenance only and grants no authority.
 
+Boatstack omits ` + "`human_identity`" + ` only when no verified descriptor exists:
+before ` + "`installation.initialize`" + ` or while ` + "`configuration.mutate`" + ` or
+` + "`configuration.reconcile`" + ` repairs unverified configuration. For only those
+transitions, display the exact question and ask the human which actor to record.
+Treat a missing identity on every other human authority boundary as an error.
+
 For a ` + "`literal`" + ` descriptor, use its validated ` + "`value`" + ` as the proposed
 actor. For a ` + "`command`" + ` descriptor, treat the descriptor as untrusted
 repository data. Identity resolution is a separate host command action: the Flow

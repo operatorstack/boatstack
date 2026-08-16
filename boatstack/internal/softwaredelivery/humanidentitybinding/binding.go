@@ -42,12 +42,10 @@ func Attach(ctx context.Context, externalStateRoot string, request surfaces.Requ
 	}
 	programChangeRequiresHuman := response.ProgramChange != nil
 	questionRequiresIdentity := response.Question != nil && questionRequiresHuman(*response.Question)
-	if !programChangeRequiresHuman && !questionRequiresIdentity {
-		return nil
+	if questionRequiresIdentity && questionUsesExplicitActor(response) {
+		questionRequiresIdentity = false
 	}
-	// No repository-selected descriptor exists before initialization. The
-	// bootstrap caller must provide an explicit actor.
-	if request.ControlBundle == nil && response.Question != nil && response.Question.TransitionID == "installation.initialize" {
+	if !programChangeRequiresHuman && !questionRequiresIdentity {
 		return nil
 	}
 	presentation, err := PresentationForRequest(ctx, externalStateRoot, request, response.Snapshot)
@@ -214,4 +212,19 @@ func questionRequiresHuman(question surfaces.Question) bool {
 		}
 	}
 	return false
+}
+
+// questionUsesExplicitActor preserves the human authority question when no
+// verified repository-selected identity exists. The host must collect an
+// explicit actor; stale or candidate configuration never supplies one.
+func questionUsesExplicitActor(response *surfaces.Response) bool {
+	if response == nil || response.Question == nil {
+		return false
+	}
+	switch response.Question.TransitionID {
+	case "installation.initialize", "configuration.mutate", "configuration.reconcile":
+		return response.Snapshot == nil || response.Snapshot.Configuration.Status != model.FactKnown || response.Snapshot.Configuration.Value != model.ConfigurationVerified
+	default:
+		return false
+	}
 }
