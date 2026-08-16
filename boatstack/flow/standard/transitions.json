@@ -3762,7 +3762,8 @@
           "known"
         ],
         "values": [
-          "current"
+          "current",
+          "stale"
         ]
       }
     ],
@@ -3998,7 +3999,8 @@
           "known"
         ],
         "values": [
-          "current"
+          "current",
+          "stale"
         ]
       }
     ],
@@ -4242,7 +4244,8 @@
           "known"
         ],
         "values": [
-          "current"
+          "current",
+          "stale"
         ]
       }
     ],

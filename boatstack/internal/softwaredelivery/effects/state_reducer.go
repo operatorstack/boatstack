@@ -446,7 +446,10 @@ func gateStateHandler(gate string) nativeStateHandler {
 		upsertGate(state, durable.GateEvidence{Gate: gate, Revision: revision, Fingerprint: fingerprint})
 		state.SourceRevision, state.WorktreeFingerprint = admission.SourceRevision, admission.WorktreeFingerprint
 		state.Terminal, state.Delivery = model.TerminalNonterminal, model.DeliveryActive
-		state.Verification, state.Phase = model.VerificationCurrent, model.PhaseActive
+		state.Verification, state.Phase = model.VerificationStale, model.PhaseActive
+		if state.RequiredGateEvidenceCurrent() {
+			state.Verification = model.VerificationCurrent
+		}
 		if verifiedObjectiveSatisfied(*state, admission.Objective) {
 			state.Delivery = model.DeliveryGatesPassed
 			establishTerminal(state, model.PhaseTerminal)
@@ -464,7 +467,10 @@ func applyVisualEvidence(state *durable.State, admission protocol.Admission, _ c
 	if admission.Objective.TrustedObjectiveClass() == model.ObjectiveVerified {
 		state.Delivery = model.DeliveryActive
 	}
-	state.Verification, state.Phase = model.VerificationCurrent, model.PhaseActive
+	state.Verification, state.Phase = model.VerificationStale, model.PhaseActive
+	if state.RequiredGateEvidenceCurrent() {
+		state.Verification = model.VerificationCurrent
+	}
 	if verifiedObjectiveSatisfied(*state, admission.Objective) {
 		state.Delivery = model.DeliveryGatesPassed
 		establishTerminal(state, model.PhaseTerminal)
@@ -541,23 +547,12 @@ func upsertGate(state *durable.State, evidence durable.GateEvidence) {
 }
 
 func hasGates(state durable.State, names ...string) bool {
-	found := map[string]bool{}
-	for _, gate := range state.Gates {
-		if gate.Revision == state.SourceRevision {
-			found[gate.Gate] = true
-		}
-	}
-	for _, name := range names {
-		if !found[name] {
-			return false
-		}
-	}
-	return true
+	return state.HasCurrentGates(names...)
 }
 
 func verifiedObjectiveSatisfied(state durable.State, objective model.Objective) bool {
 	if objective.TrustedObjectiveClass() != model.ObjectiveVerified || !hasGates(state, "build", "test", "review") {
 		return false
 	}
-	return state.VisualEvidencePolicy != "required" || hasGates(state, "visual")
+	return state.RequiredGateEvidenceCurrent()
 }

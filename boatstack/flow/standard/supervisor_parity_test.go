@@ -77,6 +77,8 @@ func openPRSnapshot(t *testing.T, recordedGates ...string) (model.Snapshot, mode
 	snapshot := snapshotFor(t, model.PhaseActive, model.TerminalNonterminal)
 	objective := model.Objective{ID: "objective", TargetID: model.ObjectiveOpenPR, DeliveryID: "delivery"}
 	evidence := snapshot.Verification.Evidence[0]
+	evidence.Revision = "current-revision"
+	snapshot.Delivery.Evidence = append(snapshot.Delivery.Evidence, evidence)
 	snapshot.Objective = model.Known(objective, evidence)
 	snapshot.Plan = model.Known(model.PlanLocked, evidence)
 	snapshot.Publication = model.Known(model.PublicationCandidate, evidence)
@@ -87,6 +89,20 @@ func openPRSnapshot(t *testing.T, recordedGates ...string) (model.Snapshot, mode
 		snapshot.Verification.Evidence = append(snapshot.Verification.Evidence, gateEvidence)
 	}
 	return recanonicalize(t, snapshot), objective
+}
+
+func TestUntargetedResolutionRetainsPerGateProgressWhileAggregateVerificationIsStale(t *testing.T) {
+	// control-law: aggregate-staleness-does-not-discard-current-gate-identity
+	authority := catalog.AuthoritySet{catalog.AuthorityHuman: true, catalog.AuthorityRepository: true}
+	snapshot, objective := openPRSnapshot(t, "build")
+	snapshot.Verification.Value = model.VerificationStale
+	snapshot.Publication = model.Known(model.PublicationNone, snapshot.Publication.Evidence[0])
+	snapshot = recanonicalize(t, snapshot)
+
+	decision := New(testprogram.StandardRegistry(), testObjectiveContracts()).Resolve(snapshot, objective, authority, "")
+	if decision.Kind != DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "gate.test.record" {
+		t.Fatalf("one-current-gate stale aggregate decision = %#v, want gate.test.record", decision)
+	}
 }
 
 func TestTerminalObjectiveOutranksLocalTransitions(t *testing.T) {

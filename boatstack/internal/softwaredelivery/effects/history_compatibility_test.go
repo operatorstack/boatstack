@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
@@ -58,6 +59,19 @@ func legacyCommittedRecord(t *testing.T, transitionID catalog.TransitionID, clas
 		EffectiveCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite}, IdempotencyKey: "idem-legacy-" + string(transitionID),
 		IssuedAt: now, ExpiresAt: now.Add(time.Minute),
 	}
+	// The immediately preceding admission encoding carried control-bundle
+	// schema 1 before member-set completeness changed the snapshot digest from
+	// the canonical file array to a structured snapshot payload.
+	bundleFiles := []boatstackruntime.ControlBundleFile{{Path: ".boatstack/project.json", SHA256: strings.Repeat("d", 64)}}
+	bundle := boatstackruntime.ControlBundleContract{
+		SchemaVersion: boatstackruntime.ControlBundleSchemaVersion,
+		Source: boatstackruntime.ControlBundleSnapshot{
+			Fingerprint: legacyContentID(t, "", bundleFiles),
+			Files:       bundleFiles,
+		},
+	}
+	bundle.Fingerprint = legacyContentID(t, "", bundle)
+	admission.ControlBundle = &bundle
 	admission.ID = legacyContentID(t, "adm-", admission)
 	if err := admission.ValidateCommittedHistoryIdentity(); err != nil {
 		t.Fatalf("legacy admission fixture: %v", err)

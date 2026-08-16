@@ -311,6 +311,45 @@ func TestObserverMarksApprovalByteSubstitutionStale(t *testing.T) {
 	}
 }
 
+func TestObserverRejectsCurrentVerificationWithStaleMandatoryGate(t *testing.T) {
+	repository := t.TempDir()
+	deliveryID := "delivery"
+	root := filepath.Join(repository, ".boatstack", "evidence", deliveryID)
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	completedAt := time.Unix(1, 0).UTC()
+	payload := observedGateEvidence{SchemaVersion: 1, Gate: "test", SourceRevision: "old", Outcome: "passed", Producer: "test", CompletedAt: completedAt}
+	payloadRaw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payloadFingerprint := hashBytes(payloadRaw)
+	artifact := observedGate{SchemaVersion: 1, DeliveryID: deliveryID, TransitionID: "gate.test.record", Revision: "old", Fingerprint: payloadFingerprint, AdmissionID: "adm-test", RecordedAt: completedAt}
+	artifactRaw, err := json.Marshal(artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "test.evidence.json"), payloadRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "test.json"), artifactRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state := durable.State{
+		Verification: model.VerificationCurrent, Terminal: model.TerminalEstablished, SourceRevision: "current",
+		Objective: model.Objective{ID: "objective", TargetID: model.ObjectiveOpenPR, DeliveryID: deliveryID},
+		Gates:     []durable.GateEvidence{{Gate: "test", Revision: "old", Fingerprint: payloadFingerprint}},
+	}
+	_, verification, terminal, _, _, err := observeRepositoryArtifacts(ports.ControllerLayout{RepositoryRoot: repository, EvidenceRoot: filepath.Join(repository, ".boatstack", "evidence")}, state, completedAt.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verification != model.VerificationStale || terminal != model.TerminalStale {
+		t.Fatalf("stale mandatory gate observed as verification=%s terminal=%s", verification, terminal)
+	}
+}
+
 func TestObserverDerivesHighRiskChangeFromCommittedAndWorkingTreePaths(t *testing.T) {
 	repository := t.TempDir()
 	runGit(t, repository, "init", "-q")

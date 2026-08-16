@@ -152,12 +152,60 @@ func (c ControlBundleContract) Validate() error {
 	if err := c.validateFields(); err != nil {
 		return err
 	}
+	return c.validateFingerprint()
+}
+
+// ValidateCommittedHistory accepts the current contract encoding or the exact
+// earlier schema-1 snapshot encoding. The earlier encoding hashed the canonical
+// file array directly, before executable directory member sets were added.
+// It is valid only through a committed-history admission validator.
+func (c ControlBundleContract) ValidateCommittedHistory() error {
+	if err := c.Validate(); err == nil {
+		return nil
+	}
+	if err := c.validateHistoricalFields(); err != nil {
+		return err
+	}
+	return c.validateFingerprint()
+}
+
+func (c ControlBundleContract) validateFingerprint() error {
 	identity := c
 	want := identity.Fingerprint
 	identity.Fingerprint = ""
 	got, err := controlBundleDigest(identity)
 	if err != nil || want == "" || got != want {
 		return fmt.Errorf("CONTROL_BUNDLE_INVALID: contract fingerprint mismatch")
+	}
+	return nil
+}
+
+func (c ControlBundleContract) validateHistoricalFields() error {
+	if c.SchemaVersion != ControlBundleSchemaVersion {
+		return fmt.Errorf("CONTROL_BUNDLE_INVALID: unsupported schema")
+	}
+	if err := c.Source.validateHistorical(); err != nil {
+		return err
+	}
+	if c.Target != nil {
+		if err := c.Target.validateHistorical(); err != nil {
+			return err
+		}
+	} else if c.TargetRevision != "" {
+		return fmt.Errorf("CONTROL_BUNDLE_INVALID: target revision has no target bundle")
+	}
+	if err := validateBoundRuntimePin(c.Source, c.SourceRuntimePin); err != nil {
+		return err
+	}
+	if c.Target != nil {
+		if err := validateBoundRuntimePin(*c.Target, c.TargetRuntimePin); err != nil {
+			return err
+		}
+	} else if c.TargetRuntimePin != nil {
+		return fmt.Errorf("CONTROL_BUNDLE_INVALID: target runtime pin has no target bundle")
+	}
+	if c.TargetRevision != "" && !validObjectIdentity(c.TargetRevision) {
+		return fmt.Errorf("CONTROL_BUNDLE_INVALID: target revision is not an exact object identity")
 	}
 	return nil
 }
@@ -238,6 +286,24 @@ func (s ControlBundleSnapshot) validate() error {
 	fingerprint, err := controlBundleSnapshotDigest(s.Files, s.MemberSets)
 	if err != nil || fingerprint != s.Fingerprint {
 		return fmt.Errorf("CONTROL_BUNDLE_INVALID: snapshot fingerprint mismatch")
+	}
+	return nil
+}
+
+func (s ControlBundleSnapshot) validateHistorical() error {
+	if !validControlDigest(s.Fingerprint) || len(s.Files) == 0 || len(s.MemberSets) != 0 {
+		return fmt.Errorf("CONTROL_BUNDLE_INVALID: historical snapshot is incomplete")
+	}
+	prior := ""
+	for _, file := range s.Files {
+		if !safeProjectionRelative(file.Path) || file.Path <= prior || (file.Absent && file.SHA256 != "") || (!file.Absent && !validControlDigest(file.SHA256)) {
+			return fmt.Errorf("CONTROL_BUNDLE_INVALID: historical file bindings are not canonical")
+		}
+		prior = file.Path
+	}
+	fingerprint, err := controlBundleDigest(s.Files)
+	if err != nil || fingerprint != s.Fingerprint {
+		return fmt.Errorf("CONTROL_BUNDLE_INVALID: historical snapshot fingerprint mismatch")
 	}
 	return nil
 }
@@ -470,6 +536,28 @@ func ResolveCommitRevision(ctx context.Context, repository, reference string) (s
 	}
 	if _, err := hex.DecodeString(revision); err != nil {
 		return "", fmt.Errorf("Git reference %q did not resolve to an exact object identity", reference)
+	}
+	return revision, nil
+}
+
+// ResolveWorkspaceBaseRevision binds a configured branch name to an exact
+// commit without requiring a local branch. A local ref remains authoritative;
+// repositories cloned without local default branches may fall back to the
+// corresponding origin remote-tracking ref.
+func ResolveWorkspaceBaseRevision(ctx context.Context, repository, reference string) (string, error) {
+	revision, localErr := ResolveCommitRevision(ctx, repository, reference)
+	if localErr == nil {
+		return revision, nil
+	}
+	check := exec.CommandContext(ctx, "git", "check-ref-format", "--branch", reference)
+	check.Dir = repository
+	if err := check.Run(); err != nil {
+		return "", localErr
+	}
+	remoteReference := "refs/remotes/origin/" + reference
+	revision, remoteErr := ResolveCommitRevision(ctx, repository, remoteReference)
+	if remoteErr != nil {
+		return "", fmt.Errorf("resolve workspace base %q locally or at origin: local: %v; origin: %w", reference, localErr, remoteErr)
 	}
 	return revision, nil
 }

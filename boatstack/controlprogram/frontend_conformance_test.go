@@ -86,7 +86,7 @@ func TestRepositoryOwnedSoftwareDeliveryFlowsShareOneRuntime(t *testing.T) {
 		{"product-delivery-a.flow.ts", 1, 1},
 		{"product-delivery-b.flow.ts", 2, 2},
 		{"product-delivery-c.flow.ts", 1, 6},
-		{"product-delivery-planning-package.flow.ts", 1, 21},
+		{"product-delivery-planning-package.flow.ts", 2, 22},
 	}
 	for _, test := range cases {
 		t.Run(test.fixture, func(t *testing.T) {

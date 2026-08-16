@@ -523,6 +523,7 @@ func TestFlowRunIdentitySurvivesWorkspaceTransfer(t *testing.T) {
 		repository: destination, programID: "product-delivery", entryID: "run", host: "codex",
 		flowProgramFingerprint: initial.flowProgramFingerprint, runID: initial.runID,
 		deliveryID: initial.deliveryID, targetID: initial.targetID, objectiveID: initial.objectiveID,
+		activeFlowBound: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -659,6 +660,33 @@ func TestWorkspaceCutFreezesMovingBaseReference(t *testing.T) {
 	runFlowGit(t, repository, "commit", "-q", "-m", "move branch")
 	if contract.TargetRevision != want {
 		t.Fatalf("target revision changed with branch: got %s want %s", contract.TargetRevision, want)
+	}
+}
+
+func TestWorkspaceCutResolvesConfiguredBaseFromOriginTrackingBranch(t *testing.T) {
+	// control-law: a semantic PR base does not require a redundant local branch
+	repository := flowRepository(t)
+	repository, err := filepath.EvalSymlinks(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runFlowGit(t, repository, "init", "-q")
+	runFlowGit(t, repository, "config", "user.name", "Boatstack Tests")
+	runFlowGit(t, repository, "config", "user.email", "boatstack@example.invalid")
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "control bundle")
+	runFlowGit(t, repository, "branch", "-M", "main")
+	want := strings.TrimSpace(runFlowGitOutput(t, repository, "rev-parse", "HEAD"))
+	runFlowGit(t, repository, "update-ref", "refs/remotes/origin/main", want)
+	runFlowGit(t, repository, "switch", "-q", "-c", "feature")
+	runFlowGit(t, repository, "branch", "-D", "main")
+
+	contract, _, err := bindControlBundle(context.Background(), repository, "workspace.cut", protocol.Parameters{{Name: "base_ref", Value: "main"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contract.TargetRevision != want {
+		t.Fatalf("target revision = %s, want origin/main revision %s", contract.TargetRevision, want)
 	}
 }
 
@@ -1416,8 +1444,8 @@ func TestFlowCompileAndCheckRejectUnbindableEntryInputs(t *testing.T) {
 	}
 }
 
-func TestFlowEntryBindsStableRunAndResumesManagedPlan(t *testing.T) {
-	// control-law: questions-and-restarts-preserve-the-exact-plan-worktree-and-run
+func TestFreshFlowEntryPreservesInboxProducerAcrossDelegationContext(t *testing.T) {
+	// control-law: authority-suspension-cannot-switch-a-fresh-run-from-its-inbox-plan-to-prior-managed-input
 	repository := flowRepository(t)
 	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("exact plan"))
 	initial, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex"})
@@ -1427,8 +1455,7 @@ func TestFlowEntryBindsStableRunAndResumesManagedPlan(t *testing.T) {
 	if !strings.HasPrefix(initial.runID, "run-") || initial.deliveryID != "delivery-one" || initial.targetID != "published-pr" || initial.trustedObjectiveClass != "open-or-updated-pr" || len(initial.parameters) != 0 {
 		t.Fatalf("initial Flow context = %#v", initial)
 	}
-	writeFixture(t, repository, ".boatstack/plans/delivery-one.source", []byte("exact plan"))
-	writeFixture(t, repository, ".boatstack/plans/inbox/unrelated.md", []byte("other plan"))
+	writeFixture(t, repository, ".boatstack/plans/delivery-one.source", []byte("prior managed plan"))
 	resumed, err := bindFlowEntry(context.Background(), commandOptions{
 		repository: repository, programID: "product-delivery", entryID: "run", runID: initial.runID, host: "codex",
 		deliveryID: initial.deliveryID, targetID: initial.targetID, objectiveID: initial.objectiveID,
@@ -1439,8 +1466,30 @@ func TestFlowEntryBindsStableRunAndResumesManagedPlan(t *testing.T) {
 	if resumed.runID != initial.runID {
 		t.Fatalf("run identity changed: %s != %s", resumed.runID, initial.runID)
 	}
-	if source, ok := resumed.workInputs["plan"]; !ok || source.Value != filepath.Join(resumed.repository, ".boatstack", "plans", "delivery-one.source") {
+	if source, ok := resumed.workInputs["plan"]; !ok || source.Value != filepath.Join(resumed.repository, ".boatstack", "plans", "inbox", "delivery-one.md") {
 		t.Fatalf("resumed entry input = %#v, present=%t", source, ok)
+	}
+}
+
+func TestActiveFlowEntryResumesManagedPlan(t *testing.T) {
+	// control-law: only a durably active Flow may resume through its materialized plan
+	repository := flowRepository(t)
+	repository, err := filepath.EvalSymlinks(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("inbox plan"))
+	managed := filepath.Join(repository, ".boatstack", "plans", "delivery-one.source")
+	writeFixture(t, repository, ".boatstack/plans/delivery-one.source", []byte("active managed plan"))
+	plan, deliveryID, err := resolveBoundPlan(repository, controlprogram.Entry{ID: "run"}, softwareflow.EntryObjective{}, commandOptions{
+		activeFlowBound: true,
+		deliveryID:      "delivery-one",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan != managed || deliveryID != "delivery-one" {
+		t.Fatalf("active plan = %q delivery = %q; want %q and delivery-one", plan, deliveryID, managed)
 	}
 }
 
@@ -1628,6 +1677,92 @@ func TestRepositoryNamedAbandonmentEntryUsesCompiledObjective(t *testing.T) {
 	}
 }
 
+func TestAbandonmentEntryCanReplacePreFlowActiveObjectiveWithoutReceipt(t *testing.T) {
+	// control-law: a trusted durable objective that predates Flow receipts can
+	// be abandoned in the same repository without deleting controller state.
+	repository := t.TempDir()
+	runFlowGit(t, repository, "init", "-q")
+	document := productDeliveryDocument("product-delivery")
+	truth := true
+	document.Facets = append(document.Facets,
+		controlprogram.Facet{ID: "delivery", Kind: "string"},
+		controlprogram.Facet{ID: "workspace", Kind: "string"},
+	)
+	document.Operators = append(document.Operators, controlprogram.Operator{
+		ID: "plan.abandon", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/plan.abandon", Version: "1"},
+	})
+	document.Transitions = append(document.Transitions, controlprogram.Transition{
+		ID: "plan.abandon", Operator: "plan.abandon", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 31,
+	})
+	document.Targets = append(document.Targets, controlprogram.Target{ID: "safely-abandoned", Predicate: controlprogram.Predicate{All: []controlprogram.Predicate{
+		flowFact("delivery", "discarded"),
+		{Fact: &controlprogram.FactPredicate{Facet: "workspace", Statuses: []string{"known"}, Values: []string{"abandoned", "absent"}}},
+	}}})
+	document.Entries = append(document.Entries, controlprogram.Entry{
+		ID: "abandon", Target: "safely-abandoned",
+		Inputs: []controlprogram.EntryInput{{
+			ID: "plan", Type: "markdown-file", Required: true, Resolver: "software-delivery.plan-inbox",
+			Config: json.RawMessage(`{"path":".boatstack/plans/inbox","cardinality":"exactly-one"}`),
+		}},
+	})
+	sourcePath, lockPath := ".boatstack/flows/product-delivery.flow.ts", "package-lock.json"
+	source, lock := []byte("flow source"), []byte("lock")
+	writeFixture(t, repository, sourcePath, source)
+	writeFixture(t, repository, lockPath, lock)
+	writeFlowArtifact(t, repository, document, sourcePath, source, lockPath, lock)
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-q", "-m", "fixture")
+
+	resolver, err := plant.NewResolver("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	invoking, err := resolver.ResolveInvocation(context.Background(), repository, "codex", "pre-flow-active-objective")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, invoking, err := resolver.ResolveLayout(context.Background(), invoking)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := durable.Default(invoking, time.Now().UTC())
+	state.ProgramFingerprint = strings.Repeat("a", 64)
+	state.Revision = 9
+	state.Phase = model.PhaseActive
+	state.Engagement = model.EngagementCommand
+	state.Delivery = model.DeliveryActive
+	state.Objective = model.Objective{
+		ID: "objective-product-delivery-run-delivery-one", TargetID: "published-pr",
+		TrustedClass: model.ObjectiveOpenPR, DeliveryID: "delivery-one",
+	}
+	raw, err := durable.EncodeState(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(layout.StatePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(layout.StatePath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	bound, err := bindFlowEntry(context.Background(), commandOptions{
+		repository: repository, programID: "product-delivery", entryID: "abandon", host: "codex",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bound.activeFlowBound || !strings.HasPrefix(bound.runID, "run-") || bound.deliveryID != "delivery-one" || bound.targetID != "safely-abandoned" || bound.trustedObjectiveClass != string(model.ObjectiveAbandoned) {
+		t.Fatalf("pre-Flow abandonment binding = %#v", bound)
+	}
+	rebound, err := bindFlowEntry(context.Background(), commandOptions{
+		repository: repository, programID: "product-delivery", entryID: "abandon", host: "codex", runID: bound.runID,
+	})
+	if err != nil || rebound.runID != bound.runID {
+		t.Fatalf("stable abandonment binding = %#v err=%v", rebound, err)
+	}
+}
+
 func TestFlowEntryRejectsSelectedPlanContentSubstitution(t *testing.T) {
 	// control-law: one-flow-run-binds-the-exact-selected-plan-bytes
 	repository := flowRepository(t)
@@ -1739,6 +1874,7 @@ func TestFlowEntryRejectsManagedPlanSymlinkEscape(t *testing.T) {
 	_, err = bindFlowEntry(context.Background(), commandOptions{
 		repository: repository, programID: "product-delivery", entryID: "run", runID: initial.runID, host: "codex",
 		deliveryID: initial.deliveryID, targetID: initial.targetID, objectiveID: initial.objectiveID,
+		activeFlowBound: true,
 	})
 	if err == nil || !strings.Contains(err.Error(), "regular non-symlink") {
 		t.Fatalf("managed symlink result = %v", err)
@@ -2119,8 +2255,15 @@ func TestDelegationReprojectionRequiresAChangedControlBundle(t *testing.T) {
 	}
 	changedInput := request
 	changedInput.InputFingerprints = []string{"changed-plan"}
-	admitted, err := canReprojectDelegation(ports.ControllerLayout{}, model.InvocationContext{}, model.Objective{}, request, changedInput)
+	admitted, err := canReprojectDelegation(ports.ControllerLayout{}, model.InvocationContext{}, request, changedInput)
 	if err != nil || admitted {
 		t.Fatalf("unchanged-bundle reprojection admitted=%t err=%v", admitted, err)
+	}
+	changedObjective := request
+	changedObjective.ControlBundleFingerprint = strings.Repeat("d", 64)
+	changedObjective.ObjectiveID = "objective-other"
+	admitted, err = canReprojectDelegation(ports.ControllerLayout{}, model.InvocationContext{}, request, changedObjective)
+	if err != nil || admitted {
+		t.Fatalf("changed-objective reprojection admitted=%t err=%v", admitted, err)
 	}
 }

@@ -45,6 +45,7 @@ const lifecycle = [
   planningPackageAdmit,
   planningPackageApprove,
   planningPackagePromote,
+  { id: "plan.abandon", priority: 31 },
   { id: "plan.activate", priority: 50 },
   { id: "workspace.cut", priority: 52 },
   { id: "workspace.activate", priority: 53 },
@@ -74,16 +75,29 @@ export default defineFlow({
   work: [planning],
   operators: trustedOperators(lifecycle),
   transitions: trustedSoftwareDeliveryTransitions(lifecycle, { planningPackageWork: planning }),
-  targets: [marked("published-pr", all(
-    fact("verification", ["current"]),
-    fact("configuration", ["verified"]),
-    fact("runtime", ["verified"]),
-    fact("publication", ["open"]),
-  ))],
-  entries: [entry({
-    id: "run",
-    target: "published-pr",
-    inputs: [inbox(".boatstack/plans/inbox")],
-    delegation: trustedDelegation("autonomy"),
-  })],
+  targets: [
+    marked("published-pr", all(
+      fact("verification", ["current"]),
+      fact("configuration", ["verified"]),
+      fact("runtime", ["verified"]),
+      fact("publication", ["open"]),
+    )),
+    marked("safely-abandoned", all(
+      fact("delivery", ["discarded"]),
+      fact("workspace", ["abandoned", "absent"]),
+    )),
+  ],
+  entries: [
+    entry({
+      id: "run",
+      target: "published-pr",
+      inputs: [inbox(".boatstack/plans/inbox")],
+      delegation: trustedDelegation("autonomy"),
+    }),
+    entry({
+      id: "abandon",
+      target: "safely-abandoned",
+      inputs: [inbox(".boatstack/plans/inbox")],
+    }),
+  ],
 });

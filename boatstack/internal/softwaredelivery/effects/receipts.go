@@ -202,9 +202,11 @@ func committedTransitionOutput(record journalRecord, transitionID catalog.Transi
 
 // InstallationReprojectionAdmits reports whether the exact current control
 // bundle was committed by an installation transition in this Flow lineage.
-// The bundle binds the Flow artifact and runtime program together. This permits
-// a fresh delegation request; it never carries prior delegation authority.
-func InstallationReprojectionAdmits(layout ports.ControllerLayout, flowID string, invocation model.InvocationContext, objective model.Objective, controlBundleFingerprint string) (bool, error) {
+// The bundle binds the Flow artifact and runtime program together. Installation
+// may preserve a prior durable objective, so objective continuity is enforced
+// between the old and new delegation requests rather than against this receipt.
+// This permits a fresh delegation request; it never carries prior authority.
+func InstallationReprojectionAdmits(layout ports.ControllerLayout, flowID string, invocation model.InvocationContext, controlBundleFingerprint string) (bool, error) {
 	records := []journalRecord{}
 	if err := scanCommittedReceipts(layout, func(record journalRecord) error {
 		records = append(records, record)
@@ -212,15 +214,14 @@ func InstallationReprojectionAdmits(layout ports.ControllerLayout, flowID string
 	}); err != nil {
 		return false, err
 	}
-	return installationReprojectionAdmits(records, flowID, invocation, objective, controlBundleFingerprint)
+	return installationReprojectionAdmits(records, flowID, invocation, controlBundleFingerprint)
 }
 
-func installationReprojectionAdmits(records []journalRecord, flowID string, invocation model.InvocationContext, objective model.Objective, controlBundleFingerprint string) (bool, error) {
+func installationReprojectionAdmits(records []journalRecord, flowID string, invocation model.InvocationContext, controlBundleFingerprint string) (bool, error) {
 	for _, record := range records {
 		receipt := *record.Receipt
 		installationTransition := receipt.TransitionID == "installation.update" || (receipt.TransitionID == "installation.reconcile-update" && receipt.ProgramChangeAccepted)
-		if !installationTransition || receipt.FlowID != flowID || receipt.ControlBundleTargetFingerprint != controlBundleFingerprint ||
-			receipt.ObjectiveID != objective.ID || receipt.TargetID != objective.TargetID || receipt.TrustedClass != objective.TrustedObjectiveClass() || receipt.DeliveryID != objective.DeliveryID {
+		if !installationTransition || receipt.FlowID != flowID || receipt.ControlBundleTargetFingerprint != controlBundleFingerprint {
 			continue
 		}
 		authorized := sameStateLineage(record.Admission.Invocation, invocation)
@@ -263,9 +264,24 @@ func invocationAuthorizedByRecords(records []journalRecord, flowID string, initi
 	contextKey := func(invocation model.InvocationContext) string {
 		return invocation.WorktreeID + "\x00" + invocation.Ref
 	}
+	// A fresh delegation can be issued after an accepted installation update in
+	// the current managed worktree. Earlier execution-context advances establish
+	// that approved starting context; they are not descendants of it. Anchor the
+	// replay after the latest committed advance into the approved context, then
+	// continue to require an unbroken receipt lineage for every later advance.
+	anchorSequence := uint64(0)
+	for _, receipt := range receipts {
+		if receipt.ExecutionContext != "advance" || receipt.ResultingInvocation == nil {
+			continue
+		}
+		resulting := *receipt.ResultingInvocation
+		if resulting.RepositoryID == initial.RepositoryID && resulting.GitCommonID == initial.GitCommonID && contextKey(resulting) == contextKey(initial) && receipt.Sequence > anchorSequence {
+			anchorSequence = receipt.Sequence
+		}
+	}
 	authorized := map[string]bool{contextKey(initial): true}
 	for _, receipt := range receipts {
-		if receipt.ExecutionContext != "advance" {
+		if receipt.ExecutionContext != "advance" || receipt.Sequence <= anchorSequence {
 			continue
 		}
 		prior, resulting := receipt.PriorInvocation, receipt.ResultingInvocation

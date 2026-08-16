@@ -477,7 +477,13 @@ func (a Admission) validateIdentity(schemaVersion int) error {
 		return fmt.Errorf("admission: invalid schema, identity, source, or lifetime")
 	}
 	if a.ControlBundle != nil {
-		if err := a.ControlBundle.Validate(); err != nil {
+		var err error
+		if schemaVersion == PreviousAdmissionSchemaVersion {
+			err = a.ControlBundle.ValidateCommittedHistory()
+		} else {
+			err = a.ControlBundle.Validate()
+		}
+		if err != nil {
 			return err
 		}
 	}

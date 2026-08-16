@@ -179,8 +179,7 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 			bound := record.Request
 			inputDrift := !options.activeFlowBound && strings.Join(bound.InputFingerprints, "\x00") != strings.Join(delegationRequest.InputFingerprints, "\x00")
 			if bound.RunID != delegationRequest.RunID || bound.ProgramID != delegationRequest.ProgramID || bound.ProgramFingerprint != delegationRequest.ProgramFingerprint || bound.ControlBundleFingerprint != delegationRequest.ControlBundleFingerprint || bound.EntryID != delegationRequest.EntryID || bound.TargetID != delegationRequest.TargetID || bound.ObjectiveID != delegationRequest.ObjectiveID || bound.DeliveryID != delegationRequest.DeliveryID || inputDrift || bound.RepositoryID != delegationRequest.RepositoryID || bound.GitCommonID != delegationRequest.GitCommonID || bound.BindingFingerprint != delegationRequest.BindingFingerprint || strings.Join(bound.RequestedAuthorities, "\x00") != strings.Join(delegationRequest.RequestedAuthorities, "\x00") || bound.Description != delegationRequest.Description {
-				runtimeObjective := model.Objective{ID: options.objectiveID, TargetID: objective.TargetID, TrustedClass: objective.TrustedClass, DeliveryID: deliveryID}
-				reprojected, reprojectErr := canReprojectDelegation(layout, invocation, runtimeObjective, bound, delegationRequest)
+				reprojected, reprojectErr := canReprojectDelegation(layout, invocation, bound, delegationRequest)
 				if reprojectErr != nil {
 					return commandOptions{}, reprojectErr
 				}
@@ -607,10 +606,10 @@ func bindActiveFlowContext(ctx context.Context, repository string, options comma
 	if findErr != nil {
 		return commandOptions{}, fmt.Errorf("FLOW_ACTIVE_RUN_INVALID: inspect committed flow receipts: %w", findErr)
 	}
-	if !found || !strings.HasPrefix(receipt.FlowID, "run-") {
-		return commandOptions{}, fmt.Errorf("FLOW_ACTIVE_RUN_INVALID: active objective has no committed run identity")
-	}
 	if active.TargetID == entryObjective.TargetID && strings.HasPrefix(active.ID, prefix) {
+		if !found || !strings.HasPrefix(receipt.FlowID, "run-") {
+			return commandOptions{}, fmt.Errorf("FLOW_ACTIVE_RUN_INVALID: active objective has no committed run identity")
+		}
 		bound, bindErr := bindCommittedActiveRun(options, active, receipt)
 		if bindErr != nil {
 			return commandOptions{}, bindErr
@@ -622,7 +621,14 @@ func bindActiveFlowContext(ctx context.Context, repository string, options comma
 		if identityErr != nil {
 			return commandOptions{}, identityErr
 		}
-		expectedRunID := flowRunID(repositoryIdentity, options.flowProgramFingerprint, options.entryID, active.DeliveryID, "active-run:"+receipt.FlowID)
+		activeIdentity := "objective:" + active.ID + ":" + string(active.TargetID) + ":" + string(active.TrustedObjectiveClass())
+		if found {
+			if !strings.HasPrefix(receipt.FlowID, "run-") {
+				return commandOptions{}, fmt.Errorf("FLOW_ACTIVE_RUN_INVALID: committed active run identity is invalid")
+			}
+			activeIdentity = "run:" + receipt.FlowID
+		}
+		expectedRunID := flowRunID(repositoryIdentity, options.flowProgramFingerprint, options.entryID, active.DeliveryID, activeIdentity)
 		if options.runID != "" && options.runID != expectedRunID {
 			return commandOptions{}, fmt.Errorf("FLOW_RUN_MISMATCH: run ID does not identify the active delivery")
 		}
@@ -801,11 +807,18 @@ func bindPrescribedRepositoryInvocation(ctx context.Context, request surfaces.Re
 }
 
 func resolveBoundPlan(repository string, entry controlprogram.Entry, entryObjective softwareflow.EntryObjective, options commandOptions) (string, string, error) {
+	if !options.activeFlowBound {
+		plan, deliveryID, err := resolvePlanInput(repository, entry)
+		if err != nil {
+			return "", "", err
+		}
+		if options.deliveryID != "" && options.deliveryID != deliveryID {
+			return "", "", fmt.Errorf("FLOW_CONTEXT_MISMATCH: selected inbox plan does not match the preserved delivery identity")
+		}
+		return plan, deliveryID, nil
+	}
 	if options.activeFlowBound && entryObjective.TrustedClass == model.ObjectiveAbandoned {
 		return "", options.deliveryID, nil
-	}
-	if options.deliveryID == "" {
-		return resolvePlanInput(repository, entry)
 	}
 	if !flowSegment.MatchString(options.deliveryID) {
 		return "", "", fmt.Errorf("FLOW_CONTEXT_MISMATCH: active run requires its delivery identity")

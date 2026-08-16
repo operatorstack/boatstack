@@ -178,6 +178,47 @@ func TestGeneratedSkillsProjectForegroundWorkProtocolWithHostParity(t *testing.T
 	}
 }
 
+func TestGeneratedSkillsProjectGateEvidenceWorkSuspensionWithHostParity(t *testing.T) {
+	// control-law: missing deterministic gate evidence suspends bounded work
+	// without becoming human input, fabricated evidence, or a terminal stop.
+	compiled := controlprogram.Compiled{Document: controlprogram.Document{
+		Program: controlprogram.Program{ID: "product-delivery"},
+		Transitions: []controlprogram.Transition{{
+			ID: "gate.build.record",
+			Parameters: []controlprogram.TransitionParameterBinding{{
+				Parameter: "evidence_path",
+				Producer: controlprogram.ParameterProducer{
+					Kind: controlprogram.ParameterSourceTrustedResolver,
+					Binding: &controlprogram.ParameterResolverBinding{
+						Reference: softwareflow.ParameterResolverPrefix + "gate-evidence-path/build",
+						Version:   "1",
+					},
+				},
+			}},
+		}},
+		Entries: []controlprogram.Entry{{ID: "run", Target: "published-pr"}},
+	}}
+	files, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	codex := string(files[".agents/skills/product-delivery-run/SKILL.md"])
+	claude := string(files[".claude/skills/product-delivery-run/SKILL.md"])
+	for _, contract := range []string{
+		"TRANSITION_INPUT_BLOCKED", "bounded product-work\nsuspension", "exact managed worktree", "parked source worktree",
+		"Commit the\nintended product change", ".boatstack/evidence/<delivery-id>/<gate>.input.json",
+		"exact committed HEAD", "actual check or reviewer", "Do not claim a\npassed outcome from model confidence",
+		"Never pass these values with `--param`", "edit controller state", "preserve the failure",
+	} {
+		if !strings.Contains(codex, contract) {
+			t.Fatalf("generated gate-evidence protocol lacks %q", contract)
+		}
+	}
+	if strings.ReplaceAll(codex, "--host codex", "--host HOST") != strings.ReplaceAll(claude, "--host claude", "--host HOST") {
+		t.Fatal("Codex and Claude gate-evidence projections differ")
+	}
+}
+
 func TestGeneratedRunSkillRequiresExplicitAbandonmentBeforeReplacement(t *testing.T) {
 	compiled := controlprogram.Compiled{Document: controlprogram.Document{
 		Program: controlprogram.Program{ID: "product-delivery"},
