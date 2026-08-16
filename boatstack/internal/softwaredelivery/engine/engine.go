@@ -519,6 +519,12 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 		return result, err
 	}
 	defer e.receipts.Unbind(request.FlowID)
+	// Validate the entire committed history and allocate from it before any
+	// effect or transaction journal can cross the mutation boundary.
+	sequence, err := e.receipts.NextSequence(ctx, request.FlowID)
+	if err != nil {
+		return result, fmt.Errorf("preflight committed receipt history: %w", err)
+	}
 	if err := e.journal.Begin(ctx, admission, transition); err != nil {
 		return result, fmt.Errorf("begin transaction journal: %w", err)
 	}
@@ -592,10 +598,6 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 			return result, requireRecovery("postcondition and rollback failed", errors.Join(postcondition, rollbackErr))
 		}
 		return result, abort("postcondition failed and effect rolled back", postcondition)
-	}
-	sequence, err := e.receipts.NextSequence(ctx, request.FlowID)
-	if err != nil {
-		return result, requireRecovery("sequence allocation failed after verified effect", err)
 	}
 	completedAt := e.clock.Now()
 	receipt, err := protocol.NewReceipt(request.FlowID, sequence, e.program, admission, transition, target, prepared.ChangedStateFacets(), prepared.CommittedEffects(), effectResult.Outputs, nil, startedAt, completedAt)

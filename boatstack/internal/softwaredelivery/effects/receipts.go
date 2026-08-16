@@ -137,8 +137,9 @@ func findLatestCommittedFlowForObjective(records []journalRecord, invocation mod
 }
 
 // FindLatestCommittedTransitionOutput returns one effect output only from a
-// committed receipt in the current Flow lineage. It never infers an output
-// from durable state or provider state.
+// committed receipt in the current Flow lineage. The sole historical adapter
+// projects the exact admitted branch from a schema-12 publication commit as an
+// observation locator; provider observation must still establish the PR ID.
 func FindLatestCommittedTransitionOutput(layout ports.ControllerLayout, flowID string, invocation model.InvocationContext, transitionID catalog.TransitionID, field string, maximumRevision uint64) (string, string, bool, error) {
 	records := []journalRecord{}
 	if err := scanCommittedReceipts(layout, func(record journalRecord) error {
@@ -158,7 +159,7 @@ func findLatestCommittedTransitionOutput(records []journalRecord, flowID string,
 		if receipt.FlowID != flowID || receipt.TransitionID != transitionID || receipt.ResultingStateRevision > maximumRevision {
 			continue
 		}
-		output, exists := receipt.EffectOutputs.Get(field)
+		output, exists := committedTransitionOutput(record, transitionID, field)
 		if !exists {
 			continue
 		}
@@ -178,6 +179,25 @@ func findLatestCommittedTransitionOutput(records []journalRecord, flowID string,
 		}
 	}
 	return value, found.ID, found.ID != "", nil
+}
+
+func committedTransitionOutput(record journalRecord, transitionID catalog.TransitionID, field string) (string, bool) {
+	if output, exists := record.Receipt.EffectOutputs.Get(field); exists {
+		return output, true
+	}
+	if record.Admission.SchemaVersion != protocol.PreviousAdmissionSchemaVersion || record.Receipt.SchemaVersion != protocol.PreviousReceiptSchemaVersion ||
+		transitionID != "publication.execute" || field != "publication_id" || record.Receipt.TransitionID != transitionID {
+		return "", false
+	}
+	const branchPrefix = "refs/heads/"
+	if !strings.HasPrefix(record.Admission.Invocation.Ref, branchPrefix) {
+		return "", false
+	}
+	branch := strings.TrimPrefix(record.Admission.Invocation.Ref, branchPrefix)
+	if err := protocol.ValidateGitBranch(branch); err != nil {
+		return "", false
+	}
+	return branch, true
 }
 
 // InstallationReprojectionAdmits reports whether the exact current control

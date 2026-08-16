@@ -14,6 +14,11 @@ import (
 
 const ReceiptSchemaVersion = 13
 
+// PreviousReceiptSchemaVersion is the only historical receipt encoding
+// accepted by the committed-journal compatibility boundary. New receipts are
+// always written at ReceiptSchemaVersion.
+const PreviousReceiptSchemaVersion = 12
+
 type TransitionFactKind string
 
 const TransitionCommitted TransitionFactKind = "transition-committed"
@@ -250,7 +255,28 @@ func NewReceipt(flowID string, sequence uint64, program ProgramIdentity, admissi
 }
 
 func (r TransitionReceipt) Validate() error {
-	if r.SchemaVersion != ReceiptSchemaVersion || r.Kind != TransitionCommitted || r.ID == "" || r.FlowID == "" || r.Sequence == 0 || r.TransitionID == "" || r.TransitionVersion < 1 || r.PrescriptionID == "" || r.AdmissionID == "" || r.PriorStateRevision == 0 || r.PriorStateRevision == ^uint64(0) || r.ResultingStateRevision != r.PriorStateRevision+1 || !validSHA256(r.SourceFingerprint) || !validSHA256(r.TargetFingerprint) || !validSHA256(r.ObjectiveBindingFingerprint) || r.AuthorityFingerprint == "" || len(r.RequiredCapabilities) == 0 || r.IdempotencyKey == "" || len(r.CommittedEffects) == 0 || len(r.ChangedStateFacets) == 0 {
+	return r.validate(ReceiptSchemaVersion)
+}
+
+// ValidateCommittedHistory validates an immutable receipt using either the
+// current encoding or the exact immediately preceding encoding. It is not a
+// write-side compatibility path.
+func (r TransitionReceipt) ValidateCommittedHistory() error {
+	switch r.SchemaVersion {
+	case ReceiptSchemaVersion:
+		return r.Validate()
+	case PreviousReceiptSchemaVersion:
+		if len(r.EffectOutputs) != 0 || r.InvocationFingerprint != "" {
+			return fmt.Errorf("legacy receipt invents current-schema output or invocation evidence")
+		}
+		return r.validate(PreviousReceiptSchemaVersion)
+	default:
+		return fmt.Errorf("receipt has unsupported committed-history schema %d", r.SchemaVersion)
+	}
+}
+
+func (r TransitionReceipt) validate(schemaVersion int) error {
+	if r.SchemaVersion != schemaVersion || r.Kind != TransitionCommitted || r.ID == "" || r.FlowID == "" || r.Sequence == 0 || r.TransitionID == "" || r.TransitionVersion < 1 || r.PrescriptionID == "" || r.AdmissionID == "" || r.PriorStateRevision == 0 || r.PriorStateRevision == ^uint64(0) || r.ResultingStateRevision != r.PriorStateRevision+1 || !validSHA256(r.SourceFingerprint) || !validSHA256(r.TargetFingerprint) || !validSHA256(r.ObjectiveBindingFingerprint) || r.AuthorityFingerprint == "" || len(r.RequiredCapabilities) == 0 || r.IdempotencyKey == "" || len(r.CommittedEffects) == 0 || len(r.ChangedStateFacets) == 0 {
 		return fmt.Errorf("receipt has incomplete committed-transition identity or evidence")
 	}
 	if (r.ControlBundleSourceFingerprint == "") != (r.ControlBundleTargetFingerprint == "") ||

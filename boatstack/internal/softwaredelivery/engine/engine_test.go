@@ -150,15 +150,19 @@ func (e *fakeEffects) Rollback(context.Context) error {
 }
 
 type memoryReceipts struct {
-	next       uint64
-	values     []protocol.TransitionReceipt
-	projectErr error
+	next        uint64
+	values      []protocol.TransitionReceipt
+	projectErr  error
+	sequenceErr error
 }
 
 func (s *memoryReceipts) Bind(context.Context, string, protocol.Admission) error { return nil }
 func (s *memoryReceipts) Unbind(string)                                          {}
 
 func (s *memoryReceipts) NextSequence(context.Context, string) (uint64, error) {
+	if s.sequenceErr != nil {
+		return 0, s.sequenceErr
+	}
 	s.next++
 	return s.next, nil
 }
@@ -631,6 +635,26 @@ func TestApplyCrossesAdmissionEffectVerificationAndReceiptBoundary(t *testing.T)
 	}
 	if !replayed.Replayed || replayed.Receipt.ID != result.Receipt.ID || effects.executions != 1 || journal.begun != 1 {
 		t.Fatalf("idempotent replay crossed effect boundary: replay=%+v effects=%d journals=%d", replayed, effects.executions, journal.begun)
+	}
+}
+
+func TestApplyValidatesCommittedHistoryBeforeExecutingEffect(t *testing.T) {
+	// control-law: incompatible durable history cannot be discovered after a
+	// new effect has crossed its execution boundary
+	now := time.Unix(30, 0).UTC()
+	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source")}}
+	journal, effects := &fakeJournal{}, &fakeEffects{result: ports.EffectResult{Settlement: ports.EffectSettled}}
+	receipts := &memoryReceipts{sequenceErr: errors.New("unsupported committed history")}
+	kernel, err := New(testRegistry(t), syntheticObjectiveContracts(t), syntheticProgram, observer, fixedClock{now}, fakeLocker{&fakeLock{}}, journal, effects, receipts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = kernel.Apply(context.Background(), request(t, now))
+	if err == nil || !strings.Contains(err.Error(), "preflight committed receipt history") {
+		t.Fatalf("history preflight error = %v", err)
+	}
+	if effects.executions != 0 || journal.begun != 0 || journal.recovery != 0 {
+		t.Fatalf("history failure crossed mutation boundary: effects=%d begun=%d recovery=%d", effects.executions, journal.begun, journal.recovery)
 	}
 }
 
