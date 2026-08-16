@@ -616,12 +616,26 @@ func TestExternalConfigurationAuthorityTransfersAcrossAttachAndDetach(t *testing
 		t.Fatalf("detached layout did not select external config: %#v", detachedLayout)
 	}
 	apply("engagement.begin", protocol.AuthorityBundle{}, true, nil)
-	updatedConfig := []byte("{\"schema_version\":3,\"identity\":{\"human\":{\"kind\":\"literal\",\"value\":\"operator\"}},\"project\":{\"name\":\"external-updated\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
+	updatedConfig := []byte("{\"schema_version\":3,\"identity\":{\"human\":{\"kind\":\"literal\",\"value\":\"updated-operator\"}},\"project\":{\"name\":\"external-updated\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
 	updatedPath := filepath.Join(t.TempDir(), "updated.json")
 	if err := os.WriteFile(updatedPath, updatedConfig, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	apply("configuration.mutate", human, false, protocol.Parameters{{Name: "config_path", Value: updatedPath}, {Name: "config_sha256", Value: configFingerprint(t, updatedConfig)}})
+	updated, _, err := protocol.ProjectConfigFingerprint(updatedConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedProvider, err := updated.Identity.Human.Fingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if admitted, err := effects.ConfigurationIdentityReprojectionAdmits(detachedLayout, "flow-external-config", detachedInvocation, updatedProvider); err != nil || !admitted {
+		t.Fatalf("accepted external identity reprojection admitted=%t err=%v", admitted, err)
+	}
+	if admitted, err := effects.ConfigurationIdentityReprojectionAdmits(detachedLayout, "flow-external-config", detachedInvocation, strings.Repeat("f", 64)); err != nil || admitted {
+		t.Fatalf("foreign identity provider admitted=%t err=%v", admitted, err)
+	}
 	repositoryConfigPath := filepath.Join(repository, ".boatstack", "project.json")
 	if raw, err := os.ReadFile(repositoryConfigPath); err != nil || string(raw) != string(initialConfig) {
 		t.Fatalf("external mutation leaked into repository authority before detach: err=%v value=%q", err, raw)

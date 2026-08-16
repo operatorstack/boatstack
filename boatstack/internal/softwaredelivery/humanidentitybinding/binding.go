@@ -118,11 +118,13 @@ func PresentationForRepository(ctx context.Context, externalStateRoot, repositor
 		if !bundleBindsRawConfig(*bundle, raw) {
 			return humanidentity.Presentation{}, fmt.Errorf("HUMAN_IDENTITY_DRIFT: project configuration does not match the verified control bundle")
 		}
-		trusted = true
 	}
 	if observed != nil {
 		if observed.Invocation.RepositoryID != current.RepositoryID || observed.Invocation.GitCommonID != current.GitCommonID || observed.Invocation.WorktreeID != current.WorktreeID {
 			return humanidentity.Presentation{}, fmt.Errorf("HUMAN_IDENTITY_DRIFT: observed configuration belongs to a different invocation")
+		}
+		if observed.Configuration.Status != model.FactKnown || observed.Configuration.Value != model.ConfigurationVerified {
+			return humanidentity.Presentation{}, fmt.Errorf("HUMAN_IDENTITY_UNBOUND: observed configuration is not verified")
 		}
 		if !snapshotBindsConfig(observed, fingerprint) {
 			return humanidentity.Presentation{}, fmt.Errorf("HUMAN_IDENTITY_DRIFT: project configuration does not match the observed configuration")

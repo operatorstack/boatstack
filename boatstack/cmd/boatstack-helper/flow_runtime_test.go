@@ -2738,9 +2738,9 @@ func TestExplicitAuthorizationCanReplaceRevokedPreReconciliationRequest(t *testi
 	}
 }
 
-func TestDelegationReprojectionRequiresAChangedControlBundle(t *testing.T) {
-	// control-law: ordinary input or context drift cannot be relabeled as an
-	// installation reprojection when the installed control bundle is unchanged.
+func TestDelegationReprojectionRejectsUnadmittedContextChanges(t *testing.T) {
+	// control-law: ordinary input or objective drift cannot be relabeled as an
+	// installation or configuration-identity reprojection.
 	request := delegation.Request{
 		RunID: "run-example", ProgramID: "product-delivery", ProgramFingerprint: strings.Repeat("a", 64), ControlBundleFingerprint: strings.Repeat("b", 64),
 		EntryID: "run", TargetID: "published-pr", ObjectiveID: "objective", DeliveryID: "delivery",

@@ -17,6 +17,7 @@ import (
 )
 
 func TestPresentationUsesRepositoryConfigurationBoundByControlBundle(t *testing.T) {
+	ctx := context.Background()
 	repository := identityRepository(t)
 	raw := identityConfig("repository-actor")
 	writeIdentityFile(t, filepath.Join(repository, ".boatstack", "project.json"), raw)
@@ -24,12 +25,29 @@ func TestPresentationUsesRepositoryConfigurationBoundByControlBundle(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	presentation, err := PresentationForRepository(context.Background(), t.TempDir(), repository, "sdk", "repository-config", &bundle, nil)
+	externalBase := t.TempDir()
+	if _, err := PresentationForRepository(ctx, externalBase, repository, "sdk", "repository-unverified", &bundle, nil); err == nil || !strings.Contains(err.Error(), "HUMAN_IDENTITY_UNBOUND") {
+		t.Fatalf("bundle bytes were treated as accepted configuration: %v", err)
+	}
+	resolver, err := plant.NewResolver(externalBase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, err := resolver.ResolveInvocation(ctx, repository, "sdk", "repository-observed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, fingerprint, err := protocol.ProjectConfigFingerprint(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed := &model.Snapshot{Observation: model.Observation{Invocation: invocation, Configuration: model.Known(model.ConfigurationVerified, model.Evidence{Source: "configuration:repository", Fingerprint: fingerprint})}}
+	presentation, err := PresentationForRepository(ctx, externalBase, repository, "sdk", "repository-config", &bundle, observed)
 	if err != nil || presentation.Descriptor.Value != "repository-actor" {
 		t.Fatalf("presentation = %#v, err=%v", presentation, err)
 	}
 	writeIdentityFile(t, filepath.Join(repository, ".boatstack", "project.json"), identityConfig("changed-actor"))
-	if _, err := PresentationForRepository(context.Background(), t.TempDir(), repository, "sdk", "repository-drift", &bundle, nil); err == nil || !strings.Contains(err.Error(), "HUMAN_IDENTITY_DRIFT") {
+	if _, err := PresentationForRepository(ctx, externalBase, repository, "sdk", "repository-drift", &bundle, observed); err == nil || !strings.Contains(err.Error(), "HUMAN_IDENTITY_DRIFT") {
 		t.Fatalf("unbound repository config change was accepted: %v", err)
 	}
 }
@@ -79,6 +97,11 @@ func TestPresentationUsesExternalConfigurationAuthorityAndVerifiedState(t *testi
 	presentation, err := PresentationForRepository(ctx, externalBase, repository, "sdk", "external-observed", &bundle, observed)
 	if err != nil || presentation.Descriptor.Value != "external-actor" {
 		t.Fatalf("external presentation = %#v, err=%v", presentation, err)
+	}
+	stale := *observed
+	stale.Configuration.Value = model.ConfigurationStale
+	if _, err := PresentationForRepository(ctx, externalBase, repository, "sdk", "external-stale", &bundle, &stale); err == nil || !strings.Contains(err.Error(), "not verified") {
+		t.Fatalf("stale configuration selected a human identity: %v", err)
 	}
 	wrongInvocation := *observed
 	wrongInvocation.Invocation.WorktreeID = "wt-different"

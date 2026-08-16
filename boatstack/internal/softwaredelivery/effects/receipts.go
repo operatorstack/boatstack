@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/ports"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
@@ -222,6 +223,67 @@ func installationReprojectionAdmits(records []journalRecord, flowID string, invo
 		receipt := *record.Receipt
 		installationTransition := receipt.TransitionID == "installation.update" || (receipt.TransitionID == "installation.reconcile-update" && receipt.ProgramChangeAccepted)
 		if !installationTransition || receipt.FlowID != flowID || receipt.ControlBundleTargetFingerprint != controlBundleFingerprint {
+			continue
+		}
+		authorized := sameStateLineage(record.Admission.Invocation, invocation)
+		if !authorized && record.Admission.Invocation.ControllerID == invocation.ControllerID {
+			var err error
+			authorized, err = invocationAuthorizedByRecords(records, flowID, record.Admission.Invocation, invocation)
+			if err != nil {
+				return false, err
+			}
+		}
+		if authorized {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// ConfigurationIdentityReprojectionAdmits reports whether the exact current
+// identity provider was established by a committed configuration mutation in
+// this Flow lineage and remains the verified durable configuration. It permits
+// a fresh delegation request only; prior authority is never carried forward.
+func ConfigurationIdentityReprojectionAdmits(layout ports.ControllerLayout, flowID string, invocation model.InvocationContext, providerFingerprint string) (bool, error) {
+	configRaw, err := os.ReadFile(layout.ConfigPath)
+	if err != nil {
+		return false, err
+	}
+	config, configFingerprint, err := protocol.ProjectConfigFingerprint(configRaw)
+	if err != nil {
+		return false, err
+	}
+	actualProvider, err := config.Identity.Human.Fingerprint()
+	if err != nil || actualProvider != providerFingerprint {
+		return false, nil
+	}
+	stateRaw, err := os.ReadFile(layout.StatePath)
+	if err != nil {
+		return false, err
+	}
+	state, err := durable.DecodeState(stateRaw)
+	if err != nil {
+		return false, err
+	}
+	if state.RepositoryID != invocation.RepositoryID || state.GitCommonID != invocation.GitCommonID || state.WorktreeID != invocation.WorktreeID ||
+		state.Configuration != model.ConfigurationVerified || state.ConfigFingerprint != configFingerprint {
+		return false, nil
+	}
+	records := []journalRecord{}
+	if err := scanCommittedReceipts(layout, func(record journalRecord) error {
+		records = append(records, record)
+		return nil
+	}); err != nil {
+		return false, err
+	}
+	return configurationIdentityReprojectionAdmits(records, flowID, invocation, configFingerprint, state.Revision)
+}
+
+func configurationIdentityReprojectionAdmits(records []journalRecord, flowID string, invocation model.InvocationContext, configFingerprint string, maximumRevision uint64) (bool, error) {
+	for _, record := range records {
+		receipt := *record.Receipt
+		admittedFingerprint, exists := record.Admission.Parameters.Get("config_sha256")
+		if receipt.TransitionID != "configuration.mutate" || receipt.FlowID != flowID || receipt.ResultingStateRevision > maximumRevision || !exists || admittedFingerprint != configFingerprint {
 			continue
 		}
 		authorized := sameStateLineage(record.Admission.Invocation, invocation)

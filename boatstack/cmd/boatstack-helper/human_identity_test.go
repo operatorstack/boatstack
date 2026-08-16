@@ -13,7 +13,11 @@ import (
 
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentity"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/plant"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
 )
 
@@ -38,6 +42,37 @@ func TestHumanIdentityPresentationIsBoundToVerifiedConfiguration(t *testing.T) {
 	if err := os.WriteFile(configPath, configRaw, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	resolver, err := plant.NewResolver("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, err := resolver.ResolveInvocation(context.Background(), repository, "cli", "human-identity-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, invocation, err := resolver.ResolveLayout(context.Background(), invocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, configFingerprint, err := protocol.ProjectConfigFingerprint(configRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := durable.Default(invocation, time.Now().UTC())
+	policy := config.ControlPolicy()
+	state.Configuration, state.ConfigFingerprint = model.ConfigurationVerified, configFingerprint
+	state.PlanApprovalPolicy, state.VisualEvidencePolicy, state.ExternalEffectPolicy = policy.PlanApproval, policy.VisualEvidence, policy.ExternalEffectAuthority
+	state.IndependentReview, state.EnabledHosts = policy.IndependentReviewForHighRisk, policy.Hosts
+	stateRaw, err := durable.EncodeState(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(layout.StatePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(layout.StatePath, stateRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	snapshot, err := boatstackruntime.NewControlBundleSnapshot(map[string][]byte{".boatstack/project.json": configRaw})
 	if err != nil {
 		t.Fatal(err)
@@ -46,7 +81,7 @@ func TestHumanIdentityPresentationIsBoundToVerifiedConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := surfaces.Request{Repository: repository, ControlBundle: &contract}
+	request := surfaces.Request{Repository: repository, Host: "cli", CorrelationID: "human-identity-test", ControlBundle: &contract}
 	presentation, err := humanIdentityPresentationForRequest(request)
 	if err != nil {
 		t.Fatal(err)

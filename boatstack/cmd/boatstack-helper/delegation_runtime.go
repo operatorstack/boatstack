@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"slices"
+	"sort"
 	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
@@ -22,13 +24,32 @@ import (
 func canReprojectDelegation(layout ports.ControllerLayout, invocation model.InvocationContext, prior, current delegation.Request) (bool, error) {
 	if prior.RunID != current.RunID || prior.ProgramID != current.ProgramID || prior.EntryID != current.EntryID ||
 		prior.TargetID != current.TargetID || prior.ObjectiveID != current.ObjectiveID || prior.DeliveryID != current.DeliveryID ||
-		prior.RepositoryID != current.RepositoryID || prior.GitCommonID != current.GitCommonID {
+		prior.RepositoryID != current.RepositoryID || prior.GitCommonID != current.GitCommonID ||
+		prior.BindingFingerprint != current.BindingFingerprint || prior.Description != current.Description ||
+		!sameStringSet(prior.InputFingerprints, current.InputFingerprints) || !sameStringSet(prior.RequestedAuthorities, current.RequestedAuthorities) {
 		return false, nil
+	}
+	initial := invocation
+	initial.WorktreeID, initial.Ref = prior.InitialWorktreeID, prior.InitialRef
+	authorized, err := effects.InvocationAuthorizedByFlow(layout, current.RunID, initial, invocation)
+	if err != nil || !authorized {
+		return false, err
 	}
 	if prior.ControlBundleFingerprint == current.ControlBundleFingerprint {
-		return false, nil
+		if prior.ProgramFingerprint != current.ProgramFingerprint || prior.HumanIdentityProviderFingerprint == current.HumanIdentityProviderFingerprint {
+			return false, nil
+		}
+		return effects.ConfigurationIdentityReprojectionAdmits(layout, current.RunID, invocation, current.HumanIdentityProviderFingerprint)
 	}
 	return effects.InstallationReprojectionAdmits(layout, current.RunID, invocation, current.ControlBundleFingerprint)
+}
+
+func sameStringSet(left, right []string) bool {
+	left = append([]string(nil), left...)
+	right = append([]string(nil), right...)
+	sort.Strings(left)
+	sort.Strings(right)
+	return slices.Equal(left, right)
 }
 
 func prepareDelegation(ctx context.Context, request *surfaces.Request) (ports.Lock, *surfaces.Response, error) {
@@ -93,12 +114,24 @@ func prepareDelegation(ctx context.Context, request *surfaces.Request) (ports.Lo
 		return nil, nil, err
 	}
 	if record.RequestFingerprint != request.DelegationRequestFingerprint || record.Request.RunID != request.FlowID || record.Request.ProgramID != request.ProgramID || record.Request.ProgramFingerprint != request.ProgramFingerprint || record.Request.ControlBundleFingerprint != request.ControlBundleFingerprint || record.Request.EntryID != request.EntryID || record.Request.TargetID != string(request.Objective.TargetID) || record.Request.ObjectiveID != request.Objective.ID || record.Request.DeliveryID != request.Objective.DeliveryID || record.Request.RepositoryID != invocation.RepositoryID || record.Request.GitCommonID != invocation.GitCommonID || record.Request.BindingFingerprint != request.DelegationBindingFingerprint || record.Request.HumanIdentityProviderFingerprint != presentation.ProviderFingerprint || record.ActorIdentityProviderFingerprint != presentation.ProviderFingerprint {
-		reprojected, reprojectErr := canReprojectDelegation(layout, invocation, record.Request, delegation.Request{
-			RunID: request.FlowID, ProgramID: request.ProgramID, ProgramFingerprint: request.ProgramFingerprint, ControlBundleFingerprint: request.ControlBundleFingerprint,
-			EntryID: request.EntryID, TargetID: string(request.Objective.TargetID), ObjectiveID: request.Objective.ID, DeliveryID: request.Objective.DeliveryID,
-			RepositoryID: invocation.RepositoryID, GitCommonID: invocation.GitCommonID, BindingFingerprint: request.DelegationBindingFingerprint,
-			HumanIdentityProviderFingerprint: presentation.ProviderFingerprint,
-		})
+		current := record.Request
+		current.RunID, current.ProgramID, current.ProgramFingerprint, current.ControlBundleFingerprint = request.FlowID, request.ProgramID, request.ProgramFingerprint, request.ControlBundleFingerprint
+		current.EntryID, current.TargetID, current.ObjectiveID, current.DeliveryID = request.EntryID, string(request.Objective.TargetID), request.Objective.ID, request.Objective.DeliveryID
+		current.RepositoryID, current.GitCommonID = invocation.RepositoryID, invocation.GitCommonID
+		current.InitialWorktreeID, current.InitialRef = invocation.WorktreeID, invocation.Ref
+		current.BindingFingerprint, current.HumanIdentityProviderFingerprint = request.DelegationBindingFingerprint, presentation.ProviderFingerprint
+		current.RequestedAuthorities = make([]string, len(request.DelegatedAuthorities))
+		for index, authority := range request.DelegatedAuthorities {
+			current.RequestedAuthorities[index] = string(authority)
+		}
+		currentFingerprint, fingerprintErr := current.Fingerprint()
+		reprojected := false
+		var reprojectErr error
+		if fingerprintErr == nil && currentFingerprint == request.DelegationRequestFingerprint {
+			reprojected, reprojectErr = canReprojectDelegation(layout, invocation, record.Request, current)
+		} else if fingerprintErr != nil {
+			reprojectErr = fingerprintErr
+		}
 		releaseOnError()
 		if reprojectErr != nil {
 			return nil, nil, reprojectErr
