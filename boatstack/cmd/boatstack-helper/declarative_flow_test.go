@@ -349,6 +349,17 @@ func TestDeclarativeRuntimeRejectsSemanticsItCannotProve(t *testing.T) {
 		"unproved-enum-parameter": {func(document *controlprogram.Document) {
 			document.Operators[0].StateEffect.Assignments[0] = controlprogram.StateAssignment{Facet: "incident", ValueFrom: &controlprogram.ValueReference{Parameter: "channel"}}
 		}, "cannot prove parameter"},
+		"string-parameter-to-boolean-facet": {func(document *controlprogram.Document) {
+			document.Facets = append(document.Facets, controlprogram.Facet{ID: "approved", Kind: "boolean"})
+			document.Operators[0].StateEffect.Assignments = append(document.Operators[0].StateEffect.Assignments,
+				controlprogram.StateAssignment{Facet: "approved", ValueFrom: &controlprogram.ValueReference{Parameter: "channel"}})
+		}, "cannot prove parameter"},
+		"invalid-boolean-literal": {func(document *controlprogram.Document) {
+			invalid := "not-a-boolean"
+			document.Facets = append(document.Facets, controlprogram.Facet{ID: "approved", Kind: "boolean"})
+			document.Operators[0].StateEffect.Assignments = append(document.Operators[0].StateEffect.Assignments,
+				controlprogram.StateAssignment{Facet: "approved", Value: &invalid})
+		}, "outside the facet type"},
 		"target-not-established": {func(document *controlprogram.Document) {
 			document.Operators[0].StateEffect.Assignments[0] = controlprogram.StateAssignment{Facet: "incident", Value: &open}
 		}, "do not establish its target"},
@@ -379,5 +390,29 @@ func TestDeclarativeRuntimeRejectsSemanticsItCannotProve(t *testing.T) {
 				t.Fatalf("validation = %v, want %q", err, test.witness)
 			}
 		})
+	}
+}
+
+func TestDeclarativeRuntimeRejectsTypedAssignmentBeforeStateOrReceipt(t *testing.T) {
+	stateRoot := t.TempDir()
+	t.Setenv("BOATSTACK_STATE_ROOT", stateRoot)
+	document := declarativeInvocationDocument()
+	document.Facets = append(document.Facets, controlprogram.Facet{ID: "approved", Kind: "boolean"})
+	document.Operators[0].StateEffect.Assignments = append(document.Operators[0].StateEffect.Assignments,
+		controlprogram.StateAssignment{Facet: "approved", ValueFrom: &controlprogram.ValueReference{Parameter: "channel"}})
+	repository := declarativeFlowRepositoryWithDocument(t, document)
+
+	_, err := captureStdout(t, func() error {
+		return runFlowContinuation([]string{"--repo", repository, "--flow", "incident-response-invocation", "--entry", "respond", "--input", "incident=INC-7", "--host", "codex", "--format", "json"})
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot prove parameter \"channel\" belongs to the facet") {
+		t.Fatalf("run validation = %v", err)
+	}
+	entries, readErr := os.ReadDir(stateRoot)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("invalid Flow created controller state or receipts: %#v", entries)
 	}
 }

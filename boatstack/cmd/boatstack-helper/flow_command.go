@@ -376,6 +376,13 @@ func validateDeclarativeFlow(compiled controlprogram.Compiled) error {
 			}
 		}
 		for _, assignment := range operator.StateEffect.Assignments {
+			facet := facets[assignment.Facet]
+			if assignment.Value != nil {
+				if facet.Kind == "boolean" && *assignment.Value != "true" && *assignment.Value != "false" {
+					return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative assignment %q has a value outside the facet type", assignment.Facet)
+				}
+				continue
+			}
 			if assignment.ValueFrom == nil {
 				continue
 			}
@@ -386,7 +393,7 @@ func validateDeclarativeFlow(compiled controlprogram.Compiled) error {
 			if !declared || !bindings[assignment.ValueFrom.Parameter] {
 				return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative assignment %q requires bound operator parameter %q", assignment.Facet, assignment.ValueFrom.Parameter)
 			}
-			if facets[assignment.Facet].Kind == "enum" || contract.Type.Kind != "string" {
+			if facet.Kind == "enum" || contract.Type.Kind != facet.Kind {
 				return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative assignment %q cannot prove parameter %q belongs to the facet", assignment.Facet, assignment.ValueFrom.Parameter)
 			}
 		}
