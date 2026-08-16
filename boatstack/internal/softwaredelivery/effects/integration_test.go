@@ -621,7 +621,7 @@ func TestExternalConfigurationAuthorityTransfersAcrossAttachAndDetach(t *testing
 	if err := os.WriteFile(updatedPath, updatedConfig, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	apply("configuration.mutate", human, false, protocol.Parameters{{Name: "config_path", Value: updatedPath}, {Name: "config_sha256", Value: configFingerprint(t, updatedConfig)}})
+	configResult := apply("configuration.mutate", human, false, protocol.Parameters{{Name: "config_path", Value: updatedPath}, {Name: "config_sha256", Value: configFingerprint(t, updatedConfig)}})
 	updated, _, err := protocol.ProjectConfigFingerprint(updatedConfig)
 	if err != nil {
 		t.Fatal(err)
@@ -630,10 +630,10 @@ func TestExternalConfigurationAuthorityTransfersAcrossAttachAndDetach(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if admitted, err := effects.ConfigurationIdentityReprojectionAdmits(detachedLayout, "flow-external-config", detachedInvocation, updatedProvider); err != nil || !admitted {
+	if admitted, err := effects.ConfigurationReprojectionAdmits(detachedLayout, "flow-external-config", detachedInvocation, updatedProvider, configResult.Receipt.ControlBundleTargetFingerprint); err != nil || !admitted {
 		t.Fatalf("accepted external identity reprojection admitted=%t err=%v", admitted, err)
 	}
-	if admitted, err := effects.ConfigurationIdentityReprojectionAdmits(detachedLayout, "flow-external-config", detachedInvocation, strings.Repeat("f", 64)); err != nil || admitted {
+	if admitted, err := effects.ConfigurationReprojectionAdmits(detachedLayout, "flow-external-config", detachedInvocation, strings.Repeat("f", 64), configResult.Receipt.ControlBundleTargetFingerprint); err != nil || admitted {
 		t.Fatalf("foreign identity provider admitted=%t err=%v", admitted, err)
 	}
 	repositoryConfigPath := filepath.Join(repository, ".boatstack", "project.json")

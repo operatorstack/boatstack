@@ -35,13 +35,30 @@ func canReprojectDelegation(layout ports.ControllerLayout, invocation model.Invo
 	if err != nil || !authorized {
 		return false, err
 	}
-	if prior.ControlBundleFingerprint == current.ControlBundleFingerprint {
-		if prior.ProgramFingerprint != current.ProgramFingerprint || prior.HumanIdentityProviderFingerprint == current.HumanIdentityProviderFingerprint {
-			return false, nil
+	return admittedDelegationReprojection(
+		prior,
+		current,
+		func() (bool, error) {
+			return effects.ConfigurationReprojectionAdmits(layout, current.RunID, invocation, current.HumanIdentityProviderFingerprint, current.ControlBundleFingerprint)
+		},
+		func() (bool, error) {
+			return effects.InstallationReprojectionAdmits(layout, current.RunID, invocation, current.ControlBundleFingerprint)
+		},
+	)
+}
+
+func admittedDelegationReprojection(prior, current delegation.Request, configurationAdmits, installationAdmits func() (bool, error)) (bool, error) {
+	configurationChanged := prior.ControlBundleFingerprint != current.ControlBundleFingerprint || prior.HumanIdentityProviderFingerprint != current.HumanIdentityProviderFingerprint
+	if prior.ProgramFingerprint == current.ProgramFingerprint && configurationChanged {
+		admitted, err := configurationAdmits()
+		if err != nil || admitted {
+			return admitted, err
 		}
-		return effects.ConfigurationIdentityReprojectionAdmits(layout, current.RunID, invocation, current.HumanIdentityProviderFingerprint)
 	}
-	return effects.InstallationReprojectionAdmits(layout, current.RunID, invocation, current.ControlBundleFingerprint)
+	if prior.ControlBundleFingerprint == current.ControlBundleFingerprint {
+		return false, nil
+	}
+	return installationAdmits()
 }
 
 func sameStringSet(left, right []string) bool {

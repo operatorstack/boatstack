@@ -222,7 +222,7 @@ func questionUsesExplicitActor(response *surfaces.Response) bool {
 		return false
 	}
 	switch response.Question.TransitionID {
-	case "installation.initialize", "configuration.mutate", "configuration.reconcile":
+	case "installation.initialize", "configuration.initialize", "configuration.mutate", "configuration.reconcile":
 		return response.Snapshot == nil || response.Snapshot.Configuration.Status != model.FactKnown || response.Snapshot.Configuration.Value != model.ConfigurationVerified
 	default:
 		return false

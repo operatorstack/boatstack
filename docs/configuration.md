@@ -69,7 +69,9 @@ interpolation, and execute them only when that boundary independently permits
 the action. It accepts only a zero exit status and one non-empty actor line of
 at most 1 KiB after removing at most one trailing LF or CRLF. If execution is
 not permitted or resolution fails, the host must ask the user for an actor; it
-must not infer an operating-system or Git identity.
+must not infer an operating-system or Git identity. This explicit fallback does
+not replace the verified descriptor. The host retains its exact provider
+fingerprint and still requires separate approval of the exact authority request.
 
 The host displays the resolved actor, exact request, and requested authority,
 then asks for explicit approval. The authorization command still requires
@@ -78,12 +80,12 @@ proposed. It does not prove approval, identity ownership, provider permission,
 or external-provider authority. In particular, resolving an actor through
 `gh` does not create a GitHub provider receipt.
 
-Before initialization, or while `configuration.mutate` or
-`configuration.reconcile` repairs unverified configuration, no trusted
-descriptor is available. Boatstack preserves the human authority question but
-omits `human_identity`. The host must ask for an explicit actor and must not
-infer one. A missing identity on any other human authority boundary is an
-error.
+Before initialization, or while `configuration.initialize`,
+`configuration.mutate`, or `configuration.reconcile` repairs unverified
+configuration, no trusted descriptor is available. Boatstack preserves the
+human authority question but omits `human_identity`. The host must ask for an
+explicit actor and must not infer one. A missing identity on any other human
+authority boundary is an error.
 
 The canonical snapshot carries this policy projection as controlling evidence.
 `human` plan approval rejects autonomy receipts. `human-or-autonomy` accepts

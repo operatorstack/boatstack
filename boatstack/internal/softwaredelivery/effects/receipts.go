@@ -240,11 +240,12 @@ func installationReprojectionAdmits(records []journalRecord, flowID string, invo
 	return false, nil
 }
 
-// ConfigurationIdentityReprojectionAdmits reports whether the exact current
-// identity provider was established by a committed configuration mutation in
-// this Flow lineage and remains the verified durable configuration. It permits
-// a fresh delegation request only; prior authority is never carried forward.
-func ConfigurationIdentityReprojectionAdmits(layout ports.ControllerLayout, flowID string, invocation model.InvocationContext, providerFingerprint string) (bool, error) {
+// ConfigurationReprojectionAdmits reports whether the exact current
+// configuration, identity provider, and control bundle were established by a
+// committed configuration mutation in this Flow lineage and remain the
+// verified durable state. It permits a fresh delegation request only; prior
+// authority is never carried forward.
+func ConfigurationReprojectionAdmits(layout ports.ControllerLayout, flowID string, invocation model.InvocationContext, providerFingerprint, controlBundleFingerprint string) (bool, error) {
 	configRaw, err := os.ReadFile(layout.ConfigPath)
 	if err != nil {
 		return false, err
@@ -276,14 +277,15 @@ func ConfigurationIdentityReprojectionAdmits(layout ports.ControllerLayout, flow
 	}); err != nil {
 		return false, err
 	}
-	return configurationIdentityReprojectionAdmits(records, flowID, invocation, configFingerprint, state.Revision)
+	return configurationReprojectionAdmits(records, flowID, invocation, configFingerprint, controlBundleFingerprint, state.Revision)
 }
 
-func configurationIdentityReprojectionAdmits(records []journalRecord, flowID string, invocation model.InvocationContext, configFingerprint string, maximumRevision uint64) (bool, error) {
+func configurationReprojectionAdmits(records []journalRecord, flowID string, invocation model.InvocationContext, configFingerprint, controlBundleFingerprint string, maximumRevision uint64) (bool, error) {
 	for _, record := range records {
 		receipt := *record.Receipt
 		admittedFingerprint, exists := record.Admission.Parameters.Get("config_sha256")
-		if receipt.TransitionID != "configuration.mutate" || receipt.FlowID != flowID || receipt.ResultingStateRevision > maximumRevision || !exists || admittedFingerprint != configFingerprint {
+		if receipt.TransitionID != "configuration.mutate" || receipt.FlowID != flowID || receipt.ResultingStateRevision > maximumRevision ||
+			receipt.ControlBundleTargetFingerprint != controlBundleFingerprint || !exists || admittedFingerprint != configFingerprint {
 			continue
 		}
 		authorized := sameStateLineage(record.Admission.Invocation, invocation)

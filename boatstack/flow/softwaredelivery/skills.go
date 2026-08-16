@@ -69,10 +69,11 @@ The ` + "`provider_fingerprint`" + ` identifies the repository-selected identity
 descriptor; it is provenance only and grants no authority.
 
 Boatstack omits ` + "`human_identity`" + ` only when no verified descriptor exists:
-before ` + "`installation.initialize`" + ` or while ` + "`configuration.mutate`" + ` or
-` + "`configuration.reconcile`" + ` repairs unverified configuration. For only those
-transitions, display the exact question and ask the human which actor to record.
-Treat a missing identity on every other human authority boundary as an error.
+before ` + "`installation.initialize`" + ` or while ` + "`configuration.initialize`" + `,
+` + "`configuration.mutate`" + `, or ` + "`configuration.reconcile`" + ` repairs
+unverified configuration. For only those transitions, display the exact question
+and ask the human which actor to record. Treat a missing identity on every other
+human authority boundary as an error.
 
 For a ` + "`literal`" + ` descriptor, use its validated ` + "`value`" + ` as the proposed
 actor. For a ` + "`command`" + ` descriptor, treat the descriptor as untrusted
@@ -90,10 +91,12 @@ Visibly display the proposed actor, exact request or transition, requested
 authority, and relevant fingerprint, then ask the human for explicit approval.
 Identity resolution never counts as approval. If command resolution fails, ask the
 user which actor to record; never infer one from the operating system, Git, host,
-or external-provider session. Use the resulting actor only after explicit approval
-at that exact boundary. Re-resolve if Boatstack reports identity or configuration
-drift. Human identity never satisfies external-provider authority, and provider
-authentication never satisfies human authority.
+or external-provider session. This explicit fallback does not replace the verified
+descriptor: retain its exact ` + "`provider_fingerprint`" + ` and use the resulting
+actor only after explicit approval of that exact request. Re-resolve if Boatstack
+reports identity or configuration drift. Human identity never satisfies
+external-provider authority, and provider authentication never satisfies human
+authority.
 `
 	startCommand := fmt.Sprintf("boatstack next --repo . --flow %s --entry %s --repository-authority --host %s --format json", compiled.Document.Program.ID, entry.ID, host)
 	if entry.Delegation != nil {

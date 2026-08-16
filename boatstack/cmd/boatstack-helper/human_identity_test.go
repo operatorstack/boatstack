@@ -132,7 +132,7 @@ func TestUnverifiedConfigurationRepairPreservesExplicitActorQuestion(t *testing.
 	stale := &model.Snapshot{Observation: model.Observation{Configuration: model.Known(model.ConfigurationStale, model.Evidence{
 		Source: "configuration:test", Fingerprint: strings.Repeat("a", 64),
 	})}}
-	for _, transitionID := range []catalog.TransitionID{"configuration.mutate", "configuration.reconcile"} {
+	for _, transitionID := range []catalog.TransitionID{"configuration.initialize", "configuration.mutate", "configuration.reconcile"} {
 		response := surfaces.Response{Snapshot: stale, Question: &surfaces.Question{
 			TransitionID: transitionID, Authority: []catalog.AuthorityClass{catalog.AuthorityHuman},
 		}}

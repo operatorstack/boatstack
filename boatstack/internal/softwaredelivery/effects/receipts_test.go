@@ -86,28 +86,32 @@ func TestAcceptedConfigurationMutationAuthorizesFreshIdentityDelegationRequestOn
 	invoking := model.InvocationContext{RepositoryID: "repo", GitCommonID: "common", WorktreeID: "worktree", Ref: "refs/heads/main", ControllerID: "controller"}
 	receipt := protocol.TransitionReceipt{
 		ID: "configuration-one", FlowID: "run-one", Sequence: 9, TransitionID: "configuration.mutate", ResultingStateRevision: 12,
+		ControlBundleTargetFingerprint: "bundle-b",
 	}
 	records := []journalRecord{{
 		Admission: protocol.Admission{Invocation: invoking, Parameters: protocol.Parameters{{Name: "config_sha256", Value: "config-b"}}},
 		Receipt:   &receipt,
 	}}
-	admitted, err := configurationIdentityReprojectionAdmits(records, "run-one", invoking, "config-b", 12)
+	admitted, err := configurationReprojectionAdmits(records, "run-one", invoking, "config-b", "bundle-b", 12)
 	if err != nil || !admitted {
 		t.Fatalf("configuration reprojection admitted=%t err=%v", admitted, err)
 	}
-	if admitted, err := configurationIdentityReprojectionAdmits(records, "run-other", invoking, "config-b", 12); err != nil || admitted {
+	if admitted, err := configurationReprojectionAdmits(records, "run-other", invoking, "config-b", "bundle-b", 12); err != nil || admitted {
 		t.Fatalf("foreign Flow mutation admitted=%t err=%v", admitted, err)
 	}
-	if admitted, err := configurationIdentityReprojectionAdmits(records, "run-one", invoking, "config-other", 12); err != nil || admitted {
+	if admitted, err := configurationReprojectionAdmits(records, "run-one", invoking, "config-other", "bundle-b", 12); err != nil || admitted {
 		t.Fatalf("foreign configuration admitted=%t err=%v", admitted, err)
 	}
-	if admitted, err := configurationIdentityReprojectionAdmits(records, "run-one", invoking, "config-b", 11); err != nil || admitted {
+	if admitted, err := configurationReprojectionAdmits(records, "run-one", invoking, "config-b", "bundle-b", 11); err != nil || admitted {
 		t.Fatalf("future configuration receipt admitted=%t err=%v", admitted, err)
 	}
 	other := invoking
 	other.WorktreeID = "other-worktree"
-	if admitted, err := configurationIdentityReprojectionAdmits(records, "run-one", other, "config-b", 12); err != nil || admitted {
+	if admitted, err := configurationReprojectionAdmits(records, "run-one", other, "config-b", "bundle-b", 12); err != nil || admitted {
 		t.Fatalf("foreign worktree mutation admitted=%t err=%v", admitted, err)
+	}
+	if admitted, err := configurationReprojectionAdmits(records, "run-one", invoking, "config-b", "bundle-other", 12); err != nil || admitted {
+		t.Fatalf("foreign control bundle admitted=%t err=%v", admitted, err)
 	}
 }
 

@@ -2801,3 +2801,36 @@ func TestDelegationReprojectionRejectsUnadmittedContextChanges(t *testing.T) {
 		t.Fatalf("changed-objective reprojection admitted=%t err=%v", admitted, err)
 	}
 }
+
+func TestConfigurationReprojectionPrecedesInstallationForChangedRepositoryBundle(t *testing.T) {
+	prior := delegation.Request{
+		ProgramFingerprint: strings.Repeat("a", 64), ControlBundleFingerprint: strings.Repeat("b", 64),
+		HumanIdentityProviderFingerprint: strings.Repeat("c", 64),
+	}
+	current := prior
+	current.ControlBundleFingerprint = strings.Repeat("d", 64)
+	current.HumanIdentityProviderFingerprint = strings.Repeat("e", 64)
+	configurationCalls, installationCalls := 0, 0
+	admitted, err := admittedDelegationReprojection(prior, current, func() (bool, error) {
+		configurationCalls++
+		return true, nil
+	}, func() (bool, error) {
+		installationCalls++
+		return false, nil
+	})
+	if err != nil || !admitted || configurationCalls != 1 || installationCalls != 0 {
+		t.Fatalf("configuration reprojection = admitted=%t config=%d install=%d err=%v", admitted, configurationCalls, installationCalls, err)
+	}
+
+	configurationCalls, installationCalls = 0, 0
+	admitted, err = admittedDelegationReprojection(prior, current, func() (bool, error) {
+		configurationCalls++
+		return false, nil
+	}, func() (bool, error) {
+		installationCalls++
+		return true, nil
+	})
+	if err != nil || !admitted || configurationCalls != 1 || installationCalls != 1 {
+		t.Fatalf("installation fallback = admitted=%t config=%d install=%d err=%v", admitted, configurationCalls, installationCalls, err)
+	}
+}
