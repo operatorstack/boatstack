@@ -108,6 +108,7 @@ export type ParameterSourceKind =
   | "entry-input"
   | "state"
   | "receipt"
+  | "state-or-receipt"
   | "work-output"
   | "trusted-resolver"
   | "host-input";
@@ -141,6 +142,13 @@ export type ParameterProducer =
   | { kind: "entry-input"; input: string }
   | { kind: "state"; facet: string; available_when: Predicate }
   | { kind: "receipt"; transition: string; field: string }
+  | {
+      kind: "state-or-receipt";
+      facet: string;
+      available_when: Predicate;
+      transition: string;
+      field: string;
+    }
   | { kind: "work-output"; work: string; output: string }
   | {
       kind: "trusted-resolver";
@@ -395,6 +403,22 @@ export function fromReceipt(definition: {
   field: string;
 }): ParameterProducer {
   return { kind: "receipt", ...definition };
+}
+
+/** Resolves from current durable state, falling back to one exact committed receipt. */
+export function fromStateOrReceipt(definition: {
+  facet: string;
+  availableWhen: Predicate;
+  transition: string;
+  field: string;
+}): ParameterProducer {
+  return {
+    kind: "state-or-receipt",
+    facet: definition.facet,
+    available_when: definition.availableWhen,
+    transition: definition.transition,
+    field: definition.field,
+  };
 }
 
 /** Resolves a transition parameter from exact run-scoped foreground-work output. */

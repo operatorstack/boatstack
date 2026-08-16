@@ -13,8 +13,8 @@ import {
   always,
   facet,
   fact,
-  fromReceipt,
   fromState,
+  fromStateOrReceipt,
   hostParameter,
   operator,
   trustedParameterResolver,
@@ -245,7 +245,14 @@ export function standardSoftwareDeliveryParameters(step: TrustedStep): Record<st
     case "publication.execute":
       return { preview_fingerprint: durableValue("preview_fingerprint") };
     case "publication.observe":
-      return { publication_id: fromReceipt({ transition: "publication.execute", field: "publication_id" }) };
+      return {
+        publication_id: fromStateOrReceipt({
+          facet: "publication_id",
+          availableWhen: fact("publication_id"),
+          transition: "publication.execute",
+          field: "publication_id",
+        }),
+      };
     case "publication.correct":
       return {
         publication_id: durableValue("publication_id"),

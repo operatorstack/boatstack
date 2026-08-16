@@ -59,7 +59,8 @@ func (r Resolver) ResolveOperator(reference, version string) (controlprogram.Res
 	transition.ExecutionContext = executionContextFor(transition)
 	outputs := projectOperatorOutputs(transition)
 	stateInputs := projectOperatorStateInputs(transition)
-	fingerprint, err := transitionFingerprint(transition, outputs, stateInputs)
+	receiptInputs := projectOperatorReceiptInputs(transition)
+	fingerprint, err := transitionFingerprint(transition, outputs, stateInputs, receiptInputs)
 	if err != nil {
 		return controlprogram.ResolvedOperator{}, err
 	}
@@ -91,6 +92,7 @@ func (r Resolver) ResolveOperator(reference, version string) (controlprogram.Res
 		Parameters:       projectOperatorParameters(transition),
 		Outputs:          outputs,
 		StateInputs:      stateInputs,
+		ReceiptInputs:    receiptInputs,
 	}, nil
 }
 
@@ -242,7 +244,7 @@ func projectOperatorParameters(transition delivery.Transition) []controlprogram.
 		case transition.ID == "publication.execute" && parameter.Name == "preview_fingerprint":
 			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceState}
 		case transition.ID == "publication.observe" && parameter.Name == "publication_id":
-			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceReceipt, controlprogram.ParameterSourceState}
+			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceState, controlprogram.ParameterSourceStateOrReceipt}
 		case transition.ID == "publication.correct" && parameter.Name == "publication_id":
 			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceState}
 		case transition.ID == "publication.correct" && (parameter.Name == "body_path" || parameter.Name == "body_sha256"):
@@ -294,12 +296,20 @@ func projectOperatorStateInputs(transition delivery.Transition) []controlprogram
 	}
 }
 
-func transitionFingerprint(value delivery.Transition, outputs []controlprogram.OperatorOutput, stateInputs []controlprogram.OperatorStateInput) (string, error) {
+func projectOperatorReceiptInputs(transition delivery.Transition) []controlprogram.OperatorReceiptInput {
+	if transition.ID == "publication.observe" {
+		return []controlprogram.OperatorReceiptInput{{Parameter: "publication_id", Transition: "publication.execute", Field: "publication_id"}}
+	}
+	return nil
+}
+
+func transitionFingerprint(value delivery.Transition, outputs []controlprogram.OperatorOutput, stateInputs []controlprogram.OperatorStateInput, receiptInputs []controlprogram.OperatorReceiptInput) (string, error) {
 	encoded, err := json.Marshal(struct {
-		Transition  delivery.Transition                 `json:"transition"`
-		Outputs     []controlprogram.OperatorOutput     `json:"outputs,omitempty"`
-		StateInputs []controlprogram.OperatorStateInput `json:"state_inputs,omitempty"`
-	}{Transition: value, Outputs: outputs, StateInputs: stateInputs})
+		Transition    delivery.Transition                   `json:"transition"`
+		Outputs       []controlprogram.OperatorOutput       `json:"outputs,omitempty"`
+		StateInputs   []controlprogram.OperatorStateInput   `json:"state_inputs,omitempty"`
+		ReceiptInputs []controlprogram.OperatorReceiptInput `json:"receipt_inputs,omitempty"`
+	}{Transition: value, Outputs: outputs, StateInputs: stateInputs, ReceiptInputs: receiptInputs})
 	if err != nil {
 		return "", err
 	}

@@ -21,8 +21,20 @@ type delegationResolver struct {
 
 type invocationResolver struct {
 	delegationResolver
+	operators          map[string]controlprogram.ResolvedOperator
 	parameterResolvers map[string]controlprogram.ResolvedParameterResolver
 	validators         map[string]controlprogram.ResolvedValueValidator
+}
+
+func (r invocationResolver) ResolveOperator(reference, version string) (controlprogram.ResolvedOperator, error) {
+	if version != "1" {
+		return controlprogram.ResolvedOperator{}, os.ErrNotExist
+	}
+	value, ok := r.operators[reference]
+	if !ok {
+		return controlprogram.ResolvedOperator{}, os.ErrNotExist
+	}
+	return value, nil
 }
 
 func (r invocationResolver) ResolveParameterResolver(reference, version string) (controlprogram.ResolvedParameterResolver, error) {
@@ -175,7 +187,7 @@ func TestInvocationCompletenessRequiresAuthorityReceiptProducer(t *testing.T) {
 	}
 }
 
-func TestInvocationCompletenessRejectsUnguaranteedReceiptAndUnknownResolver(t *testing.T) {
+func TestInvocationCompletenessRejectsUntrustedReceiptAndUnknownResolver(t *testing.T) {
 	receiptBound := parameterProgram()
 	receiptBound.Operators[0].Parameters[0].Authority = controlprogram.AuthorityRequirement{}
 	receiptBound.Operators[0].Parameters[0].AllowedSources = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceReceipt}
@@ -187,8 +199,8 @@ func TestInvocationCompletenessRejectsUnguaranteedReceiptAndUnknownResolver(t *t
 		ID: "observe-channel", Operator: "observe-channel", Guard: controlprogram.Predicate{True: &truth}, Target: fact("service", "healthy"), Priority: 1,
 	}}, receiptBound.Transitions...)
 	receiptBound.Transitions[1].Parameters[0].Producer = controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceReceipt, Transition: "observe-channel", Field: "channel"}
-	if _, err := controlprogram.Compile(receiptBound, nil); err == nil || !strings.Contains(err.Error(), "receipt is not guaranteed") {
-		t.Fatalf("unguaranteed receipt result = %v", err)
+	if _, err := controlprogram.Compile(receiptBound, nil); err == nil || !strings.Contains(err.Error(), "receipt availability is not guaranteed by the trusted operator binding") {
+		t.Fatalf("untrusted receipt result = %v", err)
 	}
 
 	unknown := parameterProgram()
@@ -197,6 +209,56 @@ func TestInvocationCompletenessRejectsUnguaranteedReceiptAndUnknownResolver(t *t
 	unknown.Transitions[0].Parameters[0].Producer = controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceTrustedResolver, Binding: &controlprogram.ParameterResolverBinding{Reference: "incident/missing", Version: "1"}}
 	if _, err := controlprogram.Compile(unknown, invocationResolver{}); err == nil || !strings.Contains(err.Error(), "trusted resolver is unknown") {
 		t.Fatalf("unknown resolver result = %v", err)
+	}
+}
+
+func TestInvocationCompletenessAcceptsOnlyExactTrustedReceiptProvenance(t *testing.T) {
+	// control-law: state predicates cannot stand in for a committed receipt;
+	// the consumer binding must guarantee the exact producer transition field.
+	document := incidentProgram()
+	document.Operators = []controlprogram.Operator{
+		{ID: "observe-channel", Binding: &controlprogram.OperatorBinding{Reference: "incident/observe-channel", Version: "1"}},
+		{ID: "restart", Binding: &controlprogram.OperatorBinding{Reference: "incident/restart", Version: "1"}},
+	}
+	truth := true
+	document.Transitions = []controlprogram.Transition{
+		{ID: "observe-channel", Operator: "observe-channel", Guard: controlprogram.Predicate{True: &truth}, Target: fact("service", "healthy"), Priority: 1},
+		{ID: "restart", Operator: "restart", Guard: fact("service", "healthy"), Target: fact("incident", "mitigated"), Priority: 10, Parameters: []controlprogram.TransitionParameterBinding{{
+			Parameter: "channel", Producer: controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceReceipt, Transition: "observe-channel", Field: "channel"},
+		}}},
+	}
+	mitigated := "mitigated"
+	healthy := "healthy"
+	resolver := invocationResolver{operators: map[string]controlprogram.ResolvedOperator{
+		"incident/observe-channel": {
+			Fingerprint: strings.Repeat("a", 64), Verifier: "healthcheck", ExecutionContext: "preserve",
+			StateEffect: controlprogram.StateEffect{Kind: "assignments", Assignments: []controlprogram.StateAssignment{{Facet: "service", Value: &healthy}}},
+			Outputs:     []controlprogram.OperatorOutput{{ID: "channel", Type: controlprogram.ValueTypeDefinition{Kind: "string"}}},
+		},
+		"incident/restart": {
+			Fingerprint: strings.Repeat("b", 64), Capabilities: []string{"service.restart"}, Effects: []string{"service.restart"}, Verifier: "healthcheck", Recovery: "restart", ExecutionContext: "preserve",
+			StateEffect: controlprogram.StateEffect{Kind: "assignments", Assignments: []controlprogram.StateAssignment{{Facet: "incident", Value: &mitigated}}},
+			Parameters:  []controlprogram.OperatorParameter{{ID: "channel", Type: controlprogram.ValueTypeDefinition{Kind: "string"}, Required: true, AllowedSources: []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceReceipt}}},
+		},
+	}}
+	if _, err := controlprogram.Compile(clone(t, document), resolver); err == nil || !strings.Contains(err.Error(), "receipt availability is not guaranteed by the trusted operator binding") {
+		t.Fatalf("missing trusted receipt input result = %v", err)
+	}
+	consumer := resolver.operators["incident/restart"]
+	consumer.ReceiptInputs = []controlprogram.OperatorReceiptInput{{Parameter: "channel", Transition: "observe-channel", Field: "channel", Guaranteed: true}}
+	resolver.operators["incident/restart"] = consumer
+	compiled, err := controlprogram.Compile(document, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tampered := clone(t, compiled.Document)
+	for index := range tampered.Operators {
+		if tampered.Operators[index].ID == "restart" {
+			tampered.Operators[index].ReceiptInputs[0].Field = "other"
+		}
+	}
+	if _, err := controlprogram.Compile(tampered, resolver); err == nil || !strings.Contains(err.Error(), "compiled binding semantics drift") {
+		t.Fatalf("receipt-input provenance drift result = %v", err)
 	}
 }
 

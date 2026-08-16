@@ -123,10 +123,13 @@ func TestRepositoryOwnedSoftwareDeliveryFlowsShareOneRuntime(t *testing.T) {
 					t.Fatalf("checked product-delivery IR is stale: frontend=%s checked=%s", compiled.Fingerprint, reference.Fingerprint)
 				}
 				var packageProducer, publicationProducer controlprogram.ParameterProducer
-				publicationOutputDeclared := false
+				publicationStateInputDeclared, publicationReceiptInputDeclared := false, false
 				for _, operator := range compiled.Document.Operators {
-					if operator.ID == "publication.execute" && len(operator.Outputs) == 1 && operator.Outputs[0].ID == "publication_id" && operator.Outputs[0].Type.Kind == "string" {
-						publicationOutputDeclared = true
+					if operator.ID == "publication.observe" && len(operator.StateInputs) == 1 && operator.StateInputs[0].Parameter == "publication_id" && operator.StateInputs[0].Facet == "publication_id" {
+						publicationStateInputDeclared = true
+					}
+					if operator.ID == "publication.observe" && len(operator.ReceiptInputs) == 1 && operator.ReceiptInputs[0].Parameter == "publication_id" && operator.ReceiptInputs[0].Transition == "publication.execute" && operator.ReceiptInputs[0].Field == "publication_id" && !operator.ReceiptInputs[0].Guaranteed {
+						publicationReceiptInputDeclared = true
 					}
 				}
 				for _, transition := range compiled.Document.Transitions {
@@ -145,11 +148,11 @@ func TestRepositoryOwnedSoftwareDeliveryFlowsShareOneRuntime(t *testing.T) {
 				if packageProducer.Kind != controlprogram.ParameterSourceTrustedResolver || packageProducer.Binding == nil || packageProducer.Binding.Reference != "software-delivery/admitted-planning-package-fingerprint" {
 					t.Fatalf("planning package producer = %#v", packageProducer)
 				}
-				if publicationProducer.Kind != controlprogram.ParameterSourceReceipt || publicationProducer.Transition != "publication.execute" || publicationProducer.Field != "publication_id" {
+				if publicationProducer.Kind != controlprogram.ParameterSourceStateOrReceipt || publicationProducer.Facet != "publication_id" || publicationProducer.Transition != "publication.execute" || publicationProducer.Field != "publication_id" {
 					t.Fatalf("publication identity producer = %#v", publicationProducer)
 				}
-				if !publicationOutputDeclared {
-					t.Fatal("publication receipt producer has no trusted runtime output declaration")
+				if !publicationStateInputDeclared || !publicationReceiptInputDeclared {
+					t.Fatal("publication identity producer lacks exact trusted alternative provenance")
 				}
 				if _, compileErr := delivery.Compile(context.Background(), delivery.CompileRequest{KernelVersion: boatstack.Version, Core: core.System(), Runtime: definition, Settings: map[string]string{"fixture": test.fixture}}); compileErr != nil {
 					t.Fatalf("compile repository Flow runtime: %v", compileErr)

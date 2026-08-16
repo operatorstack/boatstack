@@ -118,6 +118,7 @@ const (
 	ParameterSourceEntryInput      ParameterSourceKind = "entry-input"
 	ParameterSourceState           ParameterSourceKind = "state"
 	ParameterSourceReceipt         ParameterSourceKind = "receipt"
+	ParameterSourceStateOrReceipt  ParameterSourceKind = "state-or-receipt"
 	ParameterSourceWorkOutput      ParameterSourceKind = "work-output"
 	ParameterSourceTrustedResolver ParameterSourceKind = "trusted-resolver"
 	ParameterSourceHostInput       ParameterSourceKind = "host-input"
@@ -182,19 +183,20 @@ type TransitionParameterBinding struct {
 }
 
 type Operator struct {
-	ID               string               `json:"id"`
-	Binding          *OperatorBinding     `json:"binding,omitempty"`
-	Capabilities     []string             `json:"capabilities,omitempty"`
-	Authority        AuthorityRequirement `json:"authority"`
-	Effects          []string             `json:"effects,omitempty"`
-	Verifier         string               `json:"verifier,omitempty"`
-	Recovery         string               `json:"recovery,omitempty"`
-	StateEffect      *StateEffect         `json:"state_effect,omitempty"`
-	ExecutionContext string               `json:"execution_context"`
-	Parameters       []OperatorParameter  `json:"parameters,omitempty"`
-	Outputs          []OperatorOutput     `json:"outputs,omitempty"`
-	StateInputs      []OperatorStateInput `json:"state_inputs,omitempty"`
-	Description      string               `json:"description,omitempty"`
+	ID               string                 `json:"id"`
+	Binding          *OperatorBinding       `json:"binding,omitempty"`
+	Capabilities     []string               `json:"capabilities,omitempty"`
+	Authority        AuthorityRequirement   `json:"authority"`
+	Effects          []string               `json:"effects,omitempty"`
+	Verifier         string                 `json:"verifier,omitempty"`
+	Recovery         string                 `json:"recovery,omitempty"`
+	StateEffect      *StateEffect           `json:"state_effect,omitempty"`
+	ExecutionContext string                 `json:"execution_context"`
+	Parameters       []OperatorParameter    `json:"parameters,omitempty"`
+	Outputs          []OperatorOutput       `json:"outputs,omitempty"`
+	StateInputs      []OperatorStateInput   `json:"state_inputs,omitempty"`
+	ReceiptInputs    []OperatorReceiptInput `json:"receipt_inputs,omitempty"`
+	Description      string                 `json:"description,omitempty"`
 }
 
 // OperatorOutput declares a committed transition-receipt field that later
@@ -210,6 +212,16 @@ type OperatorStateInput struct {
 	Parameter     string    `json:"parameter"`
 	Facet         string    `json:"facet"`
 	AvailableWhen Predicate `json:"available_when"`
+}
+
+// OperatorReceiptInput binds a receipt-capable parameter to one exact
+// committed transition output owned by a trusted operator adapter. Guaranteed
+// is required when that receipt is the parameter's only source.
+type OperatorReceiptInput struct {
+	Parameter  string `json:"parameter"`
+	Transition string `json:"transition"`
+	Field      string `json:"field"`
+	Guaranteed bool   `json:"guaranteed,omitempty"`
 }
 
 type StateEffect struct {
@@ -311,6 +323,7 @@ type ResolvedOperator struct {
 	Parameters       []OperatorParameter
 	Outputs          []OperatorOutput
 	StateInputs      []OperatorStateInput
+	ReceiptInputs    []OperatorReceiptInput
 }
 
 type ResolvedParameterResolver struct {

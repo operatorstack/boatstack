@@ -28,6 +28,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
+	"github.com/operatorstack/boatstack/boatstack/internal/testprogram"
 	"github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
@@ -356,6 +357,102 @@ func productDeliveryDocument(programID string) controlprogram.Document {
 			flowFact("verification", "current"), flowFact("configuration", "verified"), flowFact("runtime", "verified"), flowFact("publication", "open"),
 		}}}},
 		Entries: []controlprogram.Entry{{ID: "run", Target: "published-pr", Inputs: []controlprogram.EntryInput{{ID: "plan", Type: "markdown-file", Required: true, Resolver: "software-delivery.plan-inbox", Config: config}}}},
+	}
+}
+
+type publicationReconcileRunner struct{ output []byte }
+
+func (r publicationReconcileRunner) CombinedOutput(context.Context, string, string, ...string) ([]byte, error) {
+	return r.output, nil
+}
+
+func TestPublicationReconciliationWithoutExecuteReceiptMaterializesObservation(t *testing.T) {
+	// control-law: an unknown publication effect may reconcile a durable
+	// publication identity without manufacturing an execute receipt; the next
+	// observation must consume that durable identity.
+	repository := flowRepository(t)
+	runFlowGit(t, repository, "init", "-q", "-b", "main")
+	runFlowGit(t, repository, "config", "user.name", "Boatstack Tests")
+	runFlowGit(t, repository, "config", "user.email", "boatstack@example.invalid")
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "fixture")
+
+	document := productDeliveryDocument("product-delivery")
+	resolver, err := softwareflow.NewResolver(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiled, err := controlprogram.Compile(document, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plantResolver, err := plant.NewResolver("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	invoking, err := plantResolver.ResolveInvocation(context.Background(), repository, "codex", "publication-reconcile-fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, invoking, err := plantResolver.ResolveLayout(context.Background(), invoking)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := durable.Default(invoking, time.Now().UTC())
+	state.ProgramFingerprint = compiled.Fingerprint
+	state.TransactionID = "publication-unknown"
+	state.TransactionTransition = "publication.execute"
+	state.Phase = model.PhaseRecovery
+	state.Recovery = model.RecoveryReconcile
+	state.RecoveryCause = "publication result was not parseable"
+	state.RecoverySourcePhase = model.PhaseExecutingExternal
+	state.RecoveryResumption = model.PhaseActive
+	state.RecoveryBudget = 3
+	state.Transaction = model.TransactionExternalUncertain
+
+	if _, _, found, err := effects.FindLatestCommittedTransitionOutput(layout, "run-publication-unknown", invoking, "publication.execute", "publication_id", state.Revision); err != nil || found {
+		t.Fatalf("interrupted execute receipt found=%t err=%v", found, err)
+	}
+	boundary, err := effects.NewNativeBoundaryWithRunner(publicationReconcileRunner{output: []byte(`{"state":"OPEN","url":"https://github.com/operatorstack/todo/pull/9","number":9,"mergedAt":null,"baseRefName":"main","headRefName":"main","headRefOid":"` + runFlowGitOutput(t, repository, "rev-parse", "HEAD") + `","isCrossRepository":false}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reconcile, ok := testprogram.StandardRegistry().Lookup("publication.reconcile")
+	if !ok {
+		t.Fatal("publication reconciliation transition is unavailable")
+	}
+	admission := protocol.Admission{
+		Invocation: invoking, SourceRevision: runFlowGitOutput(t, repository, "rev-parse", "HEAD"),
+		Parameters: protocol.Parameters{{Name: "transaction_id", Value: state.TransactionID}},
+	}
+	admission.RequiredCapabilities = catalog.RequiredCapabilities(reconcile)
+	admission.EffectiveCapabilities = admission.RequiredCapabilities
+	if err := boundary.PrepareObservation(context.Background(), admission, reconcile, layout, &state); err != nil {
+		t.Fatal(err)
+	}
+	if state.PublicationID != "9" {
+		t.Fatalf("reconciled publication ID = %q", state.PublicationID)
+	}
+	raw, err := durable.EncodeState(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(layout.StatePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(layout.StatePath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	materialized, err := materializeFlowInvocation(context.Background(), compiled, compiled.Document.Entries[0], commandOptions{
+		repository: repository, host: "codex", runID: "run-publication-unknown", deliveryID: "delivery-one",
+		targetID: "published-pr", transitionID: "publication.observe",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(materialized.parameters) != 1 || materialized.parameters[0] != "publication_id=9" || materialized.invocationEvidence == nil {
+		t.Fatalf("state-backed observation materialization = parameters %#v evidence %#v", materialized.parameters, materialized.invocationEvidence)
 	}
 }
 

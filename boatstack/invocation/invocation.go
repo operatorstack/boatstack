@@ -287,6 +287,12 @@ func materializeOne(contract controlprogram.OperatorParameter, producer controlp
 	case controlprogram.ParameterSourceReceipt:
 		value, ok := context.Receipts[producer.Transition+"/"+producer.Field]
 		return value, ok, nil
+	case controlprogram.ParameterSourceStateOrReceipt:
+		if value, ok := context.State[producer.Facet]; ok {
+			return value, true, nil
+		}
+		value, ok := context.Receipts[producer.Transition+"/"+producer.Field]
+		return value, ok, nil
 	case controlprogram.ParameterSourceWorkOutput:
 		value, ok := context.WorkOutputs[producer.Work+"/"+producer.Output]
 		return value, ok, nil

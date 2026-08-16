@@ -311,12 +311,12 @@ func normalizeOperators(document *Document, facets map[string]Facet, resolver Bi
 				if op.Binding.Fingerprint != resolved.Fingerprint {
 					return nil, invalid("operators."+op.ID+".binding", "binding fingerprint drift")
 				}
-				expected := Operator{ID: op.ID, Binding: &OperatorBinding{Reference: op.Binding.Reference, Version: op.Binding.Version, Fingerprint: resolved.Fingerprint}, Capabilities: resolved.Capabilities, Authority: resolved.Authority, Effects: resolved.Effects, Verifier: resolved.Verifier, Recovery: resolved.Recovery, StateEffect: &resolved.StateEffect, ExecutionContext: resolved.ExecutionContext, Parameters: resolved.Parameters, Outputs: resolved.Outputs, StateInputs: resolved.StateInputs}
+				expected := Operator{ID: op.ID, Binding: &OperatorBinding{Reference: op.Binding.Reference, Version: op.Binding.Version, Fingerprint: resolved.Fingerprint}, Capabilities: resolved.Capabilities, Authority: resolved.Authority, Effects: resolved.Effects, Verifier: resolved.Verifier, Recovery: resolved.Recovery, StateEffect: &resolved.StateEffect, ExecutionContext: resolved.ExecutionContext, Parameters: resolved.Parameters, Outputs: resolved.Outputs, StateInputs: resolved.StateInputs, ReceiptInputs: resolved.ReceiptInputs}
 				expectedBinding = &expected
 			} else {
 				op.Binding.Fingerprint = resolved.Fingerprint
 				op.Capabilities, op.Authority, op.Effects = resolved.Capabilities, resolved.Authority, resolved.Effects
-				op.Verifier, op.Recovery, op.StateEffect, op.ExecutionContext, op.Parameters, op.Outputs, op.StateInputs = resolved.Verifier, resolved.Recovery, &resolved.StateEffect, resolved.ExecutionContext, resolved.Parameters, resolved.Outputs, resolved.StateInputs
+				op.Verifier, op.Recovery, op.StateEffect, op.ExecutionContext, op.Parameters, op.Outputs, op.StateInputs, op.ReceiptInputs = resolved.Verifier, resolved.Recovery, &resolved.StateEffect, resolved.ExecutionContext, resolved.Parameters, resolved.Outputs, resolved.StateInputs, resolved.ReceiptInputs
 			}
 		}
 		var err error
@@ -336,6 +336,9 @@ func normalizeOperators(document *Document, facets map[string]Facet, resolver Bi
 			return nil, err
 		}
 		if err := normalizeOperatorStateInputs(op, facets); err != nil {
+			return nil, err
+		}
+		if err := normalizeOperatorReceiptInputs(op); err != nil {
 			return nil, err
 		}
 		if op.ExecutionContext != "preserve" && op.ExecutionContext != "advance" {
@@ -390,6 +393,7 @@ func normalizeOperators(document *Document, facets map[string]Facet, resolver Bi
 			_ = normalizeOperatorParameters(expectedBinding, resolver)
 			_ = normalizeOperatorOutputs(expectedBinding, resolver)
 			_ = normalizeOperatorStateInputs(expectedBinding, facets)
+			_ = normalizeOperatorReceiptInputs(expectedBinding)
 			_ = normalizeStateEffect(expectedBinding.StateEffect, facets)
 			if !sameOperatorSemantics(*op, *expectedBinding) {
 				return nil, invalid("operators."+op.ID, "compiled binding semantics drift")
@@ -721,7 +725,7 @@ func stripDescriptions(value Document) Document {
 }
 
 func hasInlineSemantics(value Operator) bool {
-	return len(value.Capabilities) != 0 || len(value.Authority.AnyOf) != 0 || len(value.Authority.AllOf) != 0 || len(value.Effects) != 0 || value.Verifier != "" || value.Recovery != "" || value.StateEffect != nil || value.ExecutionContext != "" || len(value.Parameters) != 0 || len(value.Outputs) != 0 || len(value.StateInputs) != 0
+	return len(value.Capabilities) != 0 || len(value.Authority.AnyOf) != 0 || len(value.Authority.AllOf) != 0 || len(value.Effects) != 0 || value.Verifier != "" || value.Recovery != "" || value.StateEffect != nil || value.ExecutionContext != "" || len(value.Parameters) != 0 || len(value.Outputs) != 0 || len(value.StateInputs) != 0 || len(value.ReceiptInputs) != 0
 }
 func sameOperatorSemantics(left, right Operator) bool {
 	left.Description, right.Description = "", ""

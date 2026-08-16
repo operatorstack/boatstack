@@ -8,7 +8,7 @@ import (
 
 var parameterSourceKinds = map[ParameterSourceKind]bool{
 	ParameterSourceEntryInput: true, ParameterSourceState: true,
-	ParameterSourceReceipt: true, ParameterSourceWorkOutput: true,
+	ParameterSourceReceipt: true, ParameterSourceStateOrReceipt: true, ParameterSourceWorkOutput: true,
 	ParameterSourceTrustedResolver: true, ParameterSourceHostInput: true,
 }
 
@@ -80,7 +80,7 @@ func normalizeOperatorStateInputs(op *Operator, facets map[string]Facet) error {
 		input := &op.StateInputs[index]
 		field := fmt.Sprintf("operators.%s.state_inputs[%d]", op.ID, index)
 		contract, ok := contracts[input.Parameter]
-		if !ok || seen[input.Parameter] || !containsSource(contract.AllowedSources, ParameterSourceState) {
+		if !ok || seen[input.Parameter] || (!containsSource(contract.AllowedSources, ParameterSourceState) && !containsSource(contract.AllowedSources, ParameterSourceStateOrReceipt)) {
 			return invalid(field+".parameter", "state input requires one state-capable operator parameter")
 		}
 		seen[input.Parameter] = true
@@ -93,6 +93,34 @@ func normalizeOperatorStateInputs(op *Operator, facets map[string]Facet) error {
 		}
 	}
 	sort.Slice(op.StateInputs, func(i, j int) bool { return op.StateInputs[i].Parameter < op.StateInputs[j].Parameter })
+	return nil
+}
+
+func normalizeOperatorReceiptInputs(op *Operator) error {
+	if op.Binding == nil && len(op.ReceiptInputs) != 0 {
+		return invalid("operators."+op.ID+".receipt_inputs", "only trusted bindings may declare receipt-input provenance")
+	}
+	contracts := map[string]OperatorParameter{}
+	for _, parameter := range op.Parameters {
+		contracts[parameter.ID] = parameter
+	}
+	seen := map[string]bool{}
+	for index := range op.ReceiptInputs {
+		input := &op.ReceiptInputs[index]
+		field := fmt.Sprintf("operators.%s.receipt_inputs[%d]", op.ID, index)
+		contract, ok := contracts[input.Parameter]
+		if !ok || seen[input.Parameter] || (!containsSource(contract.AllowedSources, ParameterSourceReceipt) && !containsSource(contract.AllowedSources, ParameterSourceStateOrReceipt)) {
+			return invalid(field+".parameter", "receipt input requires one receipt-capable operator parameter")
+		}
+		seen[input.Parameter] = true
+		if !validID(input.Transition) {
+			return invalid(field+".transition", "receipt input transition is invalid")
+		}
+		if !validID(input.Field) {
+			return invalid(field+".field", "receipt input field is invalid")
+		}
+	}
+	sort.Slice(op.ReceiptInputs, func(i, j int) bool { return op.ReceiptInputs[i].Parameter < op.ReceiptInputs[j].Parameter })
 	return nil
 }
 
@@ -255,8 +283,18 @@ func normalizeProducer(producer *ParameterProducer, contract OperatorParameter, 
 		}
 	case ParameterSourceReceipt:
 		prior, ok := transitions[producer.Transition]
-		if !ok || !validID(producer.Field) || prior.Priority >= transition.Priority || !predicateImplies(transition.Guard, prior.Target) {
-			return nil, invocationIncomplete(transition.ID, contract.ID, "receipt is not guaranteed before the consuming transition")
+		if !ok || !validID(producer.Field) || prior.Priority >= transition.Priority {
+			return nil, invocationIncomplete(transition.ID, contract.ID, "receipt producer is not ordered before the consuming transition")
+		}
+		consumerOperator := operators[transition.Operator]
+		trustedAvailability := false
+		for _, input := range consumerOperator.ReceiptInputs {
+			if input.Parameter == contract.ID && input.Transition == producer.Transition && input.Field == producer.Field && input.Guaranteed {
+				trustedAvailability = true
+			}
+		}
+		if !trustedAvailability {
+			return nil, invocationIncomplete(transition.ID, contract.ID, "receipt availability is not guaranteed by the trusted operator binding")
 		}
 		priorOperator := operators[prior.Operator]
 		outputFound := false
@@ -267,6 +305,41 @@ func normalizeProducer(producer *ParameterProducer, contract OperatorParameter, 
 		}
 		if !outputFound {
 			return nil, invocationIncomplete(transition.ID, contract.ID, "references an undeclared or incompatible committed receipt output")
+		}
+	case ParameterSourceStateOrReceipt:
+		facet, ok := facets[producer.Facet]
+		if !ok || producer.AvailableWhen == nil || !compatibleFacetType(facet.Kind, contract.Type.Kind) {
+			return nil, invocationIncomplete(transition.ID, contract.ID, "has an invalid state alternative")
+		}
+		if err := normalizePredicate(producer.AvailableWhen, facets); err != nil || !predicateRequiresKnownFacet(*producer.AvailableWhen, producer.Facet) {
+			return nil, invocationIncomplete(transition.ID, contract.ID, "state alternative does not prove the produced facet is known")
+		}
+		consumerOperator := operators[transition.Operator]
+		trustedState := false
+		for _, input := range consumerOperator.StateInputs {
+			if input.Parameter == contract.ID && input.Facet == producer.Facet && predicateImplies(*producer.AvailableWhen, input.AvailableWhen) {
+				trustedState = true
+			}
+		}
+		trustedReceipt := false
+		for _, input := range consumerOperator.ReceiptInputs {
+			if input.Parameter == contract.ID && input.Transition == producer.Transition && input.Field == producer.Field {
+				trustedReceipt = true
+			}
+		}
+		prior, priorFound := transitions[producer.Transition]
+		if !trustedState || !trustedReceipt || !priorFound || !validID(producer.Field) || prior.Priority >= transition.Priority {
+			return nil, invocationIncomplete(transition.ID, contract.ID, "state-or-receipt alternatives are not guaranteed by the trusted operator binding")
+		}
+		priorOperator := operators[prior.Operator]
+		outputFound := false
+		for _, output := range priorOperator.Outputs {
+			if output.ID == producer.Field && sameValueType(output.Type, contract.Type) {
+				outputFound = true
+			}
+		}
+		if !outputFound {
+			return nil, invocationIncomplete(transition.ID, contract.ID, "references an undeclared or incompatible committed receipt alternative")
 		}
 	case ParameterSourceWorkOutput:
 		contractWork, ok := work[producer.Work]
@@ -333,6 +406,8 @@ func rejectProducerExtraneousFields(value ParameterProducer, field string) error
 		invalidFields = value.Input != "" || value.Transition != "" || value.Field != "" || value.Work != "" || value.Output != "" || value.Binding != nil || value.Request != nil
 	case ParameterSourceReceipt:
 		invalidFields = value.Input != "" || value.Facet != "" || value.AvailableWhen != nil || value.Work != "" || value.Output != "" || value.Binding != nil || value.Request != nil
+	case ParameterSourceStateOrReceipt:
+		invalidFields = value.Input != "" || value.Facet == "" || value.AvailableWhen == nil || value.Transition == "" || value.Field == "" || value.Work != "" || value.Output != "" || value.Binding != nil || value.Request != nil
 	case ParameterSourceWorkOutput:
 		invalidFields = value.Input != "" || value.Facet != "" || value.AvailableWhen != nil || value.Transition != "" || value.Field != "" || value.Binding != nil || value.Request != nil
 	case ParameterSourceTrustedResolver:

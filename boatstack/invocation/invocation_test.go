@@ -91,6 +91,39 @@ func TestZeroParameterTransitionStillProducesInvocationEvidence(t *testing.T) {
 	}
 }
 
+func TestStateOrReceiptMaterializesEitherExactAlternative(t *testing.T) {
+	// control-law: one canonical producer can explicitly cover normal receipt
+	// output and recovery-established durable state without inferring either.
+	contract := testContract()
+	contract.Authority = controlprogram.AuthorityRequirement{}
+	contract.AllowedSources = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceStateOrReceipt}
+	producer := controlprogram.ParameterProducer{
+		Kind: controlprogram.ParameterSourceStateOrReceipt, Facet: "channel",
+		AvailableWhen: &controlprogram.Predicate{Fact: &controlprogram.FactPredicate{Facet: "channel", Statuses: []string{"known"}}},
+		Transition:    "observe-channel", Field: "channel",
+	}
+	binding := []controlprogram.TransitionParameterBinding{{Parameter: "channel", Producer: producer}}
+
+	receiptContext := testContext()
+	receiptContext.Receipts = map[string]Value{"observe-channel/channel": {Type: contract.Type, Canonical: "pager", Provenance: "transition-receipt:receipt-channel"}}
+	receiptResult, err := Materialize([]controlprogram.OperatorParameter{contract}, binding, receiptContext, nil)
+	if err != nil || receiptResult.Ready == nil || receiptResult.Ready.Parameters[0].Value != "pager" {
+		t.Fatalf("receipt alternative = %#v, %v", receiptResult, err)
+	}
+
+	stateContext := testContext()
+	stateContext.State = map[string]Value{"channel": {Type: contract.Type, Canonical: "chat", Provenance: "durable-state:channel"}}
+	stateResult, err := Materialize([]controlprogram.OperatorParameter{contract}, binding, stateContext, nil)
+	if err != nil || stateResult.Ready == nil || stateResult.Ready.Parameters[0].Value != "chat" {
+		t.Fatalf("state alternative = %#v, %v", stateResult, err)
+	}
+
+	missing, err := Materialize([]controlprogram.OperatorParameter{contract}, binding, testContext(), nil)
+	if err != nil || missing.Blocker == nil || missing.Blocker.Code != "TRANSITION_INPUT_UNAVAILABLE" {
+		t.Fatalf("missing alternatives = %#v, %v", missing, err)
+	}
+}
+
 func TestInputReceiptRejectsCrossScopeExpiryAndControlDrift(t *testing.T) {
 	context := testContext()
 	binding := []controlprogram.TransitionParameterBinding{{Parameter: "channel", Producer: testProducer()}}

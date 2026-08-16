@@ -361,7 +361,7 @@ func materializeFlowInvocation(ctx context.Context, compiled controlprogram.Comp
 	stateValues := softwareflow.StateParameterValues(state)
 	receiptValues := map[string]invocation.Value{}
 	for _, binding := range transition.Parameters {
-		if binding.Producer.Kind != controlprogram.ParameterSourceReceipt {
+		if binding.Producer.Kind != controlprogram.ParameterSourceReceipt && binding.Producer.Kind != controlprogram.ParameterSourceStateOrReceipt {
 			continue
 		}
 		value, receiptID, found, lookupErr := effects.FindLatestCommittedTransitionOutput(layout, options.runID, invocationContext, catalog.TransitionID(binding.Producer.Transition), binding.Producer.Field, state.Revision)
