@@ -320,6 +320,11 @@ func declarativeFlow(document controlprogram.Document) (bool, error) {
 // generic Control Program compiler remains broader; a domain adapter must
 // explicitly own every additional producer or effect mechanism.
 func validateDeclarativeFlow(compiled controlprogram.Compiled) error {
+	const stateVerifier = "state-effect"
+	facets := make(map[string]controlprogram.Facet, len(compiled.Document.Facets))
+	for _, facet := range compiled.Document.Facets {
+		facets[facet.ID] = facet
+	}
 	for _, entry := range compiled.Document.Entries {
 		if entry.Delegation != nil || entry.Diagnostics != nil {
 			return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative entries do not support delegation or domain diagnostics")
@@ -329,20 +334,144 @@ func validateDeclarativeFlow(compiled controlprogram.Compiled) error {
 		return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative runtime has no foreground-work adapter for %q", work.ID)
 	}
 	for _, operator := range compiled.Document.Operators {
-		if len(operator.Effects) != 0 || operator.StateEffect == nil || operator.StateEffect.Kind != "assignments" || operator.ExecutionContext != "preserve" {
+		if len(operator.Capabilities) != 0 || len(operator.Effects) != 0 || operator.Verifier != stateVerifier || operator.Recovery != "" || operator.StateEffect == nil || operator.StateEffect.Kind != "assignments" || operator.ExecutionContext != "preserve" {
 			return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative operator %q must be effect-free, assignment-only, and preserve context", operator.ID)
+		}
+		if !declarativeAuthoritySupported(operator.Authority.AnyOf) || !declarativeAuthoritySupported(operator.Authority.AllOf) {
+			return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative operator %q uses unsupported authority", operator.ID)
 		}
 	}
 	for _, transition := range compiled.Document.Transitions {
+		if !declarativeAuthoritySupported(transition.Requires.Authorities) {
+			return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative transition %q uses unsupported authority", transition.ID)
+		}
+		operator, ok := findCompiledOperator(compiled.Document.Operators, transition.Operator)
+		if !ok || operator.StateEffect == nil {
+			return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative transition %q has no executable operator", transition.ID)
+		}
+		contracts := make(map[string]controlprogram.OperatorParameter, len(operator.Parameters))
+		bindings := make(map[string]bool, len(transition.Parameters))
+		for _, contract := range operator.Parameters {
+			contracts[contract.ID] = contract
+		}
 		for _, binding := range transition.Parameters {
+			bindings[binding.Parameter] = true
 			switch binding.Producer.Kind {
 			case controlprogram.ParameterSourceEntryInput, controlprogram.ParameterSourceState, controlprogram.ParameterSourceHostInput:
 			default:
 				return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative transition %q requires an adapter for producer %q", transition.ID, binding.Producer.Kind)
 			}
 		}
+		for _, precondition := range operator.StateEffect.Preconditions {
+			if !predicateRequiresFacetValue(transition.Guard, precondition.Facet, precondition.Values) {
+				return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative transition %q guard does not establish precondition %q", transition.ID, precondition.Facet)
+			}
+		}
+		for _, assignment := range operator.StateEffect.Assignments {
+			if assignment.ValueFrom == nil {
+				continue
+			}
+			if assignment.ValueFrom.Parameter == "" || assignment.ValueFrom.Admission != "" || assignment.ValueFrom.Invocation != "" {
+				return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative assignment %q has an unsupported value source", assignment.Facet)
+			}
+			contract, declared := contracts[assignment.ValueFrom.Parameter]
+			if !declared || !bindings[assignment.ValueFrom.Parameter] {
+				return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative assignment %q requires bound operator parameter %q", assignment.Facet, assignment.ValueFrom.Parameter)
+			}
+			if facets[assignment.Facet].Kind == "enum" || contract.Type.Kind != "string" {
+				return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative assignment %q cannot prove parameter %q belongs to the facet", assignment.Facet, assignment.ValueFrom.Parameter)
+			}
+		}
+		if !assignmentsEstablishPredicate(*operator.StateEffect, transition.Guard, transition.Target) {
+			return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative transition %q assignments do not establish its target", transition.ID)
+		}
 	}
 	return nil
+}
+
+func declarativeAuthoritySupported(authorities []string) bool {
+	for _, authority := range authorities {
+		if authority != "human" {
+			return false
+		}
+	}
+	return true
+}
+
+// predicateRequiresFacetValue is intentionally conservative. It accepts only
+// facts whose truth is structurally required by every path through a guard.
+func predicateRequiresFacetValue(predicate controlprogram.Predicate, facet string, values []string) bool {
+	if predicate.Fact != nil {
+		fact := predicate.Fact
+		if fact.Facet != facet || len(fact.Values) == 0 {
+			return false
+		}
+		for _, value := range fact.Values {
+			if !containsString(values, value) {
+				return false
+			}
+		}
+		return true
+	}
+	if len(predicate.All) != 0 {
+		for _, child := range predicate.All {
+			if predicateRequiresFacetValue(child, facet, values) {
+				return true
+			}
+		}
+		return false
+	}
+	if len(predicate.Any) != 0 {
+		for _, child := range predicate.Any {
+			if !predicateRequiresFacetValue(child, facet, values) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+func assignmentsEstablishPredicate(effect controlprogram.StateEffect, guard, target controlprogram.Predicate) bool {
+	assigned := make(map[string]string, len(effect.Assignments))
+	for _, assignment := range effect.Assignments {
+		if assignment.Value != nil {
+			assigned[assignment.Facet] = *assignment.Value
+		}
+	}
+	var established func(controlprogram.Predicate) bool
+	established = func(predicate controlprogram.Predicate) bool {
+		if predicate.True != nil {
+			return *predicate.True
+		}
+		if predicate.Fact != nil {
+			fact := predicate.Fact
+			if value, ok := assigned[fact.Facet]; ok {
+				if len(fact.Statuses) != 0 && !containsString(fact.Statuses, "known") {
+					return false
+				}
+				return len(fact.Values) == 0 || containsString(fact.Values, value)
+			}
+			return predicateRequiresFacetValue(guard, fact.Facet, fact.Values)
+		}
+		if len(predicate.All) != 0 {
+			for _, child := range predicate.All {
+				if !established(child) {
+					return false
+				}
+			}
+			return true
+		}
+		if len(predicate.Any) != 0 {
+			for _, child := range predicate.Any {
+				if established(child) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return established(target)
 }
 
 func validateSoftwareFlow(ctx context.Context, _ string, compiled controlprogram.Compiled, resolver softwareflow.Resolver) error {

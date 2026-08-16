@@ -21,20 +21,32 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/invocation"
 )
 
-const declarativeRunSchemaRevision = 1
+const declarativeRunSchemaRevision = 2
+
+type declarativeTransitionReceipt struct {
+	ID                    string                         `json:"id"`
+	TransitionID          string                         `json:"transition_id"`
+	InvocationFingerprint string                         `json:"invocation_fingerprint"`
+	PriorStateRevision    uint64                         `json:"prior_state_revision"`
+	ResultStateRevision   uint64                         `json:"result_state_revision"`
+	Parameters            []invocation.ResolvedParameter `json:"parameters"`
+	HumanActor            string                         `json:"human_actor,omitempty"`
+	Fingerprint           string                         `json:"fingerprint"`
+}
 
 type declarativeRunState struct {
-	SchemaRevision     int               `json:"schema_revision"`
-	RunID              string            `json:"run_id"`
-	ProgramFingerprint string            `json:"program_fingerprint"`
-	EntryID            string            `json:"entry_id"`
-	TargetID           string            `json:"target_id"`
-	StateRevision      uint64            `json:"state_revision"`
-	EntryInputs        map[string]string `json:"entry_inputs"`
-	Facts              map[string]string `json:"facts"`
-	LastTransition     string            `json:"last_transition,omitempty"`
-	LastInvocation     string            `json:"last_invocation,omitempty"`
-	Fingerprint        string            `json:"fingerprint"`
+	SchemaRevision     int                           `json:"schema_revision"`
+	RunID              string                        `json:"run_id"`
+	ProgramFingerprint string                        `json:"program_fingerprint"`
+	EntryID            string                        `json:"entry_id"`
+	TargetID           string                        `json:"target_id"`
+	StateRevision      uint64                        `json:"state_revision"`
+	EntryInputs        map[string]string             `json:"entry_inputs"`
+	Facts              map[string]string             `json:"facts"`
+	LastTransition     string                        `json:"last_transition,omitempty"`
+	LastInvocation     string                        `json:"last_invocation,omitempty"`
+	LastReceipt        *declarativeTransitionReceipt `json:"last_receipt,omitempty"`
+	Fingerprint        string                        `json:"fingerprint"`
 }
 
 type declarativeRuntimeContext struct {
@@ -114,6 +126,7 @@ func runDeclarativeFlow(ctx context.Context, compiled controlprogram.Compiled, o
 		return encodeDeclarativeResult(map[string]any{
 			"kind": "terminal", "run_id": runtimeContext.state.RunID, "program_fingerprint": compiled.Fingerprint,
 			"entry_id": entry.ID, "target_id": entry.Target, "state_revision": runtimeContext.state.StateRevision,
+			"receipt": runtimeContext.state.LastReceipt,
 		}, options.format)
 	}
 	transition, operator, ok := selectDeclarativeTransition(compiled.Document, runtimeContext.state.Facts)
@@ -146,6 +159,13 @@ func runDeclarativeFlow(ctx context.Context, compiled controlprogram.Compiled, o
 	if result.Ready == nil {
 		return fmt.Errorf("FLOW_INVOCATION_INCOMPLETE: declarative materialization produced no evidence")
 	}
+	if err := requireDeclarativeAuthority(transition, operator, options.humanActor); err != nil {
+		return encodeDeclarativeResult(map[string]any{
+			"kind": "blocked", "code": "AUTHORITY_REQUIRED", "detail": err.Error(),
+			"run_id": runtimeContext.state.RunID, "program_fingerprint": compiled.Fingerprint,
+			"entry_id": entry.ID, "target_id": entry.Target, "transition_id": transition.ID,
+		}, options.format)
+	}
 
 	// Re-read receipts and rematerialize while the run lock is held. The first
 	// result is a candidate; only this current evidence may cross the state
@@ -161,15 +181,29 @@ func runDeclarativeFlow(ctx context.Context, compiled controlprogram.Compiled, o
 	if fresh.Ready == nil || fresh.Ready.InvocationFingerprint != result.Ready.InvocationFingerprint {
 		return fmt.Errorf("INVOCATION_DRIFT: invocation changed before declarative state effect")
 	}
-	if err := applyDeclarativeAssignments(&runtimeContext.state, *operator.StateEffect, fresh.Ready.Parameters); err != nil {
+	priorRevision := runtimeContext.state.StateRevision
+	candidate := runtimeContext.state
+	if err := applyDeclarativeAssignments(&candidate, *operator.StateEffect, fresh.Ready.Parameters); err != nil {
 		return err
 	}
-	runtimeContext.state.StateRevision++
-	runtimeContext.state.LastTransition = transition.ID
-	runtimeContext.state.LastInvocation = fresh.Ready.InvocationFingerprint
-	if err := saveDeclarativeRun(runtimeContext.statePath, runtimeContext.state); err != nil {
+	if !predicateSatisfied(transition.Target, candidate.Facts) {
+		return fmt.Errorf("DECLARATIVE_VERIFICATION_FAILED: transition %q did not establish its compiled target", transition.ID)
+	}
+	candidate.StateRevision++
+	candidate.LastTransition = transition.ID
+	candidate.LastInvocation = fresh.Ready.InvocationFingerprint
+	receipt := declarativeTransitionReceipt{
+		TransitionID: transition.ID, InvocationFingerprint: fresh.Ready.InvocationFingerprint,
+		PriorStateRevision: priorRevision, ResultStateRevision: candidate.StateRevision,
+		Parameters: append([]invocation.ResolvedParameter(nil), fresh.Ready.Parameters...), HumanActor: strings.TrimSpace(options.humanActor),
+	}
+	receipt.ID = "receipt-" + digestDeclarative(receipt)[:24]
+	receipt.Fingerprint = digestDeclarative(receipt)
+	candidate.LastReceipt = &receipt
+	if err := saveDeclarativeRun(runtimeContext.statePath, candidate); err != nil {
 		return err
 	}
+	runtimeContext.state = candidate
 	terminal := predicateSatisfied(targetPredicate(compiled.Document.Targets, entry.Target), runtimeContext.state.Facts)
 	kind := "continued"
 	if terminal {
@@ -179,8 +213,22 @@ func runDeclarativeFlow(ctx context.Context, compiled controlprogram.Compiled, o
 		"kind": kind, "run_id": runtimeContext.state.RunID, "program_fingerprint": compiled.Fingerprint,
 		"entry_id": entry.ID, "target_id": entry.Target, "transition_id": transition.ID,
 		"state_revision": runtimeContext.state.StateRevision, "invocation": fresh.Ready,
-		"receipt": map[string]any{"transition_id": transition.ID, "invocation_fingerprint": fresh.Ready.InvocationFingerprint},
+		"receipt": runtimeContext.state.LastReceipt,
 	}, options.format)
+}
+
+func requireDeclarativeAuthority(transition controlprogram.Transition, operator controlprogram.Operator, humanActor string) error {
+	providedHuman := strings.TrimSpace(humanActor) != ""
+	if len(operator.Authority.AnyOf) != 0 && !providedHuman {
+		return fmt.Errorf("operator %q requires one of %s", operator.ID, strings.Join(operator.Authority.AnyOf, ", "))
+	}
+	if containsString(operator.Authority.AllOf, "human") && !providedHuman {
+		return fmt.Errorf("operator %q requires human authority", operator.ID)
+	}
+	if containsString(transition.Requires.Authorities, "human") && !providedHuman {
+		return fmt.Errorf("transition %q requires human authority", transition.ID)
+	}
+	return nil
 }
 
 func loadDeclarativeRuntimeContext(ctx context.Context, repository string, compiled controlprogram.Compiled, entry controlprogram.Entry, options commandOptions) (declarativeRuntimeContext, error) {
@@ -232,6 +280,14 @@ func loadDeclarativeRuntimeContext(ctx context.Context, repository string, compi
 	}
 	if state.SchemaRevision != declarativeRunSchemaRevision || state.RunID != runID || state.ProgramFingerprint != compiled.Fingerprint || state.EntryID != entry.ID || state.TargetID != entry.Target || state.StateRevision == 0 || state.EntryInputs == nil || state.Facts == nil {
 		return declarativeRuntimeContext{}, fmt.Errorf("FLOW_CONTEXT_MISMATCH: declarative run identity or schema changed")
+	}
+	if state.LastReceipt != nil {
+		receipt := *state.LastReceipt
+		fingerprint := receipt.Fingerprint
+		receipt.Fingerprint = ""
+		if fingerprint == "" || fingerprint != digestDeclarative(receipt) || state.LastTransition != state.LastReceipt.TransitionID || state.LastInvocation != state.LastReceipt.InvocationFingerprint || state.StateRevision != state.LastReceipt.ResultStateRevision {
+			return declarativeRuntimeContext{}, fmt.Errorf("FLOW_CONTEXT_MISMATCH: declarative transition receipt is invalid")
+		}
 	}
 	if len(provided) != 0 && !equalStringMaps(provided, state.EntryInputs) {
 		return declarativeRuntimeContext{}, fmt.Errorf("FLOW_CONTEXT_MISMATCH: entry inputs changed across the run")

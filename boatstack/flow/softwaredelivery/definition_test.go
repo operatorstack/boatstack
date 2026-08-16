@@ -26,7 +26,7 @@ func compiledFlow(t *testing.T, guard controlprogram.Predicate) (controlprogram.
 		Program: controlprogram.Program{ID: "product-delivery", Version: "1"},
 		Facets: []controlprogram.Facet{
 			{ID: "publication", Kind: "string"}, {ID: "verification", Kind: "string"},
-			{ID: "configuration", Kind: "string"}, {ID: "runtime", Kind: "string"},
+			{ID: "configuration", Kind: "string"}, {ID: "runtime", Kind: "string"}, {ID: "publication_id", Kind: "string"},
 		},
 		Operators:   []controlprogram.Operator{{ID: "publication.observe", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/publication.observe", Version: "1"}}},
 		Transitions: []controlprogram.Transition{{ID: "publication.observe", Operator: "publication.observe", Guard: guard, Target: controlprogram.Predicate{True: &truth}, Priority: 77, Parameters: publicationIDStateParameter(guard)}},
@@ -42,9 +42,10 @@ func compiledFlow(t *testing.T, guard controlprogram.Predicate) (controlprogram.
 	return compiled, resolver
 }
 
-func publicationIDStateParameter(available controlprogram.Predicate) []controlprogram.TransitionParameterBinding {
+func publicationIDStateParameter(_ controlprogram.Predicate) []controlprogram.TransitionParameterBinding {
+	available := controlprogram.Predicate{Fact: &controlprogram.FactPredicate{Facet: "publication_id", Statuses: []string{"known"}}}
 	return []controlprogram.TransitionParameterBinding{{Parameter: "publication_id", Producer: controlprogram.ParameterProducer{
-		Kind: controlprogram.ParameterSourceState, Facet: "publication", AvailableWhen: &available,
+		Kind: controlprogram.ParameterSourceState, Facet: "publication_id", AvailableWhen: &available,
 	}}}
 }
 
@@ -308,7 +309,7 @@ func TestAbandonmentEntryMakesTrustedAbandonmentObjectiveProgress(t *testing.T) 
 		Facets: []controlprogram.Facet{
 			{ID: "publication", Kind: "string"}, {ID: "verification", Kind: "string"},
 			{ID: "configuration", Kind: "string"}, {ID: "runtime", Kind: "string"},
-			{ID: "delivery", Kind: "string"}, {ID: "workspace", Kind: "string"},
+			{ID: "delivery", Kind: "string"}, {ID: "workspace", Kind: "string"}, {ID: "publication_id", Kind: "string"},
 		},
 		Operators: []controlprogram.Operator{
 			{ID: "publication.observe", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/publication.observe", Version: "1"}},

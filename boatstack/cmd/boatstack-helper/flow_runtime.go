@@ -651,6 +651,14 @@ func bindRPCFlowEntryWithMaintenance(ctx context.Context, request surfaces.Reque
 	if request.ProgramID == "" && request.EntryID == "" {
 		return request, nil
 	}
+	if replay, canonicalRepository, err := committedFlowReplay(ctx, request); err != nil {
+		return surfaces.Request{}, err
+	} else if replay {
+		request.Repository = canonicalRepository
+		request.Parameters, request.InvocationEvidence, request.InputRequest = nil, nil, nil
+		request.ControlBundle, request.ControlBundleFingerprint = nil, ""
+		return request, nil
+	}
 	repositoryTransition, err := repositoryFlowDeclaresTransition(request.Repository, request.ProgramID, string(request.TransitionID))
 	if err != nil {
 		return surfaces.Request{}, err
@@ -689,6 +697,47 @@ func bindRPCFlowEntryWithMaintenance(ctx context.Context, request surfaces.Reque
 	request.InvocationEvidence = bound.invocationEvidence
 	request.InputRequest = bound.inputRequest
 	return request, nil
+}
+
+// committedFlowReplay recognizes an exact, already committed apply before any
+// producer is rematerialized. Repository effects may have consumed or moved
+// their inputs, so safe replay must be decided from the immutable receipt.
+func committedFlowReplay(ctx context.Context, request surfaces.Request) (bool, string, error) {
+	if request.Operation != surfaces.OperationApply || request.IdempotencyKey == "" || request.Prescription.ID == "" || request.FlowID == "" || request.TransitionID == "" {
+		return false, "", nil
+	}
+	repository, err := filepath.Abs(request.Repository)
+	if err != nil {
+		return false, "", err
+	}
+	repository, err = filepath.EvalSymlinks(repository)
+	if err != nil {
+		return false, "", err
+	}
+	resolver, err := plant.NewResolver("")
+	if err != nil {
+		return false, "", err
+	}
+	host := request.Host
+	if host == "" {
+		host = "cli"
+	}
+	invoking, err := resolver.ResolveInvocation(ctx, repository, host, request.CorrelationID)
+	if err != nil {
+		return false, "", err
+	}
+	store, err := effects.NewReceiptStore(resolver, effects.Clock{})
+	if err != nil {
+		return false, "", err
+	}
+	receipt, found, err := store.FindByIdempotency(ctx, invoking, request.IdempotencyKey)
+	if err != nil || !found {
+		return false, "", err
+	}
+	if receipt.FlowID != request.FlowID || receipt.PrescriptionID != request.Prescription.ID || receipt.TransitionID != request.TransitionID || receipt.InvocationFingerprint != request.Prescription.InvocationFingerprint {
+		return false, "", fmt.Errorf("FLOW_REPLAY_MISMATCH: committed receipt does not match the exact Flow apply request")
+	}
+	return true, repository, nil
 }
 
 func repositoryFlowDeclaresTransition(repository, programID, transitionID string) (bool, error) {

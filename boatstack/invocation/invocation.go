@@ -199,6 +199,16 @@ func (e Evidence) Validate() error {
 	if e.Schema != EvidenceSchema || e.SchemaRevision != EvidenceSchemaRevision || e.RunID == "" || len(e.ProgramFingerprint) != 64 || len(e.ExecutionProgramFingerprint) != 64 || e.EntryID == "" || e.TargetID == "" || e.TransitionID == "" || len(e.ContextFingerprint) != 64 || len(e.InvocationFingerprint) != 64 {
 		return fmt.Errorf("invocation evidence envelope is invalid")
 	}
+	previous := ""
+	for _, parameter := range e.Parameters {
+		if parameter.Name == "" || parameter.Name <= previous || parameter.Type.Kind == "" || len(parameter.ValueFingerprint) != 64 || parameter.ProducerKind == "" || len(parameter.ProducerFingerprint) != 64 || (parameter.Value == "" && parameter.SecretReference == "") {
+			return fmt.Errorf("invocation evidence parameter set is invalid")
+		}
+		if parameter.ValueFingerprint != digest(parameter.Value+"\x00"+parameter.SecretReference) {
+			return fmt.Errorf("invocation evidence parameter %q failed value identity verification", parameter.Name)
+		}
+		previous = parameter.Name
+	}
 	identity := e
 	identity.InvocationFingerprint = ""
 	if fingerprint(identity) != e.InvocationFingerprint {
@@ -333,7 +343,42 @@ func (r InputReceipt) ValidateCurrent(context Context, contract controlprogram.O
 	if !sameType(r.Type, contract.Type) || r.ValueFingerprint != digest(r.Value+"\x00"+r.SecretReference) || r.ProducerFingerprint != fingerprintProducer(producer) {
 		return fmt.Errorf("input receipt type, value, or producer binding changed")
 	}
+	if strings.TrimSpace(r.Actor) == "" || strings.TrimSpace(r.Host) == "" || !authorityReceiptsSatisfy(r.AuthorityReceipts, contract.Authority) || !authorityReceiptsSatisfy(r.AuthorityReceipts, authorityRequirementForRequest(producer.Request)) {
+		return fmt.Errorf("input receipt does not satisfy the compiled parameter authority")
+	}
 	return validateValue(contract.Type, r.Value, r.SecretReference, contract.Secret)
+}
+
+func authorityRequirementForRequest(request *controlprogram.HostInputRequest) controlprogram.AuthorityRequirement {
+	if request == nil {
+		return controlprogram.AuthorityRequirement{}
+	}
+	return controlprogram.AuthorityRequirement{AnyOf: append([]string(nil), request.Authorities...)}
+}
+
+func authorityReceiptsSatisfy(receipts []string, requirement controlprogram.AuthorityRequirement) bool {
+	provided := map[string]bool{}
+	for _, receipt := range receipts {
+		class, _, ok := strings.Cut(receipt, ":")
+		if ok && class != "" {
+			provided[class] = true
+		}
+	}
+	if len(requirement.AnyOf) != 0 {
+		found := false
+		for _, authority := range requirement.AnyOf {
+			found = found || provided[authority]
+		}
+		if !found {
+			return false
+		}
+	}
+	for _, authority := range requirement.AllOf {
+		if !provided[authority] {
+			return false
+		}
+	}
+	return true
 }
 
 func inputRequestForHostBindings(contracts []controlprogram.OperatorParameter, producers map[string]controlprogram.ParameterProducer, context Context) *InputRequest {

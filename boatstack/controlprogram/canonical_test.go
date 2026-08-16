@@ -188,6 +188,12 @@ func TestInvocationCompletenessChecksEntryAndStateAvailabilityPerEntry(t *testin
 
 	stateBound := parameterProgram()
 	stateBound.Operators[0].Parameters[0].AllowedSources = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceState}
+	truth := true
+	alwaysAvailable := controlprogram.Predicate{True: &truth}
+	stateBound.Transitions[0].Parameters[0].Producer = controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceState, Facet: "service", AvailableWhen: &alwaysAvailable}
+	if _, err := controlprogram.Compile(stateBound, nil); err == nil || !strings.Contains(err.Error(), "does not prove the produced facet is known") {
+		t.Fatalf("unproved state producer result = %v", err)
+	}
 	availability := fact("service", "degraded")
 	stateBound.Transitions[0].Parameters[0].Producer = controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceState, Facet: "service", AvailableWhen: &availability}
 	if _, err := controlprogram.Compile(stateBound, nil); err == nil || !strings.Contains(err.Error(), "state availability is not implied") {

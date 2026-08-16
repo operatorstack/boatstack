@@ -255,7 +255,50 @@ func TestExactProductDeliveryFlowReachesPublishedPRWithFakeProvider(t *testing.T
 	if last.TransitionID != "publication.observe" || final.Snapshot.Publication.Value != model.PublicationOpen {
 		t.Fatalf("final publication observation = receipt=%s state=%s", last.TransitionID, final.Snapshot.Publication.Value)
 	}
+	var replayReceipt protocol.TransitionReceipt
+	for _, receipt := range receipts {
+		if receipt.TransitionID == "gate.review.record" {
+			replayReceipt = receipt
+		}
+	}
+	if replayReceipt.ID == "" {
+		t.Fatal("full Flow produced no gate-review receipt to replay")
+	}
+	if err := os.Remove(filepath.Join(continuation.repository, ".boatstack", "evidence", "todo", "review.input.json")); err != nil {
+		t.Fatal(err)
+	}
+	replayedRequest, err := bindRPCFlowEntry(context.Background(), surfaces.Request{
+		SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationApply,
+		Repository: continuation.repository, Host: "codex", CorrelationID: "committed-replay",
+		ProgramID: "product-delivery", ProgramFingerprint: documentFingerprint(t, document), EntryID: "run", FlowID: runID,
+		TransitionID: replayReceipt.TransitionID, IdempotencyKey: replayReceipt.IdempotencyKey,
+		Prescription: protocol.Prescription{ID: replayReceipt.PrescriptionID, InvocationFingerprint: replayReceipt.InvocationFingerprint},
+	})
+	if err != nil {
+		t.Fatalf("committed replay rematerialized consumed producer input: %v", err)
+	}
+	if replayedRequest.InvocationEvidence != nil || replayedRequest.ControlBundle != nil || len(replayedRequest.Parameters) != 0 {
+		t.Fatalf("committed replay crossed producer materialization: %#v", replayedRequest)
+	}
 	t.Logf("TERMINAL target=published-pr verification=%s configuration=%s runtime=%s publication=%s snapshot=%s", final.Snapshot.Verification.Value, final.Snapshot.Configuration.Value, final.Snapshot.Runtime.Value, final.Snapshot.Publication.Value, final.Snapshot.Fingerprint)
+}
+
+func documentFingerprint(t *testing.T, document controlprogram.Document) string {
+	t.Helper()
+	compiled, err := controlprogram.Compile(document, mustSoftwareResolver(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return compiled.Fingerprint
+}
+
+func mustSoftwareResolver(t *testing.T) softwareflow.Resolver {
+	t.Helper()
+	resolver, err := softwareflow.NewResolver(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resolver
 }
 
 func inspectActiveFlow(t *testing.T, repository, runID string) {

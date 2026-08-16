@@ -123,6 +123,12 @@ func TestRepositoryOwnedSoftwareDeliveryFlowsShareOneRuntime(t *testing.T) {
 					t.Fatalf("checked product-delivery IR is stale: frontend=%s checked=%s", compiled.Fingerprint, reference.Fingerprint)
 				}
 				var packageProducer, publicationProducer controlprogram.ParameterProducer
+				publicationOutputDeclared := false
+				for _, operator := range compiled.Document.Operators {
+					if operator.ID == "publication.execute" && len(operator.Outputs) == 1 && operator.Outputs[0].ID == "publication_id" && operator.Outputs[0].Type.Kind == "string" {
+						publicationOutputDeclared = true
+					}
+				}
 				for _, transition := range compiled.Document.Transitions {
 					for _, parameter := range transition.Parameters {
 						if parameter.Producer.Kind == controlprogram.ParameterSourceHostInput && (transition.ID != "delivery.slice.advance" || parameter.Parameter != "slice_id") {
@@ -141,6 +147,9 @@ func TestRepositoryOwnedSoftwareDeliveryFlowsShareOneRuntime(t *testing.T) {
 				}
 				if publicationProducer.Kind != controlprogram.ParameterSourceReceipt || publicationProducer.Transition != "publication.execute" || publicationProducer.Field != "publication_id" {
 					t.Fatalf("publication identity producer = %#v", publicationProducer)
+				}
+				if !publicationOutputDeclared {
+					t.Fatal("publication receipt producer has no trusted runtime output declaration")
 				}
 				if _, compileErr := delivery.Compile(context.Background(), delivery.CompileRequest{KernelVersion: boatstack.Version, Core: core.System(), Runtime: definition, Settings: map[string]string{"fixture": test.fixture}}); compileErr != nil {
 					t.Fatalf("compile repository Flow runtime: %v", compileErr)

@@ -12,6 +12,7 @@
 import {
   always,
   facet,
+  fact,
   fromReceipt,
   fromState,
   hostParameter,
@@ -180,7 +181,7 @@ export function publicationBodyFingerprint(): ParameterProducer {
 }
 
 function durableValue(facet: string): ParameterProducer {
-  return fromState({ facet, availableWhen: always });
+  return fromState({ facet, availableWhen: fact(facet) });
 }
 
 function canonicalGateParameters(gate: "build" | "test" | "review" | "change" | "journey"): Record<string, ParameterProducer> {
@@ -325,15 +326,16 @@ export function trustedTransition(
   step: TrustedStep,
   options: TrustedTransitionOptions = {},
 ): TransitionDefinition {
+  const parameters = options.parameters ?? {};
   return transition(step.id, step.id, {
     guard: always,
     target: always,
     priority: step.priority,
     ...(options.requires ? { requires: options.requires } : {}),
     ...(options.work ? { work: options.work.id } : {}),
-    ...(options.parameters
+    ...(Object.keys(parameters).length !== 0
       ? {
-          parameters: Object.entries(options.parameters).map(
+          parameters: Object.entries(parameters).map(
             ([parameter, producer]) => ({ parameter, producer }),
           ),
         }

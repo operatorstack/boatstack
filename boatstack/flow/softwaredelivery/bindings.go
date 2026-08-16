@@ -57,7 +57,9 @@ func (r Resolver) ResolveOperator(reference, version string) (controlprogram.Res
 		return controlprogram.ResolvedOperator{}, fmt.Errorf("operator %q requires binding version %d", id, transition.Version)
 	}
 	transition.ExecutionContext = executionContextFor(transition)
-	fingerprint, err := transitionFingerprint(transition)
+	outputs := projectOperatorOutputs(transition)
+	stateInputs := projectOperatorStateInputs(transition)
+	fingerprint, err := transitionFingerprint(transition, outputs, stateInputs)
 	if err != nil {
 		return controlprogram.ResolvedOperator{}, err
 	}
@@ -87,6 +89,8 @@ func (r Resolver) ResolveOperator(reference, version string) (controlprogram.Res
 		Verifier: transition.Verifier, Recovery: string(transition.Interruption.Recovery), StateEffect: projectStateEffect(transition.StateEffect),
 		ExecutionContext: executionContextFor(transition),
 		Parameters:       projectOperatorParameters(transition),
+		Outputs:          outputs,
+		StateInputs:      stateInputs,
 	}, nil
 }
 
@@ -258,8 +262,44 @@ func projectOperatorParameters(transition delivery.Transition) []controlprogram.
 	return result
 }
 
-func transitionFingerprint(value delivery.Transition) (string, error) {
-	encoded, err := json.Marshal(value)
+func projectOperatorOutputs(transition delivery.Transition) []controlprogram.OperatorOutput {
+	if transition.ID == "publication.execute" {
+		return []controlprogram.OperatorOutput{{ID: "publication_id", Type: controlprogram.ValueTypeDefinition{Kind: "string"}}}
+	}
+	return nil
+}
+
+func projectOperatorStateInputs(transition delivery.Transition) []controlprogram.OperatorStateInput {
+	known := func(parameter, facet string) controlprogram.OperatorStateInput {
+		return controlprogram.OperatorStateInput{
+			Parameter: parameter, Facet: facet,
+			AvailableWhen: controlprogram.Predicate{Fact: &controlprogram.FactPredicate{Facet: facet, Statuses: []string{"known"}}},
+		}
+	}
+	switch transition.ID {
+	case "workspace.activate", "workspace.sync", "workspace.publish":
+		return []controlprogram.OperatorStateInput{known("branch", "workspace_branch")}
+	case "publication.preview":
+		return []controlprogram.OperatorStateInput{known("head_ref", "workspace_branch")}
+	case "publication.execute":
+		return []controlprogram.OperatorStateInput{known("preview_fingerprint", "preview_fingerprint")}
+	case "publication.observe", "publication.correct":
+		return []controlprogram.OperatorStateInput{known("publication_id", "publication_id")}
+	case "workspace.reconcile":
+		return []controlprogram.OperatorStateInput{known("transaction_id", "transaction_id")}
+	case "publication.reconcile":
+		return []controlprogram.OperatorStateInput{known("publication_id", "publication_id"), known("transaction_id", "transaction_id")}
+	default:
+		return nil
+	}
+}
+
+func transitionFingerprint(value delivery.Transition, outputs []controlprogram.OperatorOutput, stateInputs []controlprogram.OperatorStateInput) (string, error) {
+	encoded, err := json.Marshal(struct {
+		Transition  delivery.Transition                 `json:"transition"`
+		Outputs     []controlprogram.OperatorOutput     `json:"outputs,omitempty"`
+		StateInputs []controlprogram.OperatorStateInput `json:"state_inputs,omitempty"`
+	}{Transition: value, Outputs: outputs, StateInputs: stateInputs})
 	if err != nil {
 		return "", err
 	}

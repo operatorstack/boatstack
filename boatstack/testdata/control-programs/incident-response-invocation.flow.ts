@@ -17,19 +17,19 @@ export default defineFlow({
   version: "1",
   declarations: {
     authorities: ["human"],
-    verifiers: ["healthcheck"],
+    verifiers: ["state-effect"],
     input_resolvers: ["incident-input"],
   },
   facets: [
     facet("incident", "enum", ["open", "mitigated"]),
     facet("service", "enum", ["degraded", "healthy"]),
   ],
-  evidence: [evidence("healthcheck", "service", "observation")],
+  evidence: [evidence("state-effect", "incident", "state-observation")],
   operators: [operator("restart", {
     capabilities: [],
-    authority: {},
+    authority: { any_of: ["human"] },
     effects: [],
-    verifier: "healthcheck",
+    verifier: "state-effect",
     execution_context: "preserve",
     parameters: [
       { id: "incident", type: { kind: "string" }, required: true, secret: false, allowed_sources: ["entry-input"], authority: {} },

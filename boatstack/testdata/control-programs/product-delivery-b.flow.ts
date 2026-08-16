@@ -1,4 +1,4 @@
-import { all, always, defineFlow, entry, fact, fromState, marked } from "@operatorstack/boatstack";
+import { all, defineFlow, entry, fact, fromState, marked } from "@operatorstack/boatstack";
 import {
   inbox,
   planInboxResolver,
@@ -23,7 +23,7 @@ export default defineFlow({
   operators: trustedOperators(lifecycle),
   transitions: [
     trustedTransition({ id: "publication.observe", priority: 77 }, {
-      parameters: { publication_id: fromState({ facet: "publication_id", availableWhen: always }) },
+      parameters: { publication_id: fromState({ facet: "publication_id", availableWhen: fact("publication_id") }) },
     }),
     trustedTransition({ id: "plan.abandon", priority: 31 }),
   ],

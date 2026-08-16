@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -16,11 +17,11 @@ func declarativeInvocationDocument() controlprogram.Document {
 	return controlprogram.Document{
 		Schema: controlprogram.SchemaName, SchemaRevision: controlprogram.SchemaRevision,
 		Program:      controlprogram.Program{ID: "incident-response-invocation", Version: "1"},
-		Declarations: controlprogram.Declarations{Authorities: []string{"human"}, Verifiers: []string{"healthcheck"}},
+		Declarations: controlprogram.Declarations{Authorities: []string{"human"}, Verifiers: []string{"state-effect"}},
 		Facets:       []controlprogram.Facet{{ID: "incident", Kind: "enum", Values: []string{"open", "mitigated"}}},
-		Evidence:     []controlprogram.Evidence{{ID: "healthcheck", Subject: "incident", Kind: "observation"}},
+		Evidence:     []controlprogram.Evidence{{ID: "state-effect", Subject: "incident", Kind: "state-observation"}},
 		Operators: []controlprogram.Operator{{
-			ID: "restart", Authority: controlprogram.AuthorityRequirement{}, Verifier: "healthcheck", ExecutionContext: "preserve",
+			ID: "restart", Authority: controlprogram.AuthorityRequirement{AnyOf: []string{"human"}}, Verifier: "state-effect", ExecutionContext: "preserve",
 			Parameters: []controlprogram.OperatorParameter{
 				{ID: "incident", Type: controlprogram.ValueTypeDefinition{Kind: "string"}, Required: true, AllowedSources: []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceEntryInput}},
 				{ID: "channel", Type: controlprogram.ValueTypeDefinition{Kind: "string"}, Required: true, AllowedSources: []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceHostInput}, Authority: controlprogram.AuthorityRequirement{AnyOf: []string{"human"}}},
@@ -105,8 +106,19 @@ func TestGeneratedDeclarativeDriverSuspendsAnswersRestartsAndExecutes(t *testing
 		t.Fatal(err)
 	}
 
-	completedRaw, err := captureStdout(t, func() error {
+	blockedRaw, err := captureStdout(t, func() error {
 		return runFlowContinuation([]string{"--repo", repository, "--flow", "incident-response-invocation", "--entry", "respond", "--run-id", runID, "--host", "codex", "--format", "json"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocked := decodeObject(t, blockedRaw)
+	if blocked["kind"] != "blocked" || blocked["code"] != "AUTHORITY_REQUIRED" {
+		t.Fatalf("unauthorized driver result = %s", blockedRaw)
+	}
+
+	completedRaw, err := captureStdout(t, func() error {
+		return runFlowContinuation([]string{"--repo", repository, "--flow", "incident-response-invocation", "--entry", "respond", "--run-id", runID, "--human", "boateng", "--host", "codex", "--format", "json"})
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -114,5 +126,57 @@ func TestGeneratedDeclarativeDriverSuspendsAnswersRestartsAndExecutes(t *testing
 	completed := decodeObject(t, completedRaw)
 	if completed["kind"] != "terminal" || completed["run_id"] != runID || completed["transition_id"] != "restart" || completed["invocation"] == nil || completed["receipt"] == nil {
 		t.Fatalf("resumed driver result = %s", completedRaw)
+	}
+	replayedRaw, err := captureStdout(t, func() error {
+		return runFlowContinuation([]string{"--repo", repository, "--flow", "incident-response-invocation", "--entry", "respond", "--run-id", runID, "--host", "codex", "--format", "json"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed := decodeObject(t, replayedRaw)
+	if replayed["kind"] != "terminal" || replayed["receipt"] == nil || !reflect.DeepEqual(completed["receipt"], replayed["receipt"]) {
+		t.Fatalf("terminal replay lost its durable receipt:\ncompleted=%s\nreplayed=%s", completedRaw, replayedRaw)
+	}
+}
+
+func TestDeclarativeRuntimeRejectsSemanticsItCannotProve(t *testing.T) {
+	open := "open"
+	for name, test := range map[string]struct {
+		mutate  func(*controlprogram.Document)
+		witness string
+	}{
+		"unsupported-verifier": {func(document *controlprogram.Document) {
+			document.Declarations.Verifiers = []string{"healthcheck"}
+			document.Evidence = []controlprogram.Evidence{{ID: "healthcheck", Subject: "incident", Kind: "observation"}}
+			document.Operators[0].Verifier = "healthcheck"
+		}, "effect-free"},
+		"unsupported-authority": {func(document *controlprogram.Document) {
+			document.Declarations.Authorities = append(document.Declarations.Authorities, "autonomy")
+			document.Operators[0].Authority = controlprogram.AuthorityRequirement{AnyOf: []string{"autonomy"}}
+		}, "unsupported authority"},
+		"unproved-precondition": {func(document *controlprogram.Document) {
+			document.Operators[0].StateEffect.Preconditions = []controlprogram.StatePrecondition{{Facet: "incident", Values: []string{"open"}}}
+		}, "does not establish precondition"},
+		"unsupported-assignment-source": {func(document *controlprogram.Document) {
+			document.Operators[0].StateEffect.Assignments[0] = controlprogram.StateAssignment{Facet: "incident", ValueFrom: &controlprogram.ValueReference{Admission: "id"}}
+		}, "unsupported value source"},
+		"unproved-enum-parameter": {func(document *controlprogram.Document) {
+			document.Operators[0].StateEffect.Assignments[0] = controlprogram.StateAssignment{Facet: "incident", ValueFrom: &controlprogram.ValueReference{Parameter: "channel"}}
+		}, "cannot prove parameter"},
+		"target-not-established": {func(document *controlprogram.Document) {
+			document.Operators[0].StateEffect.Assignments[0] = controlprogram.StateAssignment{Facet: "incident", Value: &open}
+		}, "do not establish its target"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			document := declarativeInvocationDocument()
+			test.mutate(&document)
+			compiled, err := controlprogram.Compile(document, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := validateDeclarativeFlow(compiled); err == nil || !strings.Contains(err.Error(), test.witness) {
+				t.Fatalf("validation = %v, want %q", err, test.witness)
+			}
+		})
 	}
 }

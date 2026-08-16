@@ -98,6 +98,8 @@ export interface OperatorDefinition {
   state_effect?: StateEffectDefinition;
   execution_context?: "preserve" | "advance";
   parameters?: OperatorParameterDefinition[];
+  /** Trusted binding-owned committed transition-receipt fields. */
+  outputs?: { id: string; type: ValueTypeDefinition }[];
   description?: string;
 }
 

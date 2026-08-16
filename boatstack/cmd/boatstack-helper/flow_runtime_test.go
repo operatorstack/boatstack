@@ -343,13 +343,13 @@ func productDeliveryDocument(programID string) controlprogram.Document {
 		Facets: []controlprogram.Facet{
 			{ID: "publication", Kind: "string"}, {ID: "verification", Kind: "string"},
 			{ID: "configuration", Kind: "string"}, {ID: "runtime", Kind: "string"},
-			{ID: "preview_fingerprint", Kind: "string"},
+			{ID: "preview_fingerprint", Kind: "string"}, {ID: "publication_id", Kind: "string"},
 		},
 		Operators: []controlprogram.Operator{{ID: "publication.observe", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/publication.observe", Version: "1"}}},
 		Transitions: []controlprogram.Transition{{
 			ID: "publication.observe", Operator: "publication.observe", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 77,
 			Parameters: []controlprogram.TransitionParameterBinding{{Parameter: "publication_id", Producer: controlprogram.ParameterProducer{
-				Kind: controlprogram.ParameterSourceState, Facet: "publication", AvailableWhen: &controlprogram.Predicate{True: &truth},
+				Kind: controlprogram.ParameterSourceState, Facet: "publication_id", AvailableWhen: ptrPredicate(flowKnown("publication_id")),
 			}}},
 		}},
 		Targets: []controlprogram.Target{{ID: "published-pr", Predicate: controlprogram.Predicate{All: []controlprogram.Predicate{
@@ -357,6 +357,11 @@ func productDeliveryDocument(programID string) controlprogram.Document {
 		}}}},
 		Entries: []controlprogram.Entry{{ID: "run", Target: "published-pr", Inputs: []controlprogram.EntryInput{{ID: "plan", Type: "markdown-file", Required: true, Resolver: "software-delivery.plan-inbox", Config: config}}}},
 	}
+}
+
+func ptrPredicate(value controlprogram.Predicate) *controlprogram.Predicate { return &value }
+func flowKnown(facet string) controlprogram.Predicate {
+	return controlprogram.Predicate{Fact: &controlprogram.FactPredicate{Facet: facet, Statuses: []string{"known"}}}
 }
 
 func writeFixture(t *testing.T, repository, relative string, content []byte) {
@@ -1200,7 +1205,7 @@ func TestFlowExecutionLeaseSerializesProjectionPublicationThroughEffect(t *testi
 func TestFlowValidationRejectsMissingProductionRecoveryClosure(t *testing.T) {
 	// control-law: published-flows-close-recovery-in-the-production-composition
 	document := productDeliveryDocument("product-delivery")
-	available := document.Transitions[0].Guard
+	available := flowKnown("preview_fingerprint")
 	document.Operators[0] = controlprogram.Operator{ID: "publication.execute", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/publication.execute", Version: "1"}}
 	document.Transitions[0] = controlprogram.Transition{
 		ID: "publication.execute", Operator: "publication.execute", Guard: document.Transitions[0].Guard, Target: document.Transitions[0].Target, Priority: 77,

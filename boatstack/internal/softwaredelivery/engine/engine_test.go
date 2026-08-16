@@ -437,6 +437,43 @@ func TestResolutionDoesNotPrescribeBeforeRequiredParametersAreBound(t *testing.T
 	}
 }
 
+func TestResolutionRejectsParametersThatDifferFromInvocationEvidence(t *testing.T) {
+	// control-law: protocol parameters cannot diverge from the exact values
+	// materialized into the selected transition invocation.
+	now := time.Unix(30, 0).UTC()
+	transitions := testRegistry(t).All()
+	for index := range transitions {
+		if transitions[index].ID == "test.advance" {
+			transitions[index].Parameters = []catalog.ParameterSpec{{Name: "value", Required: true}}
+		}
+	}
+	registry, err := catalog.New(transitions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	effects := &fakeEffects{}
+	kernel, err := New(registry, syntheticObjectiveContracts(t), syntheticProgram,
+		&sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source")}}, fixedClock{now},
+		fakeLocker{&fakeLock{}}, &fakeJournal{}, effects, &memoryReceipts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := request(t, now).ResolveRequest
+	request.Parameters = protocol.Parameters{{Name: "value", Value: "substituted"}}
+	request.InvocationEvidence = &invocation.Evidence{
+		ProgramFingerprint: strings.Repeat("c", 64), ExecutionProgramFingerprint: syntheticProgramFingerprint,
+		TransitionID: "test.advance", StateRevision: 1, InvocationFingerprint: strings.Repeat("d", 64),
+		Parameters: []invocation.ResolvedParameter{{Name: "value", Value: "materialized"}},
+	}
+	resolution, err := kernel.Resolve(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolution.Decision.Kind != supervisor.DecisionRefused || !strings.Contains(resolution.Decision.Reason, "INVOCATION_DRIFT") || effects.transition.ID != "" {
+		t.Fatalf("mismatched invocation parameters = decision %#v prepared=%q", resolution.Decision, effects.transition.ID)
+	}
+}
+
 func mustWorkContextFingerprint(t *testing.T, snapshot model.Snapshot) string {
 	t.Helper()
 	fingerprint, err := model.ForegroundWorkContextFingerprint(snapshot)
@@ -558,7 +595,26 @@ func TestApplyCrossesAdmissionEffectVerificationAndReceiptBoundary(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := kernel.Apply(context.Background(), request(t, now))
+	apply := request(t, now)
+	snapshot, err := model.CanonicalizeForProgram(observation(model.PhaseObserved, "source"), syntheticProgramFingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transition, _ := testRegistry(t).Lookup("test.advance")
+	capabilities, err := protocol.ProjectCapabilities(snapshot, transition, apply.Authority, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocationFingerprint := strings.Repeat("a", 64)
+	apply.Prescription, err = protocol.NewPrescriptionWithInvocation(snapshot, transition, capabilities, nil, nil, invocationFingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apply.InvocationEvidence = &invocation.Evidence{
+		ProgramFingerprint: strings.Repeat("c", 64), ExecutionProgramFingerprint: syntheticProgramFingerprint,
+		TransitionID: "test.advance", StateRevision: snapshot.StateRevision, InvocationFingerprint: invocationFingerprint,
+	}
+	result, err := kernel.Apply(context.Background(), apply)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -566,7 +622,9 @@ func TestApplyCrossesAdmissionEffectVerificationAndReceiptBoundary(t *testing.T)
 		t.Fatalf("unexpected boundary evidence: effects=%+v journal=%+v receipts=%d receipt=%q released=%v", effects, journal, len(receipts.values), result.Receipt.ID, lock.released)
 	}
 	retry := request(t, now)
+	retry.Prescription = apply.Prescription
 	retry.IdempotencyKey = result.Admission.IdempotencyKey
+	retry.InvocationEvidence = nil
 	replayed, err := kernel.Apply(context.Background(), retry)
 	if err != nil {
 		t.Fatal(err)

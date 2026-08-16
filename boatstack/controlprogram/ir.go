@@ -192,7 +192,24 @@ type Operator struct {
 	StateEffect      *StateEffect         `json:"state_effect,omitempty"`
 	ExecutionContext string               `json:"execution_context"`
 	Parameters       []OperatorParameter  `json:"parameters,omitempty"`
+	Outputs          []OperatorOutput     `json:"outputs,omitempty"`
+	StateInputs      []OperatorStateInput `json:"state_inputs,omitempty"`
 	Description      string               `json:"description,omitempty"`
+}
+
+// OperatorOutput declares a committed transition-receipt field that later
+// transitions may consume. Trusted bindings own this metadata.
+type OperatorOutput struct {
+	ID   string              `json:"id"`
+	Type ValueTypeDefinition `json:"type"`
+}
+
+// OperatorStateInput binds a state-sourced parameter to the exact canonical
+// facet and availability predicate owned by a trusted operator adapter.
+type OperatorStateInput struct {
+	Parameter     string    `json:"parameter"`
+	Facet         string    `json:"facet"`
+	AvailableWhen Predicate `json:"available_when"`
 }
 
 type StateEffect struct {
@@ -292,6 +309,8 @@ type ResolvedOperator struct {
 	StateEffect      StateEffect
 	ExecutionContext string
 	Parameters       []OperatorParameter
+	Outputs          []OperatorOutput
+	StateInputs      []OperatorStateInput
 }
 
 type ResolvedParameterResolver struct {

@@ -140,6 +140,49 @@ func TestInputReceiptRejectsCrossScopeExpiryAndControlDrift(t *testing.T) {
 	}
 }
 
+func TestInputReceiptCannotClaimUnrecordedParameterAuthority(t *testing.T) {
+	context := testContext()
+	binding := []controlprogram.TransitionParameterBinding{{Parameter: "channel", Producer: testProducer()}}
+	suspended, err := Materialize([]controlprogram.OperatorParameter{testContract()}, binding, context, nil)
+	if err != nil || suspended.Request == nil {
+		t.Fatalf("suspension = %#v, %v", suspended, err)
+	}
+	receipt, err := SealReceipt(InputReceipt{
+		RunID: context.RunID, ProgramFingerprint: context.ProgramFingerprint, ExecutionProgramFingerprint: context.ExecutionProgramFingerprint,
+		EntryID: context.EntryID, TargetID: context.TargetID, TransitionID: context.TransitionID, ParameterID: "channel",
+		Type: testContract().Type, Value: "pager", ProducerFingerprint: fingerprintProducer(testProducer()), RequestFingerprint: suspended.Request.Fingerprint,
+		StateRevision: context.StateRevision, ContextFingerprint: context.ContextFingerprint, ControlBundleFingerprint: context.ControlBundleFingerprint,
+		ExecutionScopeFingerprint: context.ExecutionScopeFingerprint, Actor: "automation", Host: "codex",
+		AuthorityReceipts: []string{"autonomy:automation"}, Scope: "transition",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	context.InputReceipts["channel@"+suspended.Request.Fingerprint] = receipt
+	result, err := Materialize([]controlprogram.OperatorParameter{testContract()}, binding, context, nil)
+	if err != nil || result.Blocker == nil || !strings.Contains(result.Blocker.Detail, "parameter authority") {
+		t.Fatalf("wrong-authority input receipt = %#v, %v", result, err)
+	}
+}
+
+func TestEvidenceValidationRejectsNonCanonicalParameters(t *testing.T) {
+	context := testContext()
+	contract := testContract()
+	contract.Authority = controlprogram.AuthorityRequirement{}
+	contract.AllowedSources = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceEntryInput}
+	context.EntryInputs = map[string]Value{"channel": {Type: contract.Type, Canonical: "pager", Provenance: "entry"}}
+	result, err := Materialize([]controlprogram.OperatorParameter{contract}, []controlprogram.TransitionParameterBinding{{Parameter: "channel", Producer: controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceEntryInput, Input: "channel"}}}, context, nil)
+	if err != nil || result.Ready == nil || result.Ready.Validate() != nil {
+		t.Fatalf("valid evidence = %#v, %v", result, err)
+	}
+	changed := *result.Ready
+	changed.Parameters[0].ValueFingerprint = strings.Repeat("f", 64)
+	changed.InvocationFingerprint = fingerprintWithoutField(changed, "InvocationFingerprint")
+	if err := changed.Validate(); err == nil || !strings.Contains(err.Error(), "value identity") {
+		t.Fatalf("noncanonical parameter result = %v", err)
+	}
+}
+
 func TestStoreIsIdempotentAndRejectsConflictingAnswers(t *testing.T) {
 	store := Store{Root: t.TempDir(), Writer: testRuntimeStore{}}
 	receipt, _ := SealReceipt(InputReceipt{RunID: "run", ProgramFingerprint: strings.Repeat("a", 64), ExecutionProgramFingerprint: strings.Repeat("f", 64), EntryID: "run", TargetID: "target", TransitionID: "respond", ParameterID: "channel", Type: controlprogram.ValueTypeDefinition{Kind: "string"}, Value: "pager", ValueFingerprint: digest("pager\x00"), ProducerFingerprint: strings.Repeat("b", 64), RequestFingerprint: strings.Repeat("c", 64), StateRevision: 1, ContextFingerprint: strings.Repeat("d", 64), ExecutionScopeFingerprint: strings.Repeat("e", 64), Actor: "operator", Host: "codex", Scope: "transition"})

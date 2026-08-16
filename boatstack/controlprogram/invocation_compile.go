@@ -47,6 +47,55 @@ func normalizeOperatorParameters(op *Operator, resolver BindingResolver) error {
 	return nil
 }
 
+func normalizeOperatorOutputs(op *Operator, resolver BindingResolver) error {
+	if op.Binding == nil && len(op.Outputs) != 0 {
+		return invalid("operators."+op.ID+".outputs", "only trusted bindings may declare committed receipt outputs")
+	}
+	seen := map[string]bool{}
+	for index := range op.Outputs {
+		output := &op.Outputs[index]
+		field := fmt.Sprintf("operators.%s.outputs[%d]", op.ID, index)
+		if !validID(output.ID) || seen[output.ID] {
+			return invalid(field+".id", "invalid or duplicate output")
+		}
+		seen[output.ID] = true
+		if err := normalizeValueType(&output.Type, resolver, field+".type"); err != nil {
+			return err
+		}
+	}
+	sort.Slice(op.Outputs, func(i, j int) bool { return op.Outputs[i].ID < op.Outputs[j].ID })
+	return nil
+}
+
+func normalizeOperatorStateInputs(op *Operator, facets map[string]Facet) error {
+	if op.Binding == nil && len(op.StateInputs) != 0 {
+		return invalid("operators."+op.ID+".state_inputs", "only trusted bindings may declare state-input provenance")
+	}
+	contracts := map[string]OperatorParameter{}
+	for _, parameter := range op.Parameters {
+		contracts[parameter.ID] = parameter
+	}
+	seen := map[string]bool{}
+	for index := range op.StateInputs {
+		input := &op.StateInputs[index]
+		field := fmt.Sprintf("operators.%s.state_inputs[%d]", op.ID, index)
+		contract, ok := contracts[input.Parameter]
+		if !ok || seen[input.Parameter] || !containsSource(contract.AllowedSources, ParameterSourceState) {
+			return invalid(field+".parameter", "state input requires one state-capable operator parameter")
+		}
+		seen[input.Parameter] = true
+		facet, ok := facets[input.Facet]
+		if !ok || !compatibleFacetType(facet.Kind, contract.Type.Kind) {
+			return invalid(field+".facet", "state input facet is unknown or incompatible")
+		}
+		if err := normalizePredicate(&input.AvailableWhen, facets); err != nil || !predicateRequiresKnownFacet(input.AvailableWhen, input.Facet) {
+			return invalid(field+".available_when", "state input must prove its exact facet is known")
+		}
+	}
+	sort.Slice(op.StateInputs, func(i, j int) bool { return op.StateInputs[i].Parameter < op.StateInputs[j].Parameter })
+	return nil
+}
+
 func normalizeValueType(value *ValueTypeDefinition, resolver BindingResolver, field string) error {
 	switch value.Kind {
 	case "string":
@@ -138,7 +187,7 @@ func normalizeInvocationCompleteness(document *Document, operators map[string]Op
 			if !containsSource(contract.AllowedSources, binding.Producer.Kind) {
 				return invocationIncomplete(transition.ID, binding.Parameter, fmt.Sprintf("does not allow producer kind %q", binding.Producer.Kind))
 			}
-			deps, err := normalizeProducer(&binding.Producer, contract, *transition, entries, work, facets, transitions, resolver, field)
+			deps, err := normalizeProducer(&binding.Producer, contract, *transition, entries, work, facets, transitions, operators, resolver, field)
 			if err != nil {
 				return err
 			}
@@ -157,7 +206,7 @@ func normalizeInvocationCompleteness(document *Document, operators map[string]Op
 	return nil
 }
 
-func normalizeProducer(producer *ParameterProducer, contract OperatorParameter, transition Transition, entries map[string]map[string]EntryInput, work map[string]WorkContract, facets map[string]Facet, transitions map[string]Transition, resolver BindingResolver, field string) ([]string, error) {
+func normalizeProducer(producer *ParameterProducer, contract OperatorParameter, transition Transition, entries map[string]map[string]EntryInput, work map[string]WorkContract, facets map[string]Facet, transitions map[string]Transition, operators map[string]Operator, resolver BindingResolver, field string) ([]string, error) {
 	if !parameterSourceKinds[producer.Kind] {
 		return nil, invocationIncomplete(transition.ID, contract.ID, "has an unknown producer kind")
 	}
@@ -188,13 +237,33 @@ func normalizeProducer(producer *ParameterProducer, contract OperatorParameter, 
 		if err := normalizePredicate(producer.AvailableWhen, facets); err != nil {
 			return nil, invocationIncomplete(transition.ID, contract.ID, "has an invalid state availability predicate: "+err.Error())
 		}
-		if !predicateImplies(transition.Guard, *producer.AvailableWhen) {
-			return nil, invocationIncomplete(transition.ID, contract.ID, "state availability is not implied by the transition guard")
+		if !predicateRequiresKnownFacet(*producer.AvailableWhen, producer.Facet) {
+			return nil, invocationIncomplete(transition.ID, contract.ID, "state availability does not prove the produced facet is known")
+		}
+		operator := operators[transition.Operator]
+		trustedAvailability := false
+		for _, input := range operator.StateInputs {
+			if input.Parameter == contract.ID && input.Facet == producer.Facet && predicateImplies(*producer.AvailableWhen, input.AvailableWhen) {
+				trustedAvailability = true
+			}
+		}
+		if !trustedAvailability && !predicateImplies(transition.Guard, *producer.AvailableWhen) {
+			return nil, invocationIncomplete(transition.ID, contract.ID, "state availability is not implied by the transition guard or trusted operator binding")
 		}
 	case ParameterSourceReceipt:
 		prior, ok := transitions[producer.Transition]
 		if !ok || !validID(producer.Field) || prior.Priority >= transition.Priority || !predicateImplies(transition.Guard, prior.Target) {
 			return nil, invocationIncomplete(transition.ID, contract.ID, "receipt is not guaranteed before the consuming transition")
+		}
+		priorOperator := operators[prior.Operator]
+		outputFound := false
+		for _, output := range priorOperator.Outputs {
+			if output.ID == producer.Field && sameValueType(output.Type, contract.Type) {
+				outputFound = true
+			}
+		}
+		if !outputFound {
+			return nil, invocationIncomplete(transition.ID, contract.ID, "references an undeclared or incompatible committed receipt output")
 		}
 	case ParameterSourceWorkOutput:
 		contractWork, ok := work[producer.Work]
@@ -305,6 +374,9 @@ func compatibleWorkOutputType(mediaType, wanted string) bool {
 }
 
 func predicateImplies(guard, condition Predicate) bool {
+	if condition.True != nil && *condition.True {
+		return true
+	}
 	wanted, _ := json.Marshal(condition)
 	actual, _ := json.Marshal(guard)
 	if string(wanted) == string(actual) {
@@ -315,6 +387,35 @@ func predicateImplies(guard, condition Predicate) bool {
 		if string(encoded) == string(wanted) {
 			return true
 		}
+	}
+	return false
+}
+
+func predicateRequiresKnownFacet(predicate Predicate, facet string) bool {
+	if predicate.Fact != nil {
+		if predicate.Fact.Facet != facet {
+			return false
+		}
+		if len(predicate.Fact.Values) != 0 {
+			return true
+		}
+		return len(predicate.Fact.Statuses) == 1 && predicate.Fact.Statuses[0] == "known"
+	}
+	if len(predicate.All) != 0 {
+		for _, child := range predicate.All {
+			if predicateRequiresKnownFacet(child, facet) {
+				return true
+			}
+		}
+		return false
+	}
+	if len(predicate.Any) != 0 {
+		for _, child := range predicate.Any {
+			if !predicateRequiresKnownFacet(child, facet) {
+				return false
+			}
+		}
+		return true
 	}
 	return false
 }
