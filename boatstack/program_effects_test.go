@@ -8,11 +8,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/core"
 	"github.com/operatorstack/boatstack/boatstack/delivery"
+	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
@@ -120,6 +122,7 @@ func (c protocolStateClock) Now() time.Time { return c.now }
 
 type protocolStateObserver struct {
 	path        string
+	repository  string
 	invocation  model.InvocationContext
 	program     string
 	now         time.Time
@@ -136,12 +139,24 @@ func (o protocolStateObserver) Observe(context.Context, ports.ObservationRequest
 		return model.Observation{}, err
 	}
 	evidence := model.Evidence{Source: "fixture", Fingerprint: "fixture-state", ObservedAt: o.now}
+	gitEvidence := evidence
+	if o.repository != "" {
+		command := exec.Command("git", "rev-parse", "--verify", "HEAD^{commit}")
+		command.Dir = o.repository
+		head, headErr := command.Output()
+		if headErr != nil {
+			return model.Observation{}, headErr
+		}
+		revision := strings.TrimSpace(string(head))
+		digest := sha256.Sum256([]byte(revision))
+		gitEvidence = model.Evidence{Source: "git:" + o.repository, Fingerprint: hex.EncodeToString(digest[:]), Revision: revision, ObservedAt: o.now}
+	}
 	return model.Observation{
 		SchemaVersion: model.SnapshotSchemaVersion, StateRevision: state.Revision, RecordedProgramFingerprint: state.ProgramFingerprint,
 		Invocation: o.invocation, Phase: model.Known(state.Phase, evidence), Engagement: model.Known(state.Engagement, evidence),
-		Delivery: model.Known(state.Delivery, evidence), Workspace: model.Known(state.Workspace, evidence), Plan: model.Known(state.Plan, evidence),
+		Delivery: model.Known(state.Delivery, gitEvidence), Workspace: model.Known(state.Workspace, evidence), Plan: model.Known(state.Plan, evidence),
 		Configuration: model.Known(state.Configuration, o.configProof), ConfigurationPolicy: model.Known(state.ConfigurationPolicy(), o.configProof),
-		Runtime: model.Known(state.Runtime, evidence), Publication: model.Known(state.Publication, evidence), Verification: model.Known(state.Verification, evidence),
+		Runtime: model.Known(state.Runtime, evidence), Publication: model.Known(state.Publication, evidence), Verification: model.Known(state.Verification, gitEvidence),
 		Recovery: model.Known(state.Recovery, evidence), Transaction: model.Known(state.Transaction, evidence),
 		RecoveryInfo: model.Absent[model.RecoveryContext]("none", evidence), TransactionInfo: model.Absent[model.TransactionContext]("none", evidence),
 		Terminal: model.Known(state.Terminal, evidence), Objective: model.Known(state.Objective, evidence), ObservedAt: o.now,
@@ -171,6 +186,25 @@ func TestProgramRuntimeProtocolCommitsDeclaredStateEffectBeforeReceipt(t *testin
 	}
 	runGit("add", "README.md")
 	runGit("commit", "-q", "-m", "fixture")
+	baseRevisionCommand := exec.Command("git", "rev-parse", "HEAD")
+	baseRevisionCommand.Dir = repository
+	baseRevisionRaw, err := baseRevisionCommand.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseRevision := strings.TrimSpace(string(baseRevisionRaw))
+	if err := os.WriteFile(filepath.Join(repository, "README.md"), []byte("protocol candidate\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", "README.md")
+	runGit("commit", "-q", "-m", "protocol candidate")
+	acceptedRevisionCommand := exec.Command("git", "rev-parse", "HEAD")
+	acceptedRevisionCommand.Dir = repository
+	acceptedRevisionRaw, err := acceptedRevisionCommand.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	acceptedRevision := strings.TrimSpace(string(acceptedRevisionRaw))
 
 	now := time.Unix(1200, 0).UTC()
 	clock := protocolStateClock{now: now}
@@ -203,7 +237,7 @@ func TestProgramRuntimeProtocolCommitsDeclaredStateEffectBeforeReceipt(t *testin
 		t.Fatal(err)
 	}
 	configurationEvidence := model.Evidence{Source: "configuration:fixture", Fingerprint: state.ConfigFingerprint, ObservedAt: now}
-	observer := protocolStateObserver{path: layout.StatePath, invocation: invocation, program: program.Fingerprint(), now: now, configProof: configurationEvidence}
+	observer := protocolStateObserver{path: layout.StatePath, repository: repository, invocation: invocation, program: program.Fingerprint(), now: now, configProof: configurationEvidence}
 	locker, _ := effects.NewLocker(resolver)
 	journal, _ := effects.NewJournal(resolver, clock)
 	receipts, _ := effects.NewReceiptStore(resolver, clock)
@@ -221,8 +255,20 @@ func TestProgramRuntimeProtocolCommitsDeclaredStateEffectBeforeReceipt(t *testin
 		{ID: "human", Class: catalog.AuthorityHuman, Subject: invocation.RepositoryID, Fingerprint: "human", IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)},
 		{ID: "repository", Class: catalog.AuthorityRepository, Subject: configurationEvidence.Source, Fingerprint: configurationEvidence.Fingerprint, IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)},
 	}}
+	readme, err := os.ReadFile(filepath.Join(repository, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundleSnapshot, err := boatstackruntime.NewControlBundleSnapshot(map[string][]byte{"README.md": readme})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := boatstackruntime.NewControlBundleContract(bundleSnapshot, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	request := engine.ApplyRequest{
-		ResolveRequest: engine.ResolveRequest{Invocation: invocation, Objective: state.Objective, Authority: authority, Requested: "fixture.state.publish"},
+		ResolveRequest: engine.ResolveRequest{Invocation: invocation, Objective: state.Objective, Authority: authority, Requested: "fixture.state.publish", ControlBundle: &bundle, ControlBundleRevision: acceptedRevision},
 		FlowID:         "protocol-state-flow", AdmissionLifetime: time.Minute,
 	}
 	resolution, err := kernel.Resolve(ctx, request.ResolveRequest)
@@ -232,6 +278,11 @@ func TestProgramRuntimeProtocolCommitsDeclaredStateEffectBeforeReceipt(t *testin
 	if resolution.Decision.Kind != supervisor.DecisionPrescribed {
 		t.Fatalf("resolution = %#v", resolution.Decision)
 	}
+	runGit("reset", "--mixed", baseRevision)
+	if _, prepareErr := driver.Prepare(ctx, resolution.Admission, *resolution.Decision.Transition); prepareErr == nil || !strings.Contains(prepareErr.Error(), "CONTROL_BUNDLE_REVISION_DRIFT") {
+		t.Fatalf("protocol runtime accepted stale commit-bound bundle: %v", prepareErr)
+	}
+	runGit("reset", "--mixed", acceptedRevision)
 	request.Prescription = resolution.Prescription
 	result, err := kernel.Apply(ctx, request)
 	if err != nil {

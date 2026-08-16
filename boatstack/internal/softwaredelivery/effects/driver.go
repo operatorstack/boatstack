@@ -51,6 +51,31 @@ func NewProgramDriver(resolver ports.InvocationResolver, clock ports.Clock, boun
 	return driver, nil
 }
 
+// VerifyControlBundleBoundary re-observes the invocation and any explicit
+// commit-bound bundle at the final side-effect-free software-delivery
+// boundary. Program and extension runtimes use the same guard even when they
+// plan effects without delegating preparation to Driver.
+func VerifyControlBundleBoundary(ctx context.Context, resolver ports.InvocationResolver, admission protocol.Admission) (ports.ControllerLayout, error) {
+	layout, currentInvocation, err := resolver.ResolveLayout(ctx, admission.Invocation)
+	if err != nil {
+		return ports.ControllerLayout{}, err
+	}
+	if currentInvocation.RepositoryID != admission.Invocation.RepositoryID || currentInvocation.GitCommonID != admission.Invocation.GitCommonID || currentInvocation.WorktreeID != admission.Invocation.WorktreeID {
+		return ports.ControllerLayout{}, fmt.Errorf("effect invocation identity changed before preparation")
+	}
+	if admission.ControlBundle != nil {
+		if admission.ControlBundleRevision != "" {
+			if err := boatstackruntime.VerifyCurrentControlBundleRevision(ctx, layout.RepositoryRoot, admission.ControlBundleRevision, admission.ControlBundle.Source); err != nil {
+				return ports.ControllerLayout{}, err
+			}
+		}
+		if err := boatstackruntime.VerifyControlBundleRoot(layout.RepositoryRoot, admission.ControlBundle.Source); err != nil {
+			return ports.ControllerLayout{}, err
+		}
+	}
+	return layout, nil
+}
+
 func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, transition catalog.Transition) (ports.PreparedEffect, error) {
 	if err := protocol.ValidateEffectCapabilities(admission, transition); err != nil {
 		return nil, err
@@ -62,17 +87,9 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 			}
 		}
 	}
-	layout, currentInvocation, err := d.resolver.ResolveLayout(ctx, admission.Invocation)
+	layout, err := VerifyControlBundleBoundary(ctx, d.resolver, admission)
 	if err != nil {
 		return nil, err
-	}
-	if currentInvocation.RepositoryID != admission.Invocation.RepositoryID || currentInvocation.GitCommonID != admission.Invocation.GitCommonID || currentInvocation.WorktreeID != admission.Invocation.WorktreeID {
-		return nil, fmt.Errorf("effect invocation identity changed before preparation")
-	}
-	if admission.ControlBundle != nil {
-		if err := boatstackruntime.VerifyControlBundleRoot(layout.RepositoryRoot, admission.ControlBundle.Source); err != nil {
-			return nil, err
-		}
 	}
 	if transition.ID == "recovery.resume" || transition.ID == "recovery.rollback" || transition.ID == "workspace.reconcile" {
 		prepared, prepareErr := d.prepareRecoveryReplay(ctx, layout, admission, transition)

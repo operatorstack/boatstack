@@ -41,15 +41,16 @@ func (e Engine) canonicalize(observation model.Observation) (model.Snapshot, err
 }
 
 type ResolveRequest struct {
-	Invocation         model.InvocationContext
-	Objective          model.Objective
-	Authority          protocol.AuthorityBundle
-	Parameters         protocol.Parameters
-	Requested          catalog.TransitionID
-	Trace              bool
-	Work               *protocol.WorkEvidence
-	ControlBundle      *boatstackruntime.ControlBundleContract
-	InvocationEvidence *invocation.Evidence
+	Invocation            model.InvocationContext
+	Objective             model.Objective
+	Authority             protocol.AuthorityBundle
+	Parameters            protocol.Parameters
+	Requested             catalog.TransitionID
+	Trace                 bool
+	Work                  *protocol.WorkEvidence
+	ControlBundle         *boatstackruntime.ControlBundleContract
+	ControlBundleRevision string
+	InvocationEvidence    *invocation.Evidence
 }
 
 type Resolution struct {
@@ -181,7 +182,7 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 				updateDecisionTrace(decisionTrace, decision)
 				return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision, Trace: decisionTrace}, nil
 			}
-			admission, admissionErr := protocol.NewAdmissionWithWorkAndBundle(snapshot, objective, *decision.Transition, prescription, request.Authority, request.Parameters, request.Work, bundle, now, 2*time.Minute)
+			admission, admissionErr := protocol.NewAdmissionWithWorkBundleAndRevision(snapshot, objective, *decision.Transition, prescription, request.Authority, request.Parameters, request.Work, bundle, request.ControlBundleRevision, now, 2*time.Minute)
 			if admissionErr != nil {
 				decision.Kind = supervisor.DecisionUnresolved
 				decision.Reason = admissionErr.Error()
@@ -433,7 +434,7 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 	if err != nil {
 		return result, err
 	}
-	admission, err := protocol.NewAdmissionWithWorkAndBundle(resolution.Snapshot, request.Objective, transition, request.Prescription, request.Authority, request.Parameters, request.Work, bundle, now, request.AdmissionLifetime)
+	admission, err := protocol.NewAdmissionWithWorkBundleAndRevision(resolution.Snapshot, request.Objective, transition, request.Prescription, request.Authority, request.Parameters, request.Work, bundle, request.ControlBundleRevision, now, request.AdmissionLifetime)
 	if err != nil {
 		return result, err
 	}
@@ -515,6 +516,13 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 	if err := protocol.ValidateEffectCapabilities(admission, transition); err != nil {
 		return result, err
 	}
+	// Prepare is the final side-effect-free plant preflight. Run it after the
+	// locked observation but before receipt binding or transaction state so a
+	// changed external boundary leaves no managed mutation to recover.
+	prepared, err := e.effects.Prepare(ctx, admission, transition)
+	if err != nil {
+		return result, err
+	}
 	if err := e.receipts.Bind(ctx, request.FlowID, admission); err != nil {
 		return result, err
 	}
@@ -544,10 +552,6 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 	}
 	if err := e.journal.Mark(ctx, admission.ID, "executing"); err != nil {
 		return result, abort("journal mark failed", err)
-	}
-	prepared, err := e.effects.Prepare(ctx, admission, transition)
-	if err != nil {
-		return result, abort("effect preparation failed", err)
 	}
 	if err := protocol.ValidateEffectCapabilities(admission, transition); err != nil {
 		return result, abort("effect capability check failed", err)

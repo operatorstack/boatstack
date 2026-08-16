@@ -523,6 +523,20 @@ func VerifyControlBundleRevision(ctx context.Context, repository, revision strin
 	return nil
 }
 
+// VerifyCurrentControlBundleRevision binds the admitted bundle to the exact
+// commit currently checked out by the repository. Matching working-tree bytes
+// cannot substitute for the committed revision that supplied authority.
+func VerifyCurrentControlBundleRevision(ctx context.Context, repository, expectedRevision string, snapshot ControlBundleSnapshot) error {
+	currentRevision, err := ResolveCommitRevision(ctx, repository, "HEAD")
+	if err != nil {
+		return err
+	}
+	if currentRevision != expectedRevision {
+		return fmt.Errorf("CONTROL_BUNDLE_REVISION_DRIFT: expected revision %s, observed %s", expectedRevision, currentRevision)
+	}
+	return VerifyControlBundleRevision(ctx, repository, currentRevision, snapshot)
+}
+
 func ResolveCommitRevision(ctx context.Context, repository, reference string) (string, error) {
 	command := exec.CommandContext(ctx, "git", "rev-parse", "--verify", reference+"^{commit}")
 	command.Dir = repository
