@@ -50,6 +50,7 @@ func declarativeFlowRepositoryWithDocument(t *testing.T, document controlprogram
 	runFlowGit(t, repository, "init", "-b", "main")
 	runFlowGit(t, repository, "config", "user.email", "fixture@example.invalid")
 	runFlowGit(t, repository, "config", "user.name", "Fixture")
+	runFlowGit(t, repository, "config", "core.autocrlf", "false")
 	sourcePath, lockPath := ".boatstack/flows/incident-response-invocation.flow.ts", "package-lock.json"
 	source, lock := []byte("declarative flow source\n"), []byte("lock\n")
 	writeFixture(t, repository, sourcePath, source)
