@@ -808,6 +808,18 @@ func bindPrescribedRepositoryInvocation(ctx context.Context, request surfaces.Re
 
 func resolveBoundPlan(repository string, entry controlprogram.Entry, entryObjective softwareflow.EntryObjective, options commandOptions) (string, string, error) {
 	if !options.activeFlowBound {
+		// A pre-materialization resume already carries the delivery identity
+		// derived from the selected plan. Resolve that exact identity rather
+		// than selecting from the inbox again: unrelated new plans cannot
+		// redirect the run, and case-colliding aliases fail closed.
+		if options.runID != "" && options.deliveryID != "" {
+			inbox, _, err := resolvePlanInbox(repository, entry)
+			if err != nil {
+				return "", "", err
+			}
+			plan, err := resolveActiveInboxPlan(repository, inbox, options.deliveryID)
+			return plan, options.deliveryID, err
+		}
 		plan, deliveryID, err := resolvePlanInput(repository, entry)
 		if err != nil {
 			return "", "", err

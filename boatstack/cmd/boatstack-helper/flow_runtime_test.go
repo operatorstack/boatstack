@@ -1806,6 +1806,28 @@ func TestFlowEntryPreservesSelectedPlanFilenameBeforeMaterialization(t *testing.
 	}
 }
 
+func TestFlowEntryResumeIgnoresUnrelatedNewInboxPlan(t *testing.T) {
+	// control-law: one-flow-run-retains-its-selected-plan-identity-before-materialization
+	repository := flowRepository(t)
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery.md", []byte("selected plan"))
+	initial, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, repository, ".boatstack/plans/inbox/unrelated.md", []byte("different plan"))
+	resumed, err := bindFlowEntry(context.Background(), commandOptions{
+		repository: repository, programID: "product-delivery", entryID: "run", runID: initial.runID, host: "codex",
+		deliveryID: initial.deliveryID, targetID: initial.targetID, objectiveID: initial.objectiveID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := filepath.Join(initial.repository, ".boatstack", "plans", "inbox", "delivery.md")
+	if source, ok := resumed.workInputs["plan"]; !ok || source.Value != expected {
+		t.Fatalf("resumed entry input = %#v, present=%t; want %q", source, ok, expected)
+	}
+}
+
 func TestFlowEntryRejectsAmbiguousPlanFilenameOnResume(t *testing.T) {
 	// control-law: a-run-cannot-resume-through-a-different-case-colliding-plan-identity
 	repository := flowRepository(t)
