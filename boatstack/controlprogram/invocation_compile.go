@@ -282,6 +282,19 @@ func normalizeProducer(producer *ParameterProducer, contract OperatorParameter, 
 		if !found {
 			return nil, invocationIncomplete(transition.ID, contract.ID, "references an optional, unknown, or incompatible work output")
 		}
+		var producerTransitions []Transition
+		for _, candidate := range transitions {
+			if candidate.Work == producer.Work {
+				producerTransitions = append(producerTransitions, candidate)
+			}
+		}
+		if len(producerTransitions) != 1 {
+			return nil, invocationIncomplete(transition.ID, contract.ID, "work output does not have exactly one producer transition")
+		}
+		prior := producerTransitions[0]
+		if prior.ID != transition.ID && (prior.Priority >= transition.Priority || !predicateImplies(transition.Guard, prior.Target)) {
+			return nil, invocationIncomplete(transition.ID, contract.ID, "work output is not guaranteed before the consuming transition")
+		}
 	case ParameterSourceTrustedResolver:
 		if producer.Binding == nil || resolver == nil || !semanticReference.MatchString(producer.Binding.Reference) || producer.Binding.Version == "" {
 			return nil, invocationIncomplete(transition.ID, contract.ID, "has an invalid trusted resolver binding")

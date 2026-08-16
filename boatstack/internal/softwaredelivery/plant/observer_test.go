@@ -492,6 +492,43 @@ func TestRecoveryWithoutStagedManifestCannotPrescribeResume(t *testing.T) {
 	}
 }
 
+func TestUnknownPublicationOutcomeRetainsMaterializableReconciliationIdentity(t *testing.T) {
+	// control-law: publication recovery depends only on journal evidence that
+	// survives an interrupted external effect.
+	root := t.TempDir()
+	transactionID := "adm-publication-unknown"
+	pending := map[string]any{
+		"schema_version":   protocol.JournalSchemaVersion,
+		"transition_id":    "publication.execute",
+		"transition_class": "owned-external",
+		"status":           "recovery-required",
+		"reason":           "publication result was not parseable",
+		"admission": map[string]any{
+			"id":                           transactionID,
+			"expected_program_fingerprint": strings.Repeat("a", 64),
+			"source_phase":                 "ACTIVE",
+			"invocation":                   map[string]any{"correlation_id": "prior-process"},
+		},
+	}
+	raw, err := json.Marshal(pending)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, transactionID+".pending"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	observed, err := pendingJournalEvidence(root, "restart", time.Unix(550, 0).UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !observed.Found || observed.Recovery.TransactionID != transactionID {
+		t.Fatalf("publication recovery evidence = %#v", observed)
+	}
+	if len(observed.Recovery.Permitted) != 2 || observed.Recovery.Permitted[0] != "publication.reconcile" || observed.Recovery.Permitted[1] != "recovery.escalate" {
+		t.Fatalf("publication recovery contract = %v", observed.Recovery.Permitted)
+	}
+}
+
 func TestInterruptedRecoveryAttemptCollapsesToEscalatableTransactionGroup(t *testing.T) {
 	// control-law: recovery-of-recovery-does-not-create-an-unselectable-conflict
 	root := t.TempDir()

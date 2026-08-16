@@ -155,6 +155,22 @@ func TestPublicationBindingPreservesProviderAsMandatory(t *testing.T) {
 	}
 }
 
+func TestPublicationReconcileBindingDoesNotRequireUncommittedPublicationOutput(t *testing.T) {
+	// control-law: recovery inputs survive an interrupted external effect
+	resolver, err := softwareflow.NewResolver(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := resolver.ResolveOperator("software-delivery/publication.reconcile", "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resolved.Parameters) != 1 || resolved.Parameters[0].ID != "transaction_id" ||
+		len(resolved.StateInputs) != 1 || resolved.StateInputs[0].Parameter != "transaction_id" {
+		t.Fatalf("publication reconciliation inputs = parameters %#v state %#v", resolved.Parameters, resolved.StateInputs)
+	}
+}
+
 func contains(values []string, wanted string) bool {
 	for _, value := range values {
 		if value == wanted {

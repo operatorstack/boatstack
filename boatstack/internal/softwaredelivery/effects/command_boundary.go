@@ -152,11 +152,18 @@ func (b NativeBoundary) PrepareObservation(ctx context.Context, admission protoc
 		}
 	case "publication.observe", "publication.reconcile":
 		publicationID, _ := admission.Parameters.Get("publication_id")
-		if state.PublicationID != "" && state.PublicationID != publicationID {
+		if transition.ID == "publication.reconcile" && publicationID == "" {
+			publicationID = state.PublicationID
+		}
+		if state.PublicationID != "" && publicationID != "" && state.PublicationID != publicationID {
 			state.Publication = model.PublicationConflicting
 			return nil
 		}
-		output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "gh", "pr", "view", "--json", "state,url,number,mergedAt,baseRefName,headRefName,headRefOid,isCrossRepository", "--", publicationID)
+		arguments := []string{"pr", "view", "--json", "state,url,number,mergedAt,baseRefName,headRefName,headRefOid,isCrossRepository"}
+		if publicationID != "" {
+			arguments = append(arguments, "--", publicationID)
+		}
+		output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "gh", arguments...)
 		if err != nil {
 			state.Publication, state.PublicationID, state.PublicationURL = model.PublicationUnavailable, publicationID, ""
 			return nil

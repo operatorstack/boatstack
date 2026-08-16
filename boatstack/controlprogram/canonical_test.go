@@ -235,6 +235,79 @@ func TestInvocationCompletenessChecksEntryAndStateAvailabilityPerEntry(t *testin
 	}
 }
 
+func TestInvocationCompletenessProvesWorkOutputProducerPrecedence(t *testing.T) {
+	// control-law: selected work-output consumers identify one completed producer
+	base := incidentWorkProgram()
+	consumerOperator := base.Operators[0]
+	consumerOperator.ID = "dispatch"
+	consumerOperator.Parameters = []controlprogram.OperatorParameter{{
+		ID: "diagnosis", Type: controlprogram.ValueTypeDefinition{Kind: "string"}, Required: true,
+		AllowedSources: []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceWorkOutput},
+	}}
+	base.Operators = append(base.Operators, consumerOperator)
+	producerTarget := base.Transitions[0].Target
+	base.Transitions = append(base.Transitions, controlprogram.Transition{
+		ID: "dispatch", Operator: "dispatch", Priority: 20, Guard: producerTarget,
+		Target: fact("incident", "mitigated"), Parameters: []controlprogram.TransitionParameterBinding{{
+			Parameter: "diagnosis", Producer: controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceWorkOutput, Work: "diagnose", Output: "diagnosis"},
+		}},
+	})
+	if _, err := controlprogram.Compile(base, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	ambiguous := clone(t, base)
+	var duplicateProducer controlprogram.Transition
+	for _, candidate := range ambiguous.Transitions {
+		if candidate.Work == "diagnose" {
+			duplicateProducer = candidate
+			break
+		}
+	}
+	duplicateProducer.ID = "diagnose-again"
+	var duplicateOperator controlprogram.Operator
+	for _, candidate := range ambiguous.Operators {
+		if candidate.ID == duplicateProducer.Operator {
+			duplicateOperator = candidate
+			break
+		}
+	}
+	duplicateOperator.ID = "diagnose-again"
+	duplicateProducer.Operator = duplicateOperator.ID
+	ambiguous.Operators = append(ambiguous.Operators, duplicateOperator)
+	ambiguous.Transitions = append(ambiguous.Transitions, duplicateProducer)
+	if _, err := controlprogram.Compile(ambiguous, nil); err == nil || !strings.Contains(err.Error(), "exactly one producer transition") {
+		t.Fatalf("ambiguous work producer result = %v", err)
+	}
+
+	shadowed := clone(t, base)
+	producerPriority := 0
+	for _, candidate := range shadowed.Transitions {
+		if candidate.Work == "diagnose" {
+			producerPriority = candidate.Priority
+		}
+	}
+	for index := range shadowed.Transitions {
+		if shadowed.Transitions[index].ID == "dispatch" {
+			shadowed.Transitions[index].Priority = producerPriority
+		}
+	}
+	if _, err := controlprogram.Compile(shadowed, nil); err == nil || !strings.Contains(err.Error(), "not guaranteed before") {
+		t.Fatalf("shadowed work producer result = %v", err)
+	}
+
+	unproved := clone(t, base)
+	truth := true
+	for index := range unproved.Transitions {
+		if unproved.Transitions[index].ID == "dispatch" {
+			unproved.Transitions[index].Guard = controlprogram.Predicate{True: &truth}
+		}
+	}
+	if _, err := controlprogram.Compile(unproved, nil); err == nil || !strings.Contains(err.Error(), "not guaranteed before") {
+		t.Fatalf("unproved work producer result = %v", err)
+	}
+}
+
 func TestInvocationCompletenessRejectsResolverDriftCyclesAndValidatorOverride(t *testing.T) {
 	fingerprintA, fingerprintB := strings.Repeat("a", 64), strings.Repeat("b", 64)
 	resolver := invocationResolver{

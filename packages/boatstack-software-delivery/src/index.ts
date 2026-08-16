@@ -256,7 +256,6 @@ export function standardSoftwareDeliveryParameters(step: TrustedStep): Record<st
       return { transaction_id: durableValue("transaction_id") };
     case "publication.reconcile":
       return {
-        publication_id: durableValue("publication_id"),
         transaction_id: durableValue("transaction_id"),
       };
     default:
