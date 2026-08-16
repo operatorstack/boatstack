@@ -62,11 +62,14 @@ A command descriptor contains an executable name and an exact argument array:
 ```
 
 Boatstack validates, fingerprints, and exposes this data but never executes the
-command. A host may execute the exact command and arguments directly, without a
-shell or interpolation. It accepts only a zero exit status and one non-empty
-actor line of at most 1 KiB after removing at most one trailing LF or CRLF. If
-resolution fails, the host must ask the user for an actor; it must not infer an
-operating-system or Git identity.
+command. The descriptor is untrusted repository data. A Flow or delegation
+request does not authorize its execution. A host may submit the exact command
+and arguments to its own command permission boundary, without a shell or
+interpolation, and execute them only when that boundary independently permits
+the action. It accepts only a zero exit status and one non-empty actor line of
+at most 1 KiB after removing at most one trailing LF or CRLF. If execution is
+not permitted or resolution fails, the host must ask the user for an actor; it
+must not infer an operating-system or Git identity.
 
 The host displays the resolved actor, exact request, and requested authority,
 then asks for explicit approval. The authorization command still requires
