@@ -1936,6 +1936,13 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	if err != nil || lock != nil || suspension != nil || !request.Authority.Set(time.Now().UTC())[catalog.AuthorityAutonomy] {
 		t.Fatalf("authorized resolve = lock=%v response=%#v authority=%#v err=%v", lock, suspension, request.Authority, err)
 	}
+	refreshedApply, _, err := refreshFlowInvocation(context.Background(), surfaces.OperationApply, request, bound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !refreshedApply.Authority.Set(time.Now().UTC())[catalog.AuthorityAutonomy] || !reflect.DeepEqual(refreshedApply.Authority, request.Authority) {
+		t.Fatalf("direct CLI refresh dropped admitted delegation authority:\nprior=%#v\nfresh=%#v", request.Authority, refreshedApply.Authority)
+	}
 	var replayedReceipt protocol.AuthorityReceipt
 	for _, receipt := range request.Authority.Receipts {
 		if strings.HasPrefix(receipt.ID, "delegation-") {

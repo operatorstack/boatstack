@@ -41,6 +41,10 @@ func declarativeInvocationDocument() controlprogram.Document {
 }
 
 func declarativeFlowRepository(t *testing.T) string {
+	return declarativeFlowRepositoryWithDocument(t, declarativeInvocationDocument())
+}
+
+func declarativeFlowRepositoryWithDocument(t *testing.T, document controlprogram.Document) string {
 	t.Helper()
 	repository := t.TempDir()
 	runFlowGit(t, repository, "init", "-b", "main")
@@ -50,10 +54,32 @@ func declarativeFlowRepository(t *testing.T) string {
 	source, lock := []byte("declarative flow source\n"), []byte("lock\n")
 	writeFixture(t, repository, sourcePath, source)
 	writeFixture(t, repository, lockPath, lock)
-	writeFlowArtifact(t, repository, declarativeInvocationDocument(), sourcePath, source, lockPath, lock)
+	writeFlowArtifact(t, repository, document, sourcePath, source, lockPath, lock)
 	runFlowGit(t, repository, "add", ".")
 	runFlowGit(t, repository, "commit", "-m", "fixture")
 	return repository
+}
+
+func twoStepDeclarativeDocument() controlprogram.Document {
+	truth := true
+	contained, mitigated := "contained", "mitigated"
+	return controlprogram.Document{
+		Schema: controlprogram.SchemaName, SchemaRevision: controlprogram.SchemaRevision,
+		Program:      controlprogram.Program{ID: "incident-response-invocation", Version: "1"},
+		Declarations: controlprogram.Declarations{Authorities: []string{"human"}, Verifiers: []string{"state-effect"}},
+		Facets:       []controlprogram.Facet{{ID: "incident", Kind: "enum", Values: []string{"open", "contained", "mitigated"}}},
+		Evidence:     []controlprogram.Evidence{{ID: "state-effect", Subject: "incident", Kind: "state-observation"}},
+		Operators: []controlprogram.Operator{
+			{ID: "contain", Authority: controlprogram.AuthorityRequirement{AnyOf: []string{"human"}}, Verifier: "state-effect", ExecutionContext: "preserve", StateEffect: &controlprogram.StateEffect{Kind: "assignments", Assignments: []controlprogram.StateAssignment{{Facet: "incident", Value: &contained}}}},
+			{ID: "mitigate", Authority: controlprogram.AuthorityRequirement{AnyOf: []string{"human"}}, Verifier: "state-effect", ExecutionContext: "preserve", StateEffect: &controlprogram.StateEffect{Kind: "assignments", Assignments: []controlprogram.StateAssignment{{Facet: "incident", Value: &mitigated}}}},
+		},
+		Transitions: []controlprogram.Transition{
+			{ID: "contain", Operator: "contain", Guard: controlprogram.Predicate{True: &truth}, Target: flowFact("incident", "contained"), Priority: 10},
+			{ID: "mitigate", Operator: "mitigate", Guard: flowFact("incident", "contained"), Target: flowFact("incident", "mitigated"), Priority: 20},
+		},
+		Targets: []controlprogram.Target{{ID: "mitigated", Predicate: flowFact("incident", "mitigated")}},
+		Entries: []controlprogram.Entry{{ID: "respond", Target: "mitigated", Inputs: []controlprogram.EntryInput{{ID: "incident", Type: "string", Required: true}}}},
+	}
 }
 
 func decodeObject(t *testing.T, raw []byte) map[string]any {
@@ -139,6 +165,119 @@ func TestGeneratedDeclarativeDriverSuspendsAnswersRestartsAndExecutes(t *testing
 	}
 }
 
+func TestDeclarativeRunRejectsCrossWorktreeResume(t *testing.T) {
+	// control-law: an explicit run ID cannot bypass the opaque execution-scope
+	// identity that was bound when the durable declarative run was created.
+	t.Setenv("BOATSTACK_STATE_ROOT", t.TempDir())
+	repository := declarativeFlowRepository(t)
+	suspendedRaw, err := captureStdout(t, func() error {
+		return runFlowContinuation([]string{"--repo", repository, "--flow", "incident-response-invocation", "--entry", "respond", "--input", "incident=INC-7", "--host", "codex", "--format", "json"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	suspended := decodeObject(t, suspendedRaw)
+	runID, _ := suspended["run_id"].(string)
+	request := suspended["request"]
+	otherWorktree := filepath.Join(t.TempDir(), "other-worktree")
+	runFlowGit(t, repository, "worktree", "add", "-q", "-b", "other-worktree", otherWorktree)
+	if _, err := captureStdout(t, func() error {
+		return runFlowContinuation([]string{"--repo", otherWorktree, "--flow", "incident-response-invocation", "--entry", "respond", "--run-id", runID, "--host", "codex", "--format", "json"})
+	}); err == nil || !strings.Contains(err.Error(), "FLOW_CONTEXT_MISMATCH") {
+		t.Fatalf("cross-worktree resume = %v", err)
+	}
+	replayedRaw, err := captureStdout(t, func() error {
+		return runFlowContinuation([]string{"--repo", repository, "--flow", "incident-response-invocation", "--entry", "respond", "--run-id", runID, "--host", "codex", "--format", "json"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed := decodeObject(t, replayedRaw)
+	if replayed["kind"] != "suspended" || !reflect.DeepEqual(request, replayed["request"]) {
+		t.Fatalf("cross-scope refusal changed the originating run:\nbefore=%s\nafter=%s", suspendedRaw, replayedRaw)
+	}
+}
+
+func TestDeclarativeSelectionPreservesEqualPriorityFrontier(t *testing.T) {
+	// control-law: equally preferred transitions are an explicit frontier, not
+	// an ID-based mutation choice.
+	t.Setenv("BOATSTACK_STATE_ROOT", t.TempDir())
+	document := declarativeInvocationDocument()
+	alternate := document.Transitions[0]
+	alternate.ID = "alternate-restart"
+	document.Transitions = append(document.Transitions, alternate)
+	repository := declarativeFlowRepositoryWithDocument(t, document)
+	blockedRaw, err := captureStdout(t, func() error {
+		return runFlowContinuation([]string{"--repo", repository, "--flow", "incident-response-invocation", "--entry", "respond", "--input", "incident=INC-7", "--human", "boateng", "--host", "codex", "--format", "json"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocked := decodeObject(t, blockedRaw)
+	if blocked["kind"] != "blocked" || blocked["code"] != "FLOW_SELECTION_AMBIGUOUS" || blocked["state_revision"] != float64(1) {
+		t.Fatalf("ambiguous selection = %s", blockedRaw)
+	}
+	want := []any{"alternate-restart", "restart"}
+	if !reflect.DeepEqual(blocked["transitions"], want) {
+		t.Fatalf("frontier = %#v, want %#v", blocked["transitions"], want)
+	}
+	runID, _ := blocked["run_id"].(string)
+	replayedRaw, err := captureStdout(t, func() error {
+		return runFlowContinuation([]string{"--repo", repository, "--flow", "incident-response-invocation", "--entry", "respond", "--run-id", runID, "--human", "boateng", "--host", "codex", "--format", "json"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayed := decodeObject(t, replayedRaw); replayed["code"] != "FLOW_SELECTION_AMBIGUOUS" || replayed["state_revision"] != float64(1) {
+		t.Fatalf("ambiguous replay mutated state = %s", replayedRaw)
+	}
+}
+
+func TestDeclarativeReceiptHistoryIsImmutableAndContiguous(t *testing.T) {
+	// control-law: every accepted declarative transition remains recoverable as
+	// one contiguous durable receipt chain after later commits and restart.
+	t.Setenv("BOATSTACK_STATE_ROOT", t.TempDir())
+	repository := declarativeFlowRepositoryWithDocument(t, twoStepDeclarativeDocument())
+	firstRaw, err := captureStdout(t, func() error {
+		return runFlowContinuation([]string{"--repo", repository, "--flow", "incident-response-invocation", "--entry", "respond", "--input", "incident=INC-7", "--human", "boateng", "--host", "codex", "--format", "json"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := decodeObject(t, firstRaw)
+	if first["kind"] != "continued" {
+		t.Fatalf("first transition = %s", firstRaw)
+	}
+	runID, _ := first["run_id"].(string)
+	firstReceipt := first["receipt"]
+	secondRaw, err := captureStdout(t, func() error {
+		return runFlowContinuation([]string{"--repo", repository, "--flow", "incident-response-invocation", "--entry", "respond", "--run-id", runID, "--human", "boateng", "--host", "codex", "--format", "json"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := decodeObject(t, secondRaw)
+	receipts, _ := second["receipts"].([]any)
+	if second["kind"] != "terminal" || len(receipts) != 2 || !reflect.DeepEqual(receipts[0], firstReceipt) {
+		t.Fatalf("second transition lost receipt history:\nfirst=%s\nsecond=%s", firstRaw, secondRaw)
+	}
+	prior := receipts[0].(map[string]any)
+	latest := receipts[1].(map[string]any)
+	if latest["prior_receipt_fingerprint"] != prior["fingerprint"] || latest["prior_state_revision"] != prior["result_state_revision"] {
+		t.Fatalf("receipt chain is not contiguous: %#v", receipts)
+	}
+	replayedRaw, err := captureStdout(t, func() error {
+		return runFlowContinuation([]string{"--repo", repository, "--flow", "incident-response-invocation", "--entry", "respond", "--run-id", runID, "--host", "codex", "--format", "json"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed := decodeObject(t, replayedRaw)
+	if replayed["kind"] != "terminal" || !reflect.DeepEqual(replayed["receipts"], second["receipts"]) || !reflect.DeepEqual(replayed["receipt"], second["receipt"]) {
+		t.Fatalf("restart changed durable receipt history:\nsecond=%s\nreplayed=%s", secondRaw, replayedRaw)
+	}
+}
+
 func TestDeclarativeRuntimeRejectsSemanticsItCannotProve(t *testing.T) {
 	open := "open"
 	for name, test := range map[string]struct {
@@ -166,15 +305,18 @@ func TestDeclarativeRuntimeRejectsSemanticsItCannotProve(t *testing.T) {
 		"target-not-established": {func(document *controlprogram.Document) {
 			document.Operators[0].StateEffect.Assignments[0] = controlprogram.StateAssignment{Facet: "incident", Value: &open}
 		}, "do not establish its target"},
+		"non-positive-priority": {func(document *controlprogram.Document) {
+			document.Transitions[0].Priority = 0
+		}, "priority must be positive"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			document := declarativeInvocationDocument()
 			test.mutate(&document)
 			compiled, err := controlprogram.Compile(document, nil)
-			if err != nil {
-				t.Fatal(err)
+			if err == nil {
+				err = validateDeclarativeFlow(compiled)
 			}
-			if err := validateDeclarativeFlow(compiled); err == nil || !strings.Contains(err.Error(), test.witness) {
+			if err == nil || !strings.Contains(err.Error(), test.witness) {
 				t.Fatalf("validation = %v, want %q", err, test.witness)
 			}
 		})

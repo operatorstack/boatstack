@@ -516,6 +516,10 @@ func refreshFlowInvocation(ctx context.Context, operation surfaces.Operation, pr
 	if err != nil {
 		return surfaces.Request{}, commandOptions{}, err
 	}
+	// Delegation is admitted before the Flow invocation is refreshed under the
+	// execution lease. Preserve that exact external authority evidence; the
+	// refresh owns producer evidence, not authority re-admission.
+	request.Authority = prior.Authority
 	request.Prescription = prescription
 	return request, fresh, nil
 }

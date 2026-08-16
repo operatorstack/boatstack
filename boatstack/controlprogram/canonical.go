@@ -426,6 +426,9 @@ func normalizeTransitions(document *Document, facets map[string]Facet, operators
 		if !validID(value.ID) || seen[value.ID] || operators[value.Operator].ID == "" {
 			return invalid(fmt.Sprintf("transitions[%d]", i), "invalid transition or operator reference")
 		}
+		if value.Priority <= 0 {
+			return invalid("transitions."+value.ID+".priority", "priority must be positive")
+		}
 		seen[value.ID] = true
 		if value.Work != "" {
 			if work[value.Work].ID == "" {
