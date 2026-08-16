@@ -22,18 +22,21 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/invocation"
 )
 
-const declarativeRunSchemaRevision = 3
+const declarativeRunSchemaRevision = 4
 
 type declarativeTransitionReceipt struct {
-	ID                      string                         `json:"id"`
-	TransitionID            string                         `json:"transition_id"`
-	InvocationFingerprint   string                         `json:"invocation_fingerprint"`
-	PriorStateRevision      uint64                         `json:"prior_state_revision"`
-	ResultStateRevision     uint64                         `json:"result_state_revision"`
-	PriorReceiptFingerprint string                         `json:"prior_receipt_fingerprint,omitempty"`
-	Parameters              []invocation.ResolvedParameter `json:"parameters"`
-	HumanActor              string                         `json:"human_actor,omitempty"`
-	Fingerprint             string                         `json:"fingerprint"`
+	ID                          string                         `json:"id"`
+	TransitionID                string                         `json:"transition_id"`
+	InvocationFingerprint       string                         `json:"invocation_fingerprint"`
+	PriorStateRevision          uint64                         `json:"prior_state_revision"`
+	ResultStateRevision         uint64                         `json:"result_state_revision"`
+	PriorReceiptFingerprint     string                         `json:"prior_receipt_fingerprint,omitempty"`
+	Parameters                  []invocation.ResolvedParameter `json:"parameters"`
+	ControlBundleFingerprint    string                         `json:"control_bundle_fingerprint"`
+	AuthorityContextFingerprint string                         `json:"authority_context_fingerprint,omitempty"`
+	AuthorityFingerprint        string                         `json:"authority_fingerprint,omitempty"`
+	HumanActor                  string                         `json:"human_actor,omitempty"`
+	Fingerprint                 string                         `json:"fingerprint"`
 }
 
 type declarativeRunState struct {
@@ -51,13 +54,15 @@ type declarativeRunState struct {
 }
 
 type declarativeRuntimeContext struct {
-	compiled                  controlprogram.Compiled
-	entry                     controlprogram.Entry
-	state                     declarativeRunState
-	statePath                 string
-	store                     invocation.Store
-	controlBundle             boatstackruntime.ControlBundleSnapshot
-	executionScopeFingerprint string
+	compiled                    controlprogram.Compiled
+	entry                       controlprogram.Entry
+	state                       declarativeRunState
+	statePath                   string
+	store                       invocation.Store
+	controlBundle               boatstackruntime.ControlBundleSnapshot
+	executionScopeFingerprint   string
+	authorityContextFingerprint string
+	humanIdentity               *humanidentity.Presentation
 }
 
 func tryRunDeclarativeFlow(ctx context.Context, options commandOptions) (bool, error) {
@@ -175,6 +180,15 @@ func runDeclarativeFlow(ctx context.Context, compiled controlprogram.Compiled, o
 	if !ok {
 		return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative transition %q has no executable operator", transition.ID)
 	}
+	requiresHumanAuthority := declarativeRequiresHumanAuthority(transition, operator)
+	if requiresHumanAuthority || transitionUsesHostInput(transition) {
+		presentation, identityErr := humanIdentityPresentationForRepositoryBound(ctx, repository, options.host, "declarative-suspension", runtimeContext.controlBundle, nil)
+		if identityErr != nil {
+			return identityErr
+		}
+		runtimeContext.authorityContextFingerprint = presentation.ProviderFingerprint
+		runtimeContext.humanIdentity = &presentation
+	}
 	result, materializationContext, err := materializeDeclarativeInvocation(runtimeContext, transition, operator)
 	if err != nil {
 		return err
@@ -189,29 +203,26 @@ func runDeclarativeFlow(ctx context.Context, compiled controlprogram.Compiled, o
 		if err := runtimeContext.store.SaveRequest(*result.Request); err != nil {
 			return err
 		}
-		presentation, identityErr := humanIdentityPresentationForRepositoryBound(ctx, repository, options.host, "declarative-input", runtimeContext.controlBundle, nil)
-		if identityErr != nil {
-			return identityErr
-		}
 		return encodeDeclarativeResult(map[string]any{
 			"kind": "suspended", "code": result.Request.Code, "run_id": runtimeContext.state.RunID,
 			"program_fingerprint": compiled.Fingerprint, "entry_id": entry.ID, "target_id": entry.Target,
-			"transition_id": transition.ID, "request": result.Request, "human_identity": presentation,
+			"transition_id": transition.ID, "request": result.Request, "human_identity": runtimeContext.humanIdentity,
 		}, options.format)
 	}
 	if result.Ready == nil {
 		return fmt.Errorf("FLOW_INVOCATION_INCOMPLETE: declarative materialization produced no evidence")
 	}
-	if err := requireDeclarativeAuthority(transition, operator, options.humanActor); err != nil {
-		presentation, identityErr := humanIdentityPresentationForRepositoryBound(ctx, repository, options.host, "declarative-authority", runtimeContext.controlBundle, nil)
-		if identityErr != nil {
-			return identityErr
-		}
+	authorityFingerprint := ""
+	if requiresHumanAuthority {
+		authorityFingerprint = declarativeAuthorityFingerprint(*result.Ready, transition, operator, runtimeContext.authorityContextFingerprint)
+	}
+	if err := requireDeclarativeAuthority(transition, operator, options.humanActor, options.authorityFingerprint, authorityFingerprint); err != nil {
 		return encodeDeclarativeResult(map[string]any{
 			"kind": "blocked", "code": "AUTHORITY_REQUIRED", "detail": err.Error(),
 			"run_id": runtimeContext.state.RunID, "program_fingerprint": compiled.Fingerprint,
 			"entry_id": entry.ID, "target_id": entry.Target, "transition_id": transition.ID,
-			"human_identity": presentation,
+			"authority_fingerprint": authorityFingerprint, "requested_authorities": declarativeAuthorities(transition, operator),
+			"human_identity": runtimeContext.humanIdentity,
 		}, options.format)
 	}
 
@@ -221,6 +232,15 @@ func runDeclarativeFlow(ctx context.Context, compiled controlprogram.Compiled, o
 	materializationContext.InputReceipts, err = runtimeContext.store.LoadReceipts(runtimeContext.state.RunID, transition.ID)
 	if err != nil {
 		return err
+	}
+	if runtimeContext.humanIdentity != nil {
+		current, identityErr := humanIdentityPresentationForRepositoryBound(ctx, repository, options.host, "declarative-commit", runtimeContext.controlBundle, nil)
+		if identityErr != nil {
+			return identityErr
+		}
+		if current.ProviderFingerprint != runtimeContext.authorityContextFingerprint {
+			return fmt.Errorf("HUMAN_IDENTITY_DRIFT: verified identity provider changed before declarative state commit")
+		}
 	}
 	fresh, err := invocation.Materialize(operator.Parameters, transition.Parameters, materializationContext, nil)
 	if err != nil {
@@ -241,7 +261,10 @@ func runDeclarativeFlow(ctx context.Context, compiled controlprogram.Compiled, o
 	receipt := declarativeTransitionReceipt{
 		TransitionID: transition.ID, InvocationFingerprint: fresh.Ready.InvocationFingerprint,
 		PriorStateRevision: priorRevision, ResultStateRevision: candidate.StateRevision,
-		Parameters: append([]invocation.ResolvedParameter(nil), fresh.Ready.Parameters...), HumanActor: strings.TrimSpace(options.humanActor),
+		Parameters:                  append([]invocation.ResolvedParameter(nil), fresh.Ready.Parameters...),
+		ControlBundleFingerprint:    runtimeContext.controlBundle.Fingerprint,
+		AuthorityContextFingerprint: runtimeContext.authorityContextFingerprint, AuthorityFingerprint: authorityFingerprint,
+		HumanActor: strings.TrimSpace(options.humanActor),
 	}
 	if previous := lastDeclarativeReceipt(candidate); previous != nil {
 		receipt.PriorReceiptFingerprint = previous.Fingerprint
@@ -266,7 +289,7 @@ func runDeclarativeFlow(ctx context.Context, compiled controlprogram.Compiled, o
 	}, options.format)
 }
 
-func requireDeclarativeAuthority(transition controlprogram.Transition, operator controlprogram.Operator, humanActor string) error {
+func requireDeclarativeAuthority(transition controlprogram.Transition, operator controlprogram.Operator, humanActor, providedFingerprint, expectedFingerprint string) error {
 	actor := strings.TrimSpace(humanActor)
 	providedHuman := actor != ""
 	if providedHuman {
@@ -283,7 +306,34 @@ func requireDeclarativeAuthority(transition controlprogram.Transition, operator 
 	if containsString(transition.Requires.Authorities, "human") && !providedHuman {
 		return fmt.Errorf("transition %q requires human authority", transition.ID)
 	}
+	if declarativeRequiresHumanAuthority(transition, operator) && (len(expectedFingerprint) != 64 || providedFingerprint != expectedFingerprint) {
+		return fmt.Errorf("exact current authority fingerprint is required for transition %q", transition.ID)
+	}
 	return nil
+}
+
+func declarativeRequiresHumanAuthority(transition controlprogram.Transition, operator controlprogram.Operator) bool {
+	return containsString(operator.Authority.AnyOf, "human") || containsString(operator.Authority.AllOf, "human") || containsString(transition.Requires.Authorities, "human")
+}
+
+func declarativeAuthorities(transition controlprogram.Transition, operator controlprogram.Operator) []string {
+	values := append(append(append([]string(nil), operator.Authority.AnyOf...), operator.Authority.AllOf...), transition.Requires.Authorities...)
+	sort.Strings(values)
+	result := values[:0]
+	for _, value := range values {
+		if len(result) == 0 || result[len(result)-1] != value {
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
+func declarativeAuthorityFingerprint(evidence invocation.Evidence, transition controlprogram.Transition, operator controlprogram.Operator, authorityContextFingerprint string) string {
+	return digestDeclarative(struct {
+		InvocationFingerprint       string   `json:"invocation_fingerprint"`
+		AuthorityContextFingerprint string   `json:"authority_context_fingerprint"`
+		Authorities                 []string `json:"authorities"`
+	}{evidence.InvocationFingerprint, authorityContextFingerprint, declarativeAuthorities(transition, operator)})
 }
 
 func loadDeclarativeRuntimeContext(ctx context.Context, repository string, compiled controlprogram.Compiled, entry controlprogram.Entry, options commandOptions) (declarativeRuntimeContext, error) {
@@ -346,7 +396,10 @@ func loadDeclarativeRuntimeContext(ctx context.Context, repository string, compi
 		receipt := state.Receipts[index]
 		fingerprint := receipt.Fingerprint
 		receipt.Fingerprint = ""
-		if fingerprint == "" || fingerprint != digestDeclarative(receipt) || receipt.PriorReceiptFingerprint != priorReceiptFingerprint || receipt.PriorStateRevision != expectedRevision || receipt.ResultStateRevision != expectedRevision+1 {
+		invalidAuthority := (receipt.AuthorityContextFingerprint != "" && len(receipt.AuthorityContextFingerprint) != 64) ||
+			(receipt.HumanActor != "" && (len(receipt.AuthorityContextFingerprint) != 64 || len(receipt.AuthorityFingerprint) != 64)) ||
+			(receipt.HumanActor == "" && receipt.AuthorityFingerprint != "")
+		if fingerprint == "" || fingerprint != digestDeclarative(receipt) || len(receipt.ControlBundleFingerprint) != 64 || invalidAuthority || receipt.PriorReceiptFingerprint != priorReceiptFingerprint || receipt.PriorStateRevision != expectedRevision || receipt.ResultStateRevision != expectedRevision+1 {
 			return declarativeRuntimeContext{}, fmt.Errorf("FLOW_CONTEXT_MISMATCH: declarative transition receipt is invalid")
 		}
 		expectedRevision = receipt.ResultStateRevision
@@ -380,15 +433,17 @@ func materializeDeclarativeInvocation(runtimeContext declarativeRuntimeContext, 
 		stateValues[facet] = invocation.Value{Type: controlprogram.ValueTypeDefinition{Kind: "string"}, Canonical: value, Provenance: "state", ProducerFingerprint: digestDeclarative(map[string]string{"facet": facet, "value": value})}
 	}
 	contextFingerprint := digestDeclarative(struct {
-		RunID         string            `json:"run_id"`
-		Program       string            `json:"program"`
-		Entry         string            `json:"entry"`
-		Target        string            `json:"target"`
-		Transition    string            `json:"transition"`
-		StateRevision uint64            `json:"state_revision"`
-		Inputs        map[string]string `json:"inputs"`
-		Facts         map[string]string `json:"facts"`
-	}{runtimeContext.state.RunID, runtimeContext.compiled.Fingerprint, runtimeContext.entry.ID, runtimeContext.entry.Target, transition.ID, runtimeContext.state.StateRevision, runtimeContext.state.EntryInputs, runtimeContext.state.Facts})
+		RunID                       string            `json:"run_id"`
+		Program                     string            `json:"program"`
+		Entry                       string            `json:"entry"`
+		Target                      string            `json:"target"`
+		Transition                  string            `json:"transition"`
+		StateRevision               uint64            `json:"state_revision"`
+		ControlBundleFingerprint    string            `json:"control_bundle_fingerprint"`
+		AuthorityContextFingerprint string            `json:"authority_context_fingerprint,omitempty"`
+		Inputs                      map[string]string `json:"inputs"`
+		Facts                       map[string]string `json:"facts"`
+	}{runtimeContext.state.RunID, runtimeContext.compiled.Fingerprint, runtimeContext.entry.ID, runtimeContext.entry.Target, transition.ID, runtimeContext.state.StateRevision, runtimeContext.controlBundle.Fingerprint, runtimeContext.authorityContextFingerprint, runtimeContext.state.EntryInputs, runtimeContext.state.Facts})
 	receipts, err := runtimeContext.store.LoadReceipts(runtimeContext.state.RunID, transition.ID)
 	if err != nil {
 		return invocation.Result{}, invocation.Context{}, err
@@ -397,8 +452,8 @@ func materializeDeclarativeInvocation(runtimeContext declarativeRuntimeContext, 
 		RunID: runtimeContext.state.RunID, ProgramFingerprint: runtimeContext.compiled.Fingerprint,
 		ExecutionProgramFingerprint: runtimeContext.compiled.Fingerprint,
 		EntryID:                     runtimeContext.entry.ID, TargetID: runtimeContext.entry.Target, TransitionID: transition.ID,
-		StateRevision: runtimeContext.state.StateRevision, ContextFingerprint: contextFingerprint,
-		ExecutionScopeFingerprint: runtimeContext.executionScopeFingerprint, EntryInputs: entryInputs,
+		StateRevision: runtimeContext.state.StateRevision, ContextFingerprint: contextFingerprint, ControlBundleFingerprint: runtimeContext.controlBundle.Fingerprint,
+		AuthorityContextFingerprint: runtimeContext.authorityContextFingerprint, ExecutionScopeFingerprint: runtimeContext.executionScopeFingerprint, EntryInputs: entryInputs,
 		State: stateValues, Receipts: map[string]invocation.Value{}, WorkOutputs: map[string]invocation.Value{}, InputReceipts: receipts,
 	}
 	result, err := invocation.Materialize(operator.Parameters, transition.Parameters, materializationContext, nil)

@@ -92,19 +92,18 @@ func runFlowInput(arguments []string) error {
 	if request.ProgramFingerprint != compiled.Fingerprint || request.EntryID != options.entryID {
 		return fmt.Errorf("FLOW_INPUT_REQUEST_MISMATCH: request does not belong to the selected program and entry")
 	}
-	if request.ControlBundleFingerprint != "" && request.ControlBundleFingerprint != runtimeContext.controlBundle.Fingerprint {
+	if request.ControlBundleFingerprint != runtimeContext.controlBundle.Fingerprint {
 		return fmt.Errorf("HUMAN_IDENTITY_DRIFT: input request bundle %s does not match current verified bundle %s", request.ControlBundleFingerprint, runtimeContext.controlBundle.Fingerprint)
+	}
+	if request.AuthorityContextFingerprint != runtimeContext.humanIdentity.ProviderFingerprint {
+		return fmt.Errorf("HUMAN_IDENTITY_DRIFT: input request authority context %s does not match current verified identity provider %s", request.AuthorityContextFingerprint, runtimeContext.humanIdentity.ProviderFingerprint)
 	}
 	if action == "show" {
 		receipts, loadErr := store.LoadReceipts(options.runID, request.TransitionID)
 		if loadErr != nil {
 			return loadErr
 		}
-		presentation, identityErr := humanIdentityPresentationForRepositoryBound(ctx, repository, options.host, "flow-input", runtimeContext.controlBundle.Source, nil)
-		if identityErr != nil {
-			return identityErr
-		}
-		return encodeFlowInputResult(map[string]any{"request": request, "receipts": receipts, "human_identity": presentation}, options.format)
+		return encodeFlowInputResult(map[string]any{"request": request, "receipts": receipts, "human_identity": runtimeContext.humanIdentity}, options.format)
 	}
 	if action == "supersede" {
 		if options.reason == "" || options.human == "" || options.host == "" {
@@ -119,7 +118,8 @@ func runFlowInput(arguments []string) error {
 		requestContext := invocation.Context{
 			RunID: request.RunID, ProgramFingerprint: request.ProgramFingerprint, ExecutionProgramFingerprint: request.ExecutionProgramFingerprint,
 			EntryID: request.EntryID, TargetID: request.TargetID, TransitionID: request.TransitionID, StateRevision: request.StateRevision,
-			ContextFingerprint: request.ContextFingerprint, ControlBundleFingerprint: request.ControlBundleFingerprint, ExecutionScopeFingerprint: request.ExecutionScopeFingerprint,
+			ContextFingerprint: request.ContextFingerprint, ControlBundleFingerprint: request.ControlBundleFingerprint,
+			AuthorityContextFingerprint: request.AuthorityContextFingerprint, ExecutionScopeFingerprint: request.ExecutionScopeFingerprint,
 		}
 		latest, found, latestErr := store.LatestRequest(requestContext)
 		if latestErr != nil {
@@ -167,7 +167,8 @@ func runFlowInput(arguments []string) error {
 
 type flowInputRuntimeContext struct {
 	executionScopeFingerprint string
-	controlBundle             *boatstackruntime.ControlBundleContract
+	controlBundle             boatstackruntime.ControlBundleSnapshot
+	humanIdentity             humanidentity.Presentation
 }
 
 func loadFlowInputContext(ctx context.Context, options flowInputOptions) (controlprogram.Compiled, invocation.Store, flowInputRuntimeContext, error) {
@@ -207,7 +208,13 @@ func loadFlowInputContext(ctx context.Context, options flowInputOptions) (contro
 	if err != nil {
 		return controlprogram.Compiled{}, invocation.Store{}, flowInputRuntimeContext{}, err
 	}
-	return compiled, invocation.Store{Root: layout.FlowRoot, Writer: effects.NewRuntimeStore()}, flowInputRuntimeContext{executionScopeFingerprint: executionScopeFingerprint, controlBundle: controlBundle}, nil
+	presentation, err := humanIdentityPresentationForRepositoryBound(ctx, options.repository, options.host, "flow-input-"+options.runID, controlBundle.Source, nil)
+	if err != nil {
+		return controlprogram.Compiled{}, invocation.Store{}, flowInputRuntimeContext{}, err
+	}
+	return compiled, invocation.Store{Root: layout.FlowRoot, Writer: effects.NewRuntimeStore()}, flowInputRuntimeContext{
+		executionScopeFingerprint: executionScopeFingerprint, controlBundle: controlBundle.Source, humanIdentity: presentation,
+	}, nil
 }
 
 func loadFlowInputAnswers(path string) (map[string]string, error) {
@@ -245,6 +252,9 @@ func loadFlowInputAnswers(path string) (map[string]string, error) {
 func recordFlowInputAnswers(store invocation.Store, compiled controlprogram.Compiled, request invocation.InputRequest, runtimeContext flowInputRuntimeContext, answers map[string]string, actor, host string) ([]invocation.InputReceipt, error) {
 	if runtimeContext.executionScopeFingerprint != request.ExecutionScopeFingerprint {
 		return nil, fmt.Errorf("FLOW_INPUT_REQUEST_MISMATCH: execution scope changed after suspension")
+	}
+	if runtimeContext.humanIdentity.ProviderFingerprint != request.AuthorityContextFingerprint {
+		return nil, fmt.Errorf("HUMAN_IDENTITY_DRIFT: input request identity provider changed after suspension")
 	}
 	transition, ok := findCompiledTransition(compiled.Document.Transitions, request.TransitionID)
 	if !ok {
@@ -300,8 +310,8 @@ func recordFlowInputAnswers(store invocation.Store, compiled controlprogram.Comp
 			TransitionID: request.TransitionID, ParameterID: parameterID, Type: contract.Type, Value: value,
 			ProducerFingerprint: invocation.ProducerFingerprint(producer), RequestFingerprint: request.Fingerprint,
 			StateRevision: request.StateRevision, ContextFingerprint: request.ContextFingerprint, ControlBundleFingerprint: request.ControlBundleFingerprint,
-			ExecutionScopeFingerprint: runtimeContext.executionScopeFingerprint,
-			Actor:                     actor, Host: host, AuthorityReceipts: []string{"human:" + actor}, Scope: "transition",
+			AuthorityContextFingerprint: request.AuthorityContextFingerprint, ExecutionScopeFingerprint: runtimeContext.executionScopeFingerprint,
+			Actor: actor, Host: host, AuthorityReceipts: []string{"human:" + actor}, Scope: "transition",
 		})
 		if sealErr != nil {
 			return nil, sealErr

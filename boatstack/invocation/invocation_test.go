@@ -20,7 +20,7 @@ func (testRuntimeStore) WriteAtomic(path string, raw []byte, mode uint32) error 
 }
 
 func testContext() Context {
-	return Context{RunID: "run-one", ProgramFingerprint: strings.Repeat("a", 64), ExecutionProgramFingerprint: strings.Repeat("e", 64), EntryID: "run", TargetID: "mitigated", TransitionID: "respond", StateRevision: 12, ContextFingerprint: strings.Repeat("b", 64), ControlBundleFingerprint: strings.Repeat("c", 64), ExecutionScopeFingerprint: strings.Repeat("d", 64), InputReceipts: map[string]InputReceipt{}}
+	return Context{RunID: "run-one", ProgramFingerprint: strings.Repeat("a", 64), ExecutionProgramFingerprint: strings.Repeat("e", 64), EntryID: "run", TargetID: "mitigated", TransitionID: "respond", StateRevision: 12, ContextFingerprint: strings.Repeat("b", 64), ControlBundleFingerprint: strings.Repeat("c", 64), AuthorityContextFingerprint: strings.Repeat("f", 64), ExecutionScopeFingerprint: strings.Repeat("d", 64), InputReceipts: map[string]InputReceipt{}}
 }
 
 func testContract() controlprogram.OperatorParameter {
@@ -39,7 +39,7 @@ func TestHostInputSuspendsAndSameRunReceiptResumes(t *testing.T) {
 	if err != nil || result.Request == nil || result.Request.Code != "TRANSITION_INPUT_REQUIRED" || result.Ready != nil {
 		t.Fatalf("suspension = %#v, %v", result, err)
 	}
-	receipt, err := SealReceipt(InputReceipt{RunID: context.RunID, ProgramFingerprint: context.ProgramFingerprint, ExecutionProgramFingerprint: context.ExecutionProgramFingerprint, EntryID: context.EntryID, TargetID: context.TargetID, TransitionID: context.TransitionID, ParameterID: "channel", Type: testContract().Type, Value: "pager", ProducerFingerprint: fingerprintProducer(testProducer()), RequestFingerprint: result.Request.Fingerprint, StateRevision: context.StateRevision, ContextFingerprint: context.ContextFingerprint, ControlBundleFingerprint: context.ControlBundleFingerprint, ExecutionScopeFingerprint: context.ExecutionScopeFingerprint, Actor: "operator", Host: "codex", AuthorityReceipts: []string{"human:operator"}, CreatedAt: time.Now().UTC(), Scope: "transition"})
+	receipt, err := SealReceipt(InputReceipt{RunID: context.RunID, ProgramFingerprint: context.ProgramFingerprint, ExecutionProgramFingerprint: context.ExecutionProgramFingerprint, EntryID: context.EntryID, TargetID: context.TargetID, TransitionID: context.TransitionID, ParameterID: "channel", Type: testContract().Type, Value: "pager", ProducerFingerprint: fingerprintProducer(testProducer()), RequestFingerprint: result.Request.Fingerprint, StateRevision: context.StateRevision, ContextFingerprint: context.ContextFingerprint, ControlBundleFingerprint: context.ControlBundleFingerprint, AuthorityContextFingerprint: context.AuthorityContextFingerprint, ExecutionScopeFingerprint: context.ExecutionScopeFingerprint, Actor: "operator", Host: "codex", AuthorityReceipts: []string{"human:operator"}, CreatedAt: time.Now().UTC(), Scope: "transition"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,8 +136,8 @@ func TestInputReceiptRejectsCrossScopeExpiryAndControlDrift(t *testing.T) {
 		TransitionID: context.TransitionID, ParameterID: "channel", Type: testContract().Type, Value: "pager",
 		ProducerFingerprint: fingerprintProducer(testProducer()), RequestFingerprint: suspended.Request.Fingerprint,
 		StateRevision: context.StateRevision, ContextFingerprint: context.ContextFingerprint, ControlBundleFingerprint: context.ControlBundleFingerprint,
-		ExecutionScopeFingerprint: context.ExecutionScopeFingerprint,
-		Actor:                     "operator", Host: "codex", AuthorityReceipts: []string{"human:operator"}, Scope: "transition",
+		AuthorityContextFingerprint: context.AuthorityContextFingerprint, ExecutionScopeFingerprint: context.ExecutionScopeFingerprint,
+		Actor: "operator", Host: "codex", AuthorityReceipts: []string{"human:operator"}, Scope: "transition",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -150,6 +150,7 @@ func TestInputReceiptRejectsCrossScopeExpiryAndControlDrift(t *testing.T) {
 		"state":             func(value *Context) { value.StateRevision++ },
 		"context":           func(value *Context) { value.ContextFingerprint = strings.Repeat("d", 64) },
 		"control-bundle":    func(value *Context) { value.ControlBundleFingerprint = strings.Repeat("e", 64) },
+		"authority-context": func(value *Context) { value.AuthorityContextFingerprint = strings.Repeat("a", 64) },
 		"execution-scope":   func(value *Context) { value.ExecutionScopeFingerprint = strings.Repeat("f", 64) },
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -185,7 +186,7 @@ func TestInputReceiptCannotClaimUnrecordedParameterAuthority(t *testing.T) {
 		EntryID: context.EntryID, TargetID: context.TargetID, TransitionID: context.TransitionID, ParameterID: "channel",
 		Type: testContract().Type, Value: "pager", ProducerFingerprint: fingerprintProducer(testProducer()), RequestFingerprint: suspended.Request.Fingerprint,
 		StateRevision: context.StateRevision, ContextFingerprint: context.ContextFingerprint, ControlBundleFingerprint: context.ControlBundleFingerprint,
-		ExecutionScopeFingerprint: context.ExecutionScopeFingerprint, Actor: "automation", Host: "codex",
+		AuthorityContextFingerprint: context.AuthorityContextFingerprint, ExecutionScopeFingerprint: context.ExecutionScopeFingerprint, Actor: "automation", Host: "codex",
 		AuthorityReceipts: []string{"autonomy:automation"}, Scope: "transition",
 	})
 	if err != nil {

@@ -60,6 +60,7 @@ func renderSkill(compiled controlprogram.Compiled, entry controlprogram.Entry, s
 	inputProtocol := ""
 	gateEvidenceProtocol := ""
 	entryInputProtocol := ""
+	declarativeAuthorityProtocol := ""
 	programReconciliation := ""
 	publication := ""
 	humanIdentityProtocol := `
@@ -104,6 +105,19 @@ authority.
 	}
 	if declarativeProgram(compiled.Document.Operators) {
 		startCommand = fmt.Sprintf("boatstack flow run --repo . --flow %s --entry %s --host %s --format json", compiled.Document.Program.ID, entry.ID, host)
+		declarativeAuthorityProtocol = fmt.Sprintf(`
+If Boatstack returns `+"`AUTHORITY_REQUIRED`"+`, preserve its exact run, state,
+transition, `+"`authority_fingerprint`"+`, requested authorities, and
+`+"`human_identity`"+`. Resolve the proposed actor through the identity protocol
+above, display the exact authority request, and ask for explicit approval. Only
+after approval, resume with:
+
+`+"`boatstack flow run --repo . --flow %s --entry %s --run-id <run-id> --authority-fingerprint <authority-fingerprint> --human <actor> --host %s --format json`"+`
+
+If the authority or identity fingerprint changes, discard the prior approval,
+present the fresh suspension, and ask again. Never resume a declarative human
+authority boundary with `+"`--human`"+` alone.
+`, compiled.Document.Program.ID, entry.ID, host)
 		if len(entry.Inputs) != 0 {
 			var required []string
 			for _, input := range entry.Inputs {
@@ -178,8 +192,8 @@ background while a question is open.
 	if hasHostInputProducer(compiled.Document.Transitions) {
 		inputProtocol = fmt.Sprintf(`
 When Boatstack returns `+"`TRANSITION_INPUT_REQUIRED`"+`, preserve the exact run,
-program, entry, target, transition, state, context, control-bundle, and request
-fingerprints. Inspect the runtime-owned request with:
+program, entry, target, transition, state, context, control-bundle,
+authority-context, and request fingerprints. Inspect the runtime-owned request with:
 
 `+"`boatstack flow input show --repo . --flow %s --entry %s --run-id <run-id> --request-fingerprint <fingerprint> --host %s --format json`"+`
 
@@ -325,16 +339,17 @@ background while input is missing. Never synthesize authority.
 %s
 %s
 %s
-%s
-%s
-%s
-%s
-%s
+	%s
+	%s
+	%s
+	%s
+	%s
+	%s
 
 Stop only when Boatstack reports the marked target, a typed blocker, refusal,
 unresolved recovery, or missing authority. This entry grants no merge or deploy
 authority.
-`, slug, description, title(slug), compiled.Document.Program.ID, entry.ID, entry.Target, skillprojection.BootstrapContract(), startCommand, humanIdentityProtocol, delegation, supersession, diagnostics, workProtocol, inputProtocol, entryInputProtocol, programReconciliation, publication))
+`, slug, description, title(slug), compiled.Document.Program.ID, entry.ID, entry.Target, skillprojection.BootstrapContract(), startCommand, humanIdentityProtocol, delegation, supersession, diagnostics, workProtocol, inputProtocol, entryInputProtocol, declarativeAuthorityProtocol, programReconciliation, publication))
 }
 
 func declarativeProgram(operators []controlprogram.Operator) bool {

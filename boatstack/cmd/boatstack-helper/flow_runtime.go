@@ -571,7 +571,18 @@ func materializeFlowInvocation(ctx context.Context, compiled controlprogram.Comp
 	}
 	bundleFingerprint := ""
 	if bundle != nil {
-		bundleFingerprint = bundle.Fingerprint
+		bundleFingerprint = bundle.Source.Fingerprint
+	}
+	authorityContextFingerprint := ""
+	if transitionUsesHostInput(*transition) {
+		if bundle == nil || len(bundleFingerprint) != 64 {
+			return commandOptions{}, fmt.Errorf("FLOW_INPUT_UNBOUND: host input requires an exact verified control bundle")
+		}
+		presentation, presentationErr := humanIdentityPresentationForRepositoryBound(ctx, options.repository, host, "flow-input-"+options.runID+"-"+transition.ID, bundle.Source, nil)
+		if presentationErr != nil {
+			return commandOptions{}, presentationErr
+		}
+		authorityContextFingerprint = presentation.ProviderFingerprint
 	}
 	contextFingerprint, err := general.Fingerprint(struct {
 		Invocation       model.InvocationContext `json:"invocation"`
@@ -581,7 +592,8 @@ func materializeFlowInvocation(ctx context.Context, compiled controlprogram.Comp
 		Entry            string                  `json:"entry"`
 		Target           string                  `json:"target"`
 		Transition       string                  `json:"transition"`
-	}{invocationContext, state.Revision, compiled.Fingerprint, state.ProgramFingerprint, entry.ID, options.targetID, transition.ID})
+		AuthorityContext string                  `json:"authority_context,omitempty"`
+	}{invocationContext, state.Revision, compiled.Fingerprint, state.ProgramFingerprint, entry.ID, options.targetID, transition.ID, authorityContextFingerprint})
 	if err != nil {
 		return commandOptions{}, err
 	}
@@ -676,8 +688,8 @@ func materializeFlowInvocation(ctx context.Context, compiled controlprogram.Comp
 		RunID: options.runID, ProgramFingerprint: compiled.Fingerprint, ExecutionProgramFingerprint: state.ProgramFingerprint,
 		EntryID: entry.ID, TargetID: options.targetID, TransitionID: transition.ID,
 		StateRevision: state.Revision, ContextFingerprint: contextFingerprint, ControlBundleFingerprint: bundleFingerprint,
-		ExecutionScopeFingerprint: executionScopeFingerprint,
-		EntryInputs:               entryInputs, State: stateValues, Receipts: receiptValues, WorkOutputs: workOutputs, InputReceipts: inputReceipts,
+		AuthorityContextFingerprint: authorityContextFingerprint, ExecutionScopeFingerprint: executionScopeFingerprint,
+		EntryInputs: entryInputs, State: stateValues, Receipts: receiptValues, WorkOutputs: workOutputs, InputReceipts: inputReceipts,
 	}
 	if latest, found, latestErr := store.LatestRequest(materializationContext); latestErr != nil {
 		return commandOptions{}, latestErr
@@ -714,6 +726,15 @@ func materializeFlowInvocation(ctx context.Context, compiled controlprogram.Comp
 		options.parameters = append(options.parameters, parameter.Name+"="+parameter.Value)
 	}
 	return options, nil
+}
+
+func transitionUsesHostInput(transition controlprogram.Transition) bool {
+	for _, binding := range transition.Parameters {
+		if binding.Producer.Kind == controlprogram.ParameterSourceHostInput {
+			return true
+		}
+	}
+	return false
 }
 
 func validateWorkOutputProducer(record foregroundwork.Record, work controlprogram.WorkContract, compiled controlprogram.Compiled, entry controlprogram.Entry, options commandOptions, current model.InvocationContext) error {

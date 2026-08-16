@@ -346,6 +346,18 @@ func writeAdmittedFlowProgramState(t *testing.T, repository, programFingerprint 
 	state := durable.Default(invoking, time.Now().UTC())
 	state.ProgramFingerprint = programFingerprint
 	state.ControlBundleFingerprint = bundleFingerprint
+	configRaw, err := os.ReadFile(layout.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, configFingerprint, err := protocol.ProjectConfigFingerprint(configRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := config.ControlPolicy()
+	state.Configuration, state.ConfigFingerprint = model.ConfigurationVerified, configFingerprint
+	state.PlanApprovalPolicy, state.VisualEvidencePolicy, state.ExternalEffectPolicy = policy.PlanApproval, policy.VisualEvidence, policy.ExternalEffectAuthority
+	state.IndependentReview, state.EnabledHosts = policy.IndependentReviewForHighRisk, policy.Hosts
 	raw, err := durable.EncodeState(state)
 	if err != nil {
 		t.Fatal(err)
