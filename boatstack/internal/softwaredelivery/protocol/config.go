@@ -11,10 +11,11 @@ import (
 	"regexp"
 	"sort"
 
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentity"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 )
 
-const ConfigSchemaVersion = 2
+const ConfigSchemaVersion = 3
 
 type ProjectSettings struct {
 	Name          string            `json:"name"`
@@ -45,8 +46,13 @@ type SubprocessExtensionSettings struct {
 	StderrBytes    int64           `json:"stderr_bytes,omitempty"`
 }
 
+type IdentitySettings struct {
+	Human humanidentity.Descriptor `json:"human"`
+}
+
 type ProjectConfig struct {
 	SchemaVersion int                           `json:"schema_version"`
+	Identity      IdentitySettings              `json:"identity"`
 	Project       ProjectSettings               `json:"project"`
 	Policy        PolicySettings                `json:"policy"`
 	Hosts         []string                      `json:"hosts"`
@@ -86,7 +92,7 @@ func DecodeProjectConfig(value []byte) (ProjectConfig, error) {
 	return config, nil
 }
 
-// ProjectConfigFingerprint binds configuration authority to strict schema-2
+// ProjectConfigFingerprint binds configuration authority to strict schema-3
 // semantics rather than checkout-specific JSON bytes. Formatting, object-key
 // order, line endings, the defaulted external-effect policy, and host ordering
 // therefore cannot make an otherwise identical configuration stale.
@@ -133,7 +139,10 @@ func ProjectConfigFingerprint(value []byte) (ProjectConfig, string, error) {
 
 func (c ProjectConfig) Validate() error {
 	if c.SchemaVersion != ConfigSchemaVersion || c.Project.Name == "" || c.Project.DefaultBranch == "" || c.Project.Commands == nil {
-		return fmt.Errorf("Boatstack project configuration requires schema 2, project name, default branch, and commands")
+		return fmt.Errorf("Boatstack project configuration requires schema 3, project name, default branch, commands, and human identity")
+	}
+	if err := c.Identity.Human.Validate(); err != nil {
+		return err
 	}
 	if err := ValidateGitBranch(c.Project.DefaultBranch); err != nil {
 		return fmt.Errorf("invalid default branch: %w", err)

@@ -793,6 +793,19 @@ class RepositoryContract(unittest.TestCase):
             self.assertIn("unknown field", (rejected.stdout + rejected.stderr).lower())
             self.assertFalse((repository / ".boatstack" / "project.json").exists())
 
+    def test_installers_require_an_explicit_human_actor(self) -> None:
+        if os.name != "nt":
+            env = dict(os.environ)
+            env.pop("BOATSTACK_ACTOR", None)
+            rejected = self.run_command(
+                "bash", REPO / "install.sh", cwd=REPO, env=env, expected=2
+            )
+            self.assertIn("BOATSTACK_HUMAN_ACTOR_REQUIRED", rejected.stderr)
+        powershell = (REPO / "install.ps1").read_text()
+        shell = (REPO / "install.sh").read_text()
+        self.assertNotIn("$env:USERNAME", powershell)
+        self.assertNotIn("${USER", shell)
+
     def test_offline_installer_initializes_updates_and_guards_through_kernel(self) -> None:
         if os.name == "nt":
             self.skipTest("the repository contract job exercises the POSIX installer")
@@ -954,6 +967,7 @@ class RepositoryContract(unittest.TestCase):
                     "BOATSTACK_HOME": str(root / "home"),
                     "BOATSTACK_INSTALL_DIR": str(root / "bin"),
                     "BOATSTACK_VERSION": "v9.9.9",
+                    "BOATSTACK_ACTOR": "contract",
                 }
             )
             unavailable = self.run_command(

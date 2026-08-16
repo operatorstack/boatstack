@@ -5,18 +5,27 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentity"
 )
 
+const literalIdentityJSON = `"identity":{"human":{"kind":"literal","value":"operator"}},`
+
+func literalIdentity() IdentitySettings {
+	return IdentitySettings{Human: humanidentity.Descriptor{Kind: humanidentity.KindLiteral, Value: "operator"}}
+}
+
 func TestProjectConfigurationIsStrictAndVersioned(t *testing.T) {
-	valid := []byte(`{"schema_version":2,"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli","codex"]}`)
+	valid := []byte(`{"schema_version":3,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli","codex"]}`)
 	if _, err := DecodeProjectConfig(valid); err != nil {
 		t.Fatal(err)
 	}
 	invalid := [][]byte{
-		[]byte(`{"schema_version":1,"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"]}`),
-		[]byte(`{"schema_version":2,"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["unknown"]}`),
-		[]byte(`{"schema_version":2,"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"legacy":true}`),
-		[]byte(`{"schema_version":2,"project":{"name":"product","default_branch":"--upload-pack=bad","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"]}`),
+		[]byte(`{"schema_version":2,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"]}`),
+		[]byte(`{"schema_version":3,"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"]}`),
+		[]byte(`{"schema_version":3,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["unknown"]}`),
+		[]byte(`{"schema_version":3,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"legacy":true}`),
+		[]byte(`{"schema_version":3,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"product","default_branch":"--upload-pack=bad","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"]}`),
 	}
 	for _, value := range invalid {
 		if _, err := DecodeProjectConfig(value); err == nil {
@@ -30,6 +39,7 @@ func TestRepositorySubprocessExtensionsAreStrictAndSemanticallyFingerprinted(t *
 	executable := filepath.Join(t.TempDir(), "extension")
 	base := ProjectConfig{
 		SchemaVersion: ConfigSchemaVersion,
+		Identity:      literalIdentity(),
 		Project:       ProjectSettings{Name: "product", DefaultBranch: "main", Commands: map[string]string{}},
 		Policy:        PolicySettings{PlanApproval: "human", VisualEvidence: "optional"},
 		Hosts:         []string{"cli", "sdk"},
@@ -82,8 +92,8 @@ func TestRepositorySubprocessExtensionsAreStrictAndSemanticallyFingerprinted(t *
 }
 
 func TestProjectConfigurationFingerprintIsSemanticAndStrict(t *testing.T) {
-	one := []byte("{\n  \"schema_version\": 2,\n  \"project\": {\"name\": \"product\", \"default_branch\": \"main\", \"commands\": {\"test\": \"go test ./...\"}},\n  \"policy\": {\"plan_approval\": \"human\", \"visual_evidence\": \"optional\"},\n  \"hosts\": [\"codex\", \"cli\"]\n}\n")
-	two := []byte("{\r\n\"hosts\":[\"cli\",\"codex\"],\r\n\"policy\":{\"external_effect_authority\":\"human-or-autonomy-plus-provider\",\"visual_evidence\":\"optional\",\"plan_approval\":\"human\"},\r\n\"project\":{\"commands\":{\"test\":\"go test ./...\"},\"default_branch\":\"main\",\"name\":\"product\"},\r\n\"schema_version\":2\r\n}\r\n")
+	one := []byte("{\n  \"schema_version\": 3,\n  \"identity\": {\"human\": {\"kind\": \"literal\", \"value\": \"operator\"}},\n  \"project\": {\"name\": \"product\", \"default_branch\": \"main\", \"commands\": {\"test\": \"go test ./...\"}},\n  \"policy\": {\"plan_approval\": \"human\", \"visual_evidence\": \"optional\"},\n  \"hosts\": [\"codex\", \"cli\"]\n}\n")
+	two := []byte("{\r\n\"hosts\":[\"cli\",\"codex\"],\r\n\"identity\":{\"human\":{\"value\":\"operator\",\"kind\":\"literal\"}},\r\n\"policy\":{\"external_effect_authority\":\"human-or-autonomy-plus-provider\",\"visual_evidence\":\"optional\",\"plan_approval\":\"human\"},\r\n\"project\":{\"commands\":{\"test\":\"go test ./...\"},\"default_branch\":\"main\",\"name\":\"product\"},\r\n\"schema_version\":3\r\n}\r\n")
 	_, oneFingerprint, err := ProjectConfigFingerprint(one)
 	if err != nil {
 		t.Fatal(err)
@@ -96,7 +106,7 @@ func TestProjectConfigurationFingerprintIsSemanticAndStrict(t *testing.T) {
 		t.Fatalf("representation changed semantic fingerprint: %s != %s", oneFingerprint, twoFingerprint)
 	}
 
-	changed := []byte(`{"schema_version":2,"project":{"name":"product","default_branch":"main","commands":{"test":"go test ./..."}},"policy":{"plan_approval":"human","visual_evidence":"required"},"hosts":["cli","codex"]}`)
+	changed := []byte(`{"schema_version":3,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"product","default_branch":"main","commands":{"test":"go test ./..."}},"policy":{"plan_approval":"human","visual_evidence":"required"},"hosts":["cli","codex"]}`)
 	_, changedFingerprint, err := ProjectConfigFingerprint(changed)
 	if err != nil {
 		t.Fatal(err)
@@ -109,6 +119,35 @@ func TestProjectConfigurationFingerprintIsSemanticAndStrict(t *testing.T) {
 	unknown = append(unknown, []byte(",\"unknown\":true}\n")...)
 	if _, _, err := ProjectConfigFingerprint(unknown); err == nil {
 		t.Fatal("unknown configuration field acquired a semantic fingerprint")
+	}
+}
+
+func TestProjectConfigurationBindsHumanIdentityDescriptor(t *testing.T) {
+	literal := []byte(`{"schema_version":3,"identity":{"human":{"kind":"literal","value":"example-operator"}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"]}`)
+	command := []byte(`{"schema_version":3,"identity":{"human":{"kind":"command","command":"gh","args":["api","user","--jq",".login"]}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"]}`)
+	literalConfig, literalFingerprint, err := ProjectConfigFingerprint(literal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commandConfig, commandFingerprint, err := ProjectConfigFingerprint(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if literalConfig.Identity.Human.Kind != humanidentity.KindLiteral || commandConfig.Identity.Human.Kind != humanidentity.KindCommand {
+		t.Fatalf("decoded identities literal=%#v command=%#v", literalConfig.Identity, commandConfig.Identity)
+	}
+	if literalFingerprint == commandFingerprint {
+		t.Fatal("identity descriptor change preserved project configuration fingerprint")
+	}
+	for _, invalid := range [][]byte{
+		[]byte(`{"schema_version":3,"identity":{"human":{"kind":"command","command":"gh"}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"]}`),
+		[]byte(`{"schema_version":3,"identity":{"human":{"kind":"command","command":"gh","args":null}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"]}`),
+		[]byte(`{"schema_version":3,"identity":{"human":{"kind":"literal","value":"actor","command":""}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"]}`),
+		[]byte(`{"schema_version":3,"identity":{"human":{"kind":"literal","value":"actor","unknown":true}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"]}`),
+	} {
+		if _, err := DecodeProjectConfig(invalid); err == nil {
+			t.Fatalf("invalid identity config was accepted: %s", invalid)
+		}
 	}
 }
 

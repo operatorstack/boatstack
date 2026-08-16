@@ -15,7 +15,7 @@ func TestDelegationSupersessionArchiveIsImmutableAndIdempotent(t *testing.T) {
 		RunID: "run-example", ProgramID: "program", ProgramFingerprint: strings.Repeat("a", 64), ControlBundleFingerprint: strings.Repeat("b", 64),
 		EntryID: "run", TargetID: "done", ObjectiveID: "objective", DeliveryID: "delivery", InputFingerprints: []string{"input"},
 		RepositoryID: "repository", GitCommonID: "common", InitialWorktreeID: "worktree", InitialRef: "refs/heads/main",
-		BindingFingerprint: strings.Repeat("c", 64), RequestedAuthorities: []string{"autonomy"}, Description: "Run the program",
+		BindingFingerprint: strings.Repeat("c", 64), HumanIdentityProviderFingerprint: strings.Repeat("d", 64), RequestedAuthorities: []string{"autonomy"}, Description: "Run the program",
 	}
 	fingerprint, err := request.Fingerprint()
 	if err != nil {
@@ -23,7 +23,7 @@ func TestDelegationSupersessionArchiveIsImmutableAndIdempotent(t *testing.T) {
 	}
 	record := delegation.Record{
 		Schema: delegation.Schema, SchemaRevision: delegation.SchemaRevision, Request: request, RequestFingerprint: fingerprint,
-		ReceiptID: "authorization-one", Actor: "operator", AuthorizedAt: time.Unix(1_700_000_000, 0).UTC(), Revision: 1, Status: "revoked",
+		ReceiptID: "authorization-one", Actor: "operator", ActorIdentityProviderFingerprint: request.HumanIdentityProviderFingerprint, AuthorizedAt: time.Unix(1_700_000_000, 0).UTC(), Revision: 1, Status: "revoked",
 	}
 	path := filepath.Join(t.TempDir(), "prior.json")
 	if err := ArchiveDelegationRecord(path, record); err != nil {

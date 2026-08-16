@@ -1,12 +1,19 @@
 # Boatstack configuration
 
 `.boatstack/project.json` is the repository-owned policy input. Boatstack accepts only
-schema version 2. Unknown top-level fields, unsupported policy values, duplicate
+schema version 3. Unknown top-level fields, unsupported policy values, duplicate
 hosts, trailing JSON, and missing required fields fail closed.
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
+  "identity": {
+    "human": {
+      "kind": "command",
+      "command": "gh",
+      "args": ["api", "user", "--jq", ".login"]
+    }
+  },
   "project": {
     "name": "example-product",
     "default_branch": "main",
@@ -30,6 +37,7 @@ hosts, trailing JSON, and missing required fields fail closed.
 ## Required values
 
 - `project.name`, `project.default_branch`, and `project.commands`;
+- `identity.human`, as either a literal or structured command descriptor;
 - `policy.plan_approval`: `human` or `human-or-autonomy`;
 - `policy.visual_evidence`: `off`, `optional`, or `required`;
 - at least the `cli` host.
@@ -37,6 +45,35 @@ hosts, trailing JSON, and missing required fields fail closed.
 The only accepted external-effect authority policy is
 `human-or-autonomy-plus-provider`. Provider authority is an independent
 mandatory clause; it cannot be replaced by a human receipt.
+
+## Human actor identity
+
+`identity.human` tells a host how to obtain the proposed actor label for a
+human-authority request. It does not grant authority. A literal descriptor is:
+
+```json
+{"kind": "literal", "value": "alice"}
+```
+
+A command descriptor contains an executable name and an exact argument array:
+
+```json
+{"kind": "command", "command": "gh", "args": ["api", "user", "--jq", ".login"]}
+```
+
+Boatstack validates, fingerprints, and exposes this data but never executes the
+command. A host may execute the exact command and arguments directly, without a
+shell or interpolation. It accepts only a zero exit status and one non-empty
+actor line of at most 1 KiB after removing at most one trailing LF or CRLF. If
+resolution fails, the host must ask the user for an actor; it must not infer an
+operating-system or Git identity.
+
+The host displays the resolved actor, exact request, and requested authority,
+then asks for explicit approval. The authorization command still requires
+`--human <actor>`. The descriptor fingerprint records how the actor was
+proposed. It does not prove approval, identity ownership, provider permission,
+or external-provider authority. In particular, resolving an actor through
+`gh` does not create a GitHub provider receipt.
 
 The canonical snapshot carries this policy projection as controlling evidence.
 `human` plan approval rejects autonomy receipts. `human-or-autonomy` accepts
@@ -99,7 +136,7 @@ document; an arbitrary fingerprint string is insufficient.
 
 To change configuration, write a candidate file elsewhere, then request
 `configuration.mutate`. The CLI derives `config_sha256` from the strict decoded
-schema-2 value in canonical JSON form. Formatting, object-key order, and LF/CRLF
+schema-3 value in canonical JSON form. Formatting, object-key order, and LF/CRLF
 checkout conversion therefore retain the same authority, while any controlling
 value change produces a new fingerprint. The kernel still copies the exact
 candidate bytes, installs state last, re-observes the tracked file, and accepts
@@ -126,5 +163,5 @@ boatstack attach --repo . --human alice \
   --param topology=detached --param config_authority=external
 ```
 
-V1 configuration schemas are intentionally unsupported. Reinstall or supply a
+Earlier configuration schemas are intentionally unsupported. Reinstall or supply a
 new Boatstack document; no compatibility conversion runs.

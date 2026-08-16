@@ -1,5 +1,12 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
+  "identity": {
+    "human": {
+      "kind": "command",
+      "command": "gh",
+      "args": ["api", "user", "--jq", ".login"]
+    }
+  },
   "project": {
     "name": "example-product",
     "default_branch": "main",

@@ -15,6 +15,7 @@ import (
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentity"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/plant"
 	"github.com/operatorstack/boatstack/boatstack/invocation"
 )
@@ -91,16 +92,26 @@ func runFlowInput(arguments []string) error {
 	if request.ProgramFingerprint != compiled.Fingerprint || request.EntryID != options.entryID {
 		return fmt.Errorf("FLOW_INPUT_REQUEST_MISMATCH: request does not belong to the selected program and entry")
 	}
+	if request.ControlBundleFingerprint != "" && request.ControlBundleFingerprint != runtimeContext.controlBundle.Fingerprint {
+		return fmt.Errorf("HUMAN_IDENTITY_DRIFT: input request bundle %s does not match current verified bundle %s", request.ControlBundleFingerprint, runtimeContext.controlBundle.Fingerprint)
+	}
 	if action == "show" {
 		receipts, loadErr := store.LoadReceipts(options.runID, request.TransitionID)
 		if loadErr != nil {
 			return loadErr
 		}
-		return encodeFlowInputResult(map[string]any{"request": request, "receipts": receipts}, options.format)
+		presentation, identityErr := humanIdentityPresentationFromBoundConfig(filepath.Join(repository, ".boatstack", "project.json"), runtimeContext.controlBundle.Source)
+		if identityErr != nil {
+			return identityErr
+		}
+		return encodeFlowInputResult(map[string]any{"request": request, "receipts": receipts, "human_identity": presentation}, options.format)
 	}
 	if action == "supersede" {
 		if options.reason == "" || options.human == "" || options.host == "" {
 			return fmt.Errorf("--reason, --human, and --host are required")
+		}
+		if err := humanidentity.ValidateActor(options.human); err != nil {
+			return err
 		}
 		if runtimeContext.executionScopeFingerprint != request.ExecutionScopeFingerprint {
 			return fmt.Errorf("FLOW_INPUT_REQUEST_MISMATCH: execution scope changed after suspension")
@@ -140,6 +151,9 @@ func runFlowInput(arguments []string) error {
 	if options.answerPath == "" || options.human == "" || options.host == "" {
 		return fmt.Errorf("--answer, --human, and --host are required")
 	}
+	if err := humanidentity.ValidateActor(options.human); err != nil {
+		return err
+	}
 	answers, err := loadFlowInputAnswers(options.answerPath)
 	if err != nil {
 		return err
@@ -153,6 +167,7 @@ func runFlowInput(arguments []string) error {
 
 type flowInputRuntimeContext struct {
 	executionScopeFingerprint string
+	controlBundle             *boatstackruntime.ControlBundleContract
 }
 
 func loadFlowInputContext(ctx context.Context, options flowInputOptions) (controlprogram.Compiled, invocation.Store, flowInputRuntimeContext, error) {
@@ -188,7 +203,11 @@ func loadFlowInputContext(ctx context.Context, options flowInputOptions) (contro
 	if err != nil {
 		return controlprogram.Compiled{}, invocation.Store{}, flowInputRuntimeContext{}, err
 	}
-	return compiled, invocation.Store{Root: layout.FlowRoot, Writer: effects.NewRuntimeStore()}, flowInputRuntimeContext{executionScopeFingerprint: executionScopeFingerprint}, nil
+	controlBundle, _, err := bindControlBundle(ctx, options.repository, "", nil)
+	if err != nil {
+		return controlprogram.Compiled{}, invocation.Store{}, flowInputRuntimeContext{}, err
+	}
+	return compiled, invocation.Store{Root: layout.FlowRoot, Writer: effects.NewRuntimeStore()}, flowInputRuntimeContext{executionScopeFingerprint: executionScopeFingerprint, controlBundle: controlBundle}, nil
 }
 
 func loadFlowInputAnswers(path string) (map[string]string, error) {

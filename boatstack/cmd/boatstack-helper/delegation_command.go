@@ -14,6 +14,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/delegation"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentity"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/plant"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
@@ -45,20 +46,25 @@ func runFlowAuthorize(arguments []string) error {
 	flags.SetOutput(os.Stderr)
 	options := commandOptions{repository: ".", host: "cli"}
 	requestFingerprint := ""
+	identityProviderFingerprint := ""
 	expiresIn := time.Duration(0)
 	flags.StringVar(&options.repository, "repo", options.repository, "repository or worktree")
 	flags.StringVar(&options.programID, "flow", "", "repository Control Program identity")
 	flags.StringVar(&options.entryID, "entry", "", "named Flow entry")
 	flags.StringVar(&options.runID, "run-id", "", "exact run identity")
 	flags.StringVar(&requestFingerprint, "request-fingerprint", "", "exact delegation request fingerprint")
+	flags.StringVar(&identityProviderFingerprint, "human-identity-provider-fingerprint", "", "exact human identity provider fingerprint from the delegation request")
 	flags.StringVar(&options.humanActor, "human", "", "authorizing human actor")
 	flags.StringVar(&options.host, "host", options.host, "trusted host identity")
 	flags.DurationVar(&expiresIn, "expires-in", 0, "optional delegation lifetime")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
-	if flags.NArg() != 0 || options.runID == "" || requestFingerprint == "" || options.humanActor == "" {
-		return fmt.Errorf("flow authorize requires --flow, --entry, --run-id, --request-fingerprint, and --human")
+	if flags.NArg() != 0 || options.runID == "" || requestFingerprint == "" || identityProviderFingerprint == "" || options.humanActor == "" {
+		return fmt.Errorf("flow authorize requires --flow, --entry, --run-id, --request-fingerprint, --human-identity-provider-fingerprint, and --human")
+	}
+	if err := humanidentity.ValidateActor(options.humanActor); err != nil {
+		return err
 	}
 	if expiresIn < 0 {
 		return fmt.Errorf("flow authorize --expires-in cannot be negative")
@@ -76,6 +82,9 @@ func runFlowAuthorize(arguments []string) error {
 	}
 	if bound.delegationRequestFingerprint == "" || requestFingerprint != bound.delegationRequestFingerprint || bound.runID != options.runID {
 		return fmt.Errorf("DELEGATION_REQUEST_MISMATCH: authorization does not match the exact current request")
+	}
+	if identityProviderFingerprint != bound.delegationRequest.HumanIdentityProviderFingerprint {
+		return fmt.Errorf("HUMAN_IDENTITY_DRIFT: authorization does not match the current identity provider")
 	}
 	resolver, err := plant.NewResolver("")
 	if err != nil {
@@ -109,7 +118,7 @@ func runFlowAuthorize(arguments []string) error {
 		return loadErr
 	}
 	now := time.Now().UTC()
-	record, changed, err := authorizeDelegation(existing, bound.delegationRequest, requestFingerprint, options.humanActor, expiresIn, now, bound.delegationReprojection)
+	record, changed, err := authorizeDelegation(existing, bound.delegationRequest, requestFingerprint, identityProviderFingerprint, options.humanActor, expiresIn, now, bound.delegationReprojection)
 	if err != nil {
 		return err
 	}
@@ -130,13 +139,19 @@ func runFlowAuthorize(arguments []string) error {
 	return printDelegationRecord(record)
 }
 
-func authorizeDelegation(existing *delegation.Record, request delegation.Request, requestFingerprint, actor string, expiresIn time.Duration, now time.Time, allowReprojection bool) (delegation.Record, bool, error) {
+func authorizeDelegation(existing *delegation.Record, request delegation.Request, requestFingerprint, identityProviderFingerprint, actor string, expiresIn time.Duration, now time.Time, allowReprojection bool) (delegation.Record, bool, error) {
 	if expiresIn < 0 {
 		return delegation.Record{}, false, fmt.Errorf("flow authorize --expires-in cannot be negative")
 	}
 	computedFingerprint, err := request.Fingerprint()
 	if err != nil || computedFingerprint != requestFingerprint {
 		return delegation.Record{}, false, fmt.Errorf("DELEGATION_REQUEST_MISMATCH: authorization does not match the exact current request")
+	}
+	if identityProviderFingerprint != request.HumanIdentityProviderFingerprint {
+		return delegation.Record{}, false, fmt.Errorf("HUMAN_IDENTITY_DRIFT: authorization does not match the current identity provider")
+	}
+	if err := humanidentity.ValidateActor(actor); err != nil {
+		return delegation.Record{}, false, err
 	}
 	if existing != nil {
 		if allowReprojection && existing.RequestFingerprint != requestFingerprint {
@@ -146,15 +161,16 @@ func authorizeDelegation(existing *delegation.Record, request delegation.Request
 			record := delegation.Record{
 				Schema: delegation.Schema, SchemaRevision: delegation.SchemaRevision,
 				Request: request, RequestFingerprint: requestFingerprint,
-				ReceiptID: authorizationReceiptID(requestFingerprint, actor, existing.Revision+1, now), Actor: actor,
-				AuthorizedAt: now, Revision: existing.Revision + 1, Status: "active",
+				ReceiptID: authorizationReceiptID(requestFingerprint, actor, identityProviderFingerprint, existing.Revision+1, now), Actor: actor,
+				ActorIdentityProviderFingerprint: identityProviderFingerprint,
+				AuthorizedAt:                     now, Revision: existing.Revision + 1, Status: "active",
 			}
 			if expiresIn > 0 {
 				record.ExpiresAt = now.Add(expiresIn)
 			}
 			return record, true, nil
 		}
-		if existing.RequestFingerprint != requestFingerprint || existing.Actor != actor || existing.Status != "active" {
+		if existing.RequestFingerprint != requestFingerprint || existing.Actor != actor || existing.ActorIdentityProviderFingerprint != identityProviderFingerprint || existing.Status != "active" {
 			return delegation.Record{}, false, fmt.Errorf("DELEGATION_CONFLICT: run already has a different authorization, actor, or status")
 		}
 		if existing.ExpiresAt.IsZero() || now.Before(existing.ExpiresAt) {
@@ -167,15 +183,16 @@ func authorizeDelegation(existing *delegation.Record, request delegation.Request
 		if expiresIn > 0 {
 			record.ExpiresAt = now.Add(expiresIn)
 		}
-		record.ReceiptID = authorizationReceiptID(requestFingerprint, actor, record.Revision, now)
+		record.ReceiptID = authorizationReceiptID(requestFingerprint, actor, identityProviderFingerprint, record.Revision, now)
 		record.RevokedAt, record.EndedAt, record.EndReason = time.Time{}, time.Time{}, ""
 		return record, true, nil
 	}
 	record := delegation.Record{
 		Schema: delegation.Schema, SchemaRevision: delegation.SchemaRevision,
 		Request: request, RequestFingerprint: requestFingerprint,
-		ReceiptID: authorizationReceiptID(requestFingerprint, actor, 1, now), Actor: actor,
-		AuthorizedAt: now, Revision: 1, Status: "active",
+		ReceiptID: authorizationReceiptID(requestFingerprint, actor, identityProviderFingerprint, 1, now), Actor: actor,
+		ActorIdentityProviderFingerprint: identityProviderFingerprint,
+		AuthorizedAt:                     now, Revision: 1, Status: "active",
 	}
 	if expiresIn > 0 {
 		record.ExpiresAt = now.Add(expiresIn)
@@ -183,8 +200,8 @@ func authorizeDelegation(existing *delegation.Record, request delegation.Request
 	return record, true, nil
 }
 
-func authorizationReceiptID(requestFingerprint, actor string, revision uint64, authorizedAt time.Time) string {
-	receiptDigest := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%d\x00%s", requestFingerprint, actor, revision, authorizedAt.UTC().Format(time.RFC3339Nano))))
+func authorizationReceiptID(requestFingerprint, actor, identityProviderFingerprint string, revision uint64, authorizedAt time.Time) string {
+	receiptDigest := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%s\x00%d\x00%s", requestFingerprint, actor, identityProviderFingerprint, revision, authorizedAt.UTC().Format(time.RFC3339Nano))))
 	return "authorization-" + hex.EncodeToString(receiptDigest[:12])
 }
 
@@ -201,6 +218,9 @@ func runFlowRevoke(arguments []string) error {
 	}
 	if flags.NArg() != 0 || runID == "" || actor == "" {
 		return fmt.Errorf("flow revoke requires --run-id and --human")
+	}
+	if err := humanidentity.ValidateActor(actor); err != nil {
+		return err
 	}
 	resolver, err := plant.NewResolver("")
 	if err != nil {
@@ -314,6 +334,9 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 		return surfaces.Response{}, err
 	}
 	if programChangeResponse != nil {
+		if err := attachHumanIdentity(resolveRequest, programChangeResponse); err != nil {
+			return surfaces.Response{}, err
+		}
 		return *programChangeResponse, nil
 	}
 	_, delegationResponse, err := prepareDelegation(ctx, &resolveRequest)
@@ -398,6 +421,9 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 		if err != nil || resolved.Prescription == nil {
 			return resolved, err
 		}
+	}
+	if err := attachHumanIdentity(resolveRequest, &resolved); err != nil {
+		return surfaces.Response{}, err
 	}
 	applyRequest := resolveRequest
 	applyRequest.Operation = surfaces.OperationApply

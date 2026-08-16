@@ -11,6 +11,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/delivery"
 	"github.com/operatorstack/boatstack/boatstack/distribution"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentity"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
@@ -37,6 +38,8 @@ type Request = surfaces.Request
 type Response = surfaces.Response
 type DoctorReport = surfaces.DoctorReport
 type ProgramChange = surfaces.ProgramChange
+type HumanIdentityDescriptor = humanidentity.Descriptor
+type HumanIdentityPresentation = humanidentity.Presentation
 type Objective = model.Objective
 type TargetID = model.TargetID
 type StateFacet = model.StateFacet

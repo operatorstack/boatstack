@@ -8,7 +8,7 @@ set -euo pipefail
 repository="${BOATSTACK_REPO:-$PWD}"
 version="${BOATSTACK_VERSION:-latest}"
 mode="${BOATSTACK_MODE:-install}"
-actor="${BOATSTACK_ACTOR:-${USER:-operator}}"
+actor="${BOATSTACK_ACTOR:-}"
 install_dir="${BOATSTACK_INSTALL_DIR:-${HOME}/.local/bin}"
 boatstack_home="${BOATSTACK_HOME:-${XDG_DATA_HOME:-${HOME}/.local/share}/boatstack}"
 config_source="${BOATSTACK_CONFIG:-}"
@@ -17,6 +17,11 @@ case "$mode" in
   install|update|hydrate) ;;
   *) echo "Boatstack supports BOATSTACK_MODE=install, update, or hydrate" >&2; exit 2 ;;
 esac
+
+if [[ "$mode" != hydrate && -z "$actor" ]]; then
+  echo "BOATSTACK_HUMAN_ACTOR_REQUIRED: install and update require an explicit BOATSTACK_ACTOR" >&2
+  exit 2
+fi
 
 if [[ "$mode" == hydrate ]]; then
   [[ "$version" != latest ]] || {
@@ -138,7 +143,7 @@ if [[ "$mode" == install ]]; then
     config_source="$temporary/project.json"
     json_default_branch="${default_branch//\\/\\\\}"
     json_default_branch="${json_default_branch//\"/\\\"}"
-    printf '%s\n' "{\"schema_version\":2,\"project\":{\"name\":\"repository\",\"default_branch\":\"$json_default_branch\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\",\"cursor\",\"codex\",\"claude\",\"gemini\",\"mcp\"]}" > "$config_source"
+    printf '%s\n' "{\"schema_version\":3,\"identity\":{\"human\":{\"kind\":\"literal\",\"value\":\"$actor\"}},\"project\":{\"name\":\"repository\",\"default_branch\":\"$json_default_branch\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\",\"cursor\",\"codex\",\"claude\",\"gemini\",\"mcp\"]}" > "$config_source"
   fi
   "$runtime" init --repo "$repository" --human "$actor" --param "config_path=$config_source" --format text
 elif [[ "$mode" == update ]]; then

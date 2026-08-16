@@ -263,6 +263,10 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		if description == "" {
 			description = fmt.Sprintf("Run %s/%s to %s", options.programID, options.entryID, objective.TargetID)
 		}
+		presentation, presentationErr := humanIdentityPresentationFromBoundConfig(filepath.Join(repository, ".boatstack", "project.json"), bundle.Source)
+		if presentationErr != nil {
+			return commandOptions{}, presentationErr
+		}
 		delegationRequest := delegation.Request{
 			RunID: options.runID, ProgramID: options.programID, ProgramFingerprint: compiled.Fingerprint,
 			ControlBundleFingerprint: bundleFingerprint,
@@ -270,7 +274,8 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 			InputFingerprints: []string{planFingerprint}, RepositoryID: invocation.RepositoryID, GitCommonID: invocation.GitCommonID,
 			InitialWorktreeID: invocation.WorktreeID, InitialRef: invocation.Ref,
 			BindingFingerprint: entry.Delegation.Fingerprint, RequestedAuthorities: append([]string(nil), entry.Delegation.Authorities...),
-			Description: description,
+			HumanIdentityProviderFingerprint: presentation.ProviderFingerprint,
+			Description:                      description,
 		}
 		layout, _, layoutErr := contextResolver.ResolveLayout(ctx, invocation)
 		if layoutErr != nil {
@@ -283,7 +288,7 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		if record, loadErr := delegation.Load(recordPath); loadErr == nil {
 			bound := record.Request
 			inputDrift := !options.activeFlowBound && strings.Join(bound.InputFingerprints, "\x00") != strings.Join(delegationRequest.InputFingerprints, "\x00")
-			if bound.RunID != delegationRequest.RunID || bound.ProgramID != delegationRequest.ProgramID || bound.ProgramFingerprint != delegationRequest.ProgramFingerprint || bound.ControlBundleFingerprint != delegationRequest.ControlBundleFingerprint || bound.EntryID != delegationRequest.EntryID || bound.TargetID != delegationRequest.TargetID || bound.ObjectiveID != delegationRequest.ObjectiveID || bound.DeliveryID != delegationRequest.DeliveryID || inputDrift || bound.RepositoryID != delegationRequest.RepositoryID || bound.GitCommonID != delegationRequest.GitCommonID || bound.BindingFingerprint != delegationRequest.BindingFingerprint || strings.Join(bound.RequestedAuthorities, "\x00") != strings.Join(delegationRequest.RequestedAuthorities, "\x00") || bound.Description != delegationRequest.Description {
+			if bound.RunID != delegationRequest.RunID || bound.ProgramID != delegationRequest.ProgramID || bound.ProgramFingerprint != delegationRequest.ProgramFingerprint || bound.ControlBundleFingerprint != delegationRequest.ControlBundleFingerprint || bound.EntryID != delegationRequest.EntryID || bound.TargetID != delegationRequest.TargetID || bound.ObjectiveID != delegationRequest.ObjectiveID || bound.DeliveryID != delegationRequest.DeliveryID || inputDrift || bound.RepositoryID != delegationRequest.RepositoryID || bound.GitCommonID != delegationRequest.GitCommonID || bound.BindingFingerprint != delegationRequest.BindingFingerprint || bound.HumanIdentityProviderFingerprint != delegationRequest.HumanIdentityProviderFingerprint || strings.Join(bound.RequestedAuthorities, "\x00") != strings.Join(delegationRequest.RequestedAuthorities, "\x00") || bound.Description != delegationRequest.Description {
 				reprojected, reprojectErr := canReprojectDelegation(layout, invocation, bound, delegationRequest)
 				if reprojectErr != nil {
 					return commandOptions{}, reprojectErr

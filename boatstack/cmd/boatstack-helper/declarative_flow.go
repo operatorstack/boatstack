@@ -17,6 +17,7 @@ import (
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentity"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/plant"
 	"github.com/operatorstack/boatstack/boatstack/invocation"
 )
@@ -187,20 +188,29 @@ func runDeclarativeFlow(ctx context.Context, compiled controlprogram.Compiled, o
 		if err := runtimeContext.store.SaveRequest(*result.Request); err != nil {
 			return err
 		}
+		presentation, identityErr := humanIdentityPresentationForRepository(repository)
+		if identityErr != nil {
+			return identityErr
+		}
 		return encodeDeclarativeResult(map[string]any{
 			"kind": "suspended", "code": result.Request.Code, "run_id": runtimeContext.state.RunID,
 			"program_fingerprint": compiled.Fingerprint, "entry_id": entry.ID, "target_id": entry.Target,
-			"transition_id": transition.ID, "request": result.Request,
+			"transition_id": transition.ID, "request": result.Request, "human_identity": presentation,
 		}, options.format)
 	}
 	if result.Ready == nil {
 		return fmt.Errorf("FLOW_INVOCATION_INCOMPLETE: declarative materialization produced no evidence")
 	}
 	if err := requireDeclarativeAuthority(transition, operator, options.humanActor); err != nil {
+		presentation, identityErr := humanIdentityPresentationForRepository(repository)
+		if identityErr != nil {
+			return identityErr
+		}
 		return encodeDeclarativeResult(map[string]any{
 			"kind": "blocked", "code": "AUTHORITY_REQUIRED", "detail": err.Error(),
 			"run_id": runtimeContext.state.RunID, "program_fingerprint": compiled.Fingerprint,
 			"entry_id": entry.ID, "target_id": entry.Target, "transition_id": transition.ID,
+			"human_identity": presentation,
 		}, options.format)
 	}
 
@@ -256,7 +266,13 @@ func runDeclarativeFlow(ctx context.Context, compiled controlprogram.Compiled, o
 }
 
 func requireDeclarativeAuthority(transition controlprogram.Transition, operator controlprogram.Operator, humanActor string) error {
-	providedHuman := strings.TrimSpace(humanActor) != ""
+	actor := strings.TrimSpace(humanActor)
+	providedHuman := actor != ""
+	if providedHuman {
+		if err := humanidentity.ValidateActor(actor); err != nil {
+			return err
+		}
+	}
 	if len(operator.Authority.AnyOf) != 0 && !providedHuman {
 		return fmt.Errorf("operator %q requires one of %s", operator.ID, strings.Join(operator.Authority.AnyOf, ", "))
 	}

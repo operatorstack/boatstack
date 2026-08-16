@@ -1,0 +1,111 @@
+package main
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentity"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
+)
+
+func TestHumanIdentityPresentationIsBoundToVerifiedConfiguration(t *testing.T) {
+	repository := t.TempDir()
+	configRaw := []byte(`{"schema_version":3,"identity":{"human":{"kind":"command","command":"gh","args":["api","user","--jq",".login"]}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli","codex"]}`)
+	configPath := filepath.Join(repository, ".boatstack", "project.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, configRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := boatstackruntime.NewControlBundleSnapshot(map[string][]byte{".boatstack/project.json": configRaw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := boatstackruntime.NewControlBundleContract(snapshot, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := surfaces.Request{Repository: repository, ControlBundle: &contract}
+	presentation, err := humanIdentityPresentationForRequest(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantDescriptor := humanidentity.Descriptor{Kind: humanidentity.KindCommand, Command: "gh", Args: []string{"api", "user", "--jq", ".login"}}
+	if !reflect.DeepEqual(presentation.Descriptor, wantDescriptor) || presentation.Validate() != nil {
+		t.Fatalf("presentation = %#v", presentation)
+	}
+	response := surfaces.Response{Question: &surfaces.Question{Authority: []catalog.AuthorityClass{catalog.AuthorityHuman}}}
+	if err := attachHumanIdentity(request, &response); err != nil || response.Question.HumanIdentity == nil || !reflect.DeepEqual(*response.Question.HumanIdentity, presentation) {
+		t.Fatalf("attached identity = %#v, err=%v", response.Question.HumanIdentity, err)
+	}
+
+	if err := os.WriteFile(configPath, []byte(strings.ReplaceAll(string(configRaw), ".login", ".name")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := humanIdentityPresentationForRequest(request); err == nil || !strings.Contains(err.Error(), "HUMAN_IDENTITY_DRIFT") {
+		t.Fatalf("changed configuration was not rejected: %v", err)
+	}
+}
+
+func TestHumanIdentityIsAttachedOnlyToHumanAuthorityQuestions(t *testing.T) {
+	response := surfaces.Response{Question: &surfaces.Question{Authority: []catalog.AuthorityClass{catalog.AuthorityRepository}}}
+	if err := attachHumanIdentity(surfaces.Request{}, &response); err != nil || response.Question.HumanIdentity != nil {
+		t.Fatalf("non-human question gained identity: %#v err=%v", response.Question.HumanIdentity, err)
+	}
+}
+
+func TestPreconfigurationInitializationUsesOnlyExplicitActorBootstrap(t *testing.T) {
+	response := surfaces.Response{Question: &surfaces.Question{TransitionID: "installation.initialize", Authority: []catalog.AuthorityClass{catalog.AuthorityHuman}}}
+	if err := attachHumanIdentity(surfaces.Request{}, &response); err != nil || response.Question.HumanIdentity != nil {
+		t.Fatalf("preconfiguration bootstrap identity = %#v err=%v", response.Question.HumanIdentity, err)
+	}
+	response.Question.TransitionID = "plan.approve"
+	if err := attachHumanIdentity(surfaces.Request{}, &response); err == nil || !strings.Contains(err.Error(), "HUMAN_IDENTITY_UNBOUND") {
+		t.Fatalf("configured human boundary did not fail closed: %v", err)
+	}
+}
+
+func TestHumanIdentityRenderingPreservesStructuredArgvWithoutExecutingIt(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "executed")
+	descriptor := humanidentity.Descriptor{Kind: humanidentity.KindCommand, Command: "touch", Args: []string{marker}}
+	presentation, err := humanidentity.NewPresentation(descriptor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := surfaces.Response{Delegation: &surfaces.DelegationRequired{
+		Code: "DELEGATION_REQUIRED", RunID: "run-example", RequestFingerprint: strings.Repeat("a", 64),
+		Authorities: []catalog.AuthorityClass{catalog.AuthorityAutonomy}, Description: "authorize exact run", HumanIdentity: presentation,
+	}}
+	raw, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"command":"touch","args":["`+marker+`"]`) {
+		t.Fatalf("structured JSON lost command argv: %s", raw)
+	}
+	output, err := captureStdout(t, func() error { return renderResponse(response, "text") })
+	if err != nil || !strings.Contains(string(output), `human_identity_command="touch" "`+marker+`"`) {
+		t.Fatalf("text output = %q, err=%v", output, err)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("rendering executed identity command: %v", err)
+	}
+}
+
+func TestAuthorizationReceiptIdentityBindsIdentityProvider(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	requestFingerprint := strings.Repeat("a", 64)
+	first := authorizationReceiptID(requestFingerprint, "operator", strings.Repeat("b", 64), 1, now)
+	second := authorizationReceiptID(requestFingerprint, "operator", strings.Repeat("c", 64), 1, now)
+	if first == second {
+		t.Fatal("identity provider change preserved authorization receipt ID")
+	}
+}

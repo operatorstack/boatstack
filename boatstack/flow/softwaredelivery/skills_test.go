@@ -48,9 +48,18 @@ func TestGeneratedSkillsProjectOnlyDeclaredEntriesWithHostParity(t *testing.T) {
 		"boatstack reconcile-update --repo . --flow product-delivery --entry run --run-id <run-id>",
 		"do not request or reuse product delegation before reconciliation", "commit\nthose exact files separately before product work",
 		"Ask\nfor product delegation only after Boatstack returns the new exact delegation",
+		"inspect its exact\n`human_identity`", "provider_fingerprint", "execute the exact `command` and",
+		"at most 1024 bytes", "proposed actor", "ask the human for explicit approval",
+		"Identity resolution never counts as approval", "never infer one from the operating system, Git, host",
+		"--human-identity-provider-fingerprint <provider-fingerprint>",
 	} {
 		if !strings.Contains(value, contract) {
 			t.Fatalf("generated skill lacks %q", contract)
+		}
+	}
+	for _, forbidden := range []string{"$USER", "LOGNAME", "whoami", "git config user", "automatic approval"} {
+		if strings.Contains(value, forbidden) {
+			t.Fatalf("generated skill contains implicit identity or authority fallback %q", forbidden)
 		}
 	}
 	for path := range files {

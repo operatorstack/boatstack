@@ -35,6 +35,10 @@ func prepareDelegation(ctx context.Context, request *surfaces.Request) (ports.Lo
 	if request.ProgramID == "" || len(request.DelegatedAuthorities) == 0 {
 		return nil, nil, nil
 	}
+	presentation, err := humanIdentityPresentationForRequest(*request)
+	if err != nil {
+		return nil, nil, err
+	}
 	resolver, err := plant.NewResolver("")
 	if err != nil {
 		return nil, nil, err
@@ -81,17 +85,19 @@ func prepareDelegation(ctx context.Context, request *surfaces.Request) (ports.Lo
 		if request.Operation == surfaces.OperationExplain {
 			return nil, nil, nil
 		}
-		return nil, delegationRequiredResponse(*request), nil
+		response, responseErr := delegationRequiredResponse(*request)
+		return nil, response, responseErr
 	}
 	if err != nil {
 		releaseOnError()
 		return nil, nil, err
 	}
-	if record.RequestFingerprint != request.DelegationRequestFingerprint || record.Request.RunID != request.FlowID || record.Request.ProgramID != request.ProgramID || record.Request.ProgramFingerprint != request.ProgramFingerprint || record.Request.ControlBundleFingerprint != request.ControlBundleFingerprint || record.Request.EntryID != request.EntryID || record.Request.TargetID != string(request.Objective.TargetID) || record.Request.ObjectiveID != request.Objective.ID || record.Request.DeliveryID != request.Objective.DeliveryID || record.Request.RepositoryID != invocation.RepositoryID || record.Request.GitCommonID != invocation.GitCommonID || record.Request.BindingFingerprint != request.DelegationBindingFingerprint {
+	if record.RequestFingerprint != request.DelegationRequestFingerprint || record.Request.RunID != request.FlowID || record.Request.ProgramID != request.ProgramID || record.Request.ProgramFingerprint != request.ProgramFingerprint || record.Request.ControlBundleFingerprint != request.ControlBundleFingerprint || record.Request.EntryID != request.EntryID || record.Request.TargetID != string(request.Objective.TargetID) || record.Request.ObjectiveID != request.Objective.ID || record.Request.DeliveryID != request.Objective.DeliveryID || record.Request.RepositoryID != invocation.RepositoryID || record.Request.GitCommonID != invocation.GitCommonID || record.Request.BindingFingerprint != request.DelegationBindingFingerprint || record.Request.HumanIdentityProviderFingerprint != presentation.ProviderFingerprint || record.ActorIdentityProviderFingerprint != presentation.ProviderFingerprint {
 		reprojected, reprojectErr := canReprojectDelegation(layout, invocation, record.Request, delegation.Request{
 			RunID: request.FlowID, ProgramID: request.ProgramID, ProgramFingerprint: request.ProgramFingerprint, ControlBundleFingerprint: request.ControlBundleFingerprint,
 			EntryID: request.EntryID, TargetID: string(request.Objective.TargetID), ObjectiveID: request.Objective.ID, DeliveryID: request.Objective.DeliveryID,
 			RepositoryID: invocation.RepositoryID, GitCommonID: invocation.GitCommonID, BindingFingerprint: request.DelegationBindingFingerprint,
+			HumanIdentityProviderFingerprint: presentation.ProviderFingerprint,
 		})
 		releaseOnError()
 		if reprojectErr != nil {
@@ -101,7 +107,8 @@ func prepareDelegation(ctx context.Context, request *surfaces.Request) (ports.Lo
 			if request.Operation == surfaces.OperationExplain {
 				return nil, nil, nil
 			}
-			return nil, delegationRequiredResponse(*request), nil
+			response, responseErr := delegationRequiredResponse(*request)
+			return nil, response, responseErr
 		}
 		return nil, nil, fmt.Errorf("DELEGATION_DRIFT: authorization does not match the current run context")
 	}
@@ -145,11 +152,15 @@ func prepareDelegation(ctx context.Context, request *surfaces.Request) (ports.Lo
 	return lock, nil, nil
 }
 
-func delegationRequiredResponse(request surfaces.Request) *surfaces.Response {
+func delegationRequiredResponse(request surfaces.Request) (*surfaces.Response, error) {
+	presentation, err := humanIdentityPresentationForRequest(request)
+	if err != nil {
+		return nil, err
+	}
 	return &surfaces.Response{
 		SchemaVersion: surfaces.SchemaVersion, Operation: request.Operation, ProgramID: request.ProgramID, EntryID: request.EntryID, RunID: request.FlowID, Objective: request.Objective,
-		Delegation: &surfaces.DelegationRequired{Code: "DELEGATION_REQUIRED", RunID: request.FlowID, RequestFingerprint: request.DelegationRequestFingerprint, Authorities: append([]catalog.AuthorityClass(nil), request.DelegatedAuthorities...), Description: "Explicitly authorize " + request.ProgramID + "/" + request.EntryID + " for this exact run"},
-	}
+		Delegation: &surfaces.DelegationRequired{Code: "DELEGATION_REQUIRED", RunID: request.FlowID, RequestFingerprint: request.DelegationRequestFingerprint, Authorities: append([]catalog.AuthorityClass(nil), request.DelegatedAuthorities...), Description: "Explicitly authorize " + request.ProgramID + "/" + request.EntryID + " for this exact run", HumanIdentity: presentation},
+	}, nil
 }
 
 // preflightDelegatedProgramChange observes the selected program before any

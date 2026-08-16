@@ -1,13 +1,13 @@
 # Host and hook contract
 
-All hosts call `boatstack rpc` with one schema-2 JSON object and read one
-schema-2 response. The decoder rejects unknown fields and trailing JSON.
+All hosts call `boatstack rpc` with one schema-14 JSON object and read one
+schema-14 response. The decoder rejects unknown fields and trailing JSON.
 
 Example read request:
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 14,
   "operation": "resolve",
   "repository": "/absolute/worktree",
   "host": "codex",

@@ -32,12 +32,16 @@ boatstack next --repo . --flow product-delivery --entry run
 ```
 
 If the entry requests delegation, `next` returns `DELEGATION_REQUIRED` with an
-exact run and request fingerprint before managed state changes. A human can
-authorize that exact request and continue it:
+exact run, request fingerprint, and repository-selected human identity
+descriptor before managed state changes. The host resolves a proposed actor,
+shows that actor and the exact request, and asks for explicit approval. A human
+can then authorize that exact request and continue it:
 
 ```sh
 boatstack flow authorize --repo . --flow product-delivery --entry run \
-  --run-id <run-id> --request-fingerprint <fingerprint> --human <actor>
+  --run-id <run-id> --request-fingerprint <fingerprint> \
+  --human-identity-provider-fingerprint <provider-fingerprint> \
+  --human <actor>
 boatstack flow run --repo . --flow product-delivery --entry run --run-id <run-id>
 boatstack flow revoke --repo . --run-id <run-id> --human <actor>
 ```

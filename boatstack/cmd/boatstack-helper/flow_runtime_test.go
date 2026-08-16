@@ -249,7 +249,7 @@ func TestFreshFlowInitializationRejectsDirtyCanonicalConfigurationBeforeEffects(
 	runFlowGit(t, repository, "add", ".")
 	runFlowGit(t, repository, "commit", "-q", "-m", "fixture")
 
-	writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":2,"project":{"name":"dirty","default_branch":"main","commands":{"test":"false"}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude"]}`))
+	writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":3,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"dirty","default_branch":"main","commands":{"test":"false"}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude"]}`))
 	questionRaw, err := captureRunOutput(t,
 		"flow", "run", "--repo", repository, "--flow", "product-delivery", "--entry", "run",
 		"--repository-authority", "--host", "codex", "--format", "json",
@@ -504,7 +504,7 @@ func writeFlowArtifact(t *testing.T, repository string, document controlprogram.
 	t.Helper()
 	projectPath := filepath.Join(repository, ".boatstack", "project.json")
 	if _, err := os.Stat(projectPath); os.IsNotExist(err) {
-		writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":2,"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude"]}`))
+		writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":3,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude"]}`))
 	}
 	resolver, err := softwareflow.NewResolver(context.Background())
 	if err != nil {
@@ -2487,6 +2487,23 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	if err != nil || lock != nil || suspension == nil || suspension.Delegation == nil || suspension.Delegation.Code != "DELEGATION_REQUIRED" || suspension.Delegation.RequestFingerprint != bound.delegationRequestFingerprint {
 		t.Fatalf("delegation suspension = lock=%v response=%#v err=%v", lock, suspension, err)
 	}
+	if suspension.Delegation.HumanIdentity.Descriptor.Kind != "literal" || suspension.Delegation.HumanIdentity.Descriptor.Value != "operator" || suspension.Delegation.HumanIdentity.ProviderFingerprint != bound.delegationRequest.HumanIdentityProviderFingerprint {
+		t.Fatalf("delegation human identity = %#v, request = %#v", suspension.Delegation.HumanIdentity, bound.delegationRequest)
+	}
+	authority := request.Authority.Set(time.Now().UTC())
+	for _, forbidden := range []catalog.AuthorityClass{catalog.AuthorityHuman, catalog.AuthorityAutonomy, catalog.AuthorityProvider} {
+		if authority[forbidden] {
+			t.Fatalf("identity presentation granted %s authority: %#v", forbidden, request.Authority)
+		}
+	}
+	restartedRequest, err := buildRequest(surfaces.OperationResolve, bound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, restartedSuspension, err := prepareDelegation(context.Background(), &restartedRequest)
+	if err != nil || restartedSuspension == nil || restartedSuspension.Delegation == nil || !reflect.DeepEqual(restartedSuspension.Delegation.HumanIdentity, suspension.Delegation.HumanIdentity) || restartedSuspension.Delegation.RequestFingerprint != suspension.Delegation.RequestFingerprint {
+		t.Fatalf("restart changed delegation identity: first=%#v restarted=%#v err=%v", suspension.Delegation, restartedSuspension, err)
+	}
 	explainRequest, err := buildRequest(surfaces.OperationExplain, bound)
 	if err != nil {
 		t.Fatal(err)
@@ -2516,7 +2533,12 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 		t.Fatalf("explain created a delegation record: %v", err)
 	}
 	now := time.Now().UTC()
-	record := delegation.Record{Schema: delegation.Schema, SchemaRevision: delegation.SchemaRevision, Request: bound.delegationRequest, RequestFingerprint: bound.delegationRequestFingerprint, ReceiptID: "authorization-test", Actor: "human@example.com", AuthorizedAt: now, Revision: 1, Status: "active"}
+	record := delegation.Record{
+		Schema: delegation.Schema, SchemaRevision: delegation.SchemaRevision,
+		Request: bound.delegationRequest, RequestFingerprint: bound.delegationRequestFingerprint,
+		ReceiptID: "authorization-test", Actor: "operator", ActorIdentityProviderFingerprint: bound.delegationRequest.HumanIdentityProviderFingerprint,
+		AuthorizedAt: now, Revision: 1, Status: "active",
+	}
 	if err := effects.StoreDelegationRecord(recordPath, record); err != nil {
 		t.Fatal(err)
 	}
@@ -2591,14 +2613,17 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 		t.Fatalf("expired delegation = lock=%v response=%#v err=%v", expiredLock, expiredSuspension, expiredErr)
 	}
 	renewedAt := time.Now().UTC()
-	renewed, changed, err := authorizeDelegation(&record, bound.delegationRequest, bound.delegationRequestFingerprint, record.Actor, time.Hour, renewedAt, false)
+	if _, _, staleErr := authorizeDelegation(&record, bound.delegationRequest, bound.delegationRequestFingerprint, strings.Repeat("0", 64), record.Actor, time.Hour, renewedAt, false); staleErr == nil || !strings.Contains(staleErr.Error(), "HUMAN_IDENTITY_DRIFT") {
+		t.Fatalf("stale identity provider authorization = %v", staleErr)
+	}
+	renewed, changed, err := authorizeDelegation(&record, bound.delegationRequest, bound.delegationRequestFingerprint, record.ActorIdentityProviderFingerprint, record.Actor, time.Hour, renewedAt, false)
 	if err != nil || !changed || renewed.Revision != record.Revision+1 || renewed.ReceiptID == record.ReceiptID || !renewed.ExpiresAt.Equal(renewedAt.Add(time.Hour)) {
 		t.Fatalf("renewed delegation = record=%#v changed=%v err=%v", renewed, changed, err)
 	}
-	if idempotent, changedAgain, idempotentErr := authorizeDelegation(&renewed, bound.delegationRequest, bound.delegationRequestFingerprint, record.Actor, time.Hour, renewedAt.Add(time.Second), false); idempotentErr != nil || changedAgain || idempotent.ReceiptID != renewed.ReceiptID {
+	if idempotent, changedAgain, idempotentErr := authorizeDelegation(&renewed, bound.delegationRequest, bound.delegationRequestFingerprint, record.ActorIdentityProviderFingerprint, record.Actor, time.Hour, renewedAt.Add(time.Second), false); idempotentErr != nil || changedAgain || idempotent.ReceiptID != renewed.ReceiptID {
 		t.Fatalf("idempotent renewal = record=%#v changed=%v err=%v", idempotent, changedAgain, idempotentErr)
 	}
-	if _, _, conflictErr := authorizeDelegation(&renewed, bound.delegationRequest, bound.delegationRequestFingerprint, "other-actor", time.Hour, renewedAt, false); conflictErr == nil || !strings.Contains(conflictErr.Error(), "DELEGATION_CONFLICT") {
+	if _, _, conflictErr := authorizeDelegation(&renewed, bound.delegationRequest, bound.delegationRequestFingerprint, record.ActorIdentityProviderFingerprint, "other-actor", time.Hour, renewedAt, false); conflictErr == nil || !strings.Contains(conflictErr.Error(), "DELEGATION_CONFLICT") {
 		t.Fatalf("conflicting renewal = %v", conflictErr)
 	}
 	if err := effects.StoreDelegationRecord(recordPath, renewed); err != nil {
@@ -2687,7 +2712,7 @@ func TestExplicitAuthorizationCanReplaceRevokedPreReconciliationRequest(t *testi
 		RunID: "run-example", ProgramID: "product-delivery", ProgramFingerprint: strings.Repeat("a", 64), ControlBundleFingerprint: strings.Repeat("b", 64),
 		EntryID: "run", TargetID: "published-pr", ObjectiveID: "objective", DeliveryID: "delivery", InputFingerprints: []string{"plan"},
 		RepositoryID: "repository", GitCommonID: "common", InitialWorktreeID: "worktree", InitialRef: "refs/heads/main",
-		BindingFingerprint: strings.Repeat("c", 64), RequestedAuthorities: []string{"autonomy"}, Description: "Run product delivery",
+		BindingFingerprint: strings.Repeat("c", 64), HumanIdentityProviderFingerprint: strings.Repeat("f", 64), RequestedAuthorities: []string{"autonomy"}, Description: "Run product delivery",
 	}
 	priorFingerprint, err := prior.Fingerprint()
 	if err != nil {
@@ -2695,7 +2720,7 @@ func TestExplicitAuthorizationCanReplaceRevokedPreReconciliationRequest(t *testi
 	}
 	existing := delegation.Record{
 		Schema: delegation.Schema, SchemaRevision: delegation.SchemaRevision, Request: prior, RequestFingerprint: priorFingerprint,
-		ReceiptID: "authorization-prior", Actor: "operator", AuthorizedAt: time.Unix(1_700_000_000, 0).UTC(), Revision: 3, Status: "revoked",
+		ReceiptID: "authorization-prior", Actor: "operator", ActorIdentityProviderFingerprint: prior.HumanIdentityProviderFingerprint, AuthorizedAt: time.Unix(1_700_000_000, 0).UTC(), Revision: 3, Status: "revoked",
 	}
 	current := prior
 	current.ProgramFingerprint, current.ControlBundleFingerprint = strings.Repeat("d", 64), strings.Repeat("e", 64)
@@ -2704,11 +2729,11 @@ func TestExplicitAuthorizationCanReplaceRevokedPreReconciliationRequest(t *testi
 		t.Fatal(err)
 	}
 	now := time.Unix(1_700_000_100, 0).UTC()
-	refreshed, changed, err := authorizeDelegation(&existing, current, currentFingerprint, "operator", 0, now, true)
+	refreshed, changed, err := authorizeDelegation(&existing, current, currentFingerprint, current.HumanIdentityProviderFingerprint, "operator", 0, now, true)
 	if err != nil || !changed || refreshed.Status != "active" || refreshed.Revision != 4 || refreshed.RequestFingerprint != currentFingerprint || refreshed.ReceiptID == existing.ReceiptID {
 		t.Fatalf("reprojected authorization = %#v changed=%t err=%v", refreshed, changed, err)
 	}
-	if _, _, err := authorizeDelegation(&existing, current, currentFingerprint, "operator", 0, now, false); err == nil {
+	if _, _, err := authorizeDelegation(&existing, current, currentFingerprint, current.HumanIdentityProviderFingerprint, "operator", 0, now, false); err == nil {
 		t.Fatal("revoked authority was replaced without an admitted reprojection")
 	}
 }
