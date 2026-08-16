@@ -2,16 +2,12 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
-	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentity"
-	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentitybinding"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
 )
 
@@ -23,138 +19,19 @@ type humanIdentityResponseHandler interface {
 // A response cannot leave the command layer before every human authority
 // surface is bound to the verified repository identity descriptor.
 func handleWithHumanIdentity(ctx context.Context, handler humanIdentityResponseHandler, request surfaces.Request) (surfaces.Response, error) {
-	response, err := handler.Handle(ctx, request)
-	if identityErr := attachHumanIdentity(request, &response); identityErr != nil {
-		return response, identityErr
-	}
-	return response, err
+	return humanidentitybinding.Handle(ctx, "", handler, request)
 }
 
 func humanIdentityPresentationForRequest(request surfaces.Request) (humanidentity.Presentation, error) {
-	if request.ControlBundle == nil {
-		return humanidentity.Presentation{}, fmt.Errorf("HUMAN_IDENTITY_UNBOUND: request has no verified control bundle")
-	}
-	snapshot := request.ControlBundle.Source
-	configPath := filepath.Join(request.Repository, ".boatstack", "project.json")
-	if request.TransitionID == "installation.initialize" {
-		if request.ControlBundle.Target == nil {
-			return humanidentity.Presentation{}, fmt.Errorf("HUMAN_IDENTITY_UNBOUND: initialization has no target control bundle")
-		}
-		snapshot = *request.ControlBundle.Target
-		value, ok := request.Parameters.Get("config_path")
-		if !ok {
-			return humanidentity.Presentation{}, fmt.Errorf("HUMAN_IDENTITY_UNBOUND: initialization has no configuration path")
-		}
-		configPath = value
-	}
-	return humanIdentityPresentationFromBoundConfig(configPath, snapshot)
+	return humanidentitybinding.PresentationForRequest(context.Background(), "", request, nil)
 }
 
-func humanIdentityPresentationFromBoundConfig(configPath string, snapshot boatstackruntime.ControlBundleSnapshot) (humanidentity.Presentation, error) {
-	var binding *boatstackruntime.ControlBundleFile
-	for index := range snapshot.Files {
-		if snapshot.Files[index].Path == ".boatstack/project.json" {
-			binding = &snapshot.Files[index]
-			break
-		}
-	}
-	if binding == nil || binding.Absent {
-		return humanidentity.Presentation{}, fmt.Errorf("HUMAN_IDENTITY_UNBOUND: verified project configuration is absent")
-	}
-	info, err := os.Lstat(configPath)
-	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return humanidentity.Presentation{}, fmt.Errorf("HUMAN_IDENTITY_UNBOUND: project configuration is not a regular file")
-	}
-	raw, err := os.ReadFile(configPath)
-	if err != nil {
-		return humanidentity.Presentation{}, err
-	}
-	digest := sha256.Sum256(raw)
-	if hex.EncodeToString(digest[:]) != binding.SHA256 {
-		return humanidentity.Presentation{}, fmt.Errorf("HUMAN_IDENTITY_DRIFT: project configuration does not match the verified control bundle")
-	}
-	config, err := protocol.DecodeProjectConfig(raw)
-	if err != nil {
-		return humanidentity.Presentation{}, err
-	}
-	return humanidentity.NewPresentation(config.Identity.Human)
-}
-
-func humanIdentityPresentationForRepository(repository string) (humanidentity.Presentation, error) {
-	presentation, _, err := humanIdentityPresentationAndFingerprintForRepository(repository)
-	return presentation, err
-}
-
-func humanIdentityPresentationAndFingerprintForRepository(repository string) (humanidentity.Presentation, string, error) {
-	raw, err := os.ReadFile(filepath.Join(repository, ".boatstack", "project.json"))
-	if err != nil {
-		return humanidentity.Presentation{}, "", err
-	}
-	config, fingerprint, err := protocol.ProjectConfigFingerprint(raw)
-	if err != nil {
-		return humanidentity.Presentation{}, "", err
-	}
-	presentation, err := humanidentity.NewPresentation(config.Identity.Human)
-	return presentation, fingerprint, err
+func humanIdentityPresentationForRepositoryBound(ctx context.Context, repository, host, correlation string, bundle boatstackruntime.ControlBundleSnapshot, observed *model.Snapshot) (humanidentity.Presentation, error) {
+	return humanidentitybinding.PresentationForRepository(ctx, "", repository, host, correlation, &bundle, observed)
 }
 
 func attachHumanIdentity(request surfaces.Request, response *surfaces.Response) error {
-	if response == nil {
-		return nil
-	}
-	programChangeRequiresHuman := response.ProgramChange != nil
-	questionRequiresIdentity := response.Question != nil && questionRequiresHuman(*response.Question)
-	if !programChangeRequiresHuman && !questionRequiresIdentity {
-		return nil
-	}
-	// Before installation there is no repository-selected identity descriptor
-	// to bind. The bootstrap caller must supply an explicit actor; once a
-	// candidate or installed configuration exists, every human question below
-	// is required to carry its verified descriptor.
-	if request.ControlBundle == nil && response.Question != nil && response.Question.TransitionID == "installation.initialize" {
-		return nil
-	}
-	var presentation humanidentity.Presentation
-	var err error
-	if request.ControlBundle != nil {
-		presentation, err = humanIdentityPresentationForRequest(request)
-	} else if request.ProgramID == "" && response.Snapshot != nil {
-		var fingerprint string
-		presentation, fingerprint, err = humanIdentityPresentationAndFingerprintForRepository(request.Repository)
-		if err == nil {
-			bound := false
-			for _, evidence := range response.Snapshot.Configuration.Evidence {
-				if evidence.Fingerprint == fingerprint {
-					bound = true
-					break
-				}
-			}
-			if !bound {
-				return fmt.Errorf("HUMAN_IDENTITY_DRIFT: project configuration does not match the observed configuration")
-			}
-		}
-	} else {
-		err = fmt.Errorf("HUMAN_IDENTITY_UNBOUND: human authority question has no verified project configuration")
-	}
-	if err != nil {
-		return err
-	}
-	if questionRequiresIdentity {
-		response.Question.HumanIdentity = &presentation
-	}
-	if programChangeRequiresHuman {
-		response.ProgramChange.HumanIdentity = &presentation
-	}
-	return nil
-}
-
-func questionRequiresHuman(question surfaces.Question) bool {
-	for _, authority := range append(append([]catalog.AuthorityClass(nil), question.Authority...), question.AuthorityAll...) {
-		if authority == catalog.AuthorityHuman {
-			return true
-		}
-	}
-	return false
+	return humanidentitybinding.Attach(context.Background(), "", request, response)
 }
 
 func renderHumanIdentity(presentation humanidentity.Presentation) {

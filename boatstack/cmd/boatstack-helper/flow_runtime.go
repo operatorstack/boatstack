@@ -263,7 +263,7 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		if description == "" {
 			description = fmt.Sprintf("Run %s/%s to %s", options.programID, options.entryID, objective.TargetID)
 		}
-		presentation, presentationErr := humanIdentityPresentationFromBoundConfig(filepath.Join(repository, ".boatstack", "project.json"), bundle.Source)
+		presentation, presentationErr := humanIdentityPresentationForRepositoryBound(ctx, repository, host, "flow-delegation-request", bundle.Source, nil)
 		if presentationErr != nil {
 			return commandOptions{}, presentationErr
 		}

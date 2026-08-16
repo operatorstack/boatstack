@@ -100,7 +100,7 @@ func runFlowInput(arguments []string) error {
 		if loadErr != nil {
 			return loadErr
 		}
-		presentation, identityErr := humanIdentityPresentationFromBoundConfig(filepath.Join(repository, ".boatstack", "project.json"), runtimeContext.controlBundle.Source)
+		presentation, identityErr := humanIdentityPresentationForRepositoryBound(ctx, repository, options.host, "flow-input", runtimeContext.controlBundle.Source, nil)
 		if identityErr != nil {
 			return identityErr
 		}

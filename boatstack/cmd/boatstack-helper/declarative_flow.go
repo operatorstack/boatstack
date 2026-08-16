@@ -56,6 +56,7 @@ type declarativeRuntimeContext struct {
 	state                     declarativeRunState
 	statePath                 string
 	store                     invocation.Store
+	controlBundle             boatstackruntime.ControlBundleSnapshot
 	executionScopeFingerprint string
 }
 
@@ -188,7 +189,7 @@ func runDeclarativeFlow(ctx context.Context, compiled controlprogram.Compiled, o
 		if err := runtimeContext.store.SaveRequest(*result.Request); err != nil {
 			return err
 		}
-		presentation, identityErr := humanIdentityPresentationForRepository(repository)
+		presentation, identityErr := humanIdentityPresentationForRepositoryBound(ctx, repository, options.host, "declarative-input", runtimeContext.controlBundle, nil)
 		if identityErr != nil {
 			return identityErr
 		}
@@ -202,7 +203,7 @@ func runDeclarativeFlow(ctx context.Context, compiled controlprogram.Compiled, o
 		return fmt.Errorf("FLOW_INVOCATION_INCOMPLETE: declarative materialization produced no evidence")
 	}
 	if err := requireDeclarativeAuthority(transition, operator, options.humanActor); err != nil {
-		presentation, identityErr := humanIdentityPresentationForRepository(repository)
+		presentation, identityErr := humanIdentityPresentationForRepositoryBound(ctx, repository, options.host, "declarative-authority", runtimeContext.controlBundle, nil)
 		if identityErr != nil {
 			return identityErr
 		}
@@ -286,6 +287,10 @@ func requireDeclarativeAuthority(transition controlprogram.Transition, operator 
 }
 
 func loadDeclarativeRuntimeContext(ctx context.Context, repository string, compiled controlprogram.Compiled, entry controlprogram.Entry, options commandOptions) (declarativeRuntimeContext, error) {
+	controlBundle, err := buildRepositoryControlBundle(ctx, repository)
+	if err != nil {
+		return declarativeRuntimeContext{}, err
+	}
 	resolver, err := plant.NewResolver("")
 	if err != nil {
 		return declarativeRuntimeContext{}, err
@@ -358,7 +363,7 @@ func loadDeclarativeRuntimeContext(ctx context.Context, repository string, compi
 	}
 	return declarativeRuntimeContext{
 		compiled: compiled, entry: entry, state: state, statePath: statePath,
-		store: invocation.Store{Root: layout.FlowRoot, Writer: effects.NewRuntimeStore()}, executionScopeFingerprint: scope,
+		store: invocation.Store{Root: layout.FlowRoot, Writer: effects.NewRuntimeStore()}, controlBundle: controlBundle, executionScopeFingerprint: scope,
 	}, nil
 }
 

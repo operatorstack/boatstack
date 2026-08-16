@@ -12,6 +12,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/distribution"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentity"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentitybinding"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
@@ -243,5 +244,9 @@ func (c Client) Do(ctx context.Context, request Request) (Response, error) {
 	if err != nil {
 		return Response{}, err
 	}
-	return kernel.Handle(ctx, request)
+	return c.handle(ctx, kernel, request)
+}
+
+func (c Client) handle(ctx context.Context, handler humanidentitybinding.ResponseHandler, request Request) (Response, error) {
+	return humanidentitybinding.Handle(ctx, c.externalStateRoot, handler, request)
 }
