@@ -334,9 +334,6 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 		return surfaces.Response{}, err
 	}
 	if programChangeResponse != nil {
-		if err := attachHumanIdentity(resolveRequest, programChangeResponse); err != nil {
-			return surfaces.Response{}, err
-		}
 		return *programChangeResponse, nil
 	}
 	_, delegationResponse, err := prepareDelegation(ctx, &resolveRequest)

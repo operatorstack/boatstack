@@ -83,14 +83,19 @@ func humanIdentityPresentationAndFingerprintForRepository(repository string) (hu
 }
 
 func attachHumanIdentity(request surfaces.Request, response *surfaces.Response) error {
-	if response == nil || response.Question == nil || !questionRequiresHuman(*response.Question) {
+	if response == nil {
+		return nil
+	}
+	programChangeRequiresHuman := response.ProgramChange != nil
+	questionRequiresIdentity := response.Question != nil && questionRequiresHuman(*response.Question)
+	if !programChangeRequiresHuman && !questionRequiresIdentity {
 		return nil
 	}
 	// Before installation there is no repository-selected identity descriptor
 	// to bind. The bootstrap caller must supply an explicit actor; once a
 	// candidate or installed configuration exists, every human question below
 	// is required to carry its verified descriptor.
-	if request.ControlBundle == nil && response.Question.TransitionID == "installation.initialize" {
+	if request.ControlBundle == nil && response.Question != nil && response.Question.TransitionID == "installation.initialize" {
 		return nil
 	}
 	var presentation humanidentity.Presentation
@@ -118,7 +123,12 @@ func attachHumanIdentity(request surfaces.Request, response *surfaces.Response) 
 	if err != nil {
 		return err
 	}
-	response.Question.HumanIdentity = &presentation
+	if questionRequiresIdentity {
+		response.Question.HumanIdentity = &presentation
+	}
+	if programChangeRequiresHuman {
+		response.ProgramChange.HumanIdentity = &presentation
+	}
 	return nil
 }
 

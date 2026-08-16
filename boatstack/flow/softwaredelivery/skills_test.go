@@ -48,6 +48,7 @@ func TestGeneratedSkillsProjectOnlyDeclaredEntriesWithHostParity(t *testing.T) {
 		"boatstack reconcile-update --repo . --flow product-delivery --entry run --run-id <run-id>",
 		"do not request or reuse product delegation before reconciliation", "commit\nthose exact files separately before product work",
 		"Ask\nfor product delegation only after Boatstack returns the new exact delegation",
+		"program_change.human_identity", "Do not ask the user to invent\nan actor unless",
 		"inspect its exact\n`human_identity`", "provider_fingerprint", "execute the exact `command` and",
 		"at most 1024 bytes", "proposed actor", "ask the human for explicit approval",
 		"Identity resolution never counts as approval", "never infer one from the operating system, Git, host",
@@ -90,6 +91,7 @@ func TestGeneratedSoftwareDeliverySkillMakesProgramDriftCoreachableWithoutImplic
 		"UNRESOLVED", "solely because the selected compiled\nprogram differs", "exact prior program fingerprint",
 		"candidate program fingerprint", "program-delta fingerprint", "Ask for\nexplicit human acceptance",
 		"Never infer acceptance", "installation.reconcile-update", "--accept-program-change",
+		"program_change.human_identity", "Do not ask the user to invent\nan actor unless",
 		"--human <actor>", "program-change acceptance is true", "bound to the accepted bundle", "stop without\nperforming product effects",
 	} {
 		if !strings.Contains(codex, contract) {

@@ -169,9 +169,6 @@ func run(arguments []string) error {
 		return err
 	}
 	if programChangeResponse != nil {
-		if err := attachHumanIdentity(request, programChangeResponse); err != nil {
-			return err
-		}
 		return renderResponse(*programChangeResponse, options.format)
 	}
 	delegationLock, delegationResponse, err := prepareDelegation(context.Background(), &request)
@@ -299,9 +296,6 @@ func runRPC() error {
 		return err
 	}
 	if programChangeResponse != nil {
-		if err := attachHumanIdentity(request, programChangeResponse); err != nil {
-			return err
-		}
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(programChangeResponse)
@@ -968,6 +962,9 @@ func renderResponse(response surfaces.Response, format string) error {
 				fmt.Printf("program_change prior=%s candidate=%s delta=%s transition=%s accept=%s\n",
 					response.ProgramChange.PriorProgramFingerprint, response.ProgramChange.CandidateProgramFingerprint,
 					response.ProgramChange.ProgramDeltaFingerprint, response.ProgramChange.RequiredTransition, response.ProgramChange.AcceptanceFlag)
+				if response.ProgramChange.HumanIdentity != nil {
+					renderHumanIdentity(*response.ProgramChange.HumanIdentity)
+				}
 			}
 			return nil
 		}

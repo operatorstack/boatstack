@@ -198,6 +198,9 @@ func preflightDelegatedProgramChange(ctx context.Context, request surfaces.Reque
 		return nil, nil
 	}
 	response.Operation = request.Operation
+	if err := attachHumanIdentity(request, &response); err != nil {
+		return nil, err
+	}
 	return &response, nil
 }
 

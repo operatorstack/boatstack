@@ -46,6 +46,13 @@ func TestHumanIdentityPresentationIsBoundToVerifiedConfiguration(t *testing.T) {
 	if err := attachHumanIdentity(request, &response); err != nil || response.Question.HumanIdentity == nil || !reflect.DeepEqual(*response.Question.HumanIdentity, presentation) {
 		t.Fatalf("attached identity = %#v, err=%v", response.Question.HumanIdentity, err)
 	}
+	programChange := surfaces.Response{ProgramChange: &surfaces.ProgramChange{
+		PriorProgramFingerprint: strings.Repeat("a", 64), CandidateProgramFingerprint: strings.Repeat("b", 64),
+		ProgramDeltaFingerprint: strings.Repeat("c", 64), RequiredTransition: "installation.reconcile-update", AcceptanceFlag: "--accept-program-change",
+	}}
+	if err := attachHumanIdentity(request, &programChange); err != nil || programChange.ProgramChange.HumanIdentity == nil || !reflect.DeepEqual(*programChange.ProgramChange.HumanIdentity, presentation) {
+		t.Fatalf("program-change identity = %#v, err=%v", programChange.ProgramChange.HumanIdentity, err)
+	}
 
 	if err := os.WriteFile(configPath, []byte(strings.ReplaceAll(string(configRaw), ".login", ".name")), 0o600); err != nil {
 		t.Fatal(err)
@@ -97,6 +104,14 @@ func TestHumanIdentityRenderingPreservesStructuredArgvWithoutExecutingIt(t *test
 	}
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
 		t.Fatalf("rendering executed identity command: %v", err)
+	}
+	programChange := surfaces.Response{Error: "PROGRAM_DRIFT", ProgramChange: &surfaces.ProgramChange{
+		PriorProgramFingerprint: strings.Repeat("b", 64), CandidateProgramFingerprint: strings.Repeat("c", 64),
+		ProgramDeltaFingerprint: strings.Repeat("d", 64), RequiredTransition: "installation.reconcile-update", AcceptanceFlag: "--accept-program-change", HumanIdentity: &presentation,
+	}}
+	output, err = captureStdout(t, func() error { return renderResponse(programChange, "text") })
+	if err != nil || !strings.Contains(string(output), `human_identity_command="touch" "`+marker+`"`) {
+		t.Fatalf("program-change text output = %q, err=%v", output, err)
 	}
 }
 

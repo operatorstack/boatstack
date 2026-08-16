@@ -229,11 +229,12 @@ type DoctorReport struct {
 }
 
 type ProgramChange struct {
-	PriorProgramFingerprint     string               `json:"prior_program_fingerprint"`
-	CandidateProgramFingerprint string               `json:"candidate_program_fingerprint"`
-	ProgramDeltaFingerprint     string               `json:"program_delta_fingerprint"`
-	RequiredTransition          catalog.TransitionID `json:"required_transition"`
-	AcceptanceFlag              string               `json:"acceptance_flag"`
+	PriorProgramFingerprint     string                      `json:"prior_program_fingerprint"`
+	CandidateProgramFingerprint string                      `json:"candidate_program_fingerprint"`
+	ProgramDeltaFingerprint     string                      `json:"program_delta_fingerprint"`
+	RequiredTransition          catalog.TransitionID        `json:"required_transition"`
+	AcceptanceFlag              string                      `json:"acceptance_flag"`
+	HumanIdentity               *humanidentity.Presentation `json:"human_identity,omitempty"`
 }
 
 type Response struct {

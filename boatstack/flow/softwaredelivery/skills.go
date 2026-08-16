@@ -119,6 +119,10 @@ explicit human acceptance of that exact delta separately from delegation
 approval. Never infer acceptance from repository authority, autonomy,
 installation, or a previous program change.
 
+Resolve the proposed actor from the exact `+"`program_change.human_identity`"+`
+object using the human-identity protocol above. Do not ask the user to invent
+an actor unless that descriptor's command resolution fails.
+
 Continue only when the response names `+"`installation.reconcile-update`"+` and
 `+"`--accept-program-change`"+`, and the user accepts the displayed exact delta.
 Then run:
