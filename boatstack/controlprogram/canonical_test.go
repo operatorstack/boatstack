@@ -133,6 +133,7 @@ func TestInvocationCompletenessRequiresExactlyOneAdmissibleProducer(t *testing.T
 		"wrong-source-type": {func(value *controlprogram.Document) {
 			value.Operators[0].Parameters[0].Type = controlprogram.ValueTypeDefinition{Kind: "integer"}
 			value.Operators[0].Parameters[0].AllowedSources = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceEntryInput}
+			value.Operators[0].Parameters[0].Authority = controlprogram.AuthorityRequirement{}
 			value.Transitions[0].Parameters[0].Producer = controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceEntryInput, Input: "incident"}
 		}, "unavailable or incompatible"},
 		"authority-weakening": {func(value *controlprogram.Document) {
@@ -149,8 +150,34 @@ func TestInvocationCompletenessRequiresExactlyOneAdmissibleProducer(t *testing.T
 	}
 }
 
+func TestInvocationCompletenessRequiresAuthorityReceiptProducer(t *testing.T) {
+	// control-law: producer metadata cannot stand in for an authority receipt
+	// attached to the admitted parameter value.
+	for name, test := range map[string]struct {
+		authority controlprogram.AuthorityRequirement
+		producer  controlprogram.ParameterProducer
+	}{
+		"entry-input-any-of":      {controlprogram.AuthorityRequirement{AnyOf: []string{"human"}}, controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceEntryInput, Input: "incident"}},
+		"state-all-of":            {controlprogram.AuthorityRequirement{AllOf: []string{"human"}}, controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceState, Facet: "service", AvailableWhen: func() *controlprogram.Predicate { value := fact("service", "degraded"); return &value }()}},
+		"receipt-any-of":          {controlprogram.AuthorityRequirement{AnyOf: []string{"human"}}, controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceReceipt, Transition: "observe-channel", Field: "channel"}},
+		"work-output-all-of":      {controlprogram.AuthorityRequirement{AllOf: []string{"human"}}, controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceWorkOutput, Work: "plan", Output: "channel"}},
+		"trusted-resolver-any-of": {controlprogram.AuthorityRequirement{AnyOf: []string{"human"}}, controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceTrustedResolver, Binding: &controlprogram.ParameterResolverBinding{Reference: "incident/channel", Version: "1"}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			value := parameterProgram()
+			value.Operators[0].Parameters[0].Authority = test.authority
+			value.Operators[0].Parameters[0].AllowedSources = []controlprogram.ParameterSourceKind{test.producer.Kind}
+			value.Transitions[0].Parameters[0].Producer = test.producer
+			if _, err := controlprogram.Compile(value, nil); err == nil || !strings.Contains(err.Error(), "requires an authority-receipt-producing host-input producer") {
+				t.Fatalf("result = %v", err)
+			}
+		})
+	}
+}
+
 func TestInvocationCompletenessRejectsUnguaranteedReceiptAndUnknownResolver(t *testing.T) {
 	receiptBound := parameterProgram()
+	receiptBound.Operators[0].Parameters[0].Authority = controlprogram.AuthorityRequirement{}
 	receiptBound.Operators[0].Parameters[0].AllowedSources = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceReceipt}
 	priorOperator := receiptBound.Operators[0]
 	priorOperator.ID, priorOperator.Parameters = "observe-channel", nil
@@ -165,6 +192,7 @@ func TestInvocationCompletenessRejectsUnguaranteedReceiptAndUnknownResolver(t *t
 	}
 
 	unknown := parameterProgram()
+	unknown.Operators[0].Parameters[0].Authority = controlprogram.AuthorityRequirement{}
 	unknown.Operators[0].Parameters[0].AllowedSources = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceTrustedResolver}
 	unknown.Transitions[0].Parameters[0].Producer = controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceTrustedResolver, Binding: &controlprogram.ParameterResolverBinding{Reference: "incident/missing", Version: "1"}}
 	if _, err := controlprogram.Compile(unknown, invocationResolver{}); err == nil || !strings.Contains(err.Error(), "trusted resolver is unknown") {
@@ -174,6 +202,7 @@ func TestInvocationCompletenessRejectsUnguaranteedReceiptAndUnknownResolver(t *t
 
 func TestInvocationCompletenessChecksEntryAndStateAvailabilityPerEntry(t *testing.T) {
 	entryBound := parameterProgram()
+	entryBound.Operators[0].Parameters[0].Authority = controlprogram.AuthorityRequirement{}
 	entryBound.Entries[0].Inputs[0].Type = "string"
 	entryBound.Operators[0].Parameters[0].AllowedSources = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceEntryInput}
 	entryBound.Transitions[0].Parameters[0].Producer = controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceEntryInput, Input: "incident"}
@@ -187,6 +216,7 @@ func TestInvocationCompletenessChecksEntryAndStateAvailabilityPerEntry(t *testin
 	}
 
 	stateBound := parameterProgram()
+	stateBound.Operators[0].Parameters[0].Authority = controlprogram.AuthorityRequirement{}
 	stateBound.Operators[0].Parameters[0].AllowedSources = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceState}
 	truth := true
 	alwaysAvailable := controlprogram.Predicate{True: &truth}
@@ -216,6 +246,7 @@ func TestInvocationCompletenessRejectsResolverDriftCyclesAndValidatorOverride(t 
 		},
 	}
 	value := parameterProgram()
+	value.Operators[0].Parameters[0].Authority = controlprogram.AuthorityRequirement{}
 	value.Operators[0].Parameters[0].AllowedSources = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceTrustedResolver}
 	value.Transitions[0].Parameters[0].Producer = controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceTrustedResolver, Binding: &controlprogram.ParameterResolverBinding{Reference: "incident/channel", Version: "1"}}
 	if _, err := controlprogram.Compile(value, resolver); err == nil || !strings.Contains(err.Error(), "dependency cycle") {

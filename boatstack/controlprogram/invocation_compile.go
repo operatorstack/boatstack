@@ -218,6 +218,9 @@ func normalizeProducer(producer *ParameterProducer, contract OperatorParameter, 
 	if err := rejectProducerExtraneousFields(*producer, field); err != nil {
 		return nil, err
 	}
+	if parameterRequiresAuthority(contract.Authority) && producer.Kind != ParameterSourceHostInput {
+		return nil, invocationIncomplete(transition.ID, contract.ID, "requires an authority-receipt-producing host-input producer")
+	}
 	switch producer.Kind {
 	case ParameterSourceEntryInput:
 		if !validID(producer.Input) {
@@ -292,9 +295,6 @@ func normalizeProducer(producer *ParameterProducer, contract OperatorParameter, 
 		}
 		if producer.Binding.Fingerprint != "" && producer.Binding.Fingerprint != resolved.Fingerprint {
 			return nil, invocationIncomplete(transition.ID, contract.ID, "trusted resolver fingerprint drift")
-		}
-		if !authoritySatisfies(resolved.Authority, contract.Authority) {
-			return nil, invocationIncomplete(transition.ID, contract.ID, "trusted resolver weakens parameter authority")
 		}
 		producer.Binding.Fingerprint = resolved.Fingerprint
 		return append([]string(nil), resolved.Dependencies...), nil
@@ -441,9 +441,8 @@ func authorityListSatisfies(actual []string, required AuthorityRequirement) bool
 	return false
 }
 
-func authoritySatisfies(actual, required AuthorityRequirement) bool {
-	combined := append(append([]string(nil), actual.AnyOf...), actual.AllOf...)
-	return authorityListSatisfies(combined, required)
+func parameterRequiresAuthority(requirement AuthorityRequirement) bool {
+	return len(requirement.AnyOf) != 0 || len(requirement.AllOf) != 0
 }
 
 func parameterDependencyCycle(graph map[string][]string) string {

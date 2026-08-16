@@ -234,6 +234,42 @@ func TestDeclarativeSelectionPreservesEqualPriorityFrontier(t *testing.T) {
 	}
 }
 
+func TestDeclarativeRunRefusesTargetOutsideBestPriorityFrontier(t *testing.T) {
+	// control-law: an explicit transition request narrows the current trusted
+	// frontier; it cannot select a lower-priority mutation.
+	t.Setenv("BOATSTACK_STATE_ROOT", t.TempDir())
+	document := declarativeInvocationDocument()
+	alternate := document.Transitions[0]
+	alternate.ID = "alternate-restart"
+	alternate.Priority = 20
+	document.Transitions = append(document.Transitions, alternate)
+	repository := declarativeFlowRepositoryWithDocument(t, document)
+	blockedRaw, err := captureStdout(t, func() error {
+		return runFlowContinuation([]string{"--repo", repository, "--flow", "incident-response-invocation", "--entry", "respond", "--transition", "alternate-restart", "--input", "incident=INC-7", "--human", "boateng", "--host", "codex", "--format", "json"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocked := decodeObject(t, blockedRaw)
+	if blocked["kind"] != "blocked" || blocked["code"] != "FLOW_TRANSITION_NOT_ADMISSIBLE" || blocked["transition_id"] != "alternate-restart" || blocked["state_revision"] != float64(1) {
+		t.Fatalf("targeted selection = %s", blockedRaw)
+	}
+	if !reflect.DeepEqual(blocked["transitions"], []any{"restart"}) || blocked["receipt"] != nil {
+		t.Fatalf("targeted refusal did not preserve the frontier: %s", blockedRaw)
+	}
+	runID, _ := blocked["run_id"].(string)
+	suspendedRaw, err := captureStdout(t, func() error {
+		return runFlowContinuation([]string{"--repo", repository, "--flow", "incident-response-invocation", "--entry", "respond", "--run-id", runID, "--host", "codex", "--format", "json"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	suspended := decodeObject(t, suspendedRaw)
+	if suspended["kind"] != "suspended" || suspended["transition_id"] != "restart" {
+		t.Fatalf("untargeted continuation after refusal = %s", suspendedRaw)
+	}
+}
+
 func TestDeclarativeReceiptHistoryIsImmutableAndContiguous(t *testing.T) {
 	// control-law: every accepted declarative transition remains recoverable as
 	// one contiguous durable receipt chain after later commits and restart.
@@ -294,6 +330,16 @@ func TestDeclarativeRuntimeRejectsSemanticsItCannotProve(t *testing.T) {
 			document.Declarations.Authorities = append(document.Declarations.Authorities, "autonomy")
 			document.Operators[0].Authority = controlprogram.AuthorityRequirement{AnyOf: []string{"autonomy"}}
 		}, "unsupported authority"},
+		"unsupported-parameter-authority": {func(document *controlprogram.Document) {
+			document.Declarations.Authorities = append(document.Declarations.Authorities, "autonomy")
+			document.Operators[0].Parameters[1].Authority = controlprogram.AuthorityRequirement{AnyOf: []string{"autonomy"}}
+			document.Transitions[0].Parameters[1].Producer.Request.Authorities = []string{"autonomy"}
+		}, "parameter \"channel\" uses unsupported authority"},
+		"unsupported-host-input-authority": {func(document *controlprogram.Document) {
+			document.Declarations.Authorities = append(document.Declarations.Authorities, "autonomy")
+			document.Operators[0].Parameters[1].Authority = controlprogram.AuthorityRequirement{}
+			document.Transitions[0].Parameters[1].Producer.Request.Authorities = []string{"autonomy"}
+		}, "host-input parameter \"channel\" uses unsupported authority"},
 		"unproved-precondition": {func(document *controlprogram.Document) {
 			document.Operators[0].StateEffect.Preconditions = []controlprogram.StatePrecondition{{Facet: "incident", Values: []string{"open"}}}
 		}, "does not establish precondition"},
@@ -305,6 +351,18 @@ func TestDeclarativeRuntimeRejectsSemanticsItCannotProve(t *testing.T) {
 		}, "cannot prove parameter"},
 		"target-not-established": {func(document *controlprogram.Document) {
 			document.Operators[0].StateEffect.Assignments[0] = controlprogram.StateAssignment{Facet: "incident", Value: &open}
+		}, "do not establish its target"},
+		"parameter-mutation-cannot-inherit-guard": {func(document *controlprogram.Document) {
+			done := "yes"
+			document.Facets[0].Kind, document.Facets[0].Values = "string", nil
+			document.Facets = append(document.Facets, controlprogram.Facet{ID: "done", Kind: "enum", Values: []string{"no", "yes"}})
+			document.Operators[0].StateEffect.Assignments = []controlprogram.StateAssignment{
+				{Facet: "incident", ValueFrom: &controlprogram.ValueReference{Parameter: "channel"}},
+				{Facet: "done", Value: &done},
+			}
+			document.Transitions[0].Guard = flowFact("incident", "open")
+			document.Transitions[0].Target = controlprogram.Predicate{All: []controlprogram.Predicate{flowFact("incident", "open"), flowFact("done", "yes")}}
+			document.Targets[0].Predicate = document.Transitions[0].Target
 		}, "do not establish its target"},
 		"non-positive-priority": {func(document *controlprogram.Document) {
 			document.Transitions[0].Priority = 0

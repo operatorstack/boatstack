@@ -340,6 +340,11 @@ func validateDeclarativeFlow(compiled controlprogram.Compiled) error {
 		if !declarativeAuthoritySupported(operator.Authority.AnyOf) || !declarativeAuthoritySupported(operator.Authority.AllOf) {
 			return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative operator %q uses unsupported authority", operator.ID)
 		}
+		for _, parameter := range operator.Parameters {
+			if !declarativeAuthoritySupported(parameter.Authority.AnyOf) || !declarativeAuthoritySupported(parameter.Authority.AllOf) {
+				return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative operator %q parameter %q uses unsupported authority", operator.ID, parameter.ID)
+			}
+		}
 	}
 	for _, transition := range compiled.Document.Transitions {
 		if !declarativeAuthoritySupported(transition.Requires.Authorities) {
@@ -358,6 +363,9 @@ func validateDeclarativeFlow(compiled controlprogram.Compiled) error {
 			bindings[binding.Parameter] = true
 			switch binding.Producer.Kind {
 			case controlprogram.ParameterSourceEntryInput, controlprogram.ParameterSourceState, controlprogram.ParameterSourceHostInput:
+				if binding.Producer.Kind == controlprogram.ParameterSourceHostInput && (binding.Producer.Request == nil || !declarativeAuthoritySupported(binding.Producer.Request.Authorities)) {
+					return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative transition %q host-input parameter %q uses unsupported authority", transition.ID, binding.Parameter)
+				}
 			default:
 				return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative transition %q requires an adapter for producer %q", transition.ID, binding.Producer.Kind)
 			}
@@ -434,7 +442,9 @@ func predicateRequiresFacetValue(predicate controlprogram.Predicate, facet strin
 
 func assignmentsEstablishPredicate(effect controlprogram.StateEffect, guard, target controlprogram.Predicate) bool {
 	assigned := make(map[string]string, len(effect.Assignments))
+	mutated := make(map[string]bool, len(effect.Assignments))
 	for _, assignment := range effect.Assignments {
+		mutated[assignment.Facet] = true
 		if assignment.Value != nil {
 			assigned[assignment.Facet] = *assignment.Value
 		}
@@ -451,6 +461,9 @@ func assignmentsEstablishPredicate(effect controlprogram.StateEffect, guard, tar
 					return false
 				}
 				return len(fact.Values) == 0 || containsString(fact.Values, value)
+			}
+			if mutated[fact.Facet] {
+				return false
 			}
 			return predicateRequiresFacetValue(guard, fact.Facet, fact.Values)
 		}

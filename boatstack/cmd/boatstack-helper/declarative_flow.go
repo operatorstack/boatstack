@@ -136,6 +136,27 @@ func runDeclarativeFlow(ctx context.Context, compiled controlprogram.Compiled, o
 			"program_fingerprint": compiled.Fingerprint, "entry_id": entry.ID, "target_id": entry.Target,
 		}, options.format)
 	}
+	if options.transitionID != "" {
+		var requested *controlprogram.Transition
+		for index := range frontier {
+			if frontier[index].ID == options.transitionID {
+				requested = &frontier[index]
+				break
+			}
+		}
+		if requested == nil {
+			ids := make([]string, len(frontier))
+			for index := range frontier {
+				ids[index] = frontier[index].ID
+			}
+			return encodeDeclarativeResult(map[string]any{
+				"kind": "blocked", "code": "FLOW_TRANSITION_NOT_ADMISSIBLE", "run_id": runtimeContext.state.RunID,
+				"program_fingerprint": compiled.Fingerprint, "entry_id": entry.ID, "target_id": entry.Target,
+				"state_revision": runtimeContext.state.StateRevision, "transition_id": options.transitionID, "transitions": ids,
+			}, options.format)
+		}
+		frontier = []controlprogram.Transition{*requested}
+	}
 	if len(frontier) != 1 {
 		ids := make([]string, len(frontier))
 		for index := range frontier {
