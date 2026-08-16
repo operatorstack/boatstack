@@ -212,10 +212,7 @@ func run(arguments []string) error {
 			resolveRequest.FlowID = ""
 		}
 		resolveRequest.Prescription = protocol.Prescription{}
-		resolved, resolveErr := kernel.Handle(context.Background(), resolveRequest)
-		if identityErr := attachHumanIdentity(resolveRequest, &resolved); identityErr != nil {
-			return identityErr
-		}
+		resolved, resolveErr := handleWithHumanIdentity(context.Background(), kernel, resolveRequest)
 		if resolveErr != nil || resolved.Prescription == nil {
 			if renderErr := renderResponse(resolved, options.format); renderErr != nil {
 				return renderErr
@@ -230,7 +227,7 @@ func run(arguments []string) error {
 		}
 		request.Prescription = *resolved.Prescription
 	}
-	response, handleErr := kernel.Handle(context.Background(), request)
+	response, handleErr := handleWithHumanIdentity(context.Background(), kernel, request)
 	if handleErr == nil && operation == surfaces.OperationResolve {
 		request, response, _, handleErr = stabilizeRepositoryPrescription(context.Background(), request, response)
 	}
@@ -340,7 +337,7 @@ func runRPC() error {
 	if err != nil {
 		return err
 	}
-	response, handleErr := kernel.Handle(context.Background(), request)
+	response, handleErr := handleWithHumanIdentity(context.Background(), kernel, request)
 	if handleErr == nil && request.Operation == surfaces.OperationResolve {
 		request, response, _, handleErr = stabilizeRepositoryPrescription(context.Background(), request, response)
 	}
@@ -606,7 +603,7 @@ func followEvents(kernel boatstack.DeliveryController, request surfaces.Request)
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
-		response, err := kernel.Handle(ctx, request)
+		response, err := handleWithHumanIdentity(ctx, kernel, request)
 		if err != nil {
 			return err
 		}

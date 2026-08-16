@@ -355,7 +355,7 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 		resolveLease.Release()
 		return surfaces.Response{}, err
 	}
-	resolved, err := kernel.Handle(ctx, resolveRequest)
+	resolved, err := handleWithHumanIdentity(ctx, kernel, resolveRequest)
 	resolveLease.Release()
 	if settleErr := settleDelegationAtTarget(ctx, resolveRequest, resolved, kernel.TargetSatisfied(resolved.Snapshot, resolveRequest.Objective), false); settleErr != nil && err == nil {
 		err = settleErr
@@ -410,7 +410,7 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 			resolveLease.Release()
 			return surfaces.Response{}, err
 		}
-		resolved, err = kernel.Handle(ctx, resolveRequest)
+		resolved, err = handleWithHumanIdentity(ctx, kernel, resolveRequest)
 		resolveLease.Release()
 		if settleErr := settleDelegationAtTarget(ctx, resolveRequest, resolved, kernel.TargetSatisfied(resolved.Snapshot, resolveRequest.Objective), false); settleErr != nil && err == nil {
 			err = settleErr
@@ -418,9 +418,6 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 		if err != nil || resolved.Prescription == nil {
 			return resolved, err
 		}
-	}
-	if err := attachHumanIdentity(resolveRequest, &resolved); err != nil {
-		return surfaces.Response{}, err
 	}
 	applyRequest := resolveRequest
 	applyRequest.Operation = surfaces.OperationApply
@@ -455,7 +452,7 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 	if err := verifyTrustedRequestControlBundle(ctx, applyRequest); err != nil {
 		return surfaces.Response{}, err
 	}
-	applied, err := kernel.Handle(ctx, applyRequest)
+	applied, err := handleWithHumanIdentity(ctx, kernel, applyRequest)
 	targetSatisfied := kernel.TargetSatisfied(applied.Snapshot, applyRequest.Objective)
 	if settleErr := settleDelegationAtTarget(ctx, applyRequest, applied, targetSatisfied, delegationLock != nil); settleErr != nil && err == nil {
 		err = settleErr
@@ -507,7 +504,7 @@ func stabilizeRepositoryPrescription(ctx context.Context, request surfaces.Reque
 	if err != nil {
 		return surfaces.Request{}, surfaces.Response{}, true, err
 	}
-	stabilized, err := kernel.Handle(ctx, rebound)
+	stabilized, err := handleWithHumanIdentity(ctx, kernel, rebound)
 	if err != nil {
 		return rebound, stabilized, true, err
 	}

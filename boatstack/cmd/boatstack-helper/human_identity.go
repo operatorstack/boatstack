@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -13,6 +14,21 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
 )
+
+type humanIdentityResponseHandler interface {
+	Handle(context.Context, surfaces.Request) (surfaces.Response, error)
+}
+
+// handleWithHumanIdentity is the single user-facing Kernel response boundary.
+// A response cannot leave the command layer before every human authority
+// surface is bound to the verified repository identity descriptor.
+func handleWithHumanIdentity(ctx context.Context, handler humanIdentityResponseHandler, request surfaces.Request) (surfaces.Response, error) {
+	response, err := handler.Handle(ctx, request)
+	if identityErr := attachHumanIdentity(request, &response); identityErr != nil {
+		return response, identityErr
+	}
+	return response, err
+}
 
 func humanIdentityPresentationForRequest(request surfaces.Request) (humanidentity.Presentation, error) {
 	if request.ControlBundle == nil {

@@ -190,7 +190,7 @@ func preflightDelegatedProgramChange(ctx context.Context, request surfaces.Reque
 	if err != nil {
 		return nil, err
 	}
-	response, err := kernel.Handle(ctx, probe)
+	response, err := handleWithHumanIdentity(ctx, kernel, probe)
 	if err != nil {
 		return nil, err
 	}
@@ -198,9 +198,6 @@ func preflightDelegatedProgramChange(ctx context.Context, request surfaces.Reque
 		return nil, nil
 	}
 	response.Operation = request.Operation
-	if err := attachHumanIdentity(request, &response); err != nil {
-		return nil, err
-	}
 	return &response, nil
 }
 

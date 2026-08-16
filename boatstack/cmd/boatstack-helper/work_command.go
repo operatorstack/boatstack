@@ -71,7 +71,7 @@ func runFlowWork(arguments []string) error {
 	if err != nil {
 		return err
 	}
-	response, handleErr := kernel.Handle(context.Background(), request)
+	response, handleErr := handleWithHumanIdentity(context.Background(), kernel, request)
 	if renderErr := renderResponse(response, options.format); renderErr != nil {
 		return renderErr
 	}

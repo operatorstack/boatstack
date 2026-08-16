@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -14,6 +15,14 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentity"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
 )
+
+type staticHumanIdentityResponseHandler struct {
+	response surfaces.Response
+}
+
+func (handler staticHumanIdentityResponseHandler) Handle(context.Context, surfaces.Request) (surfaces.Response, error) {
+	return handler.response, nil
+}
 
 func TestHumanIdentityPresentationIsBoundToVerifiedConfiguration(t *testing.T) {
 	repository := t.TempDir()
@@ -46,11 +55,11 @@ func TestHumanIdentityPresentationIsBoundToVerifiedConfiguration(t *testing.T) {
 	if err := attachHumanIdentity(request, &response); err != nil || response.Question.HumanIdentity == nil || !reflect.DeepEqual(*response.Question.HumanIdentity, presentation) {
 		t.Fatalf("attached identity = %#v, err=%v", response.Question.HumanIdentity, err)
 	}
-	programChange := surfaces.Response{ProgramChange: &surfaces.ProgramChange{
+	programChange, err := handleWithHumanIdentity(context.Background(), staticHumanIdentityResponseHandler{response: surfaces.Response{ProgramChange: &surfaces.ProgramChange{
 		PriorProgramFingerprint: strings.Repeat("a", 64), CandidateProgramFingerprint: strings.Repeat("b", 64),
 		ProgramDeltaFingerprint: strings.Repeat("c", 64), RequiredTransition: "installation.reconcile-update", AcceptanceFlag: "--accept-program-change",
-	}}
-	if err := attachHumanIdentity(request, &programChange); err != nil || programChange.ProgramChange.HumanIdentity == nil || !reflect.DeepEqual(*programChange.ProgramChange.HumanIdentity, presentation) {
+	}}}, request)
+	if err != nil || programChange.ProgramChange.HumanIdentity == nil || !reflect.DeepEqual(*programChange.ProgramChange.HumanIdentity, presentation) {
 		t.Fatalf("program-change identity = %#v, err=%v", programChange.ProgramChange.HumanIdentity, err)
 	}
 
