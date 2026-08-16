@@ -32,6 +32,35 @@ func TestSurfaceSchemaIsFlagDayAndApplyRequiresPrescription(t *testing.T) {
 	}
 }
 
+func TestCommitRequiredHasANewSurfaceSchemaIdentity(t *testing.T) {
+	// control-law: a v12 consumer must reject the new suspension by schema
+	// identity instead of accepting it while discarding commit_required.
+	if SchemaVersion == 12 {
+		t.Fatal("commit_required reused the prior surface schema")
+	}
+	encoded, err := json.Marshal(Response{
+		SchemaVersion: SchemaVersion,
+		CommitRequired: &CommitRequired{
+			Code: "CONTROL_BUNDLE_COMMIT_REQUIRED", RunID: "run-1",
+			Revision:                 "0123456789012345678901234567890123456789",
+			ControlBundleFingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			Description:              "Commit the exact bundle.",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope struct {
+		SchemaVersion int `json:"schema_version"`
+	}
+	if err := json.Unmarshal(encoded, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.SchemaVersion != SchemaVersion || envelope.SchemaVersion == 12 {
+		t.Fatalf("commit suspension schema = %d, want current non-v12 identity", envelope.SchemaVersion)
+	}
+}
+
 func TestForegroundWorkSurfaceRejectsAmbiguousMutationPayloads(t *testing.T) {
 	// control-law: each foreground-work mutation crosses one typed operation boundary
 	base := Request{

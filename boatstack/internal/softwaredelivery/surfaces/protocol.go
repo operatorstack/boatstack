@@ -19,9 +19,10 @@ import (
 	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
-const SchemaVersion = 12
+const SchemaVersion = 13
 
 var flowContextIdentity = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+var gitObjectIdentity = regexp.MustCompile(`^[0-9a-f]{40,64}$`)
 
 type Operation string
 
@@ -81,6 +82,7 @@ type Request struct {
 	WorkBlockReason              string                                  `json:"work_block_reason,omitempty"`
 	ControlBundle                *boatstackruntime.ControlBundleContract `json:"control_bundle,omitempty"`
 	ControlBundleFingerprint     string                                  `json:"control_bundle_fingerprint,omitempty"`
+	ControlBundleRevision        string                                  `json:"control_bundle_revision,omitempty"`
 	InvocationEvidence           *invocation.Evidence                    `json:"invocation_evidence,omitempty"`
 	InputRequest                 *invocation.InputRequest                `json:"input_request,omitempty"`
 }
@@ -123,6 +125,9 @@ func (r Request) Validate(now time.Time) error {
 		}
 	} else if r.ControlBundleFingerprint != "" {
 		return fmt.Errorf("CONTROL_BUNDLE_INVALID: request fingerprint has no trusted bundle")
+	}
+	if r.ControlBundleRevision != "" && (r.ControlBundle == nil || !gitObjectIdentity.MatchString(r.ControlBundleRevision)) {
+		return fmt.Errorf("CONTROL_BUNDLE_INVALID: request revision has no trusted bundle or is not a Git object identity")
 	}
 	if len(r.DelegatedAuthorities) != 0 && (r.ProgramID == "" || len(r.DelegationBindingFingerprint) != 64 || len(r.DelegationRequestFingerprint) != 64) {
 		return fmt.Errorf("surface delegated Flow request requires exact binding and request fingerprints")
@@ -231,30 +236,31 @@ type ProgramChange struct {
 }
 
 type Response struct {
-	SchemaVersion int                         `json:"schema_version"`
-	Operation     Operation                   `json:"operation"`
-	ProgramID     string                      `json:"program_id,omitempty"`
-	EntryID       string                      `json:"entry_id,omitempty"`
-	RunID         string                      `json:"run_id,omitempty"`
-	Objective     model.Objective             `json:"objective,omitempty"`
-	Snapshot      *model.Snapshot             `json:"snapshot,omitempty"`
-	Decision      *supervisor.Decision        `json:"decision,omitempty"`
-	Trace         *general.DecisionTrace      `json:"trace,omitempty"`
-	Question      *Question                   `json:"question,omitempty"`
-	Prescription  *protocol.Prescription      `json:"prescription,omitempty"`
-	Admission     *protocol.Admission         `json:"admission,omitempty"`
-	Receipt       *protocol.TransitionReceipt `json:"receipt,omitempty"`
-	Replayed      bool                        `json:"replayed,omitempty"`
-	Catalog       []catalog.Transition        `json:"catalog,omitempty"`
-	Events        []map[string]any            `json:"events,omitempty"`
-	Doctor        *DoctorReport               `json:"doctor,omitempty"`
-	ProgramChange *ProgramChange              `json:"program_change,omitempty"`
-	Guard         *supervisor.GuardDecision   `json:"guard,omitempty"`
-	Error         string                      `json:"error,omitempty"`
-	Delegation    *DelegationRequired         `json:"delegation,omitempty"`
-	Work          *foregroundwork.Record      `json:"work,omitempty"`
-	InputRequest  *invocation.InputRequest    `json:"input_request,omitempty"`
-	Invocation    *invocation.Evidence        `json:"invocation_evidence,omitempty"`
+	SchemaVersion  int                         `json:"schema_version"`
+	Operation      Operation                   `json:"operation"`
+	ProgramID      string                      `json:"program_id,omitempty"`
+	EntryID        string                      `json:"entry_id,omitempty"`
+	RunID          string                      `json:"run_id,omitempty"`
+	Objective      model.Objective             `json:"objective,omitempty"`
+	Snapshot       *model.Snapshot             `json:"snapshot,omitempty"`
+	Decision       *supervisor.Decision        `json:"decision,omitempty"`
+	Trace          *general.DecisionTrace      `json:"trace,omitempty"`
+	Question       *Question                   `json:"question,omitempty"`
+	Prescription   *protocol.Prescription      `json:"prescription,omitempty"`
+	Admission      *protocol.Admission         `json:"admission,omitempty"`
+	Receipt        *protocol.TransitionReceipt `json:"receipt,omitempty"`
+	Replayed       bool                        `json:"replayed,omitempty"`
+	Catalog        []catalog.Transition        `json:"catalog,omitempty"`
+	Events         []map[string]any            `json:"events,omitempty"`
+	Doctor         *DoctorReport               `json:"doctor,omitempty"`
+	ProgramChange  *ProgramChange              `json:"program_change,omitempty"`
+	Guard          *supervisor.GuardDecision   `json:"guard,omitempty"`
+	Error          string                      `json:"error,omitempty"`
+	Delegation     *DelegationRequired         `json:"delegation,omitempty"`
+	CommitRequired *CommitRequired             `json:"commit_required,omitempty"`
+	Work           *foregroundwork.Record      `json:"work,omitempty"`
+	InputRequest   *invocation.InputRequest    `json:"input_request,omitempty"`
+	Invocation     *invocation.Evidence        `json:"invocation_evidence,omitempty"`
 }
 
 type DelegationRequired struct {
@@ -263,6 +269,17 @@ type DelegationRequired struct {
 	RequestFingerprint string                   `json:"request_fingerprint"`
 	Authorities        []catalog.AuthorityClass `json:"authorities"`
 	Description        string                   `json:"description"`
+}
+
+// CommitRequired is a typed suspension at a repository revision boundary.
+// Boatstack preserves the run and installed bytes but does not mint Git commit
+// authority; the caller must commit the exact control bundle and resume.
+type CommitRequired struct {
+	Code                     string `json:"code"`
+	RunID                    string `json:"run_id"`
+	Revision                 string `json:"revision"`
+	ControlBundleFingerprint string `json:"control_bundle_fingerprint"`
+	Description              string `json:"description"`
 }
 
 // Question is a typed suspension, not a background task. Supplying its

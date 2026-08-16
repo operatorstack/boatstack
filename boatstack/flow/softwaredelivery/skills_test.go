@@ -15,7 +15,10 @@ func TestGeneratedSkillsProjectOnlyDeclaredEntriesWithHostParity(t *testing.T) {
 	compiled := controlprogram.Compiled{Fingerprint: strings.Repeat("a", 64), Document: controlprogram.Document{
 		Program: controlprogram.Program{ID: "product-delivery"},
 		Targets: []controlprogram.Target{{ID: "published-pr", Predicate: controlprogram.Predicate{True: &truth}}},
-		Entries: []controlprogram.Entry{{ID: "run", Target: "published-pr", Description: "Publish the reviewed change"}},
+		Entries: []controlprogram.Entry{{
+			ID: "run", Target: "published-pr", Description: "Publish the reviewed change",
+			Delegation: &controlprogram.DelegationBinding{Reference: "software-delivery/delegation/autonomy", Version: "1"},
+		}},
 	}}
 	files, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
 	if err != nil {
@@ -36,9 +39,11 @@ func TestGeneratedSkillsProjectOnlyDeclaredEntriesWithHostParity(t *testing.T) {
 	}
 	value := string(codex)
 	for _, contract := range []string{
-		"--flow product-delivery --entry run", "--repository-authority", "same run ID", "Nothing continues in the\nbackground", "no merge or deploy",
+		"boatstack flow run --repo . --flow product-delivery --entry run --repository-authority", "same run ID", "Nothing continues in the\nbackground", "no merge or deploy",
 		"BOATSTACK_LAUNCHER_NOT_FOUND", ".boatstack/runtime.json", "Never run it", "creates no\nFlow run ID",
 		"WORKSPACE_COMMIT_REQUIRED", "Commit only the intended delivery changes", "Never fabricate an external-provider receipt",
+		"Before product delegation", "do not invoke an update operation", "committed project configuration",
+		"CONTROL_BUNDLE_COMMIT_REQUIRED", "stay in the source\nrepository", "do not switch worktrees or exclude generated bundle files",
 		"installation-authority\nsuspension before product work", "installation.reconcile-update", "--accept-program-change",
 		"boatstack reconcile-update --repo . --flow product-delivery --entry run --run-id <run-id>",
 		"do not request or reuse product delegation before reconciliation", "commit\nthose exact files separately before product work",

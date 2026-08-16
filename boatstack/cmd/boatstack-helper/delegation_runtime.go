@@ -161,6 +161,7 @@ func preflightDelegatedProgramChange(ctx context.Context, request surfaces.Reque
 		return nil, nil
 	}
 	probe := request
+	requestedOperation := request.Operation
 	probe.Operation = surfaces.OperationExplain
 	probe.Prescription = protocol.Prescription{}
 	probe.IdempotencyKey = ""
@@ -171,8 +172,8 @@ func preflightDelegatedProgramChange(ctx context.Context, request surfaces.Reque
 		return nil, err
 	}
 	defer lease.Release()
-	if err := verifyTrustedRequestControlBundle(probe); err != nil {
-		return nil, err
+	if err := verifyTrustedRequestControlBundle(ctx, probe); err != nil {
+		return nil, bindFlowCommitRequiredOperation(err, requestedOperation)
 	}
 	kernel, err := standardKernel(ctx, probe)
 	if err != nil {

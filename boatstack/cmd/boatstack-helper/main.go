@@ -92,6 +92,7 @@ type commandOptions struct {
 	workResultFingerprint               string
 	controlBundle                       *boatstackruntime.ControlBundleContract
 	controlBundleFingerprint            string
+	controlBundleRevision               string
 	invocationEvidence                  *invocation.Evidence
 	inputRequest                        *invocation.InputRequest
 }
@@ -142,8 +143,12 @@ func run(arguments []string) error {
 	if err != nil {
 		return err
 	}
+	requestedFormat := options.format
 	options, err = bindFlowEntry(context.Background(), options)
 	if err != nil {
+		if suspended, ok := flowCommitRequiredResponse(err, operation); ok {
+			return renderResponse(suspended, requestedFormat)
+		}
 		return err
 	}
 	request, err := buildRequest(operation, options)
@@ -157,6 +162,9 @@ func run(arguments []string) error {
 	}
 	programChangeResponse, err := preflightDelegatedProgramChange(context.Background(), request)
 	if err != nil {
+		if suspended, ok := flowCommitRequiredResponse(err, operation); ok {
+			return renderResponse(suspended, options.format)
+		}
 		return err
 	}
 	if programChangeResponse != nil {
@@ -180,10 +188,16 @@ func run(arguments []string) error {
 	if (operation == surfaces.OperationApply || operation == surfaces.OperationRecover) && request.ProgramID != "" {
 		request, options, err = refreshFlowInvocation(context.Background(), operation, request, options)
 		if err != nil {
+			if suspended, ok := flowCommitRequiredResponse(err, operation); ok {
+				return renderResponse(suspended, options.format)
+			}
 			return err
 		}
 	}
-	if err := verifyTrustedRequestControlBundle(request); err != nil {
+	if err := verifyTrustedRequestControlBundle(context.Background(), request); err != nil {
+		if suspended, ok := flowCommitRequiredResponse(err, operation); ok {
+			return renderResponse(suspended, options.format)
+		}
 		return err
 	}
 	kernel, err := standardKernel(context.Background(), request)
@@ -215,6 +229,9 @@ func run(arguments []string) error {
 	response, handleErr := kernel.Handle(context.Background(), request)
 	if handleErr == nil && operation == surfaces.OperationResolve {
 		request, response, _, handleErr = stabilizeRepositoryPrescription(context.Background(), request, response)
+	}
+	if suspended, ok := flowCommitRequiredResponse(handleErr, operation); ok {
+		response, handleErr = suspended, nil
 	}
 	if operation != surfaces.OperationExplain {
 		if settleErr := settleDelegationAtTarget(context.Background(), request, response, kernel.TargetSatisfied(response.Snapshot, request.Objective), delegationLock != nil); settleErr != nil && handleErr == nil {
@@ -250,6 +267,11 @@ func runRPC() error {
 	}
 	request, err := bindRPCFlowEntry(context.Background(), request)
 	if err != nil {
+		if suspended, ok := flowCommitRequiredResponse(err, request.Operation); ok {
+			encoder := json.NewEncoder(os.Stdout)
+			encoder.SetIndent("", "  ")
+			return encoder.Encode(suspended)
+		}
 		return err
 	}
 	if request.ProgramID == "" {
@@ -259,6 +281,11 @@ func runRPC() error {
 	}
 	programChangeResponse, err := preflightDelegatedProgramChange(context.Background(), request)
 	if err != nil {
+		if suspended, ok := flowCommitRequiredResponse(err, request.Operation); ok {
+			encoder := json.NewEncoder(os.Stdout)
+			encoder.SetIndent("", "  ")
+			return encoder.Encode(suspended)
+		}
 		return err
 	}
 	if programChangeResponse != nil {
@@ -286,10 +313,20 @@ func runRPC() error {
 	if (request.Operation == surfaces.OperationApply || request.Operation == surfaces.OperationRecover) && request.ProgramID != "" {
 		request, err = refreshRPCFlowInvocation(context.Background(), request)
 		if err != nil {
+			if suspended, ok := flowCommitRequiredResponse(err, request.Operation); ok {
+				encoder := json.NewEncoder(os.Stdout)
+				encoder.SetIndent("", "  ")
+				return encoder.Encode(suspended)
+			}
 			return err
 		}
 	}
-	if err := verifyTrustedRequestControlBundle(request); err != nil {
+	if err := verifyTrustedRequestControlBundle(context.Background(), request); err != nil {
+		if suspended, ok := flowCommitRequiredResponse(err, request.Operation); ok {
+			encoder := json.NewEncoder(os.Stdout)
+			encoder.SetIndent("", "  ")
+			return encoder.Encode(suspended)
+		}
 		return err
 	}
 	kernel, err := standardKernel(context.Background(), request)
@@ -299,6 +336,9 @@ func runRPC() error {
 	response, handleErr := kernel.Handle(context.Background(), request)
 	if handleErr == nil && request.Operation == surfaces.OperationResolve {
 		request, response, _, handleErr = stabilizeRepositoryPrescription(context.Background(), request, response)
+	}
+	if suspended, ok := flowCommitRequiredResponse(handleErr, request.Operation); ok {
+		response, handleErr = suspended, nil
 	}
 	if request.Operation != surfaces.OperationExplain {
 		if settleErr := settleDelegationAtTarget(context.Background(), request, response, kernel.TargetSatisfied(response.Snapshot, request.Objective), delegationLock != nil); settleErr != nil && handleErr == nil {
@@ -749,6 +789,7 @@ func buildRequest(operation surfaces.Operation, options commandOptions) (surface
 		WorkBlockReason:              options.workBlockReason,
 		ControlBundle:                options.controlBundle,
 		ControlBundleFingerprint:     options.controlBundleFingerprint,
+		ControlBundleRevision:        options.controlBundleRevision,
 		InvocationEvidence:           options.invocationEvidence,
 		InputRequest:                 options.inputRequest,
 	}, nil
@@ -922,6 +963,10 @@ func renderResponse(response surfaces.Response, format string) error {
 			for _, parameter := range response.InputRequest.Parameters {
 				fmt.Printf("input=%s type=%s %s\n", parameter.ID, parameter.Type.Kind, parameter.Description)
 			}
+			return nil
+		}
+		if response.CommitRequired != nil {
+			fmt.Printf("SUSPENDED: %s run=%s revision=%s bundle=%s\n%s\n", response.CommitRequired.Code, response.CommitRequired.RunID, response.CommitRequired.Revision, response.CommitRequired.ControlBundleFingerprint, response.CommitRequired.Description)
 			return nil
 		}
 		if response.Decision != nil {

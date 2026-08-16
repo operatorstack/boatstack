@@ -63,6 +63,9 @@ func renderSkill(compiled controlprogram.Compiled, entry controlprogram.Entry, s
 	programReconciliation := ""
 	publication := ""
 	startCommand := fmt.Sprintf("boatstack next --repo . --flow %s --entry %s --repository-authority --host %s --format json", compiled.Document.Program.ID, entry.ID, host)
+	if entry.Delegation != nil {
+		startCommand = fmt.Sprintf("boatstack flow run --repo . --flow %s --entry %s --repository-authority --host %s --format json", compiled.Document.Program.ID, entry.ID, host)
+	}
 	if declarativeProgram(compiled.Document.Operators) {
 		startCommand = fmt.Sprintf("boatstack flow run --repo . --flow %s --entry %s --host %s --format json", compiled.Document.Program.ID, entry.ID, host)
 		if len(entry.Inputs) != 0 {
@@ -210,10 +213,23 @@ run ID, reconstruct the transition graph, or act on a rejected candidate.
 	}
 	if entry.Delegation != nil {
 		delegation = fmt.Sprintf(`
-The first `+"`next`"+` returns a typed `+"`DELEGATION_REQUIRED`"+` response before
-managed state changes. Display its exact run ID, request fingerprint, requested
-authorities, and description. Obtain one explicit human approval for that exact
-request, then run:
+Before product delegation, Boatstack may select `+"`installation.initialize`"+`
+for an installed repository whose controller state is fresh. Display that exact
+installation-authority question and obtain explicit human approval. Resume the
+same Flow command with `+"`--human <actor>`"+`; do not invoke an update operation
+or supply installation values with `+"`--param`"+`. Boatstack derives those values
+from the committed project configuration and the executing runtime.
+
+If Boatstack returns `+"`CONTROL_BUNDLE_COMMIT_REQUIRED`"+`, stay in the source
+repository and current run. Commit the exact installed Boatstack control bundle,
+including the generated runtime and host projection files named by the response,
+then resume the same Flow command. This is an installation boundary, not managed
+product-workspace work; do not switch worktrees or exclude generated bundle files.
+
+After internal preconditions are committed, Boatstack returns a typed
+`+"`DELEGATION_REQUIRED`"+` response bound to the resulting control bundle.
+Display its exact run ID, request fingerprint, requested authorities, and
+description. Obtain one explicit human approval for that exact request, then run:
 
 `+"`boatstack flow authorize --repo . --flow %s --entry %s --run-id <run-id> --request-fingerprint <fingerprint> --human <actor> --host %s`"+`
 
