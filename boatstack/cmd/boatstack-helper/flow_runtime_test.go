@@ -366,6 +366,140 @@ func (r publicationReconcileRunner) CombinedOutput(context.Context, string, stri
 	return r.output, nil
 }
 
+func recoveryMaterializationDocument(programID string) controlprogram.Document {
+	document := productDeliveryDocument(programID)
+	truth := true
+	document.Facets = append(document.Facets, controlprogram.Facet{ID: softwareflow.RecoveryTransactionFacet, Kind: "string"})
+	document.Operators = []controlprogram.Operator{{ID: "publication.reconcile", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/publication.reconcile", Version: "1"}}}
+	document.Transitions = []controlprogram.Transition{{
+		ID: "publication.reconcile", Operator: "publication.reconcile", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 1,
+		Parameters: []controlprogram.TransitionParameterBinding{{Parameter: "transaction_id", Producer: controlprogram.ParameterProducer{
+			Kind: controlprogram.ParameterSourceState, Facet: softwareflow.RecoveryTransactionFacet, AvailableWhen: ptrPredicate(flowKnown(softwareflow.RecoveryTransactionFacet)),
+		}}},
+	}}
+	return document
+}
+
+func publicationExecuteAdmission(t *testing.T, invocationContext model.InvocationContext, stateRevision uint64, programFingerprint, sourceRevision string) (protocol.Admission, catalog.Transition) {
+	t.Helper()
+	now := time.Now().UTC()
+	evidence := model.Evidence{Source: "git:fixture", Revision: sourceRevision, Fingerprint: strings.Repeat("f", 64), ObservedAt: now}
+	objective := model.Objective{ID: "objective-product-delivery-run-plan", TargetID: model.ObjectiveOpenPR, DeliveryID: "plan"}
+	observation := model.Observation{
+		SchemaVersion: model.SnapshotSchemaVersion, StateRevision: stateRevision, RecordedProgramFingerprint: programFingerprint, Invocation: invocationContext,
+		Phase: model.Known(model.PhaseActive, evidence), Engagement: model.Known(model.EngagementActive, evidence), Delivery: model.Known(model.DeliveryActive, evidence),
+		Workspace: model.Known(model.WorkspaceActive, evidence), Plan: model.Known(model.PlanLocked, evidence),
+		Configuration: model.Known(model.ConfigurationVerified, evidence), Runtime: model.Known(model.RuntimeVerified, evidence),
+		ConfigurationPolicy: model.Known(model.ConfigurationPolicy{PlanApproval: "human", VisualEvidence: "optional", ExternalEffectAuthority: "human-or-autonomy-plus-provider", Hosts: []string{"cli", "codex"}}, evidence),
+		Publication:         model.Known(model.PublicationCandidate, evidence), Verification: model.Known(model.VerificationCurrent, evidence),
+		Recovery: model.Known(model.RecoveryNone, evidence), Transaction: model.Known(model.TransactionNone, evidence),
+		RecoveryInfo: model.Absent[model.RecoveryContext]("none", evidence), TransactionInfo: model.Absent[model.TransactionContext]("none", evidence),
+		Terminal: model.Known(model.TerminalNonterminal, evidence), Objective: model.Known(objective, evidence), ObservedAt: now,
+	}
+	snapshot, err := model.CanonicalizeForProgram(observation, programFingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transition, ok := testprogram.StandardRegistry().Lookup("publication.execute")
+	if !ok {
+		t.Fatal("publication execute transition is unavailable")
+	}
+	previewFingerprint := strings.Repeat("a", 64)
+	authority := protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{
+		{ID: "human-publication", Class: catalog.AuthorityHuman, Subject: "operator", Fingerprint: "human-publication", IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Minute)},
+		{ID: "provider-publication", Class: catalog.AuthorityProvider, Subject: "github:fixture", Fingerprint: previewFingerprint, IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Minute)},
+	}}
+	capabilities, err := protocol.ProjectCapabilities(snapshot, transition, authority, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prescription, err := protocol.NewPrescription(snapshot, transition, capabilities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admission, err := protocol.NewAdmission(snapshot, objective, transition, prescription, authority, protocol.Parameters{{Name: "preview_fingerprint", Value: previewFingerprint}}, now, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return admission, transition
+}
+
+func TestUntargetedReconciliationMaterializesPendingJournalAdmissionID(t *testing.T) {
+	// control-law: recovery admissibility and its transaction parameter must
+	// come from the same pending-journal observation when durable state was not
+	// advanced before an external outcome became unknown.
+	repository := flowRepository(t)
+	runFlowGit(t, repository, "init", "-q", "-b", "main")
+	runFlowGit(t, repository, "config", "user.name", "Boatstack Tests")
+	runFlowGit(t, repository, "config", "user.email", "boatstack@example.invalid")
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "fixture")
+
+	document := recoveryMaterializationDocument("product-delivery")
+	resolver, err := softwareflow.NewResolver(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiled, err := controlprogram.Compile(document, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plantResolver, err := plant.NewResolver("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	invoking, err := plantResolver.ResolveInvocation(context.Background(), repository, "codex", "pending-journal-reconcile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, invoking, err := plantResolver.ResolveLayout(context.Background(), invoking)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := durable.Default(invoking, time.Now().UTC())
+	state.Revision = 1
+	state.ProgramFingerprint = compiled.Fingerprint
+	raw, err := durable.EncodeState(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(layout.StatePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(layout.StatePath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	admission, execute := publicationExecuteAdmission(t, invoking, state.Revision, compiled.Fingerprint, runFlowGitOutput(t, repository, "rev-parse", "HEAD"))
+	journal, err := effects.NewJournal(plantResolver, effects.Clock{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.Begin(context.Background(), admission, execute); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.Mark(context.Background(), admission.ID, "executing"); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.RequireRecovery(context.Background(), admission.ID, "provider outcome unknown"); err != nil {
+		t.Fatal(err)
+	}
+	if state.TransactionID != "" || state.Transaction != model.TransactionNone {
+		t.Fatalf("fixture advanced durable transaction state: %#v", state)
+	}
+
+	materialized, err := materializeFlowInvocation(context.Background(), compiled, compiled.Document.Entries[0], commandOptions{
+		repository: repository, host: "codex", runID: "run-pending-journal", deliveryID: "plan",
+		targetID: "published-pr", transitionID: "publication.reconcile",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "transaction_id=" + admission.ID
+	if len(materialized.parameters) != 1 || materialized.parameters[0] != want || materialized.invocationEvidence == nil {
+		t.Fatalf("observed recovery materialization = parameters %#v evidence %#v, want %q", materialized.parameters, materialized.invocationEvidence, want)
+	}
+}
+
 func TestPublicationReconciliationWithoutExecuteReceiptMaterializesObservation(t *testing.T) {
 	// control-law: an unknown publication effect may reconcile a durable
 	// publication identity without manufacturing an execute receipt; the next

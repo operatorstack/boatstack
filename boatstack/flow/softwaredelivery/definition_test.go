@@ -166,7 +166,7 @@ func TestPublicationReconcileBindingDoesNotRequireUncommittedPublicationOutput(t
 		t.Fatal(err)
 	}
 	if len(resolved.Parameters) != 1 || resolved.Parameters[0].ID != "transaction_id" ||
-		len(resolved.StateInputs) != 1 || resolved.StateInputs[0].Parameter != "transaction_id" {
+		len(resolved.StateInputs) != 1 || resolved.StateInputs[0].Parameter != "transaction_id" || resolved.StateInputs[0].Facet != softwareflow.RecoveryTransactionFacet {
 		t.Fatalf("publication reconciliation inputs = parameters %#v state %#v", resolved.Parameters, resolved.StateInputs)
 	}
 }

@@ -58,6 +58,7 @@ export const softwareDeliveryFacets: FacetDefinition[] = [
   "source_revision",
   "preview_fingerprint",
   "publication_id",
+  "recovery_transaction_id",
   "transaction_id",
   "transaction_transition",
   "workspace_base_ref",
@@ -184,6 +185,14 @@ function durableValue(facet: string): ParameterProducer {
   return fromState({ facet, availableWhen: fact(facet) });
 }
 
+/** Resolves the exact transaction identity from current recovery observation. */
+export function observedRecoveryTransaction(): ParameterProducer {
+  return fromState({
+    facet: "recovery_transaction_id",
+    availableWhen: fact("recovery_transaction_id"),
+  });
+}
+
 function canonicalGateParameters(gate: "build" | "test" | "review" | "change" | "journey"): Record<string, ParameterProducer> {
   return {
     source_revision: currentSourceRevision(),
@@ -260,10 +269,10 @@ export function standardSoftwareDeliveryParameters(step: TrustedStep): Record<st
         body_sha256: publicationBodyFingerprint(),
       };
     case "workspace.reconcile":
-      return { transaction_id: durableValue("transaction_id") };
+      return { transaction_id: observedRecoveryTransaction() };
     case "publication.reconcile":
       return {
-        transaction_id: durableValue("transaction_id"),
+        transaction_id: observedRecoveryTransaction(),
       };
     default:
       return {};

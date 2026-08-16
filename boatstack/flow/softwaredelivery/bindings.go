@@ -288,9 +288,9 @@ func projectOperatorStateInputs(transition delivery.Transition) []controlprogram
 	case "publication.observe", "publication.correct":
 		return []controlprogram.OperatorStateInput{known("publication_id", "publication_id")}
 	case "workspace.reconcile":
-		return []controlprogram.OperatorStateInput{known("transaction_id", "transaction_id")}
+		return []controlprogram.OperatorStateInput{known("transaction_id", RecoveryTransactionFacet)}
 	case "publication.reconcile":
-		return []controlprogram.OperatorStateInput{known("transaction_id", "transaction_id")}
+		return []controlprogram.OperatorStateInput{known("transaction_id", RecoveryTransactionFacet)}
 	default:
 		return nil
 	}

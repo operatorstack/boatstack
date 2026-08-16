@@ -13,6 +13,7 @@ import (
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/durable"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/plant"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/invocation"
@@ -20,6 +21,8 @@ import (
 )
 
 var managedBranchSegment = regexp.MustCompile(`[^a-z0-9._-]+`)
+
+const RecoveryTransactionFacet = "recovery_transaction_id"
 
 // RuntimeParameterResolver executes only trusted software-delivery resolver
 // bindings copied into canonical IR. Repository Flow source cannot provide
@@ -45,6 +48,33 @@ func StateParameterValues(state durable.State) map[string]invocation.Value {
 	for facet, value := range values {
 		if value != "" {
 			result[facet] = invocation.Value{Type: controlprogram.ValueTypeDefinition{Kind: "string"}, Canonical: value, Provenance: "durable-state:" + facet}
+		}
+	}
+	return result
+}
+
+// UsesObservationParameterValues reports whether a transition declares a
+// trusted state producer whose value is owned by the current plant observation
+// rather than durable state.
+func UsesObservationParameterValues(bindings []controlprogram.TransitionParameterBinding) bool {
+	for _, binding := range bindings {
+		if binding.Producer.Kind == controlprogram.ParameterSourceState && binding.Producer.Facet == RecoveryTransactionFacet {
+			return true
+		}
+	}
+	return false
+}
+
+// ObservationParameterValues projects current recovery context into the
+// domain-neutral invocation value interface. The pending-journal observation
+// remains authoritative when an interrupted effect did not update durable
+// transaction state.
+func ObservationParameterValues(observation model.Observation) map[string]invocation.Value {
+	result := map[string]invocation.Value{}
+	if observation.RecoveryInfo.Status == model.FactKnown && observation.RecoveryInfo.Value.TransactionID != "" {
+		result[RecoveryTransactionFacet] = invocation.Value{
+			Type: controlprogram.ValueTypeDefinition{Kind: "string"}, Canonical: observation.RecoveryInfo.Value.TransactionID,
+			Provenance: "observation:recovery-info",
 		}
 	}
 	return result

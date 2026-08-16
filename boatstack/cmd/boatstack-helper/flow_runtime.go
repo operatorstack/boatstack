@@ -23,6 +23,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/foregroundwork"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/plant"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/ports"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
 	"github.com/operatorstack/boatstack/boatstack/invocation"
@@ -359,6 +360,19 @@ func materializeFlowInvocation(ctx context.Context, compiled controlprogram.Comp
 		entryInputs[id] = invocation.Value{Type: controlprogram.ValueTypeDefinition{Kind: "string"}, Canonical: value.Value, Provenance: "entry-input:" + value.Fingerprint}
 	}
 	stateValues := softwareflow.StateParameterValues(state)
+	if softwareflow.UsesObservationParameterValues(transition.Parameters) {
+		observer, observerErr := plant.NewObserver(plantResolver, effects.Clock{})
+		if observerErr != nil {
+			return commandOptions{}, observerErr
+		}
+		observation, observeErr := observer.Observe(ctx, ports.ObservationRequest{Invocation: invocationContext})
+		if observeErr != nil {
+			return commandOptions{}, fmt.Errorf("FLOW_INVOCATION_OBSERVATION_FAILED: %w", observeErr)
+		}
+		for facet, value := range softwareflow.ObservationParameterValues(observation) {
+			stateValues[facet] = value
+		}
+	}
 	receiptValues := map[string]invocation.Value{}
 	for _, binding := range transition.Parameters {
 		if binding.Producer.Kind != controlprogram.ParameterSourceReceipt && binding.Producer.Kind != controlprogram.ParameterSourceStateOrReceipt {

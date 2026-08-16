@@ -6,8 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/invocation"
 )
 
@@ -54,5 +56,21 @@ func TestAdmittedPlanningPackageFingerprintMaterializesManifestIdentity(t *testi
 	parameters := materialization.Ready.Parameters
 	if len(parameters) != 1 || parameters[0].Value != manifestFingerprint || parameters[0].Value == workResultFingerprint || parameters[0].ProducerKind != controlprogram.ParameterSourceTrustedResolver {
 		t.Fatalf("package fingerprint parameters = %#v", parameters)
+	}
+}
+
+func TestObservationParameterValuesUseExactRecoveryTransaction(t *testing.T) {
+	evidence := model.Evidence{Source: "journal", Fingerprint: strings.Repeat("a", 64), ObservedAt: time.Unix(10, 0).UTC()}
+	observation := model.Observation{RecoveryInfo: model.Known(model.RecoveryContext{
+		TransactionID: "adm-interrupted", Cause: "provider outcome unknown", SourcePhase: model.PhaseExecutingExternal,
+		Permitted: []string{"publication.reconcile"}, BudgetRemaining: 3, Resumption: model.PhaseActive,
+	}, evidence)}
+	values := ObservationParameterValues(observation)
+	value, ok := values[RecoveryTransactionFacet]
+	if !ok || value.Canonical != "adm-interrupted" || value.Provenance != "observation:recovery-info" {
+		t.Fatalf("observed recovery parameter = %#v", values)
+	}
+	if values["transaction_id"].Canonical != "" {
+		t.Fatalf("observation invented durable transaction state: %#v", values)
 	}
 }
