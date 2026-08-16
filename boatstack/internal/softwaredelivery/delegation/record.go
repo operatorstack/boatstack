@@ -21,6 +21,7 @@ const (
 )
 
 var identity = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+var fingerprint = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 type Request struct {
 	RunID                    string   `json:"run_id"`
@@ -83,6 +84,15 @@ func Path(flowRoot, runID string) (string, error) {
 		return "", fmt.Errorf("DELEGATION_RUN_INVALID: invalid run identity")
 	}
 	return filepath.Join(flowRoot, "delegations", runID+".json"), nil
+}
+
+// SupersededPath preserves an earlier exact authorization record before a
+// verified installation boundary accepts a fresh delegation request.
+func SupersededPath(flowRoot, runID, requestFingerprint string) (string, error) {
+	if !identity.MatchString(runID) || !fingerprint.MatchString(requestFingerprint) {
+		return "", fmt.Errorf("DELEGATION_RUN_INVALID: invalid superseded authorization identity")
+	}
+	return filepath.Join(flowRoot, "delegations", runID+".superseded-"+requestFingerprint[:12]+".json"), nil
 }
 
 func LockPath(lockRoot, runID string) (string, error) {

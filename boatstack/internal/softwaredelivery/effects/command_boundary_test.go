@@ -225,6 +225,34 @@ func TestPublicationObservationTerminatesOptionsBeforeIdentifier(t *testing.T) {
 	}
 }
 
+func TestPublicationReconciliationDiscoversUnknownPublicationByCurrentBranch(t *testing.T) {
+	// control-law: uncertain publication recovery remains materializable without
+	// an output that the interrupted publication effect never committed.
+	runner := &boundaryRunner{output: []byte(`{"state":"OPEN","url":"https://example.invalid/pull/9","number":9,"mergedAt":null,"baseRefName":"main","headRefName":"feature","headRefOid":"revision","isCrossRepository":false}`)}
+	boundary, err := NewNativeBoundaryWithRunner(runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transition, _ := testprogram.StandardRegistry().Lookup("publication.reconcile")
+	admission := protocol.Admission{
+		Invocation: model.InvocationContext{Ref: "refs/heads/feature"}, SourceRevision: "revision",
+		Parameters: protocol.Parameters{{Name: "transaction_id", Value: "transaction-9"}},
+	}
+	admission.RequiredCapabilities = catalog.RequiredCapabilities(transition)
+	admission.EffectiveCapabilities = admission.RequiredCapabilities
+	state := durable.State{}
+	if err := boundary.PrepareObservation(context.Background(), admission, transition, writeBoundaryConfig(t, "go test ./..."), &state); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"pr", "view", "--json", "state,url,number,mergedAt,baseRefName,headRefName,headRefOid,isCrossRepository"}
+	if runner.name != "gh" || strings.Join(runner.arguments, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("reconciliation command = %s %q, want gh %q", runner.name, runner.arguments, want)
+	}
+	if state.Publication != model.PublicationOpen || state.PublicationID != "9" {
+		t.Fatalf("reconciled publication = %s %q", state.Publication, state.PublicationID)
+	}
+}
+
 func TestPublicationObservationRejectsUnrelatedProviderIdentity(t *testing.T) {
 	runner := &boundaryRunner{output: []byte(`{"state":"OPEN","url":"https://example.invalid/pull/8","number":8,"baseRefName":"main","headRefName":"other","headRefOid":"revision","isCrossRepository":false}`)}
 	boundary, _ := NewNativeBoundaryWithRunner(runner)
@@ -277,7 +305,7 @@ func TestPublicationPreviewRejectsFieldTamperingUnderAnOldFingerprint(t *testing
 }
 
 func TestPublicationExecutionUsesBoundBodyAndNoninteractiveTitle(t *testing.T) {
-	runner := &boundaryRunner{}
+	runner := &boundaryRunner{outputs: [][]byte{[]byte("push complete"), []byte("https://github.com/operatorstack/boatstack/pull/222\n")}}
 	boundary, err := NewNativeBoundaryWithRunner(runner)
 	if err != nil {
 		t.Fatal(err)
@@ -318,8 +346,12 @@ func TestPublicationExecutionUsesBoundBodyAndNoninteractiveTitle(t *testing.T) {
 	}
 	admission.RequiredCapabilities = catalog.RequiredCapabilities(transition)
 	admission.EffectiveCapabilities = admission.RequiredCapabilities
-	if _, err := boundary.Execute(context.Background(), admission, transition, layout, durable.State{}); err != nil {
+	result, err := boundary.Execute(context.Background(), admission, transition, layout, durable.State{})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if publicationID, ok := result.Outputs.Get("publication_id"); !ok || publicationID != "222" {
+		t.Fatalf("publication effect outputs = %#v", result.Outputs)
 	}
 	want := []string{"pr", "create", "--base", "main", "--head", "feature", "--fill-first", "--body-file", bodyPath}
 	if runner.name != "gh" || strings.Join(runner.arguments, "\x00") != strings.Join(want, "\x00") {

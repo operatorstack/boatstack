@@ -86,7 +86,7 @@ func TestRepositoryOwnedSoftwareDeliveryFlowsShareOneRuntime(t *testing.T) {
 		{"product-delivery-a.flow.ts", 1, 1},
 		{"product-delivery-b.flow.ts", 2, 2},
 		{"product-delivery-c.flow.ts", 1, 6},
-		{"product-delivery-planning-package.flow.ts", 1, 21},
+		{"product-delivery-planning-package.flow.ts", 2, 22},
 	}
 	for _, test := range cases {
 		t.Run(test.fixture, func(t *testing.T) {
@@ -111,6 +111,49 @@ func TestRepositoryOwnedSoftwareDeliveryFlowsShareOneRuntime(t *testing.T) {
 				t.Fatalf("entries=%d transitions=%d", len(compiled.Document.Entries), len(manifest.Transitions))
 			}
 			if test.fixture == "product-delivery-planning-package.flow.ts" {
+				referenceRaw, readErr := os.ReadFile(filepath.Join(moduleRoot, "testdata", "control-programs", "product-delivery-planning-package.raw.json"))
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				reference, referenceErr := controlprogram.LoadWithAssets(bytes.NewReader(referenceRaw), resolver, controlprogram.RepositoryAssetResolver{Repository: filepath.Dir(moduleRoot)})
+				if referenceErr != nil {
+					t.Fatal(referenceErr)
+				}
+				if compiled.Fingerprint != reference.Fingerprint {
+					t.Fatalf("checked product-delivery IR is stale: frontend=%s checked=%s", compiled.Fingerprint, reference.Fingerprint)
+				}
+				var packageProducer, publicationProducer controlprogram.ParameterProducer
+				publicationStateInputDeclared, publicationReceiptInputDeclared := false, false
+				for _, operator := range compiled.Document.Operators {
+					if operator.ID == "publication.observe" && len(operator.StateInputs) == 1 && operator.StateInputs[0].Parameter == "publication_id" && operator.StateInputs[0].Facet == "publication_id" {
+						publicationStateInputDeclared = true
+					}
+					if operator.ID == "publication.observe" && len(operator.ReceiptInputs) == 1 && operator.ReceiptInputs[0].Parameter == "publication_id" && operator.ReceiptInputs[0].Transition == "publication.execute" && operator.ReceiptInputs[0].Field == "publication_id" && !operator.ReceiptInputs[0].Guaranteed {
+						publicationReceiptInputDeclared = true
+					}
+				}
+				for _, transition := range compiled.Document.Transitions {
+					for _, parameter := range transition.Parameters {
+						if parameter.Producer.Kind == controlprogram.ParameterSourceHostInput && (transition.ID != "delivery.slice.advance" || parameter.Parameter != "slice_id") {
+							t.Fatalf("deterministic parameter requires human text input: %s/%s", transition.ID, parameter.Parameter)
+						}
+						if transition.ID == "planning.package.approve" && parameter.Parameter == "package_fingerprint" {
+							packageProducer = parameter.Producer
+						}
+						if transition.ID == "publication.observe" && parameter.Parameter == "publication_id" {
+							publicationProducer = parameter.Producer
+						}
+					}
+				}
+				if packageProducer.Kind != controlprogram.ParameterSourceTrustedResolver || packageProducer.Binding == nil || packageProducer.Binding.Reference != "software-delivery/admitted-planning-package-fingerprint" {
+					t.Fatalf("planning package producer = %#v", packageProducer)
+				}
+				if publicationProducer.Kind != controlprogram.ParameterSourceStateOrReceipt || publicationProducer.Facet != "publication_id" || publicationProducer.Transition != "publication.execute" || publicationProducer.Field != "publication_id" {
+					t.Fatalf("publication identity producer = %#v", publicationProducer)
+				}
+				if !publicationStateInputDeclared || !publicationReceiptInputDeclared {
+					t.Fatal("publication identity producer lacks exact trusted alternative provenance")
+				}
 				if _, compileErr := delivery.Compile(context.Background(), delivery.CompileRequest{KernelVersion: boatstack.Version, Core: core.System(), Runtime: definition, Settings: map[string]string{"fixture": test.fixture}}); compileErr != nil {
 					t.Fatalf("compile repository Flow runtime: %v", compileErr)
 				}
@@ -145,6 +188,44 @@ func TestDomainNeutralFrontendDeclaresForegroundWorkWithoutSoftwareDelivery(t *t
 	}
 	if len(compiled.Document.Work) != 1 || compiled.Document.Transitions[0].Work != "diagnose" || compiled.Document.Work[0].Instructions.Content == "" || compiled.Document.Work[0].Outputs[0].Schema.Content == "" {
 		t.Fatalf("compiled foreground work = %#v", compiled.Document.Work)
+	}
+}
+
+func TestDomainNeutralInvocationFixtureCompilesAndMissingProducerFails(t *testing.T) {
+	// control-law: generic invocation completeness does not depend on the
+	// software-delivery authoring package.
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("cannot locate invocation fixtures")
+	}
+	moduleRoot := filepath.Clean(filepath.Join(filepath.Dir(file), ".."))
+	frontend := filepath.Join(filepath.Dir(moduleRoot), "node_modules", ".bin", "boatstack-flow-frontend")
+	if runtime.GOOS == "windows" {
+		frontend += ".cmd"
+	}
+	if _, err := os.Stat(frontend); err != nil {
+		t.Skip("Flow frontend dependencies are not installed")
+	}
+	compile := func(name string) ([]byte, error) {
+		return exec.Command(frontend, filepath.Join(moduleRoot, "testdata", "control-programs", name)).CombinedOutput()
+	}
+	raw, err := compile("incident-response-invocation.flow.ts")
+	if err != nil {
+		t.Fatalf("compile domain-neutral fixture: %v\n%s", err, raw)
+	}
+	compiled, err := controlprogram.Load(bytes.NewReader(raw), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"}); err != nil {
+		t.Fatalf("generate domain-neutral entry drivers: %v", err)
+	}
+	missingRaw, err := compile("incident-response-invocation-missing.flow.ts")
+	if err != nil {
+		t.Fatalf("lower negative fixture: %v\n%s", err, missingRaw)
+	}
+	if _, err := controlprogram.Load(bytes.NewReader(missingRaw), nil); err == nil || !strings.Contains(err.Error(), "CONTROL_PROGRAM_INVOCATION_INCOMPLETE") {
+		t.Fatalf("missing producer result = %v", err)
 	}
 }
 

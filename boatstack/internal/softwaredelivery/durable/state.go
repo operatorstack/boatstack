@@ -176,6 +176,36 @@ func (s State) Canonical() State {
 	return result
 }
 
+// HasCurrentGates reports whether every named gate is bound to the exact
+// source revision currently controlled by the durable state.
+func (s State) HasCurrentGates(names ...string) bool {
+	if s.SourceRevision == "" {
+		return false
+	}
+	found := make(map[string]bool, len(names))
+	for _, gate := range s.Gates {
+		if gate.Revision == s.SourceRevision {
+			found[gate.Gate] = true
+		}
+	}
+	for _, name := range names {
+		if !found[name] {
+			return false
+		}
+	}
+	return true
+}
+
+// RequiredGateEvidenceCurrent defines the standard software-delivery
+// verification set. Optional visual evidence becomes mandatory only when the
+// repository policy declares it required.
+func (s State) RequiredGateEvidenceCurrent() bool {
+	if !s.HasCurrentGates("build", "test", "review") {
+		return false
+	}
+	return s.VisualEvidencePolicy != "required" || s.HasCurrentGates("visual")
+}
+
 func (s State) ConfigurationPolicy() model.ConfigurationPolicy {
 	return model.ConfigurationPolicy{
 		PlanApproval: s.PlanApprovalPolicy, IndependentReviewForHighRisk: s.IndependentReview,

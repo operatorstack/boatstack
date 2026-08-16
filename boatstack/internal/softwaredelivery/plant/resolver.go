@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -142,6 +143,33 @@ func (r Resolver) git(ctx context.Context, path string, arguments ...string) (st
 		return "", err
 	}
 	return strings.TrimSpace(string(output)), nil
+}
+
+// BranchExists performs the trusted read-only Git inspection used by domain
+// parameter resolvers. Command execution remains owned by the plant boundary.
+func (r Resolver) BranchExists(ctx context.Context, path, branch string) (bool, error) {
+	_, err := r.git(ctx, path, "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
+	if err == nil {
+		return true, nil
+	}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 1 {
+		return false, nil
+	}
+	return false, err
+}
+
+// ResolveSourceRevision returns the exact committed HEAD through the plant's
+// classified read-only Git boundary.
+func (r Resolver) ResolveSourceRevision(ctx context.Context, path string) (string, error) {
+	revision, err := r.git(ctx, path, "rev-parse", "--verify", "HEAD^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("resolve current source revision: %w", err)
+	}
+	if (len(revision) != 40 && len(revision) != 64) || strings.Trim(revision, "0123456789abcdef") != "" {
+		return "", fmt.Errorf("resolve current source revision: invalid object identity")
+	}
+	return revision, nil
 }
 
 func (r Resolver) ResolveInvocation(ctx context.Context, path, host, correlation string) (model.InvocationContext, error) {

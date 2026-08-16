@@ -10,7 +10,12 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 )
 
-const AdmissionSchemaVersion = 8
+const AdmissionSchemaVersion = 9
+
+// PreviousAdmissionSchemaVersion is the only historical admission encoding
+// accepted by the committed-journal compatibility boundary. New admissions
+// are always written at AdmissionSchemaVersion.
+const PreviousAdmissionSchemaVersion = 8
 
 type Admission struct {
 	SchemaVersion                       int                                     `json:"schema_version"`
@@ -43,6 +48,7 @@ type Admission struct {
 	ExpiresAt                           time.Time                               `json:"expires_at"`
 	Work                                *WorkEvidence                           `json:"work,omitempty"`
 	ControlBundle                       *boatstackruntime.ControlBundleContract `json:"control_bundle,omitempty"`
+	InvocationFingerprint               string                                  `json:"invocation_fingerprint,omitempty"`
 }
 
 func NewAdmission(snapshot model.Snapshot, objective model.Objective, transition catalog.Transition, prescription Prescription, authority AuthorityBundle, parameters Parameters, now time.Time, lifetime time.Duration) (Admission, error) {
@@ -98,6 +104,7 @@ func NewAdmissionWithWorkAndBundle(snapshot model.Snapshot, objective model.Obje
 		AuthorityFingerprint: capabilities.AuthorityFingerprint, RequiredCapabilities: capabilities.Required,
 		GrantedCapabilities: capabilities.Granted, EffectiveCapabilities: capabilities.Effective,
 		Evidence: append([]string(nil), transition.RequiredEvidence...), Parameters: parameters.Canonical(), IssuedAt: now.UTC(), ExpiresAt: now.Add(lifetime).UTC(),
+		InvocationFingerprint: prescription.InvocationFingerprint,
 	}
 	if work != nil {
 		copy := *work
@@ -445,11 +452,38 @@ func validateAuthorityEvidence(snapshot model.Snapshot, authority AuthorityBundl
 }
 
 func (a Admission) ValidateIdentity() error {
-	if a.SchemaVersion != AdmissionSchemaVersion || a.ID == "" || a.PrescriptionID == "" || a.TransitionID == "" || a.TransitionVersion < 1 || a.ExpectedStateRevision == 0 || len(a.ExpectedProgramFingerprint) != 64 || len(a.ExpectedSnapshotFingerprint) != 64 || len(a.ExpectedObjectiveBindingFingerprint) != 64 || a.AuthorityFingerprint == "" || len(a.RequiredCapabilities) == 0 || len(a.EffectiveCapabilities) == 0 || !a.SourcePhase.Valid() || a.IdempotencyKey == "" || a.IssuedAt.IsZero() || a.ExpiresAt.Before(a.IssuedAt) {
+	return a.validateIdentity(AdmissionSchemaVersion)
+}
+
+// ValidateCommittedHistoryIdentity validates an immutable admission using
+// either the current encoding or the exact immediately preceding encoding.
+// It is not valid for admitting new work or for pending journals.
+func (a Admission) ValidateCommittedHistoryIdentity() error {
+	switch a.SchemaVersion {
+	case AdmissionSchemaVersion:
+		return a.ValidateIdentity()
+	case PreviousAdmissionSchemaVersion:
+		if a.InvocationFingerprint != "" {
+			return fmt.Errorf("legacy admission invents a current-schema invocation identity")
+		}
+		return a.validateIdentity(PreviousAdmissionSchemaVersion)
+	default:
+		return fmt.Errorf("admission: unsupported committed-history schema %d", a.SchemaVersion)
+	}
+}
+
+func (a Admission) validateIdentity(schemaVersion int) error {
+	if a.SchemaVersion != schemaVersion || a.ID == "" || a.PrescriptionID == "" || a.TransitionID == "" || a.TransitionVersion < 1 || a.ExpectedStateRevision == 0 || len(a.ExpectedProgramFingerprint) != 64 || len(a.ExpectedSnapshotFingerprint) != 64 || len(a.ExpectedObjectiveBindingFingerprint) != 64 || a.AuthorityFingerprint == "" || len(a.RequiredCapabilities) == 0 || len(a.EffectiveCapabilities) == 0 || !a.SourcePhase.Valid() || a.IdempotencyKey == "" || a.IssuedAt.IsZero() || a.ExpiresAt.Before(a.IssuedAt) || (a.InvocationFingerprint != "" && len(a.InvocationFingerprint) != 64) {
 		return fmt.Errorf("admission: invalid schema, identity, source, or lifetime")
 	}
 	if a.ControlBundle != nil {
-		if err := a.ControlBundle.Validate(); err != nil {
+		var err error
+		if schemaVersion == PreviousAdmissionSchemaVersion {
+			err = a.ControlBundle.ValidateCommittedHistory()
+		} else {
+			err = a.ControlBundle.Validate()
+		}
+		if err != nil {
 			return err
 		}
 	}

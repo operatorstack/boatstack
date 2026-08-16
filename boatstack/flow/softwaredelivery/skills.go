@@ -57,7 +57,60 @@ func renderSkill(compiled controlprogram.Compiled, entry controlprogram.Entry, s
 	delegation := ""
 	diagnostics := ""
 	workProtocol := ""
+	inputProtocol := ""
+	gateEvidenceProtocol := ""
+	entryInputProtocol := ""
+	programReconciliation := ""
 	publication := ""
+	startCommand := fmt.Sprintf("boatstack next --repo . --flow %s --entry %s --repository-authority --host %s --format json", compiled.Document.Program.ID, entry.ID, host)
+	if declarativeProgram(compiled.Document.Operators) {
+		startCommand = fmt.Sprintf("boatstack flow run --repo . --flow %s --entry %s --host %s --format json", compiled.Document.Program.ID, entry.ID, host)
+		if len(entry.Inputs) != 0 {
+			var required []string
+			for _, input := range entry.Inputs {
+				if input.Required {
+					required = append(required, input.ID)
+				}
+			}
+			if len(required) != 0 {
+				entryInputProtocol = fmt.Sprintf(`
+Supply each required entry input exactly once on the first command with a
+repeatable `+"`--input name=value`"+` flag. Required input IDs: %s. Preserve the
+same values when explicitly restating them after restart; never substitute an
+input on an existing run.
+`, strings.Join(required, ", "))
+			}
+		}
+	} else {
+		programReconciliation = fmt.Sprintf(`
+If Boatstack returns `+"`UNRESOLVED`"+` solely because the selected compiled
+program differs from the admitted program, treat it as an installation-authority
+suspension before product work, not as terminal Flow failure. Preserve the same
+run ID, but do not request or reuse product delegation before reconciliation.
+Display the exact prior program fingerprint, candidate program fingerprint,
+program-delta fingerprint, required transition, and acceptance flag. Ask for
+explicit human acceptance of that exact delta separately from delegation
+approval. Never infer acceptance from repository authority, autonomy,
+installation, or a previous program change.
+
+Continue only when the response names `+"`installation.reconcile-update`"+` and
+`+"`--accept-program-change`"+`, and the user accepts the displayed exact delta.
+Then run:
+
+`+"`boatstack reconcile-update --repo . --flow %s --entry %s --run-id <run-id> --accept-program-change --human <actor> --host %s --format json`"+`
+
+Require a committed `+"`installation.reconcile-update`"+` receipt whose prior,
+candidate, and delta fingerprints match the accepted suspension and whose
+program-change acceptance is true. If the receipt changes tracked control-bundle
+files, verify that only its declared installation result changed, then commit
+those exact files separately before product work. Rerun the same Flow run. Ask
+for product delegation only after Boatstack returns the new exact delegation
+request bound to the accepted bundle; then resume with that one delegation.
+If the user declines, any fingerprint changes, the required transition differs,
+reconciliation does not commit, or unrelated files changed, stop without
+performing product effects.
+`, compiled.Document.Program.ID, entry.ID, host)
+	}
 	if len(compiled.Document.Work) != 0 {
 		workProtocol = fmt.Sprintf(`
 When a response contains a `+"`work`"+` request, treat it as foreground work for
@@ -79,6 +132,69 @@ and run ID afterward. Never edit the work record directly or continue in the
 background while a question is open.
 `, compiled.Document.Program.ID, entry.ID, host)
 	}
+	if hasHostInputProducer(compiled.Document.Transitions) {
+		inputProtocol = fmt.Sprintf(`
+When Boatstack returns `+"`TRANSITION_INPUT_REQUIRED`"+`, preserve the exact run,
+program, entry, target, transition, state, context, control-bundle, and request
+fingerprints. Inspect the runtime-owned request with:
+
+`+"`boatstack flow input show --repo . --flow %s --entry %s --run-id <run-id> --request-fingerprint <fingerprint> --host %s --format json`"+`
+
+Ask the user only for the bounded values in that request. Write a temporary
+JSON answer object outside repository-tracked paths and submit it only with:
+
+`+"`boatstack flow input answer --repo . --flow %s --entry %s --run-id <run-id> --request-fingerprint <fingerprint> --answer <json-path> --human <actor> --host %s --format json`"+`
+
+Resume the same run after the receipt is recorded. Never guess a value, pass a
+Flow `+"`--param`"+`, reuse `+"`flow work answer`"+`, or edit runtime input receipts.
+
+If transition preflight semantically rejects an already recorded free-form
+answer, preserve that request and receipt. Ask the user for the corrected value,
+then create a new immutable request generation with:
+
+`+"`boatstack flow input supersede --repo . --flow %s --entry %s --run-id <run-id> --request-fingerprint <fingerprint> --reason <semantic-rejection> --human <actor> --host %s --format json`"+`
+
+Answer only the new request fingerprint. Never overwrite or delete the rejected
+generation.
+`, compiled.Document.Program.ID, entry.ID, host, compiled.Document.Program.ID, entry.ID, host, compiled.Document.Program.ID, entry.ID, host)
+	}
+	if entry.Target == "published-pr" && hasGateEvidenceProducer(compiled.Document.Transitions) {
+		gateEvidenceProtocol = `
+If Boatstack returns ` + "`TRANSITION_INPUT_BLOCKED`" + ` because a canonical
+gate-evidence input is unavailable, treat it as a bounded product-work
+suspension before gate admission, not as terminal Flow failure and not as a
+request for human text. Stay in the exact managed worktree named by the current
+snapshot. Never continue product work in the parked source worktree.
+
+For the first gate, implement only the exact approved plan under the active
+delegation. Run the repository's real check for each named gate. Commit the
+intended product change on the managed branch before preparing gate evidence,
+so ` + "`source_revision`" + ` names the exact checked commit. Do not claim a
+passed outcome from model confidence or from an unexecuted check.
+
+After a successful check, prepare the exact ignored input
+` + "`.boatstack/evidence/<delivery-id>/<gate>.input.json`" + ` as strict JSON:
+
+` + "```json" + `
+{
+  "schema_version": 1,
+  "gate": "<gate>",
+  "source_revision": "<exact committed HEAD>",
+  "outcome": "passed",
+  "producer": "<actual check or reviewer>",
+  "completed_at": "<UTC RFC3339 timestamp>"
+}
+` + "```" + `
+
+Resume this same entry and run. Boatstack binds the canonical path and bytes,
+reruns configured build or test commands at the admitted transition, and
+records its own evidence receipt. Never pass these values with ` + "`--param`" + `,
+write a passed input after a failed check, edit controller state, or substitute
+one gate's evidence for another. If the check cannot pass within the approved
+plan, preserve the failure and report the blocker.
+`
+	}
+	inputProtocol += gateEvidenceProtocol
 	if entry.Diagnostics != nil && entry.Diagnostics.ExplainOnSuspend {
 		diagnostics = fmt.Sprintf(`
 If Boatstack suspends this run without reaching the target or prescribing an
@@ -140,7 +256,7 @@ Boatstack does not interpret the entry name.
 
 %s
 
-Start with `+"`boatstack next --repo . --flow %s --entry %s --repository-authority --host %s --format json`"+`.
+Start with `+"`%s`"+`.
 Preserve the returned program fingerprint, entry, run ID, delivery, repository,
 worktree, host, actor, authority receipts, prescription, and receipts through
 every `+"`next`"+`, `+"`apply`"+`, recovery, question, and re-resolution.
@@ -154,11 +270,42 @@ background while input is missing. Never synthesize authority.
 %s
 %s
 %s
+%s
+%s
+%s
 
 Stop only when Boatstack reports the marked target, a typed blocker, refusal,
 unresolved recovery, or missing authority. This entry grants no merge or deploy
 authority.
-`, slug, description, title(slug), compiled.Document.Program.ID, entry.ID, entry.Target, skillprojection.BootstrapContract(), compiled.Document.Program.ID, entry.ID, host, delegation, supersession, diagnostics, workProtocol, publication))
+`, slug, description, title(slug), compiled.Document.Program.ID, entry.ID, entry.Target, skillprojection.BootstrapContract(), startCommand, delegation, supersession, diagnostics, workProtocol, inputProtocol, entryInputProtocol, programReconciliation, publication))
+}
+
+func declarativeProgram(operators []controlprogram.Operator) bool {
+	return len(operators) != 0 && operators[0].Binding == nil
+}
+
+func hasHostInputProducer(transitions []controlprogram.Transition) bool {
+	for _, transition := range transitions {
+		for _, binding := range transition.Parameters {
+			if binding.Producer.Kind == controlprogram.ParameterSourceHostInput {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func hasGateEvidenceProducer(transitions []controlprogram.Transition) bool {
+	for _, transition := range transitions {
+		for _, parameter := range transition.Parameters {
+			producer := parameter.Producer
+			if producer.Kind == controlprogram.ParameterSourceTrustedResolver && producer.Binding != nil &&
+				strings.HasPrefix(producer.Binding.Reference, ParameterResolverPrefix+"gate-evidence-") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func targetEntrySkill(programID string, entries []controlprogram.Entry, target string) (string, bool) {

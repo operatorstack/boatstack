@@ -657,6 +657,25 @@ class RepositoryContract(unittest.TestCase):
             "migration T5 has not connected the generic kernel runtime to production code",
         )
 
+    def test_invocation_runtime_is_domain_neutral(self) -> None:
+        invocation = REPO / "boatstack" / "invocation"
+        files = sorted(invocation.glob("*.go"))
+        self.assertTrue(files)
+        self.assertEqual([], domain_vocabulary_hits(files))
+        boatstack_packages = "github.com/operatorstack/boatstack/boatstack/"
+        allowed = {
+            boatstack_packages + "controlprogram",
+            boatstack_packages + "invocation",
+        }
+        for path, metadata in zip(files, go_source_metadata(files), strict=True):
+            invalid = [
+                import_path
+                for import_path in metadata["imports"]
+                if import_path.startswith(boatstack_packages)
+                and import_path not in allowed
+            ]
+            self.assertEqual([], invalid, f"invocation dependency direction: {path}")
+
     def test_documented_cli_verbs_are_registered_v2_surfaces(self) -> None:
         documents = [
             REPO / "README.md",

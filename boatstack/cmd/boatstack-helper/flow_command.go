@@ -21,7 +21,7 @@ import (
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 )
 
-const flowCompilerVersion = "control-program.compiler.3"
+const flowCompilerVersion = "control-program.compiler.4"
 
 type flowCommandOptions struct {
 	repository string
@@ -33,7 +33,7 @@ type flowCommandOptions struct {
 
 func runFlowCommand(arguments []string) error {
 	if len(arguments) == 0 {
-		return fmt.Errorf("usage: boatstack flow <compile|check|authorize|revoke|run|work> [flags]")
+		return fmt.Errorf("usage: boatstack flow <compile|check|authorize|revoke|run|work|input> [flags]")
 	}
 	action := arguments[0]
 	if action == "authorize" {
@@ -47,6 +47,9 @@ func runFlowCommand(arguments []string) error {
 	}
 	if action == "work" {
 		return runFlowWork(arguments[1:])
+	}
+	if action == "input" {
+		return runFlowInput(arguments[1:])
 	}
 	flags := flag.NewFlagSet("flow "+action, flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
@@ -123,7 +126,7 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := validateSoftwareFlow(ctx, options.repository, compiled, resolver); err != nil {
+	if err := validateCompiledFlow(ctx, options.repository, compiled, resolver); err != nil {
 		return err
 	}
 	artifactPath, err := resolveArtifactPath(options.repository, options.artifact, compiled.Document.Program.ID)
@@ -280,10 +283,215 @@ func checkFlow(ctx context.Context, options flowCommandOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := validateSoftwareFlow(ctx, options.repository, compiled, resolver); err != nil {
+	if err := validateCompiledFlow(ctx, options.repository, compiled, resolver); err != nil {
 		return err
 	}
 	return renderFlowResult("valid", artifactPath, artifact)
+}
+
+func validateCompiledFlow(ctx context.Context, repository string, compiled controlprogram.Compiled, resolver softwareflow.Resolver) error {
+	declarative, err := declarativeFlow(compiled.Document)
+	if err != nil {
+		return fmt.Errorf("FLOW_RUNTIME_INVALID: %w", err)
+	}
+	if declarative {
+		return validateDeclarativeFlow(compiled)
+	}
+	return validateSoftwareFlow(ctx, repository, compiled, resolver)
+}
+
+func declarativeFlow(document controlprogram.Document) (bool, error) {
+	inline, bound := 0, 0
+	for _, operator := range document.Operators {
+		if operator.Binding == nil {
+			inline++
+		} else {
+			bound++
+		}
+	}
+	if inline != 0 && bound != 0 {
+		return false, fmt.Errorf("a Flow cannot mix inline and adapter-bound operators")
+	}
+	return inline != 0, nil
+}
+
+// validateDeclarativeFlow admits the smallest domain-neutral executable
+// adapter: repository-independent, assignment-only state transitions. The
+// generic Control Program compiler remains broader; a domain adapter must
+// explicitly own every additional producer or effect mechanism.
+func validateDeclarativeFlow(compiled controlprogram.Compiled) error {
+	const stateVerifier = "state-effect"
+	facets := make(map[string]controlprogram.Facet, len(compiled.Document.Facets))
+	for _, facet := range compiled.Document.Facets {
+		facets[facet.ID] = facet
+	}
+	for _, entry := range compiled.Document.Entries {
+		if entry.Delegation != nil || entry.Diagnostics != nil {
+			return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative entries do not support delegation or domain diagnostics")
+		}
+	}
+	for _, work := range compiled.Document.Work {
+		return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative runtime has no foreground-work adapter for %q", work.ID)
+	}
+	for _, operator := range compiled.Document.Operators {
+		if len(operator.Capabilities) != 0 || len(operator.Effects) != 0 || operator.Verifier != stateVerifier || operator.Recovery != "" || operator.StateEffect == nil || operator.StateEffect.Kind != "assignments" || operator.ExecutionContext != "preserve" {
+			return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative operator %q must be effect-free, assignment-only, and preserve context", operator.ID)
+		}
+		if !declarativeAuthoritySupported(operator.Authority.AnyOf) || !declarativeAuthoritySupported(operator.Authority.AllOf) {
+			return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative operator %q uses unsupported authority", operator.ID)
+		}
+		for _, parameter := range operator.Parameters {
+			if !declarativeAuthoritySupported(parameter.Authority.AnyOf) || !declarativeAuthoritySupported(parameter.Authority.AllOf) {
+				return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative operator %q parameter %q uses unsupported authority", operator.ID, parameter.ID)
+			}
+		}
+	}
+	for _, transition := range compiled.Document.Transitions {
+		if !declarativeAuthoritySupported(transition.Requires.Authorities) {
+			return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative transition %q uses unsupported authority", transition.ID)
+		}
+		operator, ok := findCompiledOperator(compiled.Document.Operators, transition.Operator)
+		if !ok || operator.StateEffect == nil {
+			return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative transition %q has no executable operator", transition.ID)
+		}
+		contracts := make(map[string]controlprogram.OperatorParameter, len(operator.Parameters))
+		bindings := make(map[string]bool, len(transition.Parameters))
+		for _, contract := range operator.Parameters {
+			contracts[contract.ID] = contract
+		}
+		for _, binding := range transition.Parameters {
+			bindings[binding.Parameter] = true
+			switch binding.Producer.Kind {
+			case controlprogram.ParameterSourceEntryInput, controlprogram.ParameterSourceState, controlprogram.ParameterSourceHostInput:
+				if binding.Producer.Kind == controlprogram.ParameterSourceHostInput && (binding.Producer.Request == nil || !declarativeAuthoritySupported(binding.Producer.Request.Authorities)) {
+					return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative transition %q host-input parameter %q uses unsupported authority", transition.ID, binding.Parameter)
+				}
+			default:
+				return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative transition %q requires an adapter for producer %q", transition.ID, binding.Producer.Kind)
+			}
+		}
+		for _, precondition := range operator.StateEffect.Preconditions {
+			if !predicateRequiresFacetValue(transition.Guard, precondition.Facet, precondition.Values) {
+				return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative transition %q guard does not establish precondition %q", transition.ID, precondition.Facet)
+			}
+		}
+		for _, assignment := range operator.StateEffect.Assignments {
+			facet := facets[assignment.Facet]
+			if assignment.Value != nil {
+				if facet.Kind == "boolean" && *assignment.Value != "true" && *assignment.Value != "false" {
+					return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative assignment %q has a value outside the facet type", assignment.Facet)
+				}
+				continue
+			}
+			if assignment.ValueFrom == nil {
+				continue
+			}
+			if assignment.ValueFrom.Parameter == "" || assignment.ValueFrom.Admission != "" || assignment.ValueFrom.Invocation != "" {
+				return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative assignment %q has an unsupported value source", assignment.Facet)
+			}
+			contract, declared := contracts[assignment.ValueFrom.Parameter]
+			if !declared || !bindings[assignment.ValueFrom.Parameter] {
+				return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative assignment %q requires bound operator parameter %q", assignment.Facet, assignment.ValueFrom.Parameter)
+			}
+			if facet.Kind == "enum" || contract.Type.Kind != facet.Kind {
+				return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative assignment %q cannot prove parameter %q belongs to the facet", assignment.Facet, assignment.ValueFrom.Parameter)
+			}
+		}
+		if !assignmentsEstablishPredicate(*operator.StateEffect, transition.Guard, transition.Target) {
+			return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative transition %q assignments do not establish its target", transition.ID)
+		}
+	}
+	return nil
+}
+
+func declarativeAuthoritySupported(authorities []string) bool {
+	for _, authority := range authorities {
+		if authority != "human" {
+			return false
+		}
+	}
+	return true
+}
+
+// predicateRequiresFacetValue is intentionally conservative. It accepts only
+// facts whose truth is structurally required by every path through a guard.
+func predicateRequiresFacetValue(predicate controlprogram.Predicate, facet string, values []string) bool {
+	if predicate.Fact != nil {
+		fact := predicate.Fact
+		if fact.Facet != facet || len(fact.Values) == 0 {
+			return false
+		}
+		for _, value := range fact.Values {
+			if !containsString(values, value) {
+				return false
+			}
+		}
+		return true
+	}
+	if len(predicate.All) != 0 {
+		for _, child := range predicate.All {
+			if predicateRequiresFacetValue(child, facet, values) {
+				return true
+			}
+		}
+		return false
+	}
+	if len(predicate.Any) != 0 {
+		for _, child := range predicate.Any {
+			if !predicateRequiresFacetValue(child, facet, values) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+func assignmentsEstablishPredicate(effect controlprogram.StateEffect, guard, target controlprogram.Predicate) bool {
+	assigned := make(map[string]string, len(effect.Assignments))
+	mutated := make(map[string]bool, len(effect.Assignments))
+	for _, assignment := range effect.Assignments {
+		mutated[assignment.Facet] = true
+		if assignment.Value != nil {
+			assigned[assignment.Facet] = *assignment.Value
+		}
+	}
+	var established func(controlprogram.Predicate) bool
+	established = func(predicate controlprogram.Predicate) bool {
+		if predicate.True != nil {
+			return *predicate.True
+		}
+		if predicate.Fact != nil {
+			fact := predicate.Fact
+			if value, ok := assigned[fact.Facet]; ok {
+				if len(fact.Statuses) != 0 && !containsString(fact.Statuses, "known") {
+					return false
+				}
+				return len(fact.Values) == 0 || containsString(fact.Values, value)
+			}
+			if mutated[fact.Facet] {
+				return false
+			}
+			return predicateRequiresFacetValue(guard, fact.Facet, fact.Values)
+		}
+		if len(predicate.All) != 0 {
+			for _, child := range predicate.All {
+				if !established(child) {
+					return false
+				}
+			}
+			return true
+		}
+		if len(predicate.Any) != 0 {
+			for _, child := range predicate.Any {
+				if established(child) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return established(target)
 }
 
 func validateSoftwareFlow(ctx context.Context, _ string, compiled controlprogram.Compiled, resolver softwareflow.Resolver) error {

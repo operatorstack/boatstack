@@ -13,6 +13,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/ports"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
+	"github.com/operatorstack/boatstack/boatstack/invocation"
 	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
@@ -40,14 +41,15 @@ func (e Engine) canonicalize(observation model.Observation) (model.Snapshot, err
 }
 
 type ResolveRequest struct {
-	Invocation    model.InvocationContext
-	Objective     model.Objective
-	Authority     protocol.AuthorityBundle
-	Parameters    protocol.Parameters
-	Requested     catalog.TransitionID
-	Trace         bool
-	Work          *protocol.WorkEvidence
-	ControlBundle *boatstackruntime.ControlBundleContract
+	Invocation         model.InvocationContext
+	Objective          model.Objective
+	Authority          protocol.AuthorityBundle
+	Parameters         protocol.Parameters
+	Requested          catalog.TransitionID
+	Trace              bool
+	Work               *protocol.WorkEvidence
+	ControlBundle      *boatstackruntime.ControlBundleContract
+	InvocationEvidence *invocation.Evidence
 }
 
 type Resolution struct {
@@ -157,7 +159,21 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 			if bundleErr != nil {
 				return Resolution{}, bundleErr
 			}
-			prescription, prescriptionErr := protocol.NewPrescriptionWithWorkAndBundle(snapshot, *decision.Transition, capabilities, request.Work, bundle)
+			invocationFingerprint := ""
+			if request.InvocationEvidence != nil {
+				if request.InvocationEvidence.TransitionID != string(decision.Transition.ID) || request.InvocationEvidence.ExecutionProgramFingerprint != e.program.Fingerprint || request.InvocationEvidence.StateRevision != snapshot.StateRevision {
+					decision.Kind, decision.Reason, decision.Transition = supervisor.DecisionRefused, "INVOCATION_DRIFT: invocation evidence does not match the selected transition, executable program, or state", nil
+					updateDecisionTrace(decisionTrace, decision)
+					return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision, Trace: decisionTrace}, nil
+				}
+				if parameterErr := validateInvocationParameters(*request.InvocationEvidence, request.Parameters); parameterErr != nil {
+					decision.Kind, decision.Reason, decision.Transition = supervisor.DecisionRefused, "INVOCATION_DRIFT: "+parameterErr.Error(), nil
+					updateDecisionTrace(decisionTrace, decision)
+					return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision, Trace: decisionTrace}, nil
+				}
+				invocationFingerprint = request.InvocationEvidence.InvocationFingerprint
+			}
+			prescription, prescriptionErr := protocol.NewPrescriptionWithInvocation(snapshot, *decision.Transition, capabilities, request.Work, bundle, invocationFingerprint)
 			if prescriptionErr != nil {
 				decision.Kind = supervisor.DecisionUnresolved
 				decision.Reason = prescriptionErr.Error()
@@ -182,6 +198,29 @@ func (e Engine) Resolve(ctx context.Context, request ResolveRequest) (Resolution
 	}
 	updateDecisionTrace(decisionTrace, decision)
 	return Resolution{Snapshot: snapshot, Objective: objective, Decision: decision, Trace: decisionTrace}, nil
+}
+
+func validateInvocationParameters(evidence invocation.Evidence, parameters protocol.Parameters) error {
+	bound := make(map[string]string, len(evidence.Parameters))
+	for _, parameter := range evidence.Parameters {
+		if parameter.SecretReference != "" {
+			continue
+		}
+		if _, exists := bound[parameter.Name]; exists {
+			return fmt.Errorf("invocation evidence duplicates parameter %q", parameter.Name)
+		}
+		bound[parameter.Name] = parameter.Value
+	}
+	if len(bound) != len(parameters) {
+		return fmt.Errorf("invocation evidence parameters do not match the admitted parameter set")
+	}
+	for _, parameter := range parameters {
+		value, ok := bound[parameter.Name]
+		if !ok || value != parameter.Value {
+			return fmt.Errorf("invocation evidence parameter %q does not match the admitted value", parameter.Name)
+		}
+	}
+	return nil
 }
 
 func (e Engine) decisionTrace(snapshot model.Snapshot, requestedObjective model.Objective, authorityFingerprint string, requested catalog.TransitionID, decision supervisor.Decision, candidates []general.CandidateTrace) *general.DecisionTrace {
@@ -357,6 +396,13 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 			return result, nil
 		}
 	}
+	invocationFingerprint := ""
+	if request.InvocationEvidence != nil {
+		invocationFingerprint = request.InvocationEvidence.InvocationFingerprint
+	}
+	if err := request.Prescription.ValidateInvocation(invocationFingerprint); err != nil {
+		return result, err
+	}
 	if request.AdmissionLifetime <= 0 {
 		request.AdmissionLifetime = 2 * time.Minute
 	}
@@ -473,6 +519,12 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 		return result, err
 	}
 	defer e.receipts.Unbind(request.FlowID)
+	// Validate the entire committed history and allocate from it before any
+	// effect or transaction journal can cross the mutation boundary.
+	sequence, err := e.receipts.NextSequence(ctx, request.FlowID)
+	if err != nil {
+		return result, fmt.Errorf("preflight committed receipt history: %w", err)
+	}
 	if err := e.journal.Begin(ctx, admission, transition); err != nil {
 		return result, fmt.Errorf("begin transaction journal: %w", err)
 	}
@@ -547,12 +599,8 @@ func (e Engine) Apply(ctx context.Context, request ApplyRequest) (result ApplyRe
 		}
 		return result, abort("postcondition failed and effect rolled back", postcondition)
 	}
-	sequence, err := e.receipts.NextSequence(ctx, request.FlowID)
-	if err != nil {
-		return result, requireRecovery("sequence allocation failed after verified effect", err)
-	}
 	completedAt := e.clock.Now()
-	receipt, err := protocol.NewReceipt(request.FlowID, sequence, e.program, admission, transition, target, prepared.ChangedStateFacets(), prepared.CommittedEffects(), nil, startedAt, completedAt)
+	receipt, err := protocol.NewReceipt(request.FlowID, sequence, e.program, admission, transition, target, prepared.ChangedStateFacets(), prepared.CommittedEffects(), effectResult.Outputs, nil, startedAt, completedAt)
 	if err != nil {
 		return result, requireRecovery("receipt construction failed after verified effect", err)
 	}
@@ -604,6 +652,9 @@ func validateReplayRequest(prior protocol.TransitionReceipt, request ApplyReques
 	if prior.PrescriptionID != request.Prescription.ID {
 		return fmt.Errorf("idempotency receipt belongs to a different prescription")
 	}
+	if prior.InvocationFingerprint != request.Prescription.InvocationFingerprint {
+		return fmt.Errorf("idempotency receipt belongs to a different transition invocation")
+	}
 	if prior.ObjectiveScope != catalog.ObjectiveScopeOptionalPreserve && request.Objective.Validate() == nil {
 		if prior.ObjectiveID != request.Objective.ID || prior.TargetID != request.Objective.TargetID || prior.TrustedClass != request.Objective.TrustedClass || prior.DeliveryID != request.Objective.DeliveryID {
 			return fmt.Errorf("idempotency receipt belongs to a different configured objective")
@@ -619,11 +670,7 @@ func validateReplayRequest(prior protocol.TransitionReceipt, request ApplyReques
 	if prior.WorkResultFingerprint != workFingerprint {
 		return fmt.Errorf("idempotency receipt belongs to a different foreground work result")
 	}
-	if bundle == nil {
-		if prior.ControlBundleSourceFingerprint != "" || prior.ControlBundleTargetFingerprint != "" {
-			return fmt.Errorf("idempotency receipt belongs to a repository control bundle")
-		}
-	} else {
+	if bundle != nil {
 		if prior.ControlBundleTargetFingerprint == "" {
 			if prior.ControlBundleSourceFingerprint != bundle.Source.Fingerprint || bundle.Target != nil {
 				return fmt.Errorf("idempotency receipt belongs to a different repository control bundle")

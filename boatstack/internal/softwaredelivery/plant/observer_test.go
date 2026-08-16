@@ -311,6 +311,45 @@ func TestObserverMarksApprovalByteSubstitutionStale(t *testing.T) {
 	}
 }
 
+func TestObserverRejectsCurrentVerificationWithStaleMandatoryGate(t *testing.T) {
+	repository := t.TempDir()
+	deliveryID := "delivery"
+	root := filepath.Join(repository, ".boatstack", "evidence", deliveryID)
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	completedAt := time.Unix(1, 0).UTC()
+	payload := observedGateEvidence{SchemaVersion: 1, Gate: "test", SourceRevision: "old", Outcome: "passed", Producer: "test", CompletedAt: completedAt}
+	payloadRaw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payloadFingerprint := hashBytes(payloadRaw)
+	artifact := observedGate{SchemaVersion: 1, DeliveryID: deliveryID, TransitionID: "gate.test.record", Revision: "old", Fingerprint: payloadFingerprint, AdmissionID: "adm-test", RecordedAt: completedAt}
+	artifactRaw, err := json.Marshal(artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "test.evidence.json"), payloadRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "test.json"), artifactRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state := durable.State{
+		Verification: model.VerificationCurrent, Terminal: model.TerminalEstablished, SourceRevision: "current",
+		Objective: model.Objective{ID: "objective", TargetID: model.ObjectiveOpenPR, DeliveryID: deliveryID},
+		Gates:     []durable.GateEvidence{{Gate: "test", Revision: "old", Fingerprint: payloadFingerprint}},
+	}
+	_, verification, terminal, _, _, err := observeRepositoryArtifacts(ports.ControllerLayout{RepositoryRoot: repository, EvidenceRoot: filepath.Join(repository, ".boatstack", "evidence")}, state, completedAt.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verification != model.VerificationStale || terminal != model.TerminalStale {
+		t.Fatalf("stale mandatory gate observed as verification=%s terminal=%s", verification, terminal)
+	}
+}
+
 func TestObserverDerivesHighRiskChangeFromCommittedAndWorkingTreePaths(t *testing.T) {
 	repository := t.TempDir()
 	runGit(t, repository, "init", "-q")
@@ -450,6 +489,43 @@ func TestRecoveryWithoutStagedManifestCannotPrescribeResume(t *testing.T) {
 	}
 	if len(permitted) != 2 || permitted[0] != "recovery.rollback" || permitted[1] != "recovery.escalate" {
 		t.Fatalf("unstaged recovery contract = %v", permitted)
+	}
+}
+
+func TestUnknownPublicationOutcomeRetainsMaterializableReconciliationIdentity(t *testing.T) {
+	// control-law: publication recovery depends only on journal evidence that
+	// survives an interrupted external effect.
+	root := t.TempDir()
+	transactionID := "adm-publication-unknown"
+	pending := map[string]any{
+		"schema_version":   protocol.JournalSchemaVersion,
+		"transition_id":    "publication.execute",
+		"transition_class": "owned-external",
+		"status":           "recovery-required",
+		"reason":           "publication result was not parseable",
+		"admission": map[string]any{
+			"id":                           transactionID,
+			"expected_program_fingerprint": strings.Repeat("a", 64),
+			"source_phase":                 "ACTIVE",
+			"invocation":                   map[string]any{"correlation_id": "prior-process"},
+		},
+	}
+	raw, err := json.Marshal(pending)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, transactionID+".pending"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	observed, err := pendingJournalEvidence(root, "restart", time.Unix(550, 0).UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !observed.Found || observed.Recovery.TransactionID != transactionID {
+		t.Fatalf("publication recovery evidence = %#v", observed)
+	}
+	if len(observed.Recovery.Permitted) != 2 || observed.Recovery.Permitted[0] != "publication.reconcile" || observed.Recovery.Permitted[1] != "recovery.escalate" {
+		t.Fatalf("publication recovery contract = %v", observed.Recovery.Permitted)
 	}
 }
 

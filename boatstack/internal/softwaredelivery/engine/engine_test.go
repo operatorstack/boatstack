@@ -18,6 +18,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/ports"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
+	"github.com/operatorstack/boatstack/boatstack/invocation"
 	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
@@ -149,15 +150,19 @@ func (e *fakeEffects) Rollback(context.Context) error {
 }
 
 type memoryReceipts struct {
-	next       uint64
-	values     []protocol.TransitionReceipt
-	projectErr error
+	next        uint64
+	values      []protocol.TransitionReceipt
+	projectErr  error
+	sequenceErr error
 }
 
 func (s *memoryReceipts) Bind(context.Context, string, protocol.Admission) error { return nil }
 func (s *memoryReceipts) Unbind(string)                                          {}
 
 func (s *memoryReceipts) NextSequence(context.Context, string) (uint64, error) {
+	if s.sequenceErr != nil {
+		return 0, s.sequenceErr
+	}
 	s.next++
 	return s.next, nil
 }
@@ -324,6 +329,80 @@ func TestRequiredObserverFailureReturnsTypedUnresolvedDecision(t *testing.T) {
 	}
 }
 
+func TestApplyRejectsInvocationDriftBeforePrepareOrEffect(t *testing.T) {
+	// control-law: an old prescription cannot cross the effect boundary after
+	// effect-time invocation rematerialization produces a different identity.
+	now := time.Unix(30, 0).UTC()
+	journal, effects, receipts, lock := &fakeJournal{}, &fakeEffects{}, &memoryReceipts{}, &fakeLock{}
+	kernel, err := New(
+		testRegistry(t), syntheticObjectiveContracts(t), syntheticProgram,
+		&sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source")}}, fixedClock{now},
+		fakeLocker{lock}, journal, effects, receipts,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apply := request(t, now)
+	snapshot, err := model.CanonicalizeForProgram(observation(model.PhaseObserved, "source"), syntheticProgramFingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transition, _ := testRegistry(t).Lookup("test.advance")
+	capabilities, err := protocol.ProjectCapabilities(snapshot, transition, apply.Authority, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apply.Prescription, err = protocol.NewPrescriptionWithInvocation(snapshot, transition, capabilities, nil, nil, strings.Repeat("a", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	apply.InvocationEvidence = &invocation.Evidence{
+		ProgramFingerprint: strings.Repeat("a", 64), ExecutionProgramFingerprint: syntheticProgramFingerprint,
+		TransitionID: "test.advance", StateRevision: snapshot.StateRevision, InvocationFingerprint: strings.Repeat("c", 64),
+	}
+
+	if _, err := kernel.Apply(context.Background(), apply); err == nil || !strings.Contains(err.Error(), "INVOCATION_DRIFT") {
+		t.Fatalf("drift result = %v", err)
+	}
+	if effects.transition.ID != "" || effects.executions != 0 || journal.begun != 0 || len(receipts.values) != 0 || lock.released {
+		t.Fatalf("invocation drift crossed the effect boundary: prepared=%q effects=%d journal=%d receipts=%d lock=%t", effects.transition.ID, effects.executions, journal.begun, len(receipts.values), lock.released)
+	}
+}
+
+func TestResolutionSeparatesDefinitionAndExecutableProgramIdentity(t *testing.T) {
+	// control-law: repository definition identity and executable control-program
+	// identity are both bound, but only the latter is compared to the engine.
+	now := time.Unix(30, 0).UTC()
+	kernel, err := New(
+		testRegistry(t), syntheticObjectiveContracts(t), syntheticProgram,
+		&sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source")}}, fixedClock{now},
+		fakeLocker{&fakeLock{}}, &fakeJournal{}, &fakeEffects{}, &memoryReceipts{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := request(t, now).ResolveRequest
+	request.InvocationEvidence = &invocation.Evidence{
+		ProgramFingerprint: strings.Repeat("a", 64), ExecutionProgramFingerprint: syntheticProgramFingerprint,
+		TransitionID: "test.advance", StateRevision: 1, InvocationFingerprint: strings.Repeat("d", 64),
+	}
+	resolution, err := kernel.Resolve(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolution.Prescription.ID == "" || resolution.Prescription.InvocationFingerprint != request.InvocationEvidence.InvocationFingerprint {
+		t.Fatalf("distinct definition and executable identities were not prescribed: %#v", resolution)
+	}
+	request.InvocationEvidence.ExecutionProgramFingerprint = strings.Repeat("e", 64)
+	refused, err := kernel.Resolve(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refused.Decision.Kind != supervisor.DecisionRefused || !strings.Contains(refused.Decision.Reason, "executable program") {
+		t.Fatalf("wrong executable identity was not refused: %#v", refused.Decision)
+	}
+}
+
 func TestResolutionDoesNotPrescribeBeforeRequiredParametersAreBound(t *testing.T) {
 	// control-law: a selected transition is only a candidate until deterministic admission inputs are complete
 	now := time.Unix(30, 0).UTC()
@@ -359,6 +438,43 @@ func TestResolutionDoesNotPrescribeBeforeRequiredParametersAreBound(t *testing.T
 	}
 	if prescribed.Decision.Kind != supervisor.DecisionPrescribed || prescribed.Decision.Transition == nil || prescribed.Decision.Transition.ID != "test.advance" {
 		t.Fatalf("complete resolution = %+v, want PRESCRIBED", prescribed.Decision)
+	}
+}
+
+func TestResolutionRejectsParametersThatDifferFromInvocationEvidence(t *testing.T) {
+	// control-law: protocol parameters cannot diverge from the exact values
+	// materialized into the selected transition invocation.
+	now := time.Unix(30, 0).UTC()
+	transitions := testRegistry(t).All()
+	for index := range transitions {
+		if transitions[index].ID == "test.advance" {
+			transitions[index].Parameters = []catalog.ParameterSpec{{Name: "value", Required: true}}
+		}
+	}
+	registry, err := catalog.New(transitions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	effects := &fakeEffects{}
+	kernel, err := New(registry, syntheticObjectiveContracts(t), syntheticProgram,
+		&sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source")}}, fixedClock{now},
+		fakeLocker{&fakeLock{}}, &fakeJournal{}, effects, &memoryReceipts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := request(t, now).ResolveRequest
+	request.Parameters = protocol.Parameters{{Name: "value", Value: "substituted"}}
+	request.InvocationEvidence = &invocation.Evidence{
+		ProgramFingerprint: strings.Repeat("c", 64), ExecutionProgramFingerprint: syntheticProgramFingerprint,
+		TransitionID: "test.advance", StateRevision: 1, InvocationFingerprint: strings.Repeat("d", 64),
+		Parameters: []invocation.ResolvedParameter{{Name: "value", Value: "materialized"}},
+	}
+	resolution, err := kernel.Resolve(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolution.Decision.Kind != supervisor.DecisionRefused || !strings.Contains(resolution.Decision.Reason, "INVOCATION_DRIFT") || effects.transition.ID != "" {
+		t.Fatalf("mismatched invocation parameters = decision %#v prepared=%q", resolution.Decision, effects.transition.ID)
 	}
 }
 
@@ -483,7 +599,26 @@ func TestApplyCrossesAdmissionEffectVerificationAndReceiptBoundary(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := kernel.Apply(context.Background(), request(t, now))
+	apply := request(t, now)
+	snapshot, err := model.CanonicalizeForProgram(observation(model.PhaseObserved, "source"), syntheticProgramFingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transition, _ := testRegistry(t).Lookup("test.advance")
+	capabilities, err := protocol.ProjectCapabilities(snapshot, transition, apply.Authority, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocationFingerprint := strings.Repeat("a", 64)
+	apply.Prescription, err = protocol.NewPrescriptionWithInvocation(snapshot, transition, capabilities, nil, nil, invocationFingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apply.InvocationEvidence = &invocation.Evidence{
+		ProgramFingerprint: strings.Repeat("c", 64), ExecutionProgramFingerprint: syntheticProgramFingerprint,
+		TransitionID: "test.advance", StateRevision: snapshot.StateRevision, InvocationFingerprint: invocationFingerprint,
+	}
+	result, err := kernel.Apply(context.Background(), apply)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -491,13 +626,35 @@ func TestApplyCrossesAdmissionEffectVerificationAndReceiptBoundary(t *testing.T)
 		t.Fatalf("unexpected boundary evidence: effects=%+v journal=%+v receipts=%d receipt=%q released=%v", effects, journal, len(receipts.values), result.Receipt.ID, lock.released)
 	}
 	retry := request(t, now)
+	retry.Prescription = apply.Prescription
 	retry.IdempotencyKey = result.Admission.IdempotencyKey
+	retry.InvocationEvidence = nil
 	replayed, err := kernel.Apply(context.Background(), retry)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !replayed.Replayed || replayed.Receipt.ID != result.Receipt.ID || effects.executions != 1 || journal.begun != 1 {
 		t.Fatalf("idempotent replay crossed effect boundary: replay=%+v effects=%d journals=%d", replayed, effects.executions, journal.begun)
+	}
+}
+
+func TestApplyValidatesCommittedHistoryBeforeExecutingEffect(t *testing.T) {
+	// control-law: incompatible durable history cannot be discovered after a
+	// new effect has crossed its execution boundary
+	now := time.Unix(30, 0).UTC()
+	observer := &sequenceObserver{items: []model.Observation{observation(model.PhaseObserved, "source"), observation(model.PhaseObserved, "source")}}
+	journal, effects := &fakeJournal{}, &fakeEffects{result: ports.EffectResult{Settlement: ports.EffectSettled}}
+	receipts := &memoryReceipts{sequenceErr: errors.New("unsupported committed history")}
+	kernel, err := New(testRegistry(t), syntheticObjectiveContracts(t), syntheticProgram, observer, fixedClock{now}, fakeLocker{&fakeLock{}}, journal, effects, receipts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = kernel.Apply(context.Background(), request(t, now))
+	if err == nil || !strings.Contains(err.Error(), "preflight committed receipt history") {
+		t.Fatalf("history preflight error = %v", err)
+	}
+	if effects.executions != 0 || journal.begun != 0 || journal.recovery != 0 {
+		t.Fatalf("history failure crossed mutation boundary: effects=%d begun=%d recovery=%d", effects.executions, journal.begun, journal.recovery)
 	}
 }
 

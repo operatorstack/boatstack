@@ -98,7 +98,7 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 			if !exists {
 				return delivery.ProgramRuntimeManifest{}, fmt.Errorf("transition %q references unknown foreground work %q", declaration.ID, declaration.Work)
 			}
-			transition.Work, err = runtimeWorkContract(work)
+			transition.Work, err = RuntimeWorkContract(work)
 			if err != nil {
 				return delivery.ProgramRuntimeManifest{}, fmt.Errorf("transition %q foreground work: %w", declaration.ID, err)
 			}
@@ -181,7 +181,9 @@ func requireReachableEntryInputs(transition delivery.Transition, entriesByTarget
 	return nil
 }
 
-func runtimeWorkContract(declaration controlprogram.WorkContract) (*delivery.WorkContract, error) {
+// RuntimeWorkContract projects one exact canonical foreground-work contract
+// for both runtime admission and invocation producer validation.
+func RuntimeWorkContract(declaration controlprogram.WorkContract) (*delivery.WorkContract, error) {
 	work := &delivery.WorkContract{
 		ID: declaration.ID, InstructionPath: declaration.Instructions.Path,
 		InstructionSHA256: declaration.Instructions.SHA256, InstructionContent: declaration.Instructions.Content,

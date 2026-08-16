@@ -79,6 +79,7 @@ const (
 type EffectResult struct {
 	Settlement EffectSettlement
 	Detail     string
+	Outputs    protocol.Parameters
 }
 
 type ResourceMutation struct {

@@ -102,11 +102,20 @@ func runFlowAuthorize(arguments []string) error {
 		return loadErr
 	}
 	now := time.Now().UTC()
-	record, changed, err := authorizeDelegation(existing, bound.delegationRequest, requestFingerprint, options.humanActor, expiresIn, now)
+	record, changed, err := authorizeDelegation(existing, bound.delegationRequest, requestFingerprint, options.humanActor, expiresIn, now, bound.delegationReprojection)
 	if err != nil {
 		return err
 	}
 	if changed {
+		if existing != nil && existing.RequestFingerprint != record.RequestFingerprint {
+			archivePath, archivePathErr := delegation.SupersededPath(layout.FlowRoot, bound.runID, existing.RequestFingerprint)
+			if archivePathErr != nil {
+				return archivePathErr
+			}
+			if archiveErr := effects.ArchiveDelegationRecord(archivePath, *existing); archiveErr != nil {
+				return archiveErr
+			}
+		}
 		if err := effects.StoreDelegationRecord(recordPath, record); err != nil {
 			return err
 		}
@@ -114,11 +123,30 @@ func runFlowAuthorize(arguments []string) error {
 	return printDelegationRecord(record)
 }
 
-func authorizeDelegation(existing *delegation.Record, request delegation.Request, requestFingerprint, actor string, expiresIn time.Duration, now time.Time) (delegation.Record, bool, error) {
+func authorizeDelegation(existing *delegation.Record, request delegation.Request, requestFingerprint, actor string, expiresIn time.Duration, now time.Time, allowReprojection bool) (delegation.Record, bool, error) {
 	if expiresIn < 0 {
 		return delegation.Record{}, false, fmt.Errorf("flow authorize --expires-in cannot be negative")
 	}
+	computedFingerprint, err := request.Fingerprint()
+	if err != nil || computedFingerprint != requestFingerprint {
+		return delegation.Record{}, false, fmt.Errorf("DELEGATION_REQUEST_MISMATCH: authorization does not match the exact current request")
+	}
 	if existing != nil {
+		if allowReprojection && existing.RequestFingerprint != requestFingerprint {
+			if existing.Status != "active" && existing.Status != "revoked" {
+				return delegation.Record{}, false, fmt.Errorf("DELEGATION_CONFLICT: reconciled run authorization is %s", existing.Status)
+			}
+			record := delegation.Record{
+				Schema: delegation.Schema, SchemaRevision: delegation.SchemaRevision,
+				Request: request, RequestFingerprint: requestFingerprint,
+				ReceiptID: authorizationReceiptID(requestFingerprint, actor, existing.Revision+1, now), Actor: actor,
+				AuthorizedAt: now, Revision: existing.Revision + 1, Status: "active",
+			}
+			if expiresIn > 0 {
+				record.ExpiresAt = now.Add(expiresIn)
+			}
+			return record, true, nil
+		}
 		if existing.RequestFingerprint != requestFingerprint || existing.Actor != actor || existing.Status != "active" {
 			return delegation.Record{}, false, fmt.Errorf("DELEGATION_CONFLICT: run already has a different authorization, actor, or status")
 		}
@@ -226,6 +254,12 @@ func runFlowContinuation(arguments []string) error {
 	if options.programID == "" || options.entryID == "" {
 		return fmt.Errorf("flow run requires --flow and --entry")
 	}
+	if handled, declarativeErr := tryRunDeclarativeFlow(context.Background(), options); handled || declarativeErr != nil {
+		return declarativeErr
+	}
+	if len(options.entryInputs) != 0 {
+		return fmt.Errorf("FLOW_INPUT_INVALID: --input is available only to declarative Flow entries")
+	}
 	var response surfaces.Response
 	for step := 0; step < 256; step++ {
 		response, err = executeContinuationStep(context.Background(), options)
@@ -260,6 +294,13 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 	if err != nil {
 		return surfaces.Response{}, err
 	}
+	programChangeResponse, err := preflightDelegatedProgramChange(ctx, resolveRequest)
+	if err != nil {
+		return surfaces.Response{}, err
+	}
+	if programChangeResponse != nil {
+		return *programChangeResponse, nil
+	}
 	_, delegationResponse, err := prepareDelegation(ctx, &resolveRequest)
 	if err != nil {
 		return surfaces.Response{}, err
@@ -284,6 +325,9 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 	if settleErr := settleDelegationAtTarget(ctx, resolveRequest, resolved, kernel.TargetSatisfied(resolved.Snapshot, resolveRequest.Objective), false); settleErr != nil && err == nil {
 		err = settleErr
 	}
+	if err == nil {
+		resolveRequest, resolved, _, err = stabilizeRepositoryPrescription(ctx, resolveRequest, resolved)
+	}
 	if err != nil || resolved.Prescription == nil {
 		if err != nil {
 			return resolved, err
@@ -304,6 +348,13 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 		resolveRequest, err = buildRequest(surfaces.OperationResolve, rebound)
 		if err != nil {
 			return surfaces.Response{}, err
+		}
+		programChangeResponse, err = preflightDelegatedProgramChange(ctx, resolveRequest)
+		if err != nil {
+			return surfaces.Response{}, err
+		}
+		if programChangeResponse != nil {
+			return *programChangeResponse, nil
 		}
 		_, delegationResponse, err = prepareDelegation(ctx, &resolveRequest)
 		if err != nil {
@@ -340,6 +391,19 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 	if resolved.Admission != nil {
 		applyRequest.IdempotencyKey = resolved.Admission.IdempotencyKey
 	}
+	lease, err := acquireFlowExecutionLease(applyRequest)
+	if err != nil {
+		return surfaces.Response{}, err
+	}
+	defer lease.Release()
+	applyRequest.Parameters, applyRequest.InvocationEvidence, applyRequest.InputRequest = nil, nil, nil
+	applyRequest, err = bindRPCFlowEntry(ctx, applyRequest)
+	if err != nil {
+		return surfaces.Response{}, err
+	}
+	if applyRequest.InputRequest != nil {
+		return surfaces.Response{SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationApply, ProgramID: applyRequest.ProgramID, EntryID: applyRequest.EntryID, RunID: applyRequest.FlowID, InputRequest: applyRequest.InputRequest}, nil
+	}
 	delegationLock, delegationResponse, err := prepareDelegation(ctx, &applyRequest)
 	if err != nil {
 		return surfaces.Response{}, err
@@ -350,11 +414,6 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 	if delegationResponse != nil {
 		return *delegationResponse, nil
 	}
-	lease, err := acquireFlowExecutionLease(applyRequest)
-	if err != nil {
-		return surfaces.Response{}, err
-	}
-	defer lease.Release()
 	if err := verifyTrustedRequestControlBundle(applyRequest); err != nil {
 		return surfaces.Response{}, err
 	}
@@ -381,6 +440,48 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 		applied.Prescription = &protocol.Prescription{SchemaVersion: protocol.PrescriptionSchemaVersion, ID: "continued", TransitionID: catalog.TransitionID(applyRequest.TransitionID)}
 	}
 	return applied, nil
+}
+
+// stabilizeRepositoryPrescription ensures that selection and parameter
+// materialization are one resolved identity before a prescription can leave
+// the command boundary. It is shared by next, RPC, and Flow continuation.
+func stabilizeRepositoryPrescription(ctx context.Context, request surfaces.Request, response surfaces.Response) (surfaces.Request, surfaces.Response, bool, error) {
+	rebound, changed, err := bindPrescribedRepositoryInvocation(ctx, request, response)
+	if err != nil || !changed {
+		return request, response, changed, err
+	}
+	if rebound.InputRequest != nil {
+		return rebound, surfaces.Response{
+			SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationResolve,
+			ProgramID: rebound.ProgramID, EntryID: rebound.EntryID, RunID: rebound.FlowID,
+			InputRequest: rebound.InputRequest,
+		}, true, nil
+	}
+	lease, err := acquireFlowExecutionLease(rebound)
+	if err != nil {
+		return surfaces.Request{}, surfaces.Response{}, true, err
+	}
+	defer lease.Release()
+	if err := verifyTrustedRequestControlBundle(rebound); err != nil {
+		return surfaces.Request{}, surfaces.Response{}, true, err
+	}
+	kernel, err := standardKernel(ctx, rebound)
+	if err != nil {
+		return surfaces.Request{}, surfaces.Response{}, true, err
+	}
+	stabilized, err := kernel.Handle(ctx, rebound)
+	if err != nil {
+		return rebound, stabilized, true, err
+	}
+	if stabilized.Prescription != nil {
+		if rebound.InvocationEvidence == nil {
+			return surfaces.Request{}, surfaces.Response{}, true, fmt.Errorf("FLOW_INVOCATION_INCOMPLETE: stabilized repository prescription has no invocation evidence")
+		}
+		if err := stabilized.Prescription.ValidateInvocation(rebound.InvocationEvidence.InvocationFingerprint); err != nil {
+			return surfaces.Request{}, surfaces.Response{}, true, err
+		}
+	}
+	return rebound, stabilized, true, nil
 }
 
 func bindTrustedProviderCandidate(ctx context.Context, bound commandOptions, response surfaces.Response) (commandOptions, bool, error) {
@@ -427,7 +528,7 @@ func bindContinuationCandidate(ctx context.Context, bound commandOptions, respon
 	if err != nil {
 		return commandOptions{}, false, err
 	}
-	if len(rebound.parameters) <= len(bound.parameters) {
+	if rebound.inputRequest == nil && len(rebound.parameters) <= len(bound.parameters) {
 		return bound, false, nil
 	}
 	return rebound, true, nil
@@ -460,5 +561,7 @@ func advanceContinuation(options *commandOptions, response surfaces.Response) er
 	options.effectiveCapabilities = nil
 	options.idempotencyKey = ""
 	options.trustedAuthorityReceipts = nil
+	options.invocationEvidence = nil
+	options.inputRequest = nil
 	return nil
 }

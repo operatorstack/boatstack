@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -151,11 +152,18 @@ func (b NativeBoundary) PrepareObservation(ctx context.Context, admission protoc
 		}
 	case "publication.observe", "publication.reconcile":
 		publicationID, _ := admission.Parameters.Get("publication_id")
-		if state.PublicationID != "" && state.PublicationID != publicationID {
+		if transition.ID == "publication.reconcile" && publicationID == "" {
+			publicationID = state.PublicationID
+		}
+		if state.PublicationID != "" && publicationID != "" && state.PublicationID != publicationID {
 			state.Publication = model.PublicationConflicting
 			return nil
 		}
-		output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "gh", "pr", "view", "--json", "state,url,number,mergedAt,baseRefName,headRefName,headRefOid,isCrossRepository", "--", publicationID)
+		arguments := []string{"pr", "view", "--json", "state,url,number,mergedAt,baseRefName,headRefName,headRefOid,isCrossRepository"}
+		if publicationID != "" {
+			arguments = append(arguments, "--", publicationID)
+		}
+		output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "gh", arguments...)
 		if err != nil {
 			state.Publication, state.PublicationID, state.PublicationURL = model.PublicationUnavailable, publicationID, ""
 			return nil
@@ -328,9 +336,15 @@ func (b NativeBoundary) Execute(ctx context.Context, admission protocol.Admissio
 		if output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "git", "push", "origin", refspec); err != nil {
 			return ports.EffectResult{Settlement: ports.EffectUnknown, Detail: strings.TrimSpace(string(output))}, nil
 		}
-		if output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "gh", "pr", "create", "--base", preview.BaseRef, "--head", preview.HeadRef, "--fill-first", "--body-file", preview.BodyPath); err != nil {
+		output, err := b.runner.CombinedOutput(ctx, layout.RepositoryRoot, "gh", "pr", "create", "--base", preview.BaseRef, "--head", preview.HeadRef, "--fill-first", "--body-file", preview.BodyPath)
+		if err != nil {
 			return ports.EffectResult{Settlement: ports.EffectUnknown, Detail: strings.TrimSpace(string(output))}, nil
 		}
+		publicationID, parseErr := publicationIDFromCreateOutput(output)
+		if parseErr != nil {
+			return ports.EffectResult{Settlement: ports.EffectUnknown, Detail: parseErr.Error()}, nil
+		}
+		return ports.EffectResult{Settlement: ports.EffectSettled, Outputs: protocol.Parameters{{Name: "publication_id", Value: publicationID}}}, nil
 	case "publication.correct":
 		publicationID, _ := admission.Parameters.Get("publication_id")
 		bodyPath, _ := admission.Parameters.Get("body_path")
@@ -355,6 +369,24 @@ func (b NativeBoundary) Execute(ctx context.Context, admission protocol.Admissio
 		}
 	}
 	return settled, nil
+}
+
+func publicationIDFromCreateOutput(output []byte) (string, error) {
+	lines := strings.Fields(string(output))
+	for index := len(lines) - 1; index >= 0; index-- {
+		parsed, err := url.Parse(lines[index])
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			continue
+		}
+		segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+		if len(segments) < 2 || segments[len(segments)-2] != "pull" {
+			continue
+		}
+		if number, err := strconv.ParseUint(segments[len(segments)-1], 10, 64); err == nil && number > 0 {
+			return strconv.FormatUint(number, 10), nil
+		}
+	}
+	return "", fmt.Errorf("publication provider did not return an exact pull-request identity")
 }
 
 func publicationProductStatus(status string) string {

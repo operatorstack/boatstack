@@ -20,7 +20,7 @@ import {
   softwareDeliveryFacets,
   trustedDelegation,
   trustedOperators,
-  trustedTransition,
+  trustedSoftwareDeliveryTransitions,
 } from "@operatorstack/boatstack-software-delivery";
 
 const planning = foregroundWork({
@@ -45,6 +45,7 @@ const lifecycle = [
   planningPackageAdmit,
   planningPackageApprove,
   planningPackagePromote,
+  { id: "plan.abandon", priority: 31 },
   { id: "plan.activate", priority: 50 },
   { id: "workspace.cut", priority: 52 },
   { id: "workspace.activate", priority: 53 },
@@ -66,46 +67,37 @@ const lifecycle = [
 ];
 
 export default defineFlow({
-  id: "product-delivery-planning-package",
+  id: "product-delivery",
   version: "1",
   declarations: { input_resolvers: [planInboxResolver] },
   facets: softwareDeliveryFacets,
   evidence: softwareDeliveryEvidence,
   work: [planning],
   operators: trustedOperators(lifecycle),
-  transitions: [
-    trustedTransition(planningPackageAdmit, { work: planning }),
-    trustedTransition(planningPackageApprove),
-    trustedTransition(planningPackagePromote),
-    trustedTransition({ id: "plan.activate", priority: 50 }),
-    trustedTransition({ id: "workspace.cut", priority: 52 }),
-    trustedTransition({ id: "workspace.activate", priority: 53 }),
-    trustedTransition({ id: "workspace.sync", priority: 58 }),
-    trustedTransition({ id: "gate.build.record", priority: 61 }),
-    trustedTransition({ id: "gate.test.record", priority: 62 }),
-    trustedTransition({ id: "gate.review.record", priority: 63 }),
-    trustedTransition({ id: "gate.change.record", priority: 64 }),
-    trustedTransition({ id: "gate.journey.record", priority: 64 }),
-    trustedTransition({ id: "evidence.visual.attach", priority: 66 }),
-    trustedTransition({ id: "delivery.slice.advance", priority: 68 }),
-    trustedTransition({ id: "publication.preview", priority: 72 }),
-    trustedTransition({ id: "workspace.publish", priority: 75 }),
-    trustedTransition({ id: "publication.execute", priority: 76 }),
-    trustedTransition({ id: "publication.observe", priority: 77 }),
-    trustedTransition({ id: "publication.correct", priority: 80 }),
-    trustedTransition({ id: "workspace.reconcile", priority: 2 }),
-    trustedTransition({ id: "publication.reconcile", priority: 1 }),
+  transitions: trustedSoftwareDeliveryTransitions(lifecycle, { planningPackageWork: planning }),
+  targets: [
+    marked("published-pr", all(
+      fact("verification", ["current"]),
+      fact("configuration", ["verified"]),
+      fact("runtime", ["verified"]),
+      fact("publication", ["open"]),
+    )),
+    marked("safely-abandoned", all(
+      fact("delivery", ["discarded"]),
+      fact("workspace", ["abandoned", "absent"]),
+    )),
   ],
-  targets: [marked("published-pr", all(
-    fact("verification", ["current"]),
-    fact("configuration", ["verified"]),
-    fact("runtime", ["verified"]),
-    fact("publication", ["open"]),
-  ))],
-  entries: [entry({
-    id: "run",
-    target: "published-pr",
-    inputs: [inbox(".boatstack/plans/inbox")],
-    delegation: trustedDelegation("autonomy"),
-  })],
+  entries: [
+    entry({
+      id: "run",
+      target: "published-pr",
+      inputs: [inbox(".boatstack/plans/inbox")],
+      delegation: trustedDelegation("autonomy"),
+    }),
+    entry({
+      id: "abandon",
+      target: "safely-abandoned",
+      inputs: [inbox(".boatstack/plans/inbox")],
+    }),
+  ],
 });

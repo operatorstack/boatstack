@@ -94,10 +94,14 @@ func NewDeliveryController(externalStateRoot string, program delivery.ControlPro
 }
 
 func (k DeliveryController) Handle(ctx context.Context, request surfaces.Request) (surfaces.Response, error) {
-	response := surfaces.Response{SchemaVersion: surfaces.SchemaVersion, Operation: request.Operation, ProgramID: request.ProgramID, EntryID: request.EntryID, RunID: request.FlowID}
+	response := surfaces.Response{SchemaVersion: surfaces.SchemaVersion, Operation: request.Operation, ProgramID: request.ProgramID, EntryID: request.EntryID, RunID: request.FlowID, Invocation: request.InvocationEvidence}
 	if err := request.Validate(k.clock.Now()); err != nil {
 		response.Error = err.Error()
 		return response, err
+	}
+	if request.InputRequest != nil {
+		response.InputRequest = request.InputRequest
+		return response, nil
 	}
 	if request.Operation == surfaces.OperationCatalog {
 		response.Catalog = k.registry.All()
@@ -126,7 +130,7 @@ func (k DeliveryController) Handle(ctx context.Context, request surfaces.Request
 	switch request.Operation {
 	case surfaces.OperationResolve, surfaces.OperationExplain:
 		explain := request.Operation == surfaces.OperationExplain
-		resolveRequest := engine.ResolveRequest{Invocation: invocation, Objective: request.Objective, Authority: request.Authority, Parameters: request.Parameters, Requested: request.TransitionID, Trace: explain, ControlBundle: request.ControlBundle}
+		resolveRequest := engine.ResolveRequest{Invocation: invocation, Objective: request.Objective, Authority: request.Authority, Parameters: request.Parameters, Requested: request.TransitionID, Trace: explain, ControlBundle: request.ControlBundle, InvocationEvidence: request.InvocationEvidence}
 		resolution, resolveErr := k.engine.Resolve(ctx, resolveRequest)
 		if !explain && resolveErr == nil && resolution.Decision.Kind == supervisor.DecisionCandidate && resolution.Decision.Transition != nil && resolution.Decision.Transition.Work != nil {
 			record, workErr := k.work.Ensure(ctx, invocation, request.FlowID, request.ProgramID, request.EntryID, resolution.Objective, resolution.Snapshot, *resolution.Decision.Transition, request.WorkInputs)
@@ -183,7 +187,7 @@ func (k DeliveryController) Handle(ctx context.Context, request surfaces.Request
 			work, response.Work = record.Result, &record
 		}
 		result, applyErr := k.engine.Apply(ctx, engine.ApplyRequest{
-			ResolveRequest: engine.ResolveRequest{Invocation: invocation, Objective: request.Objective, Authority: request.Authority, Requested: request.TransitionID, Work: work, ControlBundle: request.ControlBundle},
+			ResolveRequest: engine.ResolveRequest{Invocation: invocation, Objective: request.Objective, Authority: request.Authority, Requested: request.TransitionID, Work: work, ControlBundle: request.ControlBundle, InvocationEvidence: request.InvocationEvidence},
 			FlowID:         request.FlowID, Prescription: request.Prescription, Parameters: request.Parameters, IdempotencyKey: request.IdempotencyKey, AdmissionLifetime: 2 * time.Minute,
 		})
 		response.Prescription = &request.Prescription

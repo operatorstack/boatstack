@@ -1,6 +1,6 @@
 {
   "schema": "control-program",
-  "schema_revision": 3,
+  "schema_revision": 4,
   "program": {
     "id": "incident-response",
     "version": "1"

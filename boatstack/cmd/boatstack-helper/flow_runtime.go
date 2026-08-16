@@ -13,15 +13,21 @@ import (
 	"strings"
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
+	"github.com/operatorstack/boatstack/boatstack/core"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
+	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/delegation"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/foregroundwork"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/plant"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/ports"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
+	"github.com/operatorstack/boatstack/boatstack/invocation"
+	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
 var flowSegment = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
@@ -33,6 +39,9 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	if !flowSegment.MatchString(options.programID) || !flowSegment.MatchString(options.entryID) {
 		return commandOptions{}, fmt.Errorf("FLOW_ENTRY_INVALID: --flow and --entry require semantic identifiers")
 	}
+	if len(options.parameters) != 0 && !options.maintenanceParameterSurface {
+		return commandOptions{}, fmt.Errorf("FLOW_PARAMETER_BYPASS: repository Flow parameters must come from compiled producer declarations")
+	}
 	repository, err := filepath.Abs(options.repository)
 	if err != nil {
 		return commandOptions{}, err
@@ -41,6 +50,10 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	if err != nil {
 		return commandOptions{}, err
 	}
+	// Preserve the exact root used to validate and compile the Flow. Downstream
+	// control-bundle verification rejects relative or symlinked repository
+	// paths, including the generated command's ordinary "--repo ." form.
+	options.repository = repository
 	artifactPath := filepath.Join(repository, ".boatstack", "flows", options.programID+".flow.ir.json")
 	artifactRaw, err := os.ReadFile(artifactPath)
 	if err != nil {
@@ -119,33 +132,17 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	if options.targetID != string(objective.TargetID) || options.trustedObjectiveClass != string(objective.TrustedClass) || options.deliveryID != deliveryID || options.objectiveID != expectedObjectiveID {
 		return commandOptions{}, fmt.Errorf("FLOW_CONTEXT_MISMATCH: objective or delivery changed across the run")
 	}
-	if options.transitionID == "installation.initialize" {
-		configPath := filepath.Join(repository, ".boatstack", "project.json")
-		initialParameters, parseErr := parseParameters(options.parameters)
-		if parseErr != nil {
-			return commandOptions{}, parseErr
-		}
-		if err := bindResolvedParameter(&options, initialParameters, "config_path", configPath); err != nil {
-			return commandOptions{}, err
-		}
-		if err := populateProjectConfigFingerprint(&options); err != nil {
-			return commandOptions{}, fmt.Errorf("FLOW_INPUT_REQUIRED: bind verified project configuration: %w", err)
-		}
-		if err := populateRuntimeParameters(&options); err != nil {
-			return commandOptions{}, fmt.Errorf("FLOW_INPUT_REQUIRED: bind exact runtime identity: %w", err)
-		}
-	}
-	parameters, err := parseParameters(options.parameters)
-	if err != nil {
-		return commandOptions{}, err
-	}
-	bundle, bundleFingerprint, err := bindControlBundle(ctx, repository, catalog.TransitionID(options.transitionID), parameters)
+	bundle, bundleFingerprint, err := bindControlBundle(ctx, repository, "", nil)
 	if err != nil {
 		return commandOptions{}, err
 	}
 	options.controlBundle = bundle
 	options.controlBundleFingerprint = bundleFingerprint
-	if entry.Delegation != nil {
+	// Installation authority transitions must not consume or create product
+	// delegation. Their accepted effects establish or change the exact bundle
+	// to which later product delegation is bound.
+	installationAuthority := options.transitionID == "installation.initialize" || options.transitionID == "installation.update" || options.transitionID == "installation.reconcile-update"
+	if entry.Delegation != nil && !installationAuthority {
 		contextResolver, resolverErr := plant.NewResolver("")
 		if resolverErr != nil {
 			return commandOptions{}, resolverErr
@@ -183,9 +180,17 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 			bound := record.Request
 			inputDrift := !options.activeFlowBound && strings.Join(bound.InputFingerprints, "\x00") != strings.Join(delegationRequest.InputFingerprints, "\x00")
 			if bound.RunID != delegationRequest.RunID || bound.ProgramID != delegationRequest.ProgramID || bound.ProgramFingerprint != delegationRequest.ProgramFingerprint || bound.ControlBundleFingerprint != delegationRequest.ControlBundleFingerprint || bound.EntryID != delegationRequest.EntryID || bound.TargetID != delegationRequest.TargetID || bound.ObjectiveID != delegationRequest.ObjectiveID || bound.DeliveryID != delegationRequest.DeliveryID || inputDrift || bound.RepositoryID != delegationRequest.RepositoryID || bound.GitCommonID != delegationRequest.GitCommonID || bound.BindingFingerprint != delegationRequest.BindingFingerprint || strings.Join(bound.RequestedAuthorities, "\x00") != strings.Join(delegationRequest.RequestedAuthorities, "\x00") || bound.Description != delegationRequest.Description {
-				return commandOptions{}, fmt.Errorf("DELEGATION_DRIFT: current Flow context does not match the authorized request (bundle %s, authorized %s)", delegationRequest.ControlBundleFingerprint, bound.ControlBundleFingerprint)
+				reprojected, reprojectErr := canReprojectDelegation(layout, invocation, bound, delegationRequest)
+				if reprojectErr != nil {
+					return commandOptions{}, reprojectErr
+				}
+				if !reprojected {
+					return commandOptions{}, fmt.Errorf("DELEGATION_DRIFT: current Flow context does not match the authorized request (bundle %s, authorized %s)", delegationRequest.ControlBundleFingerprint, bound.ControlBundleFingerprint)
+				}
+				options.delegationReprojection = true
+			} else {
+				delegationRequest = bound
 			}
-			delegationRequest = bound
 		} else if !os.IsNotExist(loadErr) {
 			return commandOptions{}, loadErr
 		}
@@ -199,92 +204,334 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		options.delegationDescription = description
 		options.delegationRequest = delegationRequest
 	}
-	for name, expected := range map[string]string{
-		"target_id":          string(objective.TargetID),
-		"delivery_id":        deliveryID,
-		"source_path":        plan,
-		"source_fingerprint": planFingerprint,
-	} {
-		if err := validateResolvedParameter(parameters, name, expected); err != nil {
+	if options.transitionID != "" {
+		_, repositoryTransition := findCompiledTransition(compiled.Document.Transitions, options.transitionID)
+		if repositoryTransition {
+			options, err = materializeFlowInvocation(ctx, compiled, entry, options, options.controlBundle)
+			if err != nil || options.inputRequest != nil {
+				return options, err
+			}
+		} else if err := bindInternalFlowContextParameters(ctx, &options); err != nil {
 			return commandOptions{}, err
 		}
-	}
-	switch options.transitionID {
-	case "objective.bind":
-		if err := bindResolvedParameter(&options, parameters, "target_id", string(objective.TargetID)); err != nil {
+		parameters, parseErr := parseParameters(options.parameters)
+		if parseErr != nil {
+			return commandOptions{}, parseErr
+		}
+		bundle, bundleFingerprint, err = bindControlBundle(ctx, repository, catalog.TransitionID(options.transitionID), parameters)
+		if err != nil {
 			return commandOptions{}, err
 		}
-		if err := bindResolvedParameter(&options, parameters, "delivery_id", deliveryID); err != nil {
-			return commandOptions{}, err
+		options.controlBundle, options.controlBundleFingerprint = bundle, bundleFingerprint
+		if repositoryTransition && options.invocationEvidence == nil {
+			return commandOptions{}, fmt.Errorf("FLOW_INVOCATION_INCOMPLETE: materialization produced no ready evidence")
 		}
-	case "plan.create", "plan.amend", softwareflow.PlanningPackageAdmit:
-		if err := bindResolvedParameter(&options, parameters, "source_path", plan); err != nil {
-			return commandOptions{}, err
-		}
-		if err := bindResolvedParameter(&options, parameters, "delivery_id", deliveryID); err != nil {
-			return commandOptions{}, err
-		}
-		if err := bindResolvedParameter(&options, parameters, "source_fingerprint", planFingerprint); err != nil {
-			return commandOptions{}, err
-		}
-	case softwareflow.PlanningPackageApprove:
-		fingerprint, fingerprintErr := softwareflow.PlanningPackageFingerprint(repository, deliveryID)
-		if fingerprintErr != nil {
-			return commandOptions{}, fmt.Errorf("FLOW_INPUT_REQUIRED: read planning package fingerprint: %w", fingerprintErr)
-		}
-		if err := bindResolvedParameter(&options, parameters, "package_fingerprint", fingerprint); err != nil {
-			return commandOptions{}, err
-		}
-	case "publication.preview":
-		if err := bindPublicationPreviewParameters(ctx, repository, deliveryID, options.host, &options, parameters); err != nil {
-			return commandOptions{}, err
+		if repositoryTransition {
+			boundEvidence, bindErr := invocation.BindControlBundle(*options.invocationEvidence, bundle.Fingerprint)
+			if bindErr != nil {
+				return commandOptions{}, bindErr
+			}
+			options.invocationEvidence = &boundEvidence
 		}
 	}
 	return options, nil
 }
 
-func bindPublicationPreviewParameters(ctx context.Context, repository, deliveryID, host string, options *commandOptions, parameters protocol.Parameters) error {
-	canonicalRepository, err := filepath.EvalSymlinks(repository)
-	if err != nil {
-		return fmt.Errorf("FLOW_INPUT_REQUIRED: resolve publication repository: %w", err)
-	}
-	repository = canonicalRepository
-	configRaw, err := os.ReadFile(filepath.Join(repository, ".boatstack", "project.json"))
-	if err != nil {
-		return fmt.Errorf("FLOW_INPUT_REQUIRED: read publication configuration: %w", err)
-	}
-	config, err := protocol.DecodeProjectConfig(configRaw)
-	if err != nil {
-		return fmt.Errorf("FLOW_INPUT_REQUIRED: decode publication configuration: %w", err)
-	}
-	resolver, err := plant.NewResolver("")
+func bindInternalFlowContextParameters(ctx context.Context, options *commandOptions) error {
+	manifest, err := core.System().CoreManifest(ctx)
 	if err != nil {
 		return err
 	}
+	parameters, err := parseParameters(options.parameters)
+	if err != nil {
+		return err
+	}
+	for _, transition := range manifest.Transitions {
+		if string(transition.ID) != options.transitionID {
+			continue
+		}
+		declared := map[string]bool{}
+		for _, parameter := range transition.Parameters {
+			declared[parameter.Name] = true
+			value := ""
+			switch parameter.Name {
+			case "target_id":
+				value = options.targetID
+			case "delivery_id":
+				value = options.deliveryID
+			}
+			if value != "" {
+				if err := bindFlowContextParameter(options, parameters, parameter.Name, value); err != nil {
+					return err
+				}
+			}
+		}
+		for _, parameter := range parameters {
+			if !declared[parameter.Name] {
+				return fmt.Errorf("FLOW_PARAMETER_BYPASS: internal transition %s does not declare parameter %s", options.transitionID, parameter.Name)
+			}
+		}
+		return nil
+	}
+	return fmt.Errorf("FLOW_TRANSITION_UNKNOWN: %s", options.transitionID)
+}
+
+func bindFlowContextParameter(options *commandOptions, parameters protocol.Parameters, name, value string) error {
+	if actual, exists := parameters.Get(name); exists {
+		if actual != value {
+			return fmt.Errorf("FLOW_INPUT_MISMATCH: parameter %s conflicts with the entry-resolved value", name)
+		}
+		return nil
+	}
+	options.parameters = append(options.parameters, name+"="+value)
+	return nil
+}
+
+func materializeFlowInvocation(ctx context.Context, compiled controlprogram.Compiled, entry controlprogram.Entry, options commandOptions, bundle *boatstackruntime.ControlBundleContract) (commandOptions, error) {
+	var transition *controlprogram.Transition
+	for index := range compiled.Document.Transitions {
+		if compiled.Document.Transitions[index].ID == options.transitionID {
+			transition = &compiled.Document.Transitions[index]
+			break
+		}
+	}
+	if transition == nil {
+		return commandOptions{}, fmt.Errorf("FLOW_TRANSITION_UNKNOWN: %s", options.transitionID)
+	}
+	var operator *controlprogram.Operator
+	for index := range compiled.Document.Operators {
+		if compiled.Document.Operators[index].ID == transition.Operator {
+			operator = &compiled.Document.Operators[index]
+			break
+		}
+	}
+	if operator == nil {
+		return commandOptions{}, fmt.Errorf("FLOW_OPERATOR_UNKNOWN: %s", transition.Operator)
+	}
+	host := options.host
 	if host == "" {
 		host = "cli"
 	}
-	invocation, err := resolver.ResolveInvocation(ctx, repository, host, "flow-publication-preview")
+	if options.correlationID == "" {
+		options.correlationID = "flow-" + options.runID
+	}
+	plantResolver, err := plant.NewResolver("")
 	if err != nil {
-		return err
+		return commandOptions{}, err
 	}
-	if !strings.HasPrefix(invocation.Ref, "refs/heads/") {
-		return fmt.Errorf("FLOW_INPUT_REQUIRED: publication requires an attached branch")
-	}
-	bodyPath, err := resolveRegularRepositoryFile(repository, filepath.Join(repository, ".boatstack", "evidence", deliveryID+"-pr-body.md"), "publication body")
+	invocationContext, err := plantResolver.ResolveInvocation(ctx, options.repository, host, options.correlationID)
 	if err != nil {
-		return fmt.Errorf("FLOW_INPUT_REQUIRED: bind publication body: %w", err)
+		return commandOptions{}, err
 	}
-	for name, value := range map[string]string{
-		"base_ref":  config.Project.DefaultBranch,
-		"head_ref":  strings.TrimPrefix(invocation.Ref, "refs/heads/"),
-		"body_path": bodyPath,
-	} {
-		if err := bindResolvedParameter(options, parameters, name, value); err != nil {
-			return err
+	layout, invocationContext, err := plantResolver.ResolveLayout(ctx, invocationContext)
+	if err != nil {
+		return commandOptions{}, err
+	}
+	state := durable.State{}
+	if raw, readErr := os.ReadFile(layout.StatePath); readErr == nil {
+		state, err = durable.DecodeState(raw)
+		if err != nil {
+			return commandOptions{}, fmt.Errorf("FLOW_ACTIVE_RUN_INVALID: decode durable state: %w", err)
+		}
+	} else if !os.IsNotExist(readErr) {
+		return commandOptions{}, readErr
+	}
+	bundleFingerprint := ""
+	if bundle != nil {
+		bundleFingerprint = bundle.Fingerprint
+	}
+	contextFingerprint, err := general.Fingerprint(struct {
+		Invocation       model.InvocationContext `json:"invocation"`
+		StateRevision    uint64                  `json:"state_revision"`
+		Program          string                  `json:"program"`
+		ExecutionProgram string                  `json:"execution_program"`
+		Entry            string                  `json:"entry"`
+		Target           string                  `json:"target"`
+		Transition       string                  `json:"transition"`
+	}{invocationContext, state.Revision, compiled.Fingerprint, state.ProgramFingerprint, entry.ID, options.targetID, transition.ID})
+	if err != nil {
+		return commandOptions{}, err
+	}
+	if len(state.ProgramFingerprint) != 64 {
+		return commandOptions{}, fmt.Errorf("FLOW_PROGRAM_UNBOUND: repository transition invocation requires an admitted executable program")
+	}
+	entryInputs := map[string]invocation.Value{}
+	for id, value := range options.workInputs {
+		entryInputs[id] = invocation.Value{Type: controlprogram.ValueTypeDefinition{Kind: "string"}, Canonical: value.Value, Provenance: "entry-input:" + value.Fingerprint}
+	}
+	stateValues := softwareflow.StateParameterValues(state)
+	if softwareflow.UsesObservationParameterValues(transition.Parameters) {
+		observer, observerErr := plant.NewObserver(plantResolver, effects.Clock{})
+		if observerErr != nil {
+			return commandOptions{}, observerErr
+		}
+		observation, observeErr := observer.Observe(ctx, ports.ObservationRequest{Invocation: invocationContext})
+		if observeErr != nil {
+			return commandOptions{}, fmt.Errorf("FLOW_INVOCATION_OBSERVATION_FAILED: %w", observeErr)
+		}
+		for facet, value := range softwareflow.ObservationParameterValues(observation) {
+			stateValues[facet] = value
+		}
+	}
+	receiptValues := map[string]invocation.Value{}
+	for _, binding := range transition.Parameters {
+		if binding.Producer.Kind != controlprogram.ParameterSourceReceipt && binding.Producer.Kind != controlprogram.ParameterSourceStateOrReceipt {
+			continue
+		}
+		value, receiptID, found, lookupErr := effects.FindLatestCommittedTransitionOutput(layout, options.runID, invocationContext, catalog.TransitionID(binding.Producer.Transition), binding.Producer.Field, state.Revision)
+		if lookupErr != nil {
+			return commandOptions{}, lookupErr
+		}
+		if found {
+			receiptValues[binding.Producer.Transition+"/"+binding.Producer.Field] = invocation.Value{
+				Type: controlprogram.ValueTypeDefinition{Kind: "string"}, Canonical: value, Provenance: "transition-receipt:" + receiptID,
+			}
+		}
+	}
+	workOutputs := map[string]invocation.Value{}
+	workByID := map[string]controlprogram.WorkContract{}
+	for _, work := range compiled.Document.Work {
+		workByID[work.ID] = work
+	}
+	for _, binding := range transition.Parameters {
+		if binding.Producer.Kind != controlprogram.ParameterSourceWorkOutput {
+			continue
+		}
+		work, declared := workByID[binding.Producer.Work]
+		if !declared {
+			return commandOptions{}, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: producer references unknown work %q", binding.Producer.Work)
+		}
+		record, loadErr := foregroundwork.LoadRecord(layout, options.runID, work.ID)
+		if loadErr != nil {
+			if os.IsNotExist(loadErr) {
+				return commandOptions{}, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q has no current result", work.ID)
+			}
+			return commandOptions{}, loadErr
+		}
+		if record.Status != foregroundwork.StatusCompleted || record.Result == nil {
+			return commandOptions{}, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q is not complete", work.ID)
+		}
+		if err := validateWorkOutputProducer(record, work, compiled, entry, options, invocationContext); err != nil {
+			return commandOptions{}, err
+		}
+		foundOutput := false
+		for _, output := range record.Result.Outputs {
+			if output.ID != binding.Producer.Output {
+				continue
+			}
+			foundOutput = true
+			kind := "string"
+			if output.MediaType == "application/json" {
+				kind = "json"
+			}
+			workOutputs[work.ID+"/"+output.ID] = invocation.Value{Type: controlprogram.ValueTypeDefinition{Kind: kind}, Canonical: output.Content, Provenance: "work-output:" + output.SHA256, ProducerFingerprint: record.Result.ResultFingerprint}
+		}
+		if !foundOutput {
+			return commandOptions{}, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q lacks output %q", work.ID, binding.Producer.Output)
+		}
+	}
+	store := invocation.Store{Root: layout.FlowRoot, Writer: effects.NewRuntimeStore()}
+	inputReceipts, err := store.LoadReceipts(options.runID, transition.ID)
+	if err != nil {
+		return commandOptions{}, err
+	}
+	executionScopeFingerprint, err := flowExecutionScopeFingerprint(invocationContext)
+	if err != nil {
+		return commandOptions{}, err
+	}
+	materializationContext := invocation.Context{
+		RunID: options.runID, ProgramFingerprint: compiled.Fingerprint, ExecutionProgramFingerprint: state.ProgramFingerprint,
+		EntryID: entry.ID, TargetID: options.targetID, TransitionID: transition.ID,
+		StateRevision: state.Revision, ContextFingerprint: contextFingerprint, ControlBundleFingerprint: bundleFingerprint,
+		ExecutionScopeFingerprint: executionScopeFingerprint,
+		EntryInputs:               entryInputs, State: stateValues, Receipts: receiptValues, WorkOutputs: workOutputs, InputReceipts: inputReceipts,
+	}
+	if latest, found, latestErr := store.LatestRequest(materializationContext); latestErr != nil {
+		return commandOptions{}, latestErr
+	} else if found {
+		materializationContext.InputRequestGeneration = latest.Generation
+		materializationContext.InputRequestSupersession = latest.Supersession
+	}
+	bindingResolver, err := softwareflow.NewResolver(ctx)
+	if err != nil {
+		return commandOptions{}, err
+	}
+	sourceRevision, err := plantResolver.ResolveSourceRevision(ctx, options.repository)
+	if err != nil {
+		return commandOptions{}, err
+	}
+	result, err := invocation.Materialize(operator.Parameters, transition.Parameters, materializationContext, softwareflow.RuntimeParameterResolver{Context: ctx, Repository: options.repository, DeliveryID: options.deliveryID, SourceRevision: sourceRevision, Binding: bindingResolver})
+	if err != nil {
+		return commandOptions{}, err
+	}
+	if result.Blocker != nil {
+		return commandOptions{}, fmt.Errorf("%s: %s", result.Blocker.Code, result.Blocker.Detail)
+	}
+	options.parameters, options.inputRequest, options.invocationEvidence = nil, result.Request, result.Ready
+	if result.Request != nil {
+		if err := store.SaveRequest(*result.Request); err != nil {
+			return commandOptions{}, err
+		}
+		return options, nil
+	}
+	for _, parameter := range result.Ready.Parameters {
+		if parameter.SecretReference != "" {
+			return commandOptions{}, fmt.Errorf("FLOW_SECRET_STORE_UNAVAILABLE: parameter %s requires a trusted secret store", parameter.Name)
+		}
+		options.parameters = append(options.parameters, parameter.Name+"="+parameter.Value)
+	}
+	return options, nil
+}
+
+func validateWorkOutputProducer(record foregroundwork.Record, work controlprogram.WorkContract, compiled controlprogram.Compiled, entry controlprogram.Entry, options commandOptions, current model.InvocationContext) error {
+	contract, err := softwareflow.RuntimeWorkContract(work)
+	if err != nil {
+		return fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: %w", err)
+	}
+	request := record.Request
+	result := record.Result
+	if result == nil || result.Validate() != nil || request.RunID != options.runID || request.ProgramID != compiled.Document.Program.ID || request.ProgramFingerprint != compiled.Fingerprint || request.EntryID != entry.ID || request.Objective.ID != options.objectiveID || string(request.Objective.TargetID) != options.targetID || request.Objective.DeliveryID != options.deliveryID || request.RepositoryID != current.RepositoryID || request.GitCommonID != current.GitCommonID || request.WorktreeID != current.WorktreeID || request.Ref != current.Ref || request.Contract.ID != contract.ID || request.Contract.Fingerprint != contract.Fingerprint || result.ContractID != contract.ID || result.ContractFingerprint != contract.Fingerprint || result.RequestFingerprint != request.Fingerprint || result.RepositoryID != current.RepositoryID || result.WorktreeID != current.WorktreeID {
+		return fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q belongs to a different run, program, entry, objective, scope, or contract", work.ID)
+	}
+	producerTransition := ""
+	for _, candidate := range compiled.Document.Transitions {
+		if candidate.Work == work.ID {
+			if producerTransition != "" {
+				return fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q has ambiguous producer transitions", work.ID)
+			}
+			producerTransition = candidate.ID
+		}
+	}
+	if producerTransition == "" || string(request.TransitionID) != producerTransition || result.TransitionID != request.TransitionID {
+		return fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q transition context changed", work.ID)
+	}
+	expectedInputs := map[string]protocol.WorkInputValue{}
+	for _, input := range work.Inputs {
+		value, ok := options.workInputs[input.EntryInput]
+		if !ok {
+			return fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q entry input %q is unavailable", work.ID, input.EntryInput)
+		}
+		expectedInputs[input.ID] = value
+	}
+	if len(request.Inputs) != len(expectedInputs) {
+		return fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q input binding changed", work.ID)
+	}
+	for _, input := range request.Inputs {
+		expected, ok := expectedInputs[input.ID]
+		if !ok || input.Value != expected.Value || input.Fingerprint != expected.Fingerprint {
+			return fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q input binding changed", work.ID)
 		}
 	}
 	return nil
+}
+
+func flowExecutionScopeFingerprint(value model.InvocationContext) (string, error) {
+	return general.Fingerprint(struct {
+		RepositoryID string `json:"repository_id"`
+		GitCommonID  string `json:"git_common_id"`
+		WorktreeID   string `json:"worktree_id"`
+		Ref          string `json:"ref"`
+	}{value.RepositoryID, value.GitCommonID, value.WorktreeID, value.Ref})
 }
 
 func populateProjectConfigFingerprint(options *commandOptions) error {
@@ -321,7 +568,7 @@ func bindSelectedPlanRun(options commandOptions, repository, programFingerprint,
 	}
 	runID := flowRunID(repositoryIdentity, programFingerprint, options.entryID, deliveryID, planFingerprint)
 	if options.runID != "" && options.runID != runID {
-		return commandOptions{}, fmt.Errorf("FLOW_RUN_MISMATCH: run ID does not identify the selected plan and repository")
+		return commandOptions{}, fmt.Errorf("FLOW_RUN_MISMATCH: run ID %s does not identify the selected plan and repository (expected %s)", options.runID, runID)
 	}
 	options.runID = runID
 	return options, nil
@@ -373,22 +620,29 @@ func bindActiveFlowContext(ctx context.Context, repository string, options comma
 	if findErr != nil {
 		return commandOptions{}, fmt.Errorf("FLOW_ACTIVE_RUN_INVALID: inspect committed flow receipts: %w", findErr)
 	}
-	if !found || !strings.HasPrefix(receipt.FlowID, "run-") {
-		return commandOptions{}, fmt.Errorf("FLOW_ACTIVE_RUN_INVALID: active objective has no committed run identity")
-	}
 	if active.TargetID == entryObjective.TargetID && strings.HasPrefix(active.ID, prefix) {
+		if !found || !strings.HasPrefix(receipt.FlowID, "run-") {
+			return commandOptions{}, fmt.Errorf("FLOW_ACTIVE_RUN_INVALID: active objective has no committed run identity")
+		}
 		bound, bindErr := bindCommittedActiveRun(options, active, receipt)
 		if bindErr != nil {
 			return commandOptions{}, bindErr
 		}
-		return bindStateOwnedTransitionParameters(bound, state)
+		return bound, nil
 	}
 	if entryObjective.TrustedClass == model.ObjectiveAbandoned {
 		repositoryIdentity, identityErr := flowRepositoryIdentity(repository)
 		if identityErr != nil {
 			return commandOptions{}, identityErr
 		}
-		expectedRunID := flowRunID(repositoryIdentity, options.flowProgramFingerprint, options.entryID, active.DeliveryID, "active-run:"+receipt.FlowID)
+		activeIdentity := "objective:" + active.ID + ":" + string(active.TargetID) + ":" + string(active.TrustedObjectiveClass())
+		if found {
+			if !strings.HasPrefix(receipt.FlowID, "run-") {
+				return commandOptions{}, fmt.Errorf("FLOW_ACTIVE_RUN_INVALID: committed active run identity is invalid")
+			}
+			activeIdentity = "run:" + receipt.FlowID
+		}
+		expectedRunID := flowRunID(repositoryIdentity, options.flowProgramFingerprint, options.entryID, active.DeliveryID, activeIdentity)
 		if options.runID != "" && options.runID != expectedRunID {
 			return commandOptions{}, fmt.Errorf("FLOW_RUN_MISMATCH: run ID does not identify the active delivery")
 		}
@@ -397,36 +651,6 @@ func bindActiveFlowContext(ctx context.Context, repository string, options comma
 		return options, nil
 	}
 	return commandOptions{}, fmt.Errorf("FLOW_ACTIVE_RUN_CONFLICT: delivery %q is active under objective %q; abandon it before selecting another inbox plan", active.DeliveryID, active.ID)
-}
-
-func bindStateOwnedTransitionParameters(options commandOptions, state durable.State) (commandOptions, error) {
-	parameters, err := parseParameters(options.parameters)
-	if err != nil {
-		return commandOptions{}, err
-	}
-	bindings := [][2]string{}
-	switch options.transitionID {
-	case "workspace.activate", "workspace.sync", "workspace.publish":
-		bindings = append(bindings, [2]string{"branch", state.WorkspaceBranch})
-	case "publication.execute":
-		bindings = append(bindings, [2]string{"preview_fingerprint", state.PreviewFingerprint})
-	case "publication.observe":
-		bindings = append(bindings, [2]string{"publication_id", state.PublicationID})
-	case "publication.reconcile":
-		bindings = append(bindings,
-			[2]string{"publication_id", state.PublicationID},
-			[2]string{"transaction_id", state.TransactionID},
-		)
-	}
-	for _, binding := range bindings {
-		if binding[1] == "" {
-			continue
-		}
-		if err := bindResolvedParameter(&options, parameters, binding[0], binding[1]); err != nil {
-			return commandOptions{}, err
-		}
-	}
-	return options, nil
 }
 
 func bindCommittedActiveRun(options commandOptions, active model.Objective, receipt protocol.TransitionReceipt) (commandOptions, error) {
@@ -439,37 +663,35 @@ func bindCommittedActiveRun(options commandOptions, active model.Objective, rece
 	return options, nil
 }
 
-func validateResolvedParameter(parameters protocol.Parameters, name, expected string) error {
-	if actual, exists := parameters.Get(name); exists && actual != expected {
-		return fmt.Errorf("FLOW_INPUT_MISMATCH: parameter %s conflicts with the entry-resolved value", name)
-	}
-	return nil
-}
-
-func bindResolvedParameter(options *commandOptions, parameters protocol.Parameters, name, expected string) error {
-	if actual, exists := parameters.Get(name); exists {
-		if actual != expected {
-			return fmt.Errorf("FLOW_INPUT_MISMATCH: parameter %s conflicts with the entry-resolved value", name)
-		}
-		return nil
-	}
-	options.parameters = append(options.parameters, name+"="+expected)
-	return nil
-}
-
 func bindRPCFlowEntry(ctx context.Context, request surfaces.Request) (surfaces.Request, error) {
+	return bindRPCFlowEntryWithMaintenance(ctx, request, false)
+}
+
+func bindRPCFlowEntryWithMaintenance(ctx context.Context, request surfaces.Request, maintenanceParameterSurface bool) (surfaces.Request, error) {
 	if request.ProgramID == "" && request.EntryID == "" {
 		return request, nil
+	}
+	if replay, canonicalRepository, err := committedFlowReplay(ctx, request); err != nil {
+		return surfaces.Request{}, err
+	} else if replay {
+		request.Repository = canonicalRepository
+		request.Parameters, request.InvocationEvidence, request.InputRequest = nil, nil, nil
+		request.ControlBundle, request.ControlBundleFingerprint = nil, ""
+		return request, nil
+	}
+	repositoryTransition, err := repositoryFlowDeclaresTransition(request.Repository, request.ProgramID, string(request.TransitionID))
+	if err != nil {
+		return surfaces.Request{}, err
 	}
 	parameterFlags := make([]string, 0, len(request.Parameters))
 	for _, parameter := range request.Parameters {
 		parameterFlags = append(parameterFlags, parameter.Name+"="+parameter.Value)
 	}
 	bound, err := bindFlowEntry(ctx, commandOptions{
-		repository: request.Repository, host: request.Host, programID: request.ProgramID, entryID: request.EntryID,
+		repository: request.Repository, host: request.Host, correlationID: request.CorrelationID, programID: request.ProgramID, entryID: request.EntryID,
 		flowProgramFingerprint: request.ProgramFingerprint,
 		runID:                  request.FlowID, objectiveID: request.Objective.ID, targetID: string(request.Objective.TargetID), trustedObjectiveClass: string(request.Objective.TrustedObjectiveClass()), deliveryID: request.Objective.DeliveryID,
-		transitionID: string(request.TransitionID), parameters: parameterFlags,
+		transitionID: string(request.TransitionID), parameters: parameterFlags, maintenanceParameterSurface: maintenanceParameterSurface && request.TransitionID != "" && !repositoryTransition,
 	})
 	if err != nil {
 		return surfaces.Request{}, err
@@ -492,15 +714,137 @@ func bindRPCFlowEntry(ctx context.Context, request surfaces.Request) (surfaces.R
 	request.WorkInputs = bound.workInputs
 	request.ControlBundle = bound.controlBundle
 	request.ControlBundleFingerprint = bound.controlBundleFingerprint
+	request.InvocationEvidence = bound.invocationEvidence
+	request.InputRequest = bound.inputRequest
 	return request, nil
 }
 
+// committedFlowReplay recognizes an exact, already committed apply before any
+// producer is rematerialized. Repository effects may have consumed or moved
+// their inputs, so safe replay must be decided from the immutable receipt.
+func committedFlowReplay(ctx context.Context, request surfaces.Request) (bool, string, error) {
+	if request.Operation != surfaces.OperationApply || request.IdempotencyKey == "" || request.Prescription.ID == "" || request.FlowID == "" || request.TransitionID == "" {
+		return false, "", nil
+	}
+	repository, err := filepath.Abs(request.Repository)
+	if err != nil {
+		return false, "", err
+	}
+	repository, err = filepath.EvalSymlinks(repository)
+	if err != nil {
+		return false, "", err
+	}
+	resolver, err := plant.NewResolver("")
+	if err != nil {
+		return false, "", err
+	}
+	host := request.Host
+	if host == "" {
+		host = "cli"
+	}
+	invoking, err := resolver.ResolveInvocation(ctx, repository, host, request.CorrelationID)
+	if err != nil {
+		return false, "", err
+	}
+	store, err := effects.NewReceiptStore(resolver, effects.Clock{})
+	if err != nil {
+		return false, "", err
+	}
+	receipt, found, err := store.FindByIdempotency(ctx, invoking, request.IdempotencyKey)
+	if err != nil || !found {
+		return false, "", err
+	}
+	if receipt.FlowID != request.FlowID || receipt.PrescriptionID != request.Prescription.ID || receipt.TransitionID != request.TransitionID || receipt.InvocationFingerprint != request.Prescription.InvocationFingerprint {
+		return false, "", fmt.Errorf("FLOW_REPLAY_MISMATCH: committed receipt does not match the exact Flow apply request")
+	}
+	return true, repository, nil
+}
+
+func repositoryFlowDeclaresTransition(repository, programID, transitionID string) (bool, error) {
+	if programID == "" || transitionID == "" {
+		return false, nil
+	}
+	repository, err := filepath.Abs(repository)
+	if err != nil {
+		return false, err
+	}
+	repository, err = filepath.EvalSymlinks(repository)
+	if err != nil {
+		return false, err
+	}
+	raw, err := os.ReadFile(filepath.Join(repository, ".boatstack", "flows", programID+".flow.ir.json"))
+	if err != nil {
+		return false, err
+	}
+	artifact, err := controlprogram.LoadArtifact(bytes.NewReader(raw))
+	if err != nil {
+		return false, err
+	}
+	_, found := findCompiledTransition(artifact.Program.Transitions, transitionID)
+	return found, nil
+}
+
+// bindPrescribedRepositoryInvocation closes the selector-to-invocation gap.
+// A repository transition may be selected before its exact transition-specific
+// producers are known. That first prescription is candidate evidence only: it
+// must be rebound and re-resolved before it can be returned or applied.
+func bindPrescribedRepositoryInvocation(ctx context.Context, request surfaces.Request, response surfaces.Response) (surfaces.Request, bool, error) {
+	if request.Operation != surfaces.OperationResolve || request.ProgramID == "" || request.InvocationEvidence != nil || response.Prescription == nil {
+		return request, false, nil
+	}
+	transitionID := string(response.Prescription.TransitionID)
+	repositoryTransition, err := repositoryFlowDeclaresTransition(request.Repository, request.ProgramID, transitionID)
+	if err != nil {
+		return surfaces.Request{}, false, err
+	}
+	if !repositoryTransition {
+		return request, false, nil
+	}
+	if response.Prescription.InvocationFingerprint != "" {
+		return surfaces.Request{}, false, fmt.Errorf("FLOW_INVOCATION_INVALID: unmaterialized repository prescription carries invocation identity")
+	}
+	rebound := request
+	rebound.TransitionID = response.Prescription.TransitionID
+	rebound.Parameters = nil
+	rebound.Prescription = protocol.Prescription{}
+	rebound.IdempotencyKey = ""
+	rebound.InvocationEvidence = nil
+	rebound.InputRequest = nil
+	rebound, err = bindRPCFlowEntry(ctx, rebound)
+	if err != nil {
+		return surfaces.Request{}, false, err
+	}
+	if rebound.InputRequest == nil && rebound.InvocationEvidence == nil {
+		return surfaces.Request{}, false, fmt.Errorf("FLOW_INVOCATION_INCOMPLETE: selected repository transition produced neither an input request nor invocation evidence")
+	}
+	return rebound, true, nil
+}
+
 func resolveBoundPlan(repository string, entry controlprogram.Entry, entryObjective softwareflow.EntryObjective, options commandOptions) (string, string, error) {
+	if !options.activeFlowBound {
+		// A pre-materialization resume already carries the delivery identity
+		// derived from the selected plan. Resolve that exact identity rather
+		// than selecting from the inbox again: unrelated new plans cannot
+		// redirect the run, and case-colliding aliases fail closed.
+		if options.runID != "" && options.deliveryID != "" {
+			inbox, _, err := resolvePlanInbox(repository, entry)
+			if err != nil {
+				return "", "", err
+			}
+			plan, err := resolveActiveInboxPlan(repository, inbox, options.deliveryID)
+			return plan, options.deliveryID, err
+		}
+		plan, deliveryID, err := resolvePlanInput(repository, entry)
+		if err != nil {
+			return "", "", err
+		}
+		if options.deliveryID != "" && options.deliveryID != deliveryID {
+			return "", "", fmt.Errorf("FLOW_CONTEXT_MISMATCH: selected inbox plan does not match the preserved delivery identity")
+		}
+		return plan, deliveryID, nil
+	}
 	if options.activeFlowBound && entryObjective.TrustedClass == model.ObjectiveAbandoned {
 		return "", options.deliveryID, nil
-	}
-	if options.deliveryID == "" {
-		return resolvePlanInput(repository, entry)
 	}
 	if !flowSegment.MatchString(options.deliveryID) {
 		return "", "", fmt.Errorf("FLOW_CONTEXT_MISMATCH: active run requires its delivery identity")

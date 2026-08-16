@@ -117,7 +117,7 @@ func TestPublicationRequestsDeriveTrustedProviderAuthorityFromCatalogBinding(t *
 	for transition, parameter := range map[string]string{
 		"publication.execute":   "preview_fingerprint=" + strings.Repeat("a", 64),
 		"publication.correct":   "body_sha256=" + strings.Repeat("b", 64),
-		"publication.reconcile": "publication_id=123",
+		"publication.reconcile": "transaction_id=transaction-123",
 	} {
 		t.Run(transition, func(t *testing.T) {
 			options := commandOptions{repository: ".", transitionID: transition, parameters: stringList{parameter}}

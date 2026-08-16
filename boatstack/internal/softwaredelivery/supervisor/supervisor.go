@@ -298,11 +298,17 @@ func targetAlreadySatisfied(snapshot model.Snapshot, objective model.Objective, 
 }
 
 func currentEvidenceRecorded(snapshot model.Snapshot, sourcePrefix string) bool {
-	if snapshot.Verification.Status != model.FactKnown || snapshot.Verification.Value != model.VerificationCurrent {
+	if snapshot.Verification.Status != model.FactKnown {
 		return false
 	}
+	currentRevisions := map[string]bool{}
+	for _, evidence := range snapshot.Delivery.Evidence {
+		if evidence.Revision != "" {
+			currentRevisions[evidence.Revision] = true
+		}
+	}
 	for _, evidence := range snapshot.Verification.Evidence {
-		if strings.HasPrefix(evidence.Source, sourcePrefix) {
+		if strings.HasPrefix(evidence.Source, sourcePrefix) && evidence.Revision != "" && currentRevisions[evidence.Revision] {
 			return true
 		}
 	}

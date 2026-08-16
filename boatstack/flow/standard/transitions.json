@@ -3762,7 +3762,8 @@
           "known"
         ],
         "values": [
-          "current"
+          "current",
+          "stale"
         ]
       }
     ],
@@ -3998,7 +3999,8 @@
           "known"
         ],
         "values": [
-          "current"
+          "current",
+          "stale"
         ]
       }
     ],
@@ -4242,7 +4244,8 @@
           "known"
         ],
         "values": [
-          "current"
+          "current",
+          "stale"
         ]
       }
     ],
@@ -5519,6 +5522,15 @@
     "source_predicate": "predicate:source-phase:publication.preview",
     "source_conditions": [
       {
+        "facet": "publication",
+        "statuses": [
+          "known"
+        ],
+        "values": [
+          "none"
+        ]
+      },
+      {
         "facet": "plan",
         "statuses": [
           "known"
@@ -6225,11 +6237,6 @@
     "idempotent": true,
     "parameters": [
       {
-        "name": "publication_id",
-        "required": true,
-        "secret": false
-      },
-      {
         "name": "transaction_id",
         "required": true,
         "secret": false
@@ -6355,7 +6362,7 @@
       "objective_scope": "optional-preserve"
     },
     "priority": 1,
-    "authority_fingerprint_parameter": "publication_id",
+    "authority_fingerprint_parameter": "transaction_id",
     "owned_facets": [
       "control",
       "product"

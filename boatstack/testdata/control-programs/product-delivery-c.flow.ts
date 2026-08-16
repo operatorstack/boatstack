@@ -5,7 +5,7 @@ import {
   softwareDeliveryEvidence,
   softwareDeliveryFacets,
   trustedOperators,
-  trustedTransitions,
+  trustedSoftwareDeliveryTransitions,
   type TrustedStep,
 } from "@operatorstack/boatstack-software-delivery";
 
@@ -25,7 +25,7 @@ export default defineFlow({
   facets: softwareDeliveryFacets,
   evidence: softwareDeliveryEvidence,
   operators: trustedOperators(lifecycle),
-  transitions: trustedTransitions(lifecycle),
+  transitions: trustedSoftwareDeliveryTransitions(lifecycle),
   targets: [marked("published-pr", all(
     fact("verification", ["current"]),
     fact("configuration", ["verified"]),

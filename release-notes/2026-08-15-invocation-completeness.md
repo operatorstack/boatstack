@@ -1,0 +1,3 @@
+### Require complete Control Program invocations
+
+Control Program compilation now requires one declared producer for every required operator parameter. Repository Flows materialize those producers through a domain-neutral invocation boundary, suspend with a typed input request when a host value is missing, and bind current invocation evidence through prescription, admission, effect execution, and transition receipts. Software-delivery Flows derive deterministic lifecycle values from trusted runtime evidence, can supersede a rejected free-form input without rewriting its receipt, and reproject after an accepted program change before requesting fresh product authority. Generated drivers preserve the run across that boundary and continue to the marked delivery state.

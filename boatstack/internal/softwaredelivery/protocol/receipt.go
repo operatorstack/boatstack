@@ -12,7 +12,12 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 )
 
-const ReceiptSchemaVersion = 12
+const ReceiptSchemaVersion = 13
+
+// PreviousReceiptSchemaVersion is the only historical receipt encoding
+// accepted by the committed-journal compatibility boundary. New receipts are
+// always written at ReceiptSchemaVersion.
+const PreviousReceiptSchemaVersion = 12
 
 type TransitionFactKind string
 
@@ -123,6 +128,7 @@ type TransitionReceipt struct {
 	GrantedCapabilities            []catalog.Capability     `json:"granted_capabilities"`
 	ExercisedCapabilities          []catalog.Capability     `json:"exercised_capabilities,omitempty"`
 	CommittedEffects               []EffectFact             `json:"committed_effects"`
+	EffectOutputs                  Parameters               `json:"effect_outputs,omitempty"`
 	ChangedStateFacets             []model.StateFacet       `json:"changed_state_facets"`
 	Verification                   VerificationFact         `json:"verification"`
 	IdempotencyKey                 string                   `json:"idempotency_key"`
@@ -137,6 +143,7 @@ type TransitionReceipt struct {
 	WorkResultFingerprint          string                   `json:"work_result_fingerprint,omitempty"`
 	ControlBundleSourceFingerprint string                   `json:"control_bundle_source_fingerprint,omitempty"`
 	ControlBundleTargetFingerprint string                   `json:"control_bundle_target_fingerprint,omitempty"`
+	InvocationFingerprint          string                   `json:"invocation_fingerprint,omitempty"`
 }
 
 type AuthoritySource struct {
@@ -146,7 +153,7 @@ type AuthoritySource struct {
 	Fingerprint string                 `json:"fingerprint"`
 }
 
-func NewReceipt(flowID string, sequence uint64, program ProgramIdentity, admission Admission, transition catalog.Transition, target model.Snapshot, changedStateFacets []model.StateFacet, effects []EffectFact, exercised []catalog.Capability, startedAt, committedAt time.Time) (TransitionReceipt, error) {
+func NewReceipt(flowID string, sequence uint64, program ProgramIdentity, admission Admission, transition catalog.Transition, target model.Snapshot, changedStateFacets []model.StateFacet, effects []EffectFact, outputs Parameters, exercised []catalog.Capability, startedAt, committedAt time.Time) (TransitionReceipt, error) {
 	if flowID == "" || sequence == 0 || admission.ID == "" || target.Fingerprint == "" {
 		return TransitionReceipt{}, fmt.Errorf("receipt requires flow, sequence, admission, and target identity")
 	}
@@ -197,10 +204,12 @@ func NewReceipt(flowID string, sequence uint64, program ProgramIdentity, admissi
 		GrantedCapabilities:   append([]catalog.Capability(nil), admission.GrantedCapabilities...),
 		ExercisedCapabilities: append([]catalog.Capability(nil), exercised...),
 		CommittedEffects:      canonicalEffects,
+		EffectOutputs:         outputs.Canonical(),
 		ChangedStateFacets:    canonicalFacets,
 		Verification:          VerificationFact{Verifier: transition.Verifier, ExpectedPostcondition: transition.TargetPredicate, Result: VerificationSatisfied, EvidenceFingerprint: target.Fingerprint, VerifiedAt: committedAt.UTC()},
 		IdempotencyKey:        admission.IdempotencyKey, Recovery: transition.Interruption.Recovery, Terminal: terminal,
 		StartedAt: startedAt.UTC(), CommittedAt: committedAt.UTC(), DurationNanoseconds: committedAt.Sub(startedAt).Nanoseconds(),
+		InvocationFingerprint: admission.InvocationFingerprint,
 	}
 	if admission.Work != nil {
 		receipt.WorkResultFingerprint = admission.Work.ResultFingerprint
@@ -246,12 +255,39 @@ func NewReceipt(flowID string, sequence uint64, program ProgramIdentity, admissi
 }
 
 func (r TransitionReceipt) Validate() error {
-	if r.SchemaVersion != ReceiptSchemaVersion || r.Kind != TransitionCommitted || r.ID == "" || r.FlowID == "" || r.Sequence == 0 || r.TransitionID == "" || r.TransitionVersion < 1 || r.PrescriptionID == "" || r.AdmissionID == "" || r.PriorStateRevision == 0 || r.PriorStateRevision == ^uint64(0) || r.ResultingStateRevision != r.PriorStateRevision+1 || !validSHA256(r.SourceFingerprint) || !validSHA256(r.TargetFingerprint) || !validSHA256(r.ObjectiveBindingFingerprint) || r.AuthorityFingerprint == "" || len(r.RequiredCapabilities) == 0 || r.IdempotencyKey == "" || len(r.CommittedEffects) == 0 || len(r.ChangedStateFacets) == 0 {
+	return r.validate(ReceiptSchemaVersion)
+}
+
+// ValidateCommittedHistory validates an immutable receipt using either the
+// current encoding or the exact immediately preceding encoding. It is not a
+// write-side compatibility path.
+func (r TransitionReceipt) ValidateCommittedHistory() error {
+	switch r.SchemaVersion {
+	case ReceiptSchemaVersion:
+		return r.Validate()
+	case PreviousReceiptSchemaVersion:
+		if len(r.EffectOutputs) != 0 || r.InvocationFingerprint != "" {
+			return fmt.Errorf("legacy receipt invents current-schema output or invocation evidence")
+		}
+		return r.validate(PreviousReceiptSchemaVersion)
+	default:
+		return fmt.Errorf("receipt has unsupported committed-history schema %d", r.SchemaVersion)
+	}
+}
+
+func (r TransitionReceipt) validate(schemaVersion int) error {
+	if r.SchemaVersion != schemaVersion || r.Kind != TransitionCommitted || r.ID == "" || r.FlowID == "" || r.Sequence == 0 || r.TransitionID == "" || r.TransitionVersion < 1 || r.PrescriptionID == "" || r.AdmissionID == "" || r.PriorStateRevision == 0 || r.PriorStateRevision == ^uint64(0) || r.ResultingStateRevision != r.PriorStateRevision+1 || !validSHA256(r.SourceFingerprint) || !validSHA256(r.TargetFingerprint) || !validSHA256(r.ObjectiveBindingFingerprint) || r.AuthorityFingerprint == "" || len(r.RequiredCapabilities) == 0 || r.IdempotencyKey == "" || len(r.CommittedEffects) == 0 || len(r.ChangedStateFacets) == 0 {
 		return fmt.Errorf("receipt has incomplete committed-transition identity or evidence")
 	}
 	if (r.ControlBundleSourceFingerprint == "") != (r.ControlBundleTargetFingerprint == "") ||
 		(r.ControlBundleSourceFingerprint != "" && (len(r.ControlBundleSourceFingerprint) != 64 || len(r.ControlBundleTargetFingerprint) != 64)) {
 		return fmt.Errorf("receipt has incomplete repository control-bundle identity")
+	}
+	if r.InvocationFingerprint != "" && !validSHA256(r.InvocationFingerprint) {
+		return fmt.Errorf("receipt has invalid invocation identity")
+	}
+	if err := validateEffectOutputs(r.EffectOutputs); err != nil {
+		return err
 	}
 	if r.ExecutionContext != "" {
 		if r.ExecutionContext != "advance" || r.PriorInvocation == nil || r.ResultingInvocation == nil {
@@ -380,6 +416,21 @@ func (r TransitionReceipt) Validate() error {
 	}
 	if got != want {
 		return fmt.Errorf("receipt %q failed content identity verification", r.ID)
+	}
+	return nil
+}
+
+func validateEffectOutputs(outputs Parameters) error {
+	seen := map[string]bool{}
+	canonical := outputs.Canonical()
+	for index, output := range outputs {
+		if output.Name == "" || output.Value == "" || seen[output.Name] {
+			return fmt.Errorf("receipt effect outputs require unique non-empty names and values")
+		}
+		seen[output.Name] = true
+		if canonical[index] != output {
+			return fmt.Errorf("receipt effect outputs are not canonical")
+		}
 	}
 	return nil
 }

@@ -251,7 +251,7 @@ func bindControlBundle(ctx context.Context, repository string, transitionID cata
 		if !exists {
 			return nil, "", fmt.Errorf("WORKSPACE_CONTROL_BUNDLE_UNCOMMITTED: workspace.cut requires an exact base_ref")
 		}
-		resolvedRevision, resolveErr := boatstackruntime.ResolveCommitRevision(ctx, repository, baseRef)
+		resolvedRevision, resolveErr := boatstackruntime.ResolveWorkspaceBaseRevision(ctx, repository, baseRef)
 		if resolveErr != nil {
 			return nil, "", fmt.Errorf("WORKSPACE_CONTROL_BUNDLE_UNCOMMITTED: resolve base_ref %q: %w", baseRef, resolveErr)
 		}

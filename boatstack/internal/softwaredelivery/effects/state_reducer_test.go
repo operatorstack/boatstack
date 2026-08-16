@@ -49,6 +49,37 @@ func TestRequiredVisualEvidenceParticipatesInVerifiedTerminal(t *testing.T) {
 	}
 }
 
+func TestVerificationCurrentRequiresEveryMandatoryGateAtCurrentRevision(t *testing.T) {
+	objective := model.Objective{ID: "publication-objective", TargetID: model.ObjectiveOpenPR, DeliveryID: "delivery"}
+	state := durable.State{
+		SchemaVersion: durable.StateSchemaVersion, RepositoryID: "repo", GitCommonID: "git", WorktreeID: "worktree", Revision: 1,
+		Phase: model.PhaseActive, Engagement: model.EngagementActive, Delivery: model.DeliveryActive, Workspace: model.WorkspaceActive,
+		Plan: model.PlanLocked, Configuration: model.ConfigurationVerified, Runtime: model.RuntimeVerified, Publication: model.PublicationNone,
+		Verification: model.VerificationCurrent, Recovery: model.RecoveryNone, Transaction: model.TransactionNone, Terminal: model.TerminalNonterminal,
+		Objective: objective, SourceRevision: "old", Gates: []durable.GateEvidence{{Gate: "test", Revision: "old", Fingerprint: "old-test"}},
+	}
+	apply := func(gate string) {
+		t.Helper()
+		transition, ok := testprogram.StandardRegistry().Lookup(catalog.TransitionID("gate." + gate + ".record"))
+		if !ok {
+			t.Fatalf("missing %s gate transition", gate)
+		}
+		parameters := protocol.Parameters{{Name: "source_revision", Value: "current"}, {Name: "evidence_fingerprint", Value: "evidence-" + gate}}
+		if err := applyStateTransition(&state, protocol.Admission{Objective: objective, Parameters: parameters, SourceRevision: "current", WorktreeFingerprint: "tree"}, transition); err != nil {
+			t.Fatalf("apply %s: %v", gate, err)
+		}
+	}
+	apply("build")
+	apply("review")
+	if state.Verification != model.VerificationStale {
+		t.Fatalf("stale test gate produced verification=%s, want stale", state.Verification)
+	}
+	apply("test")
+	if state.Verification != model.VerificationCurrent || !state.RequiredGateEvidenceCurrent() {
+		t.Fatalf("complete exact-revision gate set produced state %#v", state)
+	}
+}
+
 func TestPublicationCorrectionRequiresIndependentObservationForTerminal(t *testing.T) {
 	// control-law: external-writer-cannot-self-certify-provider-state
 	objective := model.Objective{ID: "publication-objective", TargetID: model.ObjectiveOpenPR, DeliveryID: "publication-delivery"}

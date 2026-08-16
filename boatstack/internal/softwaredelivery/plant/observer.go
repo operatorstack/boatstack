@@ -617,6 +617,9 @@ func observeRepositoryArtifacts(layout ports.ControllerLayout, state durable.Sta
 			if err != nil {
 				return plan, verification, terminal, nil, nil, err
 			}
+			if exists && fingerprint == gate.Fingerprint && gate.Revision == state.SourceRevision {
+				evidence.Revision = gate.Revision
+			}
 			verificationEvidence = append(verificationEvidence, evidence)
 			if !exists || fingerprint != gate.Fingerprint || gate.Revision == "" {
 				verification, terminal = model.VerificationStale, model.TerminalStale
@@ -629,7 +632,6 @@ func observeRepositoryArtifacts(layout ports.ControllerLayout, state durable.Sta
 		if err != nil {
 			return plan, verification, terminal, nil, nil, err
 		}
-		verificationEvidence = append(verificationEvidence, evidence)
 		valid := known && exists
 		if valid {
 			raw, readErr := os.ReadFile(path)
@@ -660,9 +662,16 @@ func observeRepositoryArtifacts(layout ports.ControllerLayout, state durable.Sta
 		} else {
 			valid = false
 		}
+		if valid && gate.Revision == state.SourceRevision {
+			evidence.Revision = gate.Revision
+		}
+		verificationEvidence = append(verificationEvidence, evidence)
 		if !valid {
 			verification, terminal = model.VerificationStale, model.TerminalStale
 		}
+	}
+	if state.Verification == model.VerificationCurrent && !state.RequiredGateEvidenceCurrent() {
+		verification, terminal = model.VerificationStale, model.TerminalStale
 	}
 	if terminal == model.TerminalEstablished && state.Objective.TrustedObjectiveClass() == model.ObjectiveVerified && state.VisualEvidencePolicy == "required" && !hasVisual {
 		verification, terminal = model.VerificationUnresolved, model.TerminalStale

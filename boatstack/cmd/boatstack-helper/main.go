@@ -28,6 +28,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
+	"github.com/operatorstack/boatstack/boatstack/invocation"
 	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
@@ -67,6 +68,8 @@ type commandOptions struct {
 	repositoryPolicy                    bool
 	acceptProgramChange                 bool
 	parameters                          stringList
+	entryInputs                         stringList
+	maintenanceParameterSurface         bool
 	authorityReceipts                   stringList
 	trustedAuthorityReceipts            []protocol.AuthorityReceipt
 	follow                              bool
@@ -77,6 +80,7 @@ type commandOptions struct {
 	delegationAuthorities               stringList
 	delegationDescription               string
 	delegationRequest                   delegation.Request
+	delegationReprojection              bool
 	workInputs                          map[string]protocol.WorkInputValue
 	workID                              string
 	workQuestionPrompt                  string
@@ -87,6 +91,8 @@ type commandOptions struct {
 	workResultFingerprint               string
 	controlBundle                       *boatstackruntime.ControlBundleContract
 	controlBundleFingerprint            string
+	invocationEvidence                  *invocation.Evidence
+	inputRequest                        *invocation.InputRequest
 }
 
 func main() {
@@ -148,6 +154,13 @@ func run(arguments []string) error {
 			return err
 		}
 	}
+	programChangeResponse, err := preflightDelegatedProgramChange(context.Background(), request)
+	if err != nil {
+		return err
+	}
+	if programChangeResponse != nil {
+		return renderResponse(*programChangeResponse, options.format)
+	}
 	delegationLock, delegationResponse, err := prepareDelegation(context.Background(), &request)
 	if err != nil {
 		return err
@@ -163,6 +176,12 @@ func run(arguments []string) error {
 		return err
 	}
 	defer lease.Release()
+	if (operation == surfaces.OperationApply || operation == surfaces.OperationRecover) && request.ProgramID != "" {
+		request, options, err = refreshFlowInvocation(context.Background(), operation, request, options)
+		if err != nil {
+			return err
+		}
+	}
 	if err := verifyTrustedRequestControlBundle(request); err != nil {
 		return err
 	}
@@ -193,6 +212,9 @@ func run(arguments []string) error {
 		request.Prescription = *resolved.Prescription
 	}
 	response, handleErr := kernel.Handle(context.Background(), request)
+	if handleErr == nil && operation == surfaces.OperationResolve {
+		request, response, _, handleErr = stabilizeRepositoryPrescription(context.Background(), request, response)
+	}
 	if operation != surfaces.OperationExplain {
 		if settleErr := settleDelegationAtTarget(context.Background(), request, response, kernel.TargetSatisfied(response.Snapshot, request.Objective), delegationLock != nil); settleErr != nil && handleErr == nil {
 			handleErr = settleErr
@@ -234,6 +256,15 @@ func runRPC() error {
 			return err
 		}
 	}
+	programChangeResponse, err := preflightDelegatedProgramChange(context.Background(), request)
+	if err != nil {
+		return err
+	}
+	if programChangeResponse != nil {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(programChangeResponse)
+	}
 	delegationLock, delegationResponse, err := prepareDelegation(context.Background(), &request)
 	if err != nil {
 		return err
@@ -251,6 +282,12 @@ func runRPC() error {
 		return err
 	}
 	defer lease.Release()
+	if (request.Operation == surfaces.OperationApply || request.Operation == surfaces.OperationRecover) && request.ProgramID != "" {
+		request, err = refreshRPCFlowInvocation(context.Background(), request)
+		if err != nil {
+			return err
+		}
+	}
 	if err := verifyTrustedRequestControlBundle(request); err != nil {
 		return err
 	}
@@ -259,6 +296,9 @@ func runRPC() error {
 		return err
 	}
 	response, handleErr := kernel.Handle(context.Background(), request)
+	if handleErr == nil && request.Operation == surfaces.OperationResolve {
+		request, response, _, handleErr = stabilizeRepositoryPrescription(context.Background(), request, response)
+	}
 	if request.Operation != surfaces.OperationExplain {
 		if settleErr := settleDelegationAtTarget(context.Background(), request, response, kernel.TargetSatisfied(response.Snapshot, request.Objective), delegationLock != nil); settleErr != nil && handleErr == nil {
 			handleErr = settleErr
@@ -348,7 +388,10 @@ func parseOptions(command string, arguments []string, transition catalog.Transit
 	if command == "explain" {
 		defaultFormat = "text"
 	}
-	options := commandOptions{format: defaultFormat, transitionID: string(transition), host: "cli"}
+	options := commandOptions{
+		format: defaultFormat, transitionID: string(transition), host: "cli",
+		maintenanceParameterSurface: command == "init" || command == "update" || command == "reconcile-update" || command == "hydrate-runtime" || command == "configure",
+	}
 	if defaults != nil {
 		options.targetID, options.deliveryID, options.objectiveID = defaults["target-id"], defaults["delivery"], defaults["objective-id"]
 	}
@@ -376,6 +419,7 @@ func parseOptions(command string, arguments []string, transition catalog.Transit
 	flags.BoolVar(&options.repositoryPolicy, "repository-authority", false, "derive repository-policy authority from Boatstack project configuration")
 	flags.BoolVar(&options.acceptProgramChange, "accept-program-change", false, "explicitly accept the exact prior-to-candidate control-program delta during update")
 	flags.Var(&options.parameters, "param", "transition parameter name=value (repeatable)")
+	flags.Var(&options.entryInputs, "input", "Flow entry input name=value (repeatable)")
 	flags.Var(&options.authorityReceipts, "authority-receipt", "authority receipt JSON path (repeatable)")
 	flags.BoolVar(&options.follow, "follow", false, "follow passive process events (events with jsonl only)")
 	flags.StringVar(&options.host, "host", options.host, "cli, sdk, cursor, codex, claude, gemini, or mcp")
@@ -450,6 +494,52 @@ func acquireFlowExecutionLease(request surfaces.Request) (*boatstackruntime.Flow
 		return &boatstackruntime.FlowProjectionLease{}, nil
 	}
 	return boatstackruntime.AcquireFlowProjectionLease(request.Repository)
+}
+
+func refreshFlowInvocation(ctx context.Context, operation surfaces.Operation, prior surfaces.Request, options commandOptions) (surfaces.Request, commandOptions, error) {
+	prescription := prior.Prescription
+	repositoryTransition, err := repositoryFlowDeclaresTransition(options.repository, options.programID, options.transitionID)
+	if err != nil {
+		return surfaces.Request{}, commandOptions{}, err
+	}
+	if repositoryTransition {
+		options.parameters = nil
+	} else if options.transitionID != "" {
+		options.maintenanceParameterSurface = true
+	}
+	options.invocationEvidence, options.inputRequest = nil, nil
+	fresh, err := bindFlowEntry(ctx, options)
+	if err != nil {
+		return surfaces.Request{}, commandOptions{}, err
+	}
+	request, err := buildRequest(operation, fresh)
+	if err != nil {
+		return surfaces.Request{}, commandOptions{}, err
+	}
+	// Delegation is admitted before the Flow invocation is refreshed under the
+	// execution lease. Preserve that exact external authority evidence; the
+	// refresh owns producer evidence, not authority re-admission.
+	request.Authority = prior.Authority
+	request.Prescription = prescription
+	return request, fresh, nil
+}
+
+func refreshRPCFlowInvocation(ctx context.Context, prior surfaces.Request) (surfaces.Request, error) {
+	prescription := prior.Prescription
+	repositoryTransition, err := repositoryFlowDeclaresTransition(prior.Repository, prior.ProgramID, string(prior.TransitionID))
+	if err != nil {
+		return surfaces.Request{}, err
+	}
+	if repositoryTransition {
+		prior.Parameters = nil
+	}
+	prior.InvocationEvidence, prior.InputRequest = nil, nil
+	fresh, err := bindRPCFlowEntryWithMaintenance(ctx, prior, !repositoryTransition)
+	if err != nil {
+		return surfaces.Request{}, err
+	}
+	fresh.Prescription = prescription
+	return fresh, nil
 }
 
 func followEvents(kernel boatstack.DeliveryController, request surfaces.Request) error {
@@ -623,6 +713,10 @@ func buildRequest(operation surfaces.Operation, options commandOptions) (surface
 	if flowID == "" && (operation == surfaces.OperationApply || operation == surfaces.OperationRecover) {
 		flowID = "flow-" + correlation
 	}
+	invocationFingerprint := ""
+	if options.invocationEvidence != nil {
+		invocationFingerprint = options.invocationEvidence.InvocationFingerprint
+	}
 	return surfaces.Request{
 		SchemaVersion: surfaces.SchemaVersion, Operation: operation, Repository: options.repository, Host: options.host, CorrelationID: correlation,
 		ProgramID: options.programID, ProgramFingerprint: options.flowProgramFingerprint, EntryID: options.entryID, FlowID: flowID, Objective: objective, TransitionID: catalog.TransitionID(options.transitionID), Authority: authority, Parameters: parameters,
@@ -631,7 +725,7 @@ func buildRequest(operation surfaces.Operation, options commandOptions) (surface
 				ExpectedInstanceID: options.expectedInstanceID, ExpectedStateRevision: options.expectedStateRevision, ExpectedProgramFingerprint: options.expectedProgramFingerprint,
 				ExpectedSnapshotFingerprint: options.expectedSnapshotFingerprint, ExpectedObjectiveBindingFingerprint: options.expectedObjectiveBindingFingerprint,
 				AuthorityFingerprint: options.authorityFingerprint,
-			}, RequiredCapabilities: requiredCapabilities, EffectiveCapabilities: effectiveCapabilities, WorkResultFingerprint: options.workResultFingerprint},
+			}, RequiredCapabilities: requiredCapabilities, EffectiveCapabilities: effectiveCapabilities, WorkResultFingerprint: options.workResultFingerprint, InvocationFingerprint: invocationFingerprint},
 		RepositoryAuthority: options.repositoryPolicy, IdempotencyKey: options.idempotencyKey, Command: options.command,
 		DelegationBindingFingerprint: options.delegationBindingFingerprint,
 		DelegationRequestFingerprint: options.delegationRequestFingerprint,
@@ -643,6 +737,8 @@ func buildRequest(operation surfaces.Operation, options commandOptions) (surface
 		WorkBlockReason:              options.workBlockReason,
 		ControlBundle:                options.controlBundle,
 		ControlBundleFingerprint:     options.controlBundleFingerprint,
+		InvocationEvidence:           options.invocationEvidence,
+		InputRequest:                 options.inputRequest,
 	}, nil
 }
 
@@ -807,6 +903,13 @@ func renderResponse(response surfaces.Response, format string) error {
 				response.Doctor.ProgramID, response.Doctor.ProgramVersion, response.Doctor.CoreTransitionCount,
 				response.Doctor.RuntimeTransitionCount, response.Doctor.ExtensionTransitionCount, response.Doctor.TransitionCount,
 				response.Doctor.ProgramFingerprint, response.Doctor.UnresolvedProgramDrift, response.Doctor.RuntimeHealthy, response.Doctor.UpdateReady, response.Doctor.RecoveryRequired, response.Doctor.Snapshot, response.Doctor.Detail)
+			return nil
+		}
+		if response.InputRequest != nil {
+			fmt.Printf("SUSPENDED: %s transition=%s request=%s state_revision=%d\n", response.InputRequest.Code, response.InputRequest.TransitionID, response.InputRequest.Fingerprint, response.InputRequest.StateRevision)
+			for _, parameter := range response.InputRequest.Parameters {
+				fmt.Printf("input=%s type=%s %s\n", parameter.ID, parameter.Type.Kind, parameter.Description)
+			}
 			return nil
 		}
 		if response.Decision != nil {

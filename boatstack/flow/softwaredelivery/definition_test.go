@@ -26,10 +26,10 @@ func compiledFlow(t *testing.T, guard controlprogram.Predicate) (controlprogram.
 		Program: controlprogram.Program{ID: "product-delivery", Version: "1"},
 		Facets: []controlprogram.Facet{
 			{ID: "publication", Kind: "string"}, {ID: "verification", Kind: "string"},
-			{ID: "configuration", Kind: "string"}, {ID: "runtime", Kind: "string"},
+			{ID: "configuration", Kind: "string"}, {ID: "runtime", Kind: "string"}, {ID: "publication_id", Kind: "string"},
 		},
 		Operators:   []controlprogram.Operator{{ID: "publication.observe", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/publication.observe", Version: "1"}}},
-		Transitions: []controlprogram.Transition{{ID: "publication.observe", Operator: "publication.observe", Guard: guard, Target: controlprogram.Predicate{True: &truth}, Priority: 77}},
+		Transitions: []controlprogram.Transition{{ID: "publication.observe", Operator: "publication.observe", Guard: guard, Target: controlprogram.Predicate{True: &truth}, Priority: 77, Parameters: publicationIDStateParameter(guard)}},
 		Targets: []controlprogram.Target{{ID: "published-pr", Predicate: controlprogram.Predicate{All: []controlprogram.Predicate{
 			fact("verification", "current"), fact("configuration", "verified"), fact("runtime", "verified"), fact("publication", "open"),
 		}}}},
@@ -40,6 +40,13 @@ func compiledFlow(t *testing.T, guard controlprogram.Predicate) (controlprogram.
 		t.Fatal(err)
 	}
 	return compiled, resolver
+}
+
+func publicationIDStateParameter(_ controlprogram.Predicate) []controlprogram.TransitionParameterBinding {
+	available := controlprogram.Predicate{Fact: &controlprogram.FactPredicate{Facet: "publication_id", Statuses: []string{"known"}}}
+	return []controlprogram.TransitionParameterBinding{{Parameter: "publication_id", Producer: controlprogram.ParameterProducer{
+		Kind: controlprogram.ParameterSourceState, Facet: "publication_id", AvailableWhen: &available,
+	}}}
 }
 
 func fact(facet, value string) controlprogram.Predicate {
@@ -95,6 +102,7 @@ func TestRepositoryGuardCanOnlyStrengthenTrustedBinding(t *testing.T) {
 	}
 	invalid := compiled.Document
 	invalid.Transitions[0].Guard = controlprogram.Predicate{Any: []controlprogram.Predicate{fact("publication", "candidate"), fact("publication", "open")}}
+	invalid.Transitions[0].Parameters = publicationIDStateParameter(invalid.Transitions[0].Guard)
 	nonConjunctive, err := controlprogram.Compile(invalid, resolver)
 	if err != nil {
 		t.Fatal(err)
@@ -144,6 +152,22 @@ func TestPublicationBindingPreservesProviderAsMandatory(t *testing.T) {
 	}
 	if !contains(resolved.Authority.AnyOf, "human") || !contains(resolved.Authority.AnyOf, "autonomy") || !contains(resolved.Authority.AllOf, "external-provider") {
 		t.Fatalf("publication authority = %#v", resolved.Authority)
+	}
+}
+
+func TestPublicationReconcileBindingDoesNotRequireUncommittedPublicationOutput(t *testing.T) {
+	// control-law: recovery inputs survive an interrupted external effect
+	resolver, err := softwareflow.NewResolver(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := resolver.ResolveOperator("software-delivery/publication.reconcile", "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resolved.Parameters) != 1 || resolved.Parameters[0].ID != "transaction_id" ||
+		len(resolved.StateInputs) != 1 || resolved.StateInputs[0].Parameter != "transaction_id" || resolved.StateInputs[0].Facet != softwareflow.RecoveryTransactionFacet {
+		t.Fatalf("publication reconciliation inputs = parameters %#v state %#v", resolved.Parameters, resolved.StateInputs)
 	}
 }
 
@@ -301,14 +325,14 @@ func TestAbandonmentEntryMakesTrustedAbandonmentObjectiveProgress(t *testing.T) 
 		Facets: []controlprogram.Facet{
 			{ID: "publication", Kind: "string"}, {ID: "verification", Kind: "string"},
 			{ID: "configuration", Kind: "string"}, {ID: "runtime", Kind: "string"},
-			{ID: "delivery", Kind: "string"}, {ID: "workspace", Kind: "string"},
+			{ID: "delivery", Kind: "string"}, {ID: "workspace", Kind: "string"}, {ID: "publication_id", Kind: "string"},
 		},
 		Operators: []controlprogram.Operator{
 			{ID: "publication.observe", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/publication.observe", Version: "1"}},
 			{ID: "plan.abandon", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/plan.abandon", Version: "1"}},
 		},
 		Transitions: []controlprogram.Transition{
-			{ID: "publication.observe", Operator: "publication.observe", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 77},
+			{ID: "publication.observe", Operator: "publication.observe", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 77, Parameters: publicationIDStateParameter(controlprogram.Predicate{True: &truth})},
 			{ID: "plan.abandon", Operator: "plan.abandon", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 31},
 		},
 		Targets: []controlprogram.Target{

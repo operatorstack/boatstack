@@ -33,7 +33,7 @@ jobs:
         working-directory: boatstack
         env:
           BOATSTACK_REQUIRE_FLOW_FRONTEND: '1'
-        run: go test ./controlprogram -run TestTypeScriptDSLAndRawIRHaveOneCanonicalFingerprint
+        run: go test ./controlprogram -run 'TestTypeScriptDSLAndRawIRHaveOneCanonicalFingerprint|TestRepositoryOwnedSoftwareDeliveryFlowsShareOneRuntime'
 
   component:
     name: component-${{ matrix.name }}

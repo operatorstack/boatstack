@@ -118,8 +118,16 @@ func readJournal(path string) (journalRecord, error) {
 	if record.SchemaVersion != protocol.JournalSchemaVersion || record.Admission.ID == "" || record.TransitionID == "" || !record.TransitionClass.Valid() || !record.TransitionClass.Controllable() || record.Status == "" {
 		return journalRecord{}, fmt.Errorf("invalid transaction journal %s", path)
 	}
-	if err := record.Admission.ValidateIdentity(); err != nil || record.Admission.TransitionID != record.TransitionID {
-		return journalRecord{}, fmt.Errorf("invalid transaction admission in %s: %v", path, err)
+	legacyCommitted := strings.HasSuffix(path, ".committed") && record.Status == "committed" && record.Receipt != nil &&
+		record.Admission.SchemaVersion == protocol.PreviousAdmissionSchemaVersion && record.Receipt.SchemaVersion == protocol.PreviousReceiptSchemaVersion
+	var admissionErr error
+	if legacyCommitted {
+		admissionErr = record.Admission.ValidateCommittedHistoryIdentity()
+	} else {
+		admissionErr = record.Admission.ValidateIdentity()
+	}
+	if admissionErr != nil || record.Admission.TransitionID != record.TransitionID {
+		return journalRecord{}, fmt.Errorf("invalid transaction admission in %s: %v", path, admissionErr)
 	}
 	allowed, err := model.NormalizeStateFacets("journal allowed state facets", record.AllowedStateFacets)
 	if err != nil || len(allowed) == 0 || !slices.Equal(allowed, record.AllowedStateFacets) {
@@ -132,12 +140,19 @@ func readJournal(path string) (journalRecord, error) {
 		}
 	}
 	if record.Receipt != nil {
-		if err := record.Receipt.Validate(); err != nil || record.Receipt.ID != record.ReceiptID || record.Receipt.AdmissionID != record.Admission.ID || record.Receipt.TransitionID != record.TransitionID {
-			return journalRecord{}, fmt.Errorf("invalid committed transition fact in %s: %v", path, err)
+		var receiptErr error
+		if legacyCommitted {
+			receiptErr = record.Receipt.ValidateCommittedHistory()
+		} else {
+			receiptErr = record.Receipt.Validate()
+		}
+		if receiptErr != nil || record.Receipt.ID != record.ReceiptID || record.Receipt.AdmissionID != record.Admission.ID || record.Receipt.TransitionID != record.TransitionID {
+			return journalRecord{}, fmt.Errorf("invalid committed transition fact in %s: %v", path, receiptErr)
 		}
 		receipt := record.Receipt
 		admission := record.Admission
 		if receipt.PrescriptionID != admission.PrescriptionID || receipt.TransitionVersion != admission.TransitionVersion || receipt.Program.Fingerprint != admission.ExpectedProgramFingerprint ||
+			receipt.InvocationFingerprint != admission.InvocationFingerprint ||
 			receipt.PriorStateRevision != admission.ExpectedStateRevision || receipt.SourceFingerprint != admission.ExpectedSnapshotFingerprint ||
 			receipt.AuthorityFingerprint != admission.AuthorityFingerprint || !slices.Equal(receipt.RequiredCapabilities, admission.RequiredCapabilities) ||
 			!slices.Equal(receipt.GrantedCapabilities, admission.GrantedCapabilities) || receipt.ObjectiveID != admission.Objective.ID || receipt.TargetID != admission.Objective.TargetID || receipt.TrustedClass != admission.Objective.TrustedClass ||

@@ -37,6 +37,9 @@ func planningPackageTransitions(transitions map[string]delivery.Transition) ([]d
 		return nil, err
 	}
 	admit.ID, admit.Effect = PlanningPackageAdmit, PlanningPackageAdmit
+	// The planning-package effect consumes exact foreground-work evidence. The
+	// plan.create parameter contract is not part of this derived operation.
+	admit.Parameters = nil
 	admit.LocalEffects = []delivery.EffectID{PlanningPackageAdmit}
 	admit.Prescription.Operation = PlanningPackageAdmit
 	admit.Prescription.ExpectedPostcondition = "a schema-valid planning package is admitted"
