@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -97,6 +98,71 @@ func flowRepositoryWithHumanSlice(t *testing.T) string {
 	return repository
 }
 
+func TestCommitRequiredResponsePreservesRequestedOperation(t *testing.T) {
+	// control-law: typed suspension cannot change apply or recovery into resolve
+	required := &flowCommitRequiredError{
+		programID: "product-delivery", entryID: "run", runID: "run-example",
+		revision: strings.Repeat("a", 40), controlBundleFingerprint: strings.Repeat("b", 64),
+		cause: fmt.Errorf("bundle is not committed"),
+	}
+	for _, operation := range []surfaces.Operation{surfaces.OperationApply, surfaces.OperationRecover} {
+		response, ok := flowCommitRequiredResponse(required, operation)
+		if !ok || response.Operation != operation || response.CommitRequired == nil {
+			t.Fatalf("%s commit suspension = %#v, ok=%v", operation, response, ok)
+		}
+	}
+	bound := bindFlowCommitRequiredOperation(required, surfaces.OperationApply)
+	response, ok := flowCommitRequiredResponse(bound, surfaces.OperationResolve)
+	if !ok || response.Operation != surfaces.OperationApply {
+		t.Fatalf("bound apply suspension = %#v, ok=%v", response, ok)
+	}
+}
+
+func TestTrustedControlBundleRejectsHeadDriftWithMatchingWorkingTree(t *testing.T) {
+	// control-law: root bytes cannot substitute for the exact committed revision
+	repository := t.TempDir()
+	runFlowGit(t, repository, "init", "-q")
+	runFlowGit(t, repository, "config", "user.email", "flow@example.invalid")
+	runFlowGit(t, repository, "config", "user.name", "Flow Test")
+	writeFixture(t, repository, "README.md", []byte("base\n"))
+	runFlowGit(t, repository, "add", "README.md")
+	runFlowGit(t, repository, "commit", "-q", "-m", "base")
+	baseRevision := runFlowGitOutput(t, repository, "rev-parse", "HEAD")
+
+	bundleBytes := []byte("{}\n")
+	writeFixture(t, repository, ".boatstack/project.json", bundleBytes)
+	snapshot, err := boatstackruntime.NewControlBundleSnapshot(map[string][]byte{
+		".boatstack/project.json": bundleBytes,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := boatstackruntime.NewControlBundleContract(snapshot, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runFlowGit(t, repository, "add", ".boatstack/project.json")
+	runFlowGit(t, repository, "commit", "-q", "-m", "bundle")
+	bundleRevision := runFlowGitOutput(t, repository, "rev-parse", "HEAD")
+	request := surfaces.Request{
+		Operation: surfaces.OperationApply, Repository: repository,
+		ProgramID: "product-delivery", EntryID: "run", FlowID: "run-example",
+		ControlBundle: &contract, ControlBundleFingerprint: snapshot.Fingerprint, ControlBundleRevision: bundleRevision,
+	}
+
+	// A mixed reset preserves the exact working-tree bytes while moving HEAD to
+	// a revision that does not contain the admitted bundle.
+	runFlowGit(t, repository, "reset", "--mixed", baseRevision)
+	if err := boatstackruntime.VerifyControlBundleRoot(repository, snapshot); err != nil {
+		t.Fatalf("fixture no longer demonstrates root-only acceptance: %v", err)
+	}
+	err = verifyTrustedRequestControlBundle(context.Background(), request)
+	response, ok := flowCommitRequiredResponse(err, surfaces.OperationResolve)
+	if !ok || response.Operation != surfaces.OperationApply || response.CommitRequired == nil || response.CommitRequired.Code != controlBundleCommitRequiredCode {
+		t.Fatalf("HEAD drift suspension = %#v, err=%v", response, err)
+	}
+}
+
 func TestFlowEntryCanonicalizesRepositoryRoot(t *testing.T) {
 	repository := flowRepository(t)
 	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
@@ -113,6 +179,131 @@ func TestFlowEntryCanonicalizesRepositoryRoot(t *testing.T) {
 	}
 	if bound.repository != exact {
 		t.Fatalf("repository = %q, want exact root %q", bound.repository, exact)
+	}
+}
+
+func TestInternalFlowInitializationMaterializesCanonicalInputs(t *testing.T) {
+	// control-law: a Flow-selected internal initialization is complete without
+	// accepting host-supplied deterministic parameters.
+	t.Setenv("BOATSTACK_STATE_ROOT", t.TempDir())
+	repository := flowRepository(t)
+	runFlowGit(t, repository, "init", "-q", "-b", "main")
+	runFlowGit(t, repository, "config", "user.email", "fixture@example.invalid")
+	runFlowGit(t, repository, "config", "user.name", "Fixture")
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "fixture")
+
+	bound, err := bindFlowEntry(context.Background(), commandOptions{
+		repository: repository, programID: "product-delivery", entryID: "run", transitionID: "installation.initialize", humanActor: "operator", host: "codex",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parameters, err := parseParameters(bound.parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(bound.repository, ".boatstack", "project.json")
+	configRaw, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, configFingerprint, err := protocol.ProjectConfigFingerprint(configRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantRuntime, err := currentRuntimeParameters()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := append(wantRuntime, protocol.Parameter{Name: "config_path", Value: configPath}, protocol.Parameter{Name: "config_sha256", Value: configFingerprint})
+	for _, parameter := range want {
+		if actual, ok := parameters.Get(parameter.Name); !ok || actual != parameter.Value {
+			t.Fatalf("parameter %s = %q, want %q", parameter.Name, actual, parameter.Value)
+		}
+	}
+	if len(parameters) != len(want) || bound.inputRequest != nil {
+		t.Fatalf("materialized parameters = %#v, input request = %#v", parameters, bound.inputRequest)
+	}
+
+	writeFixture(t, repository, "alternate.json", configRaw)
+	_, err = bindFlowEntry(context.Background(), commandOptions{
+		repository: repository, programID: "product-delivery", entryID: "run", transitionID: "installation.initialize", humanActor: "operator", host: "codex",
+		maintenanceParameterSurface: true, parameters: []string{"config_path=" + filepath.Join(repository, "alternate.json")},
+	})
+	if err == nil || !strings.Contains(err.Error(), "FLOW_INPUT_MISMATCH") {
+		t.Fatalf("noncanonical internal initialization input error = %v", err)
+	}
+}
+
+func TestFreshFlowInitializationRejectsDirtyCanonicalConfigurationBeforeEffects(t *testing.T) {
+	// control-law: initialization may derive inputs only from an exact committed
+	// source bundle; a dirty canonical configuration cannot become durable state.
+	t.Setenv("BOATSTACK_STATE_ROOT", t.TempDir())
+	repository := flowRepository(t)
+	runFlowGit(t, repository, "init", "-q", "-b", "main")
+	runFlowGit(t, repository, "config", "user.email", "fixture@example.invalid")
+	runFlowGit(t, repository, "config", "user.name", "Fixture")
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "fixture")
+
+	writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":2,"project":{"name":"dirty","default_branch":"main","commands":{"test":"false"}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude"]}`))
+	questionRaw, err := captureRunOutput(t,
+		"flow", "run", "--repo", repository, "--flow", "product-delivery", "--entry", "run",
+		"--repository-authority", "--host", "codex", "--format", "json",
+	)
+	if err != nil {
+		t.Fatalf("installation authority question: %v\n%s", err, questionRaw)
+	}
+	var question surfaces.Response
+	if err := json.Unmarshal(questionRaw, &question); err != nil {
+		t.Fatal(err)
+	}
+	if question.Question == nil || question.Question.TransitionID != "installation.initialize" || question.RunID == "" {
+		t.Fatalf("installation authority response = %#v", question)
+	}
+
+	suspendedRaw, err := captureRunOutput(t,
+		"flow", "run", "--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", question.RunID,
+		"--repository-authority", "--human", "operator", "--host", "codex", "--format", "json",
+	)
+	if err != nil {
+		t.Fatalf("dirty source suspension: %v\n%s", err, suspendedRaw)
+	}
+	var suspended surfaces.Response
+	if err := json.Unmarshal(suspendedRaw, &suspended); err != nil {
+		t.Fatal(err)
+	}
+	if suspended.CommitRequired == nil || suspended.CommitRequired.Code != controlBundleCommitRequiredCode || suspended.CommitRequired.RunID != question.RunID || !strings.Contains(suspended.CommitRequired.Description, "authored Boatstack control bundle before initialization") {
+		t.Fatalf("dirty source suspension = %#v", suspended)
+	}
+
+	resolver, err := plant.NewResolver("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	invoking, err := resolver.ResolveInvocation(context.Background(), repository, "codex", "dirty-initialization-check")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, _, err := resolver.ResolveLayout(context.Background(), invoking)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		layout.StatePath,
+		layout.ReceiptPath,
+		filepath.Join(repository, ".boatstack", "runtime.json"),
+		filepath.Join(repository, ".boatstack", "host-skills.json"),
+	} {
+		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+			t.Fatalf("dirty initialization wrote %s: %v", path, statErr)
+		}
+	}
+	if status := runFlowGitOutput(t, repository, "status", "--short"); status != "M .boatstack/project.json" {
+		t.Fatalf("dirty initialization changed repository:\n%s", status)
 	}
 }
 
@@ -136,6 +327,10 @@ func runFlowGitOutput(t *testing.T, repository string, arguments ...string) stri
 
 func writeAdmittedFlowProgramState(t *testing.T, repository, programFingerprint string) {
 	t.Helper()
+	_, bundleFingerprint, err := bindControlBundle(context.Background(), repository, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	resolver, err := plant.NewResolver("")
 	if err != nil {
 		t.Fatal(err)
@@ -150,6 +345,7 @@ func writeAdmittedFlowProgramState(t *testing.T, repository, programFingerprint 
 	}
 	state := durable.Default(invoking, time.Now().UTC())
 	state.ProgramFingerprint = programFingerprint
+	state.ControlBundleFingerprint = bundleFingerprint
 	raw, err := durable.EncodeState(state)
 	if err != nil {
 		t.Fatal(err)
@@ -1124,6 +1320,8 @@ func TestAcceptedProgramReconciliationReprojectsSameFlowRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("initialize old program: %v\n%s", err, output)
 	}
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "commit initialized control bundle")
 	bound, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex"})
 	if err != nil {
 		t.Fatal(err)
@@ -1160,8 +1358,25 @@ func TestAcceptedProgramReconciliationReprojectsSameFlowRun(t *testing.T) {
 		"next", "--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", bound.runID,
 		"--host", "codex", "--format", "json",
 	)
-	if err != nil && strings.Contains(err.Error(), "INVOCATION_DRIFT") {
-		t.Fatalf("post-reconciliation resolution reused stale invocation: %v\n%s", err, output)
+	if err != nil {
+		t.Fatalf("post-reconciliation commit suspension: %v\n%s", err, output)
+	}
+	var commitRequired surfaces.Response
+	if err := json.Unmarshal(output, &commitRequired); err != nil {
+		t.Fatal(err)
+	}
+	if commitRequired.CommitRequired == nil || commitRequired.RunID != bound.runID {
+		t.Fatalf("post-reconciliation commit suspension = %#v", commitRequired)
+	}
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "commit reconciled control bundle")
+
+	output, err = captureRunOutput(t,
+		"next", "--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", bound.runID,
+		"--host", "codex", "--format", "json",
+	)
+	if err != nil {
+		t.Fatalf("post-commit resolution: %v\n%s", err, output)
 	}
 	var projected surfaces.Response
 	if decodeErr := json.Unmarshal(output, &projected); decodeErr != nil {
@@ -2260,7 +2475,7 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	runFlowGit(t, repository, "commit", "-q", "-m", "fixture")
 	t.Setenv("BOATSTACK_STATE_ROOT", t.TempDir())
 
-	bound, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex"})
+	bound, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex", delegationRequestProjection: true})
 	if err != nil {
 		t.Fatal(err)
 	}

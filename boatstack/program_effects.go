@@ -30,6 +30,11 @@ func (d programEffectDriver) Prepare(ctx context.Context, admission protocol.Adm
 			return nil, err
 		}
 	}
+	if transition.Origin.Kind != catalog.OriginCoreSystem {
+		if _, err := effects.VerifyControlBundleBoundary(ctx, d.resolver, admission); err != nil {
+			return nil, err
+		}
+	}
 	if transition.Origin.Kind == catalog.OriginCoreSystem {
 		return d.base.Prepare(ctx, admission, transition)
 	}

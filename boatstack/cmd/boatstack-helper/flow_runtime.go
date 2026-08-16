@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,6 +32,61 @@ import (
 )
 
 var flowSegment = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+
+const controlBundleCommitRequiredCode = "CONTROL_BUNDLE_COMMIT_REQUIRED"
+
+type flowCommitRequiredError struct {
+	programID                string
+	entryID                  string
+	runID                    string
+	revision                 string
+	controlBundleFingerprint string
+	description              string
+	operation                surfaces.Operation
+	cause                    error
+}
+
+func (e *flowCommitRequiredError) Error() string {
+	return fmt.Sprintf("%s: commit the exact Boatstack control bundle at revision %s before product delegation or repository work: %v", controlBundleCommitRequiredCode, e.revision, e.cause)
+}
+
+func flowCommitRequiredResponse(err error, operation surfaces.Operation) (surfaces.Response, bool) {
+	var required *flowCommitRequiredError
+	if !errors.As(err, &required) {
+		return surfaces.Response{}, false
+	}
+	if required.operation.Valid() {
+		operation = required.operation
+	}
+	description := required.description
+	if description == "" {
+		description = "In the source repository, commit the exact installed Boatstack control bundle, including generated runtime and host projection files, then resume this exact run."
+	}
+	return surfaces.Response{
+		SchemaVersion: surfaces.SchemaVersion,
+		Operation:     operation,
+		ProgramID:     required.programID,
+		EntryID:       required.entryID,
+		RunID:         required.runID,
+		CommitRequired: &surfaces.CommitRequired{
+			Code:                     controlBundleCommitRequiredCode,
+			RunID:                    required.runID,
+			Revision:                 required.revision,
+			ControlBundleFingerprint: required.controlBundleFingerprint,
+			Description:              description,
+		},
+	}, true
+}
+
+func bindFlowCommitRequiredOperation(err error, operation surfaces.Operation) error {
+	var required *flowCommitRequiredError
+	if !errors.As(err, &required) {
+		return err
+	}
+	bound := *required
+	bound.operation = operation
+	return &bound
+}
 
 func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions, error) {
 	if options.programID == "" && options.entryID == "" {
@@ -138,11 +194,59 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	}
 	options.controlBundle = bundle
 	options.controlBundleFingerprint = bundleFingerprint
+	// Installation authority establishes the bundle. Every other Flow phase
+	// must bind the accepted bundle to the exact current Git revision.
+	installationAuthority := options.transitionID == "installation.initialize" || options.transitionID == "installation.update" || options.transitionID == "installation.reconcile-update"
+	acceptedBundleRevision := ""
+	if options.transitionID == "" || !installationAuthority {
+		acceptedBundleRevision, err = requireCommittedAcceptedFlowBundle(ctx, repository, options, bundle.Source, bundleFingerprint)
+		if err != nil {
+			return commandOptions{}, err
+		}
+		if options.controlBundleRevision != "" && acceptedBundleRevision != options.controlBundleRevision {
+			currentRevision, revisionErr := boatstackruntime.ResolveCommitRevision(ctx, repository, "HEAD")
+			if revisionErr != nil {
+				return commandOptions{}, revisionErr
+			}
+			return commandOptions{}, newFlowCommitRequiredError(options, currentRevision, bundleFingerprint, fmt.Errorf("CONTROL_BUNDLE_REVISION_DRIFT: expected revision %s", options.controlBundleRevision))
+		}
+		options.controlBundleRevision = acceptedBundleRevision
+	}
+	repositoryTransition := false
+	if options.transitionID != "" {
+		_, repositoryTransition = findCompiledTransition(compiled.Document.Transitions, options.transitionID)
+	}
+	if repositoryTransition || options.controlBundleRevision != "" || options.transitionID == "installation.initialize" {
+		revision, revisionErr := boatstackruntime.ResolveCommitRevision(ctx, repository, "HEAD")
+		if revisionErr != nil {
+			return commandOptions{}, revisionErr
+		}
+		if options.controlBundleRevision != "" && revision != options.controlBundleRevision {
+			return commandOptions{}, newFlowCommitRequiredError(options, revision, bundleFingerprint, fmt.Errorf("CONTROL_BUNDLE_REVISION_DRIFT: expected revision %s", options.controlBundleRevision))
+		}
+		if commitErr := boatstackruntime.VerifyControlBundleRevision(ctx, repository, revision, bundle.Source); commitErr != nil {
+			required := newFlowCommitRequiredError(options, revision, bundleFingerprint, commitErr)
+			if options.transitionID == "installation.initialize" {
+				required.description = "In the source repository, commit the exact authored Boatstack control bundle before initialization, then resume this exact run."
+			}
+			return commandOptions{}, required
+		}
+		options.controlBundleRevision = revision
+	}
 	// Installation authority transitions must not consume or create product
 	// delegation. Their accepted effects establish or change the exact bundle
 	// to which later product delegation is bound.
-	installationAuthority := options.transitionID == "installation.initialize" || options.transitionID == "installation.update" || options.transitionID == "installation.reconcile-update"
-	if entry.Delegation != nil && !installationAuthority {
+	delegationRecordPresent := false
+	if entry.Delegation != nil && options.transitionID == "" && !options.delegationRequestProjection {
+		delegationRecordPresent, err = flowDelegationRecordPresent(ctx, repository, options)
+		if err != nil {
+			return commandOptions{}, err
+		}
+	}
+	// Resolve an unbound frontier before creating product delegation. This lets
+	// installation authority establish the exact control bundle first; the
+	// subsequent product candidate then receives delegation bound to that bundle.
+	if entry.Delegation != nil && (repositoryTransition || acceptedBundleRevision != "" || options.delegationRequestProjection || delegationRecordPresent) && !installationAuthority {
 		contextResolver, resolverErr := plant.NewResolver("")
 		if resolverErr != nil {
 			return commandOptions{}, resolverErr
@@ -205,7 +309,6 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		options.delegationRequest = delegationRequest
 	}
 	if options.transitionID != "" {
-		_, repositoryTransition := findCompiledTransition(compiled.Document.Transitions, options.transitionID)
 		if repositoryTransition {
 			options, err = materializeFlowInvocation(ctx, compiled, entry, options, options.controlBundle)
 			if err != nil || options.inputRequest != nil {
@@ -237,12 +340,107 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	return options, nil
 }
 
+// requireCommittedAcceptedFlowBundle makes an accepted installation result a
+// hard suspension boundary. Once durable state binds the exact current bundle,
+// no unbound resolution may select or create product state until those bytes
+// exist at the current Git revision. A candidate bundle that differs from
+// durable state remains available to the explicit reconciliation path.
+func requireCommittedAcceptedFlowBundle(ctx context.Context, repository string, options commandOptions, bundle boatstackruntime.ControlBundleSnapshot, bundleFingerprint string) (string, error) {
+	if _, err := os.Lstat(boatstackruntime.PinPath(repository)); os.IsNotExist(err) {
+		return "", nil
+	} else if err != nil {
+		return "", err
+	}
+	resolver, err := plant.NewResolver("")
+	if err != nil {
+		return "", err
+	}
+	host := options.host
+	if host == "" {
+		host = "cli"
+	}
+	invoking, err := resolver.ResolveInvocation(ctx, repository, host, "flow-control-bundle-commit")
+	if err != nil {
+		return "", err
+	}
+	layout, _, err := resolver.ResolveLayout(ctx, invoking)
+	if err != nil {
+		return "", err
+	}
+	raw, err := os.ReadFile(layout.StatePath)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	state, err := durable.DecodeState(raw)
+	if err != nil {
+		return "", err
+	}
+	if state.ControlBundleFingerprint == "" || state.ControlBundleFingerprint != bundleFingerprint {
+		return "", nil
+	}
+	revision, err := boatstackruntime.ResolveCommitRevision(ctx, repository, "HEAD")
+	if err != nil {
+		return "", err
+	}
+	if err := boatstackruntime.VerifyControlBundleRevision(ctx, repository, revision, bundle); err != nil {
+		return "", newFlowCommitRequiredError(options, revision, bundleFingerprint, err)
+	}
+	return revision, nil
+}
+
+func newFlowCommitRequiredError(options commandOptions, revision, bundleFingerprint string, cause error) *flowCommitRequiredError {
+	return &flowCommitRequiredError{
+		programID: options.programID, entryID: options.entryID, runID: options.runID,
+		revision: revision, controlBundleFingerprint: bundleFingerprint, cause: cause,
+	}
+}
+
+func flowDelegationRecordPresent(ctx context.Context, repository string, options commandOptions) (bool, error) {
+	resolver, err := plant.NewResolver("")
+	if err != nil {
+		return false, err
+	}
+	host := options.host
+	if host == "" {
+		host = "cli"
+	}
+	invoking, err := resolver.ResolveInvocation(ctx, repository, host, "flow-delegation-presence")
+	if err != nil {
+		return false, err
+	}
+	layout, _, err := resolver.ResolveLayout(ctx, invoking)
+	if err != nil {
+		return false, err
+	}
+	path, err := delegation.Path(layout.FlowRoot, options.runID)
+	if err != nil {
+		return false, err
+	}
+	if _, err := os.Lstat(path); err == nil {
+		return true, nil
+	} else if os.IsNotExist(err) {
+		return false, nil
+	} else {
+		return false, err
+	}
+}
+
 func bindInternalFlowContextParameters(ctx context.Context, options *commandOptions) error {
 	manifest, err := core.System().CoreManifest(ctx)
 	if err != nil {
 		return err
 	}
 	parameters, err := parseParameters(options.parameters)
+	if err != nil {
+		return err
+	}
+	if err := bindCanonicalInternalFlowParameters(options, parameters); err != nil {
+		return err
+	}
+	parameters, err = parseParameters(options.parameters)
 	if err != nil {
 		return err
 	}
@@ -274,6 +472,36 @@ func bindInternalFlowContextParameters(ctx context.Context, options *commandOpti
 		return nil
 	}
 	return fmt.Errorf("FLOW_TRANSITION_UNKNOWN: %s", options.transitionID)
+}
+
+// bindCanonicalInternalFlowParameters materializes deterministic inputs owned
+// by Boatstack's internal transition adapter. These values are observations of
+// the selected repository and executing runtime, not host-provided Flow input
+// and not installation authority.
+func bindCanonicalInternalFlowParameters(options *commandOptions, parameters protocol.Parameters) error {
+	if options.transitionID != "installation.initialize" {
+		return nil
+	}
+	configPath := filepath.Join(options.repository, ".boatstack", "project.json")
+	configRaw, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("CONTROL_BUNDLE_TARGET_INVALID: read canonical project configuration: %w", err)
+	}
+	_, configFingerprint, err := protocol.ProjectConfigFingerprint(configRaw)
+	if err != nil {
+		return fmt.Errorf("CONTROL_BUNDLE_TARGET_INVALID: fingerprint canonical project configuration: %w", err)
+	}
+	currentRuntime, err := currentRuntimeParameters()
+	if err != nil {
+		return err
+	}
+	canonical := append(currentRuntime, protocol.Parameter{Name: "config_path", Value: configPath}, protocol.Parameter{Name: "config_sha256", Value: configFingerprint})
+	for _, parameter := range canonical {
+		if err := bindFlowContextParameter(options, parameters, parameter.Name, parameter.Value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func bindFlowContextParameter(options *commandOptions, parameters protocol.Parameters, name, value string) error {
@@ -676,7 +904,7 @@ func bindRPCFlowEntryWithMaintenance(ctx context.Context, request surfaces.Reque
 	} else if replay {
 		request.Repository = canonicalRepository
 		request.Parameters, request.InvocationEvidence, request.InputRequest = nil, nil, nil
-		request.ControlBundle, request.ControlBundleFingerprint = nil, ""
+		request.ControlBundle, request.ControlBundleFingerprint, request.ControlBundleRevision = nil, "", ""
 		return request, nil
 	}
 	repositoryTransition, err := repositoryFlowDeclaresTransition(request.Repository, request.ProgramID, string(request.TransitionID))
@@ -692,9 +920,10 @@ func bindRPCFlowEntryWithMaintenance(ctx context.Context, request surfaces.Reque
 		flowProgramFingerprint: request.ProgramFingerprint,
 		runID:                  request.FlowID, objectiveID: request.Objective.ID, targetID: string(request.Objective.TargetID), trustedObjectiveClass: string(request.Objective.TrustedObjectiveClass()), deliveryID: request.Objective.DeliveryID,
 		transitionID: string(request.TransitionID), parameters: parameterFlags, maintenanceParameterSurface: maintenanceParameterSurface && request.TransitionID != "" && !repositoryTransition,
+		controlBundleRevision: request.ControlBundleRevision,
 	})
 	if err != nil {
-		return surfaces.Request{}, err
+		return surfaces.Request{}, bindFlowCommitRequiredOperation(err, request.Operation)
 	}
 	parameters, err := parseParameters(bound.parameters)
 	if err != nil {
@@ -714,6 +943,7 @@ func bindRPCFlowEntryWithMaintenance(ctx context.Context, request surfaces.Reque
 	request.WorkInputs = bound.workInputs
 	request.ControlBundle = bound.controlBundle
 	request.ControlBundleFingerprint = bound.controlBundleFingerprint
+	request.ControlBundleRevision = bound.controlBundleRevision
 	request.InvocationEvidence = bound.invocationEvidence
 	request.InputRequest = bound.inputRequest
 	return request, nil

@@ -47,7 +47,8 @@ func TestExactProductDeliveryFlowReachesPublishedPRWithFakeProvider(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := boatstackruntime.InstallExecutable(executable, runtimeHome, boatstackruntime.Identity{Version: buildinfo.Version, SHA256: hash(runtimeRaw), SourceRevision: buildRevision()}); err != nil {
+	runtimeIdentity := boatstackruntime.Identity{Version: buildinfo.Version, SHA256: hash(runtimeRaw), SourceRevision: buildRevision()}
+	if _, err := boatstackruntime.InstallExecutable(executable, runtimeHome, runtimeIdentity); err != nil {
 		t.Fatal(err)
 	}
 
@@ -74,39 +75,132 @@ func TestExactProductDeliveryFlowReachesPublishedPRWithFakeProvider(t *testing.T
 	runFlowGit(t, repository, "remote", "add", "origin", bare)
 	runFlowGit(t, repository, "push", "-q", "-u", "origin", "main")
 	installFakePublicationProvider(t)
-	initialize, err := captureRunOutput(t,
-		"init", "--repo", repository, "--flow", "product-delivery", "--entry", "run",
-		"--param", "config_path="+filepath.Join(repository, ".boatstack", "project.json"), "--human", "operator", "--host", "codex", "--format", "json",
-	)
+
+	generatedSkill, err := os.ReadFile(filepath.Join(repository, ".agents", "skills", "product-delivery-run", "SKILL.md"))
 	if err != nil {
-		t.Fatalf("initialize: %v\n%s", err, initialize)
-	}
-	var initialized surfaces.Response
-	if err := json.Unmarshal(initialize, &initialized); err != nil {
 		t.Fatal(err)
 	}
-	if initialized.Receipt == nil || initialized.Receipt.TransitionID != "installation.initialize" {
-		t.Fatalf("initialization response = %#v", initialized)
+	generatedStart := "boatstack flow run --repo . --flow product-delivery --entry run --repository-authority --host codex --format json"
+	if !strings.Contains(string(generatedSkill), generatedStart) {
+		t.Fatalf("generated skill lacks exact start command %q", generatedStart)
+	}
+
+	// `next` remains a read-only resolver even when scoped to a Flow entry.
+	// The generated execution skill must use `flow run` instead of changing
+	// the observation contract of `next`.
+	if _, err := captureRunOutput(t, "next", "--repo", repository, "--flow", "product-delivery", "--entry", "run", "--repository-authority", "--host", "codex", "--format", "json"); err != nil {
+		t.Fatalf("read-only Flow next: %v", err)
+	}
+	resolver, err := plant.NewResolver("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	invoking, err := resolver.ResolveInvocation(context.Background(), repository, "codex", "read-only-next")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, _, err := resolver.ResolveLayout(context.Background(), invoking)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{layout.StatePath, layout.ReceiptPath} {
+		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+			t.Fatalf("read-only Flow next wrote %s: %v", path, statErr)
+		}
+	}
+
+	// The exact generated command supplies no actor. It must return a typed,
+	// run-bound installation authority question instead of a zero-progress
+	// candidate or a premature product delegation request.
+	first, err := captureStdout(t, func() error {
+		return run([]string{"flow", "run", "--repo", repository, "--flow", "product-delivery", "--entry", "run", "--repository-authority", "--host", "codex", "--format", "json"})
+	})
+	if err != nil {
+		t.Fatalf("installation authority suspension: %v\n%s", err, first)
+	}
+	var installationQuestion surfaces.Response
+	if err := json.Unmarshal(first, &installationQuestion); err != nil {
+		t.Fatal(err)
+	}
+	if installationQuestion.Question == nil || installationQuestion.Question.TransitionID != "installation.initialize" || len(installationQuestion.Question.Authority) != 2 || installationQuestion.RunID == "" || installationQuestion.Delegation != nil || installationQuestion.Receipt != nil {
+		t.Fatalf("installation authority response = %#v\n%s", installationQuestion, first)
+	}
+	runID := installationQuestion.RunID
+	t.Logf("SUSPENSION question run=%s transition=%s authority=%v", runID, installationQuestion.Question.TransitionID, installationQuestion.Question.Authority)
+
+	// Accepting installation may write the control bundle, but product authority
+	// cannot bind to those bytes until an explicit Git commit establishes the
+	// revision boundary.
+	install, err := captureStdout(t, func() error {
+		return run([]string{"flow", "run", "--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", runID, "--repository-authority", "--human", "operator", "--host", "codex", "--format", "json"})
+	})
+	if err != nil {
+		t.Fatalf("automatic initialization: %v\n%s", err, install)
+	}
+	var commitSuspension surfaces.Response
+	if err := json.Unmarshal(install, &commitSuspension); err != nil {
+		t.Fatal(err)
+	}
+	if commitSuspension.CommitRequired == nil || commitSuspension.CommitRequired.Code != controlBundleCommitRequiredCode || commitSuspension.CommitRequired.RunID != runID || commitSuspension.CommitRequired.ControlBundleFingerprint == "" || commitSuspension.Delegation != nil || commitSuspension.Work != nil {
+		t.Fatalf("control-bundle commit suspension = %#v\n%s", commitSuspension, install)
+	}
+	if !strings.Contains(string(generatedSkill), controlBundleCommitRequiredCode) || !strings.Contains(string(generatedSkill), "stay in the source\nrepository") {
+		t.Fatalf("generated skill does not route the installation commit suspension to the source repository")
+	}
+	prerequisites := committedFlowReceipts(t, repository, runID)
+	if len(prerequisites) != 1 || prerequisites[0].TransitionID != "installation.initialize" {
+		t.Fatalf("pre-commit trace = %#v", prerequisites)
+	}
+	if _, statErr := os.Stat(filepath.Join(layout.FlowRoot, "work", runID)); !os.IsNotExist(statErr) {
+		t.Fatalf("product work exists before bundle commit and delegation: %v", statErr)
+	}
+	workShowRaw, err := captureStdout(t, func() error {
+		return runFlowWork([]string{
+			"show", "--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", runID,
+			"--work-id", "planning-package", "--host", "codex", "--format", "json",
+		})
+	})
+	if err != nil {
+		t.Fatalf("work show commit suspension: %v\n%s", err, workShowRaw)
+	}
+	var workShowSuspension surfaces.Response
+	if err := json.Unmarshal(workShowRaw, &workShowSuspension); err != nil {
+		t.Fatal(err)
+	}
+	if workShowSuspension.Operation != surfaces.OperationWorkShow || workShowSuspension.CommitRequired == nil || workShowSuspension.CommitRequired.Code != controlBundleCommitRequiredCode {
+		t.Fatalf("work show commit suspension = %#v", workShowSuspension)
+	}
+	if status := runFlowGitOutput(t, repository, "status", "--short"); !strings.Contains(status, ".boatstack/runtime.json") || !strings.Contains(status, ".boatstack/host-skills.json") {
+		t.Fatalf("automatic installation did not leave the exact bundle for explicit commit:\n%s", status)
 	}
 	runFlowGit(t, repository, "add", ".")
 	runFlowGit(t, repository, "commit", "-q", "-m", "install Boatstack control bundle")
 	runFlowGit(t, repository, "push", "-q", "origin", "main")
 
-	first, err := captureStdout(t, func() error {
-		return runFlowContinuation([]string{"--repo", repository, "--flow", "product-delivery", "--entry", "run", "--host", "codex", "--format", "json"})
+	delegationOutput, err := captureStdout(t, func() error {
+		return run([]string{"flow", "run", "--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", runID, "--repository-authority", "--human", "operator", "--host", "codex", "--format", "json"})
 	})
 	if err != nil {
-		t.Fatalf("delegation suspension: %v\n%s", err, first)
+		t.Fatalf("delegation suspension: %v\n%s", err, delegationOutput)
 	}
 	var delegated surfaces.Response
-	if err := json.Unmarshal(first, &delegated); err != nil {
+	if err := json.Unmarshal(delegationOutput, &delegated); err != nil {
 		t.Fatal(err)
 	}
 	if delegated.Delegation == nil || delegated.Delegation.RunID == "" {
-		t.Fatalf("delegation response = %#v", delegated)
+		t.Fatalf("delegation response = %#v\n%s", delegated, delegationOutput)
 	}
-	runID := delegated.Delegation.RunID
+	if delegated.Delegation.RunID != runID {
+		t.Fatalf("delegation run = %s, want %s", delegated.Delegation.RunID, runID)
+	}
 	t.Logf("SUSPENSION delegation run=%s request=%s authorities=%v", runID, delegated.Delegation.RequestFingerprint, delegated.Delegation.Authorities)
+	if delegated.Work != nil {
+		t.Fatalf("product work crossed delegation: %#v", delegated.Work)
+	}
+	preDelegation := committedFlowReceipts(t, repository, runID)
+	if len(preDelegation) != 1 || preDelegation[0].TransitionID != "installation.initialize" {
+		t.Fatalf("product transition crossed delegation: %#v", preDelegation)
+	}
 	if _, err := captureStdout(t, func() error {
 		return runFlowAuthorize([]string{
 			"--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", runID,
@@ -118,7 +212,7 @@ func TestExactProductDeliveryFlowReachesPublishedPRWithFakeProvider(t *testing.T
 	t.Logf("AUTHORITY accepted class=autonomy actor=operator request=%s", delegated.Delegation.RequestFingerprint)
 
 	workOutput, err := captureStdout(t, func() error {
-		return runFlowContinuation([]string{"--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", runID, "--repository-authority", "--host", "codex", "--format", "json"})
+		return runFlowContinuation([]string{"--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", runID, "--repository-authority", "--human", "operator", "--host", "codex", "--format", "json"})
 	})
 	if err != nil {
 		t.Fatalf("planning suspension: %v\n%s", err, workOutput)

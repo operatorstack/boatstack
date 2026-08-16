@@ -34,6 +34,31 @@ import (
 
 type fixedClock struct{ value time.Time }
 
+type stagedPrepareDriver struct {
+	base          ports.EffectDriver
+	calls         int
+	trigger       int
+	beforePrepare func()
+}
+
+func (d *stagedPrepareDriver) Prepare(ctx context.Context, admission protocol.Admission, transition catalog.Transition) (ports.PreparedEffect, error) {
+	d.calls++
+	if d.calls == d.trigger && d.beforePrepare != nil {
+		d.beforePrepare()
+	}
+	return d.base.Prepare(ctx, admission, transition)
+}
+
+type countingJournal struct {
+	ports.Journal
+	begun int
+}
+
+func (j *countingJournal) Begin(ctx context.Context, admission protocol.Admission, transition catalog.Transition) error {
+	j.begun++
+	return j.Journal.Begin(ctx, admission, transition)
+}
+
 const testProgramFingerprint = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 var testProgramIdentity = protocol.ProgramIdentity{ID: "standard", Version: "test", Fingerprint: testProgramFingerprint}
@@ -251,6 +276,135 @@ func TestStaleControlBundleStopsBeforeManagedStateOrRuntimePin(t *testing.T) {
 	}
 	if _, statErr := os.Stat(boatstackruntime.PinPath(repository)); !os.IsNotExist(statErr) {
 		t.Fatalf("stale bundle created runtime pin: %v", statErr)
+	}
+}
+
+func TestControllerRejectsExactBundleRevisionDriftWithMatchingWorkingBytes(t *testing.T) {
+	// control-law: public SDK requests cannot substitute matching working bytes for the admitted commit
+	ctx := context.Background()
+	repository := testRepository(t)
+	baseRevision := strings.TrimSpace(commandOutput(t, repository, "git", "rev-parse", "HEAD"))
+	if err := os.WriteFile(filepath.Join(repository, "README.md"), []byte("candidate bundle\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(t, repository, "git", "add", "README.md")
+	run(t, repository, "git", "commit", "-q", "-m", "candidate bundle")
+	acceptedRevision := strings.TrimSpace(commandOutput(t, repository, "git", "rev-parse", "HEAD"))
+
+	externalRoot := t.TempDir()
+	kernel, err := boatstack.NewDeliveryController(externalRoot, testProgram())
+	if err != nil {
+		t.Fatal(err)
+	}
+	executable, _ := os.Executable()
+	executable, _ = filepath.Abs(executable)
+	executable, _ = filepath.EvalSymlinks(executable)
+	runtimeRaw, _ := os.ReadFile(executable)
+	runtimeVersion := installTestRuntime(t, executable, runtimeRaw)
+	configPath := filepath.Join(t.TempDir(), "project.json")
+	configRaw := []byte("{\"schema_version\":2,\"project\":{\"name\":\"revision\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
+	if err := os.WriteFile(configPath, configRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	request := surfaces.Request{
+		SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationApply, Repository: repository, Host: "cli", CorrelationID: "exact-bundle-revision",
+		FlowID: "flow-exact-bundle-revision", TransitionID: "installation.initialize", ControlBundleRevision: acceptedRevision,
+		Authority: protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{ID: "human", Class: catalog.AuthorityHuman, Subject: "operator", Fingerprint: "human-proof", IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)}}},
+		Parameters: protocol.Parameters{
+			{Name: "source_revision", Value: "fixture"}, {Name: "runtime_version", Value: runtimeVersion}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
+			{Name: "config_path", Value: configPath}, {Name: "config_sha256", Value: configFingerprint(t, configRaw)},
+		},
+	}
+	request = prescribeSurface(t, ctx, kernel, request)
+	run(t, repository, "git", "reset", "--mixed", baseRevision)
+	if raw, readErr := os.ReadFile(filepath.Join(repository, "README.md")); readErr != nil || string(raw) != "candidate bundle\n" {
+		t.Fatalf("reset fixture lost matching working bytes: value=%q error=%v", raw, readErr)
+	}
+
+	response, handleErr := kernel.Handle(ctx, request)
+	if handleErr == nil || !strings.Contains(handleErr.Error(), "CONTROL_BUNDLE_REVISION_DRIFT") || response.Error == "" {
+		t.Fatalf("stale exact revision crossed controller boundary: response=%+v error=%v", response, handleErr)
+	}
+	resolver, err := plant.NewResolver(externalRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, err := resolver.ResolveInvocation(ctx, repository, "cli", "exact-bundle-revision-check")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, _, err := resolver.ResolveLayout(ctx, invocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{layout.StatePath, layout.ReceiptPath, layout.EventPath, boatstackruntime.PinPath(repository)} {
+		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+			t.Fatalf("stale exact revision created managed artifact %s: %v", path, statErr)
+		}
+	}
+}
+
+func TestEffectPreparationRechecksBundleRevisionBeforeJournalMutation(t *testing.T) {
+	// control-law: a HEAD move after resolution is refused by final effect preparation
+	ctx := context.Background()
+	repository := testRepository(t)
+	baseRevision := strings.TrimSpace(commandOutput(t, repository, "git", "rev-parse", "HEAD"))
+	if err := os.WriteFile(filepath.Join(repository, "README.md"), []byte("prepared candidate\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(t, repository, "git", "add", "README.md")
+	run(t, repository, "git", "commit", "-q", "-m", "prepared candidate")
+
+	clock := fixedClock{value: time.Unix(1000, 0).UTC()}
+	externalRoot := t.TempDir()
+	resolver, err := plant.NewResolver(externalRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, err := resolver.ResolveInvocation(ctx, repository, "cli", "prepared-revision")
+	if err != nil {
+		t.Fatal(err)
+	}
+	observer, _ := plant.NewObserver(resolver, clock)
+	locker, _ := effects.NewLocker(resolver)
+	baseJournal, _ := effects.NewJournal(resolver, clock)
+	journal := &countingJournal{Journal: baseJournal}
+	receipts, _ := effects.NewReceiptStore(resolver, clock)
+	baseDriver, _ := effects.NewDriver(resolver, clock, effects.NewNativeBoundary())
+	driver := &stagedPrepareDriver{base: baseDriver}
+	kernel, err := engine.New(testprogram.StandardRegistry(), testObjectiveContracts(), testProgramIdentity, observer, clock, locker, journal, driver, receipts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	objective := model.Objective{ID: "prepared-revision", TargetID: model.ObjectiveVerified, DeliveryID: "prepared-revision"}
+	authority := protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{
+		ID: "prepared-revision-human", Class: catalog.AuthorityHuman, Subject: invocation.RepositoryID, Fingerprint: "human-fingerprint",
+		IssuedAt: clock.Now().Add(-time.Minute), ExpiresAt: clock.Now().Add(time.Hour),
+	}}}
+	request := engine.ApplyRequest{
+		ResolveRequest: engine.ResolveRequest{Invocation: invocation, Objective: objective, Authority: authority, Requested: "repository.attach", ControlBundleRevision: strings.TrimSpace(commandOutput(t, repository, "git", "rev-parse", "HEAD"))},
+		FlowID:         "flow-prepared-revision", Parameters: protocol.Parameters{{Name: "topology", Value: string(model.TopologyDetached)}, {Name: "config_authority", Value: "repository"}}, AdmissionLifetime: time.Minute,
+	}
+	request = prescribeEngine(t, ctx, kernel, request)
+	driver.trigger = driver.calls + 2 // apply re-resolve, then locked final preparation
+	driver.beforePrepare = func() { run(t, repository, "git", "reset", "--mixed", baseRevision) }
+
+	_, applyErr := kernel.Apply(ctx, request)
+	if applyErr == nil || !strings.Contains(applyErr.Error(), "CONTROL_BUNDLE_REVISION_DRIFT") {
+		t.Fatalf("effect preparation accepted stale revision: %v", applyErr)
+	}
+	if driver.calls != driver.trigger || journal.begun != 0 {
+		t.Fatalf("revision refusal crossed mutation boundary: prepares=%d trigger=%d journal begins=%d", driver.calls, driver.trigger, journal.begun)
+	}
+	layout, _, err := resolver.ResolveLayout(ctx, invocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{layout.StatePath, layout.ReceiptPath, layout.EventPath} {
+		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+			t.Fatalf("effect-boundary revision drift created managed artifact %s: %v", path, statErr)
+		}
 	}
 }
 

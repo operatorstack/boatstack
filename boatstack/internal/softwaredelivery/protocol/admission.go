@@ -48,6 +48,7 @@ type Admission struct {
 	ExpiresAt                           time.Time                               `json:"expires_at"`
 	Work                                *WorkEvidence                           `json:"work,omitempty"`
 	ControlBundle                       *boatstackruntime.ControlBundleContract `json:"control_bundle,omitempty"`
+	ControlBundleRevision               string                                  `json:"control_bundle_revision,omitempty"`
 	InvocationFingerprint               string                                  `json:"invocation_fingerprint,omitempty"`
 }
 
@@ -60,6 +61,10 @@ func NewAdmissionWithWork(snapshot model.Snapshot, objective model.Objective, tr
 }
 
 func NewAdmissionWithWorkAndBundle(snapshot model.Snapshot, objective model.Objective, transition catalog.Transition, prescription Prescription, authority AuthorityBundle, parameters Parameters, work *WorkEvidence, bundle *boatstackruntime.ControlBundleContract, now time.Time, lifetime time.Duration) (Admission, error) {
+	return NewAdmissionWithWorkBundleAndRevision(snapshot, objective, transition, prescription, authority, parameters, work, bundle, "", now, lifetime)
+}
+
+func NewAdmissionWithWorkBundleAndRevision(snapshot model.Snapshot, objective model.Objective, transition catalog.Transition, prescription Prescription, authority AuthorityBundle, parameters Parameters, work *WorkEvidence, bundle *boatstackruntime.ControlBundleContract, controlBundleRevision string, now time.Time, lifetime time.Duration) (Admission, error) {
 	var err error
 	objective, err = ObjectiveForTransition(snapshot, objective, transition)
 	if err != nil {
@@ -130,6 +135,12 @@ func NewAdmissionWithWorkAndBundle(snapshot model.Snapshot, objective model.Obje
 			copy.TargetRuntimePin = &pin
 		}
 		a.ControlBundle = &copy
+	}
+	if controlBundleRevision != "" {
+		if a.ControlBundle == nil || controlBundleRevision != sourceRevision {
+			return Admission{}, fmt.Errorf("CONTROL_BUNDLE_REVISION_DRIFT: exact bundle revision does not match the observed source revision")
+		}
+		a.ControlBundleRevision = controlBundleRevision
 	}
 	if transition.Policy.ObjectiveScope == catalog.ObjectiveScopeOptionalPreserve {
 		a.ObjectiveStatus = snapshot.Objective.Status
@@ -463,8 +474,8 @@ func (a Admission) ValidateCommittedHistoryIdentity() error {
 	case AdmissionSchemaVersion:
 		return a.ValidateIdentity()
 	case PreviousAdmissionSchemaVersion:
-		if a.InvocationFingerprint != "" {
-			return fmt.Errorf("legacy admission invents a current-schema invocation identity")
+		if a.InvocationFingerprint != "" || a.ControlBundleRevision != "" {
+			return fmt.Errorf("legacy admission invents a current-schema invocation or control-bundle revision identity")
 		}
 		return a.validateIdentity(PreviousAdmissionSchemaVersion)
 	default:
@@ -486,6 +497,11 @@ func (a Admission) validateIdentity(schemaVersion int) error {
 		if err != nil {
 			return err
 		}
+		if a.ControlBundleRevision != "" && (a.ControlBundleRevision != a.SourceRevision || (len(a.ControlBundleRevision) != 40 && len(a.ControlBundleRevision) != 64) || strings.Trim(a.ControlBundleRevision, "0123456789abcdef") != "") {
+			return fmt.Errorf("admission has invalid control-bundle revision identity")
+		}
+	} else if a.ControlBundleRevision != "" {
+		return fmt.Errorf("admission control-bundle revision has no admitted bundle")
 	}
 	fingerprint, err := a.Authority.Fingerprint()
 	if err != nil || fingerprint != a.AuthorityFingerprint {

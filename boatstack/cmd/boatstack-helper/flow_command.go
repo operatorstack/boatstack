@@ -21,7 +21,7 @@ import (
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 )
 
-const flowCompilerVersion = "control-program.compiler.4"
+const flowCompilerVersion = "control-program.compiler.5"
 
 type flowCommandOptions struct {
 	repository string

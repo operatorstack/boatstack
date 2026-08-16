@@ -63,8 +63,15 @@ func runFlowAuthorize(arguments []string) error {
 	if expiresIn < 0 {
 		return fmt.Errorf("flow authorize --expires-in cannot be negative")
 	}
+	// Authorization reconstructs the exact request surfaced after candidate
+	// selection. Ordinary unbound resolution must not create product delegation
+	// before installation has established the control bundle.
+	options.delegationRequestProjection = true
 	bound, err := bindFlowEntry(context.Background(), options)
 	if err != nil {
+		if suspended, ok := flowCommitRequiredResponse(err, surfaces.OperationResolve); ok {
+			return renderResponse(suspended, "json")
+		}
 		return err
 	}
 	if bound.delegationRequestFingerprint == "" || requestFingerprint != bound.delegationRequestFingerprint || bound.runID != options.runID {
@@ -251,6 +258,10 @@ func runFlowContinuation(arguments []string) error {
 	if err != nil {
 		return err
 	}
+	return runFlowContinuationOptions(options)
+}
+
+func runFlowContinuationOptions(options commandOptions) error {
 	if options.programID == "" || options.entryID == "" {
 		return fmt.Errorf("flow run requires --flow and --entry")
 	}
@@ -261,9 +272,13 @@ func runFlowContinuation(arguments []string) error {
 		return fmt.Errorf("FLOW_INPUT_INVALID: --input is available only to declarative Flow entries")
 	}
 	var response surfaces.Response
+	var err error
 	for step := 0; step < 256; step++ {
 		response, err = executeContinuationStep(context.Background(), options)
 		if err != nil {
+			if suspended, ok := flowCommitRequiredResponse(err, surfaces.OperationResolve); ok {
+				return renderResponse(suspended, options.format)
+			}
 			return err
 		}
 		if response.RunID != "" {
@@ -278,7 +293,7 @@ func runFlowContinuation(arguments []string) error {
 		if err := advanceContinuation(&options, response); err != nil {
 			return err
 		}
-		if response.Delegation != nil || response.Prescription == nil || response.Receipt == nil || (response.Decision != nil && response.Decision.Kind == supervisor.DecisionTerminal) {
+		if response.Delegation != nil || response.CommitRequired != nil || response.Prescription == nil || response.Receipt == nil || (response.Decision != nil && response.Decision.Kind == supervisor.DecisionTerminal) {
 			return renderResponse(response, options.format)
 		}
 	}
@@ -316,7 +331,7 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 	if err != nil {
 		return surfaces.Response{}, err
 	}
-	if err := verifyTrustedRequestControlBundle(resolveRequest); err != nil {
+	if err := verifyTrustedRequestControlBundle(ctx, resolveRequest); err != nil {
 		resolveLease.Release()
 		return surfaces.Response{}, err
 	}
@@ -371,7 +386,7 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 		if err != nil {
 			return surfaces.Response{}, err
 		}
-		if err := verifyTrustedRequestControlBundle(resolveRequest); err != nil {
+		if err := verifyTrustedRequestControlBundle(ctx, resolveRequest); err != nil {
 			resolveLease.Release()
 			return surfaces.Response{}, err
 		}
@@ -414,7 +429,7 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 	if delegationResponse != nil {
 		return *delegationResponse, nil
 	}
-	if err := verifyTrustedRequestControlBundle(applyRequest); err != nil {
+	if err := verifyTrustedRequestControlBundle(ctx, applyRequest); err != nil {
 		return surfaces.Response{}, err
 	}
 	applied, err := kernel.Handle(ctx, applyRequest)
@@ -462,7 +477,7 @@ func stabilizeRepositoryPrescription(ctx context.Context, request surfaces.Reque
 		return surfaces.Request{}, surfaces.Response{}, true, err
 	}
 	defer lease.Release()
-	if err := verifyTrustedRequestControlBundle(rebound); err != nil {
+	if err := verifyTrustedRequestControlBundle(ctx, rebound); err != nil {
 		return surfaces.Request{}, surfaces.Response{}, true, err
 	}
 	kernel, err := standardKernel(ctx, rebound)
@@ -528,7 +543,7 @@ func bindContinuationCandidate(ctx context.Context, bound commandOptions, respon
 	if err != nil {
 		return commandOptions{}, false, err
 	}
-	if rebound.inputRequest == nil && len(rebound.parameters) <= len(bound.parameters) {
+	if rebound.inputRequest == nil && len(rebound.parameters) <= len(bound.parameters) && rebound.delegationRequestFingerprint == "" {
 		return bound, false, nil
 	}
 	return rebound, true, nil
@@ -563,5 +578,6 @@ func advanceContinuation(options *commandOptions, response surfaces.Response) er
 	options.trustedAuthorityReceipts = nil
 	options.invocationEvidence = nil
 	options.inputRequest = nil
+	options.controlBundleRevision = ""
 	return nil
 }

@@ -303,6 +303,7 @@ func bindTrustedRequestControlBundle(ctx context.Context, request *surfaces.Requ
 	}
 	request.ControlBundle = nil
 	request.ControlBundleFingerprint = ""
+	request.ControlBundleRevision = ""
 	if request.ProgramID == "" && !controlBundleRequired(request.TransitionID) {
 		return nil
 	}
@@ -315,12 +316,31 @@ func bindTrustedRequestControlBundle(ctx context.Context, request *surfaces.Requ
 	return nil
 }
 
-func verifyTrustedRequestControlBundle(request surfaces.Request) error {
+func verifyTrustedRequestControlBundle(ctx context.Context, request surfaces.Request) error {
 	if request.ControlBundle == nil {
 		if controlBundleRequired(request.TransitionID) {
 			return fmt.Errorf("CONTROL_BUNDLE_REQUIRED: transition %q has no trusted bundle", request.TransitionID)
 		}
 		return nil
+	}
+	if request.ControlBundleRevision != "" {
+		revision, err := boatstackruntime.ResolveCommitRevision(ctx, request.Repository, "HEAD")
+		if err != nil {
+			return err
+		}
+		if revision != request.ControlBundleRevision {
+			return &flowCommitRequiredError{
+				programID: request.ProgramID, entryID: request.EntryID, runID: request.FlowID,
+				revision: revision, controlBundleFingerprint: request.ControlBundleFingerprint, operation: request.Operation,
+				cause: fmt.Errorf("CONTROL_BUNDLE_REVISION_DRIFT: expected revision %s", request.ControlBundleRevision),
+			}
+		}
+		if err := boatstackruntime.VerifyControlBundleRevision(ctx, request.Repository, revision, request.ControlBundle.Source); err != nil {
+			return &flowCommitRequiredError{
+				programID: request.ProgramID, entryID: request.EntryID, runID: request.FlowID,
+				revision: revision, controlBundleFingerprint: request.ControlBundleFingerprint, operation: request.Operation, cause: err,
+			}
+		}
 	}
 	return boatstackruntime.VerifyControlBundleRoot(request.Repository, request.ControlBundle.Source)
 }

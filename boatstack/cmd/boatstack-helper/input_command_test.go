@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
@@ -202,6 +204,14 @@ func TestApplyAndRecoveryDiscardRevokedInvocationEvidence(t *testing.T) {
 	repository := flowRepositoryWithHumanSlice(t)
 	runFlowGit(t, repository, "init", "-q")
 	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
+	pinRaw, err := boatstackruntime.EncodePin(boatstackruntime.NewPin(
+		boatstackruntime.Identity{Version: "v-test", SHA256: strings.Repeat("a", 64), SourceRevision: "test-revision"},
+		strings.Repeat("f", 64), durable.StateSchemaVersion,
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, repository, ".boatstack/runtime.json", pinRaw)
 	runFlowGit(t, repository, "add", ".")
 	runFlowGit(t, repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-q", "-m", "fixture")
 	writeAdmittedFlowProgramState(t, repository, strings.Repeat("f", 64))
@@ -256,7 +266,6 @@ func TestApplyAndRecoveryDiscardRevokedInvocationEvidence(t *testing.T) {
 	if removed != 1 {
 		t.Fatalf("removed %d input receipts, want 1", removed)
 	}
-
 	for _, operation := range []surfaces.Operation{surfaces.OperationApply, surfaces.OperationRecover} {
 		fresh, _, err := refreshFlowInvocation(context.Background(), operation, prior, resumed)
 		if err != nil {

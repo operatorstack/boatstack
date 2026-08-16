@@ -29,8 +29,12 @@ func runFlowWork(arguments []string) error {
 	if options.programID == "" || options.entryID == "" || options.runID == "" || options.workID == "" {
 		return fmt.Errorf("flow work %s requires --flow, --entry, --run-id, and --work-id", action)
 	}
+	requestedFormat := options.format
 	bound, err := bindFlowEntry(context.Background(), options)
 	if err != nil {
+		if suspended, ok := flowCommitRequiredResponse(err, operation); ok {
+			return renderResponse(suspended, requestedFormat)
+		}
 		return err
 	}
 	request, err := buildRequest(operation, bound)
@@ -57,7 +61,10 @@ func runFlowWork(arguments []string) error {
 		return err
 	}
 	defer lease.Release()
-	if err := verifyTrustedRequestControlBundle(request); err != nil {
+	if err := verifyTrustedRequestControlBundle(context.Background(), request); err != nil {
+		if suspended, ok := flowCommitRequiredResponse(err, operation); ok {
+			return renderResponse(suspended, options.format)
+		}
 		return err
 	}
 	kernel, err := standardKernel(context.Background(), request)

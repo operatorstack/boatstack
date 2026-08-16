@@ -81,6 +81,7 @@ type commandOptions struct {
 	delegationDescription               string
 	delegationRequest                   delegation.Request
 	delegationReprojection              bool
+	delegationRequestProjection         bool
 	workInputs                          map[string]protocol.WorkInputValue
 	workID                              string
 	workQuestionPrompt                  string
@@ -91,6 +92,7 @@ type commandOptions struct {
 	workResultFingerprint               string
 	controlBundle                       *boatstackruntime.ControlBundleContract
 	controlBundleFingerprint            string
+	controlBundleRevision               string
 	invocationEvidence                  *invocation.Evidence
 	inputRequest                        *invocation.InputRequest
 }
@@ -141,8 +143,12 @@ func run(arguments []string) error {
 	if err != nil {
 		return err
 	}
+	requestedFormat := options.format
 	options, err = bindFlowEntry(context.Background(), options)
 	if err != nil {
+		if suspended, ok := flowCommitRequiredResponse(err, operation); ok {
+			return renderResponse(suspended, requestedFormat)
+		}
 		return err
 	}
 	request, err := buildRequest(operation, options)
@@ -156,6 +162,9 @@ func run(arguments []string) error {
 	}
 	programChangeResponse, err := preflightDelegatedProgramChange(context.Background(), request)
 	if err != nil {
+		if suspended, ok := flowCommitRequiredResponse(err, operation); ok {
+			return renderResponse(suspended, options.format)
+		}
 		return err
 	}
 	if programChangeResponse != nil {
@@ -179,10 +188,16 @@ func run(arguments []string) error {
 	if (operation == surfaces.OperationApply || operation == surfaces.OperationRecover) && request.ProgramID != "" {
 		request, options, err = refreshFlowInvocation(context.Background(), operation, request, options)
 		if err != nil {
+			if suspended, ok := flowCommitRequiredResponse(err, operation); ok {
+				return renderResponse(suspended, options.format)
+			}
 			return err
 		}
 	}
-	if err := verifyTrustedRequestControlBundle(request); err != nil {
+	if err := verifyTrustedRequestControlBundle(context.Background(), request); err != nil {
+		if suspended, ok := flowCommitRequiredResponse(err, operation); ok {
+			return renderResponse(suspended, options.format)
+		}
 		return err
 	}
 	kernel, err := standardKernel(context.Background(), request)
@@ -214,6 +229,9 @@ func run(arguments []string) error {
 	response, handleErr := kernel.Handle(context.Background(), request)
 	if handleErr == nil && operation == surfaces.OperationResolve {
 		request, response, _, handleErr = stabilizeRepositoryPrescription(context.Background(), request, response)
+	}
+	if suspended, ok := flowCommitRequiredResponse(handleErr, operation); ok {
+		response, handleErr = suspended, nil
 	}
 	if operation != surfaces.OperationExplain {
 		if settleErr := settleDelegationAtTarget(context.Background(), request, response, kernel.TargetSatisfied(response.Snapshot, request.Objective), delegationLock != nil); settleErr != nil && handleErr == nil {
@@ -249,6 +267,11 @@ func runRPC() error {
 	}
 	request, err := bindRPCFlowEntry(context.Background(), request)
 	if err != nil {
+		if suspended, ok := flowCommitRequiredResponse(err, request.Operation); ok {
+			encoder := json.NewEncoder(os.Stdout)
+			encoder.SetIndent("", "  ")
+			return encoder.Encode(suspended)
+		}
 		return err
 	}
 	if request.ProgramID == "" {
@@ -258,6 +281,11 @@ func runRPC() error {
 	}
 	programChangeResponse, err := preflightDelegatedProgramChange(context.Background(), request)
 	if err != nil {
+		if suspended, ok := flowCommitRequiredResponse(err, request.Operation); ok {
+			encoder := json.NewEncoder(os.Stdout)
+			encoder.SetIndent("", "  ")
+			return encoder.Encode(suspended)
+		}
 		return err
 	}
 	if programChangeResponse != nil {
@@ -285,10 +313,20 @@ func runRPC() error {
 	if (request.Operation == surfaces.OperationApply || request.Operation == surfaces.OperationRecover) && request.ProgramID != "" {
 		request, err = refreshRPCFlowInvocation(context.Background(), request)
 		if err != nil {
+			if suspended, ok := flowCommitRequiredResponse(err, request.Operation); ok {
+				encoder := json.NewEncoder(os.Stdout)
+				encoder.SetIndent("", "  ")
+				return encoder.Encode(suspended)
+			}
 			return err
 		}
 	}
-	if err := verifyTrustedRequestControlBundle(request); err != nil {
+	if err := verifyTrustedRequestControlBundle(context.Background(), request); err != nil {
+		if suspended, ok := flowCommitRequiredResponse(err, request.Operation); ok {
+			encoder := json.NewEncoder(os.Stdout)
+			encoder.SetIndent("", "  ")
+			return encoder.Encode(suspended)
+		}
 		return err
 	}
 	kernel, err := standardKernel(context.Background(), request)
@@ -298,6 +336,9 @@ func runRPC() error {
 	response, handleErr := kernel.Handle(context.Background(), request)
 	if handleErr == nil && request.Operation == surfaces.OperationResolve {
 		request, response, _, handleErr = stabilizeRepositoryPrescription(context.Background(), request, response)
+	}
+	if suspended, ok := flowCommitRequiredResponse(handleErr, request.Operation); ok {
+		response, handleErr = suspended, nil
 	}
 	if request.Operation != surfaces.OperationExplain {
 		if settleErr := settleDelegationAtTarget(context.Background(), request, response, kernel.TargetSatisfied(response.Snapshot, request.Objective), delegationLock != nil); settleErr != nil && handleErr == nil {
@@ -609,24 +650,35 @@ func populateRuntimeParameters(options *commandOptions) error {
 	if err != nil {
 		return err
 	}
-	if _, ok := parameters.Get("runtime_version"); !ok {
-		options.parameters = append(options.parameters, "runtime_version="+buildinfo.Version)
+	current, err := currentRuntimeParameters()
+	if err != nil {
+		return err
 	}
-	if _, ok := parameters.Get("runtime_sha256"); !ok {
-		runtimePath, executableErr := os.Executable()
-		if executableErr != nil {
-			return executableErr
+	for _, parameter := range current {
+		if _, ok := parameters.Get(parameter.Name); !ok {
+			options.parameters = append(options.parameters, parameter.Name+"="+parameter.Value)
 		}
-		runtimeRaw, readErr := os.ReadFile(runtimePath)
-		if readErr != nil {
-			return readErr
-		}
-		options.parameters = append(options.parameters, "runtime_sha256="+hash(runtimeRaw))
-	}
-	if _, ok := parameters.Get("source_revision"); !ok {
-		options.parameters = append(options.parameters, "source_revision="+buildRevision())
 	}
 	return nil
+}
+
+// currentRuntimeParameters observes the exact process requesting admission.
+// It does not grant installation authority; it only supplies deterministic
+// evidence that the installation verifier already requires.
+func currentRuntimeParameters() (protocol.Parameters, error) {
+	runtimePath, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	runtimeRaw, err := os.ReadFile(runtimePath)
+	if err != nil {
+		return nil, err
+	}
+	return protocol.Parameters{
+		{Name: "source_revision", Value: buildRevision()},
+		{Name: "runtime_version", Value: buildinfo.Version},
+		{Name: "runtime_sha256", Value: hash(runtimeRaw)},
+	}, nil
 }
 
 func populateFileFingerprint(options *commandOptions, pathName, fingerprintName string) error {
@@ -737,6 +789,7 @@ func buildRequest(operation surfaces.Operation, options commandOptions) (surface
 		WorkBlockReason:              options.workBlockReason,
 		ControlBundle:                options.controlBundle,
 		ControlBundleFingerprint:     options.controlBundleFingerprint,
+		ControlBundleRevision:        options.controlBundleRevision,
 		InvocationEvidence:           options.invocationEvidence,
 		InputRequest:                 options.inputRequest,
 	}, nil
@@ -910,6 +963,10 @@ func renderResponse(response surfaces.Response, format string) error {
 			for _, parameter := range response.InputRequest.Parameters {
 				fmt.Printf("input=%s type=%s %s\n", parameter.ID, parameter.Type.Kind, parameter.Description)
 			}
+			return nil
+		}
+		if response.CommitRequired != nil {
+			fmt.Printf("SUSPENDED: %s run=%s revision=%s bundle=%s\n%s\n", response.CommitRequired.Code, response.CommitRequired.RunID, response.CommitRequired.Revision, response.CommitRequired.ControlBundleFingerprint, response.CommitRequired.Description)
 			return nil
 		}
 		if response.Decision != nil {
