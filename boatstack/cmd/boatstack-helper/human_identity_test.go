@@ -104,8 +104,12 @@ func TestHumanIdentityRenderingPreservesStructuredArgvWithoutExecutingIt(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), `"command":"touch","args":["`+marker+`"]`) {
-		t.Fatalf("structured JSON lost command argv: %s", raw)
+	var decoded surfaces.Response
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Delegation == nil || decoded.Delegation.HumanIdentity.Descriptor.Command != "touch" || !reflect.DeepEqual(decoded.Delegation.HumanIdentity.Descriptor.Args, []string{marker}) {
+		t.Fatalf("structured JSON lost command argv: %#v", decoded.Delegation)
 	}
 	output, err := captureStdout(t, func() error { return renderResponse(response, "text") })
 	if err != nil || !strings.Contains(string(output), `human_identity_command="touch" "`+marker+`"`) {

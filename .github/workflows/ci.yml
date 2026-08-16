@@ -223,6 +223,11 @@ jobs:
               $env:BOATSTACK_BINARY = $helper
               $env:BOATSTACK_BINARY_SHA256 = $digest
               $env:BOATSTACK_EXPECTED_RUNTIME_SHA256 = $digest
+              if ($mode -eq "install") {
+                $env:BOATSTACK_ACTOR = "installer-contract"
+              } else {
+                Remove-Item Env:BOATSTACK_ACTOR -ErrorAction SilentlyContinue
+              }
               & ./install.ps1
               if ($LASTEXITCODE -ne 0) { throw "$mode installer failed" }
 
@@ -238,6 +243,7 @@ jobs:
                 throw "install did not initialize the repository runtime pin"
               }
             }
+            Remove-Item Env:BOATSTACK_ACTOR -ErrorAction SilentlyContinue
 
             $missingEvidenceRepository = Join-Path $root "missing-evidence-repository"
             New-Item -ItemType Directory -Force -Path $missingEvidenceRepository | Out-Null
