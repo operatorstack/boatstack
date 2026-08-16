@@ -126,7 +126,7 @@ func TestPreviousCommittedHistoryRemainsReadableAndResumable(t *testing.T) {
 	root := t.TempDir()
 	invocation := model.InvocationContext{
 		RepositoryID: "repo", GitCommonID: "common", WorktreeID: "worktree", Ref: "refs/heads/feature/legacy",
-		ControllerID: "controller", InvokingPath: "/repo", RuntimeVersion: "1.0.0", RuntimePath: "/runtime", RuntimeFingerprint: "runtime",
+		ControllerID: "controller", InvokingPath: filepath.Join(root, "repo"), RuntimeVersion: "1.0.0", RuntimePath: filepath.Join(root, "runtime"), RuntimeFingerprint: "runtime",
 		Topology: model.TopologyEmbedded, Host: "cursor", Correlation: "legacy-run",
 	}
 	objective := model.Objective{ID: "objective-legacy", TargetID: model.ObjectiveOpenPR, TrustedClass: model.ObjectiveOpenPR, DeliveryID: "legacy"}
@@ -181,9 +181,10 @@ func TestPreviousCommittedHistoryRemainsReadableAndResumable(t *testing.T) {
 }
 
 func TestPreviousHistoryCompatibilityIsCommittedOnlyAndExact(t *testing.T) {
+	root := t.TempDir()
 	invocation := model.InvocationContext{
 		RepositoryID: "repo", GitCommonID: "common", WorktreeID: "worktree", Ref: "refs/heads/feature/legacy",
-		ControllerID: "controller", InvokingPath: "/repo", RuntimeVersion: "1.0.0", RuntimePath: "/runtime", RuntimeFingerprint: "runtime",
+		ControllerID: "controller", InvokingPath: filepath.Join(root, "repo"), RuntimeVersion: "1.0.0", RuntimePath: filepath.Join(root, "runtime"), RuntimeFingerprint: "runtime",
 		Topology: model.TopologyEmbedded, Host: "cursor", Correlation: "legacy-run",
 	}
 	objective := model.Objective{ID: "objective-legacy", TargetID: model.ObjectiveOpenPR, TrustedClass: model.ObjectiveOpenPR, DeliveryID: "legacy"}
