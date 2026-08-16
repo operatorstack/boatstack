@@ -81,6 +81,7 @@ type commandOptions struct {
 	delegationDescription               string
 	delegationRequest                   delegation.Request
 	delegationReprojection              bool
+	delegationRequestProjection         bool
 	workInputs                          map[string]protocol.WorkInputValue
 	workID                              string
 	workQuestionPrompt                  string
@@ -609,24 +610,35 @@ func populateRuntimeParameters(options *commandOptions) error {
 	if err != nil {
 		return err
 	}
-	if _, ok := parameters.Get("runtime_version"); !ok {
-		options.parameters = append(options.parameters, "runtime_version="+buildinfo.Version)
+	current, err := currentRuntimeParameters()
+	if err != nil {
+		return err
 	}
-	if _, ok := parameters.Get("runtime_sha256"); !ok {
-		runtimePath, executableErr := os.Executable()
-		if executableErr != nil {
-			return executableErr
+	for _, parameter := range current {
+		if _, ok := parameters.Get(parameter.Name); !ok {
+			options.parameters = append(options.parameters, parameter.Name+"="+parameter.Value)
 		}
-		runtimeRaw, readErr := os.ReadFile(runtimePath)
-		if readErr != nil {
-			return readErr
-		}
-		options.parameters = append(options.parameters, "runtime_sha256="+hash(runtimeRaw))
-	}
-	if _, ok := parameters.Get("source_revision"); !ok {
-		options.parameters = append(options.parameters, "source_revision="+buildRevision())
 	}
 	return nil
+}
+
+// currentRuntimeParameters observes the exact process requesting admission.
+// It does not grant installation authority; it only supplies deterministic
+// evidence that the installation verifier already requires.
+func currentRuntimeParameters() (protocol.Parameters, error) {
+	runtimePath, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	runtimeRaw, err := os.ReadFile(runtimePath)
+	if err != nil {
+		return nil, err
+	}
+	return protocol.Parameters{
+		{Name: "source_revision", Value: buildRevision()},
+		{Name: "runtime_version", Value: buildinfo.Version},
+		{Name: "runtime_sha256", Value: hash(runtimeRaw)},
+	}, nil
 }
 
 func populateFileFingerprint(options *commandOptions, pathName, fingerprintName string) error {

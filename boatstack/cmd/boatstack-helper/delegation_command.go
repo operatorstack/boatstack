@@ -63,6 +63,10 @@ func runFlowAuthorize(arguments []string) error {
 	if expiresIn < 0 {
 		return fmt.Errorf("flow authorize --expires-in cannot be negative")
 	}
+	// Authorization reconstructs the exact request surfaced after candidate
+	// selection. Ordinary unbound resolution must not create product delegation
+	// before installation has established the control bundle.
+	options.delegationRequestProjection = true
 	bound, err := bindFlowEntry(context.Background(), options)
 	if err != nil {
 		return err
@@ -528,7 +532,7 @@ func bindContinuationCandidate(ctx context.Context, bound commandOptions, respon
 	if err != nil {
 		return commandOptions{}, false, err
 	}
-	if rebound.inputRequest == nil && len(rebound.parameters) <= len(bound.parameters) {
+	if rebound.inputRequest == nil && len(rebound.parameters) <= len(bound.parameters) && rebound.delegationRequestFingerprint == "" {
 		return bound, false, nil
 	}
 	return rebound, true, nil

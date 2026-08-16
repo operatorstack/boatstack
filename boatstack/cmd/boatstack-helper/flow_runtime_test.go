@@ -116,6 +116,61 @@ func TestFlowEntryCanonicalizesRepositoryRoot(t *testing.T) {
 	}
 }
 
+func TestInternalFlowInitializationMaterializesCanonicalInputs(t *testing.T) {
+	// control-law: a Flow-selected internal initialization is complete without
+	// accepting host-supplied deterministic parameters.
+	t.Setenv("BOATSTACK_STATE_ROOT", t.TempDir())
+	repository := flowRepository(t)
+	runFlowGit(t, repository, "init", "-q", "-b", "main")
+	runFlowGit(t, repository, "config", "user.email", "fixture@example.invalid")
+	runFlowGit(t, repository, "config", "user.name", "Fixture")
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "fixture")
+
+	bound, err := bindFlowEntry(context.Background(), commandOptions{
+		repository: repository, programID: "product-delivery", entryID: "run", transitionID: "installation.initialize", humanActor: "operator", host: "codex",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parameters, err := parseParameters(bound.parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(bound.repository, ".boatstack", "project.json")
+	configRaw, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, configFingerprint, err := protocol.ProjectConfigFingerprint(configRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantRuntime, err := currentRuntimeParameters()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := append(wantRuntime, protocol.Parameter{Name: "config_path", Value: configPath}, protocol.Parameter{Name: "config_sha256", Value: configFingerprint})
+	for _, parameter := range want {
+		if actual, ok := parameters.Get(parameter.Name); !ok || actual != parameter.Value {
+			t.Fatalf("parameter %s = %q, want %q", parameter.Name, actual, parameter.Value)
+		}
+	}
+	if len(parameters) != len(want) || bound.inputRequest != nil {
+		t.Fatalf("materialized parameters = %#v, input request = %#v", parameters, bound.inputRequest)
+	}
+
+	writeFixture(t, repository, "alternate.json", configRaw)
+	_, err = bindFlowEntry(context.Background(), commandOptions{
+		repository: repository, programID: "product-delivery", entryID: "run", transitionID: "installation.initialize", humanActor: "operator", host: "codex",
+		maintenanceParameterSurface: true, parameters: []string{"config_path=" + filepath.Join(repository, "alternate.json")},
+	})
+	if err == nil || !strings.Contains(err.Error(), "FLOW_INPUT_MISMATCH") {
+		t.Fatalf("noncanonical internal initialization input error = %v", err)
+	}
+}
+
 func runFlowGit(t *testing.T, repository string, arguments ...string) {
 	t.Helper()
 	command := exec.Command("git", append([]string{"-C", repository}, arguments...)...)
@@ -2260,7 +2315,7 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	runFlowGit(t, repository, "commit", "-q", "-m", "fixture")
 	t.Setenv("BOATSTACK_STATE_ROOT", t.TempDir())
 
-	bound, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex"})
+	bound, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex", delegationRequestProjection: true})
 	if err != nil {
 		t.Fatal(err)
 	}

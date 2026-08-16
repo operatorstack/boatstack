@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
+	"github.com/operatorstack/boatstack/boatstack/distribution"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
 	"github.com/operatorstack/boatstack/boatstack/internal/buildinfo"
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
@@ -47,7 +48,8 @@ func TestExactProductDeliveryFlowReachesPublishedPRWithFakeProvider(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := boatstackruntime.InstallExecutable(executable, runtimeHome, boatstackruntime.Identity{Version: buildinfo.Version, SHA256: hash(runtimeRaw), SourceRevision: buildRevision()}); err != nil {
+	runtimeIdentity := boatstackruntime.Identity{Version: buildinfo.Version, SHA256: hash(runtimeRaw), SourceRevision: buildRevision()}
+	if _, err := boatstackruntime.InstallExecutable(executable, runtimeHome, runtimeIdentity); err != nil {
 		t.Fatal(err)
 	}
 
@@ -66,6 +68,38 @@ func TestExactProductDeliveryFlowReachesPublishedPRWithFakeProvider(t *testing.T
 	writeFixture(t, repository, sourcePath, sourceRaw)
 	writeFixture(t, repository, lockPath, lockRaw)
 	writeFlowArtifact(t, repository, document, sourcePath, sourceRaw, lockPath, lockRaw)
+	hostFiles, hostManifest, err := effects.ProjectedHostSkillFiles([]string{"cli", "codex", "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, repository, ".boatstack/host-skills.json", hostManifest)
+	for path, content := range hostFiles {
+		writeFixture(t, repository, path, content)
+	}
+	definition, err := loadFlowDefinition(context.Background(), repository, "product-delivery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(repository, ".boatstack", "project.json")
+	configRaw, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, configFingerprint, err := protocol.ProjectConfigFingerprint(configRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := distribution.ProgramForRepository(context.Background(), distribution.RepositoryProgramRequest{
+		Repository: repository, Host: "codex", CorrelationID: "fixture-program", ConfigurationPath: configPath, ConfigurationFingerprint: configFingerprint,
+	}, definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinRaw, err := boatstackruntime.EncodePin(boatstackruntime.NewPin(runtimeIdentity, program.Fingerprint(), durable.StateSchemaVersion))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, repository, ".boatstack/runtime.json", pinRaw)
 	runFlowGit(t, repository, "add", ".")
 	runFlowGit(t, repository, "commit", "-q", "-m", "fixture")
 
@@ -74,26 +108,9 @@ func TestExactProductDeliveryFlowReachesPublishedPRWithFakeProvider(t *testing.T
 	runFlowGit(t, repository, "remote", "add", "origin", bare)
 	runFlowGit(t, repository, "push", "-q", "-u", "origin", "main")
 	installFakePublicationProvider(t)
-	initialize, err := captureRunOutput(t,
-		"init", "--repo", repository, "--flow", "product-delivery", "--entry", "run",
-		"--param", "config_path="+filepath.Join(repository, ".boatstack", "project.json"), "--human", "operator", "--host", "codex", "--format", "json",
-	)
-	if err != nil {
-		t.Fatalf("initialize: %v\n%s", err, initialize)
-	}
-	var initialized surfaces.Response
-	if err := json.Unmarshal(initialize, &initialized); err != nil {
-		t.Fatal(err)
-	}
-	if initialized.Receipt == nil || initialized.Receipt.TransitionID != "installation.initialize" {
-		t.Fatalf("initialization response = %#v", initialized)
-	}
-	runFlowGit(t, repository, "add", ".")
-	runFlowGit(t, repository, "commit", "-q", "-m", "install Boatstack control bundle")
-	runFlowGit(t, repository, "push", "-q", "origin", "main")
 
 	first, err := captureStdout(t, func() error {
-		return runFlowContinuation([]string{"--repo", repository, "--flow", "product-delivery", "--entry", "run", "--host", "codex", "--format", "json"})
+		return runFlowContinuation([]string{"--repo", repository, "--flow", "product-delivery", "--entry", "run", "--repository-authority", "--human", "operator", "--host", "codex", "--format", "json"})
 	})
 	if err != nil {
 		t.Fatalf("delegation suspension: %v\n%s", err, first)
@@ -103,10 +120,14 @@ func TestExactProductDeliveryFlowReachesPublishedPRWithFakeProvider(t *testing.T
 		t.Fatal(err)
 	}
 	if delegated.Delegation == nil || delegated.Delegation.RunID == "" {
-		t.Fatalf("delegation response = %#v", delegated)
+		t.Fatalf("delegation response = %#v\n%s", delegated, first)
 	}
 	runID := delegated.Delegation.RunID
 	t.Logf("SUSPENSION delegation run=%s request=%s authorities=%v", runID, delegated.Delegation.RequestFingerprint, delegated.Delegation.Authorities)
+	prerequisites := committedFlowReceipts(t, repository, runID)
+	if len(prerequisites) != 3 || prerequisites[0].TransitionID != "installation.initialize" || prerequisites[1].TransitionID != "objective.bind" || prerequisites[2].TransitionID != "engagement.begin" || delegated.Work != nil {
+		t.Fatalf("pre-delegation trace = %#v, work = %#v", prerequisites, delegated.Work)
+	}
 	if _, err := captureStdout(t, func() error {
 		return runFlowAuthorize([]string{
 			"--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", runID,
@@ -118,7 +139,7 @@ func TestExactProductDeliveryFlowReachesPublishedPRWithFakeProvider(t *testing.T
 	t.Logf("AUTHORITY accepted class=autonomy actor=operator request=%s", delegated.Delegation.RequestFingerprint)
 
 	workOutput, err := captureStdout(t, func() error {
-		return runFlowContinuation([]string{"--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", runID, "--repository-authority", "--host", "codex", "--format", "json"})
+		return runFlowContinuation([]string{"--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", runID, "--repository-authority", "--human", "operator", "--host", "codex", "--format", "json"})
 	})
 	if err != nil {
 		t.Fatalf("planning suspension: %v\n%s", err, workOutput)

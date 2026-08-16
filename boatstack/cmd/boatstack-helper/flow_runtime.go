@@ -138,11 +138,25 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	}
 	options.controlBundle = bundle
 	options.controlBundleFingerprint = bundleFingerprint
+	repositoryTransition := false
+	if options.transitionID != "" {
+		_, repositoryTransition = findCompiledTransition(compiled.Document.Transitions, options.transitionID)
+	}
 	// Installation authority transitions must not consume or create product
 	// delegation. Their accepted effects establish or change the exact bundle
 	// to which later product delegation is bound.
 	installationAuthority := options.transitionID == "installation.initialize" || options.transitionID == "installation.update" || options.transitionID == "installation.reconcile-update"
-	if entry.Delegation != nil && !installationAuthority {
+	delegationRecordPresent := false
+	if entry.Delegation != nil && options.transitionID == "" && !options.delegationRequestProjection {
+		delegationRecordPresent, err = flowDelegationRecordPresent(ctx, repository, options)
+		if err != nil {
+			return commandOptions{}, err
+		}
+	}
+	// Resolve an unbound frontier before creating product delegation. This lets
+	// installation authority establish the exact control bundle first; the
+	// subsequent product candidate then receives delegation bound to that bundle.
+	if entry.Delegation != nil && (repositoryTransition || options.delegationRequestProjection || delegationRecordPresent) && !installationAuthority {
 		contextResolver, resolverErr := plant.NewResolver("")
 		if resolverErr != nil {
 			return commandOptions{}, resolverErr
@@ -205,7 +219,6 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		options.delegationRequest = delegationRequest
 	}
 	if options.transitionID != "" {
-		_, repositoryTransition := findCompiledTransition(compiled.Document.Transitions, options.transitionID)
 		if repositoryTransition {
 			options, err = materializeFlowInvocation(ctx, compiled, entry, options, options.controlBundle)
 			if err != nil || options.inputRequest != nil {
@@ -237,12 +250,49 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	return options, nil
 }
 
+func flowDelegationRecordPresent(ctx context.Context, repository string, options commandOptions) (bool, error) {
+	resolver, err := plant.NewResolver("")
+	if err != nil {
+		return false, err
+	}
+	host := options.host
+	if host == "" {
+		host = "cli"
+	}
+	invoking, err := resolver.ResolveInvocation(ctx, repository, host, "flow-delegation-presence")
+	if err != nil {
+		return false, err
+	}
+	layout, _, err := resolver.ResolveLayout(ctx, invoking)
+	if err != nil {
+		return false, err
+	}
+	path, err := delegation.Path(layout.FlowRoot, options.runID)
+	if err != nil {
+		return false, err
+	}
+	if _, err := os.Lstat(path); err == nil {
+		return true, nil
+	} else if os.IsNotExist(err) {
+		return false, nil
+	} else {
+		return false, err
+	}
+}
+
 func bindInternalFlowContextParameters(ctx context.Context, options *commandOptions) error {
 	manifest, err := core.System().CoreManifest(ctx)
 	if err != nil {
 		return err
 	}
 	parameters, err := parseParameters(options.parameters)
+	if err != nil {
+		return err
+	}
+	if err := bindCanonicalInternalFlowParameters(options, parameters); err != nil {
+		return err
+	}
+	parameters, err = parseParameters(options.parameters)
 	if err != nil {
 		return err
 	}
@@ -274,6 +324,36 @@ func bindInternalFlowContextParameters(ctx context.Context, options *commandOpti
 		return nil
 	}
 	return fmt.Errorf("FLOW_TRANSITION_UNKNOWN: %s", options.transitionID)
+}
+
+// bindCanonicalInternalFlowParameters materializes deterministic inputs owned
+// by Boatstack's internal transition adapter. These values are observations of
+// the selected repository and executing runtime, not host-provided Flow input
+// and not installation authority.
+func bindCanonicalInternalFlowParameters(options *commandOptions, parameters protocol.Parameters) error {
+	if options.transitionID != "installation.initialize" {
+		return nil
+	}
+	configPath := filepath.Join(options.repository, ".boatstack", "project.json")
+	configRaw, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("CONTROL_BUNDLE_TARGET_INVALID: read canonical project configuration: %w", err)
+	}
+	_, configFingerprint, err := protocol.ProjectConfigFingerprint(configRaw)
+	if err != nil {
+		return fmt.Errorf("CONTROL_BUNDLE_TARGET_INVALID: fingerprint canonical project configuration: %w", err)
+	}
+	currentRuntime, err := currentRuntimeParameters()
+	if err != nil {
+		return err
+	}
+	canonical := append(currentRuntime, protocol.Parameter{Name: "config_path", Value: configPath}, protocol.Parameter{Name: "config_sha256", Value: configFingerprint})
+	for _, parameter := range canonical {
+		if err := bindFlowContextParameter(options, parameters, parameter.Name, parameter.Value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func bindFlowContextParameter(options *commandOptions, parameters protocol.Parameters, name, value string) error {
