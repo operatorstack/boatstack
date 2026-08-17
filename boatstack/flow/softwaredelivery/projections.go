@@ -124,7 +124,7 @@ external-provider authority, and provider authentication never satisfies human
 authority.
 `
 	startCommand := fmt.Sprintf("boatstack next --repo . --flow %s --entry %s --repository-authority --host %s --format json", compiled.Document.Program.ID, entry.ID, host)
-	if entry.Delegation != nil {
+	if entry.Delegation != nil || len(entry.Requires.Authorities) != 0 {
 		startCommand = fmt.Sprintf("boatstack flow run --repo . --flow %s --entry %s --repository-authority --host %s --format json", compiled.Document.Program.ID, entry.ID, host)
 	}
 	if declarativeProgram(compiled.Document.Operators) {
@@ -289,9 +289,9 @@ Boatstack. An explanation is not authority: never grant authority, fabricate a
 run ID, reconstruct the transition graph, or act on a rejected candidate.
 `, compiled.Document.Program.ID, entry.ID, host)
 	}
-	if entry.Delegation != nil {
+	if entry.Delegation != nil || len(entry.Requires.Authorities) != 0 {
 		delegation = fmt.Sprintf(`
-Before product delegation, Boatstack may select `+"`installation.initialize`"+`
+Before Flow authorization, Boatstack may select `+"`installation.initialize`"+`
 for an installed repository whose controller state is fresh. Display that exact
 installation-authority question and obtain explicit human approval. Resume the
 same Flow command with `+"`--human <actor>`"+`; do not invoke an update operation
@@ -305,16 +305,25 @@ then resume the same Flow command. This is an installation boundary, not managed
 product-workspace work; do not switch worktrees or exclude generated bundle files.
 
 After internal preconditions are committed, Boatstack returns a typed
-`+"`DELEGATION_REQUIRED`"+` response bound to the resulting control bundle.
-Display its exact run ID, request fingerprint, requested authorities, and
-description. Obtain one explicit human approval for that exact request, then run:
+`+"`authorization`"+` response. Its code is
+`+"`ENTRY_ACTIVATION_AUTHORITY_REQUIRED`"+` when entry activation is included,
+or `+"`DELEGATION_REQUIRED`"+` for delegation-only entries. Invocation alone is
+not approval. Display the exact Flow, entry, target, run ID, role, proposed actor,
+provider fingerprint, request fingerprint, `+"`entry_activation_authorities`"+`,
+`+"`delegated_authorities`"+`, and description. Explain that activation consent
+does not grant transition, provider, bootstrap, merge, deploy, later-human-transition,
+or unrelated-run authority. Obtain one explicit human approval covering each
+displayed scope for that exact request, then run:
 
 `+"`boatstack flow authorize --repo . --flow %s --entry %s --run-id <run-id> --request-fingerprint <fingerprint> --human-identity-provider-fingerprint <provider-fingerprint> --human <actor> --host %s`"+`
 
 After authorization, use `+"`boatstack flow run --repo . --flow %s --entry %s --run-id <run-id> --repository-authority --host %s --format json`"+`.
-Do not request approval again after a restart or typed suspension. Resume the
-same run and delegation unless Boatstack reports revocation, expiry, drift, or
-terminal completion. Never authorize on the user's behalf.
+Do not request approval again after a restart or typed suspension while the
+same accepted request remains current. Resume the same run; if Boatstack reports
+revocation, expiry, or drift and returns a fresh authorization request, discard
+the prior approval and ask once for the new exact scopes. Never authorize on the
+user's behalf. The accepted activation scope is not an authority receipt; only
+the separately displayed delegation scope can create run-scoped delegation receipts.
 `, compiled.Document.Program.ID, entry.ID, host, compiled.Document.Program.ID, entry.ID, host)
 	}
 	if entry.Target == "published-pr" {

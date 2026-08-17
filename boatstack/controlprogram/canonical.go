@@ -500,6 +500,14 @@ func normalizeTargetsAndEntries(document *Document, facets map[string]Facet, res
 			return invalid(fmt.Sprintf("entries[%d]", i), "invalid entry or target reference")
 		}
 		entries[entry.ID] = true
+		var err error
+		entry.Requires.Authorities, err = normalizedReferenceSet("entries."+entry.ID+".requires.authorities", entry.Requires.Authorities)
+		if err != nil {
+			return err
+		}
+		if missing := firstUndeclared(entry.Requires.Authorities, document.Declarations.Authorities); missing != "" {
+			return invalid("entries."+entry.ID+".requires.authorities", "undeclared "+missing)
+		}
 		if entry.Delegation != nil {
 			if resolver == nil {
 				return invalid("entries."+entry.ID+".delegation", "no binding resolver is available")

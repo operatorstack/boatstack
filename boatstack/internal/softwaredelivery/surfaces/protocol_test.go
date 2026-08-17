@@ -122,6 +122,34 @@ func TestExplainRequestRejectsMutationArtifacts(t *testing.T) {
 	}
 }
 
+func TestFlowAuthorizationSurfaceCoversAllEntryShapesAndFailsClosed(t *testing.T) {
+	base := Request{
+		SchemaVersion: SchemaVersion, Operation: OperationResolve, Repository: "/repo", Host: "cli", CorrelationID: "authorization",
+		ProgramID: "product-delivery", ProgramFingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", EntryID: "run", FlowID: "run-1",
+	}
+	unprotected := base
+	activationOnly := base
+	activationOnly.DelegationRequestFingerprint = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	activationOnly.EntryActivationAuthorities = []catalog.AuthorityClass{catalog.AuthorityHuman}
+	delegationOnly := base
+	delegationOnly.DelegationRequestFingerprint = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+	delegationOnly.DelegationBindingFingerprint = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	delegationOnly.DelegatedAuthorities = []catalog.AuthorityClass{catalog.AuthorityAutonomy}
+	combined := activationOnly
+	combined.DelegationBindingFingerprint = delegationOnly.DelegationBindingFingerprint
+	combined.DelegatedAuthorities = append([]catalog.AuthorityClass(nil), delegationOnly.DelegatedAuthorities...)
+	for name, request := range map[string]Request{"unprotected": unprotected, "activation-only": activationOnly, "delegation-only": delegationOnly, "combined": combined} {
+		if err := request.Validate(time.Now()); err != nil {
+			t.Fatalf("%s request: %v", name, err)
+		}
+	}
+	unsupported := activationOnly
+	unsupported.EntryActivationAuthorities = []catalog.AuthorityClass{catalog.AuthorityProvider}
+	if err := unsupported.Validate(time.Now()); err == nil {
+		t.Fatal("unsupported entry activation authority was synthesized")
+	}
+}
+
 func TestQuestionSuspendsAndBindsOneRunSnapshot(t *testing.T) {
 	// control-law: human-input-suspension-cannot-cross-run-or-snapshot
 	transition := catalog.Transition{

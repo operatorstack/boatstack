@@ -92,6 +92,7 @@ export default defineFlow({
     entry({
       id: "run",
       target: "published-pr",
+      requires: { authorities: ["human"] },
       inputs: [inbox(".boatstack/plans/inbox")],
       delegation: trustedDelegation("autonomy"),
     }),

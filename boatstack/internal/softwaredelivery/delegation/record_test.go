@@ -14,7 +14,7 @@ import (
 func request() delegation.Request {
 	return delegation.Request{
 		RunID: "run-example", ProgramID: "program", ProgramFingerprint: strings.Repeat("a", 64), ControlBundleFingerprint: strings.Repeat("c", 64), EntryID: "run",
-		TargetID: "done", ObjectiveID: "objective", DeliveryID: "delivery", InputFingerprints: []string{"b", "a"},
+		TargetID: "done", ObjectiveID: "objective", DeliveryID: "delivery", InputFingerprints: []delegation.InputFingerprint{{ID: "second", Fingerprint: strings.Repeat("b", 64)}, {ID: "first", Fingerprint: strings.Repeat("a", 64)}},
 		RepositoryID: "repository", GitCommonID: "common", InitialWorktreeID: "worktree", InitialRef: "refs/heads/main",
 		BindingFingerprint: strings.Repeat("b", 64), HumanIdentityRole: "developer", HumanIdentityProviderFingerprint: strings.Repeat("d", 64), RequestedAuthorities: []string{"human", "autonomy"}, Description: "Run the program",
 	}
@@ -57,6 +57,42 @@ func TestRequestFingerprintCanonicalizesSetsAndBindsSemantics(t *testing.T) {
 	}
 	if changed == leftFingerprint {
 		t.Fatal("semantic request change preserved fingerprint")
+	}
+}
+
+func TestRequestSupportsExactAuthorizationShapesAndRejectsUnsupportedActivation(t *testing.T) {
+	delegationOnly := request()
+	delegationFingerprint, err := delegationOnly.Fingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	activationOnly := request()
+	activationOnly.BindingFingerprint = ""
+	activationOnly.RequestedAuthorities = nil
+	activationOnly.EntryActivationAuthorities = []string{"human"}
+	activationFingerprint, err := activationOnly.Fingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	combined := request()
+	combined.EntryActivationAuthorities = []string{"human"}
+	combinedFingerprint, err := combined.Fingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if delegationFingerprint == activationFingerprint || activationFingerprint == combinedFingerprint || delegationFingerprint == combinedFingerprint {
+		t.Fatal("distinct authorization scopes produced the same request fingerprint")
+	}
+	unprotected := request()
+	unprotected.BindingFingerprint = ""
+	unprotected.RequestedAuthorities = nil
+	if _, err := unprotected.Fingerprint(); err == nil {
+		t.Fatal("unprotected entry manufactured an authorization record")
+	}
+	unsupported := activationOnly
+	unsupported.EntryActivationAuthorities = []string{"external-provider"}
+	if _, err := unsupported.Fingerprint(); err == nil || !strings.Contains(err.Error(), "ENTRY_ACTIVATION_AUTHORITY_UNSUPPORTED") {
+		t.Fatalf("unsupported entry activation result = %v", err)
 	}
 }
 

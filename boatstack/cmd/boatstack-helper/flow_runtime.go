@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -238,9 +239,10 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	// Installation authority transitions must not consume or create product
 	// delegation. Their accepted effects establish or change the exact bundle
 	// to which later product delegation is bound.
+	authorizationRequired := len(entry.Requires.Authorities) != 0 || entry.Delegation != nil
 	delegationRecordPresent := false
-	if entry.Delegation != nil && options.transitionID == "" && !options.delegationRequestProjection {
-		delegationRecordPresent, err = flowDelegationRecordPresent(ctx, repository, options)
+	if authorizationRequired && options.transitionID == "" && !options.delegationRequestProjection {
+		delegationRecordPresent, err = flowAuthorizationRecordPresent(ctx, repository, options)
 		if err != nil {
 			return commandOptions{}, err
 		}
@@ -248,7 +250,7 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	// Resolve an unbound frontier before creating product delegation. This lets
 	// installation authority establish the exact control bundle first; the
 	// subsequent product candidate then receives delegation bound to that bundle.
-	if entry.Delegation != nil && (repositoryTransition || acceptedBundleRevision != "" || options.delegationRequestProjection || delegationRecordPresent) && !installationAuthority {
+	if authorizationRequired && (repositoryTransition || acceptedBundleRevision != "" || options.delegationRequestProjection || delegationRecordPresent) && !installationAuthority {
 		contextResolver, resolverErr := plant.NewResolver("")
 		if resolverErr != nil {
 			return commandOptions{}, resolverErr
@@ -269,13 +271,20 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		if presentationErr != nil {
 			return commandOptions{}, presentationErr
 		}
+		bindingFingerprint := ""
+		delegatedAuthorities := []string(nil)
+		if entry.Delegation != nil {
+			bindingFingerprint = entry.Delegation.Fingerprint
+			delegatedAuthorities = append(delegatedAuthorities, entry.Delegation.Authorities...)
+		}
 		delegationRequest := delegation.Request{
 			RunID: options.runID, ProgramID: options.programID, ProgramFingerprint: compiled.Fingerprint,
 			ControlBundleFingerprint: bundleFingerprint,
 			EntryID:                  options.entryID, TargetID: string(objective.TargetID), ObjectiveID: options.objectiveID, DeliveryID: deliveryID,
-			InputFingerprints: []string{planFingerprint}, RepositoryID: invocation.RepositoryID, GitCommonID: invocation.GitCommonID,
+			InputFingerprints: entryInputFingerprints(options.workInputs), RepositoryID: invocation.RepositoryID, GitCommonID: invocation.GitCommonID,
 			InitialWorktreeID: invocation.WorktreeID, InitialRef: invocation.Ref,
-			BindingFingerprint: entry.Delegation.Fingerprint, RequestedAuthorities: append([]string(nil), entry.Delegation.Authorities...),
+			EntryActivationAuthorities: append([]string(nil), entry.Requires.Authorities...),
+			BindingFingerprint:         bindingFingerprint, RequestedAuthorities: delegatedAuthorities,
 			HumanIdentityRole:                presentation.Role,
 			HumanIdentityProviderFingerprint: presentation.ProviderFingerprint,
 			Description:                      description,
@@ -290,8 +299,8 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		}
 		if record, loadErr := delegation.Load(recordPath); loadErr == nil {
 			bound := record.Request
-			inputDrift := !options.activeFlowBound && strings.Join(bound.InputFingerprints, "\x00") != strings.Join(delegationRequest.InputFingerprints, "\x00")
-			if bound.RunID != delegationRequest.RunID || bound.ProgramID != delegationRequest.ProgramID || bound.ProgramFingerprint != delegationRequest.ProgramFingerprint || bound.ControlBundleFingerprint != delegationRequest.ControlBundleFingerprint || bound.EntryID != delegationRequest.EntryID || bound.TargetID != delegationRequest.TargetID || bound.ObjectiveID != delegationRequest.ObjectiveID || bound.DeliveryID != delegationRequest.DeliveryID || inputDrift || bound.RepositoryID != delegationRequest.RepositoryID || bound.GitCommonID != delegationRequest.GitCommonID || bound.BindingFingerprint != delegationRequest.BindingFingerprint || bound.HumanIdentityRole != delegationRequest.HumanIdentityRole || bound.HumanIdentityProviderFingerprint != delegationRequest.HumanIdentityProviderFingerprint || strings.Join(bound.RequestedAuthorities, "\x00") != strings.Join(delegationRequest.RequestedAuthorities, "\x00") || bound.Description != delegationRequest.Description {
+			inputDrift := !options.activeFlowBound && !equalEntryInputFingerprints(bound.InputFingerprints, delegationRequest.InputFingerprints)
+			if bound.RunID != delegationRequest.RunID || bound.ProgramID != delegationRequest.ProgramID || bound.ProgramFingerprint != delegationRequest.ProgramFingerprint || bound.ControlBundleFingerprint != delegationRequest.ControlBundleFingerprint || bound.EntryID != delegationRequest.EntryID || bound.TargetID != delegationRequest.TargetID || bound.ObjectiveID != delegationRequest.ObjectiveID || bound.DeliveryID != delegationRequest.DeliveryID || inputDrift || bound.RepositoryID != delegationRequest.RepositoryID || bound.GitCommonID != delegationRequest.GitCommonID || bound.BindingFingerprint != delegationRequest.BindingFingerprint || bound.HumanIdentityRole != delegationRequest.HumanIdentityRole || bound.HumanIdentityProviderFingerprint != delegationRequest.HumanIdentityProviderFingerprint || strings.Join(bound.EntryActivationAuthorities, "\x00") != strings.Join(delegationRequest.EntryActivationAuthorities, "\x00") || strings.Join(bound.RequestedAuthorities, "\x00") != strings.Join(delegationRequest.RequestedAuthorities, "\x00") || bound.Description != delegationRequest.Description {
 				reprojected, reprojectErr := canReprojectDelegation(layout, invocation, bound, delegationRequest)
 				if reprojectErr != nil {
 					return commandOptions{}, reprojectErr
@@ -310,9 +319,10 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		if fingerprintErr != nil {
 			return commandOptions{}, fingerprintErr
 		}
-		options.delegationBindingFingerprint = entry.Delegation.Fingerprint
+		options.delegationBindingFingerprint = bindingFingerprint
 		options.delegationRequestFingerprint = fingerprint
-		options.delegationAuthorities = append(options.delegationAuthorities[:0], entry.Delegation.Authorities...)
+		options.entryActivationAuthorities = append(options.entryActivationAuthorities[:0], entry.Requires.Authorities...)
+		options.delegationAuthorities = append(options.delegationAuthorities[:0], delegatedAuthorities...)
 		options.delegationDescription = description
 		options.delegationRequest = delegationRequest
 	}
@@ -525,7 +535,7 @@ func newFlowCommitRequiredError(options commandOptions, revision, bundleFingerpr
 	}
 }
 
-func flowDelegationRecordPresent(ctx context.Context, repository string, options commandOptions) (bool, error) {
+func flowAuthorizationRecordPresent(ctx context.Context, repository string, options commandOptions) (bool, error) {
 	resolver, err := plant.NewResolver("")
 	if err != nil {
 		return false, err
@@ -553,6 +563,23 @@ func flowDelegationRecordPresent(ctx context.Context, repository string, options
 	} else {
 		return false, err
 	}
+}
+
+func entryInputFingerprints(inputs map[string]protocol.WorkInputValue) []delegation.InputFingerprint {
+	result := make([]delegation.InputFingerprint, 0, len(inputs))
+	for id, input := range inputs {
+		result = append(result, delegation.InputFingerprint{ID: id, Fingerprint: input.Fingerprint})
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	return result
+}
+
+func equalEntryInputFingerprints(left, right []delegation.InputFingerprint) bool {
+	left = append([]delegation.InputFingerprint(nil), left...)
+	right = append([]delegation.InputFingerprint(nil), right...)
+	sort.Slice(left, func(i, j int) bool { return left[i].ID < left[j].ID })
+	sort.Slice(right, func(i, j int) bool { return right[i].ID < right[j].ID })
+	return slices.Equal(left, right)
 }
 
 func bindInternalFlowContextParameters(ctx context.Context, options *commandOptions) error {
@@ -1090,6 +1117,7 @@ func bindRPCFlowEntryWithMaintenance(ctx context.Context, request surfaces.Reque
 	request.Parameters = parameters
 	request.DelegationBindingFingerprint = bound.delegationBindingFingerprint
 	request.DelegationRequestFingerprint = bound.delegationRequestFingerprint
+	request.EntryActivationAuthorities = delegationClasses(bound.entryActivationAuthorities)
 	request.DelegatedAuthorities = delegationClasses(bound.delegationAuthorities)
 	request.WorkInputs = bound.workInputs
 	request.ControlBundle = bound.controlBundle

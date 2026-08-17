@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -122,7 +123,7 @@ func TestExactProductDeliveryFlowReachesPublishedPRWithFakeProvider(t *testing.T
 	if err := json.Unmarshal(first, &installationQuestion); err != nil {
 		t.Fatal(err)
 	}
-	if installationQuestion.Question == nil || installationQuestion.Question.TransitionID != "installation.initialize" || len(installationQuestion.Question.Authority) != 2 || installationQuestion.RunID == "" || installationQuestion.Delegation != nil || installationQuestion.Receipt != nil {
+	if installationQuestion.Question == nil || installationQuestion.Question.TransitionID != "installation.initialize" || len(installationQuestion.Question.Authority) != 2 || installationQuestion.RunID == "" || installationQuestion.Authorization != nil || installationQuestion.Receipt != nil {
 		t.Fatalf("installation authority response = %#v\n%s", installationQuestion, first)
 	}
 	runID := installationQuestion.RunID
@@ -141,7 +142,7 @@ func TestExactProductDeliveryFlowReachesPublishedPRWithFakeProvider(t *testing.T
 	if err := json.Unmarshal(install, &commitSuspension); err != nil {
 		t.Fatal(err)
 	}
-	if commitSuspension.CommitRequired == nil || commitSuspension.CommitRequired.Code != controlBundleCommitRequiredCode || commitSuspension.CommitRequired.RunID != runID || commitSuspension.CommitRequired.ControlBundleFingerprint == "" || commitSuspension.Delegation != nil || commitSuspension.Work != nil {
+	if commitSuspension.CommitRequired == nil || commitSuspension.CommitRequired.Code != controlBundleCommitRequiredCode || commitSuspension.CommitRequired.RunID != runID || commitSuspension.CommitRequired.ControlBundleFingerprint == "" || commitSuspension.Authorization != nil || commitSuspension.Work != nil {
 		t.Fatalf("control-bundle commit suspension = %#v\n%s", commitSuspension, install)
 	}
 	if !strings.Contains(string(generatedSkill), controlBundleCommitRequiredCode) || !strings.Contains(string(generatedSkill), "stay in the source\nrepository") {
@@ -187,13 +188,16 @@ func TestExactProductDeliveryFlowReachesPublishedPRWithFakeProvider(t *testing.T
 	if err := json.Unmarshal(delegationOutput, &delegated); err != nil {
 		t.Fatal(err)
 	}
-	if delegated.Delegation == nil || delegated.Delegation.RunID == "" {
+	if delegated.Authorization == nil || delegated.Authorization.RunID == "" {
 		t.Fatalf("delegation response = %#v\n%s", delegated, delegationOutput)
 	}
-	if delegated.Delegation.RunID != runID {
-		t.Fatalf("delegation run = %s, want %s", delegated.Delegation.RunID, runID)
+	if delegated.Authorization.RunID != runID {
+		t.Fatalf("authorization run = %s, want %s", delegated.Authorization.RunID, runID)
 	}
-	t.Logf("SUSPENSION delegation run=%s request=%s authorities=%v", runID, delegated.Delegation.RequestFingerprint, delegated.Delegation.Authorities)
+	if delegated.Authorization.Code != "ENTRY_ACTIVATION_AUTHORITY_REQUIRED" || !slices.Equal(delegated.Authorization.EntryActivationAuthorities, []catalog.AuthorityClass{catalog.AuthorityHuman}) || !slices.Equal(delegated.Authorization.DelegatedAuthorities, []catalog.AuthorityClass{catalog.AuthorityAutonomy}) {
+		t.Fatalf("combined authorization = %#v", delegated.Authorization)
+	}
+	t.Logf("SUSPENSION authorization run=%s request=%s activation=%v delegation=%v", runID, delegated.Authorization.RequestFingerprint, delegated.Authorization.EntryActivationAuthorities, delegated.Authorization.DelegatedAuthorities)
 	if delegated.Work != nil {
 		t.Fatalf("product work crossed delegation: %#v", delegated.Work)
 	}
@@ -204,14 +208,14 @@ func TestExactProductDeliveryFlowReachesPublishedPRWithFakeProvider(t *testing.T
 	if _, err := captureStdout(t, func() error {
 		return runFlowAuthorize([]string{
 			"--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", runID,
-			"--request-fingerprint", delegated.Delegation.RequestFingerprint,
-			"--human-identity-provider-fingerprint", delegated.Delegation.HumanIdentity.ProviderFingerprint,
+			"--request-fingerprint", delegated.Authorization.RequestFingerprint,
+			"--human-identity-provider-fingerprint", delegated.Authorization.HumanIdentity.ProviderFingerprint,
 			"--human", "operator", "--host", "codex",
 		})
 	}); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("AUTHORITY accepted class=autonomy actor=operator request=%s", delegated.Delegation.RequestFingerprint)
+	t.Logf("AUTHORIZATION accepted activation=human delegation=autonomy actor=operator request=%s", delegated.Authorization.RequestFingerprint)
 
 	workOutput, err := captureStdout(t, func() error {
 		return runFlowContinuation([]string{"--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", runID, "--repository-authority", "--human", "operator", "--host", "codex", "--format", "json"})

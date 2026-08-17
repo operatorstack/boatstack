@@ -11,7 +11,7 @@
 /** Canonical schema name emitted by {@link defineFlow}. */
 export const CONTROL_PROGRAM_SCHEMA = "control-program" as const;
 /** Current revision of the canonical Control Program schema. */
-export const CONTROL_PROGRAM_SCHEMA_REVISION = 5 as const;
+export const CONTROL_PROGRAM_SCHEMA_REVISION = 6 as const;
 
 /**
  * A declarative condition over runtime state facts.
@@ -170,6 +170,11 @@ export interface TransitionParameterBinding {
   producer: ParameterProducer;
 }
 
+/** Domain-neutral authority requirements shared by transitions and entries. */
+export interface AuthorityRequirements {
+  authorities?: string[];
+}
+
 /**
  * A repository asset resolved and fingerprinted by the trusted compiler.
  *
@@ -224,7 +229,7 @@ export interface TransitionDefinition {
   guard: Predicate;
   target: Predicate;
   priority: number;
-  requires?: { authorities?: string[] };
+  requires?: AuthorityRequirements;
   work?: string;
   parameters?: TransitionParameterBinding[];
   description?: string;
@@ -256,6 +261,7 @@ export interface EntryInputDefinition {
 export interface EntryDefinition {
   id: string;
   target: string;
+  requires?: AuthorityRequirements;
   inputs?: EntryInputDefinition[];
   delegation?: DelegationBindingDefinition;
   diagnostics?: { explain_on_suspend?: boolean };
@@ -515,7 +521,7 @@ export function marked(
  *
  * @example
  * ```ts
- * entry({ id: "run", target: "published-pr" })
+ * entry({ id: "run", target: "published-pr", requires: { authorities: ["human"] } })
  * ```
  */
 export function entry(definition: EntryDefinition): EntryDefinition {

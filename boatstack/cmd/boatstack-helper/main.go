@@ -80,6 +80,7 @@ type commandOptions struct {
 	command                             string
 	delegationBindingFingerprint        string
 	delegationRequestFingerprint        string
+	entryActivationAuthorities          stringList
 	delegationAuthorities               stringList
 	delegationDescription               string
 	delegationRequest                   delegation.Request
@@ -163,7 +164,7 @@ func run(arguments []string) error {
 			return err
 		}
 	}
-	programChangeResponse, err := preflightDelegatedProgramChange(context.Background(), request)
+	programChangeResponse, err := preflightFlowAuthorizationProgramChange(context.Background(), request)
 	if err != nil {
 		if suspended, ok := flowCommitRequiredResponse(err, operation); ok {
 			return renderResponse(suspended, options.format)
@@ -173,7 +174,7 @@ func run(arguments []string) error {
 	if programChangeResponse != nil {
 		return renderResponse(*programChangeResponse, options.format)
 	}
-	delegationLock, delegationResponse, err := prepareDelegation(context.Background(), &request)
+	delegationLock, delegationResponse, err := prepareFlowAuthorization(context.Background(), &request)
 	if err != nil {
 		return err
 	}
@@ -237,7 +238,7 @@ func run(arguments []string) error {
 		response, handleErr = suspended, nil
 	}
 	if operation != surfaces.OperationExplain {
-		if settleErr := settleDelegationAtTarget(context.Background(), request, response, kernel.TargetSatisfied(response.Snapshot, request.Objective), delegationLock != nil); settleErr != nil && handleErr == nil {
+		if settleErr := settleFlowAuthorizationAtTarget(context.Background(), request, response, kernel.TargetSatisfied(response.Snapshot, request.Objective), delegationLock != nil); settleErr != nil && handleErr == nil {
 			handleErr = settleErr
 		}
 	}
@@ -285,7 +286,7 @@ func runRPC() error {
 			return err
 		}
 	}
-	programChangeResponse, err := preflightDelegatedProgramChange(context.Background(), request)
+	programChangeResponse, err := preflightFlowAuthorizationProgramChange(context.Background(), request)
 	if err != nil {
 		if suspended, ok := flowCommitRequiredResponse(err, request.Operation); ok {
 			encoder := json.NewEncoder(os.Stdout)
@@ -299,7 +300,7 @@ func runRPC() error {
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(programChangeResponse)
 	}
-	delegationLock, delegationResponse, err := prepareDelegation(context.Background(), &request)
+	delegationLock, delegationResponse, err := prepareFlowAuthorization(context.Background(), &request)
 	if err != nil {
 		return err
 	}
@@ -347,7 +348,7 @@ func runRPC() error {
 		response, handleErr = suspended, nil
 	}
 	if request.Operation != surfaces.OperationExplain {
-		if settleErr := settleDelegationAtTarget(context.Background(), request, response, kernel.TargetSatisfied(response.Snapshot, request.Objective), delegationLock != nil); settleErr != nil && handleErr == nil {
+		if settleErr := settleFlowAuthorizationAtTarget(context.Background(), request, response, kernel.TargetSatisfied(response.Snapshot, request.Objective), delegationLock != nil); settleErr != nil && handleErr == nil {
 			handleErr = settleErr
 		}
 	}
@@ -806,6 +807,7 @@ func buildRequest(operation surfaces.Operation, options commandOptions) (surface
 		RepositoryAuthority: options.repositoryPolicy, IdempotencyKey: options.idempotencyKey, Command: options.command,
 		DelegationBindingFingerprint: options.delegationBindingFingerprint,
 		DelegationRequestFingerprint: options.delegationRequestFingerprint,
+		EntryActivationAuthorities:   delegationClasses(options.entryActivationAuthorities),
 		DelegatedAuthorities:         delegationClasses(options.delegationAuthorities),
 		WorkInputs:                   options.workInputs,
 		WorkID:                       options.workID,
@@ -999,9 +1001,9 @@ func renderResponse(response surfaces.Response, format string) error {
 			}
 			return nil
 		}
-		if response.Delegation != nil {
-			fmt.Printf("SUSPENDED: %s run=%s request=%s authorities=%v\n%s\n", response.Delegation.Code, response.Delegation.RunID, response.Delegation.RequestFingerprint, response.Delegation.Authorities, response.Delegation.Description)
-			renderHumanIdentity(response.Delegation.HumanIdentity)
+		if response.Authorization != nil {
+			fmt.Printf("SUSPENDED: %s run=%s request=%s activation=%v delegation=%v\n%s\n", response.Authorization.Code, response.Authorization.RunID, response.Authorization.RequestFingerprint, response.Authorization.EntryActivationAuthorities, response.Authorization.DelegatedAuthorities, response.Authorization.Description)
+			renderHumanIdentity(response.Authorization.HumanIdentity)
 			return nil
 		}
 		if response.Question != nil {

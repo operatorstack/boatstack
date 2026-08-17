@@ -17,7 +17,7 @@ import (
 
 const (
 	ArtifactSchemaName     = "control-program-artifact"
-	ArtifactSchemaRevision = 5
+	ArtifactSchemaRevision = 6
 )
 
 type Artifact struct {
