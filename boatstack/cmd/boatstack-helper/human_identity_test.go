@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -178,7 +179,8 @@ func TestHumanIdentityRenderingPreservesStructuredArgvWithoutExecutingIt(t *test
 		t.Fatalf("structured JSON lost command argv: %#v", decoded.Delegation)
 	}
 	output, err := captureStdout(t, func() error { return renderResponse(response, "text") })
-	if err != nil || !strings.Contains(string(output), `human_identity_command="touch" "`+marker+`"`) {
+	expectedCommand := "human_identity_command=" + strconv.Quote("touch") + " " + strconv.Quote(marker)
+	if err != nil || !strings.Contains(string(output), expectedCommand) {
 		t.Fatalf("text output = %q, err=%v", output, err)
 	}
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
@@ -189,7 +191,7 @@ func TestHumanIdentityRenderingPreservesStructuredArgvWithoutExecutingIt(t *test
 		ProgramDeltaFingerprint: strings.Repeat("d", 64), RequiredTransition: "installation.reconcile-update", AcceptanceFlag: "--accept-program-change", HumanIdentity: &presentation,
 	}}
 	output, err = captureStdout(t, func() error { return renderResponse(programChange, "text") })
-	if err != nil || !strings.Contains(string(output), `human_identity_command="touch" "`+marker+`"`) {
+	if err != nil || !strings.Contains(string(output), expectedCommand) {
 		t.Fatalf("program-change text output = %q, err=%v", output, err)
 	}
 }
