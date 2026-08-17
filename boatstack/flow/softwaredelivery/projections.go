@@ -52,12 +52,15 @@ func GenerateProjections(compiled controlprogram.Compiled, projections []hostpro
 }
 
 func flowSkillSlug(programID, entryID string) string {
+	return projectionSlugComponent(programID, false) + "-" + projectionSlugComponent(entryID, true)
+}
+
+func projectionSlugComponent(value string, encodeHyphen bool) string {
 	const encodedPrefix = "x0"
-	encodedEntry := entryID
-	if strings.Contains(entryID, "-") || strings.HasPrefix(entryID, encodedPrefix) {
-		encodedEntry = encodedPrefix + hex.EncodeToString([]byte(entryID))
+	if strings.ContainsAny(value, "._") || strings.HasPrefix(value, encodedPrefix) || (encodeHyphen && strings.Contains(value, "-")) {
+		return encodedPrefix + hex.EncodeToString([]byte(value))
 	}
-	return programID + "-" + encodedEntry
+	return value
 }
 
 func renderProjection(compiled controlprogram.Compiled, entry controlprogram.Entry, slug, host string) []byte {

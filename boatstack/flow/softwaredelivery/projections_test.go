@@ -433,3 +433,38 @@ func TestGeneratedSkillIdentityIsInjectiveAcrossProgramEntryPairs(t *testing.T) 
 		}
 	}
 }
+
+func TestGeneratedProjectionSlugsEncodeEveryValidSemanticSeparator(t *testing.T) {
+	// control-law: every-control-program-semantic-id-has-an-injective-valid-host-projection
+	type identity struct{ program, entry string }
+	identities := []identity{
+		{program: "incident.response", entry: "respond"},
+		{program: "x0696e636964656e742e726573706f6e7365", entry: "respond"},
+		{program: "incident_response", entry: "respond.now"},
+		{program: "incident-response", entry: "respond-now"},
+		{program: "incident", entry: "respond_now"},
+	}
+	seen := map[string]identity{}
+	for _, value := range identities {
+		compiled := controlprogram.Compiled{Document: controlprogram.Document{
+			Program: controlprogram.Program{ID: value.program},
+			Entries: []controlprogram.Entry{{ID: value.entry, Target: "done"}},
+		}}
+		files, err := softwareflow.GenerateProjections(compiled, hostprojection.CanonicalIDs())
+		if err != nil {
+			t.Fatalf("GenerateProjections(%s, %s): %v", value.program, value.entry, err)
+		}
+		for path := range files {
+			if !hostprojection.ValidFlowPath(path) {
+				t.Fatalf("semantic identity %v generated invalid path %q", value, path)
+			}
+			if hostprojection.IsSharedCheckoutPath(path) {
+				continue
+			}
+			if prior, collision := seen[path]; collision {
+				t.Fatalf("semantic identities %v and %v collide at %s", prior, value, path)
+			}
+			seen[path] = value
+		}
+	}
+}
