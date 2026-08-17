@@ -6,6 +6,10 @@
  * effects, handlers, minimum capability, authority, verification, and recovery
  * semantics.
  *
+ * Start with {@link softwareDelivery}. Repositories select explicit lifecycle
+ * steps, work, targets, entries, human identity role, activation authority,
+ * and delegation. These helpers return declarations only.
+ *
  * @packageDocumentation
  */
 
@@ -33,10 +37,14 @@ import {
 } from "@operatorstack/boatstack";
 
 const bindingPrefix = "software-delivery/";
-/** Trusted resolver reference used by {@link inbox}. */
+/** Trusted resolver reference used by {@link inbox}.
+ * @category Repository inputs
+ */
 export const planInboxResolver = "software-delivery.plan-inbox";
 
-/** State facets declared by the trusted software-delivery domain adapter. */
+/** State facets declared by the trusted software-delivery domain adapter.
+ * @category Flow composition
+ */
 export const softwareDeliveryFacets: FacetDefinition[] = [
   "phase",
   "program",
@@ -73,7 +81,9 @@ export const softwareDeliveryFacets: FacetDefinition[] = [
   "worktree_fingerprint",
 ].map((id) => facet(id, "string"));
 
-/** Evidence relations declared by the software-delivery domain adapter. */
+/** Evidence relations declared by the software-delivery domain adapter.
+ * @category Evidence and publication
+ */
 export const softwareDeliveryEvidence: EvidenceDefinition[] = [
   { id: "plan-evidence", subject: "plan", kind: "artifact" },
   {
@@ -83,7 +93,9 @@ export const softwareDeliveryEvidence: EvidenceDefinition[] = [
   },
 ];
 
-/** Selects a trusted software-delivery operation and its repository priority. */
+/** Selects a trusted software-delivery operation and its repository priority.
+ * @category Trusted transitions
+ */
 export interface TrustedStep {
   id: string;
   priority: number;
@@ -91,17 +103,23 @@ export interface TrustedStep {
   work?: string;
 }
 
-/** Admits a completed planning package into the delivery lifecycle. */
+/** Admits a completed planning package into the delivery lifecycle.
+ * @category Planning
+ */
 export const planningPackageAdmit: TrustedStep = {
   id: "planning.package.admit",
   priority: 43,
 };
-/** Records approval of the exact admitted planning package. */
+/** Records approval of the exact admitted planning package.
+ * @category Planning
+ */
 export const planningPackageApprove: TrustedStep = {
   id: "planning.package.approve",
   priority: 44,
 };
-/** Promotes an approved planning package into the active delivery plan. */
+/** Promotes an approved planning package into the active delivery plan.
+ * @category Planning
+ */
 export const planningPackagePromote: TrustedStep = {
   id: "planning.package.promote",
   priority: 45,
@@ -112,6 +130,10 @@ export const planningPackagePromote: TrustedStep = {
  *
  * Lifecycle membership, priorities, work, targets, and entries remain explicit.
  * This input contains data only and does not grant authority or execute code.
+ * `humanIdentity` selects a named role; it does not resolve an actor or approve
+ * the Flow.
+ *
+ * @category Flow composition
  */
 export interface SoftwareDeliveryFlowDefinition {
   /** Stable repository-selected Control Program identity. */
@@ -247,6 +269,8 @@ function referencedInputResolvers(entries: EntryDefinition[]): string[] {
  * The returned value is a regular {@link FlowDefinition}; callers still pass it
  * to `defineFlow`, the sole raw-IR lowering boundary. This helper selects no
  * lifecycle members, priorities, targets, entries, authority, or delegation.
+ *
+ * @category Flow composition
  */
 export function softwareDelivery(
   definition: SoftwareDeliveryFlowDefinition,
@@ -297,6 +321,8 @@ export function softwareDelivery(
  * Authorities listed here are additional mandatory requirements. They cannot
  * replace trusted alternatives, weaken provider requirements, or grant
  * authority.
+ *
+ * @category Trusted transitions
  */
 export interface TrustedTransitionOptions {
   requires?: { authorities?: string[] };
@@ -306,7 +332,9 @@ export interface TrustedTransitionOptions {
   parameters?: Record<string, ParameterProducer>;
 }
 
-/** Reads the exact verified repository default branch. */
+/** Reads the exact verified repository default branch.
+ * @category Parameter producers
+ */
 export function repositoryDefaultBranch(): ParameterProducer {
   return trustedParameterResolver(
     "software-delivery/repository-default-branch",
@@ -314,12 +342,16 @@ export function repositoryDefaultBranch(): ParameterProducer {
   );
 }
 
-/** Derives a non-conflicting managed branch from the exact delivery context. */
+/** Derives a non-conflicting managed branch from the exact delivery context.
+ * @category Parameter producers
+ */
 export function deliveryBranch(): ParameterProducer {
   return trustedParameterResolver("software-delivery/delivery-branch", "1");
 }
 
-/** Derives the managed destination within Boatstack's trusted worktree root. */
+/** Derives the managed destination within Boatstack's trusted worktree root.
+ * @category Parameter producers
+ */
 export function managedWorktreeDestination(): ParameterProducer {
   return trustedParameterResolver(
     "software-delivery/managed-worktree-destination",
@@ -327,7 +359,9 @@ export function managedWorktreeDestination(): ParameterProducer {
   );
 }
 
-/** Reads the exact fingerprint of the planning-package manifest admitted for this delivery. */
+/** Reads the exact fingerprint of the planning-package manifest admitted for this delivery.
+ * @category Parameter producers
+ */
 export function admittedPlanningPackageFingerprint(): ParameterProducer {
   return trustedParameterResolver(
     "software-delivery/admitted-planning-package-fingerprint",
@@ -335,7 +369,9 @@ export function admittedPlanningPackageFingerprint(): ParameterProducer {
   );
 }
 
-/** Reads the exact committed revision of the invoking worktree. */
+/** Reads the exact committed revision of the invoking worktree.
+ * @category Parameter producers
+ */
 export function currentSourceRevision(): ParameterProducer {
   return trustedParameterResolver("software-delivery/current-source-revision", "1");
 }
@@ -474,6 +510,8 @@ export function standardSoftwareDeliveryParameters(step: TrustedStep): Record<st
  * This declaration does not grant authority. Boatstack materializes authority
  * only from a runtime-owned authorization bound to the exact run.
  *
+ * @category Authority and delegation
+ *
  * @example
  * ```ts
  * entry({
@@ -498,6 +536,8 @@ export function trustedDelegation(
  *
  * Input selection happens before managed run state is created. Zero or several
  * eligible plans produce a typed blocker rather than an arbitrary choice.
+ *
+ * @category Repository inputs
  */
 export function inbox(path: string): EntryInputDefinition {
   return {
@@ -509,14 +549,18 @@ export function inbox(path: string): EntryInputDefinition {
   };
 }
 
-/** Resolves one lifecycle step through the trusted operator registry. */
+/** Resolves one lifecycle step through the trusted operator registry.
+ * @category Trusted transitions
+ */
 export function trustedOperator(step: TrustedStep): OperatorDefinition {
   return operator(step.id, {
     binding: { reference: `${bindingPrefix}${step.id}`, version: "1" },
   });
 }
 
-/** Resolves a lifecycle list through the trusted operator registry. */
+/** Resolves a lifecycle list through the trusted operator registry.
+ * @category Trusted transitions
+ */
 export function trustedOperators(steps: TrustedStep[]): OperatorDefinition[] {
   return steps.map(trustedOperator);
 }
@@ -526,6 +570,8 @@ export function trustedOperators(steps: TrustedStep[]): OperatorDefinition[] {
  *
  * The repository may set priority and add mandatory authority through
  * `options.requires`. It cannot override the trusted effect or handler.
+ *
+ * @category Trusted transitions
  */
 export function trustedTransition(
   step: TrustedStep,
@@ -551,6 +597,8 @@ export function trustedTransition(
 /**
  * Declares one standard software-delivery transition with its canonical,
  * explicit producer bindings. Authority remains owned by the trusted operator.
+ *
+ * @category Trusted transitions
  */
 export function trustedSoftwareDeliveryTransition(
   step: TrustedStep,
@@ -563,7 +611,9 @@ export function trustedSoftwareDeliveryTransition(
   });
 }
 
-/** Expands a standard lifecycle into transitions with explicit canonical producers. */
+/** Expands a standard lifecycle into transitions with explicit canonical producers.
+ * @category Trusted transitions
+ */
 export function trustedSoftwareDeliveryTransitions(
   steps: TrustedStep[],
   options: { planningPackageWork?: WorkContract } = {},
@@ -582,6 +632,8 @@ export function trustedSoftwareDeliveryTransitions(
  *
  * Pass the same lifecycle used by {@link trustedOperators}; compilation rejects
  * unresolved operator references, but authors should keep this pairing explicit.
+ *
+ * @category Trusted transitions
  */
 export function trustedTransitions(
   steps: TrustedStep[],

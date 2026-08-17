@@ -4,11 +4,34 @@ import test from "node:test";
 import { documentationFailures } from "./check-docs-api.mjs";
 
 const requiredFunctions = {
-  "@operatorstack/boatstack": ["defineFlow", "entry", "marked"],
+  "@operatorstack/boatstack": [
+    "AuthorityRequirements",
+    "EntryDefinition",
+    "defineFlow",
+    "entry",
+    "facet",
+    "fact",
+    "foregroundWork",
+    "fromEntryInput",
+    "fromReceipt",
+    "fromState",
+    "fromStateOrReceipt",
+    "fromWorkOutput",
+    "hostParameter",
+    "marked",
+    "operator",
+    "transition",
+    "trustedParameterResolver",
+  ],
   "@operatorstack/boatstack-software-delivery": [
+    "SoftwareDeliveryFlowDefinition",
     "inbox",
+    "planningPackageAdmit",
+    "planningPackageApprove",
+    "planningPackagePromote",
     "softwareDelivery",
     "trustedDelegation",
+    "trustedSoftwareDeliveryTransitions",
     "trustedTransition",
   ],
 };

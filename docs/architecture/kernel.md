@@ -1,4 +1,7 @@
-# General supervisory kernel
+# General kernel
+
+This document maps the [supervisory-control concepts](../concepts/supervisory-control.md)
+to the current domain-neutral Go implementation.
 
 Boatstack has one domain-neutral supervisory mechanism and one production
 domain: software delivery.
@@ -149,3 +152,10 @@ requires no Git executable or repository.
 12. Marked-state generality: the program defines accepted modes.
 13. Operator neutrality: the fixture uses deterministic functions, not an agent.
 14. Domain substitution: the integer domain runs without kernel changes.
+
+## Current implementation anchors
+
+- [Kernel types and ports](../../boatstack/kernel/types.go)
+- [Resolve/apply runtime](../../boatstack/kernel/runtime.go)
+- [Relation tests](../../boatstack/kernel/relation_test.go)
+- [Domain-neutral conformance fixture](../../boatstack/kernel/conformance/integer.go)

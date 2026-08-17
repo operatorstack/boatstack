@@ -5,6 +5,11 @@
  * grant authority; the Boatstack runtime validates and executes the compiled
  * program.
  *
+ * Start with {@link defineFlow}, then declare predicates and state, operators
+ * and transitions, marked targets, entries, parameter producers, and bounded
+ * foreground work. This module records exact authoring contracts; the
+ * repository guides explain their runtime control semantics.
+ *
  * @packageDocumentation
  */
 
@@ -18,6 +23,8 @@ export const CONTROL_PROGRAM_SCHEMA_REVISION = 6 as const;
  *
  * Predicates influence executable transition and target semantics. A frontend
  * author may combine facts, but only the runtime decides whether they hold.
+ *
+ * @category Predicates and state
  */
 export type Predicate =
   | { true: boolean }
@@ -67,6 +74,8 @@ export interface StateAssignment {
  *
  * Native handlers are references resolved by the trusted runtime. Repository
  * source cannot provide executable handler code through this type.
+ *
+ * @category Operators and transitions
  */
 export type StateEffectDefinition =
   | {
@@ -86,6 +95,8 @@ export type StateEffectDefinition =
  * Capabilities, authority, effects, verification, recovery, and execution
  * context are executable control semantics. Domain adapters should normally
  * supply trusted bindings instead of asking repository Flows to repeat them.
+ *
+ * @category Operators and transitions
  */
 export interface OperatorDefinition {
   id: string;
@@ -170,7 +181,11 @@ export interface TransitionParameterBinding {
   producer: ParameterProducer;
 }
 
-/** Domain-neutral authority requirements shared by transitions and entries. */
+/**
+ * Domain-neutral authority requirements shared by transitions and entries.
+ * Declarations constrain admission but do not create authority.
+ * @category Authority
+ */
 export interface AuthorityRequirements {
   authorities?: string[];
 }
@@ -242,7 +257,9 @@ export interface TargetDefinition {
   description?: string;
 }
 
-/** Declares one typed value that must be resolved before a run starts. */
+/** Declares one typed value that must be resolved before a run starts.
+ * @category Targets and entries
+ */
 export interface EntryInputDefinition {
   id: string;
   type: string;
@@ -257,6 +274,9 @@ export interface EntryInputDefinition {
  * Delegation requests a trusted runtime mechanism; it never grants authority.
  * Diagnostics affect generated-agent projection only and do not change the
  * executable Control Program fingerprint.
+ * Entry `requires` declares activation authority separately from delegation.
+ *
+ * @category Targets and entries
  */
 export interface EntryDefinition {
   id: string;
@@ -268,13 +288,17 @@ export interface EntryDefinition {
   description?: string;
 }
 
-/** References a trusted delegation implementation resolved by Boatstack. */
+/** References a trusted delegation implementation resolved by Boatstack.
+ * @category Authority
+ */
 export interface DelegationBindingDefinition {
   reference: string;
   version: string;
 }
 
-/** Complete domain-neutral authoring input accepted by {@link defineFlow}. */
+/** Complete domain-neutral authoring input accepted by {@link defineFlow}.
+ * @category Program structure
+ */
 export interface FlowDefinition {
   id: string;
   version: string;
@@ -296,7 +320,9 @@ export interface FlowDefinition {
   entries: EntryDefinition[];
 }
 
-/** Canonical raw IR emitted by the TypeScript authoring frontend. */
+/** Canonical raw IR emitted by the TypeScript authoring frontend.
+ * @category Program structure
+ */
 export interface ControlProgramIR {
   schema: typeof CONTROL_PROGRAM_SCHEMA;
   schema_revision: typeof CONTROL_PROGRAM_SCHEMA_REVISION;
@@ -317,6 +343,8 @@ export interface ControlProgramIR {
  *
  * Boatstack still canonicalizes, validates, resolves trusted bindings, and
  * fingerprints the result. Calling this function does not execute the Flow.
+ *
+ * @category Program structure
  *
  * @example
  * ```ts
@@ -357,22 +385,30 @@ export function defineFlow(definition: FlowDefinition): ControlProgramIR {
   };
 }
 
-/** Declares a repository-owned UTF-8 instruction asset. */
+/** Declares a repository-owned UTF-8 instruction asset.
+ * @category Assets and schemas
+ */
 export function instructionAsset(path: string): WorkAssetDefinition {
   return { path };
 }
 
-/** Declares a repository-owned strict JSON Schema asset. */
+/** Declares a repository-owned strict JSON Schema asset.
+ * @category Assets and schemas
+ */
 export function schemaAsset(path: string): WorkAssetDefinition {
   return { path };
 }
 
-/** Binds a foreground-work input to one entry input ID. */
+/** Binds a foreground-work input to one entry input ID.
+ * @category Foreground work
+ */
 export function entryInput(id: string): WorkInputDefinition {
   return { id, entry_input: id };
 }
 
-/** Declares one bounded foreground-work output artifact. */
+/** Declares one bounded foreground-work output artifact.
+ * @category Foreground work
+ */
 export function workArtifact(
   definition: WorkArtifactDefinition,
 ): WorkArtifactDefinition {
@@ -385,17 +421,23 @@ export function workArtifact(
  * {@link defineFlow} remains the complete controller. This helper only defines
  * bounded work that a selected transition may require before its trusted
  * operator can be admitted.
+ *
+ * @category Foreground work
  */
 export function foregroundWork(definition: WorkContract): WorkContract {
   return { ...definition };
 }
 
-/** Resolves a transition parameter from one declared entry input. */
+/** Resolves a transition parameter from one declared entry input.
+ * @category Invocation and parameters
+ */
 export function fromEntryInput(input: string): ParameterProducer {
   return { kind: "entry-input", input };
 }
 
-/** Resolves a transition parameter from a state facet under an exact availability condition. */
+/** Resolves a transition parameter from a state facet under an exact availability condition.
+ * @category Invocation and parameters
+ */
 export function fromState(definition: {
   facet: string;
   availableWhen: Predicate;
@@ -407,7 +449,9 @@ export function fromState(definition: {
   };
 }
 
-/** Resolves a transition parameter from an earlier transition receipt. */
+/** Resolves a transition parameter from an earlier transition receipt.
+ * @category Invocation and parameters
+ */
 export function fromReceipt(definition: {
   transition: string;
   field: string;
@@ -415,7 +459,9 @@ export function fromReceipt(definition: {
   return { kind: "receipt", ...definition };
 }
 
-/** Resolves from current durable state, falling back to one exact committed receipt. */
+/** Resolves from current durable state, falling back to one exact committed receipt.
+ * @category Invocation and parameters
+ */
 export function fromStateOrReceipt(definition: {
   facet: string;
   availableWhen: Predicate;
@@ -431,7 +477,9 @@ export function fromStateOrReceipt(definition: {
   };
 }
 
-/** Resolves a transition parameter from exact run-scoped foreground-work output. */
+/** Resolves a transition parameter from exact run-scoped foreground-work output.
+ * @category Invocation and parameters
+ */
 export function fromWorkOutput(definition: {
   work: string;
   output: string;
@@ -439,7 +487,9 @@ export function fromWorkOutput(definition: {
   return { kind: "work-output", ...definition };
 }
 
-/** Requests one trusted runtime-owned parameter resolver binding. */
+/** Requests one trusted runtime-owned parameter resolver binding.
+ * @category Invocation and parameters
+ */
 export function trustedParameterResolver(
   reference: string,
   version: string,
@@ -447,7 +497,9 @@ export function trustedParameterResolver(
   return { kind: "trusted-resolver", binding: { reference, version } };
 }
 
-/** Declares a typed, resumable host-input request for a transition parameter. */
+/** Declares a typed, resumable host-input request for a transition parameter.
+ * @category Invocation and parameters
+ */
 export function hostParameter(definition: {
   id: string;
   description: string;
@@ -462,6 +514,8 @@ export function hostParameter(definition: {
  *
  * Facet identifiers and allowed values are executable schema. The runtime
  * rejects effects and predicates that reference undeclared facets or values.
+ *
+ * @category Predicates and state
  */
 export function facet(
   id: string,
@@ -485,6 +539,8 @@ export function evidence(
  *
  * Prefer a trusted domain adapter where one exists. This helper describes an
  * operator but cannot make an untrusted implementation executable.
+ *
+ * @category Operators and transitions
  */
 export function operator(
   id: string,
@@ -493,7 +549,9 @@ export function operator(
   return { id, ...definition };
 }
 
-/** Declares a generic transition that refers to a declared operator. */
+/** Declares a generic transition that refers to a declared operator.
+ * @category Operators and transitions
+ */
 export function transition(
   id: string,
   operatorID: string,
@@ -507,6 +565,8 @@ export function transition(
  *
  * Targets define what counts as done. Entries select which target a particular
  * invocation pursues.
+ *
+ * @category Targets and entries
  */
 export function marked(
   id: string,
@@ -518,6 +578,10 @@ export function marked(
 
 /**
  * Declares an invocation entry and normalizes omitted inputs to an empty list.
+ * Entry `requires` declares activation authority; `delegation` requests a
+ * separate trusted run-scoped mechanism. Neither declaration grants authority.
+ *
+ * @category Targets and entries
  *
  * @example
  * ```ts
@@ -528,7 +592,9 @@ export function entry(definition: EntryDefinition): EntryDefinition {
   return { ...definition, inputs: definition.inputs ?? [] };
 }
 
-/** Predicate that is true in every state. */
+/** Predicate that is true in every state.
+ * @category Predicates and state
+ */
 export const always: Predicate = { true: true };
 
 /**
@@ -536,6 +602,8 @@ export const always: Predicate = { true: true };
  *
  * The default status is `known`; pass an explicit list when unknown or other
  * statuses are admissible.
+ *
+ * @category Predicates and state
  */
 export function fact(
   facetID: string,
@@ -545,7 +613,9 @@ export function fact(
   return { fact: { facet: facetID, statuses, values } };
 }
 
-/** Requires every supplied predicate to hold. */
+/** Requires every supplied predicate to hold.
+ * @category Predicates and state
+ */
 export function all(...predicates: Predicate[]): Predicate {
   return { all: predicates };
 }

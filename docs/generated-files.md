@@ -28,6 +28,10 @@ committed runtime inputs:
 | `.agents/skills/<program>-<entry>/agents/openai.yaml` | Flow compiler | Codex skill metadata |
 | `.claude/skills/<program>-<entry>/.gitattributes` | Flow compiler | preserves exact Claude projection bytes across Git checkouts |
 | `.claude/skills/<program>-<entry>/SKILL.md` | Flow compiler | Claude entry projection |
+| `.cursor/commands/.gitattributes` | Flow compiler | shared Cursor checkout-byte policy |
+| `.cursor/commands/<program>-<entry>.md` | Flow compiler | Cursor entry projection |
+| `.gemini/skills/.gitattributes` | Flow compiler | shared Gemini checkout-byte policy |
+| `.gemini/skills/<program>-<entry>/SKILL.md` | Flow compiler | Gemini entry projection |
 
 Skill identities are injective across program and entry pairs: hyphens in the
 entry component are doubled. The `boatstack-update` identity is reserved for
@@ -44,6 +48,13 @@ explicit absolute frontend path, revalidates retirement authorization under the
 projection lock, and publishes the artifact only after obsolete skills are
 retired. Projection filesystem mutations use a repository-root capability, so
 a parent-directory symlink swap cannot redirect them outside the repository.
+
+The kernel maintenance projection uses the reserved `boatstack-update` identity
+at the corresponding host paths: Codex and Claude skill directories, Cursor's
+`.cursor/commands/boatstack-update.md`, and Gemini's
+`.gemini/skills/boatstack-update/SKILL.md`. Selection is explicit. Boatstack
+owns only paths recorded by its generated ownership manifests, never an entire
+host directory. Manual edits to an owned path are rejected rather than adopted.
 
 ## Machine-local controller state
 
@@ -94,3 +105,8 @@ origin is the program runtime.
 The Locus phase graph is intentionally conservative: it expands each declared
 source phase against each declared target phase. Facet predicates and reducer
 branches remain executable-test obligations.
+
+Manual edits are not allowed. The generator is the compiled software-delivery
+registry exposed by `boatstack-helper catalog`; the repository contract and
+`boatstack/internal/softwaredelivery/surfaces/artifacts_external_test.go` are
+the verifiers.
