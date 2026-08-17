@@ -20,14 +20,24 @@ trustedTransition(
 ```
 
 `trustedDelegation("autonomy")` requests a trusted delegation mechanism for an
-entry. It does not authorize the run. Boatstack presents an exact run-bound
-request at runtime, and only a trusted human/host boundary can authorize it.
+entry. Separately, `requires: { authorities: ["human"] }` requires explicit
+human activation of that entry. Neither declaration authorizes the run.
+Boatstack presents one exact run-bound request when both scopes are present,
+and only a trusted human/host boundary can accept it.
 Revocation, expiry, incompatible drift, or an unauthorized execution context
 ends or suspends that delegation. External-provider authority remains separate.
 For repository Flow continuation, the trusted GitHub boundary derives that
 provider capability from the current repository identity and authenticated
 write permission. This is capability evidence, not another human approval.
 Repository files and `--authority-receipt` cannot create provider authority.
+
+The persisted event lists entry activation and delegated authorities
+separately. Activation is checked before engagement but never injected into the
+transition authority bundle. Only delegated authorities receive run-scoped
+receipts. Therefore the same approval cannot satisfy a later mandatory-human
+transition, GitHub provider capability, bootstrap, another entry, or another
+run. Revocation or expiry yields a fresh request rather than silently restoring
+authority.
 
 The repository declares `identity.default` and explicit `identity.roles` in
 `.boatstack/project.json`; each software-delivery Flow selects one role through

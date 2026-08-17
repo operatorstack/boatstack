@@ -30,6 +30,13 @@ type EntryObjective struct {
 }
 
 func NewDefinition(compiled controlprogram.Compiled, resolver Resolver) (Definition, error) {
+	for _, entry := range compiled.Document.Entries {
+		for _, authority := range entry.Requires.Authorities {
+			if authority != "human" {
+				return Definition{}, fmt.Errorf("entry %q activation authority %q has no trusted software-delivery producer", entry.ID, authority)
+			}
+		}
+	}
 	if _, err := ObjectiveForEntry(context.Background(), compiled, resolver, compiled.Document.Entries[0].ID); err != nil {
 		return Definition{}, err
 	}

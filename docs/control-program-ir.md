@@ -6,7 +6,7 @@ Boatstack separates authoring languages from executable semantics:
 TypeScript Flow -> raw Control Program IR -> Go canonicalizer -> committed artifact -> kernel
 ```
 
-The `control-program` schema at revision `3` is domain-neutral. It declares
+The `control-program` schema at revision `6` is domain-neutral. It declares
 typed facets, evidence relations, predicate ASTs, operators, capabilities,
 authority, effects, verification, recovery, bounded foreground work,
 transitions, marked targets, and entries.
@@ -16,8 +16,10 @@ Software terms such as plans, tests, Git, and pull requests belong to
 Trusted operator authority remains algebraic: `any_of` lists alternatives and
 `all_of` lists mandatory classes. Repository transitions may add mandatory
 authorities through `requires.authorities`; they cannot add alternatives or
-grant authority. Entries may request a trusted delegation binding, but only the
-runtime-owned authorization record can grant it for an exact run.
+grant authority. Entries may independently require activation authority and
+request a trusted delegation binding. Boatstack records one exact human event
+when both scopes are present, but only the delegation scope may materialize
+run-scoped authority receipts.
 
 ## Compile and check
 
@@ -31,11 +33,14 @@ boatstack flow check --repo .
 boatstack next --repo . --flow product-delivery --entry run
 ```
 
-If the entry requests delegation, `next` returns `DELEGATION_REQUIRED` with an
-exact run, request fingerprint, and repository-selected human identity
-descriptor before managed state changes. The host resolves a proposed actor,
-shows that actor and the exact request, and asks for explicit approval. A human
-can then authorize that exact request and continue it:
+If the entry requires human activation, `next` returns an `authorization`
+suspension with code `ENTRY_ACTIVATION_AUTHORITY_REQUIRED`. Delegation-only
+entries use `DELEGATION_REQUIRED`. The response separately lists
+`entry_activation_authorities` and `delegated_authorities`, while binding both
+scopes to one exact run, input set, request fingerprint, and repository-selected
+human identity descriptor. The host resolves a proposed actor, displays the
+Flow, entry, target, run, role, actor, scopes, and fingerprints, then asks once
+for explicit approval. A human can authorize that exact request and continue:
 
 ```sh
 boatstack flow authorize --repo . --flow product-delivery --entry run \
@@ -45,6 +50,11 @@ boatstack flow authorize --repo . --flow product-delivery --entry run \
 boatstack flow run --repo . --flow product-delivery --entry run --run-id <run-id>
 boatstack flow revoke --repo . --run-id <run-id> --human <actor>
 ```
+
+Entry activation consent is not a transition receipt. It cannot satisfy a
+later human-only transition, provider operation, bootstrap, or another run.
+Invocation by itself is not approval. Revocation, expiry, or bound-context
+drift requires a fresh exact authorization request.
 
 An entry may opt its generated Codex and Claude projections into factual
 diagnosis when a run suspends:

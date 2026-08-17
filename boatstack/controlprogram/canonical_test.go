@@ -584,6 +584,38 @@ func TestEntryDiagnosticsAreArtifactBoundButNotExecutableControlLaw(t *testing.T
 	}
 }
 
+func TestEntryAuthorityRequirementsAreCanonicalExecutableSemantics(t *testing.T) {
+	document := incidentProgram()
+	document.Declarations.Authorities = append(document.Declarations.Authorities, "human", "autonomy")
+	document.Entries[0].Requires.Authorities = []string{"human", "autonomy"}
+	compiled, err := controlprogram.Compile(document, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := compiled.Document.Entries[0].Requires.Authorities; !reflect.DeepEqual(got, []string{"autonomy", "human"}) {
+		t.Fatalf("canonical entry authorities = %v", got)
+	}
+	without := clone(t, document)
+	without.Entries[0].Requires.Authorities = nil
+	unprotected, err := controlprogram.Compile(without, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unprotected.Fingerprint == compiled.Fingerprint {
+		t.Fatal("entry activation requirement did not change ProgramFingerprint")
+	}
+	duplicate := clone(t, document)
+	duplicate.Entries[0].Requires.Authorities = []string{"human", "human"}
+	if _, err := controlprogram.Compile(duplicate, nil); err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("duplicate entry authority result = %v", err)
+	}
+	undeclared := clone(t, document)
+	undeclared.Entries[0].Requires.Authorities = []string{"release-manager"}
+	if _, err := controlprogram.Compile(undeclared, nil); err == nil || !strings.Contains(err.Error(), "undeclared") {
+		t.Fatalf("undeclared entry authority result = %v", err)
+	}
+}
+
 func TestDelegationBindingIsResolvedAndFingerprintBound(t *testing.T) {
 	// control-law: repository-source-can-request-but-cannot-grant-authority
 	document := incidentProgram()

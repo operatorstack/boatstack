@@ -9,7 +9,11 @@ import {
 } from "../dist/index.js";
 
 const target = { id: "done", predicate: { true: true } };
-const entry = { id: "run", target: "done" };
+const entry = {
+  id: "run",
+  target: "done",
+  requires: { authorities: ["human"] },
+};
 const work = (id) => ({
   id,
   instructions: { path: `${id}.md` },

@@ -2999,13 +2999,16 @@ func TestFlowCompileRetiresOnlyUnmodifiedPriorGeneratedProjections(t *testing.T)
 }
 
 func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) {
-	// control-law: repository-declaration-cannot-self-grant-and-apply-reloads-revocation-before-effects
+	// control-law: one event may bind activation and delegation, but only the
+	// delegation scope can materialize a reusable authority receipt.
 	repository := t.TempDir()
 	runFlowGit(t, repository, "init", "-q")
 	runFlowGit(t, repository, "config", "user.email", "test@example.com")
 	runFlowGit(t, repository, "config", "user.name", "Test User")
 	runFlowGit(t, repository, "config", "core.autocrlf", "true")
 	document := productDeliveryDocument("product-delivery")
+	document.Declarations.Authorities = append(document.Declarations.Authorities, "human")
+	document.Entries[0].Requires.Authorities = []string{"human"}
 	document.Entries[0].Delegation = &controlprogram.DelegationBinding{Reference: "software-delivery/delegation/autonomy", Version: "1"}
 	sourcePath, lockPath := ".boatstack/flows/product-delivery.flow.ts", "package-lock.json"
 	source, dependencyLock := []byte("flow source"), []byte("lock")
@@ -3027,12 +3030,12 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	lock, suspension, err := prepareDelegation(context.Background(), &request)
-	if err != nil || lock != nil || suspension == nil || suspension.Delegation == nil || suspension.Delegation.Code != "DELEGATION_REQUIRED" || suspension.Delegation.RequestFingerprint != bound.delegationRequestFingerprint {
+	lock, suspension, err := prepareFlowAuthorization(context.Background(), &request)
+	if err != nil || lock != nil || suspension == nil || suspension.Authorization == nil || suspension.Authorization.Code != "ENTRY_ACTIVATION_AUTHORITY_REQUIRED" || suspension.Authorization.RequestFingerprint != bound.delegationRequestFingerprint || !reflect.DeepEqual(suspension.Authorization.EntryActivationAuthorities, []catalog.AuthorityClass{catalog.AuthorityHuman}) || !reflect.DeepEqual(suspension.Authorization.DelegatedAuthorities, []catalog.AuthorityClass{catalog.AuthorityAutonomy}) {
 		t.Fatalf("delegation suspension = lock=%v response=%#v err=%v", lock, suspension, err)
 	}
-	if suspension.Delegation.HumanIdentity.Descriptor.Kind != "literal" || suspension.Delegation.HumanIdentity.Descriptor.Value != "operator" || suspension.Delegation.HumanIdentity.ProviderFingerprint != bound.delegationRequest.HumanIdentityProviderFingerprint {
-		t.Fatalf("delegation human identity = %#v, request = %#v", suspension.Delegation.HumanIdentity, bound.delegationRequest)
+	if suspension.Authorization.HumanIdentity.Descriptor.Kind != "literal" || suspension.Authorization.HumanIdentity.Descriptor.Value != "operator" || suspension.Authorization.HumanIdentity.ProviderFingerprint != bound.delegationRequest.HumanIdentityProviderFingerprint {
+		t.Fatalf("delegation human identity = %#v, request = %#v", suspension.Authorization.HumanIdentity, bound.delegationRequest)
 	}
 	authority := request.Authority.Set(time.Now().UTC())
 	for _, forbidden := range []catalog.AuthorityClass{catalog.AuthorityHuman, catalog.AuthorityAutonomy, catalog.AuthorityProvider} {
@@ -3044,15 +3047,15 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, restartedSuspension, err := prepareDelegation(context.Background(), &restartedRequest)
-	if err != nil || restartedSuspension == nil || restartedSuspension.Delegation == nil || !reflect.DeepEqual(restartedSuspension.Delegation.HumanIdentity, suspension.Delegation.HumanIdentity) || restartedSuspension.Delegation.RequestFingerprint != suspension.Delegation.RequestFingerprint {
-		t.Fatalf("restart changed delegation identity: first=%#v restarted=%#v err=%v", suspension.Delegation, restartedSuspension, err)
+	_, restartedSuspension, err := prepareFlowAuthorization(context.Background(), &restartedRequest)
+	if err != nil || restartedSuspension == nil || restartedSuspension.Authorization == nil || !reflect.DeepEqual(restartedSuspension.Authorization.HumanIdentity, suspension.Authorization.HumanIdentity) || restartedSuspension.Authorization.RequestFingerprint != suspension.Authorization.RequestFingerprint {
+		t.Fatalf("restart changed delegation identity: first=%#v restarted=%#v err=%v", suspension.Authorization, restartedSuspension, err)
 	}
 	explainRequest, err := buildRequest(surfaces.OperationExplain, bound)
 	if err != nil {
 		t.Fatal(err)
 	}
-	explainLock, explainSuspension, err := prepareDelegation(context.Background(), &explainRequest)
+	explainLock, explainSuspension, err := prepareFlowAuthorization(context.Background(), &explainRequest)
 	if err != nil || explainLock != nil || explainSuspension != nil || explainRequest.Authority.Set(time.Now().UTC())[catalog.AuthorityAutonomy] {
 		t.Fatalf("explain created missing delegation authority: lock=%v response=%#v authority=%#v err=%v", explainLock, explainSuspension, explainRequest.Authority, err)
 	}
@@ -3094,7 +3097,7 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	explainLock, explainSuspension, err = prepareDelegation(context.Background(), &explainRequest)
+	explainLock, explainSuspension, err = prepareFlowAuthorization(context.Background(), &explainRequest)
 	if err != nil || explainLock != nil || explainSuspension != nil || !explainRequest.Authority.Set(time.Now().UTC())[catalog.AuthorityAutonomy] {
 		t.Fatalf("explain did not project existing delegation: lock=%v response=%#v authority=%#v err=%v", explainLock, explainSuspension, explainRequest.Authority, err)
 	}
@@ -3102,9 +3105,12 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	if err != nil || !bytes.Equal(recordBeforeExplain, recordAfterExplain) {
 		t.Fatalf("explain changed delegation record: %v", err)
 	}
-	lock, suspension, err = prepareDelegation(context.Background(), &request)
+	lock, suspension, err = prepareFlowAuthorization(context.Background(), &request)
 	if err != nil || lock != nil || suspension != nil || !request.Authority.Set(time.Now().UTC())[catalog.AuthorityAutonomy] {
 		t.Fatalf("authorized resolve = lock=%v response=%#v authority=%#v err=%v", lock, suspension, request.Authority, err)
+	}
+	if request.Authority.Set(time.Now().UTC())[catalog.AuthorityHuman] {
+		t.Fatalf("entry activation approval leaked human authority: %#v", request.Authority)
 	}
 	refreshedApply, _, err := refreshFlowInvocation(context.Background(), surfaces.OperationApply, request, bound)
 	if err != nil {
@@ -3131,7 +3137,7 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 		t.Fatal(err)
 	}
 	replayedExplain.Authority.Receipts = append(replayedExplain.Authority.Receipts, replayedReceipt)
-	replayedLock, replayedSuspension, err := prepareDelegation(context.Background(), &replayedExplain)
+	replayedLock, replayedSuspension, err := prepareFlowAuthorization(context.Background(), &replayedExplain)
 	if err != nil || replayedLock != nil || replayedSuspension != nil || replayedExplain.Authority.Set(time.Now().UTC())[catalog.AuthorityAutonomy] {
 		t.Fatalf("missing-record explain replayed delegation authority: lock=%v response=%#v authority=%#v err=%v", replayedLock, replayedSuspension, replayedExplain.Authority, err)
 	}
@@ -3153,7 +3159,7 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	if err := effects.StoreDelegationRecord(recordPath, record); err != nil {
 		t.Fatal(err)
 	}
-	if expiredLock, expiredSuspension, expiredErr := prepareDelegation(context.Background(), &request); expiredLock != nil || expiredSuspension != nil || expiredErr == nil || !strings.Contains(expiredErr.Error(), "DELEGATION_EXPIRED") {
+	if expiredLock, expiredSuspension, expiredErr := prepareFlowAuthorization(context.Background(), &request); expiredLock != nil || expiredSuspension == nil || expiredSuspension.Authorization == nil || expiredErr != nil {
 		t.Fatalf("expired delegation = lock=%v response=%#v err=%v", expiredLock, expiredSuspension, expiredErr)
 	}
 	renewedAt := time.Now().UTC()
@@ -3174,7 +3180,7 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 		t.Fatal(err)
 	}
 	record = renewed
-	lock, suspension, err = prepareDelegation(context.Background(), &request)
+	lock, suspension, err = prepareFlowAuthorization(context.Background(), &request)
 	if err != nil || lock != nil || suspension != nil || !request.Authority.Set(time.Now().UTC())[catalog.AuthorityAutonomy] {
 		t.Fatalf("renewed resolve = lock=%v response=%#v authority=%#v err=%v", lock, suspension, request.Authority, err)
 	}
@@ -3193,14 +3199,14 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	refLock, refSuspension, refErr := prepareDelegation(context.Background(), &refRequest)
+	refLock, refSuspension, refErr := prepareFlowAuthorization(context.Background(), &refRequest)
 	if refLock != nil || refSuspension != nil || refErr == nil || !strings.Contains(refErr.Error(), "DELEGATION_CONTEXT_UNAUTHORIZED") {
 		t.Fatalf("unauthorized ref = lock=%v response=%#v err=%v", refLock, refSuspension, refErr)
 	}
 	runFlowGit(t, repository, "checkout", "-q", strings.TrimPrefix(record.Request.InitialRef, "refs/heads/"))
 
 	request.Operation = surfaces.OperationApply
-	lock, suspension, err = prepareDelegation(context.Background(), &request)
+	lock, suspension, err = prepareFlowAuthorization(context.Background(), &request)
 	if err != nil || lock == nil || suspension != nil {
 		t.Fatalf("authorized apply preflight = lock=%v response=%#v err=%v", lock, suspension, err)
 	}
@@ -3211,9 +3217,13 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	if err := effects.StoreDelegationRecord(recordPath, record); err != nil {
 		t.Fatal(err)
 	}
-	lock, suspension, err = prepareDelegation(context.Background(), &request)
-	if lock != nil || suspension != nil || err == nil || !strings.Contains(err.Error(), "DELEGATION_REVOKED") {
+	lock, suspension, err = prepareFlowAuthorization(context.Background(), &request)
+	if lock != nil || suspension == nil || suspension.Authorization == nil || err != nil {
 		t.Fatalf("revoked apply preflight = lock=%v response=%#v err=%v", lock, suspension, err)
+	}
+	reauthorized, changed, err := authorizeDelegation(&record, bound.delegationRequest, bound.delegationRequestFingerprint, record.ActorIdentityProviderFingerprint, record.Actor, time.Hour, time.Now().UTC(), false)
+	if err != nil || !changed || reauthorized.Status != "active" || reauthorized.Revision != record.Revision+1 || reauthorized.ReceiptID == record.ReceiptID {
+		t.Fatalf("revoked exact request reauthorization = %#v changed=%t err=%v", reauthorized, changed, err)
 	}
 	record.Status, record.Revision, record.RevokedAt = "active", record.Revision+1, time.Time{}
 	if err := effects.StoreDelegationRecord(recordPath, record); err != nil {
@@ -3228,7 +3238,7 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := settleDelegationAtTarget(context.Background(), request, committed, true, true); err != nil {
+	if err := settleFlowAuthorizationAtTarget(context.Background(), request, committed, true, true); err != nil {
 		t.Fatal(err)
 	}
 	if err := heldDelegationLock.Release(); err != nil {
@@ -3239,14 +3249,29 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 		t.Fatalf("target settlement = record=%#v err=%v", completed, err)
 	}
 	request.Operation = surfaces.OperationResolve
-	lock, suspension, err = prepareDelegation(context.Background(), &request)
+	lock, suspension, err = prepareFlowAuthorization(context.Background(), &request)
 	if lock != nil || suspension != nil || err != nil || request.Authority.Set(time.Now().UTC())[catalog.AuthorityAutonomy] {
 		t.Fatalf("completed resolve replay = lock=%v response=%#v authority=%#v err=%v", lock, suspension, request.Authority, err)
 	}
 	request.Operation = surfaces.OperationApply
-	lock, suspension, err = prepareDelegation(context.Background(), &request)
-	if lock != nil || suspension != nil || err == nil || !strings.Contains(err.Error(), "DELEGATION_REVOKED") {
-		t.Fatalf("post-target apply preflight = lock=%v response=%#v err=%v", lock, suspension, err)
+	lock, suspension, err = prepareFlowAuthorization(context.Background(), &request)
+	if lock != nil || suspension == nil || suspension.Authorization == nil || suspension.Authorization.RequestFingerprint != bound.delegationRequestFingerprint || err != nil {
+		t.Fatalf("post-target fresh authorization = lock=%v response=%#v err=%v", lock, suspension, err)
+	}
+	reauthorizedAfterTarget, changed, err := authorizeDelegation(&completed, bound.delegationRequest, bound.delegationRequestFingerprint, completed.ActorIdentityProviderFingerprint, completed.Actor, time.Hour, time.Now().UTC(), false)
+	if err != nil || !changed || reauthorizedAfterTarget.Status != "active" || reauthorizedAfterTarget.Revision != completed.Revision+1 || reauthorizedAfterTarget.ReceiptID == completed.ReceiptID || !reauthorizedAfterTarget.EndedAt.IsZero() || reauthorizedAfterTarget.EndReason != "" {
+		t.Fatalf("post-target reauthorization = record=%#v changed=%t err=%v", reauthorizedAfterTarget, changed, err)
+	}
+	if err := effects.StoreDelegationRecord(recordPath, reauthorizedAfterTarget); err != nil {
+		t.Fatal(err)
+	}
+	request.Authority.Receipts = nil
+	lock, suspension, err = prepareFlowAuthorization(context.Background(), &request)
+	if err != nil || lock == nil || suspension != nil || !request.Authority.Set(time.Now().UTC())[catalog.AuthorityAutonomy] || request.Authority.Set(time.Now().UTC())[catalog.AuthorityHuman] {
+		t.Fatalf("post-target authorized continuation = lock=%v response=%#v authority=%#v err=%v", lock, suspension, request.Authority, err)
+	}
+	if err := lock.Release(); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -3255,7 +3280,7 @@ func TestExplicitAuthorizationCanReplaceRevokedPreReconciliationRequest(t *testi
 	// explicitly authorized post-installation request creates new authority.
 	prior := delegation.Request{
 		RunID: "run-example", ProgramID: "product-delivery", ProgramFingerprint: strings.Repeat("a", 64), ControlBundleFingerprint: strings.Repeat("b", 64),
-		EntryID: "run", TargetID: "published-pr", ObjectiveID: "objective", DeliveryID: "delivery", InputFingerprints: []string{"plan"},
+		EntryID: "run", TargetID: "published-pr", ObjectiveID: "objective", DeliveryID: "delivery", InputFingerprints: []delegation.InputFingerprint{{ID: "plan", Fingerprint: strings.Repeat("1", 64)}},
 		RepositoryID: "repository", GitCommonID: "common", InitialWorktreeID: "worktree", InitialRef: "refs/heads/main",
 		BindingFingerprint: strings.Repeat("c", 64), HumanIdentityRole: "developer", HumanIdentityProviderFingerprint: strings.Repeat("f", 64), RequestedAuthorities: []string{"autonomy"}, Description: "Run product delivery",
 	}
@@ -3292,7 +3317,7 @@ func TestDelegationReprojectionRejectsUnadmittedContextChanges(t *testing.T) {
 		RepositoryID: "repository", GitCommonID: "common", HumanIdentityRole: "developer",
 	}
 	changedInput := request
-	changedInput.InputFingerprints = []string{"changed-plan"}
+	changedInput.InputFingerprints = []delegation.InputFingerprint{{ID: "plan", Fingerprint: strings.Repeat("2", 64)}}
 	admitted, err := canReprojectDelegation(ports.ControllerLayout{}, model.InvocationContext{}, request, changedInput)
 	if err != nil || admitted {
 		t.Fatalf("unchanged-bundle reprojection admitted=%t err=%v", admitted, err)

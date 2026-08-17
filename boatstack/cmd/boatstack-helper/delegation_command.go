@@ -84,7 +84,7 @@ func runFlowAuthorize(arguments []string) error {
 	if err != nil {
 		return err
 	}
-	programChange, err := preflightDelegatedProgramChange(context.Background(), resolveRequest)
+	programChange, err := preflightFlowAuthorizationProgramChange(context.Background(), resolveRequest)
 	if err != nil {
 		return err
 	}
@@ -183,6 +183,19 @@ func authorizeDelegation(existing *delegation.Record, request delegation.Request
 			return record, true, nil
 		}
 		if existing.RequestFingerprint != requestFingerprint || existing.Actor != actor || existing.ActorIdentityRole != request.HumanIdentityRole || existing.ActorIdentityProviderFingerprint != identityProviderFingerprint || existing.Status != "active" {
+			if existing.RequestFingerprint == requestFingerprint && existing.Actor == actor && existing.ActorIdentityRole == request.HumanIdentityRole && existing.ActorIdentityProviderFingerprint == identityProviderFingerprint && (existing.Status == "revoked" || existing.Status == "completed") {
+				reauthorized := *existing
+				reauthorized.Revision++
+				reauthorized.AuthorizedAt = now
+				reauthorized.ExpiresAt = time.Time{}
+				if expiresIn > 0 {
+					reauthorized.ExpiresAt = now.Add(expiresIn)
+				}
+				reauthorized.ReceiptID = authorizationReceiptID(requestFingerprint, actor, request.HumanIdentityRole, identityProviderFingerprint, reauthorized.Revision, now)
+				reauthorized.Status = "active"
+				reauthorized.RevokedAt, reauthorized.EndedAt, reauthorized.EndReason = time.Time{}, time.Time{}, ""
+				return reauthorized, true, nil
+			}
 			return delegation.Record{}, false, fmt.Errorf("DELEGATION_CONFLICT: run already has a different authorization, actor, or status")
 		}
 		if existing.ExpiresAt.IsZero() || now.Before(existing.ExpiresAt) {
@@ -326,7 +339,7 @@ func runFlowContinuationOptions(options commandOptions) error {
 		if err := advanceContinuation(&options, response); err != nil {
 			return err
 		}
-		if response.Delegation != nil || response.CommitRequired != nil || response.Prescription == nil || response.Receipt == nil || (response.Decision != nil && response.Decision.Kind == supervisor.DecisionTerminal) {
+		if response.Authorization != nil || response.CommitRequired != nil || response.Prescription == nil || response.Receipt == nil || (response.Decision != nil && response.Decision.Kind == supervisor.DecisionTerminal) {
 			return renderResponse(response, options.format)
 		}
 	}
@@ -342,14 +355,14 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 	if err != nil {
 		return surfaces.Response{}, err
 	}
-	programChangeResponse, err := preflightDelegatedProgramChange(ctx, resolveRequest)
+	programChangeResponse, err := preflightFlowAuthorizationProgramChange(ctx, resolveRequest)
 	if err != nil {
 		return surfaces.Response{}, err
 	}
 	if programChangeResponse != nil {
 		return *programChangeResponse, nil
 	}
-	_, delegationResponse, err := prepareDelegation(ctx, &resolveRequest)
+	_, delegationResponse, err := prepareFlowAuthorization(ctx, &resolveRequest)
 	if err != nil {
 		return surfaces.Response{}, err
 	}
@@ -370,7 +383,7 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 	}
 	resolved, err := handleWithHumanIdentity(ctx, kernel, resolveRequest)
 	resolveLease.Release()
-	if settleErr := settleDelegationAtTarget(ctx, resolveRequest, resolved, kernel.TargetSatisfied(resolved.Snapshot, resolveRequest.Objective), false); settleErr != nil && err == nil {
+	if settleErr := settleFlowAuthorizationAtTarget(ctx, resolveRequest, resolved, kernel.TargetSatisfied(resolved.Snapshot, resolveRequest.Objective), false); settleErr != nil && err == nil {
 		err = settleErr
 	}
 	if err == nil {
@@ -397,14 +410,14 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 		if err != nil {
 			return surfaces.Response{}, err
 		}
-		programChangeResponse, err = preflightDelegatedProgramChange(ctx, resolveRequest)
+		programChangeResponse, err = preflightFlowAuthorizationProgramChange(ctx, resolveRequest)
 		if err != nil {
 			return surfaces.Response{}, err
 		}
 		if programChangeResponse != nil {
 			return *programChangeResponse, nil
 		}
-		_, delegationResponse, err = prepareDelegation(ctx, &resolveRequest)
+		_, delegationResponse, err = prepareFlowAuthorization(ctx, &resolveRequest)
 		if err != nil {
 			return surfaces.Response{}, err
 		}
@@ -425,7 +438,7 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 		}
 		resolved, err = handleWithHumanIdentity(ctx, kernel, resolveRequest)
 		resolveLease.Release()
-		if settleErr := settleDelegationAtTarget(ctx, resolveRequest, resolved, kernel.TargetSatisfied(resolved.Snapshot, resolveRequest.Objective), false); settleErr != nil && err == nil {
+		if settleErr := settleFlowAuthorizationAtTarget(ctx, resolveRequest, resolved, kernel.TargetSatisfied(resolved.Snapshot, resolveRequest.Objective), false); settleErr != nil && err == nil {
 			err = settleErr
 		}
 		if err != nil || resolved.Prescription == nil {
@@ -452,7 +465,7 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 	if applyRequest.InputRequest != nil {
 		return surfaces.Response{SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationApply, ProgramID: applyRequest.ProgramID, EntryID: applyRequest.EntryID, RunID: applyRequest.FlowID, InputRequest: applyRequest.InputRequest}, nil
 	}
-	delegationLock, delegationResponse, err := prepareDelegation(ctx, &applyRequest)
+	delegationLock, delegationResponse, err := prepareFlowAuthorization(ctx, &applyRequest)
 	if err != nil {
 		return surfaces.Response{}, err
 	}
@@ -467,7 +480,7 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 	}
 	applied, err := handleWithHumanIdentity(ctx, kernel, applyRequest)
 	targetSatisfied := kernel.TargetSatisfied(applied.Snapshot, applyRequest.Objective)
-	if settleErr := settleDelegationAtTarget(ctx, applyRequest, applied, targetSatisfied, delegationLock != nil); settleErr != nil && err == nil {
+	if settleErr := settleFlowAuthorizationAtTarget(ctx, applyRequest, applied, targetSatisfied, delegationLock != nil); settleErr != nil && err == nil {
 		err = settleErr
 	}
 	if err != nil {

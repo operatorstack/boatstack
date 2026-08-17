@@ -26,7 +26,7 @@ func canReprojectDelegation(layout ports.ControllerLayout, invocation model.Invo
 		prior.TargetID != current.TargetID || prior.ObjectiveID != current.ObjectiveID || prior.DeliveryID != current.DeliveryID ||
 		prior.RepositoryID != current.RepositoryID || prior.GitCommonID != current.GitCommonID ||
 		prior.BindingFingerprint != current.BindingFingerprint || prior.Description != current.Description ||
-		!sameStringSet(prior.InputFingerprints, current.InputFingerprints) || !sameStringSet(prior.RequestedAuthorities, current.RequestedAuthorities) {
+		!equalEntryInputFingerprints(prior.InputFingerprints, current.InputFingerprints) || !sameStringSet(prior.EntryActivationAuthorities, current.EntryActivationAuthorities) || !sameStringSet(prior.RequestedAuthorities, current.RequestedAuthorities) {
 		return false, nil
 	}
 	initial := invocation
@@ -69,8 +69,8 @@ func sameStringSet(left, right []string) bool {
 	return slices.Equal(left, right)
 }
 
-func prepareDelegation(ctx context.Context, request *surfaces.Request) (ports.Lock, *surfaces.Response, error) {
-	if request.ProgramID == "" || len(request.DelegatedAuthorities) == 0 {
+func prepareFlowAuthorization(ctx context.Context, request *surfaces.Request) (ports.Lock, *surfaces.Response, error) {
+	if request.ProgramID == "" || (len(request.EntryActivationAuthorities) == 0 && len(request.DelegatedAuthorities) == 0) {
 		return nil, nil, nil
 	}
 	presentation, err := humanIdentityPresentationForRequest(*request)
@@ -123,20 +123,21 @@ func prepareDelegation(ctx context.Context, request *surfaces.Request) (ports.Lo
 		if request.Operation == surfaces.OperationExplain {
 			return nil, nil, nil
 		}
-		response, responseErr := delegationRequiredResponse(*request)
+		response, responseErr := flowAuthorizationRequiredResponse(*request)
 		return nil, response, responseErr
 	}
 	if err != nil {
 		releaseOnError()
 		return nil, nil, err
 	}
-	if record.RequestFingerprint != request.DelegationRequestFingerprint || record.Request.RunID != request.FlowID || record.Request.ProgramID != request.ProgramID || record.Request.ProgramFingerprint != request.ProgramFingerprint || record.Request.ControlBundleFingerprint != request.ControlBundleFingerprint || record.Request.EntryID != request.EntryID || record.Request.TargetID != string(request.Objective.TargetID) || record.Request.ObjectiveID != request.Objective.ID || record.Request.DeliveryID != request.Objective.DeliveryID || record.Request.RepositoryID != invocation.RepositoryID || record.Request.GitCommonID != invocation.GitCommonID || record.Request.BindingFingerprint != request.DelegationBindingFingerprint || record.Request.HumanIdentityRole != presentation.Role || record.Request.HumanIdentityProviderFingerprint != presentation.ProviderFingerprint || record.ActorIdentityRole != presentation.Role || record.ActorIdentityProviderFingerprint != presentation.ProviderFingerprint {
+	if record.RequestFingerprint != request.DelegationRequestFingerprint || record.Request.RunID != request.FlowID || record.Request.ProgramID != request.ProgramID || record.Request.ProgramFingerprint != request.ProgramFingerprint || record.Request.ControlBundleFingerprint != request.ControlBundleFingerprint || record.Request.EntryID != request.EntryID || record.Request.TargetID != string(request.Objective.TargetID) || record.Request.ObjectiveID != request.Objective.ID || record.Request.DeliveryID != request.Objective.DeliveryID || record.Request.RepositoryID != invocation.RepositoryID || record.Request.GitCommonID != invocation.GitCommonID || record.Request.BindingFingerprint != request.DelegationBindingFingerprint || !sameAuthorityClasses(record.Request.EntryActivationAuthorities, request.EntryActivationAuthorities) || record.Request.HumanIdentityRole != presentation.Role || record.Request.HumanIdentityProviderFingerprint != presentation.ProviderFingerprint || record.ActorIdentityRole != presentation.Role || record.ActorIdentityProviderFingerprint != presentation.ProviderFingerprint {
 		current := record.Request
 		current.RunID, current.ProgramID, current.ProgramFingerprint, current.ControlBundleFingerprint = request.FlowID, request.ProgramID, request.ProgramFingerprint, request.ControlBundleFingerprint
 		current.EntryID, current.TargetID, current.ObjectiveID, current.DeliveryID = request.EntryID, string(request.Objective.TargetID), request.Objective.ID, request.Objective.DeliveryID
 		current.RepositoryID, current.GitCommonID = invocation.RepositoryID, invocation.GitCommonID
 		current.InitialWorktreeID, current.InitialRef = invocation.WorktreeID, invocation.Ref
 		current.BindingFingerprint, current.HumanIdentityRole, current.HumanIdentityProviderFingerprint = request.DelegationBindingFingerprint, presentation.Role, presentation.ProviderFingerprint
+		current.EntryActivationAuthorities = authorityStrings(request.EntryActivationAuthorities)
 		current.RequestedAuthorities = make([]string, len(request.DelegatedAuthorities))
 		for index, authority := range request.DelegatedAuthorities {
 			current.RequestedAuthorities[index] = string(authority)
@@ -157,7 +158,7 @@ func prepareDelegation(ctx context.Context, request *surfaces.Request) (ports.Lo
 			if request.Operation == surfaces.OperationExplain {
 				return nil, nil, nil
 			}
-			response, responseErr := delegationRequiredResponse(*request)
+			response, responseErr := flowAuthorizationRequiredResponse(*request)
 			return nil, response, responseErr
 		}
 		return nil, nil, fmt.Errorf("DELEGATION_DRIFT: authorization does not match the current run context")
@@ -173,15 +174,26 @@ func prepareDelegation(ctx context.Context, request *surfaces.Request) (ports.Lo
 		releaseOnError()
 		return nil, nil, fmt.Errorf("DELEGATION_CONTEXT_UNAUTHORIZED: current worktree is not in the verified run lineage")
 	}
-	if record.Status == "completed" && (request.Operation == surfaces.OperationResolve || request.Operation == surfaces.OperationExplain) {
-		// A completed delegation carries no authority, but resolving the exact
-		// bound run remains safe and lets restarts replay its terminal state.
-		return nil, nil, nil
+	if record.Status == "completed" {
+		if request.Operation == surfaces.OperationResolve || request.Operation == surfaces.OperationExplain {
+			// A completed authorization carries no authority, but resolving the
+			// exact bound run remains safe and lets restarts replay its terminal
+			// state. If current evidence makes the target nonterminal again, the
+			// resulting apply will require a fresh exact authorization below.
+			return nil, nil, nil
+		}
+		releaseOnError()
+		response, responseErr := flowAuthorizationRequiredResponse(*request)
+		return nil, response, responseErr
 	}
 	if record.Status != "active" {
 		releaseOnError()
 		if request.Operation == surfaces.OperationExplain {
 			return nil, nil, nil
+		}
+		if record.Status == "revoked" {
+			response, responseErr := flowAuthorizationRequiredResponse(*request)
+			return nil, response, responseErr
 		}
 		return nil, nil, fmt.Errorf("DELEGATION_REVOKED: run authorization is %s", record.Status)
 	}
@@ -190,7 +202,8 @@ func prepareDelegation(ctx context.Context, request *surfaces.Request) (ports.Lo
 		if request.Operation == surfaces.OperationExplain {
 			return nil, nil, nil
 		}
-		return nil, nil, fmt.Errorf("DELEGATION_EXPIRED: run authorization expired")
+		response, responseErr := flowAuthorizationRequiredResponse(*request)
+		return nil, response, responseErr
 	}
 	for _, authority := range request.DelegatedAuthorities {
 		receiptDigest := sha256.Sum256([]byte(record.ReceiptID + "\x00" + string(authority)))
@@ -202,23 +215,39 @@ func prepareDelegation(ctx context.Context, request *surfaces.Request) (ports.Lo
 	return lock, nil, nil
 }
 
-func delegationRequiredResponse(request surfaces.Request) (*surfaces.Response, error) {
+func flowAuthorizationRequiredResponse(request surfaces.Request) (*surfaces.Response, error) {
 	presentation, err := humanIdentityPresentationForRequest(request)
 	if err != nil {
 		return nil, err
 	}
+	code := "DELEGATION_REQUIRED"
+	if len(request.EntryActivationAuthorities) != 0 {
+		code = "ENTRY_ACTIVATION_AUTHORITY_REQUIRED"
+	}
 	return &surfaces.Response{
 		SchemaVersion: surfaces.SchemaVersion, Operation: request.Operation, ProgramID: request.ProgramID, EntryID: request.EntryID, RunID: request.FlowID, Objective: request.Objective,
-		Delegation: &surfaces.DelegationRequired{Code: "DELEGATION_REQUIRED", RunID: request.FlowID, RequestFingerprint: request.DelegationRequestFingerprint, Authorities: append([]catalog.AuthorityClass(nil), request.DelegatedAuthorities...), Description: "Explicitly authorize " + request.ProgramID + "/" + request.EntryID + " for this exact run", HumanIdentity: presentation},
+		Authorization: &surfaces.FlowAuthorizationRequired{Code: code, RunID: request.FlowID, RequestFingerprint: request.DelegationRequestFingerprint, EntryActivationAuthorities: append([]catalog.AuthorityClass(nil), request.EntryActivationAuthorities...), DelegatedAuthorities: append([]catalog.AuthorityClass(nil), request.DelegatedAuthorities...), Description: "Explicitly authorize " + request.ProgramID + "/" + request.EntryID + " for this exact run", HumanIdentity: presentation},
 	}, nil
 }
 
-// preflightDelegatedProgramChange observes the selected program before any
+func authorityStrings(values []catalog.AuthorityClass) []string {
+	result := make([]string, len(values))
+	for index, value := range values {
+		result[index] = string(value)
+	}
+	return result
+}
+
+func sameAuthorityClasses(left []string, right []catalog.AuthorityClass) bool {
+	return sameStringSet(left, authorityStrings(right))
+}
+
+// preflightFlowAuthorizationProgramChange observes the selected program before any
 // product delegation is requested. Reconciliation changes the control bundle,
 // so authorizing against the prior bundle would create an authorization that
 // must be rejected immediately after the accepted maintenance transition.
-func preflightDelegatedProgramChange(ctx context.Context, request surfaces.Request) (*surfaces.Response, error) {
-	if request.ProgramID == "" || len(request.DelegatedAuthorities) == 0 || request.Operation == surfaces.OperationExplain {
+func preflightFlowAuthorizationProgramChange(ctx context.Context, request surfaces.Request) (*surfaces.Response, error) {
+	if request.ProgramID == "" || (len(request.EntryActivationAuthorities) == 0 && len(request.DelegatedAuthorities) == 0) || request.Operation == surfaces.OperationExplain {
 		return nil, nil
 	}
 	probe := request
@@ -263,10 +292,10 @@ func isExactProgramChangeSuspension(response surfaces.Response) bool {
 		response.ProgramChange.AcceptanceFlag == "--accept-program-change"
 }
 
-func settleDelegationAtTarget(ctx context.Context, request surfaces.Request, response surfaces.Response, targetSatisfied, lockHeld bool) error {
+func settleFlowAuthorizationAtTarget(ctx context.Context, request surfaces.Request, response surfaces.Response, targetSatisfied, lockHeld bool) error {
 	terminalDecision := response.Decision != nil && response.Decision.Kind == supervisor.DecisionTerminal
 	committedTarget := response.Receipt != nil && targetSatisfied
-	if len(request.DelegatedAuthorities) == 0 || (!terminalDecision && !committedTarget) {
+	if (len(request.EntryActivationAuthorities) == 0 && len(request.DelegatedAuthorities) == 0) || (!terminalDecision && !committedTarget) {
 		return nil
 	}
 	resolver, err := plant.NewResolver("")

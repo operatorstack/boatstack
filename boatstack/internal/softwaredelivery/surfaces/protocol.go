@@ -20,7 +20,7 @@ import (
 	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
-const SchemaVersion = 15
+const SchemaVersion = 16
 
 var flowContextIdentity = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 var gitObjectIdentity = regexp.MustCompile(`^[0-9a-f]{40,64}$`)
@@ -73,6 +73,7 @@ type Request struct {
 	Command                      string                                  `json:"command,omitempty"`
 	DelegationBindingFingerprint string                                  `json:"delegation_binding_fingerprint,omitempty"`
 	DelegationRequestFingerprint string                                  `json:"delegation_request_fingerprint,omitempty"`
+	EntryActivationAuthorities   []catalog.AuthorityClass                `json:"entry_activation_authorities,omitempty"`
 	DelegatedAuthorities         []catalog.AuthorityClass                `json:"delegated_authorities,omitempty"`
 	WorkInputs                   map[string]protocol.WorkInputValue      `json:"work_inputs,omitempty"`
 	WorkID                       string                                  `json:"work_id,omitempty"`
@@ -130,8 +131,16 @@ func (r Request) Validate(now time.Time) error {
 	if r.ControlBundleRevision != "" && (r.ControlBundle == nil || !gitObjectIdentity.MatchString(r.ControlBundleRevision)) {
 		return fmt.Errorf("CONTROL_BUNDLE_INVALID: request revision has no trusted bundle or is not a Git object identity")
 	}
+	if len(r.EntryActivationAuthorities) != 0 && (r.ProgramID == "" || len(r.DelegationRequestFingerprint) != 64) {
+		return fmt.Errorf("surface entry activation request requires an exact request fingerprint")
+	}
 	if len(r.DelegatedAuthorities) != 0 && (r.ProgramID == "" || len(r.DelegationBindingFingerprint) != 64 || len(r.DelegationRequestFingerprint) != 64) {
 		return fmt.Errorf("surface delegated Flow request requires exact binding and request fingerprints")
+	}
+	for _, authority := range r.EntryActivationAuthorities {
+		if authority != catalog.AuthorityHuman {
+			return fmt.Errorf("ENTRY_ACTIVATION_AUTHORITY_UNSUPPORTED: no trusted producer exists for %q", authority)
+		}
 	}
 	for _, authority := range r.DelegatedAuthorities {
 		if !authority.Valid() || authority == catalog.AuthorityNone {
@@ -258,20 +267,21 @@ type Response struct {
 	ProgramChange  *ProgramChange              `json:"program_change,omitempty"`
 	Guard          *supervisor.GuardDecision   `json:"guard,omitempty"`
 	Error          string                      `json:"error,omitempty"`
-	Delegation     *DelegationRequired         `json:"delegation,omitempty"`
+	Authorization  *FlowAuthorizationRequired  `json:"authorization,omitempty"`
 	CommitRequired *CommitRequired             `json:"commit_required,omitempty"`
 	Work           *foregroundwork.Record      `json:"work,omitempty"`
 	InputRequest   *invocation.InputRequest    `json:"input_request,omitempty"`
 	Invocation     *invocation.Evidence        `json:"invocation_evidence,omitempty"`
 }
 
-type DelegationRequired struct {
-	Code               string                     `json:"code"`
-	RunID              string                     `json:"run_id"`
-	RequestFingerprint string                     `json:"request_fingerprint"`
-	Authorities        []catalog.AuthorityClass   `json:"authorities"`
-	Description        string                     `json:"description"`
-	HumanIdentity      humanidentity.Presentation `json:"human_identity"`
+type FlowAuthorizationRequired struct {
+	Code                       string                     `json:"code"`
+	RunID                      string                     `json:"run_id"`
+	RequestFingerprint         string                     `json:"request_fingerprint"`
+	EntryActivationAuthorities []catalog.AuthorityClass   `json:"entry_activation_authorities"`
+	DelegatedAuthorities       []catalog.AuthorityClass   `json:"delegated_authorities"`
+	Description                string                     `json:"description"`
+	HumanIdentity              humanidentity.Presentation `json:"human_identity"`
 }
 
 // CommitRequired is a typed suspension at a repository revision boundary.

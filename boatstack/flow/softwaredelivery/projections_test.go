@@ -22,6 +22,7 @@ func TestGeneratedProjectionsProjectOnlyDeclaredEntriesWithHostParity(t *testing
 		Targets: []controlprogram.Target{{ID: "published-pr", Predicate: controlprogram.Predicate{True: &truth}}},
 		Entries: []controlprogram.Entry{{
 			ID: "run", Target: "published-pr", Description: "Publish the reviewed change",
+			Requires:   controlprogram.TransitionRequirements{Authorities: []string{"human"}},
 			Delegation: &controlprogram.DelegationBinding{Reference: "software-delivery/delegation/autonomy", Version: "1"},
 		}},
 	}}
@@ -47,7 +48,7 @@ func TestGeneratedProjectionsProjectOnlyDeclaredEntriesWithHostParity(t *testing
 		"boatstack flow run --repo . --flow product-delivery --entry run --repository-authority", "same run ID", "Nothing continues in the\nbackground", "no merge or deploy",
 		"BOATSTACK_LAUNCHER_NOT_FOUND", ".boatstack/runtime.json", "Never run it", "creates no\nFlow run ID",
 		"WORKSPACE_COMMIT_REQUIRED", "Commit only the intended delivery changes", "Never fabricate an external-provider receipt",
-		"Before product delegation", "do not invoke an update operation", "committed project configuration",
+		"Before Flow authorization", "do not invoke an update operation", "committed project configuration",
 		"CONTROL_BUNDLE_COMMIT_REQUIRED", "stay in the source\nrepository", "do not switch worktrees or exclude generated bundle files",
 		"installation-authority\nsuspension before product work", "installation.reconcile-update", "--accept-program-change",
 		"boatstack reconcile-update --repo . --flow product-delivery --entry run --run-id <run-id>",
@@ -64,6 +65,8 @@ func TestGeneratedProjectionsProjectOnlyDeclaredEntriesWithHostParity(t *testing
 		"at most 1024 bytes", "proposed actor", "ask that\nconcrete actor for explicit approval",
 		"Identity resolution never counts as approval", "never infer one from the operating system, Git, host",
 		"--human-identity-provider-fingerprint <provider-fingerprint>",
+		"`authorization` response", "ENTRY_ACTIVATION_AUTHORITY_REQUIRED", "entry_activation_authorities", "delegated_authorities",
+		"Invocation alone is\nnot approval", "does not grant transition, provider, bootstrap, merge, deploy", "accepted activation scope is not an authority receipt",
 	} {
 		if !strings.Contains(value, contract) {
 			t.Fatalf("generated skill lacks %q", contract)

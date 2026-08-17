@@ -141,6 +141,21 @@ func TestRepositoryAuthorityRequirementIsConjunctive(t *testing.T) {
 	}
 }
 
+func TestEntryActivationRequiresTrustedSoftwareDeliveryProducer(t *testing.T) {
+	truth := true
+	compiled, resolver := compiledFlow(t, controlprogram.Predicate{True: &truth})
+	document := compiled.Document
+	document.Declarations.Authorities = append(document.Declarations.Authorities, "autonomy")
+	document.Entries[0].Requires.Authorities = []string{"autonomy"}
+	unsupported, err := controlprogram.Compile(document, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := softwareflow.NewDefinition(unsupported, resolver); err == nil || !strings.Contains(err.Error(), "no trusted software-delivery producer") {
+		t.Fatalf("unsupported entry activation result = %v", err)
+	}
+}
+
 func TestPublicationBindingPreservesProviderAsMandatory(t *testing.T) {
 	resolver, err := softwareflow.NewResolver(context.Background())
 	if err != nil {

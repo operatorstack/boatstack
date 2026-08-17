@@ -56,9 +56,10 @@ Boatstack uses only these canonical roots:
 | macOS | `~/Library/Application Support/boatstack` |
 | XDG | `$XDG_STATE_HOME/boatstack` |
 
-It does not read or migrate generation-labelled roots. A run delegation record
-lives under the external repository and Git-common Flow root. It is bound to
-one run and protected by its own lock before controller or effect locks.
+It does not read or migrate generation-labelled roots. A run authorization
+record lives under the external repository and Git-common Flow root. It binds
+entry activation and optional delegation scopes to one run and is protected by
+its own lock before controller or effect locks.
 
 Embedded worktree state is partitioned under the Git common directory.
 Detached and hybrid state is partitioned under the platform state directory.

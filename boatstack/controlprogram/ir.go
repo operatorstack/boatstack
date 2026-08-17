@@ -7,7 +7,7 @@ import "encoding/json"
 
 const (
 	SchemaName     = "control-program"
-	SchemaRevision = 5
+	SchemaRevision = 6
 )
 
 type Document struct {
@@ -272,12 +272,13 @@ type Target struct {
 }
 
 type Entry struct {
-	ID          string             `json:"id"`
-	Target      string             `json:"target"`
-	Inputs      []EntryInput       `json:"inputs,omitempty"`
-	Delegation  *DelegationBinding `json:"delegation,omitempty"`
-	Diagnostics *EntryDiagnostics  `json:"diagnostics,omitempty"`
-	Description string             `json:"description,omitempty"`
+	ID          string                 `json:"id"`
+	Target      string                 `json:"target"`
+	Requires    TransitionRequirements `json:"requires,omitempty"`
+	Inputs      []EntryInput           `json:"inputs,omitempty"`
+	Delegation  *DelegationBinding     `json:"delegation,omitempty"`
+	Diagnostics *EntryDiagnostics      `json:"diagnostics,omitempty"`
+	Description string                 `json:"description,omitempty"`
 }
 
 // EntryDiagnostics controls generated host UX only. It is excluded from the

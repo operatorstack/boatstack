@@ -23,7 +23,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 )
 
-const flowCompilerVersion = "control-program.compiler.7"
+const flowCompilerVersion = "control-program.compiler.8"
 
 type flowCommandOptions struct {
 	repository string
@@ -345,8 +345,8 @@ func validateDeclarativeFlow(compiled controlprogram.Compiled) error {
 		facets[facet.ID] = facet
 	}
 	for _, entry := range compiled.Document.Entries {
-		if entry.Delegation != nil || entry.Diagnostics != nil {
-			return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative entries do not support delegation or domain diagnostics")
+		if entry.Delegation != nil || entry.Diagnostics != nil || len(entry.Requires.Authorities) != 0 {
+			return fmt.Errorf("FLOW_RUNTIME_INVALID: declarative entries do not support activation authority, delegation, or domain diagnostics")
 		}
 	}
 	for _, work := range compiled.Document.Work {

@@ -37,6 +37,12 @@ The first response returns an opaque run ID. Preserve the program, entry, run
 ID, objective, delivery, authority, and prescription through every subsequent
 `next`, `apply`, question, and recovery call.
 
+Product Delivery's `run` entry then presents one exact authorization request
+for human entry activation and autonomy delegation. Display both scopes and the
+repository-selected identity, ask that actor once, run the supplied
+`boatstack flow authorize` command, and resume the same run. That approval does
+not grant later human-transition or GitHub provider authority.
+
 ## Configure one exact objective manually
 
 Every managed delivery has a stable objective ID, delivery ID, and terminal kind.

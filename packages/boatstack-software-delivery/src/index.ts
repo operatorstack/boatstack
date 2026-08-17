@@ -479,6 +479,7 @@ export function standardSoftwareDeliveryParameters(step: TrustedStep): Record<st
  * entry({
  *   id: "run",
  *   target: "published-pr",
+ *   requires: { authorities: ["human"] },
  *   delegation: trustedDelegation("autonomy"),
  * })
  * ```

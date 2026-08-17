@@ -183,9 +183,9 @@ func TestHumanIdentityRenderingPreservesStructuredArgvWithoutExecutingIt(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	response := surfaces.Response{Delegation: &surfaces.DelegationRequired{
+	response := surfaces.Response{Authorization: &surfaces.FlowAuthorizationRequired{
 		Code: "DELEGATION_REQUIRED", RunID: "run-example", RequestFingerprint: strings.Repeat("a", 64),
-		Authorities: []catalog.AuthorityClass{catalog.AuthorityAutonomy}, Description: "authorize exact run", HumanIdentity: presentation,
+		DelegatedAuthorities: []catalog.AuthorityClass{catalog.AuthorityAutonomy}, Description: "authorize exact run", HumanIdentity: presentation,
 	}}
 	raw, err := json.Marshal(response)
 	if err != nil {
@@ -195,8 +195,8 @@ func TestHumanIdentityRenderingPreservesStructuredArgvWithoutExecutingIt(t *test
 	if err := json.Unmarshal(raw, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if decoded.Delegation == nil || decoded.Delegation.HumanIdentity.Descriptor.Command != "touch" || !reflect.DeepEqual(decoded.Delegation.HumanIdentity.Descriptor.Args, []string{marker}) {
-		t.Fatalf("structured JSON lost command argv: %#v", decoded.Delegation)
+	if decoded.Authorization == nil || decoded.Authorization.HumanIdentity.Descriptor.Command != "touch" || !reflect.DeepEqual(decoded.Authorization.HumanIdentity.Descriptor.Args, []string{marker}) {
+		t.Fatalf("structured JSON lost command argv: %#v", decoded.Authorization)
 	}
 	output, err := captureStdout(t, func() error { return renderResponse(response, "text") })
 	expectedCommand := "human_identity_command=" + strconv.Quote("touch") + " " + strconv.Quote(marker)

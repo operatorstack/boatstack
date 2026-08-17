@@ -13,7 +13,7 @@ import (
 func TestDelegationSupersessionArchiveIsImmutableAndIdempotent(t *testing.T) {
 	request := delegation.Request{
 		RunID: "run-example", ProgramID: "program", ProgramFingerprint: strings.Repeat("a", 64), ControlBundleFingerprint: strings.Repeat("b", 64),
-		EntryID: "run", TargetID: "done", ObjectiveID: "objective", DeliveryID: "delivery", InputFingerprints: []string{"input"},
+		EntryID: "run", TargetID: "done", ObjectiveID: "objective", DeliveryID: "delivery", InputFingerprints: []delegation.InputFingerprint{{ID: "plan", Fingerprint: strings.Repeat("e", 64)}},
 		RepositoryID: "repository", GitCommonID: "common", InitialWorktreeID: "worktree", InitialRef: "refs/heads/main",
 		BindingFingerprint: strings.Repeat("c", 64), HumanIdentityRole: "developer", HumanIdentityProviderFingerprint: strings.Repeat("d", 64), RequestedAuthorities: []string{"autonomy"}, Description: "Run the program",
 	}

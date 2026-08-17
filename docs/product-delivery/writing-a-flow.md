@@ -69,6 +69,7 @@ export default defineFlow(softwareDelivery({
     entry({
       id: "run",
       target: "published-pr",
+      requires: { authorities: ["human"] },
       inputs: [inbox(".boatstack/plans/inbox")],
       delegation: trustedDelegation("autonomy"),
       diagnostics: { explain_on_suspend: true },
