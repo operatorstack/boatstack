@@ -64,7 +64,7 @@ func TestRepositoryScopedProgramsAreIndependentUnderConcurrency(t *testing.T) {
 		Identity:      protocol.IdentitySettings{Human: humanidentity.Descriptor{Kind: humanidentity.KindLiteral, Value: "operator"}},
 		Project:       protocol.ProjectSettings{Name: "fixture", DefaultBranch: "main", Commands: map[string]string{}},
 		Policy:        protocol.PolicySettings{PlanApproval: "human", VisualEvidence: "optional"},
-		Hosts:         []string{"cli"}, Extensions: []protocol.SubprocessExtensionSettings{x},
+		Hosts:         []string{"cli"}, Projections: []string{}, Extensions: []protocol.SubprocessExtensionSettings{x},
 	}
 	candidateBytes, err := json.Marshal(candidateConfig)
 	if err != nil {
@@ -194,7 +194,7 @@ func repositoryFixture(t *testing.T, extensions []protocol.SubprocessExtensionSe
 			Identity:      protocol.IdentitySettings{Human: humanidentity.Descriptor{Kind: humanidentity.KindLiteral, Value: "operator"}},
 			Project:       protocol.ProjectSettings{Name: "fixture", DefaultBranch: "main", Commands: map[string]string{}},
 			Policy:        protocol.PolicySettings{PlanApproval: "human", VisualEvidence: "optional"},
-			Hosts:         []string{"cli"}, Extensions: extensions,
+			Hosts:         []string{"cli"}, Projections: []string{}, Extensions: extensions,
 		}
 		raw, err := json.Marshal(configuration)
 		if err != nil {

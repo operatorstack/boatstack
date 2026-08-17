@@ -57,7 +57,7 @@ func TestExactProductDeliveryFlowReachesPublishedPRWithFakeProvider(t *testing.T
 	runFlowGit(t, repository, "init", "-q", "-b", "main")
 	runFlowGit(t, repository, "config", "user.email", "fixture@example.invalid")
 	runFlowGit(t, repository, "config", "user.name", "Fixture")
-	writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":3,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"todo","default_branch":"main","commands":{"build":"true","test":"true"}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional","external_effect_authority":"human-or-autonomy-plus-provider","independent_review_for_high_risk":false},"hosts":["cli","codex","claude"]}`))
+	writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"todo","default_branch":"main","commands":{"build":"true","test":"true"}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional","external_effect_authority":"human-or-autonomy-plus-provider","independent_review_for_high_risk":false},"hosts":["cli","codex","claude"],"projections":["codex","claude"]}`))
 	writeFixture(t, repository, ".boatstack/plans/inbox/todo.md", []byte("# Add one todo\n"))
 	for path, content := range assets {
 		writeFixture(t, repository, path, content)
@@ -170,7 +170,7 @@ func TestExactProductDeliveryFlowReachesPublishedPRWithFakeProvider(t *testing.T
 	if workShowSuspension.Operation != surfaces.OperationWorkShow || workShowSuspension.CommitRequired == nil || workShowSuspension.CommitRequired.Code != controlBundleCommitRequiredCode {
 		t.Fatalf("work show commit suspension = %#v", workShowSuspension)
 	}
-	if status := runFlowGitOutput(t, repository, "status", "--short"); !strings.Contains(status, ".boatstack/runtime.json") || !strings.Contains(status, ".boatstack/host-skills.json") {
+	if status := runFlowGitOutput(t, repository, "status", "--short"); !strings.Contains(status, ".boatstack/runtime.json") || !strings.Contains(status, ".boatstack/host-projections.json") {
 		t.Fatalf("automatic installation did not leave the exact bundle for explicit commit:\n%s", status)
 	}
 	runFlowGit(t, repository, "add", ".")

@@ -2,21 +2,23 @@ package effects
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/operatorstack/boatstack/boatstack/internal/hostprojection"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/ports"
 )
 
-func TestHostSkillProjectionExposesOnlyKernelMaintenance(t *testing.T) {
+func TestHostProjectionProjectionExposesOnlyKernelMaintenance(t *testing.T) {
 	// control-law: repository-flow-entries-not-kernel-modes
-	files := desiredHostSkillFiles([]string{"cli", "cursor", "codex", "claude", "gemini", "mcp"})
+	files := desiredHostProjectionFiles(hostprojection.CanonicalIDs())
 	counts := map[string]int{}
 	for path, raw := range files {
-		for _, mode := range hostSkillModes {
+		for _, mode := range hostProjectionModes {
 			if strings.Contains(path, mode.Slug) && strings.HasSuffix(path, "SKILL.md") || strings.HasSuffix(path, mode.Slug+".md") {
 				if !strings.Contains(string(raw), "name: "+mode.Slug) || !strings.Contains(string(raw), mode.Target) {
 					t.Fatalf("%s does not bind %s to %s", path, mode.Slug, mode.Target)
@@ -26,11 +28,11 @@ func TestHostSkillProjectionExposesOnlyKernelMaintenance(t *testing.T) {
 		switch {
 		case strings.HasPrefix(path, ".agents/") && strings.HasSuffix(path, "/SKILL.md"):
 			counts["codex"]++
-		case strings.HasPrefix(path, ".claude/"):
+		case strings.HasPrefix(path, ".claude/") && strings.HasSuffix(path, "/SKILL.md"):
 			counts["claude"]++
-		case strings.HasPrefix(path, ".gemini/"):
+		case strings.HasPrefix(path, ".gemini/") && strings.HasSuffix(path, "/SKILL.md"):
 			counts["gemini"]++
-		case strings.HasPrefix(path, ".cursor/"):
+		case strings.HasPrefix(path, ".cursor/") && strings.HasSuffix(path, ".md"):
 			counts["cursor"]++
 		}
 	}
@@ -41,11 +43,62 @@ func TestHostSkillProjectionExposesOnlyKernelMaintenance(t *testing.T) {
 	}
 }
 
-func TestHostSkillProjectionPreservesAuthorityBoundaries(t *testing.T) {
+func TestMaintenanceProjectionSelectionCoversAllAndNone(t *testing.T) {
+	all, manifestRaw, err := ProjectedHostProjectionFiles(hostprojection.CanonicalIDs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 9 {
+		t.Fatalf("all maintenance files = %d, want 9: %v", len(all), all)
+	}
+	for _, id := range hostprojection.CanonicalIDs() {
+		paths, _ := hostprojection.MaintenancePaths(id)
+		for _, path := range paths {
+			raw, exists := all[path]
+			if !exists {
+				t.Fatalf("%s projection is missing %s", id, path)
+			}
+			if !strings.HasSuffix(path, ".gitattributes") && !strings.HasSuffix(path, "openai.yaml") && !strings.Contains(string(raw), "--host "+string(id)) {
+				t.Fatalf("%s does not bind its matching host", path)
+			}
+		}
+	}
+	var manifest hostProjectionManifest
+	if err := decodeHostProjectionManifest(manifestRaw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Projections) != 4 || len(manifest.ProjectionSelectionFingerprint) != 64 {
+		t.Fatalf("manifest selection = %#v", manifest)
+	}
+	for _, id := range hostprojection.CanonicalIDs() {
+		selected, selectedManifestRaw, selectedErr := ProjectedHostProjectionFiles([]hostprojection.ID{id})
+		paths, _ := hostprojection.MaintenancePaths(id)
+		if selectedErr != nil || len(selected) != len(paths) {
+			t.Fatalf("%s-only maintenance projection = %v, %v", id, selected, selectedErr)
+		}
+		var selectedManifest hostProjectionManifest
+		if decodeErr := decodeHostProjectionManifest(selectedManifestRaw, &selectedManifest); decodeErr != nil || len(selectedManifest.Projections) != 1 || selectedManifest.Projections[0] != string(id) {
+			t.Fatalf("%s-only manifest = %#v, %v", id, selectedManifest, decodeErr)
+		}
+	}
+	none, noneManifestRaw, err := ProjectedHostProjectionFiles([]hostprojection.ID{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(none) != 0 {
+		t.Fatalf("empty selection generated files: %v", none)
+	}
+	var noneManifest hostProjectionManifest
+	if err := decodeHostProjectionManifest(noneManifestRaw, &noneManifest); err != nil || len(noneManifest.Projections) != 0 || len(noneManifest.Files) != 0 {
+		t.Fatalf("empty manifest = %#v, %v", noneManifest, err)
+	}
+}
+
+func TestHostProjectionProjectionPreservesAuthorityBoundaries(t *testing.T) {
 	// control-law: operation-trigger-selects-target-without-broadening-authority
-	for path, raw := range desiredHostSkillFiles([]string{"cursor", "codex", "claude", "gemini"}) {
+	for path, raw := range desiredHostProjectionFiles(hostprojection.CanonicalIDs()) {
 		value := string(raw)
-		if strings.HasSuffix(path, "openai.yaml") {
+		if strings.HasSuffix(path, "openai.yaml") || strings.HasSuffix(path, ".gitattributes") {
 			continue
 		}
 		for _, contract := range []string{
@@ -63,11 +116,11 @@ func TestHostSkillProjectionPreservesAuthorityBoundaries(t *testing.T) {
 	}
 }
 
-func TestHostSkillProjectionDoesNotClaimDeliveryEntries(t *testing.T) {
+func TestHostProjectionProjectionDoesNotClaimDeliveryEntries(t *testing.T) {
 	// control-law: kernel-skill-projection-cannot-invent-repository-flow-entries
-	files := desiredHostSkillFiles([]string{"cursor", "codex", "claude", "gemini"})
+	files := desiredHostProjectionFiles(hostprojection.CanonicalIDs())
 	for path, raw := range files {
-		if strings.HasSuffix(path, "openai.yaml") {
+		if strings.HasSuffix(path, "openai.yaml") || strings.HasSuffix(path, ".gitattributes") {
 			continue
 		}
 		value := string(raw)
@@ -91,10 +144,10 @@ func TestHostSkillProjectionDoesNotClaimDeliveryEntries(t *testing.T) {
 	}
 }
 
-func TestHostSkillProjectionInventoriesEveryDriverPath(t *testing.T) {
+func TestHostProjectionProjectionInventoriesEveryDriverPath(t *testing.T) {
 	// control-law: generated-driver-event-slice-is-complete
-	for path, raw := range desiredHostSkillFiles([]string{"cursor", "codex", "claude", "gemini"}) {
-		if strings.HasSuffix(path, "openai.yaml") {
+	for path, raw := range desiredHostProjectionFiles(hostprojection.CanonicalIDs()) {
+		if strings.HasSuffix(path, "openai.yaml") || strings.HasSuffix(path, ".gitattributes") {
 			continue
 		}
 		value := string(raw)
@@ -108,7 +161,7 @@ func TestHostSkillProjectionInventoriesEveryDriverPath(t *testing.T) {
 	}
 }
 
-func TestHostSkillProjectionFailsClosedOnUnmanagedCollision(t *testing.T) {
+func TestHostProjectionProjectionFailsClosedOnUnmanagedCollision(t *testing.T) {
 	// control-law: unmanaged-host-file-cannot-be-overwritten-by-installation
 	repository := t.TempDir()
 	path := filepath.Join(repository, ".agents", "skills", "boatstack-update", "SKILL.md")
@@ -118,7 +171,7 @@ func TestHostSkillProjectionFailsClosedOnUnmanagedCollision(t *testing.T) {
 	if err := os.WriteFile(path, []byte("user owned\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := prepareHostSkillMutations(repository, []string{"codex"}); err == nil || !strings.Contains(err.Error(), "unmanaged file collides") {
+	if _, err := prepareHostProjectionMutations(repository, []hostprojection.ID{hostprojection.Codex}); err == nil || !strings.Contains(err.Error(), "unmanaged file collides") {
 		t.Fatalf("collision was not rejected: %v", err)
 	}
 	if raw, err := os.ReadFile(path); err != nil || string(raw) != "user owned\n" {
@@ -126,10 +179,33 @@ func TestHostSkillProjectionFailsClosedOnUnmanagedCollision(t *testing.T) {
 	}
 }
 
-func TestHostSkillProjectionRejectsManagedDrift(t *testing.T) {
+func TestHostProjectionManifestRejectsUnknownFieldsAndSelectionDrift(t *testing.T) {
+	files, raw, err := ProjectedHostProjectionFiles([]hostprojection.ID{hostprojection.Codex})
+	if err != nil || len(files) == 0 {
+		t.Fatalf("projection fixture = %v, %v", files, err)
+	}
+	unknown := []byte(strings.Replace(string(raw), `"files"`, `"unknown":true,"files"`, 1))
+	var manifest hostProjectionManifest
+	if err := decodeHostProjectionManifest(unknown, &manifest); err == nil {
+		t.Fatal("unknown manifest field was accepted")
+	}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest.Projections = []string{}
+	forged, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := decodeHostProjectionManifest(forged, &manifest); err == nil {
+		t.Fatal("selection fingerprint drift was accepted")
+	}
+}
+
+func TestHostProjectionProjectionRejectsManagedDrift(t *testing.T) {
 	// control-law: manifest-binds-update-bytes
 	repository := t.TempDir()
-	mutations, err := prepareHostSkillMutations(repository, []string{"codex", "gemini"})
+	mutations, err := prepareHostProjectionMutations(repository, []hostprojection.ID{hostprojection.Codex, hostprojection.Gemini})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,15 +214,18 @@ func TestHostSkillProjectionRejectsManagedDrift(t *testing.T) {
 	if err := os.WriteFile(gemini, []byte("drift\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := prepareHostSkillMutations(repository, []string{"codex"}); err == nil || !strings.Contains(err.Error(), "changed outside") {
+	if _, err := prepareHostProjectionMutations(repository, []hostprojection.ID{hostprojection.Codex}); err == nil || !strings.Contains(err.Error(), "changed outside") {
 		t.Fatalf("managed drift was not rejected: %v", err)
 	}
 }
 
-func TestHostSkillProjectionRemovesOnlyManagedDisabledHosts(t *testing.T) {
+func TestHostProjectionProjectionRemovesOnlyManagedDisabledHosts(t *testing.T) {
 	// control-law: host-removal-deletes-only-manifest-owned-projections
 	repository := t.TempDir()
-	mutations, err := prepareHostSkillMutations(repository, []string{"codex", "gemini"})
+	if err := os.Mkdir(filepath.Join(repository, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	mutations, err := prepareHostProjectionMutations(repository, []hostprojection.ID{hostprojection.Codex, hostprojection.Gemini})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +237,7 @@ func TestHostSkillProjectionRemovesOnlyManagedDisabledHosts(t *testing.T) {
 	if err := os.WriteFile(unmanaged, []byte("unrelated\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	mutations, err = prepareHostSkillMutations(repository, []string{"codex"})
+	mutations, err = prepareHostProjectionMutations(repository, []hostprojection.ID{hostprojection.Codex})
 	if err != nil {
 		t.Fatal(err)
 	}

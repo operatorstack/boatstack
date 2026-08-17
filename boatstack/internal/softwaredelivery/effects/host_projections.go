@@ -1,24 +1,30 @@
 package effects
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/operatorstack/boatstack/boatstack/internal/hostprojection"
+	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/ports"
 )
 
-const hostSkillManifestSchema = 1
+const hostProjectionManifestSchema = 2
 
-type hostSkillManifest struct {
-	SchemaVersion int               `json:"schema_version"`
-	Files         map[string]string `json:"files"`
+type hostProjectionManifest struct {
+	SchemaVersion                  int               `json:"schema_version"`
+	Projections                    []string          `json:"projections"`
+	ProjectionSelectionFingerprint string            `json:"projection_selection_fingerprint"`
+	Files                          map[string]string `json:"files"`
 }
 
-type hostSkillMode struct {
+type hostProjectionMode struct {
 	Slug              string
 	DisplayName       string
 	Description       string
@@ -27,7 +33,7 @@ type hostSkillMode struct {
 	AuthorityContract string
 }
 
-var hostSkillModes = []hostSkillMode{
+var hostProjectionModes = []hostProjectionMode{
 	{
 		Slug: "boatstack-update", DisplayName: "Boatstack Update",
 		Description:       "Apply a checksum-verified Boatstack update.",
@@ -52,7 +58,7 @@ through that rollback, preserve its complete receipt, and retry once from the
 restored healthy prior runtime. Never acquire repository authority to escape an
 update recovery frontier.`
 
-func renderHostSkill(mode hostSkillMode) []byte {
+func renderHostProjection(mode hostProjectionMode, projection hostprojection.ID) []byte {
 	return []byte(fmt.Sprintf(`---
 name: %s
 description: %s Use only when the user explicitly selects this Boatstack operation.
@@ -61,6 +67,8 @@ description: %s Use only when the user explicitly selects this Boatstack operati
 # %s
 
 Select %s. %s
+
+For every Boatstack command in this driver that accepts a host, pass `+"`--host %s`"+`.
 
 Run `+
 		"`boatstack status --repo . --format json`"+` once for observation. An authority-free
@@ -95,10 +103,10 @@ authority-bearing `+"`FRONTIER`"+`, `+"`BLOCKED`"+`, `+"`REFUSED`"+`, or
 If recovery is active, use only a transition in `+"`recovery_info.permitted`"+` and
 the exact transaction ID. Never choose maintenance, correction, abandonment,
 merge, provider, or destructive authority as an escape from a frontier.
-`, mode.Slug, mode.Description, mode.DisplayName, mode.Target, mode.Extra, mode.AuthorityContract))
+`, mode.Slug, mode.Description, mode.DisplayName, mode.Target, mode.Extra, projection, mode.AuthorityContract))
 }
 
-func renderOpenAIMetadata(mode hostSkillMode) []byte {
+func renderOpenAIMetadata(mode hostProjectionMode) []byte {
 	return []byte(fmt.Sprintf(`interface:
   display_name: %q
   short_description: %q
@@ -108,21 +116,28 @@ policy:
 `, mode.DisplayName, mode.Description, "Use $"+mode.Slug+" to follow the authority-preserving Boatstack driver."))
 }
 
-func desiredHostSkillFiles(hosts []string) map[string][]byte {
+func desiredHostProjectionFiles(projections []hostprojection.ID) map[string][]byte {
 	desired := map[string][]byte{}
-	for _, host := range hosts {
-		for _, mode := range hostSkillModes {
-			skill := renderHostSkill(mode)
-			switch host {
-			case "codex":
+	for _, projection := range projections {
+		for _, mode := range hostProjectionModes {
+			skill := renderHostProjection(mode, projection)
+			switch projection {
+			case hostprojection.Codex:
 				root := filepath.ToSlash(filepath.Join(".agents", "skills", mode.Slug))
+				desired[root+"/.gitattributes"] = []byte("* -text\n")
 				desired[root+"/SKILL.md"] = skill
 				desired[root+"/agents/openai.yaml"] = renderOpenAIMetadata(mode)
-			case "claude":
-				desired[filepath.ToSlash(filepath.Join(".claude", "skills", mode.Slug, "SKILL.md"))] = skill
-			case "gemini":
+			case hostprojection.Claude:
+				root := filepath.ToSlash(filepath.Join(".claude", "skills", mode.Slug))
+				desired[root+"/.gitattributes"] = []byte("* -text\n")
+				desired[root+"/SKILL.md"] = skill
+			case hostprojection.Gemini:
+				attributePath, attributeContent, _ := hostprojection.SharedCheckoutPath(projection)
+				desired[attributePath] = attributeContent
 				desired[filepath.ToSlash(filepath.Join(".gemini", "skills", mode.Slug, "SKILL.md"))] = skill
-			case "cursor":
+			case hostprojection.Cursor:
+				attributePath, attributeContent, _ := hostprojection.SharedCheckoutPath(projection)
+				desired[attributePath] = attributeContent
 				desired[filepath.ToSlash(filepath.Join(".cursor", "commands", mode.Slug+".md"))] = skill
 			}
 		}
@@ -130,11 +145,19 @@ func desiredHostSkillFiles(hosts []string) map[string][]byte {
 	return desired
 }
 
-// ProjectedHostSkillFiles returns the exact runtime-owned host projection and
+// ProjectedHostProjectionFiles returns the exact runtime-owned host projection and
 // manifest bytes without mutating a repository.
-func ProjectedHostSkillFiles(hosts []string) (map[string][]byte, []byte, error) {
-	desired := desiredHostSkillFiles(hosts)
-	manifest := hostSkillManifest{SchemaVersion: hostSkillManifestSchema, Files: map[string]string{}}
+func ProjectedHostProjectionFiles(projections []hostprojection.ID) (map[string][]byte, []byte, error) {
+	canonical, err := hostprojection.ParseIDs(hostprojection.Strings(projections))
+	if err != nil {
+		return nil, nil, err
+	}
+	desired := desiredHostProjectionFiles(canonical)
+	selectionFingerprint, err := hostprojection.SelectionFingerprint(canonical)
+	if err != nil {
+		return nil, nil, err
+	}
+	manifest := hostProjectionManifest{SchemaVersion: hostProjectionManifestSchema, Projections: hostprojection.Strings(canonical), ProjectionSelectionFingerprint: selectionFingerprint, Files: map[string]string{}}
 	for path, raw := range desired {
 		manifest.Files[path] = sha256Bytes(raw)
 	}
@@ -145,22 +168,30 @@ func ProjectedHostSkillFiles(hosts []string) (map[string][]byte, []byte, error) 
 	return desired, append(manifestRaw, '\n'), nil
 }
 
-func prepareHostSkillMutations(repository string, hosts []string) ([]ports.ResourceMutation, error) {
-	desired := desiredHostSkillFiles(hosts)
-	manifestPath := filepath.Join(repository, ".boatstack", "host-skills.json")
+func prepareHostProjectionMutations(repository string, projections []hostprojection.ID) ([]ports.ResourceMutation, error) {
+	canonical, err := hostprojection.ParseIDs(hostprojection.Strings(projections))
+	if err != nil {
+		return nil, err
+	}
+	desired := desiredHostProjectionFiles(canonical)
+	selectionFingerprint, err := hostprojection.SelectionFingerprint(canonical)
+	if err != nil {
+		return nil, err
+	}
+	manifestPath := filepath.Join(repository, ".boatstack", "host-projections.json")
 	manifestRaw, manifestExists, _, err := readAllIfExists(manifestPath)
 	if err != nil {
 		return nil, err
 	}
-	prior := hostSkillManifest{Files: map[string]string{}}
+	prior := hostProjectionManifest{Projections: []string{}, Files: map[string]string{}}
 	if manifestExists {
-		if err := json.Unmarshal(manifestRaw, &prior); err != nil || prior.SchemaVersion != hostSkillManifestSchema || prior.Files == nil {
-			return nil, fmt.Errorf("Boatstack host-skill manifest is malformed")
+		if err := decodeHostProjectionManifest(manifestRaw, &prior); err != nil {
+			return nil, fmt.Errorf("Boatstack host-projection manifest is malformed")
 		}
 	}
 
 	for relative, expected := range prior.Files {
-		absolute, pathErr := managedHostSkillPath(repository, relative)
+		absolute, pathErr := managedHostProjectionPath(repository, relative)
 		if pathErr != nil {
 			return nil, pathErr
 		}
@@ -169,7 +200,7 @@ func prepareHostSkillMutations(repository string, hosts []string) ([]ports.Resou
 			return nil, readErr
 		}
 		if !exists || sha256Bytes(current) != expected {
-			return nil, fmt.Errorf("Boatstack host skill %s changed outside the managed projection", relative)
+			return nil, fmt.Errorf("Boatstack host projection %s changed outside the managed projection", relative)
 		}
 	}
 
@@ -179,9 +210,9 @@ func prepareHostSkillMutations(repository string, hosts []string) ([]ports.Resou
 		paths = append(paths, relative)
 	}
 	sort.Strings(paths)
-	next := hostSkillManifest{SchemaVersion: hostSkillManifestSchema, Files: map[string]string{}}
+	next := hostProjectionManifest{SchemaVersion: hostProjectionManifestSchema, Projections: hostprojection.Strings(canonical), ProjectionSelectionFingerprint: selectionFingerprint, Files: map[string]string{}}
 	for _, relative := range paths {
-		absolute, pathErr := managedHostSkillPath(repository, relative)
+		absolute, pathErr := managedHostProjectionPath(repository, relative)
 		if pathErr != nil {
 			return nil, pathErr
 		}
@@ -190,7 +221,7 @@ func prepareHostSkillMutations(repository string, hosts []string) ([]ports.Resou
 			return nil, readErr
 		}
 		if exists && !manifestExists && !strings.EqualFold(sha256Bytes(current), sha256Bytes(desired[relative])) {
-			return nil, fmt.Errorf("unmanaged file collides with Boatstack host skill %s", relative)
+			return nil, fmt.Errorf("unmanaged file collides with Boatstack host projection %s", relative)
 		}
 		if !exists || !strings.EqualFold(sha256Bytes(current), sha256Bytes(desired[relative])) {
 			mutation, mutationErr := mutationFor(absolute, desired[relative], 0o644, false, false)
@@ -206,7 +237,16 @@ func prepareHostSkillMutations(repository string, hosts []string) ([]ports.Resou
 		if _, keep := desired[relative]; keep {
 			continue
 		}
-		absolute, pathErr := managedHostSkillPath(repository, relative)
+		if hostprojection.IsSharedCheckoutPath(relative) {
+			referenced, referenceErr := boatstackruntime.SharedFlowProjectionReferenced(repository, relative, prior.Files[relative])
+			if referenceErr != nil {
+				return nil, referenceErr
+			}
+			if referenced {
+				continue
+			}
+		}
+		absolute, pathErr := managedHostProjectionPath(repository, relative)
 		if pathErr != nil {
 			return nil, pathErr
 		}
@@ -231,10 +271,50 @@ func prepareHostSkillMutations(repository string, hosts []string) ([]ports.Resou
 	return mutations, nil
 }
 
-func managedHostSkillPath(repository, relative string) (string, error) {
+func managedHostProjectionPath(repository, relative string) (string, error) {
 	clean := filepath.Clean(filepath.FromSlash(relative))
-	if filepath.IsAbs(clean) || clean == "." || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) {
-		return "", fmt.Errorf("invalid managed host-skill path %q", relative)
+	if filepath.IsAbs(clean) || clean == "." || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) || !hostprojection.ValidMaintenancePath(filepath.ToSlash(clean)) {
+		return "", fmt.Errorf("invalid managed host-projection path %q", relative)
 	}
 	return filepath.Join(repository, clean), nil
+}
+
+func decodeHostProjectionManifest(raw []byte, manifest *hostProjectionManifest) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(manifest); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return fmt.Errorf("trailing manifest data")
+	}
+	if manifest.SchemaVersion != hostProjectionManifestSchema || manifest.Projections == nil || manifest.Files == nil {
+		return fmt.Errorf("incomplete manifest")
+	}
+	projections, err := hostprojection.ParseIDs(manifest.Projections)
+	if err != nil || !equalProjectionStrings(manifest.Projections, hostprojection.Strings(projections)) {
+		return fmt.Errorf("non-canonical projections")
+	}
+	fingerprint, err := hostprojection.SelectionFingerprint(projections)
+	if err != nil || fingerprint != manifest.ProjectionSelectionFingerprint {
+		return fmt.Errorf("projection fingerprint mismatch")
+	}
+	for path, fingerprint := range manifest.Files {
+		if !hostprojection.ValidMaintenancePath(path) || !hostprojection.ValidSHA256(fingerprint) {
+			return fmt.Errorf("invalid projection file binding")
+		}
+	}
+	return nil
+}
+
+func equalProjectionStrings(one, two []string) bool {
+	if len(one) != len(two) {
+		return false
+	}
+	for index := range one {
+		if one[index] != two[index] {
+			return false
+		}
+	}
+	return true
 }

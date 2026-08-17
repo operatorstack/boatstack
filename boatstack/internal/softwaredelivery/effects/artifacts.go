@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/operatorstack/boatstack/boatstack/internal/hostprojection"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
@@ -111,6 +112,7 @@ type publicationPreview struct {
 
 func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admission, transition catalog.Transition, state *durable.State) ([]ports.ResourceMutation, error) {
 	var mutations []ports.ResourceMutation
+	var selectedProjections []hostprojection.ID
 	var deliveryID string
 	if transitionUsesDeliveryArtifacts(transition.ID) {
 		var err error
@@ -147,6 +149,10 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		state.ExternalEffectPolicy = policy.ExternalEffectAuthority
 		state.IndependentReview = policy.IndependentReviewForHighRisk
 		state.EnabledHosts = append([]string(nil), policy.Hosts...)
+		selectedProjections, decodeErr = config.ProjectionIDs()
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
 	case "plan.create", "plan.amend":
 		source, _ := admission.Parameters.Get("source_path")
 		expected, _ := admission.Parameters.Get("source_fingerprint")
@@ -428,7 +434,21 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		}
 	}
 	if transition.ID == "configuration.initialize" || transition.ID == "configuration.mutate" || transition.ID == "installation.initialize" || transition.ID == "installation.update" || transition.ID == "installation.reconcile-update" {
-		hostMutations, hostErr := prepareHostSkillMutations(layout.RepositoryRoot, state.EnabledHosts)
+		if selectedProjections == nil {
+			raw, readErr := os.ReadFile(layout.ConfigPath)
+			if readErr != nil {
+				return nil, fmt.Errorf("read current project configuration for host projections: %w", readErr)
+			}
+			config, decodeErr := protocol.DecodeProjectConfig(raw)
+			if decodeErr != nil {
+				return nil, decodeErr
+			}
+			selectedProjections, decodeErr = config.ProjectionIDs()
+			if decodeErr != nil {
+				return nil, decodeErr
+			}
+		}
+		hostMutations, hostErr := prepareHostProjectionMutations(layout.RepositoryRoot, selectedProjections)
 		if hostErr != nil {
 			return nil, hostErr
 		}

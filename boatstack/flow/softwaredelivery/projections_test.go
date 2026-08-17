@@ -2,14 +2,19 @@ package softwaredelivery_test
 
 import (
 	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
+	"github.com/operatorstack/boatstack/boatstack/internal/hostprojection"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
 )
 
-func TestGeneratedSkillsProjectOnlyDeclaredEntriesWithHostParity(t *testing.T) {
+func TestGeneratedProjectionsProjectOnlyDeclaredEntriesWithHostParity(t *testing.T) {
 	// control-law: hosts-receive-the-same-entry-contract-without-kernel-inference
 	truth := true
 	compiled := controlprogram.Compiled{Fingerprint: strings.Repeat("a", 64), Document: controlprogram.Document{
@@ -20,7 +25,7 @@ func TestGeneratedSkillsProjectOnlyDeclaredEntriesWithHostParity(t *testing.T) {
 			Delegation: &controlprogram.DelegationBinding{Reference: "software-delivery/delegation/autonomy", Version: "1"},
 		}},
 	}}
-	files, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
+	files, err := softwareflow.GenerateProjections(compiled, []hostprojection.ID{hostprojection.Codex, hostprojection.Claude})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,6 +80,125 @@ func TestGeneratedSkillsProjectOnlyDeclaredEntriesWithHostParity(t *testing.T) {
 	}
 }
 
+func TestGeneratedProjectionsCoverEverySelectedTargetAndNone(t *testing.T) {
+	// control-law: generated-files-depend-only-on-explicit-projections
+	truth := true
+	compiled := controlprogram.Compiled{Fingerprint: strings.Repeat("a", 64), Document: controlprogram.Document{
+		Program: controlprogram.Program{ID: "product-delivery"},
+		Targets: []controlprogram.Target{{ID: "done", Predicate: controlprogram.Predicate{True: &truth}}},
+		Entries: []controlprogram.Entry{{ID: "run", Target: "done", Description: "Run delivery"}},
+	}}
+	files, err := softwareflow.GenerateProjections(compiled, hostprojection.CanonicalIDs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		".agents/skills/product-delivery-run/.gitattributes",
+		".agents/skills/product-delivery-run/SKILL.md",
+		".agents/skills/product-delivery-run/agents/openai.yaml",
+		".claude/skills/product-delivery-run/.gitattributes",
+		".claude/skills/product-delivery-run/SKILL.md",
+		".cursor/commands/.gitattributes",
+		".cursor/commands/product-delivery-run.md",
+		".gemini/skills/.gitattributes",
+		".gemini/skills/product-delivery-run/SKILL.md",
+	}
+	if len(files) != len(want) {
+		t.Fatalf("generated projections = %v", files)
+	}
+	for _, path := range want {
+		if len(files[path]) == 0 {
+			t.Fatalf("missing generated projection %s", path)
+		}
+	}
+	for host, path := range map[string]string{
+		"codex":  ".agents/skills/product-delivery-run/SKILL.md",
+		"claude": ".claude/skills/product-delivery-run/SKILL.md",
+		"cursor": ".cursor/commands/product-delivery-run.md",
+		"gemini": ".gemini/skills/product-delivery-run/SKILL.md",
+	} {
+		if !strings.Contains(string(files[path]), "--host "+host) {
+			t.Fatalf("%s projection does not bind its runtime host", host)
+		}
+	}
+	empty, err := softwareflow.GenerateProjections(compiled, []hostprojection.ID{})
+	if err != nil || len(empty) != 0 {
+		t.Fatalf("empty projections = %v, %v", empty, err)
+	}
+	for id, count := range map[hostprojection.ID]int{
+		hostprojection.Codex: 3, hostprojection.Claude: 2, hostprojection.Cursor: 2, hostprojection.Gemini: 2,
+	} {
+		selected, selectedErr := softwareflow.GenerateProjections(compiled, []hostprojection.ID{id})
+		if selectedErr != nil || len(selected) != count {
+			t.Fatalf("%s-only projections = %v, %v", id, selected, selectedErr)
+		}
+		for path := range selected {
+			if !hostprojection.ValidFlowPath(path) {
+				t.Fatalf("%s-only selection generated invalid path %s", id, path)
+			}
+		}
+	}
+}
+
+func TestEveryGeneratedPathSurvivesAutoCRLFCheckoutExactly(t *testing.T) {
+	// control-law: checkout-never-rewrites-hash-bound-projection-bytes
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is unavailable")
+	}
+	truth := true
+	compiled := controlprogram.Compiled{Fingerprint: strings.Repeat("a", 64), Document: controlprogram.Document{
+		Program: controlprogram.Program{ID: "checkout-proof"},
+		Targets: []controlprogram.Target{{ID: "done", Predicate: controlprogram.Predicate{True: &truth}}},
+		Entries: []controlprogram.Entry{{ID: "run", Target: "done", Description: "Line one\nLine two"}},
+	}}
+	files, err := softwareflow.GenerateProjections(compiled, hostprojection.CanonicalIDs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	maintenance, _, err := effects.ProjectedHostProjectionFiles(hostprojection.CanonicalIDs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, raw := range maintenance {
+		files[path] = raw
+	}
+	repository := t.TempDir()
+	runGit := func(arguments ...string) {
+		t.Helper()
+		command := exec.Command("git", append([]string{"-C", repository}, arguments...)...)
+		if output, runErr := command.CombinedOutput(); runErr != nil {
+			t.Fatalf("git %v: %v\n%s", arguments, runErr, output)
+		}
+	}
+	runGit("init", "-q")
+	runGit("config", "user.email", "fixture@example.invalid")
+	runGit("config", "user.name", "Fixture")
+	runGit("config", "core.autocrlf", "true")
+	for path, raw := range files {
+		absolute := filepath.Join(repository, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(absolute, raw, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGit("add", ".")
+	runGit("commit", "-q", "-m", "projection bytes")
+	for path := range files {
+		if err := os.Remove(filepath.Join(repository, filepath.FromSlash(path))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGit("checkout", "--", ".")
+	for path, expected := range files {
+		actual, err := os.ReadFile(filepath.Join(repository, filepath.FromSlash(path)))
+		if err != nil || string(actual) != string(expected) {
+			t.Fatalf("checkout rewrote %s: %v", path, err)
+		}
+	}
+}
+
 func TestGeneratedSoftwareDeliverySkillMakesProgramDriftCoreachableWithoutImplicitAcceptance(t *testing.T) {
 	// control-law: generated-driver-program-drift-has-an-exact-human-authorized-resumption
 	truth := true
@@ -86,7 +210,7 @@ func TestGeneratedSoftwareDeliverySkillMakesProgramDriftCoreachableWithoutImplic
 		Targets: []controlprogram.Target{{ID: "mitigated", Predicate: controlprogram.Predicate{True: &truth}}},
 		Entries: []controlprogram.Entry{{ID: "respond", Target: "mitigated"}},
 	}}
-	files, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
+	files, err := softwareflow.GenerateProjections(compiled, []hostprojection.ID{hostprojection.Codex, hostprojection.Claude})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +238,7 @@ func TestGeneratedSkillDescriptionIsQuotedYAML(t *testing.T) {
 		Program: controlprogram.Program{ID: "product-delivery"},
 		Entries: []controlprogram.Entry{{ID: "run", Target: "published-pr", Description: description}},
 	}}
-	files, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
+	files, err := softwareflow.GenerateProjections(compiled, []hostprojection.ID{hostprojection.Codex, hostprojection.Claude})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +273,7 @@ func TestGeneratedSkillExplanationIsEntryOptInWithHostParity(t *testing.T) {
 			{ID: "quiet", Target: "published-pr"},
 		},
 	}}
-	files, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
+	files, err := softwareflow.GenerateProjections(compiled, []hostprojection.ID{hostprojection.Codex, hostprojection.Claude})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,14 +300,14 @@ func TestGeneratedSkillExplanationIsEntryOptInWithHostParity(t *testing.T) {
 	}
 }
 
-func TestGeneratedSkillsProjectForegroundWorkProtocolWithHostParity(t *testing.T) {
+func TestGeneratedProjectionsProjectForegroundWorkProtocolWithHostParity(t *testing.T) {
 	// control-law: every supported agent host projects the same foreground-work boundary
 	compiled := controlprogram.Compiled{Document: controlprogram.Document{
 		Program: controlprogram.Program{ID: "incident-response"},
 		Work:    []controlprogram.WorkContract{{ID: "diagnose"}},
 		Entries: []controlprogram.Entry{{ID: "respond", Target: "mitigated"}},
 	}}
-	files, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
+	files, err := softwareflow.GenerateProjections(compiled, []hostprojection.ID{hostprojection.Codex, hostprojection.Claude})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +323,7 @@ func TestGeneratedSkillsProjectForegroundWorkProtocolWithHostParity(t *testing.T
 	}
 }
 
-func TestGeneratedSkillsProjectGateEvidenceWorkSuspensionWithHostParity(t *testing.T) {
+func TestGeneratedProjectionsProjectGateEvidenceWorkSuspensionWithHostParity(t *testing.T) {
 	// control-law: missing deterministic gate evidence suspends bounded work
 	// without becoming human input, fabricated evidence, or a terminal stop.
 	compiled := controlprogram.Compiled{Document: controlprogram.Document{
@@ -219,7 +343,7 @@ func TestGeneratedSkillsProjectGateEvidenceWorkSuspensionWithHostParity(t *testi
 		}},
 		Entries: []controlprogram.Entry{{ID: "run", Target: "published-pr"}},
 	}}
-	files, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
+	files, err := softwareflow.GenerateProjections(compiled, []hostprojection.ID{hostprojection.Codex, hostprojection.Claude})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +372,7 @@ func TestGeneratedRunSkillRequiresExplicitAbandonmentBeforeReplacement(t *testin
 			{ID: "cancel", Target: "safely-abandoned"},
 		},
 	}}
-	files, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
+	files, err := softwareflow.GenerateProjections(compiled, []hostprojection.ID{hostprojection.Codex, hostprojection.Claude})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,12 +390,12 @@ func TestGeneratedRunSkillRequiresExplicitAbandonmentBeforeReplacement(t *testin
 	}
 }
 
-func TestGeneratedSkillsRejectKernelMaintenanceIdentity(t *testing.T) {
+func TestGeneratedProjectionsRejectKernelMaintenanceIdentity(t *testing.T) {
 	compiled := controlprogram.Compiled{Document: controlprogram.Document{
 		Program: controlprogram.Program{ID: "boatstack"},
 		Entries: []controlprogram.Entry{{ID: "update", Target: "done"}},
 	}}
-	if _, err := softwareflow.GenerateSkills(compiled, []string{"codex"}); err == nil || !strings.Contains(err.Error(), "reserved") {
+	if _, err := softwareflow.GenerateProjections(compiled, []hostprojection.ID{hostprojection.Codex}); err == nil || !strings.Contains(err.Error(), "reserved") {
 		t.Fatalf("maintenance collision result = %v", err)
 	}
 }
@@ -283,7 +407,7 @@ func TestGeneratedSkillIdentityIsInjectiveAcrossProgramEntryPairs(t *testing.T) 
 			Program: controlprogram.Program{ID: program},
 			Entries: []controlprogram.Entry{{ID: entry, Target: "done"}},
 		}}
-		files, err := softwareflow.GenerateSkills(compiled, []string{"codex"})
+		files, err := softwareflow.GenerateProjections(compiled, []hostprojection.ID{hostprojection.Codex})
 		if err != nil {
 			t.Fatal(err)
 		}

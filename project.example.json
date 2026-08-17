@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "identity": {
     "human": {
       "kind": "command",
@@ -42,5 +42,11 @@
     "gemini",
     "mcp",
     "sdk"
+  ],
+  "projections": [
+    "codex",
+    "claude",
+    "cursor",
+    "gemini"
   ]
 }

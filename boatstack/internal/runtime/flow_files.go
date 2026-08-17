@@ -12,6 +12,8 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+
+	"github.com/operatorstack/boatstack/boatstack/internal/hostprojection"
 )
 
 func RunFlowFrontend(ctx context.Context, executable, sourceName string, source []byte) ([]byte, error) {
@@ -139,6 +141,27 @@ func applyFlowProjectionWithOwnership(repository string, writes []ProjectionWrit
 	writes = append([]ProjectionWrite(nil), writes...)
 	removals = append([]ProjectionRemoval(nil), removals...)
 	expectations = append([]ProjectionExpectation(nil), expectations...)
+	if ownership != nil {
+		filtered := removals[:0]
+		for _, removal := range removals {
+			relative, relativeErr := filepath.Rel(repository, removal.Path)
+			if relativeErr != nil {
+				return relativeErr
+			}
+			relative = filepath.ToSlash(relative)
+			if hostprojection.IsSharedCheckoutPath(relative) {
+				referenced, referenceErr := sharedProjectionReferenced(repository, relative, removal.ExpectedSHA256, ownership.next.SourcePath, true)
+				if referenceErr != nil {
+					return referenceErr
+				}
+				if referenced {
+					continue
+				}
+			}
+			filtered = append(filtered, removal)
+		}
+		removals = filtered
+	}
 	sort.Slice(writes, func(i, j int) bool {
 		if writes[i].PublishLast != writes[j].PublishLast {
 			return !writes[i].PublishLast

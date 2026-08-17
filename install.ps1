@@ -116,11 +116,12 @@ try {
     if (-not $ConfigSource) {
       $ConfigSource = Join-Path $Temporary "project.json"
       $Config = [ordered]@{
-        schema_version = 3
+        schema_version = 4
         identity = [ordered]@{ human = [ordered]@{ kind = "literal"; value = $Actor } }
         project = [ordered]@{ name = "repository"; default_branch = $DefaultBranch; commands = [ordered]@{} }
         policy = [ordered]@{ plan_approval = "human"; visual_evidence = "optional" }
         hosts = @("cli", "cursor", "codex", "claude", "gemini", "mcp")
+        projections = @("codex", "claude", "cursor", "gemini")
       }
       $ConfigText = $Config | ConvertTo-Json -Depth 4 -Compress
       [System.IO.File]::WriteAllText($ConfigSource, $ConfigText, [System.Text.UTF8Encoding]::new($false))
@@ -145,7 +146,7 @@ try {
   }
   Write-Host "Boatstack installed at $Runtime"
   if ($Mode -ne "hydrate") {
-    Write-Host "Review and commit $Repository\.boatstack\project.json, $Repository\.boatstack\runtime.json, and the generated host skills"
+    Write-Host "Review and commit $Repository\.boatstack\project.json, $Repository\.boatstack\runtime.json, and the generated host projections"
   }
   Write-Host "Run: $Launcher doctor --repo `"$Repository`" --format text"
 } finally {

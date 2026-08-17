@@ -16,6 +16,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	"github.com/operatorstack/boatstack/boatstack/core"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
+	"github.com/operatorstack/boatstack/boatstack/internal/hostprojection"
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/delegation"
@@ -126,7 +127,7 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	if err != nil {
 		return commandOptions{}, err
 	}
-	compiled, err := controlprogram.CheckArtifact(repository, artifact, flowCompilerVersion, resolver, generateSoftwareFlowSkills)
+	compiled, err := checkArtifactForCurrentProject(repository, artifact, resolver)
 	if err != nil {
 		return commandOptions{}, err
 	}
@@ -1181,7 +1182,7 @@ func loadFlowDefinition(ctx context.Context, repository, programID string) (soft
 	if err != nil {
 		return softwareflow.Definition{}, err
 	}
-	compiled, err := controlprogram.CheckArtifact(repository, artifact, flowCompilerVersion, resolver, generateSoftwareFlowSkills)
+	compiled, err := checkArtifactForCurrentProject(repository, artifact, resolver)
 	if err != nil {
 		return softwareflow.Definition{}, err
 	}
@@ -1262,8 +1263,8 @@ func findEntry(entries []controlprogram.Entry, id string) (controlprogram.Entry,
 	return controlprogram.Entry{}, false
 }
 
-func generateSoftwareFlowSkills(compiled controlprogram.Compiled) (map[string][]byte, error) {
-	return softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
+func generateSoftwareFlowProjections(compiled controlprogram.Compiled, projections []hostprojection.ID) (map[string][]byte, error) {
+	return softwareflow.GenerateProjections(compiled, projections)
 }
 
 func flowRepositoryIdentity(repository string) (string, error) {

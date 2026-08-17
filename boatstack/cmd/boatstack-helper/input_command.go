@@ -184,7 +184,7 @@ func loadFlowInputContext(ctx context.Context, options flowInputOptions) (contro
 	if err != nil {
 		return controlprogram.Compiled{}, invocation.Store{}, flowInputRuntimeContext{}, err
 	}
-	compiled, err := controlprogram.CheckArtifact(options.repository, artifact, flowCompilerVersion, bindingResolver, generateSoftwareFlowSkills)
+	compiled, err := checkArtifactForCurrentProject(options.repository, artifact, bindingResolver)
 	if err != nil {
 		return controlprogram.Compiled{}, invocation.Store{}, flowInputRuntimeContext{}, err
 	}

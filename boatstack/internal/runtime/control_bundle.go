@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -12,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -98,14 +100,25 @@ func NewControlBundleSnapshotWithMemberSets(files map[string][]byte, absent []st
 // ReplaceControlBundleFile derives a target snapshot without trusting a
 // caller-supplied target fingerprint.
 func ReplaceControlBundleFile(snapshot ControlBundleSnapshot, path string, raw []byte) (ControlBundleSnapshot, error) {
+	digest := sha256.Sum256(raw)
+	return replaceControlBundleBinding(snapshot, ControlBundleFile{Path: path, SHA256: hex.EncodeToString(digest[:])})
+}
+
+// ReplaceControlBundleFileAbsent binds an exact removal in a target snapshot.
+// It is used when a manifest-owned projection is retired so stale bytes cannot
+// silently remain outside the admitted target bundle.
+func ReplaceControlBundleFileAbsent(snapshot ControlBundleSnapshot, path string) (ControlBundleSnapshot, error) {
+	return replaceControlBundleBinding(snapshot, ControlBundleFile{Path: path, Absent: true})
+}
+
+func replaceControlBundleBinding(snapshot ControlBundleSnapshot, binding ControlBundleFile) (ControlBundleSnapshot, error) {
 	if err := snapshot.validate(); err != nil {
 		return ControlBundleSnapshot{}, err
 	}
+	path := binding.Path
 	if !safeProjectionRelative(path) {
 		return ControlBundleSnapshot{}, fmt.Errorf("CONTROL_BUNDLE_INVALID: unsafe path %q", path)
 	}
-	digest := sha256.Sum256(raw)
-	binding := ControlBundleFile{Path: path, SHA256: hex.EncodeToString(digest[:])}
 	files := append([]ControlBundleFile(nil), snapshot.Files...)
 	replaced := false
 	for index := range files {
@@ -500,20 +513,43 @@ func VerifyControlBundleRevision(ctx context.Context, repository, revision strin
 			return fmt.Errorf("CONTROL_BUNDLE_STALE: revision %s member set %s/*%s does not match the admitted bundle", revision, memberSet.Root, memberSet.Suffix)
 		}
 	}
+	var requests bytes.Buffer
 	for _, file := range snapshot.Files {
+		fmt.Fprintf(&requests, "%s:%s\n", revision, file.Path)
+	}
+	command := exec.CommandContext(ctx, "git", "cat-file", "--batch")
+	command.Dir, command.Stdin = repository, &requests
+	output, err := command.Output()
+	if err != nil {
+		return fmt.Errorf("CONTROL_BUNDLE_STALE: inspect revision %s: %w", revision, err)
+	}
+	reader := bufio.NewReader(bytes.NewReader(output))
+	for _, file := range snapshot.Files {
+		header, readErr := reader.ReadString('\n')
+		if readErr != nil {
+			return fmt.Errorf("CONTROL_BUNDLE_STALE: revision %s lacks batch evidence for %s", revision, file.Path)
+		}
+		fields := strings.Fields(header)
+		missing := len(fields) == 2 && fields[1] == "missing"
 		if file.Absent {
-			command := exec.CommandContext(ctx, "git", "cat-file", "-e", revision+":"+file.Path)
-			command.Dir = repository
-			if command.Run() == nil {
+			if !missing {
 				return fmt.Errorf("CONTROL_BUNDLE_STALE: revision %s unexpectedly contains %s", revision, file.Path)
 			}
 			continue
 		}
-		command := exec.CommandContext(ctx, "git", "show", revision+":"+file.Path)
-		command.Dir = repository
-		raw, err := command.Output()
-		if err != nil {
-			return fmt.Errorf("CONTROL_BUNDLE_STALE: revision %s lacks %s", revision, file.Path)
+		if missing || len(fields) != 3 || fields[1] != "blob" {
+			return fmt.Errorf("CONTROL_BUNDLE_STALE: revision %s lacks regular file %s", revision, file.Path)
+		}
+		size, parseErr := strconv.ParseInt(fields[2], 10, 64)
+		if parseErr != nil || size < 0 || size > 64<<20 {
+			return fmt.Errorf("CONTROL_BUNDLE_STALE: revision %s has invalid size for %s", revision, file.Path)
+		}
+		raw := make([]byte, size)
+		if _, readErr := io.ReadFull(reader, raw); readErr != nil {
+			return fmt.Errorf("CONTROL_BUNDLE_STALE: revision %s has incomplete %s", revision, file.Path)
+		}
+		if separator, readErr := reader.ReadByte(); readErr != nil || separator != '\n' {
+			return fmt.Errorf("CONTROL_BUNDLE_STALE: revision %s has malformed batch evidence for %s", revision, file.Path)
 		}
 		digest := sha256.Sum256(raw)
 		if hex.EncodeToString(digest[:]) != file.SHA256 {

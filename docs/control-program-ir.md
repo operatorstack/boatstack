@@ -69,7 +69,7 @@ repository `node_modules/.bin` program automatically.
 The frontend accepts only literal data and calls to named exports from trusted
 Boatstack SDKs. It rejects local imports and other repository code without
 executing them. Boatstack then validates, canonicalizes, fingerprints, and
-projects generated skills, retires obsolete skills, and publishes the committed
+projects generated host-native files, retires obsolete projections, and publishes the committed
 `.flow.ir.json` artifact last as one serialized update. Runtime commands never
 execute `flow.ts`. The artifact filename comes from the declared program ID,
 not the source filename.

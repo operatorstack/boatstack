@@ -143,7 +143,7 @@ if [[ "$mode" == install ]]; then
     config_source="$temporary/project.json"
     json_default_branch="${default_branch//\\/\\\\}"
     json_default_branch="${json_default_branch//\"/\\\"}"
-    printf '%s\n' "{\"schema_version\":3,\"identity\":{\"human\":{\"kind\":\"literal\",\"value\":\"$actor\"}},\"project\":{\"name\":\"repository\",\"default_branch\":\"$json_default_branch\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\",\"cursor\",\"codex\",\"claude\",\"gemini\",\"mcp\"]}" > "$config_source"
+    printf '%s\n' "{\"schema_version\":4,\"identity\":{\"human\":{\"kind\":\"literal\",\"value\":\"$actor\"}},\"project\":{\"name\":\"repository\",\"default_branch\":\"$json_default_branch\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\",\"cursor\",\"codex\",\"claude\",\"gemini\",\"mcp\"],\"projections\":[\"codex\",\"claude\",\"cursor\",\"gemini\"]}" > "$config_source"
   fi
   "$runtime" init --repo "$repository" --human "$actor" --param "config_path=$config_source" --format text
 elif [[ "$mode" == update ]]; then
@@ -167,6 +167,6 @@ fi
 
 echo "Boatstack installed at $runtime"
 if [[ "$mode" != hydrate ]]; then
-  echo "Review and commit $repository/.boatstack/project.json, $repository/.boatstack/runtime.json, and the generated host skills"
+  echo "Review and commit $repository/.boatstack/project.json, $repository/.boatstack/runtime.json, and the generated host projections"
 fi
 echo "Run: $install_dir/boatstack doctor --repo $repository --format text"

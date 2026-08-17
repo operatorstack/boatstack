@@ -30,7 +30,7 @@ language models, or coding-agent semantics.
 
 > [!WARNING]
 > Boatstack is alpha software for experimentation. The CLI, Control Program
-> ABI, configuration schema, generated skills, and state format may change
+> ABI, configuration schema, generated host projections, and state format may change
 > without a compatibility path. Audit it before using it on important work.
 
 During alpha development, Boatstack does not preserve backward compatibility.
@@ -63,7 +63,7 @@ boatstack doctor --repo . --format text
 The installer verifies the latest release, pins that exact runtime to the
 repository, creates the initial configuration, and generates integrations for
 the enabled coding-agent hosts. Review and commit the generated
-`.boatstack/` files and host skills before starting delivery.
+`.boatstack/` files and host projections before starting delivery.
 
 Boatstack keeps runtime maintenance separate from repository delivery. The
 installer generates the maintenance skill:
@@ -73,13 +73,13 @@ $boatstack-update    # install a checksum-verified runtime update
 ```
 
 A repository Flow declares its own entries. `boatstack flow compile` projects
-those entries into host skills such as `$product-delivery-run`; Boatstack does
+those entries into host-native projections such as `$product-delivery-run`; Boatstack does
 not interpret the word `run`. Compilation requires an explicitly selected,
 absolute frontend path and never executes an automatically discovered
 repository binary.
 
 If the agent was already running during installation, start a fresh task so it
-can discover the generated skills. See [Getting started](docs/getting-started.md)
+can discover the generated host projections. See [Getting started](docs/getting-started.md)
 for the lower-level CLI path and [Configuration](docs/configuration.md) for the
 repository policy schema.
 

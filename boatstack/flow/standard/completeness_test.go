@@ -455,6 +455,7 @@ func classifiedProductionFile(relative string) bool {
 		strings.HasPrefix(relative, "delivery/") || strings.HasPrefix(relative, "core/") ||
 		strings.HasPrefix(relative, "flow/") || strings.HasPrefix(relative, "distribution/") || strings.HasPrefix(relative, "extension/") ||
 		strings.HasPrefix(relative, "internal/softwaredelivery/") ||
+		strings.HasPrefix(relative, "internal/hostprojection/") ||
 		strings.HasPrefix(relative, "internal/buildinfo/") || strings.HasPrefix(relative, "internal/runtime/") ||
 		strings.HasPrefix(relative, "internal/retromine/") || strings.HasPrefix(relative, "internal/testprogram/") || strings.HasPrefix(relative, "kernel/") || strings.HasPrefix(relative, "sdk/") ||
 		strings.HasPrefix(relative, "analysis/")

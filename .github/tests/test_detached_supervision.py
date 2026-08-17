@@ -175,11 +175,12 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         config.write_text(
             json.dumps(
                 {
-                    "schema_version": 3,
+                    "schema_version": 4,
                     "identity": {"human": {"kind": "literal", "value": "contract"}},
                     "project": {"name": "fixture", "default_branch": "main", "commands": {}},
                     "policy": {"plan_approval": "human", "visual_evidence": "optional"},
                     "hosts": ["cli", "cursor", "codex", "claude", "gemini", "mcp"],
+                    "projections": ["cursor", "codex", "claude", "gemini"],
                 }
             )
         )
@@ -193,13 +194,17 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
             self.porcelain(),
             "\n".join(
                 [
+                    "?? .agents/skills/boatstack-update/.gitattributes",
                     "?? .agents/skills/boatstack-update/SKILL.md",
                     "?? .agents/skills/boatstack-update/agents/openai.yaml",
-                    "?? .boatstack/host-skills.json",
+                    "?? .boatstack/host-projections.json",
                     "?? .boatstack/project.json",
                     "?? .boatstack/runtime.json",
+                    "?? .claude/skills/boatstack-update/.gitattributes",
                     "?? .claude/skills/boatstack-update/SKILL.md",
+                    "?? .cursor/commands/.gitattributes",
                     "?? .cursor/commands/boatstack-update.md",
+                    "?? .gemini/skills/.gitattributes",
                     "?? .gemini/skills/boatstack-update/SKILL.md",
                 ]
             ),
@@ -245,11 +250,12 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         config.write_text(
             json.dumps(
                 {
-                    "schema_version": 3,
+                    "schema_version": 4,
                     "identity": {"human": {"kind": "literal", "value": "contract"}},
                     "project": {"name": "driver-fixture", "default_branch": "main", "commands": {}},
                     "policy": {"plan_approval": "human", "visual_evidence": "optional"},
                     "hosts": ["cli", "codex"],
+                    "projections": ["codex"],
                 }
             )
         )
@@ -346,7 +352,7 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         config.write_text(
             json.dumps(
                 {
-                    "schema_version": 3,
+                    "schema_version": 4,
                     "identity": {"human": {"kind": "literal", "value": "contract"}},
                     "project": {
                         "name": "retained-authority-fixture",
@@ -355,11 +361,13 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
                     },
                     "policy": {"plan_approval": "human", "visual_evidence": "optional"},
                     "hosts": ["cli", "codex"],
+                    "projections": ["codex"],
                 }
             )
         )
         canonical_config = json.loads(config.read_text())
         canonical_config["hosts"] = sorted(canonical_config["hosts"])
+        canonical_config["projections"] = sorted(canonical_config["projections"])
         canonical_config["policy"]["external_effect_authority"] = (
             "human-or-autonomy-plus-provider"
         )

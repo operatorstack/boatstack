@@ -7,10 +7,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
+	"github.com/operatorstack/boatstack/boatstack/internal/hostprojection"
 )
 
 type delegationResolver struct {
@@ -644,7 +646,7 @@ func TestStrictLoadersRejectOversizedTrailingInput(t *testing.T) {
 	}
 	_, artifactRaw, err := controlprogram.NewArtifact(compiled, controlprogram.ArtifactInput{
 		CompilerVersion: "compiler-1", SourcePath: "flow.ts", Source: []byte("source"),
-		DependencyLockPath: "package-lock.json", DependencyLock: []byte("lock"), GeneratedSkills: map[string][]byte{},
+		DependencyLockPath: "package-lock.json", DependencyLock: []byte("lock"), Projections: []hostprojection.ID{}, GeneratedProjections: map[string][]byte{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -682,7 +684,7 @@ func TestCompilerRejectsUndeclaredEffectAndMissingRecovery(t *testing.T) {
 	}
 }
 
-func TestArtifactBindsSourceLockSkillsAndCompiler(t *testing.T) {
+func TestArtifactBindsSourceLockProjectionsAndCompiler(t *testing.T) {
 	// control-law: runtime-admits-only-an-exact-source-lock-artifact-projection
 	repository := t.TempDir()
 	sourcePath, lockPath, skillPath := "flow.ts", "package-lock.json", ".agents/skills/respond/SKILL.md"
@@ -702,21 +704,21 @@ func TestArtifactBindsSourceLockSkillsAndCompiler(t *testing.T) {
 	}
 	artifact, _, err := controlprogram.NewArtifact(compiled, controlprogram.ArtifactInput{
 		CompilerVersion: "compiler-1", SourcePath: sourcePath, Source: source, DependencyLockPath: lockPath, DependencyLock: lock,
-		GeneratedSkills: map[string][]byte{skillPath: skill},
+		Projections: []hostprojection.ID{hostprojection.Codex}, GeneratedProjections: map[string][]byte{skillPath: skill},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	generate := func(controlprogram.Compiled) (map[string][]byte, error) {
+	generate := func(controlprogram.Compiled, []hostprojection.ID) (map[string][]byte, error) {
 		return map[string][]byte{skillPath: skill}, nil
 	}
-	if _, err := controlprogram.CheckArtifact(repository, artifact, "compiler-1", nil, generate); err != nil {
+	if _, err := controlprogram.CheckArtifact(repository, artifact, "compiler-1", nil, []hostprojection.ID{hostprojection.Codex}, generate); err != nil {
 		t.Fatal(err)
 	}
 	forgedSkill := []byte("forged skill")
 	forgedArtifact, _, err := controlprogram.NewArtifact(compiled, controlprogram.ArtifactInput{
 		CompilerVersion: "compiler-1", SourcePath: sourcePath, Source: source, DependencyLockPath: lockPath, DependencyLock: lock,
-		GeneratedSkills: map[string][]byte{skillPath: forgedSkill},
+		Projections: []hostprojection.ID{hostprojection.Codex}, GeneratedProjections: map[string][]byte{skillPath: forgedSkill},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -724,7 +726,7 @@ func TestArtifactBindsSourceLockSkillsAndCompiler(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repository, filepath.FromSlash(skillPath)), forgedSkill, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := controlprogram.CheckArtifact(repository, forgedArtifact, "compiler-1", nil, generate); err == nil || !strings.Contains(err.Error(), "derived from compiled program") {
+	if _, err := controlprogram.CheckArtifact(repository, forgedArtifact, "compiler-1", nil, []hostprojection.ID{hostprojection.Codex}, generate); err == nil || !strings.Contains(err.Error(), "derived from compiled program") {
 		t.Fatalf("self-consistent forged projection result = %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(repository, filepath.FromSlash(skillPath)), skill, 0o600); err != nil {
@@ -733,12 +735,97 @@ func TestArtifactBindsSourceLockSkillsAndCompiler(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repository, sourcePath), []byte("changed"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := controlprogram.CheckArtifact(repository, artifact, "compiler-1", nil, generate); err == nil || !strings.Contains(err.Error(), "source") {
+	if _, err := controlprogram.CheckArtifact(repository, artifact, "compiler-1", nil, []hostprojection.ID{hostprojection.Codex}, generate); err == nil || !strings.Contains(err.Error(), "source") {
 		t.Fatalf("stale source result = %v", err)
 	}
 }
 
-func TestArtifactRejectsGeneratedPathsOutsideHostSkillRoots(t *testing.T) {
+func TestProjectionSelectionChangesArtifactEnvelopeButNotControlProgram(t *testing.T) {
+	// control-law: generated-file-selection-is-nonsemantic-to-the-control-program
+	compiled, err := controlprogram.Compile(incidentProgram(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := controlprogram.ArtifactInput{
+		CompilerVersion: "compiler-1", SourcePath: "flow.ts", Source: []byte("same source"),
+		DependencyLockPath: "package-lock.json", DependencyLock: []byte("same lock"),
+	}
+	codex := base
+	codex.Projections = []hostprojection.ID{hostprojection.Codex}
+	codex.GeneratedProjections = map[string][]byte{".agents/skills/respond/SKILL.md": []byte("codex")}
+	all := base
+	all.Projections = hostprojection.CanonicalIDs()
+	all.GeneratedProjections = map[string][]byte{
+		".agents/skills/respond/SKILL.md": []byte("codex"),
+		".claude/skills/respond/SKILL.md": []byte("claude"),
+		".cursor/commands/respond.md":     []byte("cursor"),
+		".gemini/skills/respond/SKILL.md": []byte("gemini"),
+	}
+	codexArtifact, codexRaw, err := controlprogram.NewArtifact(compiled, codex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	allArtifact, allRaw, err := controlprogram.NewArtifact(compiled, all)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if codexArtifact.ProgramFingerprint != compiled.Fingerprint || allArtifact.ProgramFingerprint != compiled.Fingerprint {
+		t.Fatal("projection selection changed the Control Program fingerprint")
+	}
+	if codexArtifact.ProjectionSelectionFingerprint == allArtifact.ProjectionSelectionFingerprint {
+		t.Fatal("different projection memberships shared a selection fingerprint")
+	}
+	codexEnvelope, allEnvelope := sha256.Sum256(codexRaw), sha256.Sum256(allRaw)
+	if codexEnvelope == allEnvelope {
+		t.Fatal("different projection memberships shared an artifact-envelope fingerprint")
+	}
+}
+
+func TestArtifactCheckCanonicalizesExpectedProjectionOrder(t *testing.T) {
+	repository := t.TempDir()
+	files := map[string][]byte{
+		"flow.ts":                         []byte("source"),
+		"package-lock.json":               []byte("lock"),
+		".agents/skills/respond/SKILL.md": []byte("codex"),
+		".claude/skills/respond/SKILL.md": []byte("claude"),
+	}
+	for path, raw := range files {
+		absolute := filepath.Join(repository, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(absolute, raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	compiled, err := controlprogram.Compile(incidentProgram(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	generated := map[string][]byte{
+		".agents/skills/respond/SKILL.md": files[".agents/skills/respond/SKILL.md"],
+		".claude/skills/respond/SKILL.md": files[".claude/skills/respond/SKILL.md"],
+	}
+	artifact, _, err := controlprogram.NewArtifact(compiled, controlprogram.ArtifactInput{
+		CompilerVersion: "compiler-1", SourcePath: "flow.ts", Source: files["flow.ts"],
+		DependencyLockPath: "package-lock.json", DependencyLock: files["package-lock.json"],
+		Projections: []hostprojection.ID{hostprojection.Codex, hostprojection.Claude}, GeneratedProjections: generated,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	generate := func(_ controlprogram.Compiled, projections []hostprojection.ID) (map[string][]byte, error) {
+		if want := []hostprojection.ID{hostprojection.Claude, hostprojection.Codex}; !reflect.DeepEqual(projections, want) {
+			t.Fatalf("generator projections = %v, want canonical %v", projections, want)
+		}
+		return generated, nil
+	}
+	if _, err := controlprogram.CheckArtifact(repository, artifact, "compiler-1", nil, []hostprojection.ID{hostprojection.Codex, hostprojection.Claude}, generate); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestArtifactRejectsGeneratedPathsOutsideHostProjectionRoots(t *testing.T) {
 	compiled, err := controlprogram.Compile(incidentProgram(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -746,7 +833,7 @@ func TestArtifactRejectsGeneratedPathsOutsideHostSkillRoots(t *testing.T) {
 	_, _, err = controlprogram.NewArtifact(compiled, controlprogram.ArtifactInput{
 		CompilerVersion: "compiler-1", SourcePath: "flow.ts", Source: []byte("source"),
 		DependencyLockPath: "package-lock.json", DependencyLock: []byte("lock"),
-		GeneratedSkills: map[string][]byte{"README.md": []byte("delete me")},
+		Projections: []hostprojection.ID{hostprojection.Codex}, GeneratedProjections: map[string][]byte{"README.md": []byte("delete me")},
 	})
 	if err == nil {
 		t.Fatal("artifact accepted an arbitrary generated deletion path")
@@ -773,18 +860,18 @@ func TestArtifactBindsExactForegroundWorkAssets(t *testing.T) {
 	}
 	artifact, _, err := controlprogram.NewArtifact(compiled, controlprogram.ArtifactInput{
 		CompilerVersion: "compiler-1", SourcePath: "flow.ts", Source: files["flow.ts"],
-		DependencyLockPath: "package-lock.json", DependencyLock: files["package-lock.json"], GeneratedSkills: map[string][]byte{},
+		DependencyLockPath: "package-lock.json", DependencyLock: files["package-lock.json"], Projections: []hostprojection.ID{}, GeneratedProjections: map[string][]byte{},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := controlprogram.CheckArtifact(repository, artifact, "compiler-1", nil, nil); err != nil {
+	if _, err := controlprogram.CheckArtifact(repository, artifact, "compiler-1", nil, []hostprojection.ID{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(repository, "instructions.md"), []byte("different instructions"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := controlprogram.CheckArtifact(repository, artifact, "compiler-1", nil, nil); err == nil || !strings.Contains(err.Error(), "work asset") {
+	if _, err := controlprogram.CheckArtifact(repository, artifact, "compiler-1", nil, []hostprojection.ID{}, nil); err == nil || !strings.Contains(err.Error(), "work asset") {
 		t.Fatalf("changed work asset result = %v", err)
 	}
 }

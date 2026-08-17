@@ -23,6 +23,6 @@ descriptor but never executes it. Identity resolution proposes an actor; it
 does not grant human or external-provider authority.
 
 Configuration changes use `configuration.mutate` with `config_path` and
-`config_sha256`. That fingerprint is the SHA-256 of the strict decoded schema-3
+`config_sha256`. That fingerprint is the SHA-256 of the strict decoded schema-4
 value in canonical JSON form, not the source file's raw bytes; the CLI derives it
 when omitted. Never hand-edit controller state or reuse a V1 schema.

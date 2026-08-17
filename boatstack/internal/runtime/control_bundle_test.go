@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -68,6 +69,40 @@ func TestControlBundleCanonicalizesFilesAndBindsAbsence(t *testing.T) {
 	if replaced.Fingerprint == left.Fingerprint || replaced.Files[2].Absent {
 		t.Fatalf("runtime pin replacement did not change the canonical bundle: %#v", replaced)
 	}
+}
+
+func TestControlBundleRejectsPathsThatCanSplitGitBatchRequests(t *testing.T) {
+	for _, path := range []string{
+		".boatstack/project.json\nHEAD:.boatstack/runtime.json",
+		".boatstack/project.json\rHEAD:.boatstack/runtime.json",
+		".boatstack/project.json\x00suffix",
+	} {
+		t.Run(fmt.Sprintf("%q", path), func(t *testing.T) {
+			if _, err := NewControlBundleSnapshot(map[string][]byte{path: []byte("candidate")}); err == nil || !strings.Contains(err.Error(), "unsafe path") {
+				t.Fatalf("control path %q was not rejected: %v", path, err)
+			}
+		})
+	}
+}
+
+func TestReplaceControlBundleFileAbsentBindsRetirement(t *testing.T) {
+	snapshot, err := NewControlBundleSnapshot(map[string][]byte{
+		".boatstack/project.json":              []byte("project"),
+		".cursor/commands/boatstack-update.md": []byte("projection"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	retired, err := ReplaceControlBundleFileAbsent(snapshot, ".cursor/commands/boatstack-update.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range retired.Files {
+		if file.Path == ".cursor/commands/boatstack-update.md" && file.Absent && file.SHA256 == "" {
+			return
+		}
+	}
+	t.Fatalf("retirement is not bound: %#v", retired.Files)
 }
 
 func TestControlBundleVerifiesRootRevisionAndExactHead(t *testing.T) {
