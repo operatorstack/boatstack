@@ -37,7 +37,7 @@ func TestStateSchemaPermitsLegacyApprovedStateWithoutApprovalFingerprint(t *test
 	}
 }
 
-func TestDecodeStatePromotesReleasedSchemaFourWithoutChangingPriorBytes(t *testing.T) {
+func TestDecodeStatePromotesExactBaseSchemaWithoutChangingPriorBytes(t *testing.T) {
 	state := State{
 		SchemaVersion: StateSchemaVersion, RepositoryID: "repo", GitCommonID: "common", WorktreeID: "worktree", Revision: 7,
 		Phase: model.PhaseActive, Engagement: model.EngagementActive, Delivery: model.DeliveryApproved, Workspace: model.WorkspaceAbsent,
@@ -54,7 +54,7 @@ func TestDecodeStatePromotesReleasedSchemaFourWithoutChangingPriorBytes(t *testi
 		t.Fatal(err)
 	}
 	legacy["schema_version"] = float64(priorStateSchemaVersion)
-	delete(legacy, "control_bundle_fingerprint")
+	delete(legacy, "program_human_identity_role")
 	prior, err := json.MarshalIndent(legacy, "", "  ")
 	if err != nil {
 		t.Fatal(err)
@@ -73,10 +73,10 @@ func TestDecodeStatePromotesReleasedSchemaFourWithoutChangingPriorBytes(t *testi
 	}
 }
 
-func TestDecodeStateRejectsSchemaFourWithLaterIdentityFields(t *testing.T) {
-	raw := []byte(`{"schema_version":4,"repository_id":"repo","git_common_id":"common","worktree_id":"worktree","program_fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","planning_package_fingerprint":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","control_bundle_fingerprint":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","revision":1,"phase":"ACTIVE","engagement":"active","delivery":"approved","workspace":"absent","plan":"approved","configuration":"unsupported","runtime":"absent","publication":"none","verification":"unverified","recovery":"none","transaction":"none","terminal":"nonterminal","objective":{},"updated_at":"1970-01-01T00:00:01Z"}`)
+func TestDecodeStateRejectsBaseSchemaWithNewHumanIdentityRole(t *testing.T) {
+	raw := []byte(`{"schema_version":6,"repository_id":"repo","git_common_id":"common","worktree_id":"worktree","program_fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","program_human_identity_role":"developer","planning_package_fingerprint":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","control_bundle_fingerprint":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","revision":1,"phase":"ACTIVE","engagement":"active","delivery":"approved","workspace":"absent","plan":"approved","configuration":"unsupported","runtime":"absent","publication":"none","verification":"unverified","recovery":"none","transaction":"none","terminal":"nonterminal","objective":{},"updated_at":"1970-01-01T00:00:01Z"}`)
 	if _, err := DecodeState(raw); err == nil {
-		t.Fatal("schema-4 state smuggled later identity fields")
+		t.Fatal("base schema state smuggled the new human identity role")
 	}
 }
 

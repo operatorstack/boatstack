@@ -814,9 +814,8 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 	if err := json.Unmarshal(afterSuccess, &legacyState); err != nil {
 		t.Fatal(err)
 	}
-	legacyState["schema_version"] = float64(4)
-	delete(legacyState, "planning_package_fingerprint")
-	delete(legacyState, "control_bundle_fingerprint")
+	legacyState["schema_version"] = float64(6)
+	delete(legacyState, "program_human_identity_role")
 	legacyRaw, err := json.MarshalIndent(legacyState, "", "  ")
 	if err != nil {
 		t.Fatal(err)
@@ -834,7 +833,7 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacyPin.StateSchemaVersion = 4
+	legacyPin.StateSchemaVersion = 6
 	legacyPinRaw, err = boatstackruntime.EncodePin(legacyPin)
 	if err != nil {
 		t.Fatal(err)
@@ -869,7 +868,7 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 		updatedState.Delivery != priorState.Delivery || updatedState.Workspace != priorState.Workspace || updatedState.Plan != priorState.Plan ||
 		updatedState.Configuration != priorState.Configuration || updatedState.Publication != priorState.Publication || updatedState.Verification != priorState.Verification ||
 		updatedState.Terminal != priorState.Terminal || updatedState.PlanFingerprint != priorState.PlanFingerprint || updatedState.ApprovalFingerprint != priorState.ApprovalFingerprint {
-		t.Fatalf("schema-4 update changed existing product facets: before=%#v after=%#v", priorState, updatedState)
+		t.Fatalf("base-schema update changed existing product facets: before=%#v after=%#v", priorState, updatedState)
 	}
 	updatedPinRaw, err := os.ReadFile(legacyPinPath)
 	if err != nil {

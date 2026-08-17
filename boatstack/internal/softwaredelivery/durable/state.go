@@ -15,7 +15,7 @@ import (
 
 const (
 	StateSchemaVersion      = 7
-	priorStateSchemaVersion = 4
+	priorStateSchemaVersion = 6
 )
 
 // CanReadStateSchema reports the current schema and its single supported
@@ -252,7 +252,7 @@ func DecodeState(value []byte) (State, error) {
 		return State{}, fmt.Errorf("durable state contains trailing JSON")
 	}
 	if state.SchemaVersion == priorStateSchemaVersion {
-		if state.PlanningPackageFingerprint != "" || state.ControlBundleFingerprint != "" || state.ProgramHumanIdentityRole != "" {
+		if state.ProgramHumanIdentityRole != "" {
 			return State{}, fmt.Errorf("durable state schema %d contains later identity fields", priorStateSchemaVersion)
 		}
 		state.SchemaVersion = StateSchemaVersion
