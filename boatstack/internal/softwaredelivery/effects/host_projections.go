@@ -220,8 +220,18 @@ func prepareHostProjectionMutations(repository string, projections []hostproject
 		if readErr != nil {
 			return nil, readErr
 		}
-		if exists && !manifestExists && !strings.EqualFold(sha256Bytes(current), sha256Bytes(desired[relative])) {
-			return nil, fmt.Errorf("unmanaged file collides with Boatstack host projection %s", relative)
+		_, maintenanceOwned := prior.Files[relative]
+		if exists && !maintenanceOwned {
+			flowOwned := false
+			if hostprojection.IsSharedCheckoutPath(relative) && strings.EqualFold(sha256Bytes(current), sha256Bytes(desired[relative])) {
+				flowOwned, err = boatstackruntime.SharedFlowProjectionReferenced(repository, relative, sha256Bytes(desired[relative]))
+				if err != nil {
+					return nil, err
+				}
+			}
+			if !flowOwned {
+				return nil, fmt.Errorf("unmanaged file collides with Boatstack host projection %s", relative)
+			}
 		}
 		if !exists || !strings.EqualFold(sha256Bytes(current), sha256Bytes(desired[relative])) {
 			mutation, mutationErr := mutationFor(absolute, desired[relative], 0o644, false, false)

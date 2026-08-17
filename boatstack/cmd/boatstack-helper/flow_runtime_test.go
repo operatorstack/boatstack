@@ -1214,6 +1214,38 @@ func TestWorkspaceCutRejectsControlBundleThatIsNotInBaseRevision(t *testing.T) {
 	}
 }
 
+func TestInstallationInitializeRejectsArtifactsFromDifferentCandidateProjectionSelection(t *testing.T) {
+	// control-law: initialization-target-artifacts-match-the-candidate-project-selection
+	repository := flowRepository(t)
+	candidateRaw := []byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude"],"projections":["codex"]}`)
+	candidatePath := filepath.Join(t.TempDir(), "project.json")
+	if err := os.WriteFile(candidatePath, candidateRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, candidateFingerprint, err := protocol.ProjectConfigFingerprint(candidateRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectBefore, err := os.ReadFile(filepath.Join(repository, ".boatstack", "project.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, _, err := bindControlBundle(context.Background(), repository, "installation.initialize", protocol.Parameters{
+		{Name: "config_path", Value: candidatePath},
+		{Name: "config_sha256", Value: candidateFingerprint},
+	})
+	if err == nil || !strings.Contains(err.Error(), "FLOW_PROJECTION_SELECTION_STALE") {
+		t.Fatalf("mismatched initialization target = contract %#v, err %v", contract, err)
+	}
+	projectAfter, readErr := os.ReadFile(filepath.Join(repository, ".boatstack", "project.json"))
+	if readErr != nil || string(projectAfter) != string(projectBefore) {
+		t.Fatalf("refused initialization changed project config: %q, %v", projectAfter, readErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(repository, ".boatstack", "host-projections.json")); !os.IsNotExist(statErr) {
+		t.Fatalf("refused initialization installed maintenance manifest: %v", statErr)
+	}
+}
+
 func TestWorkspaceCutRejectsUncommittedRuntimePinBeforeEffect(t *testing.T) {
 	// control-law: a runtime pin cannot outrun the committed Flow projection
 	repository := flowRepository(t)

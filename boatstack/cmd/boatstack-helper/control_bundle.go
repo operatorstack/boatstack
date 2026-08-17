@@ -257,6 +257,33 @@ func replaceHostProjectionBundle(repository string, snapshot boatstackruntime.Co
 	return projected, nil
 }
 
+func validateRepositoryFlowArtifactsForProjections(ctx context.Context, repository string, projections []hostprojection.ID) error {
+	artifacts, err := filepath.Glob(filepath.Join(repository, ".boatstack", "flows", "*.flow.ir.json"))
+	if err != nil {
+		return err
+	}
+	sort.Strings(artifacts)
+	resolver, err := softwareflow.NewResolver(ctx)
+	if err != nil {
+		return err
+	}
+	for _, artifactPath := range artifacts {
+		raw, readErr := os.ReadFile(artifactPath)
+		if readErr != nil {
+			return readErr
+		}
+		artifact, loadErr := controlprogram.LoadArtifact(bytes.NewReader(raw))
+		if loadErr != nil {
+			return loadErr
+		}
+		if _, checkErr := controlprogram.CheckArtifact(repository, artifact, flowCompilerVersion, resolver, projections, generateSoftwareFlowProjections); checkErr != nil {
+			relative, _ := filepath.Rel(repository, artifactPath)
+			return fmt.Errorf("CONTROL_BUNDLE_TARGET_INVALID: Flow artifact %s does not match candidate project configuration: %w", filepath.ToSlash(relative), checkErr)
+		}
+	}
+	return nil
+}
+
 func controlBundleRequired(id catalog.TransitionID) bool {
 	switch id {
 	case "runtime.hydrate", "runtime.replace", "runtime.reconcile", "installation.initialize", "installation.update", "installation.reconcile-update", "catalog.reconcile",
@@ -319,6 +346,9 @@ func bindControlBundle(ctx context.Context, repository string, transitionID cata
 		}
 		projections, projectionErr := config.ProjectionIDs()
 		if projectionErr != nil {
+			return nil, "", projectionErr
+		}
+		if projectionErr = validateRepositoryFlowArtifactsForProjections(ctx, repository, projections); projectionErr != nil {
 			return nil, "", projectionErr
 		}
 		hostFiles, manifestRaw, projectionErr := effects.ProjectedHostProjectionFiles(projections)

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/hostprojection"
+	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/ports"
 )
@@ -176,6 +177,99 @@ func TestHostProjectionProjectionFailsClosedOnUnmanagedCollision(t *testing.T) {
 	}
 	if raw, err := os.ReadFile(path); err != nil || string(raw) != "user owned\n" {
 		t.Fatalf("collision mutated user file: %q %v", raw, err)
+	}
+}
+
+func TestHostProjectionProjectionRefusesUnlistedSharedMetadataWithExistingManifest(t *testing.T) {
+	// control-law: maintenance-ownership-is-proved-per-path-even-for-equal-shared-bytes
+	for _, projection := range []hostprojection.ID{hostprojection.Cursor, hostprojection.Gemini} {
+		t.Run(string(projection), func(t *testing.T) {
+			repository, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(filepath.Join(repository, ".git"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			initial, err := prepareHostProjectionMutations(repository, []hostprojection.ID{hostprojection.Codex})
+			if err != nil {
+				t.Fatal(err)
+			}
+			applyMutationsForTest(t, initial)
+			manifestPath := filepath.Join(repository, ".boatstack", "host-projections.json")
+			manifestBefore, err := os.ReadFile(manifestPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sharedRelative, sharedContent, ok := hostprojection.SharedCheckoutPath(projection)
+			if !ok {
+				t.Fatalf("%s has no shared checkout metadata", projection)
+			}
+			sharedPath := filepath.Join(repository, filepath.FromSlash(sharedRelative))
+			if err := os.MkdirAll(filepath.Dir(sharedPath), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(sharedPath, sharedContent, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := prepareHostProjectionMutations(repository, []hostprojection.ID{hostprojection.Codex, projection}); err == nil || !strings.Contains(err.Error(), "unmanaged file collides") {
+				t.Fatalf("equal-byte unowned collision was not rejected: %v", err)
+			}
+			if actual, err := os.ReadFile(sharedPath); err != nil || string(actual) != string(sharedContent) {
+				t.Fatalf("unowned shared metadata changed: %q, %v", actual, err)
+			}
+			if manifestAfter, err := os.ReadFile(manifestPath); err != nil || string(manifestAfter) != string(manifestBefore) {
+				t.Fatalf("manifest changed after refusal: %q, %v", manifestAfter, err)
+			}
+		})
+	}
+}
+
+func TestHostProjectionProjectionMayAddMaintenanceOwnerForExactFlowMetadata(t *testing.T) {
+	// control-law: an exact Flow owner permits shared maintenance reference-counting
+	repository, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(repository, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	initial, err := prepareHostProjectionMutations(repository, []hostprojection.ID{hostprojection.Codex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	applyMutationsForTest(t, initial)
+	sharedRelative, sharedContent, _ := hostprojection.SharedCheckoutPath(hostprojection.Cursor)
+	source := ".boatstack/flows/shared.flow.ts"
+	artifact := ".boatstack/flows/shared.flow.ir.json"
+	artifactRaw := []byte("artifact")
+	prior, err := boatstackruntime.LoadFlowProjectionOwnership(repository, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := boatstackruntime.NewFlowProjectionOwnership(source, artifact, artifactRaw, strings.Repeat("a", 64), map[string][]byte{sharedRelative: sharedContent})
+	writes := []boatstackruntime.ProjectionWrite{
+		{Path: filepath.Join(repository, filepath.FromSlash(sharedRelative)), Content: sharedContent, Mode: 0o644},
+		{Path: filepath.Join(repository, filepath.FromSlash(artifact)), Content: artifactRaw, Mode: 0o644, PublishLast: true},
+	}
+	if err := boatstackruntime.ApplyOwnedFlowProjection(repository, writes, nil, nil, prior, next); err != nil {
+		t.Fatal(err)
+	}
+	mutations, err := prepareHostProjectionMutations(repository, []hostprojection.ID{hostprojection.Codex, hostprojection.Cursor})
+	if err != nil {
+		t.Fatalf("exact Flow-owned shared metadata was rejected: %v", err)
+	}
+	applyMutationsForTest(t, mutations)
+	manifestRaw, err := os.ReadFile(filepath.Join(repository, ".boatstack", "host-projections.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest hostProjectionManifest
+	if err := decodeHostProjectionManifest(manifestRaw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Files[sharedRelative] != sha256Bytes(sharedContent) {
+		t.Fatalf("maintenance manifest did not bind shared metadata: %#v", manifest.Files)
 	}
 }
 
