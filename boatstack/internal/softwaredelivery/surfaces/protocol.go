@@ -20,7 +20,7 @@ import (
 	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
-const SchemaVersion = 14
+const SchemaVersion = 15
 
 var flowContextIdentity = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 var gitObjectIdentity = regexp.MustCompile(`^[0-9a-f]{40,64}$`)

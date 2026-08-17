@@ -11,7 +11,7 @@
 /** Canonical schema name emitted by {@link defineFlow}. */
 export const CONTROL_PROGRAM_SCHEMA = "control-program" as const;
 /** Current revision of the canonical Control Program schema. */
-export const CONTROL_PROGRAM_SCHEMA_REVISION = 4 as const;
+export const CONTROL_PROGRAM_SCHEMA_REVISION = 5 as const;
 
 /**
  * A declarative condition over runtime state facts.
@@ -272,6 +272,7 @@ export interface DelegationBindingDefinition {
 export interface FlowDefinition {
   id: string;
   version: string;
+  human_identity?: string;
   description?: string;
   declarations?: {
     capabilities?: string[];
@@ -293,7 +294,7 @@ export interface FlowDefinition {
 export interface ControlProgramIR {
   schema: typeof CONTROL_PROGRAM_SCHEMA;
   schema_revision: typeof CONTROL_PROGRAM_SCHEMA_REVISION;
-  program: { id: string; version: string; description?: string };
+  program: { id: string; version: string; human_identity?: string; description?: string };
   declarations: NonNullable<FlowDefinition["declarations"]>;
   facets: FacetDefinition[];
   evidence: EvidenceDefinition[];
@@ -331,6 +332,9 @@ export function defineFlow(definition: FlowDefinition): ControlProgramIR {
     program: {
       id: definition.id,
       version: definition.version,
+      ...(definition.human_identity
+        ? { human_identity: definition.human_identity }
+        : {}),
       ...(definition.description
         ? { description: definition.description }
         : {}),

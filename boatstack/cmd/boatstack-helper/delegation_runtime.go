@@ -39,7 +39,7 @@ func canReprojectDelegation(layout ports.ControllerLayout, invocation model.Invo
 		prior,
 		current,
 		func() (bool, error) {
-			return effects.ConfigurationReprojectionAdmits(layout, current.RunID, invocation, current.HumanIdentityProviderFingerprint, current.ControlBundleFingerprint)
+			return effects.ConfigurationReprojectionAdmits(layout, current.RunID, invocation, current.HumanIdentityRole, current.HumanIdentityProviderFingerprint, current.ControlBundleFingerprint)
 		},
 		func() (bool, error) {
 			return effects.InstallationReprojectionAdmits(layout, current.RunID, invocation, current.ControlBundleFingerprint)
@@ -48,7 +48,7 @@ func canReprojectDelegation(layout ports.ControllerLayout, invocation model.Invo
 }
 
 func admittedDelegationReprojection(prior, current delegation.Request, configurationAdmits, installationAdmits func() (bool, error)) (bool, error) {
-	configurationChanged := prior.ControlBundleFingerprint != current.ControlBundleFingerprint || prior.HumanIdentityProviderFingerprint != current.HumanIdentityProviderFingerprint
+	configurationChanged := prior.ControlBundleFingerprint != current.ControlBundleFingerprint || prior.HumanIdentityRole != current.HumanIdentityRole || prior.HumanIdentityProviderFingerprint != current.HumanIdentityProviderFingerprint
 	if prior.ProgramFingerprint == current.ProgramFingerprint && configurationChanged {
 		admitted, err := configurationAdmits()
 		if err != nil || admitted {
@@ -130,13 +130,13 @@ func prepareDelegation(ctx context.Context, request *surfaces.Request) (ports.Lo
 		releaseOnError()
 		return nil, nil, err
 	}
-	if record.RequestFingerprint != request.DelegationRequestFingerprint || record.Request.RunID != request.FlowID || record.Request.ProgramID != request.ProgramID || record.Request.ProgramFingerprint != request.ProgramFingerprint || record.Request.ControlBundleFingerprint != request.ControlBundleFingerprint || record.Request.EntryID != request.EntryID || record.Request.TargetID != string(request.Objective.TargetID) || record.Request.ObjectiveID != request.Objective.ID || record.Request.DeliveryID != request.Objective.DeliveryID || record.Request.RepositoryID != invocation.RepositoryID || record.Request.GitCommonID != invocation.GitCommonID || record.Request.BindingFingerprint != request.DelegationBindingFingerprint || record.Request.HumanIdentityProviderFingerprint != presentation.ProviderFingerprint || record.ActorIdentityProviderFingerprint != presentation.ProviderFingerprint {
+	if record.RequestFingerprint != request.DelegationRequestFingerprint || record.Request.RunID != request.FlowID || record.Request.ProgramID != request.ProgramID || record.Request.ProgramFingerprint != request.ProgramFingerprint || record.Request.ControlBundleFingerprint != request.ControlBundleFingerprint || record.Request.EntryID != request.EntryID || record.Request.TargetID != string(request.Objective.TargetID) || record.Request.ObjectiveID != request.Objective.ID || record.Request.DeliveryID != request.Objective.DeliveryID || record.Request.RepositoryID != invocation.RepositoryID || record.Request.GitCommonID != invocation.GitCommonID || record.Request.BindingFingerprint != request.DelegationBindingFingerprint || record.Request.HumanIdentityRole != presentation.Role || record.Request.HumanIdentityProviderFingerprint != presentation.ProviderFingerprint || record.ActorIdentityRole != presentation.Role || record.ActorIdentityProviderFingerprint != presentation.ProviderFingerprint {
 		current := record.Request
 		current.RunID, current.ProgramID, current.ProgramFingerprint, current.ControlBundleFingerprint = request.FlowID, request.ProgramID, request.ProgramFingerprint, request.ControlBundleFingerprint
 		current.EntryID, current.TargetID, current.ObjectiveID, current.DeliveryID = request.EntryID, string(request.Objective.TargetID), request.Objective.ID, request.Objective.DeliveryID
 		current.RepositoryID, current.GitCommonID = invocation.RepositoryID, invocation.GitCommonID
 		current.InitialWorktreeID, current.InitialRef = invocation.WorktreeID, invocation.Ref
-		current.BindingFingerprint, current.HumanIdentityProviderFingerprint = request.DelegationBindingFingerprint, presentation.ProviderFingerprint
+		current.BindingFingerprint, current.HumanIdentityRole, current.HumanIdentityProviderFingerprint = request.DelegationBindingFingerprint, presentation.Role, presentation.ProviderFingerprint
 		current.RequestedAuthorities = make([]string, len(request.DelegatedAuthorities))
 		for index, authority := range request.DelegatedAuthorities {
 			current.RequestedAuthorities[index] = string(authority)

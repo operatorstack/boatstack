@@ -168,7 +168,7 @@ func TestTrustedControlBundleRejectsHeadDriftWithMatchingWorkingTree(t *testing.
 func TestProjectionSelectionChangesProjectAndControlBundleNotProgram(t *testing.T) {
 	// control-law: projection-files-never-become-executable-control-authority
 	config := func(projections string) []byte {
-		return []byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude","cursor","gemini"],"projections":` + projections + `}`)
+		return []byte(`{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"literal","value":"operator"}}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude","cursor","gemini"],"projections":` + projections + `}`)
 	}
 	codexRaw, allRaw := config(`["codex"]`), config(`["codex","claude","cursor","gemini"]`)
 	codexConfig, codexProjectFingerprint, err := protocol.ProjectConfigFingerprint(codexRaw)
@@ -303,7 +303,7 @@ func TestFreshFlowInitializationRejectsDirtyCanonicalConfigurationBeforeEffects(
 	runFlowGit(t, repository, "add", ".")
 	runFlowGit(t, repository, "commit", "-q", "-m", "fixture")
 
-	writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"dirty","default_branch":"main","commands":{"test":"false"}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude"],"projections":["codex","claude"]}`))
+	writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"literal","value":"operator"}}},"project":{"name":"dirty","default_branch":"main","commands":{"test":"false"}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude"],"projections":["codex","claude"]}`))
 	questionRaw, err := captureRunOutput(t,
 		"flow", "run", "--repo", repository, "--flow", "product-delivery", "--entry", "run",
 		"--repository-authority", "--host", "codex", "--format", "json",
@@ -400,6 +400,7 @@ func writeAdmittedFlowProgramState(t *testing.T, repository, programFingerprint 
 	}
 	state := durable.Default(invoking, time.Now().UTC())
 	state.ProgramFingerprint = programFingerprint
+	state.ProgramHumanIdentityRole = "developer"
 	state.ControlBundleFingerprint = bundleFingerprint
 	configRaw, err := os.ReadFile(layout.ConfigPath)
 	if err != nil {
@@ -449,6 +450,26 @@ func writeVerifiedFlowConfigurationState(t *testing.T, repository string) {
 		t.Fatal(err)
 	}
 	state := durable.Default(invoking, time.Now().UTC())
+	artifacts, err := os.ReadDir(filepath.Join(repository, ".boatstack", "flows"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range artifacts {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".flow.ir.json") {
+			continue
+		}
+		raw, readErr := os.ReadFile(filepath.Join(repository, ".boatstack", "flows", entry.Name()))
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		artifact, loadErr := controlprogram.LoadArtifact(bytes.NewReader(raw))
+		if loadErr != nil {
+			t.Fatal(loadErr)
+		}
+		state.ProgramFingerprint = artifact.ProgramFingerprint
+		state.ProgramHumanIdentityRole = artifact.Program.Program.HumanIdentity
+		break
+	}
 	policy := config.ControlPolicy()
 	state.Configuration, state.ConfigFingerprint = model.ConfigurationVerified, configFingerprint
 	state.PlanApprovalPolicy, state.VisualEvidencePolicy, state.ExternalEffectPolicy = policy.PlanApproval, policy.VisualEvidence, policy.ExternalEffectAuthority
@@ -647,7 +668,7 @@ func writeFlowArtifact(t *testing.T, repository string, document controlprogram.
 	t.Helper()
 	projectPath := filepath.Join(repository, ".boatstack", "project.json")
 	if _, err := os.Stat(projectPath); os.IsNotExist(err) {
-		writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude"],"projections":["codex","claude"]}`))
+		writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"literal","value":"operator"}}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude"],"projections":["codex","claude"]}`))
 	}
 	resolver, err := softwareflow.NewResolver(context.Background())
 	if err != nil {
@@ -676,7 +697,7 @@ func writeFlowArtifact(t *testing.T, repository string, document controlprogram.
 
 func writeProjectionProjectConfig(t *testing.T, repository string) {
 	t.Helper()
-	writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude"],"projections":["codex","claude"]}`))
+	writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"literal","value":"operator"}}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude"],"projections":["codex","claude"]}`))
 }
 
 func writeMaintenanceProjectionFixture(t *testing.T, repository string) {
@@ -718,7 +739,7 @@ func productDeliveryDocument(programID string) controlprogram.Document {
 	config := json.RawMessage(`{"path":".boatstack/plans/inbox","cardinality":"exactly-one"}`)
 	return controlprogram.Document{
 		Schema: controlprogram.SchemaName, SchemaRevision: controlprogram.SchemaRevision,
-		Program:      controlprogram.Program{ID: programID, Version: "1"},
+		Program:      controlprogram.Program{ID: programID, Version: "1", HumanIdentity: "developer"},
 		Declarations: controlprogram.Declarations{InputResolvers: []string{"software-delivery.plan-inbox"}},
 		Facets: []controlprogram.Facet{
 			{ID: "publication", Kind: "string"}, {ID: "verification", Kind: "string"},
@@ -1217,7 +1238,7 @@ func TestWorkspaceCutRejectsControlBundleThatIsNotInBaseRevision(t *testing.T) {
 func TestInstallationInitializeRejectsArtifactsFromDifferentCandidateProjectionSelection(t *testing.T) {
 	// control-law: initialization-target-artifacts-match-the-candidate-project-selection
 	repository := flowRepository(t)
-	candidateRaw := []byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude"],"projections":["codex"]}`)
+	candidateRaw := []byte(`{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"literal","value":"operator"}}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude"],"projections":["codex"]}`)
 	candidatePath := filepath.Join(t.TempDir(), "project.json")
 	if err := os.WriteFile(candidatePath, candidateRaw, 0o600); err != nil {
 		t.Fatal(err)
@@ -1456,7 +1477,7 @@ func TestFlowRefreshPreservesTrustedMaintenanceParameters(t *testing.T) {
 	options, err := bindFlowEntry(context.Background(), commandOptions{
 		repository: repository, programID: "product-delivery", entryID: "run", host: "codex",
 		transitionID: "installation.reconcile-update", parameters: parameters,
-		maintenanceParameterSurface: true, humanActor: "operator",
+		maintenanceParameterSurface: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1502,6 +1523,190 @@ func TestProgramChangePreflightRequiresExactTypedRecoverySurface(t *testing.T) {
 	response.ProgramChange.AcceptanceFlag = "--implicit"
 	if isExactProgramChangeSuspension(response) {
 		t.Fatal("noncanonical acceptance surface delayed delegation")
+	}
+}
+
+func TestRolelessStandardInstallationCanAdmitFirstRoleBoundFlow(t *testing.T) {
+	// control-law: a roleless Standard installation has no prior Flow identity
+	// authority; its first Flow admission uses the verified configuration default
+	// and atomically persists the admitted Flow role.
+	t.Setenv("BOATSTACK_STATE_ROOT", t.TempDir())
+	runtimeHome := t.TempDir()
+	t.Setenv(boatstackruntime.HomeEnvironment, runtimeHome)
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeRaw, err := os.ReadFile(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := boatstackruntime.InstallExecutable(executable, runtimeHome, boatstackruntime.Identity{Version: buildinfo.Version, SHA256: hash(runtimeRaw), SourceRevision: buildRevision()}); err != nil {
+		t.Fatal(err)
+	}
+	repository := flowRepository(t)
+	runFlowGit(t, repository, "init", "-q")
+	runFlowGit(t, repository, "config", "user.email", "fixture@example.invalid")
+	runFlowGit(t, repository, "config", "user.name", "Fixture")
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "fixture")
+
+	output, err := captureRunOutput(t,
+		"init", "--repo", repository,
+		"--param", "config_path="+filepath.Join(repository, ".boatstack", "project.json"), "--human", "operator", "--host", "codex", "--format", "json",
+	)
+	if err != nil {
+		t.Fatalf("initialize Standard program: %v\n%s", err, output)
+	}
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "commit initialized control bundle")
+
+	resolver, err := plant.NewResolver("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, err := resolver.ResolveInvocation(context.Background(), repository, "codex", "roleless-standard-state")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, _, err := resolver.ResolveLayout(context.Background(), invocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stateRaw, err := os.ReadFile(layout.StatePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := durable.DecodeState(stateRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.ProgramHumanIdentityRole != "" {
+		t.Fatalf("Standard installation unexpectedly admitted Flow role %q", state.ProgramHumanIdentityRole)
+	}
+
+	bound, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err = captureRunOutput(t,
+		"reconcile-update", "--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", bound.runID,
+		"--accept-program-change", "--human", "operator", "--host", "codex", "--format", "json",
+	)
+	if err != nil {
+		t.Fatalf("admit first role-bound Flow: %v\n%s", err, output)
+	}
+	var reconciled surfaces.Response
+	if err := json.Unmarshal(output, &reconciled); err != nil {
+		t.Fatal(err)
+	}
+	if reconciled.Receipt == nil || reconciled.Receipt.TransitionID != "installation.reconcile-update" {
+		t.Fatalf("first Flow reconciliation response = %#v", reconciled)
+	}
+	stateRaw, err = os.ReadFile(layout.StatePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err = durable.DecodeState(stateRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.ProgramHumanIdentityRole != "developer" || state.ProgramFingerprint == "" || state.ProgramFingerprint != reconciled.Receipt.Program.Fingerprint {
+		t.Fatalf("first Flow admission did not persist receipt-bound role and program: role=%q fingerprint=%q receipt=%q", state.ProgramHumanIdentityRole, state.ProgramFingerprint, reconciled.Receipt.Program.Fingerprint)
+	}
+}
+
+func TestDelegationAuthorizationRequiresAdmittedCandidateProgram(t *testing.T) {
+	// control-law: delegation bound to a candidate Flow cannot be authorized
+	// before installation reconciliation durably admits that candidate.
+	t.Setenv("BOATSTACK_STATE_ROOT", t.TempDir())
+	runtimeHome := t.TempDir()
+	t.Setenv(boatstackruntime.HomeEnvironment, runtimeHome)
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeRaw, err := os.ReadFile(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := boatstackruntime.InstallExecutable(executable, runtimeHome, boatstackruntime.Identity{Version: buildinfo.Version, SHA256: hash(runtimeRaw), SourceRevision: buildRevision()}); err != nil {
+		t.Fatal(err)
+	}
+	repository := flowRepository(t)
+	document := productDeliveryDocument("product-delivery")
+	document.Entries[0].Delegation = &controlprogram.DelegationBinding{Reference: "software-delivery/delegation/autonomy", Version: "1"}
+	writeFlowArtifact(t, repository, document, ".boatstack/flows/product-delivery.flow.ts", []byte("flow source"), "package-lock.json", []byte("lock"))
+	runFlowGit(t, repository, "init", "-q")
+	runFlowGit(t, repository, "config", "user.email", "fixture@example.invalid")
+	runFlowGit(t, repository, "config", "user.name", "Fixture")
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "fixture")
+	output, err := captureRunOutput(t,
+		"init", "--repo", repository,
+		"--param", "config_path="+filepath.Join(repository, ".boatstack", "project.json"), "--human", "operator", "--host", "codex", "--format", "json",
+	)
+	if err != nil {
+		t.Fatalf("initialize Standard program: %v\n%s", err, output)
+	}
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "commit initialized control bundle")
+
+	candidate, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex", delegationRequestProjection: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorize := func(bound commandOptions) error {
+		return runFlowAuthorize([]string{
+			"--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", bound.runID,
+			"--request-fingerprint", bound.delegationRequestFingerprint,
+			"--human-identity-provider-fingerprint", bound.delegationRequest.HumanIdentityProviderFingerprint,
+			"--human", "operator", "--host", "codex",
+		})
+	}
+	if err := authorize(candidate); err == nil || !strings.Contains(err.Error(), "DELEGATION_PROGRAM_UNADMITTED") {
+		t.Fatalf("pre-admission delegation authorization = %v", err)
+	}
+	resolver, err := plant.NewResolver("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, err := resolver.ResolveInvocation(context.Background(), repository, "codex", "pre-admission-delegation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, _, err := resolver.ResolveLayout(context.Background(), invocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordPath, err := delegation.Path(layout.FlowRoot, candidate.runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(recordPath); !os.IsNotExist(err) {
+		t.Fatalf("pre-admission authorization created delegation record: %v", err)
+	}
+
+	output, err = captureRunOutput(t,
+		"reconcile-update", "--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", candidate.runID,
+		"--accept-program-change", "--human", "operator", "--host", "codex", "--format", "json",
+	)
+	if err != nil {
+		t.Fatalf("admit delegated Flow: %v\n%s", err, output)
+	}
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "commit admitted Flow bundle")
+	admitted, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", runID: candidate.runID, host: "codex", delegationRequestProjection: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := captureStdout(t, func() error { return authorize(admitted) }); err != nil {
+		t.Fatalf("post-admission delegation authorization: %v", err)
+	}
+	if _, err := delegation.Load(recordPath); err != nil {
+		t.Fatalf("post-admission authorization did not store delegation: %v", err)
 	}
 }
 
@@ -1647,7 +1852,7 @@ func TestFlowCompileRejectsProjectSelectionChangedDuringFrontend(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFixture(t, repository, "raw-ir.json", documentRaw)
-	changed := `{"schema_version":4,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude"],"projections":["codex"]}`
+	changed := `{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"literal","value":"operator"}}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude"],"projections":["codex"]}`
 	writeFixture(t, repository, "changed-project.json", []byte(changed))
 	frontend := filepath.Join(repository, "frontend.sh")
 	script := []byte("#!/bin/sh\ncat >/dev/null\ncp '" + filepath.Join(repository, "changed-project.json") + "' '" + filepath.Join(repository, ".boatstack", "project.json") + "'\ncat '" + filepath.Join(repository, "raw-ir.json") + "'\n")
@@ -1728,6 +1933,71 @@ func TestFlowCompileNamesDefaultArtifactFromProgramID(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(repository, ".boatstack", "flows", "foo.flow.ir.json")); !os.IsNotExist(err) {
 		t.Fatalf("source-stem artifact exists: %v", err)
 	}
+}
+
+func TestFlowCompileAndCheckRejectUnboundHumanIdentityBeforePublication(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+	setup := func(t *testing.T, includeRole bool) (string, flowCommandOptions) {
+		t.Helper()
+		repository, err := filepath.EvalSymlinks(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		document := productDeliveryDocument("product-delivery")
+		document.Program.HumanIdentity = "release-manager"
+		documentRaw, _ := json.Marshal(document)
+		writeFixture(t, repository, ".boatstack/flows/product-delivery.flow.ts", []byte("declarative source"))
+		writeFixture(t, repository, ".git/keep", nil)
+		writeFixture(t, repository, "package-lock.json", []byte("lock"))
+		writeFixture(t, repository, "raw-ir.json", documentRaw)
+		frontend := filepath.Join(repository, "frontend.sh")
+		script := []byte("#!/bin/sh\ncat >/dev/null\ncat '" + filepath.Join(repository, "raw-ir.json") + "'\n")
+		if err := os.WriteFile(frontend, script, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		roles := `"developer":{"kind":"literal","value":"operator"}`
+		if includeRole {
+			roles += `,"release-manager":{"kind":"literal","value":"release-operator"}`
+		}
+		writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":5,"identity":{"default":"developer","roles":{`+roles+`}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex"],"projections":["codex"]}`))
+		return repository, flowCommandOptions{repository: repository, source: ".boatstack/flows/product-delivery.flow.ts", lock: "package-lock.json", frontend: frontend}
+	}
+
+	t.Run("compile", func(t *testing.T) {
+		repository, options := setup(t, false)
+		err := compileFlow(context.Background(), options)
+		if err == nil || !strings.Contains(err.Error(), "CONTROL_PROGRAM_HUMAN_IDENTITY_UNBOUND") {
+			t.Fatalf("unbound compile result = %v", err)
+		}
+		for _, path := range []string{".boatstack/flows/product-delivery.flow.ir.json", ".agents/skills/product-delivery-run/SKILL.md"} {
+			if _, statErr := os.Stat(filepath.Join(repository, filepath.FromSlash(path))); !os.IsNotExist(statErr) {
+				t.Fatalf("unbound compile published %s: %v", path, statErr)
+			}
+		}
+	})
+
+	t.Run("check", func(t *testing.T) {
+		repository, options := setup(t, true)
+		if err := compileFlow(context.Background(), options); err != nil {
+			t.Fatal(err)
+		}
+		artifactPath := filepath.Join(repository, ".boatstack", "flows", "product-delivery.flow.ir.json")
+		before, err := os.ReadFile(artifactPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"literal","value":"operator"}}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex"],"projections":["codex"]}`))
+		err = checkFlow(context.Background(), flowCommandOptions{repository: repository})
+		if err == nil || !strings.Contains(err.Error(), "CONTROL_PROGRAM_HUMAN_IDENTITY_UNBOUND") {
+			t.Fatalf("unbound check result = %v", err)
+		}
+		after, readErr := os.ReadFile(artifactPath)
+		if readErr != nil || !bytes.Equal(before, after) {
+			t.Fatalf("failed check changed artifact: %v", readErr)
+		}
+	})
 }
 
 func TestFlowCompileProjectsHyphenatedEntryIdentity(t *testing.T) {
@@ -2810,7 +3080,7 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	record := delegation.Record{
 		Schema: delegation.Schema, SchemaRevision: delegation.SchemaRevision,
 		Request: bound.delegationRequest, RequestFingerprint: bound.delegationRequestFingerprint,
-		ReceiptID: "authorization-test", Actor: "operator", ActorIdentityProviderFingerprint: bound.delegationRequest.HumanIdentityProviderFingerprint,
+		ReceiptID: "authorization-test", Actor: "operator", ActorIdentityRole: bound.delegationRequest.HumanIdentityRole, ActorIdentityProviderFingerprint: bound.delegationRequest.HumanIdentityProviderFingerprint,
 		AuthorizedAt: now, Revision: 1, Status: "active",
 	}
 	if err := effects.StoreDelegationRecord(recordPath, record); err != nil {
@@ -2870,7 +3140,7 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 		t.Fatal(err)
 	}
 	replayedResponse, err := replayedKernel.Handle(context.Background(), replayedExplain)
-	if err != nil || replayedResponse.Decision == nil || replayedResponse.Decision.Kind != supervisor.DecisionFrontier {
+	if err != nil || replayedResponse.Decision == nil || replayedResponse.Decision.Kind != supervisor.DecisionUnresolved || !strings.Contains(replayedResponse.Decision.Reason, "program drift") {
 		t.Fatalf("missing-record explain decision = %#v, err=%v", replayedResponse.Decision, err)
 	}
 	if _, err := os.Stat(recordPath); !os.IsNotExist(err) {
@@ -2987,7 +3257,7 @@ func TestExplicitAuthorizationCanReplaceRevokedPreReconciliationRequest(t *testi
 		RunID: "run-example", ProgramID: "product-delivery", ProgramFingerprint: strings.Repeat("a", 64), ControlBundleFingerprint: strings.Repeat("b", 64),
 		EntryID: "run", TargetID: "published-pr", ObjectiveID: "objective", DeliveryID: "delivery", InputFingerprints: []string{"plan"},
 		RepositoryID: "repository", GitCommonID: "common", InitialWorktreeID: "worktree", InitialRef: "refs/heads/main",
-		BindingFingerprint: strings.Repeat("c", 64), HumanIdentityProviderFingerprint: strings.Repeat("f", 64), RequestedAuthorities: []string{"autonomy"}, Description: "Run product delivery",
+		BindingFingerprint: strings.Repeat("c", 64), HumanIdentityRole: "developer", HumanIdentityProviderFingerprint: strings.Repeat("f", 64), RequestedAuthorities: []string{"autonomy"}, Description: "Run product delivery",
 	}
 	priorFingerprint, err := prior.Fingerprint()
 	if err != nil {
@@ -2995,7 +3265,7 @@ func TestExplicitAuthorizationCanReplaceRevokedPreReconciliationRequest(t *testi
 	}
 	existing := delegation.Record{
 		Schema: delegation.Schema, SchemaRevision: delegation.SchemaRevision, Request: prior, RequestFingerprint: priorFingerprint,
-		ReceiptID: "authorization-prior", Actor: "operator", ActorIdentityProviderFingerprint: prior.HumanIdentityProviderFingerprint, AuthorizedAt: time.Unix(1_700_000_000, 0).UTC(), Revision: 3, Status: "revoked",
+		ReceiptID: "authorization-prior", Actor: "operator", ActorIdentityRole: prior.HumanIdentityRole, ActorIdentityProviderFingerprint: prior.HumanIdentityProviderFingerprint, AuthorizedAt: time.Unix(1_700_000_000, 0).UTC(), Revision: 3, Status: "revoked",
 	}
 	current := prior
 	current.ProgramFingerprint, current.ControlBundleFingerprint = strings.Repeat("d", 64), strings.Repeat("e", 64)
@@ -3019,7 +3289,7 @@ func TestDelegationReprojectionRejectsUnadmittedContextChanges(t *testing.T) {
 	request := delegation.Request{
 		RunID: "run-example", ProgramID: "product-delivery", ProgramFingerprint: strings.Repeat("a", 64), ControlBundleFingerprint: strings.Repeat("b", 64),
 		EntryID: "run", TargetID: "published-pr", ObjectiveID: "objective", DeliveryID: "delivery",
-		RepositoryID: "repository", GitCommonID: "common",
+		RepositoryID: "repository", GitCommonID: "common", HumanIdentityRole: "developer",
 	}
 	changedInput := request
 	changedInput.InputFingerprints = []string{"changed-plan"}
@@ -3039,7 +3309,7 @@ func TestDelegationReprojectionRejectsUnadmittedContextChanges(t *testing.T) {
 func TestConfigurationReprojectionPrecedesInstallationForChangedRepositoryBundle(t *testing.T) {
 	prior := delegation.Request{
 		ProgramFingerprint: strings.Repeat("a", 64), ControlBundleFingerprint: strings.Repeat("b", 64),
-		HumanIdentityProviderFingerprint: strings.Repeat("c", 64),
+		HumanIdentityRole: "developer", HumanIdentityProviderFingerprint: strings.Repeat("c", 64),
 	}
 	current := prior
 	current.ControlBundleFingerprint = strings.Repeat("d", 64)

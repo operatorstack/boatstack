@@ -51,6 +51,7 @@ const planning = foregroundWork({
 export default defineFlow(softwareDelivery({
   id: "product-delivery",
   version: "1",
+  humanIdentity: "developer",
   lifecycle: lifecycle,
   planningPackageWork: planning,
   targets: [

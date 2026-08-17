@@ -1,17 +1,21 @@
 # Boatstack configuration
 
 `.boatstack/project.json` is the repository-owned policy input. Boatstack accepts only
-schema version 4. Unknown top-level fields, unsupported policy values, duplicate
+schema version 5. Unknown fields, unsupported policy values, duplicate
 hosts or projections, trailing JSON, and missing required fields fail closed.
 
 ```json
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "identity": {
-    "human": {
-      "kind": "command",
-      "command": "gh",
-      "args": ["api", "user", "--jq", ".login"]
+    "default": "developer",
+    "roles": {
+      "developer": {
+        "kind": "command",
+        "command": "gh",
+        "args": ["api", "user", "--jq", ".login"]
+      },
+      "release-manager": {"kind": "literal", "value": "release-operator"}
     }
   },
   "project": {
@@ -38,7 +42,8 @@ hosts or projections, trailing JSON, and missing required fields fail closed.
 ## Required values
 
 - `project.name`, `project.default_branch`, and `project.commands`;
-- `identity.human`, as either a literal or structured command descriptor;
+- `identity.default` and a nonempty `identity.roles` object whose keys match
+  `^[a-z][a-z0-9._-]*$` and are at most 128 bytes;
 - `policy.plan_approval`: `human` or `human-or-autonomy`;
 - `policy.visual_evidence`: `off`, `optional`, or `required`;
 - at least the `cli` host.
@@ -55,10 +60,13 @@ The only accepted external-effect authority policy is
 `human-or-autonomy-plus-provider`. Provider authority is an independent
 mandatory clause; it cannot be replaced by a human receipt.
 
-## Human actor identity
+## Named human identity roles
 
-`identity.human` tells a host how to obtain the proposed actor label for a
-human-authority request. It does not grant authority. A literal descriptor is:
+Each role tells a host how to obtain the proposed actor for a human-authority
+request. `identity.default` is used only by non-Flow maintenance. A Flow selects
+its own role explicitly through `human_identity`; Boatstack never substitutes
+the default. Roles, actors, approvals, and provider capabilities are distinct.
+A literal descriptor is:
 
 ```json
 {"kind": "literal", "value": "alice"}
@@ -82,19 +90,25 @@ must not infer an operating-system or Git identity. This explicit fallback does
 not replace the verified descriptor. The host retains its exact provider
 fingerprint and still requires separate approval of the exact authority request.
 
-The host displays the resolved actor, exact request, and requested authority,
+The host displays the selected role, resolved actor, exact request, and requested authority,
 then asks for explicit approval. The authorization command still requires
 `--human <actor>`. The descriptor fingerprint records how the actor was
 proposed. It does not prove approval, identity ownership, provider permission,
 or external-provider authority. In particular, resolving an actor through
 `gh` does not create a GitHub provider receipt.
 
-Before initialization, or while `configuration.initialize`,
-`configuration.mutate`, or `configuration.reconcile` repairs unverified
-configuration, no trusted descriptor is available. Boatstack preserves the
-human authority question but omits `human_identity`. The host must ask for an
-explicit actor and must not infer one. A missing identity on any other human
-authority boundary is an error.
+When neither trusted source exists—at true bootstrap before
+`installation.initialize`, or while `configuration.initialize`,
+`configuration.mutate`, or
+`configuration.reconcile` repairs unverified configuration—Boatstack preserves
+the human authority question but omits `human_identity`. The host must ask for
+an explicit actor and must not infer one. A missing identity on any other human
+authority boundary is an error. Configuration mutation with verified
+configuration uses the current default. Program replacement uses the persisted
+role admitted with the prior program, so candidate code cannot select its own
+approver. Removing that role from a candidate configuration is rejected;
+changing its descriptor is allowed and invalidates prior authorization through
+configuration and bundle drift.
 
 The canonical snapshot carries this policy projection as controlling evidence.
 `human` plan approval rejects autonomy receipts. `human-or-autonomy` accepts
@@ -111,7 +125,7 @@ high-risk derivation fails closed whenever that policy is active.
 
 Host and projection selection changes use the governed configuration boundary:
 
-1. Write a candidate schema-4 configuration with the desired `hosts` and
+1. Write a candidate schema-5 configuration with the desired `hosts` and
    `projections`.
 2. Apply it through `configuration.mutate`. Boatstack installs that exact config
    and its selected maintenance projections atomically.
@@ -178,7 +192,7 @@ document; an arbitrary fingerprint string is insufficient.
 
 To change configuration, write a candidate file elsewhere, then request
 `configuration.mutate`. The CLI derives `config_sha256` from the strict decoded
-schema-4 value in canonical JSON form. Formatting, object-key order, and LF/CRLF
+schema-5 value in canonical JSON form. Formatting, object-key order, and LF/CRLF
 checkout conversion therefore retain the same authority, while any controlling
 value change produces a new fingerprint. The kernel still copies the exact
 candidate bytes, installs state last, re-observes the tracked file, and accepts

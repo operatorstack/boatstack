@@ -241,7 +241,7 @@ func TestProgramRuntimeProtocolCommitsDeclaredStateEffectBeforeReceipt(t *testin
 	locker, _ := effects.NewLocker(resolver)
 	journal, _ := effects.NewJournal(resolver, clock)
 	receipts, _ := effects.NewReceiptStore(resolver, clock)
-	base, err := effects.NewProgramDriver(resolver, clock, effects.NewNativeBoundary(), program.ResourceOwnership())
+	base, err := effects.NewProgramDriver(resolver, clock, effects.NewNativeBoundary(), program.ResourceOwnership(), "")
 	if err != nil {
 		t.Fatal(err)
 	}

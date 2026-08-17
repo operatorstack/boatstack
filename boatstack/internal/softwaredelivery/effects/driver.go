@@ -23,10 +23,11 @@ type CommandBoundary interface {
 }
 
 type Driver struct {
-	resolver          ports.InvocationResolver
-	clock             ports.Clock
-	boundary          CommandBoundary
-	resourceOwnership map[string]string
+	resolver                 ports.InvocationResolver
+	clock                    ports.Clock
+	boundary                 CommandBoundary
+	resourceOwnership        map[string]string
+	programHumanIdentityRole string
 }
 
 func NewDriver(resolver ports.InvocationResolver, clock ports.Clock, boundary CommandBoundary) (Driver, error) {
@@ -36,7 +37,7 @@ func NewDriver(resolver ports.InvocationResolver, clock ports.Clock, boundary Co
 	return Driver{resolver: resolver, clock: clock, boundary: boundary}, nil
 }
 
-func NewProgramDriver(resolver ports.InvocationResolver, clock ports.Clock, boundary CommandBoundary, ownership map[string]string) (Driver, error) {
+func NewProgramDriver(resolver ports.InvocationResolver, clock ports.Clock, boundary CommandBoundary, ownership map[string]string, programHumanIdentityRole string) (Driver, error) {
 	driver, err := NewDriver(resolver, clock, boundary)
 	if err != nil {
 		return Driver{}, err
@@ -48,6 +49,7 @@ func NewProgramDriver(resolver ports.InvocationResolver, clock ports.Clock, boun
 	for resource, owner := range ownership {
 		driver.resourceOwnership[resource] = owner
 	}
+	driver.programHumanIdentityRole = programHumanIdentityRole
 	return driver, nil
 }
 
@@ -122,6 +124,9 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 	if state.ProgramFingerprint != "" && state.ProgramFingerprint != admission.ExpectedProgramFingerprint && !transition.Policy.ReconcilesProgram {
 		return nil, fmt.Errorf("compiled control program drifted; explicit program reconciliation is required")
 	}
+	if state.ProgramFingerprint == admission.ExpectedProgramFingerprint && state.ProgramHumanIdentityRole != d.programHumanIdentityRole {
+		return nil, fmt.Errorf("HUMAN_IDENTITY_DRIFT: admitted program role %q does not match compiled role %q", state.ProgramHumanIdentityRole, d.programHumanIdentityRole)
+	}
 	if transition.ID == "catalog.reconcile" && (state.RuntimeVersion != admission.Invocation.RuntimeVersion || state.RuntimeFingerprint != admission.Invocation.RuntimeFingerprint) {
 		return nil, fmt.Errorf("catalog reconciliation cannot activate a different runtime; use installation.reconcile-update")
 	}
@@ -148,12 +153,16 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 	}
 	if next.ProgramFingerprint == "" {
 		next.ProgramFingerprint = admission.ExpectedProgramFingerprint
+		next.ProgramHumanIdentityRole = d.programHumanIdentityRole
 	}
 	if err := d.boundary.PrepareObservation(ctx, admission, transition, layout, &next); err != nil {
 		return nil, err
 	}
 	if err := applyStateTransition(&next, admission, transition); err != nil {
 		return nil, err
+	}
+	if transition.Policy.ReconcilesProgram && next.ProgramFingerprint == admission.ExpectedProgramFingerprint {
+		next.ProgramHumanIdentityRole = d.programHumanIdentityRole
 	}
 	next.Revision = resultingRevision
 	next.UpdatedAt = d.clock.Now().UTC()
@@ -347,6 +356,16 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 		}
 	}
 	return prepared, nil
+}
+
+func verifyCandidateConfigurationPreservesAdmittedRole(state durable.State, config protocol.ProjectConfig) error {
+	if state.ProgramHumanIdentityRole == "" {
+		return nil
+	}
+	if _, ok := config.Identity.Roles[state.ProgramHumanIdentityRole]; !ok {
+		return fmt.Errorf("PROJECT_CONFIG_ADMITTED_HUMAN_IDENTITY_UNBOUND: candidate configuration removes admitted program role %q", state.ProgramHumanIdentityRole)
+	}
+	return nil
 }
 
 func prepareConfigurationAuthorityTransfer(layout ports.ControllerLayout, admission protocol.Admission, state durable.State, attaching bool) ([]ports.ResourceMutation, error) {

@@ -152,7 +152,10 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 	}
 	sort.Slice(supported, func(i, j int) bool { return supported[i] < supported[j] })
 	sort.Slice(objectiveContracts, func(i, j int) bool { return objectiveContracts[i].TargetID < objectiveContracts[j].TargetID })
-	settings, _ := json.Marshal(map[string]string{"flow_id": d.compiled.Document.Program.ID, "flow_fingerprint": d.compiled.Fingerprint})
+	settings, _ := json.Marshal(map[string]string{
+		"flow_id": d.compiled.Document.Program.ID, "flow_fingerprint": d.compiled.Fingerprint,
+		"human_identity_role": d.compiled.Document.Program.HumanIdentity,
+	})
 	base.Version = standard.Version + "+flow." + d.compiled.Fingerprint[:12]
 	base.SupportedTargets = supported
 	base.ObjectiveContracts = objectiveContracts

@@ -57,7 +57,7 @@ func TestExactProductDeliveryFlowReachesPublishedPRWithFakeProvider(t *testing.T
 	runFlowGit(t, repository, "init", "-q", "-b", "main")
 	runFlowGit(t, repository, "config", "user.email", "fixture@example.invalid")
 	runFlowGit(t, repository, "config", "user.name", "Fixture")
-	writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"todo","default_branch":"main","commands":{"build":"true","test":"true"}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional","external_effect_authority":"human-or-autonomy-plus-provider","independent_review_for_high_risk":false},"hosts":["cli","codex","claude"],"projections":["codex","claude"]}`))
+	writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"literal","value":"operator"}}},"project":{"name":"todo","default_branch":"main","commands":{"build":"true","test":"true"}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional","external_effect_authority":"human-or-autonomy-plus-provider","independent_review_for_high_risk":false},"hosts":["cli","codex","claude"],"projections":["codex","claude"]}`))
 	writeFixture(t, repository, ".boatstack/plans/inbox/todo.md", []byte("# Add one todo\n"))
 	for path, content := range assets {
 		writeFixture(t, repository, path, content)

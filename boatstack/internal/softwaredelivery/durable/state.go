@@ -9,11 +9,12 @@ import (
 	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentity"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 )
 
 const (
-	StateSchemaVersion      = 6
+	StateSchemaVersion      = 7
 	priorStateSchemaVersion = 4
 )
 
@@ -35,6 +36,7 @@ type State struct {
 	GitCommonID                string                   `json:"git_common_id"`
 	WorktreeID                 string                   `json:"worktree_id"`
 	ProgramFingerprint         string                   `json:"program_fingerprint,omitempty"`
+	ProgramHumanIdentityRole   string                   `json:"program_human_identity_role,omitempty"`
 	ControlBundleFingerprint   string                   `json:"control_bundle_fingerprint,omitempty"`
 	Revision                   uint64                   `json:"revision"`
 	Phase                      model.ProtocolPhase      `json:"phase"`
@@ -113,6 +115,14 @@ func (s State) Validate() error {
 	}
 	if s.ProgramFingerprint != "" && len(s.ProgramFingerprint) != 64 {
 		return fmt.Errorf("durable state has invalid program fingerprint")
+	}
+	if s.ProgramHumanIdentityRole != "" {
+		if s.ProgramFingerprint == "" {
+			return fmt.Errorf("durable state human identity role requires a program fingerprint")
+		}
+		if err := humanidentity.ValidateRole(s.ProgramHumanIdentityRole); err != nil {
+			return fmt.Errorf("durable state has invalid program human identity role: %w", err)
+		}
 	}
 	if s.ControlBundleFingerprint != "" && len(s.ControlBundleFingerprint) != 64 {
 		return fmt.Errorf("durable state has invalid control-bundle fingerprint")
@@ -242,11 +252,7 @@ func DecodeState(value []byte) (State, error) {
 		return State{}, fmt.Errorf("durable state contains trailing JSON")
 	}
 	if state.SchemaVersion == priorStateSchemaVersion {
-		// The released predecessor is schema 4. Schemas 5 and 6 add planning
-		// package and control-bundle identity; neither may be smuggled into
-		// predecessor bytes. The original bytes remain the journal rollback
-		// source until a transition commits.
-		if state.PlanningPackageFingerprint != "" || state.ControlBundleFingerprint != "" {
+		if state.PlanningPackageFingerprint != "" || state.ControlBundleFingerprint != "" || state.ProgramHumanIdentityRole != "" {
 			return State{}, fmt.Errorf("durable state schema %d contains later identity fields", priorStateSchemaVersion)
 		}
 		state.SchemaVersion = StateSchemaVersion

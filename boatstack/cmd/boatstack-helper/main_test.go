@@ -165,6 +165,36 @@ func TestHumanPublicationConfirmationBindsExactPreviewFingerprint(t *testing.T) 
 	}
 }
 
+func TestHumanAuthorityReceiptBindsRoleAndProvider(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	base := commandOptions{
+		humanActor: "reviewer", transitionID: "plan.approve", humanIdentityRole: "developer",
+		humanIdentityProviderFingerprint: strings.Repeat("a", 64),
+	}
+	developer, err := loadAuthority(base, "correlation", model.Objective{ID: "objective"}, nil, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherRole := base
+	otherRole.humanIdentityRole = "release-manager"
+	release, err := loadAuthority(otherRole, "correlation", model.Objective{ID: "objective"}, nil, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherProvider := base
+	otherProvider.humanIdentityProviderFingerprint = strings.Repeat("b", 64)
+	rotated, err := loadAuthority(otherProvider, "correlation", model.Objective{ID: "objective"}, nil, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if developer.Receipts[0].Fingerprint == release.Receipts[0].Fingerprint || developer.Receipts[0].Fingerprint == rotated.Receipts[0].Fingerprint {
+		t.Fatal("role or provider drift reused transient human authority")
+	}
+	if _, err := loadAuthority(commandOptions{humanActor: "reviewer", humanIdentityRole: "developer"}, "correlation", model.Objective{ID: "objective"}, nil, now); err == nil {
+		t.Fatal("partial transient identity provenance was accepted")
+	}
+}
+
 func TestHumanAuthorityNeverFallsBackToEnvironmentOrGitIdentity(t *testing.T) {
 	t.Setenv("USER", "implicit-user")
 	t.Setenv("LOGNAME", "implicit-logname")

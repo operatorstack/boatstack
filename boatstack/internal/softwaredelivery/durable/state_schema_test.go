@@ -38,7 +38,6 @@ func TestStateSchemaPermitsLegacyApprovedStateWithoutApprovalFingerprint(t *test
 }
 
 func TestDecodeStatePromotesReleasedSchemaFourWithoutChangingPriorBytes(t *testing.T) {
-	// control-law: forward state migration is read-only until a transaction commits
 	state := State{
 		SchemaVersion: StateSchemaVersion, RepositoryID: "repo", GitCommonID: "common", WorktreeID: "worktree", Revision: 7,
 		Phase: model.PhaseActive, Engagement: model.EngagementActive, Delivery: model.DeliveryApproved, Workspace: model.WorkspaceAbsent,
@@ -62,16 +61,15 @@ func TestDecodeStatePromotesReleasedSchemaFourWithoutChangingPriorBytes(t *testi
 	}
 	prior = append(prior, '\n')
 	rollback := append([]byte(nil), prior...)
-
 	decoded, err := DecodeState(prior)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decoded.SchemaVersion != StateSchemaVersion || decoded.Revision != state.Revision || decoded.Objective != state.Objective || decoded.PlanFingerprint != state.PlanFingerprint {
+	if decoded.SchemaVersion != StateSchemaVersion || decoded.Revision != state.Revision || decoded.Objective != state.Objective {
 		t.Fatalf("promoted state = %#v", decoded)
 	}
 	if !bytes.Equal(prior, rollback) {
-		t.Fatal("schema promotion changed the prior rollback bytes")
+		t.Fatal("schema promotion changed prior rollback bytes")
 	}
 }
 

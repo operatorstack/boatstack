@@ -1,35 +1,75 @@
 {
   "schema": "control-program",
-  "schema_revision": 4,
+  "schema_revision": 5,
   "program": {
     "id": "incident-response",
     "version": "1"
   },
   "declarations": {
-    "capabilities": ["service.restart"],
-    "authorities": ["incident-commander"],
-    "effects": ["service.restart"],
-    "verifiers": ["healthcheck"]
+    "capabilities": [
+      "service.restart"
+    ],
+    "authorities": [
+      "incident-commander"
+    ],
+    "effects": [
+      "service.restart"
+    ],
+    "verifiers": [
+      "healthcheck"
+    ]
   },
   "facets": [
-    { "id": "incident", "kind": "enum", "values": ["open", "mitigated"] },
-    { "id": "service", "kind": "enum", "values": ["degraded", "healthy"] }
+    {
+      "id": "incident",
+      "kind": "enum",
+      "values": [
+        "open",
+        "mitigated"
+      ]
+    },
+    {
+      "id": "service",
+      "kind": "enum",
+      "values": [
+        "degraded",
+        "healthy"
+      ]
+    }
   ],
   "evidence": [
-    { "id": "healthcheck", "subject": "service", "kind": "observation" }
+    {
+      "id": "healthcheck",
+      "subject": "service",
+      "kind": "observation"
+    }
   ],
+  "work": [],
   "operators": [
     {
       "id": "restart",
-      "capabilities": ["service.restart"],
-      "authority": { "any_of": ["incident-commander"] },
-      "effects": ["service.restart"],
+      "capabilities": [
+        "service.restart"
+      ],
+      "authority": {
+        "any_of": [
+          "incident-commander"
+        ]
+      },
+      "effects": [
+        "service.restart"
+      ],
       "verifier": "healthcheck",
       "recovery": "restart",
       "execution_context": "preserve",
       "state_effect": {
         "kind": "assignments",
-        "assignments": [{ "facet": "incident", "value": "mitigated" }]
+        "assignments": [
+          {
+            "facet": "incident",
+            "value": "mitigated"
+          }
+        ]
       }
     }
   ],
@@ -37,13 +77,52 @@
     {
       "id": "restart",
       "operator": "restart",
-      "guard": { "fact": { "facet": "incident", "statuses": ["known"], "values": ["open"] } },
-      "target": { "fact": { "facet": "incident", "statuses": ["known"], "values": ["mitigated"] } },
+      "guard": {
+        "fact": {
+          "facet": "incident",
+          "statuses": [
+            "known"
+          ],
+          "values": [
+            "open"
+          ]
+        }
+      },
+      "target": {
+        "fact": {
+          "facet": "incident",
+          "statuses": [
+            "known"
+          ],
+          "values": [
+            "mitigated"
+          ]
+        }
+      },
       "priority": 10
     }
   ],
   "targets": [
-    { "id": "mitigated", "predicate": { "fact": { "facet": "incident", "statuses": ["known"], "values": ["mitigated"] } } }
+    {
+      "id": "mitigated",
+      "predicate": {
+        "fact": {
+          "facet": "incident",
+          "statuses": [
+            "known"
+          ],
+          "values": [
+            "mitigated"
+          ]
+        }
+      }
+    }
   ],
-  "entries": [{ "id": "respond", "target": "mitigated", "inputs": [] }]
+  "entries": [
+    {
+      "id": "respond",
+      "target": "mitigated",
+      "inputs": []
+    }
+  ]
 }

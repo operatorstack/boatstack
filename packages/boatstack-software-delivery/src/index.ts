@@ -118,6 +118,8 @@ export interface SoftwareDeliveryFlowDefinition {
   id: string;
   /** Repository-selected Control Program version. */
   version: string;
+  /** Named repository identity role used for this program's human interactions. */
+  humanIdentity: string;
   /** Optional human-readable description passed through unchanged. */
   description?: string;
   /** Explicit trusted lifecycle membership and repository-selected priorities. */
@@ -135,6 +137,15 @@ export interface SoftwareDeliveryFlowDefinition {
 function validateSoftwareDeliveryDefinition(
   definition: SoftwareDeliveryFlowDefinition,
 ): void {
+  if (
+    typeof definition.humanIdentity !== "string" ||
+    new TextEncoder().encode(definition.humanIdentity).length > 128 ||
+    !/^[a-z][a-z0-9._-]*$/.test(definition.humanIdentity)
+  ) {
+    throw new Error(
+      "SOFTWARE_DELIVERY_HUMAN_IDENTITY_INVALID: humanIdentity must be 1-128 bytes and match ^[a-z][a-z0-9._-]*$",
+    );
+  }
   const lifecycleIDs = new Set<string>();
   for (const step of definition.lifecycle) {
     if (step.id.trim().length === 0) {
@@ -258,6 +269,7 @@ export function softwareDelivery(
   return {
     id: definition.id,
     version: definition.version,
+    human_identity: definition.humanIdentity,
     ...(definition.description === undefined
       ? {}
       : { description: definition.description }),

@@ -66,6 +66,8 @@ type commandOptions struct {
 	effectiveCapabilities               stringList
 	idempotencyKey                      string
 	humanActor                          string
+	humanIdentityRole                   string
+	humanIdentityProviderFingerprint    string
 	repositoryPolicy                    bool
 	acceptProgramChange                 bool
 	parameters                          stringList
@@ -910,7 +912,10 @@ func loadAuthority(options commandOptions, correlation string, objective model.O
 		if err != nil {
 			return protocol.AuthorityBundle{}, err
 		}
-		fingerprint := hash([]byte(strings.Join([]string{correlation, objective.ID, options.transitionID, options.humanActor, string(parameterRaw)}, "\x00")))
+		if (options.humanIdentityRole == "") != (options.humanIdentityProviderFingerprint == "") {
+			return protocol.AuthorityBundle{}, fmt.Errorf("HUMAN_IDENTITY_UNBOUND: transient human authority has incomplete role provenance")
+		}
+		fingerprint := hash([]byte(strings.Join([]string{correlation, objective.ID, options.transitionID, options.humanActor, options.humanIdentityRole, options.humanIdentityProviderFingerprint, string(parameterRaw)}, "\x00")))
 		bundle.Receipts = append(bundle.Receipts, protocol.AuthorityReceipt{
 			ID: "human-" + fingerprint[:16], Class: catalog.AuthorityHuman, Subject: options.humanActor, Fingerprint: fingerprint,
 			IssuedAt: now, ExpiresAt: now.Add(5 * time.Minute),

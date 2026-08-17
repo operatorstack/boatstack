@@ -15,6 +15,7 @@ import (
 
 const (
 	MaxActorBytes          = 1024
+	MaxRoleBytes           = 128
 	MaxCommandBytes        = 256
 	MaxArgumentCount       = 32
 	MaxArgumentBytes       = 1024
@@ -28,6 +29,7 @@ const (
 )
 
 var actorPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+var rolePattern = regexp.MustCompile(`^[a-z][a-z0-9._-]*$`)
 
 // Descriptor is the closed, domain-neutral human identity provider contract.
 // Args must be present for command descriptors, including when it is empty.
@@ -105,8 +107,16 @@ func (d Descriptor) MarshalJSON() ([]byte, error) {
 // Presentation is safe host-facing provenance. It proposes an actor-selection
 // mechanism but grants no authority and proves no provider capability.
 type Presentation struct {
+	Role                string     `json:"role"`
 	ProviderFingerprint string     `json:"provider_fingerprint"`
 	Descriptor          Descriptor `json:"descriptor"`
+}
+
+func ValidateRole(role string) error {
+	if len(role) == 0 || len(role) > MaxRoleBytes || !rolePattern.MatchString(role) {
+		return fmt.Errorf("HUMAN_IDENTITY_ROLE_INVALID: role must be 1-%d bytes and match %s", MaxRoleBytes, rolePattern)
+	}
+	return nil
 }
 
 func ValidateActor(actor string) error {
@@ -179,20 +189,44 @@ func (d Descriptor) Fingerprint() (string, error) {
 	return hex.EncodeToString(digest[:]), nil
 }
 
-func NewPresentation(descriptor Descriptor) (Presentation, error) {
+func NewPresentation(role string, descriptor Descriptor) (Presentation, error) {
+	if err := ValidateRole(role); err != nil {
+		return Presentation{}, err
+	}
 	fingerprint, err := descriptor.Fingerprint()
 	if err != nil {
 		return Presentation{}, err
 	}
-	return Presentation{ProviderFingerprint: fingerprint, Descriptor: descriptor}, nil
+	return Presentation{Role: role, ProviderFingerprint: fingerprint, Descriptor: descriptor}, nil
 }
 
 func (p Presentation) Validate() error {
+	if err := ValidateRole(p.Role); err != nil {
+		return fmt.Errorf("HUMAN_IDENTITY_PRESENTATION_INVALID: %w", err)
+	}
 	fingerprint, err := p.Descriptor.Fingerprint()
 	if err != nil || p.ProviderFingerprint != fingerprint {
 		return fmt.Errorf("HUMAN_IDENTITY_PRESENTATION_INVALID: provider fingerprint does not match descriptor")
 	}
 	return nil
+}
+
+// BindingFingerprint binds a semantic role to its descriptor-only provider
+// fingerprint without redefining either identity.
+func (p Presentation) BindingFingerprint() (string, error) {
+	if err := p.Validate(); err != nil {
+		return "", err
+	}
+	raw, err := json.Marshal(struct {
+		SchemaVersion       int    `json:"schema_version"`
+		Role                string `json:"role"`
+		ProviderFingerprint string `json:"provider_fingerprint"`
+	}{SchemaVersion: 1, Role: p.Role, ProviderFingerprint: p.ProviderFingerprint})
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(raw)
+	return hex.EncodeToString(digest[:]), nil
 }
 
 // InterpretCommandOutput applies the host contract to already captured output.

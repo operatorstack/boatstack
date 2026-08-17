@@ -175,8 +175,8 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         config.write_text(
             json.dumps(
                 {
-                    "schema_version": 4,
-                    "identity": {"human": {"kind": "literal", "value": "contract"}},
+                    "schema_version": 5,
+                    "identity": {"default": "developer", "roles": {"developer": {"kind": "literal", "value": "contract"}}},
                     "project": {"name": "fixture", "default_branch": "main", "commands": {}},
                     "policy": {"plan_approval": "human", "visual_evidence": "optional"},
                     "hosts": ["cli", "cursor", "codex", "claude", "gemini", "mcp"],
@@ -250,8 +250,8 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         config.write_text(
             json.dumps(
                 {
-                    "schema_version": 4,
-                    "identity": {"human": {"kind": "literal", "value": "contract"}},
+                    "schema_version": 5,
+                    "identity": {"default": "developer", "roles": {"developer": {"kind": "literal", "value": "contract"}}},
                     "project": {"name": "driver-fixture", "default_branch": "main", "commands": {}},
                     "policy": {"plan_approval": "human", "visual_evidence": "optional"},
                     "hosts": ["cli", "codex"],
@@ -352,8 +352,8 @@ class DetachedSupervisionEndToEnd(unittest.TestCase):
         config.write_text(
             json.dumps(
                 {
-                    "schema_version": 4,
-                    "identity": {"human": {"kind": "literal", "value": "contract"}},
+                    "schema_version": 5,
+                    "identity": {"default": "developer", "roles": {"developer": {"kind": "literal", "value": "contract"}}},
                     "project": {
                         "name": "retained-authority-fixture",
                         "default_branch": "main",

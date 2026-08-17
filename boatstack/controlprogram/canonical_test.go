@@ -127,6 +127,33 @@ func parameterProgram() controlprogram.Document {
 	return document
 }
 
+func TestHumanIdentityRoleIsOptionalGenericProgramSemantics(t *testing.T) {
+	withoutRole, err := controlprogram.Compile(incidentProgram(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withRoleDocument := incidentProgram()
+	withRoleDocument.Program.HumanIdentity = "incident-commander"
+	withRole, err := controlprogram.Compile(withRoleDocument, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changedRoleDocument := withRoleDocument
+	changedRoleDocument.Program.HumanIdentity = "release-manager"
+	changedRole, err := controlprogram.Compile(changedRoleDocument, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withoutRole.Fingerprint == withRole.Fingerprint || withRole.Fingerprint == changedRole.Fingerprint {
+		t.Fatal("human identity role did not participate in ProgramFingerprint")
+	}
+	invalid := incidentProgram()
+	invalid.Program.HumanIdentity = "Release Manager"
+	if _, err := controlprogram.Compile(invalid, nil); err == nil || !strings.Contains(err.Error(), "program.human_identity") {
+		t.Fatalf("invalid role result = %v", err)
+	}
+}
+
 func TestInvocationCompletenessRequiresExactlyOneAdmissibleProducer(t *testing.T) {
 	// control-law: required-transition-parameters-have-exactly-one-admissible-producer-before-publication
 	if _, err := controlprogram.Compile(parameterProgram(), nil); err != nil {
