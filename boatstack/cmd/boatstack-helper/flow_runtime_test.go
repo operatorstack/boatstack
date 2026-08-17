@@ -1526,6 +1526,97 @@ func TestProgramChangePreflightRequiresExactTypedRecoverySurface(t *testing.T) {
 	}
 }
 
+func TestRolelessStandardInstallationCanAdmitFirstRoleBoundFlow(t *testing.T) {
+	// control-law: a roleless Standard installation has no prior Flow identity
+	// authority; its first Flow admission uses the verified configuration default
+	// and atomically persists the admitted Flow role.
+	t.Setenv("BOATSTACK_STATE_ROOT", t.TempDir())
+	runtimeHome := t.TempDir()
+	t.Setenv(boatstackruntime.HomeEnvironment, runtimeHome)
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeRaw, err := os.ReadFile(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := boatstackruntime.InstallExecutable(executable, runtimeHome, boatstackruntime.Identity{Version: buildinfo.Version, SHA256: hash(runtimeRaw), SourceRevision: buildRevision()}); err != nil {
+		t.Fatal(err)
+	}
+	repository := flowRepository(t)
+	runFlowGit(t, repository, "init", "-q")
+	runFlowGit(t, repository, "config", "user.email", "fixture@example.invalid")
+	runFlowGit(t, repository, "config", "user.name", "Fixture")
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "fixture")
+
+	output, err := captureRunOutput(t,
+		"init", "--repo", repository,
+		"--param", "config_path="+filepath.Join(repository, ".boatstack", "project.json"), "--human", "operator", "--host", "codex", "--format", "json",
+	)
+	if err != nil {
+		t.Fatalf("initialize Standard program: %v\n%s", err, output)
+	}
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "commit initialized control bundle")
+
+	resolver, err := plant.NewResolver("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, err := resolver.ResolveInvocation(context.Background(), repository, "codex", "roleless-standard-state")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, _, err := resolver.ResolveLayout(context.Background(), invocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stateRaw, err := os.ReadFile(layout.StatePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := durable.DecodeState(stateRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.ProgramHumanIdentityRole != "" {
+		t.Fatalf("Standard installation unexpectedly admitted Flow role %q", state.ProgramHumanIdentityRole)
+	}
+
+	bound, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err = captureRunOutput(t,
+		"reconcile-update", "--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", bound.runID,
+		"--accept-program-change", "--human", "operator", "--host", "codex", "--format", "json",
+	)
+	if err != nil {
+		t.Fatalf("admit first role-bound Flow: %v\n%s", err, output)
+	}
+	var reconciled surfaces.Response
+	if err := json.Unmarshal(output, &reconciled); err != nil {
+		t.Fatal(err)
+	}
+	if reconciled.Receipt == nil || reconciled.Receipt.TransitionID != "installation.reconcile-update" {
+		t.Fatalf("first Flow reconciliation response = %#v", reconciled)
+	}
+	stateRaw, err = os.ReadFile(layout.StatePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err = durable.DecodeState(stateRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.ProgramHumanIdentityRole != "developer" || state.ProgramFingerprint == "" || state.ProgramFingerprint != reconciled.Receipt.Program.Fingerprint {
+		t.Fatalf("first Flow admission did not persist receipt-bound role and program: role=%q fingerprint=%q receipt=%q", state.ProgramHumanIdentityRole, state.ProgramFingerprint, reconciled.Receipt.Program.Fingerprint)
+	}
+}
+
 func TestAcceptedProgramReconciliationReprojectsSameFlowRun(t *testing.T) {
 	// control-law: an accepted program mutation is a hard reprojection boundary;
 	// the next product resolution uses the new program and preserves the run.

@@ -88,8 +88,10 @@ func PresentationForRequest(ctx context.Context, externalStateRoot string, reque
 	return PresentationForRepositoryDefault(ctx, externalStateRoot, request.Repository, request.Host, request.CorrelationID, bundle, observed)
 }
 
-// PresentationForProgramChange always selects the prior admitted program role.
-// Candidate program bytes cannot choose their own approving identity.
+// PresentationForProgramChange selects the prior admitted program role when one
+// exists. A roleless admitted program has no identity authority of its own, so
+// its first role-bound replacement uses the independently verified repository
+// default. Candidate program bytes cannot choose their own approving identity.
 func PresentationForProgramChange(ctx context.Context, externalStateRoot string, request surfaces.Request, observed *model.Snapshot) (humanidentity.Presentation, error) {
 	var bundle *boatstackruntime.ControlBundleSnapshot
 	if request.ControlBundle != nil {
@@ -99,13 +101,7 @@ func PresentationForProgramChange(ctx context.Context, externalStateRoot string,
 		if state != nil && state.ProgramHumanIdentityRole != "" {
 			return state.ProgramHumanIdentityRole, nil
 		}
-		if request.ProgramID == "" {
-			// Generic maintenance programs may omit a role. Their program update
-			// is a non-Flow maintenance surface and uses the current verified
-			// default; a candidate program still cannot select its approver.
-			return config.Identity.Default, nil
-		}
-		return "", fmt.Errorf("HUMAN_IDENTITY_UNBOUND: no prior admitted program role can approve program replacement")
+		return config.Identity.Default, nil
 	})
 }
 

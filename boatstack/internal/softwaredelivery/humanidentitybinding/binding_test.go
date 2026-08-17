@@ -134,10 +134,11 @@ func TestPresentationUsesExternalConfigurationAuthorityAndVerifiedState(t *testi
 	if err != nil || genericReplacement.Role != "developer" {
 		t.Fatalf("generic program replacement presentation = %#v, err=%v", genericReplacement, err)
 	}
-	if _, err := PresentationForProgramChange(ctx, externalBase, surfaces.Request{
+	firstFlowReplacement, err := PresentationForProgramChange(ctx, externalBase, surfaces.Request{
 		Repository: repository, Host: "sdk", CorrelationID: "flow-program-change", ProgramID: "product-delivery", ControlBundle: &boatstackruntime.ControlBundleContract{Source: bundle},
-	}, nil); err == nil || !strings.Contains(err.Error(), "no prior admitted program role") {
-		t.Fatalf("Flow program replacement used the generic default: %v", err)
+	}, nil)
+	if err != nil || firstFlowReplacement.Role != "developer" || firstFlowReplacement.Descriptor.Value != "external-actor" {
+		t.Fatalf("first Flow replacement presentation = %#v, err=%v", firstFlowReplacement, err)
 	}
 
 	writeIdentityFile(t, filepath.Join(sharedRoot, "project.json"), identityConfig("changed-external-actor"))
