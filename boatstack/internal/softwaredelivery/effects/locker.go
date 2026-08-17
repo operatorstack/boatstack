@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/ports"
 )
@@ -30,10 +31,17 @@ type heldLock struct {
 	file *os.File
 }
 
-type heldLocks struct{ values []heldLock }
+type heldLocks struct {
+	values          []heldLock
+	projectionLease *boatstackruntime.FlowProjectionLease
+}
 
 func (l *heldLocks) Release() error {
 	var first error
+	if l.projectionLease != nil {
+		l.projectionLease.Release()
+		l.projectionLease = nil
+	}
 	for index := len(l.values) - 1; index >= 0; index-- {
 		value := l.values[index]
 		if err := unlockFile(value.file); err != nil && first == nil {
@@ -122,5 +130,22 @@ func (l Locker) Acquire(ctx context.Context, invocation model.InvocationContext,
 		}
 		held.values = append(held.values, heldLock{path: path, file: file})
 	}
+	if maintenanceProjectionResource(resources) {
+		lease, leaseErr := boatstackruntime.AcquireFlowProjectionLease(layout.RepositoryRoot)
+		if leaseErr != nil {
+			_ = held.Release()
+			return nil, fmt.Errorf("acquire maintenance projection lease: %w", leaseErr)
+		}
+		held.projectionLease = lease
+	}
 	return held, nil
+}
+
+func maintenanceProjectionResource(resources []string) bool {
+	for _, resource := range resources {
+		if resource == "configuration" || resource == "installation" {
+			return true
+		}
+	}
+	return false
 }

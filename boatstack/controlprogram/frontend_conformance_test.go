@@ -16,6 +16,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/core"
 	"github.com/operatorstack/boatstack/boatstack/delivery"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
+	"github.com/operatorstack/boatstack/boatstack/internal/hostprojection"
 )
 
 func TestTypeScriptDSLAndRawIRHaveOneCanonicalFingerprint(t *testing.T) {
@@ -217,7 +218,7 @@ func TestDomainNeutralInvocationFixtureCompilesAndMissingProducerFails(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"}); err != nil {
+	if _, err := softwareflow.GenerateProjections(compiled, []hostprojection.ID{hostprojection.Codex, hostprojection.Claude}); err != nil {
 		t.Fatalf("generate domain-neutral entry drivers: %v", err)
 	}
 	missingRaw, err := compile("incident-response-invocation-missing.flow.ts")

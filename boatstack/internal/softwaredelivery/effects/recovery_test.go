@@ -108,7 +108,7 @@ func TestRestartRecoveryRestoresPriorStateAndCommitsRecoveryRevision(t *testing.
 		t.Fatal(err)
 	}
 	configPath := filepath.Join(t.TempDir(), "project.json")
-	configRaw := []byte("{\"schema_version\":3,\"identity\":{\"human\":{\"kind\":\"literal\",\"value\":\"operator\"}},\"project\":{\"name\":\"recovery\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
+	configRaw := []byte("{\"schema_version\":4,\"identity\":{\"human\":{\"kind\":\"literal\",\"value\":\"operator\"}},\"project\":{\"name\":\"recovery\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"],\"projections\":[]}\n")
 	if err := os.WriteFile(configPath, configRaw, 0o600); err != nil {
 		t.Fatal(err)
 	}

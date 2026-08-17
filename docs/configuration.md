@@ -1,12 +1,12 @@
 # Boatstack configuration
 
 `.boatstack/project.json` is the repository-owned policy input. Boatstack accepts only
-schema version 3. Unknown top-level fields, unsupported policy values, duplicate
-hosts, trailing JSON, and missing required fields fail closed.
+schema version 4. Unknown top-level fields, unsupported policy values, duplicate
+hosts or projections, trailing JSON, and missing required fields fail closed.
 
 ```json
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "identity": {
     "human": {
       "kind": "command",
@@ -30,7 +30,8 @@ hosts, trailing JSON, and missing required fields fail closed.
     "visual_evidence": "optional",
     "external_effect_authority": "human-or-autonomy-plus-provider"
   },
-  "hosts": ["cli", "cursor", "codex", "claude", "gemini", "mcp", "sdk"]
+  "hosts": ["cli", "cursor", "codex", "claude", "gemini", "mcp", "sdk"],
+  "projections": ["codex", "claude", "cursor", "gemini"]
 }
 ```
 
@@ -41,6 +42,14 @@ hosts, trailing JSON, and missing required fields fail closed.
 - `policy.plan_approval`: `human` or `human-or-autonomy`;
 - `policy.visual_evidence`: `off`, `optional`, or `required`;
 - at least the `cli` host.
+- an explicit `projections` array; `[]` is valid, and every selected projection
+  must be one of `codex`, `claude`, `cursor`, or `gemini` with its matching host
+  enabled.
+
+`hosts` controls runtime admission. `projections` controls only generated
+repository files and never grants runtime authority. Projection order is
+non-semantic: Boatstack sorts the IDs before computing the SHA-256 selection
+fingerprint over `{"schema_version":1,"projections":[...]}`.
 
 The only accepted external-effect authority policy is
 `human-or-autonomy-plus-provider`. Provider authority is an independent
@@ -98,6 +107,27 @@ refuses attachment. A host omitted from `hosts` cannot request managed
 transitions. If the configured default branch cannot be inspected, the
 high-risk derivation fails closed whenever that policy is active.
 
+## Changing hosts or projections
+
+Host and projection selection changes use the governed configuration boundary:
+
+1. Write a candidate schema-4 configuration with the desired `hosts` and
+   `projections`.
+2. Apply it through `configuration.mutate`. Boatstack installs that exact config
+   and its selected maintenance projections atomically.
+3. Keep product work suspended while compiling and checking every Flow against
+   the new selection.
+4. Run the normal installation update to admit the exact new control bundle.
+   Projection-only changes do not require program-change acceptance;
+   `installation.reconcile-update` is only for independent compiled-program
+   drift.
+5. Resume the original Flow only after configuration, maintenance manifest,
+   Flow artifacts, projections, and control bundle all verify.
+
+Retirement removes only manifest- or ownership-bound files whose current bytes
+still match their recorded hashes. Modified or unrelated files fail closed and
+remain present; host directories are never removed.
+
 ## Optional additive extensions
 
 Repository configuration may enable checksum-bound subprocess extensions, but
@@ -148,7 +178,7 @@ document; an arbitrary fingerprint string is insufficient.
 
 To change configuration, write a candidate file elsewhere, then request
 `configuration.mutate`. The CLI derives `config_sha256` from the strict decoded
-schema-3 value in canonical JSON form. Formatting, object-key order, and LF/CRLF
+schema-4 value in canonical JSON form. Formatting, object-key order, and LF/CRLF
 checkout conversion therefore retain the same authority, while any controlling
 value change produces a new fingerprint. The kernel still copies the exact
 candidate bytes, installs state last, re-observes the tracked file, and accepts

@@ -101,7 +101,7 @@ func loadCurrentFlowArtifact(ctx context.Context, repository, programID string) 
 	if err != nil {
 		return controlprogram.Compiled{}, err
 	}
-	return controlprogram.CheckArtifact(repository, artifact, flowCompilerVersion, resolver, generateSoftwareFlowSkills)
+	return checkArtifactForCurrentProject(repository, artifact, resolver)
 }
 
 func runDeclarativeFlow(ctx context.Context, compiled controlprogram.Compiled, options commandOptions) error {

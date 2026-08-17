@@ -14,6 +14,7 @@ import (
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
+	"github.com/operatorstack/boatstack/boatstack/internal/hostprojection"
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
@@ -22,9 +23,11 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
 )
 
-type hostSkillProjectionManifest struct {
-	SchemaVersion int               `json:"schema_version"`
-	Files         map[string]string `json:"files"`
+type hostProjectionManifest struct {
+	SchemaVersion                  int               `json:"schema_version"`
+	Projections                    []string          `json:"projections"`
+	ProjectionSelectionFingerprint string            `json:"projection_selection_fingerprint"`
+	Files                          map[string]string `json:"files"`
 }
 
 func buildRepositoryControlBundle(ctx context.Context, repository string) (boatstackruntime.ControlBundleSnapshot, error) {
@@ -42,33 +45,53 @@ func buildRepositoryControlBundleAllowingInitialization(ctx context.Context, rep
 	}
 	paths := map[string]struct{}{}
 	absent := []string{}
-	if _, statErr := os.Lstat(filepath.Join(repository, ".boatstack", "project.json")); statErr == nil {
+	var projectConfig *protocol.ProjectConfig
+	if info, statErr := os.Lstat(filepath.Join(repository, ".boatstack", "project.json")); statErr == nil {
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return boatstackruntime.ControlBundleSnapshot{}, fmt.Errorf("CONTROL_BUNDLE_INVALID: .boatstack/project.json is not a regular file")
+		}
+		raw, readErr := os.ReadFile(filepath.Join(repository, ".boatstack", "project.json"))
+		if readErr != nil {
+			return boatstackruntime.ControlBundleSnapshot{}, readErr
+		}
+		config, decodeErr := protocol.DecodeProjectConfig(raw)
+		if decodeErr != nil {
+			return boatstackruntime.ControlBundleSnapshot{}, decodeErr
+		}
+		projectConfig = &config
 		paths[".boatstack/project.json"] = struct{}{}
 	} else if os.IsNotExist(statErr) && allowMissingProject {
 		absent = append(absent, ".boatstack/project.json")
 	} else if statErr != nil {
 		return boatstackruntime.ControlBundleSnapshot{}, fmt.Errorf("CONTROL_BUNDLE_INVALID: .boatstack/project.json is required: %w", statErr)
 	}
+	runtimeExists := false
 	if _, statErr := os.Lstat(filepath.Join(repository, ".boatstack", "runtime.json")); statErr == nil {
+		runtimeExists = true
 		paths[".boatstack/runtime.json"] = struct{}{}
 	} else if os.IsNotExist(statErr) {
 		absent = append(absent, ".boatstack/runtime.json")
 	} else if !os.IsNotExist(statErr) {
 		return boatstackruntime.ControlBundleSnapshot{}, statErr
 	}
-	manifestPath := filepath.Join(repository, ".boatstack", "host-skills.json")
+	manifestPath := filepath.Join(repository, ".boatstack", "host-projections.json")
 	if raw, readErr := os.ReadFile(manifestPath); readErr == nil {
-		decoder := json.NewDecoder(bytes.NewReader(raw))
-		decoder.DisallowUnknownFields()
-		var manifest hostSkillProjectionManifest
-		decodeErr := decoder.Decode(&manifest)
-		var trailing any
-		trailingErr := decoder.Decode(&trailing)
-		if decodeErr != nil || trailingErr != io.EOF || manifest.SchemaVersion != 1 || manifest.Files == nil {
-			return boatstackruntime.ControlBundleSnapshot{}, fmt.Errorf("CONTROL_BUNDLE_INVALID: host-skill manifest is malformed")
+		manifest, decodeErr := decodeHostProjectionManifest(raw)
+		if decodeErr != nil {
+			return boatstackruntime.ControlBundleSnapshot{}, decodeErr
 		}
-		paths[".boatstack/host-skills.json"] = struct{}{}
+		if projectConfig == nil {
+			return boatstackruntime.ControlBundleSnapshot{}, fmt.Errorf("CONTROL_BUNDLE_INVALID: host projections require project configuration")
+		}
+		selected, selectionErr := projectConfig.ProjectionIDs()
+		if selectionErr != nil || !sameProjectionIDs(manifest.Projections, hostprojection.Strings(selected)) {
+			return boatstackruntime.ControlBundleSnapshot{}, fmt.Errorf("CONTROL_BUNDLE_STALE: host projection manifest selection does not match project configuration")
+		}
+		paths[".boatstack/host-projections.json"] = struct{}{}
 		for path, expected := range manifest.Files {
+			if !hostprojection.ValidMaintenancePath(path) {
+				return boatstackruntime.ControlBundleSnapshot{}, fmt.Errorf("CONTROL_BUNDLE_INVALID: invalid host projection path %q", path)
+			}
 			absolute, pathErr := exactRepositoryPath(repository, filepath.FromSlash(path))
 			if pathErr != nil {
 				return boatstackruntime.ControlBundleSnapshot{}, pathErr
@@ -79,14 +102,16 @@ func buildRepositoryControlBundleAllowingInitialization(ctx context.Context, rep
 			}
 			digest := sha256.Sum256(raw)
 			if hex.EncodeToString(digest[:]) != expected {
-				return boatstackruntime.ControlBundleSnapshot{}, fmt.Errorf("CONTROL_BUNDLE_STALE: host skill %s does not match its manifest", path)
+				return boatstackruntime.ControlBundleSnapshot{}, fmt.Errorf("CONTROL_BUNDLE_STALE: host projection %s does not match its manifest", path)
 			}
 			paths[filepath.ToSlash(path)] = struct{}{}
 		}
 	} else if !os.IsNotExist(readErr) {
 		return boatstackruntime.ControlBundleSnapshot{}, readErr
+	} else if projectConfig != nil && runtimeExists && !allowMissingProject {
+		return boatstackruntime.ControlBundleSnapshot{}, fmt.Errorf("CONTROL_BUNDLE_INVALID: .boatstack/host-projections.json is required")
 	} else {
-		absent = append(absent, ".boatstack/host-skills.json")
+		absent = append(absent, ".boatstack/host-projections.json")
 	}
 	artifacts, err := filepath.Glob(filepath.Join(repository, ".boatstack", "flows", "*.flow.ir.json"))
 	if err != nil {
@@ -107,7 +132,7 @@ func buildRepositoryControlBundleAllowingInitialization(ctx context.Context, rep
 		if loadErr != nil {
 			return boatstackruntime.ControlBundleSnapshot{}, loadErr
 		}
-		if _, checkErr := controlprogram.CheckArtifact(repository, artifact, flowCompilerVersion, resolver, generateSoftwareFlowSkills); checkErr != nil {
+		if _, checkErr := checkArtifactForCurrentProject(repository, artifact, resolver); checkErr != nil {
 			return boatstackruntime.ControlBundleSnapshot{}, checkErr
 		}
 		relative, relErr := filepath.Rel(repository, artifactPath)
@@ -122,7 +147,7 @@ func buildRepositoryControlBundleAllowingInitialization(ctx context.Context, rep
 		for path := range artifact.Assets {
 			paths[path] = struct{}{}
 		}
-		for path := range artifact.GeneratedSkills {
+		for path := range artifact.GeneratedProjections {
 			paths[path] = struct{}{}
 		}
 	}
@@ -145,6 +170,118 @@ func buildRepositoryControlBundleAllowingInitialization(ctx context.Context, rep
 	return boatstackruntime.NewControlBundleSnapshotWithMemberSets(files, absent, []boatstackruntime.ControlBundleMemberSet{{
 		Root: ".boatstack/flows", Suffix: ".flow.ir.json", Paths: artifactPaths,
 	}})
+}
+
+func decodeHostProjectionManifest(raw []byte) (hostProjectionManifest, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var manifest hostProjectionManifest
+	if err := decoder.Decode(&manifest); err != nil {
+		return hostProjectionManifest{}, fmt.Errorf("CONTROL_BUNDLE_INVALID: host projection manifest: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return hostProjectionManifest{}, fmt.Errorf("CONTROL_BUNDLE_INVALID: host projection manifest contains trailing data")
+	}
+	if manifest.SchemaVersion != 2 || manifest.Projections == nil || manifest.Files == nil {
+		return hostProjectionManifest{}, fmt.Errorf("CONTROL_BUNDLE_INVALID: host projection manifest is incomplete")
+	}
+	projections, err := hostprojection.ParseIDs(manifest.Projections)
+	if err != nil || !sameProjectionIDs(manifest.Projections, hostprojection.Strings(projections)) {
+		return hostProjectionManifest{}, fmt.Errorf("CONTROL_BUNDLE_INVALID: host projection selection is not canonical")
+	}
+	fingerprint, err := hostprojection.SelectionFingerprint(projections)
+	if err != nil || fingerprint != manifest.ProjectionSelectionFingerprint {
+		return hostProjectionManifest{}, fmt.Errorf("CONTROL_BUNDLE_INVALID: host projection selection fingerprint mismatch")
+	}
+	for path, digest := range manifest.Files {
+		if !hostprojection.ValidMaintenancePath(path) || !hostprojection.ValidSHA256(digest) {
+			return hostProjectionManifest{}, fmt.Errorf("CONTROL_BUNDLE_INVALID: invalid host projection binding")
+		}
+	}
+	return manifest, nil
+}
+
+func sameProjectionIDs(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func replaceHostProjectionBundle(repository string, snapshot boatstackruntime.ControlBundleSnapshot, desired map[string][]byte, manifestRaw []byte) (boatstackruntime.ControlBundleSnapshot, error) {
+	projected := snapshot
+	manifestPath := filepath.Join(repository, ".boatstack", "host-projections.json")
+	if priorRaw, err := os.ReadFile(manifestPath); err == nil {
+		prior, decodeErr := decodeHostProjectionManifest(priorRaw)
+		if decodeErr != nil {
+			return boatstackruntime.ControlBundleSnapshot{}, decodeErr
+		}
+		for path := range prior.Files {
+			if _, keep := desired[path]; keep {
+				continue
+			}
+			if hostprojection.IsSharedCheckoutPath(path) {
+				referenced, referenceErr := boatstackruntime.SharedFlowProjectionReferenced(repository, path, prior.Files[path])
+				if referenceErr != nil {
+					return boatstackruntime.ControlBundleSnapshot{}, referenceErr
+				}
+				if referenced {
+					continue
+				}
+			}
+			projected, decodeErr = boatstackruntime.ReplaceControlBundleFileAbsent(projected, path)
+			if decodeErr != nil {
+				return boatstackruntime.ControlBundleSnapshot{}, decodeErr
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return boatstackruntime.ControlBundleSnapshot{}, err
+	}
+	var err error
+	projected, err = boatstackruntime.ReplaceControlBundleFile(projected, ".boatstack/host-projections.json", manifestRaw)
+	if err != nil {
+		return boatstackruntime.ControlBundleSnapshot{}, err
+	}
+	for path, raw := range desired {
+		projected, err = boatstackruntime.ReplaceControlBundleFile(projected, path, raw)
+		if err != nil {
+			return boatstackruntime.ControlBundleSnapshot{}, err
+		}
+	}
+	return projected, nil
+}
+
+func validateRepositoryFlowArtifactsForProjections(ctx context.Context, repository string, projections []hostprojection.ID) error {
+	artifacts, err := filepath.Glob(filepath.Join(repository, ".boatstack", "flows", "*.flow.ir.json"))
+	if err != nil {
+		return err
+	}
+	sort.Strings(artifacts)
+	resolver, err := softwareflow.NewResolver(ctx)
+	if err != nil {
+		return err
+	}
+	for _, artifactPath := range artifacts {
+		raw, readErr := os.ReadFile(artifactPath)
+		if readErr != nil {
+			return readErr
+		}
+		artifact, loadErr := controlprogram.LoadArtifact(bytes.NewReader(raw))
+		if loadErr != nil {
+			return loadErr
+		}
+		if _, checkErr := controlprogram.CheckArtifact(repository, artifact, flowCompilerVersion, resolver, projections, generateSoftwareFlowProjections); checkErr != nil {
+			relative, _ := filepath.Rel(repository, artifactPath)
+			return fmt.Errorf("CONTROL_BUNDLE_TARGET_INVALID: Flow artifact %s does not match candidate project configuration: %w", filepath.ToSlash(relative), checkErr)
+		}
+	}
+	return nil
 }
 
 func controlBundleRequired(id catalog.TransitionID) bool {
@@ -207,19 +344,20 @@ func bindControlBundle(ctx context.Context, repository string, transitionID cata
 		if expected, exists := parameters.Get("config_sha256"); !exists || expected != configFingerprint {
 			return nil, "", fmt.Errorf("CONTROL_BUNDLE_TARGET_INVALID: project configuration fingerprint changed")
 		}
-		hostFiles, manifestRaw, projectionErr := effects.ProjectedHostSkillFiles(config.Hosts)
+		projections, projectionErr := config.ProjectionIDs()
 		if projectionErr != nil {
 			return nil, "", projectionErr
 		}
-		projected, projectErr = boatstackruntime.ReplaceControlBundleFile(projected, ".boatstack/host-skills.json", manifestRaw)
+		if projectionErr = validateRepositoryFlowArtifactsForProjections(ctx, repository, projections); projectionErr != nil {
+			return nil, "", projectionErr
+		}
+		hostFiles, manifestRaw, projectionErr := effects.ProjectedHostProjectionFiles(projections)
+		if projectionErr != nil {
+			return nil, "", projectionErr
+		}
+		projected, projectErr = replaceHostProjectionBundle(repository, projected, hostFiles, manifestRaw)
 		if projectErr != nil {
 			return nil, "", projectErr
-		}
-		for path, raw := range hostFiles {
-			projected, projectErr = boatstackruntime.ReplaceControlBundleFile(projected, path, raw)
-			if projectErr != nil {
-				return nil, "", projectErr
-			}
 		}
 		target = &projected
 	case "installation.update", "installation.reconcile-update":
@@ -231,19 +369,17 @@ func bindControlBundle(ctx context.Context, repository string, transitionID cata
 		if decodeErr != nil {
 			return nil, "", decodeErr
 		}
-		hostFiles, manifestRaw, projectionErr := effects.ProjectedHostSkillFiles(config.Hosts)
+		projections, projectionErr := config.ProjectionIDs()
 		if projectionErr != nil {
 			return nil, "", projectionErr
 		}
-		projected, projectionErr := boatstackruntime.ReplaceControlBundleFile(snapshot, ".boatstack/host-skills.json", manifestRaw)
+		hostFiles, manifestRaw, projectionErr := effects.ProjectedHostProjectionFiles(projections)
 		if projectionErr != nil {
 			return nil, "", projectionErr
 		}
-		for path, raw := range hostFiles {
-			projected, projectionErr = boatstackruntime.ReplaceControlBundleFile(projected, path, raw)
-			if projectionErr != nil {
-				return nil, "", projectionErr
-			}
+		projected, projectionErr := replaceHostProjectionBundle(repository, snapshot, hostFiles, manifestRaw)
+		if projectionErr != nil {
+			return nil, "", projectionErr
 		}
 		target = &projected
 	case "workspace.cut":

@@ -11,11 +11,12 @@ import (
 	"regexp"
 	"sort"
 
+	"github.com/operatorstack/boatstack/boatstack/internal/hostprojection"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentity"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 )
 
-const ConfigSchemaVersion = 3
+const ConfigSchemaVersion = 4
 
 type ProjectSettings struct {
 	Name          string            `json:"name"`
@@ -56,6 +57,7 @@ type ProjectConfig struct {
 	Project       ProjectSettings               `json:"project"`
 	Policy        PolicySettings                `json:"policy"`
 	Hosts         []string                      `json:"hosts"`
+	Projections   []string                      `json:"projections"`
 	Extensions    []SubprocessExtensionSettings `json:"extensions,omitempty"`
 }
 
@@ -63,6 +65,20 @@ var canonicalHosts = []string{"claude", "cli", "codex", "cursor", "gemini", "mcp
 var extensionID = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$`)
 
 func CanonicalHosts() []string { return append([]string(nil), canonicalHosts...) }
+
+func CanonicalProjections() []string { return hostprojection.CanonicalStrings() }
+
+func (c ProjectConfig) ProjectionIDs() ([]hostprojection.ID, error) {
+	return hostprojection.Parse(c.Projections, c.Hosts)
+}
+
+func (c ProjectConfig) ProjectionSelectionFingerprint() (string, error) {
+	projections, err := c.ProjectionIDs()
+	if err != nil {
+		return "", err
+	}
+	return hostprojection.SelectionFingerprint(projections)
+}
 
 func (c ProjectConfig) ControlPolicy() model.ConfigurationPolicy {
 	external := c.Policy.ExternalEffectAuthority
@@ -92,7 +108,7 @@ func DecodeProjectConfig(value []byte) (ProjectConfig, error) {
 	return config, nil
 }
 
-// ProjectConfigFingerprint binds configuration authority to strict schema-3
+// ProjectConfigFingerprint binds configuration authority to strict schema-4
 // semantics rather than checkout-specific JSON bytes. Formatting, object-key
 // order, line endings, the defaulted external-effect policy, and host ordering
 // therefore cannot make an otherwise identical configuration stale.
@@ -104,6 +120,8 @@ func ProjectConfigFingerprint(value []byte) (ProjectConfig, string, error) {
 	canonical := config
 	canonical.Hosts = append([]string(nil), config.Hosts...)
 	sort.Strings(canonical.Hosts)
+	canonical.Projections = append([]string(nil), config.Projections...)
+	sort.Strings(canonical.Projections)
 	canonical.Extensions = append([]SubprocessExtensionSettings(nil), config.Extensions...)
 	for index := range canonical.Extensions {
 		values := []struct {
@@ -139,7 +157,7 @@ func ProjectConfigFingerprint(value []byte) (ProjectConfig, string, error) {
 
 func (c ProjectConfig) Validate() error {
 	if c.SchemaVersion != ConfigSchemaVersion || c.Project.Name == "" || c.Project.DefaultBranch == "" || c.Project.Commands == nil {
-		return fmt.Errorf("Boatstack project configuration requires schema 3, project name, default branch, commands, and human identity")
+		return fmt.Errorf("Boatstack project configuration requires schema 4, project name, default branch, commands, and human identity")
 	}
 	if err := c.Identity.Human.Validate(); err != nil {
 		return err
@@ -173,6 +191,9 @@ func (c ProjectConfig) Validate() error {
 	}
 	if !seen["cli"] {
 		return fmt.Errorf("Boatstack project configuration must enable the canonical CLI surface")
+	}
+	if _, err := hostprojection.Parse(c.Projections, c.Hosts); err != nil {
+		return err
 	}
 	seenExtensions := map[string]bool{}
 	for _, extension := range c.Extensions {

@@ -9,7 +9,111 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/operatorstack/boatstack/boatstack/internal/hostprojection"
 )
+
+func TestSharedCheckoutMetadataRetiresOnlyAfterFinalFlowOwner(t *testing.T) {
+	// control-law: shared-checkout-metadata-survives-until-its-final-exact-owner-retires
+	repository := resolvedTemporaryRepository(t)
+	sharedRelative, sharedContent, ok := hostprojection.SharedCheckoutPath(hostprojection.Cursor)
+	if !ok {
+		t.Fatal("Cursor shared checkout path is unavailable")
+	}
+	sharedPath := filepath.Join(repository, filepath.FromSlash(sharedRelative))
+	sharedDigest := projectionDigest(sharedContent)
+	type flowFixture struct {
+		source   string
+		artifact string
+		raw      []byte
+	}
+	flows := []flowFixture{
+		{source: ".boatstack/flows/one.flow.ts", artifact: ".boatstack/flows/one.flow.ir.json", raw: []byte("artifact one")},
+		{source: ".boatstack/flows/two.flow.ts", artifact: ".boatstack/flows/two.flow.ir.json", raw: []byte("artifact two")},
+	}
+	for _, flow := range flows {
+		prior, err := LoadFlowProjectionOwnership(repository, flow.source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		next := NewFlowProjectionOwnership(flow.source, flow.artifact, flow.raw, strings.Repeat("a", 64), map[string][]byte{sharedRelative: sharedContent})
+		writes := []ProjectionWrite{
+			{Path: sharedPath, Content: sharedContent, Mode: 0o644},
+			{Path: filepath.Join(repository, filepath.FromSlash(flow.artifact)), Content: flow.raw, Mode: 0o644, PublishLast: true},
+		}
+		if err := ApplyOwnedFlowProjection(repository, writes, nil, nil, prior, next); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for index, flow := range flows {
+		prior, err := LoadFlowProjectionOwnership(repository, flow.source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		nextRaw := append([]byte(nil), flow.raw...)
+		nextRaw = append(nextRaw, []byte(" retired")...)
+		next := NewFlowProjectionOwnership(flow.source, flow.artifact, nextRaw, strings.Repeat("b", 64), map[string][]byte{})
+		writes := []ProjectionWrite{{
+			Path: filepath.Join(repository, filepath.FromSlash(flow.artifact)), Content: nextRaw, Mode: 0o644,
+			ExpectedPreviousSHA256: projectionDigest(flow.raw), PublishLast: true,
+		}}
+		removals := []ProjectionRemoval{{Path: sharedPath, ExpectedSHA256: sharedDigest, AllowMissing: true}}
+		if err := ApplyOwnedFlowProjection(repository, writes, removals, nil, prior, next); err != nil {
+			t.Fatal(err)
+		}
+		_, statErr := os.Stat(sharedPath)
+		if index == 0 && statErr != nil {
+			t.Fatalf("first owner retired shared metadata: %v", statErr)
+		}
+		if index == 1 && !os.IsNotExist(statErr) {
+			t.Fatalf("final owner did not retire shared metadata: %v", statErr)
+		}
+	}
+}
+
+func TestMaintenanceOwnershipKeepsSharedCheckoutMetadata(t *testing.T) {
+	// control-law: Flow-retirement-cannot-remove-maintenance-owned-checkout-metadata
+	repository := resolvedTemporaryRepository(t)
+	sharedRelative, sharedContent, _ := hostprojection.SharedCheckoutPath(hostprojection.Gemini)
+	sharedPath := filepath.Join(repository, filepath.FromSlash(sharedRelative))
+	manifestPath := filepath.Join(repository, ".boatstack", "host-projections.json")
+	if err := os.MkdirAll(filepath.Dir(sharedPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sharedPath, sharedContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{"schema_version":2,"files":{"` + sharedRelative + `":"` + projectionDigest(sharedContent) + `"}}`
+	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	flow := ".boatstack/flows/one.flow.ts"
+	artifact := ".boatstack/flows/one.flow.ir.json"
+	prior, err := LoadFlowProjectionOwnership(repository, flow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldRaw := []byte("old artifact")
+	old := NewFlowProjectionOwnership(flow, artifact, oldRaw, strings.Repeat("a", 64), map[string][]byte{sharedRelative: sharedContent})
+	if err := ApplyOwnedFlowProjection(repository, []ProjectionWrite{{Path: sharedPath, Content: sharedContent, Mode: 0o644}, {Path: filepath.Join(repository, filepath.FromSlash(artifact)), Content: oldRaw, Mode: 0o644, PublishLast: true}}, nil, nil, prior, old); err != nil {
+		t.Fatal(err)
+	}
+	prior, err = LoadFlowProjectionOwnership(repository, flow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newRaw := []byte("new artifact")
+	next := NewFlowProjectionOwnership(flow, artifact, newRaw, strings.Repeat("b", 64), map[string][]byte{})
+	if err := ApplyOwnedFlowProjection(repository, []ProjectionWrite{{Path: filepath.Join(repository, filepath.FromSlash(artifact)), Content: newRaw, Mode: 0o644, ExpectedPreviousSHA256: projectionDigest(oldRaw), PublishLast: true}}, []ProjectionRemoval{{Path: sharedPath, ExpectedSHA256: projectionDigest(sharedContent), AllowMissing: true}}, nil, prior, next); err != nil {
+		t.Fatal(err)
+	}
+	if actual, err := os.ReadFile(sharedPath); err != nil || string(actual) != string(sharedContent) {
+		t.Fatalf("maintenance-owned metadata = %q, %v", actual, err)
+	}
+}
 
 func TestVerifyFlowProjectionAtRevisionBindsActiveBytesToWorkspaceBase(t *testing.T) {
 	// control-law: workspace-base-contains-the-active-flow-projection

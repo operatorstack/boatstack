@@ -35,7 +35,7 @@ func TestHumanIdentityPresentationIsBoundToVerifiedConfiguration(t *testing.T) {
 	if output, err := exec.Command("git", "init", "-q", repository).CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v: %s", err, output)
 	}
-	configRaw := []byte(`{"schema_version":3,"identity":{"human":{"kind":"command","command":"gh","args":["api","user","--jq",".login"]}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli","codex"]}`)
+	configRaw := []byte(`{"schema_version":4,"identity":{"human":{"kind":"command","command":"gh","args":["api","user","--jq",".login"]}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli","codex"],"projections":["codex"]}`)
 	configPath := filepath.Join(repository, ".boatstack", "project.json")
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
 		t.Fatal(err)

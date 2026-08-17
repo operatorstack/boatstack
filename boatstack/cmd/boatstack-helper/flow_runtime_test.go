@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
 	"github.com/operatorstack/boatstack/boatstack/internal/buildinfo"
+	"github.com/operatorstack/boatstack/boatstack/internal/hostprojection"
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/delegation"
@@ -163,6 +165,58 @@ func TestTrustedControlBundleRejectsHeadDriftWithMatchingWorkingTree(t *testing.
 	}
 }
 
+func TestProjectionSelectionChangesProjectAndControlBundleNotProgram(t *testing.T) {
+	// control-law: projection-files-never-become-executable-control-authority
+	config := func(projections string) []byte {
+		return []byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude","cursor","gemini"],"projections":` + projections + `}`)
+	}
+	codexRaw, allRaw := config(`["codex"]`), config(`["codex","claude","cursor","gemini"]`)
+	codexConfig, codexProjectFingerprint, err := protocol.ProjectConfigFingerprint(codexRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	allConfig, allProjectFingerprint, err := protocol.ProjectConfigFingerprint(allRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if codexProjectFingerprint == allProjectFingerprint || !reflect.DeepEqual(codexConfig.ControlPolicy(), allConfig.ControlPolicy()) {
+		t.Fatal("projection membership did not remain nonsemantic to runtime policy")
+	}
+	bundleFor := func(raw []byte, config protocol.ProjectConfig) boatstackruntime.ControlBundleSnapshot {
+		projections, projectionErr := config.ProjectionIDs()
+		if projectionErr != nil {
+			t.Fatal(projectionErr)
+		}
+		files, manifest, projectionErr := effects.ProjectedHostProjectionFiles(projections)
+		if projectionErr != nil {
+			t.Fatal(projectionErr)
+		}
+		files[".boatstack/project.json"] = raw
+		files[".boatstack/host-projections.json"] = manifest
+		snapshot, snapshotErr := boatstackruntime.NewControlBundleSnapshot(files)
+		if snapshotErr != nil {
+			t.Fatal(snapshotErr)
+		}
+		return snapshot
+	}
+	codexBundle, allBundle := bundleFor(codexRaw, codexConfig), bundleFor(allRaw, allConfig)
+	if codexBundle.Fingerprint == allBundle.Fingerprint {
+		t.Fatal("projection membership did not change the control bundle fingerprint")
+	}
+	resolver, err := softwareflow.NewResolver(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := controlprogram.Compile(productDeliveryDocument("product-delivery"), resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := controlprogram.Compile(productDeliveryDocument("product-delivery"), resolver)
+	if err != nil || first.Fingerprint != second.Fingerprint {
+		t.Fatalf("identical Flow semantics changed program fingerprint: %v", err)
+	}
+}
+
 func TestFlowEntryCanonicalizesRepositoryRoot(t *testing.T) {
 	repository := flowRepository(t)
 	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
@@ -249,7 +303,7 @@ func TestFreshFlowInitializationRejectsDirtyCanonicalConfigurationBeforeEffects(
 	runFlowGit(t, repository, "add", ".")
 	runFlowGit(t, repository, "commit", "-q", "-m", "fixture")
 
-	writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":3,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"dirty","default_branch":"main","commands":{"test":"false"}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude"]}`))
+	writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"dirty","default_branch":"main","commands":{"test":"false"}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude"],"projections":["codex","claude"]}`))
 	questionRaw, err := captureRunOutput(t,
 		"flow", "run", "--repo", repository, "--flow", "product-delivery", "--entry", "run",
 		"--repository-authority", "--host", "codex", "--format", "json",
@@ -296,7 +350,7 @@ func TestFreshFlowInitializationRejectsDirtyCanonicalConfigurationBeforeEffects(
 		layout.StatePath,
 		layout.ReceiptPath,
 		filepath.Join(repository, ".boatstack", "runtime.json"),
-		filepath.Join(repository, ".boatstack", "host-skills.json"),
+		filepath.Join(repository, ".boatstack", "host-projections.json"),
 	} {
 		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
 			t.Fatalf("dirty initialization wrote %s: %v", path, statErr)
@@ -327,6 +381,7 @@ func runFlowGitOutput(t *testing.T, repository string, arguments ...string) stri
 
 func writeAdmittedFlowProgramState(t *testing.T, repository, programFingerprint string) {
 	t.Helper()
+	writeMaintenanceProjectionFixture(t, repository)
 	_, bundleFingerprint, err := bindControlBundle(context.Background(), repository, "", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -372,6 +427,7 @@ func writeAdmittedFlowProgramState(t *testing.T, repository, programFingerprint 
 
 func writeVerifiedFlowConfigurationState(t *testing.T, repository string) {
 	t.Helper()
+	writeMaintenanceProjectionFixture(t, repository)
 	resolver, err := plant.NewResolver("")
 	if err != nil {
 		t.Fatal(err)
@@ -455,6 +511,42 @@ func TestCaptureStdoutDrainsWhileActionWrites(t *testing.T) {
 	}
 	if !bytes.Equal(output, payload) {
 		t.Fatalf("captured %d bytes, want %d", len(output), len(payload))
+	}
+}
+
+func TestFlowResultExposesProjectionSelectionAndGeneratedPaths(t *testing.T) {
+	artifact := controlprogram.Artifact{
+		ProgramFingerprint:             strings.Repeat("a", 64),
+		Projections:                    []string{"claude", "codex"},
+		ProjectionSelectionFingerprint: strings.Repeat("b", 64),
+		GeneratedProjections: map[string]string{
+			".claude/skills/example/SKILL.md":           strings.Repeat("c", 64),
+			".agents/skills/example/agents/openai.yaml": strings.Repeat("d", 64),
+		},
+		Program: controlprogram.Document{Program: controlprogram.Program{ID: "example"}},
+	}
+	raw, err := captureStdout(t, func() error { return renderFlowResult("valid", "/repo/example.flow.ir.json", artifact, "json") })
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rendered struct {
+		Projections                    []string `json:"projections"`
+		ProjectionSelectionFingerprint string   `json:"projection_selection_fingerprint"`
+		GeneratedPaths                 []string `json:"generated_paths"`
+	}
+	if err := json.Unmarshal(raw, &rendered); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(rendered.Projections, artifact.Projections) || rendered.ProjectionSelectionFingerprint != artifact.ProjectionSelectionFingerprint {
+		t.Fatalf("selection output = %#v", rendered)
+	}
+	wantPaths := []string{".agents/skills/example/agents/openai.yaml", ".claude/skills/example/SKILL.md"}
+	if !reflect.DeepEqual(rendered.GeneratedPaths, wantPaths) {
+		t.Fatalf("generated paths = %v, want %v", rendered.GeneratedPaths, wantPaths)
+	}
+	textOutput, err := captureStdout(t, func() error { return renderFlowResult("valid", "/repo/example.flow.ir.json", artifact, "text") })
+	if err != nil || !strings.Contains(string(textOutput), "projections: claude,codex") {
+		t.Fatalf("human output = %q, %v", textOutput, err)
 	}
 }
 
@@ -555,7 +647,7 @@ func writeFlowArtifact(t *testing.T, repository string, document controlprogram.
 	t.Helper()
 	projectPath := filepath.Join(repository, ".boatstack", "project.json")
 	if _, err := os.Stat(projectPath); os.IsNotExist(err) {
-		writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":3,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude"]}`))
+		writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude"],"projections":["codex","claude"]}`))
 	}
 	resolver, err := softwareflow.NewResolver(context.Background())
 	if err != nil {
@@ -565,7 +657,8 @@ func writeFlowArtifact(t *testing.T, repository string, document controlprogram.
 	if err != nil {
 		t.Fatal(err)
 	}
-	skills, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
+	projections := []hostprojection.ID{hostprojection.Codex, hostprojection.Claude}
+	skills, err := softwareflow.GenerateProjections(compiled, projections)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -573,12 +666,51 @@ func writeFlowArtifact(t *testing.T, repository string, document controlprogram.
 		writeFixture(t, repository, path, content)
 	}
 	_, artifactRaw, err := controlprogram.NewArtifact(compiled, controlprogram.ArtifactInput{
-		CompilerVersion: flowCompilerVersion, SourcePath: sourcePath, Source: source, DependencyLockPath: lockPath, DependencyLock: lock, GeneratedSkills: skills,
+		CompilerVersion: flowCompilerVersion, SourcePath: sourcePath, Source: source, DependencyLockPath: lockPath, DependencyLock: lock, Projections: projections, GeneratedProjections: skills,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeFixture(t, repository, ".boatstack/flows/"+document.Program.ID+".flow.ir.json", artifactRaw)
+}
+
+func writeProjectionProjectConfig(t *testing.T, repository string) {
+	t.Helper()
+	writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude"],"projections":["codex","claude"]}`))
+}
+
+func writeMaintenanceProjectionFixture(t *testing.T, repository string) {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(repository, ".boatstack", "project.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := protocol.DecodeProjectConfig(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projections, err := config.ProjectionIDs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, manifest, err := effects.ProjectedHostProjectionFiles(projections)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := make([]string, 0, len(files)+1)
+	for path, content := range files {
+		writeFixture(t, repository, path, content)
+		paths = append(paths, path)
+	}
+	writeFixture(t, repository, ".boatstack/host-projections.json", manifest)
+	paths = append(paths, ".boatstack/host-projections.json")
+	sort.Strings(paths)
+	arguments := append([]string{"add", "--"}, paths...)
+	runFlowGit(t, repository, arguments...)
+	if staged := runFlowGitOutput(t, repository, "diff", "--cached", "--name-only", "--"); staged != "" {
+		commitArguments := append([]string{"-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-q", "-m", "fixture maintenance projections", "--only", "--"}, paths...)
+		runFlowGit(t, repository, commitArguments...)
+	}
 }
 
 func productDeliveryDocument(programID string) controlprogram.Document {
@@ -1066,7 +1198,7 @@ func TestWorkspaceCutRejectsControlBundleThatIsNotInBaseRevision(t *testing.T) {
 	}
 
 	var skillPath string
-	for path := range artifact.GeneratedSkills {
+	for path := range artifact.GeneratedProjections {
 		skillPath = path
 		break
 	}
@@ -1082,6 +1214,38 @@ func TestWorkspaceCutRejectsControlBundleThatIsNotInBaseRevision(t *testing.T) {
 	}
 }
 
+func TestInstallationInitializeRejectsArtifactsFromDifferentCandidateProjectionSelection(t *testing.T) {
+	// control-law: initialization-target-artifacts-match-the-candidate-project-selection
+	repository := flowRepository(t)
+	candidateRaw := []byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude"],"projections":["codex"]}`)
+	candidatePath := filepath.Join(t.TempDir(), "project.json")
+	if err := os.WriteFile(candidatePath, candidateRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, candidateFingerprint, err := protocol.ProjectConfigFingerprint(candidateRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectBefore, err := os.ReadFile(filepath.Join(repository, ".boatstack", "project.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, _, err := bindControlBundle(context.Background(), repository, "installation.initialize", protocol.Parameters{
+		{Name: "config_path", Value: candidatePath},
+		{Name: "config_sha256", Value: candidateFingerprint},
+	})
+	if err == nil || !strings.Contains(err.Error(), "FLOW_PROJECTION_SELECTION_STALE") {
+		t.Fatalf("mismatched initialization target = contract %#v, err %v", contract, err)
+	}
+	projectAfter, readErr := os.ReadFile(filepath.Join(repository, ".boatstack", "project.json"))
+	if readErr != nil || string(projectAfter) != string(projectBefore) {
+		t.Fatalf("refused initialization changed project config: %q, %v", projectAfter, readErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(repository, ".boatstack", "host-projections.json")); !os.IsNotExist(statErr) {
+		t.Fatalf("refused initialization installed maintenance manifest: %v", statErr)
+	}
+}
+
 func TestWorkspaceCutRejectsUncommittedRuntimePinBeforeEffect(t *testing.T) {
 	// control-law: a runtime pin cannot outrun the committed Flow projection
 	repository := flowRepository(t)
@@ -1094,6 +1258,7 @@ func TestWorkspaceCutRejectsUncommittedRuntimePinBeforeEffect(t *testing.T) {
 	runFlowGit(t, repository, "config", "user.email", "boatstack@example.invalid")
 	runFlowGit(t, repository, "add", ".")
 	runFlowGit(t, repository, "commit", "-q", "-m", "control bundle")
+	writeMaintenanceProjectionFixture(t, repository)
 	pinRaw, err := boatstackruntime.EncodePin(boatstackruntime.NewPin(
 		boatstackruntime.Identity{Version: "v-test", SHA256: strings.Repeat("a", 64), SourceRevision: "test-revision"},
 		strings.Repeat("b", 64), durable.StateSchemaVersion,
@@ -1189,7 +1354,7 @@ func TestOneStaleFlowBlocksMultiFlowControlBundle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for path := range artifact.GeneratedSkills {
+	for path := range artifact.GeneratedProjections {
 		writeFixture(t, repository, path, []byte("stale secondary projection\n"))
 		if _, bundleErr := buildRepositoryControlBundle(context.Background(), repository); bundleErr == nil || !strings.Contains(bundleErr.Error(), path) {
 			t.Fatalf("stale secondary Flow did not block complete bundle: %v", bundleErr)
@@ -1453,6 +1618,7 @@ func TestFlowCompileRejectsSourceChangedDuringFrontend(t *testing.T) {
 	if err := os.WriteFile(frontend, script, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	writeProjectionProjectConfig(t, repository)
 	err = compileFlow(context.Background(), flowCommandOptions{
 		repository: repository, source: ".boatstack/flows/product-delivery.flow.ts", lock: "package-lock.json", frontend: frontend,
 	})
@@ -1461,6 +1627,41 @@ func TestFlowCompileRejectsSourceChangedDuringFrontend(t *testing.T) {
 	}
 	if _, statErr := os.Stat(filepath.Join(repository, ".boatstack/flows/product-delivery.flow.ir.json")); !os.IsNotExist(statErr) {
 		t.Fatalf("source race created an artifact: %v", statErr)
+	}
+}
+
+func TestFlowCompileRejectsProjectSelectionChangedDuringFrontend(t *testing.T) {
+	// control-law: compile-publication-binds-the-exact-config-selection-read-before-rendering
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+	repository, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeProjectionProjectConfig(t, repository)
+	writeFixture(t, repository, ".boatstack/flows/product-delivery.flow.ts", []byte("source"))
+	writeFixture(t, repository, "package-lock.json", []byte("lock"))
+	documentRaw, err := json.Marshal(productDeliveryDocument("product-delivery"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, repository, "raw-ir.json", documentRaw)
+	changed := `{"schema_version":4,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional"},"hosts":["cli","codex","claude"],"projections":["codex"]}`
+	writeFixture(t, repository, "changed-project.json", []byte(changed))
+	frontend := filepath.Join(repository, "frontend.sh")
+	script := []byte("#!/bin/sh\ncat >/dev/null\ncp '" + filepath.Join(repository, "changed-project.json") + "' '" + filepath.Join(repository, ".boatstack", "project.json") + "'\ncat '" + filepath.Join(repository, "raw-ir.json") + "'\n")
+	if err := os.WriteFile(frontend, script, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	err = compileFlow(context.Background(), flowCommandOptions{
+		repository: repository, source: ".boatstack/flows/product-delivery.flow.ts", lock: "package-lock.json", frontend: frontend,
+	})
+	if err == nil || !strings.Contains(err.Error(), "FLOW_PROJECTION_SELECTION_STALE") {
+		t.Fatalf("config replacement result = %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(repository, ".boatstack", "flows", "product-delivery.flow.ir.json")); !os.IsNotExist(statErr) {
+		t.Fatalf("config race created an artifact: %v", statErr)
 	}
 }
 
@@ -1483,6 +1684,7 @@ func TestFlowCompileDoesNotAutomaticallyExecuteRepositoryFrontend(t *testing.T) 
 	if err := os.WriteFile(frontend, []byte("#!/bin/sh\nprintf executed > '"+sentinel+"'\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	writeProjectionProjectConfig(t, repository)
 	err = compileFlow(context.Background(), flowCommandOptions{repository: repository, lock: "package-lock.json"})
 	if err == nil || !strings.Contains(err.Error(), "FLOW_FRONTEND_REQUIRED") {
 		t.Fatalf("automatic frontend result = %v", err)
@@ -1514,6 +1716,7 @@ func TestFlowCompileNamesDefaultArtifactFromProgramID(t *testing.T) {
 	if err := os.WriteFile(frontend, script, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	writeProjectionProjectConfig(t, repository)
 	if err := compileFlow(context.Background(), flowCommandOptions{
 		repository: repository, source: ".boatstack/flows/foo.flow.ts", lock: "package-lock.json", frontend: frontend,
 	}); err != nil {
@@ -1551,6 +1754,7 @@ func TestFlowCompileProjectsHyphenatedEntryIdentity(t *testing.T) {
 	if err := os.WriteFile(frontend, script, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	writeProjectionProjectConfig(t, repository)
 	if err := compileFlow(context.Background(), flowCommandOptions{
 		repository: repository, source: ".boatstack/flows/product-delivery.flow.ts", lock: "package-lock.json", frontend: frontend,
 	}); err != nil {
@@ -1564,10 +1768,10 @@ func TestFlowCompileProjectsHyphenatedEntryIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(artifact.GeneratedSkills) != 5 {
-		t.Fatalf("generated skills = %v", artifact.GeneratedSkills)
+	if len(artifact.GeneratedProjections) != 5 {
+		t.Fatalf("generated projections = %v", artifact.GeneratedProjections)
 	}
-	for path := range artifact.GeneratedSkills {
+	for path := range artifact.GeneratedProjections {
 		if strings.Contains(path, "--") {
 			t.Fatalf("artifact contains invalid skill path %s", path)
 		}
@@ -1598,6 +1802,7 @@ func TestFlowCompileRejectsDependencyLockProjectionOverlap(t *testing.T) {
 		t.Fatal(err)
 	}
 	options := flowCommandOptions{repository: repository, source: sourcePath, lock: "package-lock.json", frontend: frontend}
+	writeProjectionProjectConfig(t, repository)
 	if err := compileFlow(context.Background(), options); err != nil {
 		t.Fatal(err)
 	}
@@ -1606,6 +1811,7 @@ func TestFlowCompileRejectsDependencyLockProjectionOverlap(t *testing.T) {
 		t.Fatal(err)
 	}
 	options.lock = artifactPath
+	writeProjectionProjectConfig(t, repository)
 	err = compileFlow(context.Background(), options)
 	if err == nil || !strings.Contains(err.Error(), "FLOW_COMPILE_INPUT_OVERLAP") {
 		t.Fatalf("overlapping lock result = %v", err)
@@ -1643,6 +1849,7 @@ func TestFlowCompileRefusesUnmanagedGeneratedSkill(t *testing.T) {
 	if err := os.WriteFile(frontend, script, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	writeProjectionProjectConfig(t, repository)
 	err = compileFlow(context.Background(), flowCommandOptions{
 		repository: repository, source: ".boatstack/flows/product-delivery.flow.ts", lock: "package-lock.json", frontend: frontend,
 	})
@@ -1678,24 +1885,26 @@ func TestFlowCompileRejectsForgedArtifactOwnership(t *testing.T) {
 	writeFixture(t, repository, unrelatedPath, unrelated)
 	resolver, _ := softwareflow.NewResolver(context.Background())
 	compiled, _ := controlprogram.Compile(document, resolver)
-	skills, _ := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
+	projections := []hostprojection.ID{hostprojection.Codex, hostprojection.Claude}
+	skills, _ := softwareflow.GenerateProjections(compiled, projections)
 	for path, content := range skills {
 		writeFixture(t, repository, path, content)
 	}
 	forged, _, err := controlprogram.NewArtifact(compiled, controlprogram.ArtifactInput{
 		CompilerVersion: flowCompilerVersion, SourcePath: ".boatstack/flows/product-delivery.flow.ts", Source: source,
-		DependencyLockPath: "package-lock.json", DependencyLock: lock, GeneratedSkills: skills,
+		DependencyLockPath: "package-lock.json", DependencyLock: lock, Projections: projections, GeneratedProjections: skills,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	forged.GeneratedSkills[unrelatedPath] = fileDigest(unrelated)
+	forged.GeneratedProjections[unrelatedPath] = fileDigest(unrelated)
 	forgedRaw, _ := json.Marshal(forged)
 	writeFixture(t, repository, ".boatstack/flows/product-delivery.flow.ir.json", forgedRaw)
 	frontend := filepath.Join(repository, "frontend.sh")
 	if err := os.WriteFile(frontend, []byte("#!/bin/sh\ncat >/dev/null\ncat '"+filepath.Join(repository, "raw-ir.json")+"'\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	writeProjectionProjectConfig(t, repository)
 	err = compileFlow(context.Background(), flowCommandOptions{repository: repository, source: ".boatstack/flows/product-delivery.flow.ts", lock: "package-lock.json", frontend: frontend})
 	if err == nil || !strings.Contains(err.Error(), "FLOW_PROJECTION") {
 		t.Fatalf("forged ownership result = %v", err)
@@ -1791,6 +2000,7 @@ func TestFlowCompileRetiresProjectionWhenSourceChangesProgramID(t *testing.T) {
 	for _, programID := range []string{"foo", "bar"} {
 		raw, _ := json.Marshal(productDeliveryDocument(programID))
 		writeFixture(t, repository, "raw-ir.json", raw)
+		writeProjectionProjectConfig(t, repository)
 		if err := compileFlow(context.Background(), flowCommandOptions{repository: repository, source: sourcePath, lock: "package-lock.json", frontend: frontend}); err != nil {
 			t.Fatalf("compile %s: %v", programID, err)
 		}
@@ -1820,6 +2030,7 @@ func TestFlowCompileAndCheckRejectRuntimeInvalidSoftwareFlow(t *testing.T) {
 			}
 			sourcePath, lockPath := ".boatstack/flows/product-delivery.flow.ts", "package-lock.json"
 			source, lock := []byte("declarative source"), []byte("lock")
+			writeProjectionProjectConfig(t, repository)
 			writeFixture(t, repository, sourcePath, source)
 			writeFixture(t, repository, lockPath, lock)
 			if operation == "compile" {
@@ -1833,6 +2044,7 @@ func TestFlowCompileAndCheckRejectRuntimeInvalidSoftwareFlow(t *testing.T) {
 				if err := os.WriteFile(frontend, script, 0o700); err != nil {
 					t.Fatal(err)
 				}
+				writeProjectionProjectConfig(t, repository)
 				err = compileFlow(context.Background(), flowCommandOptions{repository: repository, source: sourcePath, lock: lockPath, frontend: frontend})
 				if err == nil || !strings.Contains(err.Error(), "FLOW_RUNTIME_INVALID") {
 					t.Fatalf("runtime-invalid compile result = %v", err)
@@ -1850,7 +2062,8 @@ func TestFlowCompileAndCheckRejectRuntimeInvalidSoftwareFlow(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			skills, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
+			projections := []hostprojection.ID{hostprojection.Codex, hostprojection.Claude}
+			skills, err := softwareflow.GenerateProjections(compiled, projections)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1859,7 +2072,7 @@ func TestFlowCompileAndCheckRejectRuntimeInvalidSoftwareFlow(t *testing.T) {
 			}
 			_, artifactRaw, err := controlprogram.NewArtifact(compiled, controlprogram.ArtifactInput{
 				CompilerVersion: flowCompilerVersion, SourcePath: sourcePath, Source: source,
-				DependencyLockPath: lockPath, DependencyLock: lock, GeneratedSkills: skills,
+				DependencyLockPath: lockPath, DependencyLock: lock, Projections: projections, GeneratedProjections: skills,
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -1888,6 +2101,7 @@ func TestFlowCompileAndCheckRejectUnbindableEntryInputs(t *testing.T) {
 			}
 			sourcePath, lockPath := ".boatstack/flows/product-delivery.flow.ts", "package-lock.json"
 			source, lock := []byte("declarative source"), []byte("lock")
+			writeProjectionProjectConfig(t, repository)
 			writeFixture(t, repository, sourcePath, source)
 			writeFixture(t, repository, lockPath, lock)
 			if operation == "compile" {
@@ -1901,6 +2115,7 @@ func TestFlowCompileAndCheckRejectUnbindableEntryInputs(t *testing.T) {
 				if err := os.WriteFile(frontend, script, 0o700); err != nil {
 					t.Fatal(err)
 				}
+				writeProjectionProjectConfig(t, repository)
 				err = compileFlow(context.Background(), flowCommandOptions{repository: repository, source: sourcePath, lock: lockPath, frontend: frontend})
 				if err == nil || !strings.Contains(err.Error(), "FLOW_RUNTIME_INVALID") {
 					t.Fatalf("input-invalid compile result = %v", err)
@@ -1918,7 +2133,8 @@ func TestFlowCompileAndCheckRejectUnbindableEntryInputs(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			skills, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
+			projections := []hostprojection.ID{hostprojection.Codex, hostprojection.Claude}
+			skills, err := softwareflow.GenerateProjections(compiled, projections)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1927,7 +2143,7 @@ func TestFlowCompileAndCheckRejectUnbindableEntryInputs(t *testing.T) {
 			}
 			_, artifactRaw, err := controlprogram.NewArtifact(compiled, controlprogram.ArtifactInput{
 				CompilerVersion: flowCompilerVersion, SourcePath: sourcePath, Source: source,
-				DependencyLockPath: lockPath, DependencyLock: lock, GeneratedSkills: skills,
+				DependencyLockPath: lockPath, DependencyLock: lock, Projections: projections, GeneratedProjections: skills,
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -2443,7 +2659,7 @@ func TestFlowEntryRejectsPlanInboxSymlinkEscape(t *testing.T) {
 	}
 }
 
-func TestFlowCompileRetiresOnlyUnmodifiedPriorGeneratedSkills(t *testing.T) {
+func TestFlowCompileRetiresOnlyUnmodifiedPriorGeneratedProjections(t *testing.T) {
 	// control-law: removing-an-entry-cannot-leave-a-stale-authority-bearing-skill
 	repository, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -2454,14 +2670,20 @@ func TestFlowCompileRetiresOnlyUnmodifiedPriorGeneratedSkills(t *testing.T) {
 	retired := []byte("retired")
 	retainedPath := ".agents/skills/program-keep/SKILL.md"
 	retiredPath := ".agents/skills/program-remove/SKILL.md"
+	selectionFingerprint, err := hostprojection.SelectionFingerprint([]hostprojection.ID{hostprojection.Codex})
+	if err != nil {
+		t.Fatal(err)
+	}
 	writeFixture(t, repository, retainedPath, retained)
 	writeFixture(t, repository, retiredPath, retired)
 	artifact := controlprogram.Artifact{
 		Schema: controlprogram.ArtifactSchemaName, SchemaRevision: controlprogram.ArtifactSchemaRevision, CompilerVersion: flowCompilerVersion,
 		SourcePath: ".boatstack/flows/program.flow.ts", SourceSHA256: strings.Repeat("a", 64),
 		DependencyLockPath: "package-lock.json", DependencyLockSHA256: strings.Repeat("b", 64),
-		ProgramFingerprint: strings.Repeat("c", 64),
-		GeneratedSkills:    map[string]string{retainedPath: fileDigest(retained), retiredPath: fileDigest(retired)},
+		ProgramFingerprint:             strings.Repeat("c", 64),
+		Projections:                    []string{"codex"},
+		ProjectionSelectionFingerprint: selectionFingerprint,
+		GeneratedProjections:           map[string]string{retainedPath: fileDigest(retained), retiredPath: fileDigest(retired)},
 	}
 	raw, err := json.Marshal(artifact)
 	if err != nil {
@@ -2474,7 +2696,7 @@ func TestFlowCompileRetiresOnlyUnmodifiedPriorGeneratedSkills(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ownership := boatstackruntime.NewFlowProjectionOwnership(sourcePath, ".boatstack/flows/program.flow.ir.json", raw, map[string][]byte{retainedPath: retained, retiredPath: retired})
+	ownership := boatstackruntime.NewFlowProjectionOwnership(sourcePath, ".boatstack/flows/program.flow.ir.json", raw, selectionFingerprint, map[string][]byte{retainedPath: retained, retiredPath: retired})
 	if err := boatstackruntime.ApplyOwnedFlowProjection(repository, []boatstackruntime.ProjectionWrite{
 		{Path: filepath.Join(repository, filepath.FromSlash(retainedPath)), Content: retained, Mode: 0o600},
 		{Path: filepath.Join(repository, filepath.FromSlash(retiredPath)), Content: retired, Mode: 0o600},
@@ -2490,7 +2712,7 @@ func TestFlowCompileRetiresOnlyUnmodifiedPriorGeneratedSkills(t *testing.T) {
 		t.Fatalf("retired paths = %v", paths)
 	}
 	if priorSkills[retainedPath] != fileDigest(retained) || priorSkills[retiredPath] != fileDigest(retired) {
-		t.Fatalf("prior generated skills = %v", priorSkills)
+		t.Fatalf("prior generated projections = %v", priorSkills)
 	}
 	writeFixture(t, repository, retiredPath, []byte("user changed"))
 	paths, _, _, _, err = ownedProjectionChanges(repository, sourcePath, artifactPath, map[string]string{retainedPath: fileDigest(retained)})

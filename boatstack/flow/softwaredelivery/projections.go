@@ -3,35 +3,48 @@ package softwaredelivery
 import (
 	"encoding/hex"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	"github.com/operatorstack/boatstack/boatstack/flow/skillprojection"
+	"github.com/operatorstack/boatstack/boatstack/internal/hostprojection"
 )
 
-func GenerateSkills(compiled controlprogram.Compiled, hosts []string) (map[string][]byte, error) {
+func GenerateProjections(compiled controlprogram.Compiled, projections []hostprojection.ID) (map[string][]byte, error) {
+	canonical, err := hostprojection.ParseIDs(hostprojection.Strings(projections))
+	if err != nil {
+		return nil, err
+	}
 	result := map[string][]byte{}
 	const exactCheckoutAttributes = "** -text"
+	for _, projection := range canonical {
+		if path, content, ok := hostprojection.SharedCheckoutPath(projection); ok {
+			result[path] = content
+		}
+	}
 	for _, entry := range compiled.Document.Entries {
 		slug := flowSkillSlug(compiled.Document.Program.ID, entry.ID)
 		if slug == "boatstack-update" {
-			return nil, fmt.Errorf("generated Flow skill %q is reserved for kernel maintenance", slug)
+			return nil, fmt.Errorf("generated Flow projection %q is reserved for kernel maintenance", slug)
 		}
-		for _, host := range hosts {
-			skill := renderSkill(compiled, entry, slug, host)
-			switch host {
-			case "codex":
-				root := filepath.ToSlash(filepath.Join(".agents", "skills", slug))
-				result[root+"/.gitattributes"] = []byte(exactCheckoutAttributes)
-				result[root+"/SKILL.md"] = skill
-				result[root+"/agents/openai.yaml"] = []byte(fmt.Sprintf("interface:\n  display_name: %q\n  short_description: %q\n  default_prompt: %q\npolicy:\n  allow_implicit_invocation: false\n", title(slug), entry.Description, "Use $"+slug+" to run the repository-owned Boatstack Flow entry."))
-			case "claude":
-				root := filepath.ToSlash(filepath.Join(".claude", "skills", slug))
-				result[root+"/.gitattributes"] = []byte(exactCheckoutAttributes)
-				result[root+"/SKILL.md"] = skill
+		for _, projection := range canonical {
+			paths, err := hostprojection.FlowPaths(projection, slug)
+			if err != nil {
+				return nil, err
+			}
+			content := renderProjection(compiled, entry, slug, string(projection))
+			switch projection {
+			case hostprojection.Codex:
+				result[paths[0]] = []byte(exactCheckoutAttributes)
+				result[paths[1]] = content
+				result[paths[2]] = []byte(fmt.Sprintf("interface:\n  display_name: %q\n  short_description: %q\n  default_prompt: %q\npolicy:\n  allow_implicit_invocation: false\n", title(slug), entry.Description, "Use $"+slug+" to run the repository-owned Boatstack Flow entry."))
+			case hostprojection.Claude:
+				result[paths[0]] = []byte(exactCheckoutAttributes)
+				result[paths[1]] = content
+			case hostprojection.Cursor, hostprojection.Gemini:
+				result[paths[0]] = content
 			default:
-				return nil, fmt.Errorf("unsupported generated Flow skill host %q", host)
+				return nil, fmt.Errorf("unsupported generated Flow projection %q", projection)
 			}
 		}
 	}
@@ -39,15 +52,18 @@ func GenerateSkills(compiled controlprogram.Compiled, hosts []string) (map[strin
 }
 
 func flowSkillSlug(programID, entryID string) string {
-	const encodedPrefix = "x0"
-	encodedEntry := entryID
-	if strings.Contains(entryID, "-") || strings.HasPrefix(entryID, encodedPrefix) {
-		encodedEntry = encodedPrefix + hex.EncodeToString([]byte(entryID))
-	}
-	return programID + "-" + encodedEntry
+	return projectionSlugComponent(programID, false) + "-" + projectionSlugComponent(entryID, true)
 }
 
-func renderSkill(compiled controlprogram.Compiled, entry controlprogram.Entry, slug, host string) []byte {
+func projectionSlugComponent(value string, encodeHyphen bool) string {
+	const encodedPrefix = "x0"
+	if strings.ContainsAny(value, "._") || strings.HasPrefix(value, encodedPrefix) || (encodeHyphen && strings.Contains(value, "-")) {
+		return encodedPrefix + hex.EncodeToString([]byte(value))
+	}
+	return value
+}
+
+func renderProjection(compiled controlprogram.Compiled, entry controlprogram.Entry, slug, host string) []byte {
 	description := entry.Description
 	if description == "" {
 		description = "Run repository Flow entry " + entry.ID + " to target " + entry.Target + "."

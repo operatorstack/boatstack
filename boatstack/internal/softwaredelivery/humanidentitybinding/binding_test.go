@@ -145,7 +145,7 @@ func identityRepository(t *testing.T) string {
 }
 
 func identityConfig(actor string) []byte {
-	return []byte(`{"schema_version":3,"identity":{"human":{"kind":"literal","value":"` + actor + `"}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli","sdk"]}`)
+	return []byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"` + actor + `"}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli","sdk"],"projections":[]}`)
 }
 
 func writeIdentityFile(t *testing.T, path string, raw []byte) {

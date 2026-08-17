@@ -18,10 +18,12 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/core"
 	"github.com/operatorstack/boatstack/boatstack/delivery"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
+	"github.com/operatorstack/boatstack/boatstack/internal/hostprojection"
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 )
 
-const flowCompilerVersion = "control-program.compiler.5"
+const flowCompilerVersion = "control-program.compiler.6"
 
 type flowCommandOptions struct {
 	repository string
@@ -29,6 +31,7 @@ type flowCommandOptions struct {
 	artifact   string
 	lock       string
 	frontend   string
+	format     string
 }
 
 func runFlowCommand(arguments []string) error {
@@ -59,11 +62,15 @@ func runFlowCommand(arguments []string) error {
 	flags.StringVar(&options.artifact, "artifact", "", "compiled Flow artifact path")
 	flags.StringVar(&options.lock, "lock", "package-lock.json", "frontend dependency lock path")
 	flags.StringVar(&options.frontend, "frontend", "", "exact boatstack-flow-frontend executable path")
+	flags.StringVar(&options.format, "format", "text", "output format: text or json")
 	if err := flags.Parse(arguments[1:]); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 {
 		return fmt.Errorf("unexpected flow arguments: %s", strings.Join(flags.Args(), " "))
+	}
+	if options.format != "text" && options.format != "json" {
+		return fmt.Errorf("unsupported flow output format %q", options.format)
 	}
 	repository, err := filepath.Abs(options.repository)
 	if err != nil {
@@ -100,6 +107,10 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 	if err != nil {
 		return err
 	}
+	configPath, configRaw, _, projections, err := loadProjectProjectionSelection(options.repository)
+	if err != nil {
+		return err
+	}
 	sourceRaw, err := os.ReadFile(source)
 	if err != nil {
 		return err
@@ -118,6 +129,9 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 	if err := requireUnchangedCompileInput(lockPath, lockRaw); err != nil {
 		return err
 	}
+	if err := requireUnchangedCompileInput(configPath, configRaw); err != nil {
+		return fmt.Errorf("FLOW_PROJECTION_SELECTION_STALE: %w", err)
+	}
 	resolver, err := softwareflow.NewResolver(ctx)
 	if err != nil {
 		return err
@@ -133,7 +147,7 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 	if err != nil {
 		return err
 	}
-	skills, err := softwareflow.GenerateSkills(compiled, []string{"codex", "claude"})
+	generated, err := softwareflow.GenerateProjections(compiled, projections)
 	if err != nil {
 		return err
 	}
@@ -141,17 +155,18 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 	lockRelative, _ := filepath.Rel(options.repository, lockPath)
 	artifact, artifactRaw, err := controlprogram.NewArtifact(compiled, controlprogram.ArtifactInput{
 		CompilerVersion: flowCompilerVersion, SourcePath: filepath.ToSlash(sourceRelative), Source: sourceRaw,
-		DependencyLockPath: filepath.ToSlash(lockRelative), DependencyLock: lockRaw, GeneratedSkills: skills,
+		DependencyLockPath: filepath.ToSlash(lockRelative), DependencyLock: lockRaw,
+		Projections: projections, GeneratedProjections: generated,
 	})
 	if err != nil {
 		return err
 	}
-	removals, artifactPrevious, priorSkills, ownership, err := ownedProjectionChanges(options.repository, filepath.ToSlash(sourceRelative), artifactPath, artifact.GeneratedSkills)
+	removals, artifactPrevious, priorGenerated, ownership, err := ownedProjectionChanges(options.repository, filepath.ToSlash(sourceRelative), artifactPath, artifact.GeneratedProjections)
 	if err != nil {
 		return err
 	}
-	paths := make([]string, 0, len(skills))
-	for path := range skills {
+	paths := make([]string, 0, len(generated))
+	for path := range generated {
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
@@ -162,7 +177,7 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 			return pathErr
 		}
 		writes = append(writes, boatstackruntime.ProjectionWrite{
-			Path: absolute, Content: skills[path], Mode: 0o644, ExpectedPreviousSHA256: priorSkills[path],
+			Path: absolute, Content: generated[path], Mode: 0o644, ExpectedPreviousSHA256: priorGenerated[path],
 		})
 	}
 	writes = append(writes, boatstackruntime.ProjectionWrite{
@@ -171,8 +186,9 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 	expectations := []boatstackruntime.ProjectionExpectation{
 		{Path: source, Exists: true, ExpectedSHA256: fileDigest(sourceRaw)},
 		{Path: lockPath, Exists: true, ExpectedSHA256: fileDigest(lockRaw)},
+		{Path: configPath, Exists: true, ExpectedSHA256: fileDigest(configRaw)},
 	}
-	compileInputs := []string{source, lockPath}
+	compileInputs := []string{source, lockPath, configPath}
 	assetPaths := make([]string, 0, len(artifact.Assets))
 	for relative := range artifact.Assets {
 		assetPaths = append(assetPaths, relative)
@@ -192,11 +208,11 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 		return err
 	}
 	artifactRelative, _ := filepath.Rel(options.repository, artifactPath)
-	nextOwnership := boatstackruntime.NewFlowProjectionOwnership(filepath.ToSlash(sourceRelative), filepath.ToSlash(artifactRelative), artifactRaw, skills)
+	nextOwnership := boatstackruntime.NewFlowProjectionOwnership(filepath.ToSlash(sourceRelative), filepath.ToSlash(artifactRelative), artifactRaw, artifact.ProjectionSelectionFingerprint, generated)
 	if err := boatstackruntime.ApplyOwnedFlowProjection(options.repository, writes, removals, expectations, ownership, nextOwnership); err != nil {
 		return err
 	}
-	return renderFlowResult("compiled", artifactPath, artifact)
+	return renderFlowResult("compiled", artifactPath, artifact, options.format)
 }
 
 func rejectProjectionInputOverlap(inputs []string, writes []boatstackruntime.ProjectionWrite, removals []boatstackruntime.ProjectionRemoval) error {
@@ -231,8 +247,8 @@ func ownedProjectionChanges(repository, sourceRelative, artifactPath string, nex
 		return nil, "", map[string]string{}, ownership, err
 	}
 	prior := ownership.Record
-	retired := make([]boatstackruntime.ProjectionRemoval, 0, len(prior.GeneratedSkills)+1)
-	for relative, expected := range prior.GeneratedSkills {
+	retired := make([]boatstackruntime.ProjectionRemoval, 0, len(prior.GeneratedProjections)+1)
+	for relative, expected := range prior.GeneratedProjections {
 		if _, retained := next[relative]; retained {
 			continue
 		}
@@ -254,7 +270,7 @@ func ownedProjectionChanges(repository, sourceRelative, artifactPath string, nex
 		retired = append(retired, boatstackruntime.ProjectionRemoval{Path: priorArtifact, ExpectedSHA256: prior.ArtifactSHA256, AllowMissing: true})
 	}
 	sort.Slice(retired, func(i, j int) bool { return retired[i].Path < retired[j].Path })
-	return retired, artifactPrevious, prior.GeneratedSkills, ownership, nil
+	return retired, artifactPrevious, prior.GeneratedProjections, ownership, nil
 }
 
 func fileDigest(value []byte) string {
@@ -279,14 +295,14 @@ func checkFlow(ctx context.Context, options flowCommandOptions) error {
 	if err != nil {
 		return err
 	}
-	compiled, err := controlprogram.CheckArtifact(options.repository, artifact, flowCompilerVersion, resolver, generateSoftwareFlowSkills)
+	compiled, err := checkArtifactForCurrentProject(options.repository, artifact, resolver)
 	if err != nil {
 		return err
 	}
 	if err := validateCompiledFlow(ctx, options.repository, compiled, resolver); err != nil {
 		return err
 	}
-	return renderFlowResult("valid", artifactPath, artifact)
+	return renderFlowResult("valid", artifactPath, artifact, options.format)
 }
 
 func validateCompiledFlow(ctx context.Context, repository string, compiled controlprogram.Compiled, resolver softwareflow.Resolver) error {
@@ -586,11 +602,53 @@ func exactRepositoryPath(repository, relative string) (string, error) {
 	return absolute, nil
 }
 
-func renderFlowResult(status, artifactPath string, artifact controlprogram.Artifact) error {
+func renderFlowResult(status, artifactPath string, artifact controlprogram.Artifact, format string) error {
+	generated := make([]string, 0, len(artifact.GeneratedProjections))
+	for path := range artifact.GeneratedProjections {
+		generated = append(generated, path)
+	}
+	sort.Strings(generated)
+	if format != "json" {
+		selected := strings.Join(artifact.Projections, ",")
+		if selected == "" {
+			selected = "none"
+		}
+		_, err := fmt.Fprintf(os.Stdout, "Flow %s %s; projections: %s; generated: %d; artifact: %s\n", artifact.Program.Program.ID, status, selected, len(generated), artifactPath)
+		return err
+	}
 	return json.NewEncoder(os.Stdout).Encode(map[string]any{
 		"status": status, "program_id": artifact.Program.Program.ID, "program_fingerprint": artifact.ProgramFingerprint,
-		"artifact": artifactPath, "entries": entryIDs(artifact.Program.Entries),
+		"artifact": artifactPath, "entries": entryIDs(artifact.Program.Entries), "projections": artifact.Projections,
+		"projection_selection_fingerprint": artifact.ProjectionSelectionFingerprint, "generated_paths": generated,
 	})
+}
+
+func loadProjectProjectionSelection(repository string) (string, []byte, string, []hostprojection.ID, error) {
+	path, err := exactRepositoryPath(repository, filepath.Join(".boatstack", "project.json"))
+	if err != nil {
+		return "", nil, "", nil, err
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", nil, "", nil, fmt.Errorf("PROJECT_PROJECTIONS_REQUIRED: read project configuration: %w", err)
+	}
+	config, fingerprint, err := protocol.ProjectConfigFingerprint(raw)
+	if err != nil {
+		return "", nil, "", nil, err
+	}
+	projections, err := config.ProjectionIDs()
+	if err != nil {
+		return "", nil, "", nil, err
+	}
+	return path, raw, fingerprint, projections, nil
+}
+
+func checkArtifactForCurrentProject(repository string, artifact controlprogram.Artifact, resolver controlprogram.BindingResolver) (controlprogram.Compiled, error) {
+	_, _, _, projections, err := loadProjectProjectionSelection(repository)
+	if err != nil {
+		return controlprogram.Compiled{}, err
+	}
+	return controlprogram.CheckArtifact(repository, artifact, flowCompilerVersion, resolver, projections, generateSoftwareFlowProjections)
 }
 
 func entryIDs(entries []controlprogram.Entry) []string {

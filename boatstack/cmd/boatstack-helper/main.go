@@ -543,10 +543,24 @@ func standardKernel(ctx context.Context, request surfaces.Request) (boatstack.De
 }
 
 func acquireFlowExecutionLease(request surfaces.Request) (*boatstackruntime.FlowProjectionLease, error) {
+	if transitionOwnsMaintenanceProjections(request.TransitionID) {
+		// The Kernel's configuration/installation resource lock holds this same
+		// lease across final preparation, effect execution, and verification.
+		return &boatstackruntime.FlowProjectionLease{}, nil
+	}
 	if request.ProgramID == "" && request.ControlBundle == nil {
 		return &boatstackruntime.FlowProjectionLease{}, nil
 	}
 	return boatstackruntime.AcquireFlowProjectionLease(request.Repository)
+}
+
+func transitionOwnsMaintenanceProjections(id catalog.TransitionID) bool {
+	switch id {
+	case "configuration.initialize", "configuration.mutate", "installation.initialize", "installation.update", "installation.reconcile-update":
+		return true
+	default:
+		return false
+	}
 }
 
 func refreshFlowInvocation(ctx context.Context, operation surfaces.Operation, prior surfaces.Request, options commandOptions) (surfaces.Request, commandOptions, error) {
