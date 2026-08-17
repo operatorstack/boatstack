@@ -17,7 +17,10 @@ import (
 	"strings"
 )
 
-const ControlBundleSchemaVersion = 1
+const (
+	ControlBundleSchemaVersion = 1
+	maxControlBundleFileSize   = int64(64 << 20)
+)
 
 // ControlBundleFile binds one repository-relative control file to exact bytes.
 type ControlBundleFile struct {
@@ -68,6 +71,9 @@ func NewControlBundleSnapshotWithMemberSets(files map[string][]byte, absent []st
 		if !safeProjectionRelative(path) {
 			return ControlBundleSnapshot{}, fmt.Errorf("CONTROL_BUNDLE_INVALID: unsafe path %q", path)
 		}
+		if int64(len(raw)) > maxControlBundleFileSize {
+			return ControlBundleSnapshot{}, fmt.Errorf("CONTROL_BUNDLE_INVALID: %s exceeds the maximum control-bundle file size", path)
+		}
 		digest := sha256.Sum256(raw)
 		bindings = append(bindings, ControlBundleFile{Path: path, SHA256: hex.EncodeToString(digest[:])})
 	}
@@ -100,6 +106,9 @@ func NewControlBundleSnapshotWithMemberSets(files map[string][]byte, absent []st
 // ReplaceControlBundleFile derives a target snapshot without trusting a
 // caller-supplied target fingerprint.
 func ReplaceControlBundleFile(snapshot ControlBundleSnapshot, path string, raw []byte) (ControlBundleSnapshot, error) {
+	if int64(len(raw)) > maxControlBundleFileSize {
+		return ControlBundleSnapshot{}, fmt.Errorf("CONTROL_BUNDLE_INVALID: %s exceeds the maximum control-bundle file size", path)
+	}
 	digest := sha256.Sum256(raw)
 	return replaceControlBundleBinding(snapshot, ControlBundleFile{Path: path, SHA256: hex.EncodeToString(digest[:])})
 }
@@ -541,7 +550,7 @@ func VerifyControlBundleRevision(ctx context.Context, repository, revision strin
 			return fmt.Errorf("CONTROL_BUNDLE_STALE: revision %s lacks regular file %s", revision, file.Path)
 		}
 		size, parseErr := strconv.ParseInt(fields[2], 10, 64)
-		if parseErr != nil || size < 0 || size > 64<<20 {
+		if parseErr != nil || size < 0 || size > maxControlBundleFileSize {
 			return fmt.Errorf("CONTROL_BUNDLE_STALE: revision %s has invalid size for %s", revision, file.Path)
 		}
 		raw := make([]byte, size)
@@ -652,6 +661,9 @@ func readBundleFile(repository, relative string) ([]byte, error) {
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("control file is not a regular file")
+	}
+	if info.Size() > maxControlBundleFileSize {
+		return nil, fmt.Errorf("control file exceeds the maximum control-bundle file size")
 	}
 	resolvedParent, err := filepath.EvalSymlinks(filepath.Dir(absolute))
 	if err != nil || (resolvedParent != repository && !strings.HasPrefix(resolvedParent, repository+string(filepath.Separator))) {

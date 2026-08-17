@@ -2,6 +2,8 @@ package runtime
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -82,6 +84,48 @@ func TestControlBundleRejectsPathsThatCanSplitGitBatchRequests(t *testing.T) {
 				t.Fatalf("control path %q was not rejected: %v", path, err)
 			}
 		})
+	}
+}
+
+func TestControlBundleSizeLimitIsConsistentAcrossAdmissionAndVerification(t *testing.T) {
+	oversized := make([]byte, maxControlBundleFileSize+1)
+	path := ".boatstack/oversized.lock"
+	if _, err := NewControlBundleSnapshot(map[string][]byte{path: oversized}); err == nil || !strings.Contains(err.Error(), "maximum control-bundle file size") {
+		t.Fatalf("snapshot admission accepted oversized member: %v", err)
+	}
+	base, err := NewControlBundleSnapshot(map[string][]byte{".boatstack/project.json": []byte("project\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReplaceControlBundleFile(base, path, oversized); err == nil || !strings.Contains(err.Error(), "maximum control-bundle file size") {
+		t.Fatalf("snapshot replacement accepted oversized member: %v", err)
+	}
+
+	repository := t.TempDir()
+	runBundleGit(t, repository, "init", "-q")
+	runBundleGit(t, repository, "config", "user.email", "bundle@example.invalid")
+	runBundleGit(t, repository, "config", "user.name", "Bundle Test")
+	if err := os.MkdirAll(filepath.Join(repository, ".boatstack"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, filepath.FromSlash(path)), oversized, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(oversized)
+	files := []ControlBundleFile{{Path: path, SHA256: hex.EncodeToString(digest[:])}}
+	fingerprint, err := controlBundleSnapshotDigest(files, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := ControlBundleSnapshot{Fingerprint: fingerprint, Files: files}
+	runBundleGit(t, repository, "add", path)
+	runBundleGit(t, repository, "commit", "-q", "-m", "oversized")
+	revision := strings.TrimSpace(runBundleGit(t, repository, "rev-parse", "HEAD"))
+	if err := VerifyControlBundleRoot(repository, snapshot); err == nil || !strings.Contains(err.Error(), "maximum control-bundle file size") {
+		t.Fatalf("root verification accepted oversized member: %v", err)
+	}
+	if err := VerifyControlBundleRevision(context.Background(), repository, revision, snapshot); err == nil || !strings.Contains(err.Error(), "invalid size") {
+		t.Fatalf("revision verification accepted oversized member: %v", err)
 	}
 }
 
