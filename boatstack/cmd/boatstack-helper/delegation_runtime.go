@@ -174,10 +174,17 @@ func prepareFlowAuthorization(ctx context.Context, request *surfaces.Request) (p
 		releaseOnError()
 		return nil, nil, fmt.Errorf("DELEGATION_CONTEXT_UNAUTHORIZED: current worktree is not in the verified run lineage")
 	}
-	if record.Status == "completed" && (request.Operation == surfaces.OperationResolve || request.Operation == surfaces.OperationExplain) {
-		// A completed delegation carries no authority, but resolving the exact
-		// bound run remains safe and lets restarts replay its terminal state.
-		return nil, nil, nil
+	if record.Status == "completed" {
+		if request.Operation == surfaces.OperationResolve || request.Operation == surfaces.OperationExplain {
+			// A completed authorization carries no authority, but resolving the
+			// exact bound run remains safe and lets restarts replay its terminal
+			// state. If current evidence makes the target nonterminal again, the
+			// resulting apply will require a fresh exact authorization below.
+			return nil, nil, nil
+		}
+		releaseOnError()
+		response, responseErr := flowAuthorizationRequiredResponse(*request)
+		return nil, response, responseErr
 	}
 	if record.Status != "active" {
 		releaseOnError()

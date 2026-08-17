@@ -3255,8 +3255,23 @@ func TestDelegationIsRequiredAndRevocationWinsBetweenNextAndApply(t *testing.T) 
 	}
 	request.Operation = surfaces.OperationApply
 	lock, suspension, err = prepareFlowAuthorization(context.Background(), &request)
-	if lock != nil || suspension != nil || err == nil || !strings.Contains(err.Error(), "DELEGATION_REVOKED") {
-		t.Fatalf("post-target apply preflight = lock=%v response=%#v err=%v", lock, suspension, err)
+	if lock != nil || suspension == nil || suspension.Authorization == nil || suspension.Authorization.RequestFingerprint != bound.delegationRequestFingerprint || err != nil {
+		t.Fatalf("post-target fresh authorization = lock=%v response=%#v err=%v", lock, suspension, err)
+	}
+	reauthorizedAfterTarget, changed, err := authorizeDelegation(&completed, bound.delegationRequest, bound.delegationRequestFingerprint, completed.ActorIdentityProviderFingerprint, completed.Actor, time.Hour, time.Now().UTC(), false)
+	if err != nil || !changed || reauthorizedAfterTarget.Status != "active" || reauthorizedAfterTarget.Revision != completed.Revision+1 || reauthorizedAfterTarget.ReceiptID == completed.ReceiptID || !reauthorizedAfterTarget.EndedAt.IsZero() || reauthorizedAfterTarget.EndReason != "" {
+		t.Fatalf("post-target reauthorization = record=%#v changed=%t err=%v", reauthorizedAfterTarget, changed, err)
+	}
+	if err := effects.StoreDelegationRecord(recordPath, reauthorizedAfterTarget); err != nil {
+		t.Fatal(err)
+	}
+	request.Authority.Receipts = nil
+	lock, suspension, err = prepareFlowAuthorization(context.Background(), &request)
+	if err != nil || lock == nil || suspension != nil || !request.Authority.Set(time.Now().UTC())[catalog.AuthorityAutonomy] || request.Authority.Set(time.Now().UTC())[catalog.AuthorityHuman] {
+		t.Fatalf("post-target authorized continuation = lock=%v response=%#v authority=%#v err=%v", lock, suspension, request.Authority, err)
+	}
+	if err := lock.Release(); err != nil {
+		t.Fatal(err)
 	}
 }
 

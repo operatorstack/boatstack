@@ -183,7 +183,7 @@ func authorizeDelegation(existing *delegation.Record, request delegation.Request
 			return record, true, nil
 		}
 		if existing.RequestFingerprint != requestFingerprint || existing.Actor != actor || existing.ActorIdentityRole != request.HumanIdentityRole || existing.ActorIdentityProviderFingerprint != identityProviderFingerprint || existing.Status != "active" {
-			if existing.RequestFingerprint == requestFingerprint && existing.Actor == actor && existing.ActorIdentityRole == request.HumanIdentityRole && existing.ActorIdentityProviderFingerprint == identityProviderFingerprint && existing.Status == "revoked" {
+			if existing.RequestFingerprint == requestFingerprint && existing.Actor == actor && existing.ActorIdentityRole == request.HumanIdentityRole && existing.ActorIdentityProviderFingerprint == identityProviderFingerprint && (existing.Status == "revoked" || existing.Status == "completed") {
 				reauthorized := *existing
 				reauthorized.Revision++
 				reauthorized.AuthorizedAt = now
