@@ -178,7 +178,8 @@ func requestMatchesContext(request InputRequest, context Context) bool {
 		request.ExecutionProgramFingerprint == context.ExecutionProgramFingerprint && request.EntryID == context.EntryID &&
 		request.TargetID == context.TargetID && request.TransitionID == context.TransitionID &&
 		request.StateRevision == context.StateRevision && request.ContextFingerprint == context.ContextFingerprint &&
-		request.ControlBundleFingerprint == context.ControlBundleFingerprint && request.ExecutionScopeFingerprint == context.ExecutionScopeFingerprint
+		request.ControlBundleFingerprint == context.ControlBundleFingerprint &&
+		request.AuthorityContextFingerprint == context.AuthorityContextFingerprint && request.ExecutionScopeFingerprint == context.ExecutionScopeFingerprint
 }
 
 func (s Store) SaveReceipt(receipt InputReceipt) error {

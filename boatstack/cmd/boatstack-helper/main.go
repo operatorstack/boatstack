@@ -25,6 +25,7 @@ import (
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/delegation"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentity"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
@@ -211,7 +212,7 @@ func run(arguments []string) error {
 			resolveRequest.FlowID = ""
 		}
 		resolveRequest.Prescription = protocol.Prescription{}
-		resolved, resolveErr := kernel.Handle(context.Background(), resolveRequest)
+		resolved, resolveErr := handleWithHumanIdentity(context.Background(), kernel, resolveRequest)
 		if resolveErr != nil || resolved.Prescription == nil {
 			if renderErr := renderResponse(resolved, options.format); renderErr != nil {
 				return renderErr
@@ -226,7 +227,7 @@ func run(arguments []string) error {
 		}
 		request.Prescription = *resolved.Prescription
 	}
-	response, handleErr := kernel.Handle(context.Background(), request)
+	response, handleErr := handleWithHumanIdentity(context.Background(), kernel, request)
 	if handleErr == nil && operation == surfaces.OperationResolve {
 		request, response, _, handleErr = stabilizeRepositoryPrescription(context.Background(), request, response)
 	}
@@ -237,6 +238,9 @@ func run(arguments []string) error {
 		if settleErr := settleDelegationAtTarget(context.Background(), request, response, kernel.TargetSatisfied(response.Snapshot, request.Objective), delegationLock != nil); settleErr != nil && handleErr == nil {
 			handleErr = settleErr
 		}
+	}
+	if err := attachHumanIdentity(request, &response); err != nil {
+		return err
 	}
 	if command == "events" && options.follow {
 		if options.format != "jsonl" {
@@ -333,7 +337,7 @@ func runRPC() error {
 	if err != nil {
 		return err
 	}
-	response, handleErr := kernel.Handle(context.Background(), request)
+	response, handleErr := handleWithHumanIdentity(context.Background(), kernel, request)
 	if handleErr == nil && request.Operation == surfaces.OperationResolve {
 		request, response, _, handleErr = stabilizeRepositoryPrescription(context.Background(), request, response)
 	}
@@ -344,6 +348,9 @@ func runRPC() error {
 		if settleErr := settleDelegationAtTarget(context.Background(), request, response, kernel.TargetSatisfied(response.Snapshot, request.Objective), delegationLock != nil); settleErr != nil && handleErr == nil {
 			handleErr = settleErr
 		}
+	}
+	if err := attachHumanIdentity(request, &response); err != nil {
+		return err
 	}
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
@@ -478,6 +485,11 @@ func parseOptions(command string, arguments []string, transition catalog.Transit
 	if flags.NArg() != 0 {
 		return commandOptions{}, fmt.Errorf("unexpected positional arguments: %s", strings.Join(flags.Args(), " "))
 	}
+	if options.humanActor != "" {
+		if err := humanidentity.ValidateActor(options.humanActor); err != nil {
+			return commandOptions{}, err
+		}
+	}
 	switch command {
 	case "init":
 		if err := populateInitParameters(&options); err != nil {
@@ -591,7 +603,7 @@ func followEvents(kernel boatstack.DeliveryController, request surfaces.Request)
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
-		response, err := kernel.Handle(ctx, request)
+		response, err := handleWithHumanIdentity(ctx, kernel, request)
 		if err != nil {
 			return err
 		}
@@ -634,9 +646,6 @@ func populateInitParameters(options *commandOptions) error {
 			return fingerprintErr
 		}
 		options.parameters = append(options.parameters, "config_sha256="+fingerprint)
-	}
-	if options.humanActor == "" {
-		return fmt.Errorf("init requires explicit --human <actor>")
 	}
 	return nil
 }
@@ -880,6 +889,9 @@ func loadAuthority(options commandOptions, correlation string, objective model.O
 		bundle.Receipts = append(bundle.Receipts, receipt)
 	}
 	if options.humanActor != "" {
+		if err := humanidentity.ValidateActor(options.humanActor); err != nil {
+			return protocol.AuthorityBundle{}, err
+		}
 		parameterRaw, err := json.Marshal(parameters.Canonical())
 		if err != nil {
 			return protocol.AuthorityBundle{}, err
@@ -947,6 +959,9 @@ func renderResponse(response surfaces.Response, format string) error {
 				fmt.Printf("program_change prior=%s candidate=%s delta=%s transition=%s accept=%s\n",
 					response.ProgramChange.PriorProgramFingerprint, response.ProgramChange.CandidateProgramFingerprint,
 					response.ProgramChange.ProgramDeltaFingerprint, response.ProgramChange.RequiredTransition, response.ProgramChange.AcceptanceFlag)
+				if response.ProgramChange.HumanIdentity != nil {
+					renderHumanIdentity(*response.ProgramChange.HumanIdentity)
+				}
 			}
 			return nil
 		}
@@ -962,6 +977,18 @@ func renderResponse(response surfaces.Response, format string) error {
 			fmt.Printf("SUSPENDED: %s transition=%s request=%s state_revision=%d\n", response.InputRequest.Code, response.InputRequest.TransitionID, response.InputRequest.Fingerprint, response.InputRequest.StateRevision)
 			for _, parameter := range response.InputRequest.Parameters {
 				fmt.Printf("input=%s type=%s %s\n", parameter.ID, parameter.Type.Kind, parameter.Description)
+			}
+			return nil
+		}
+		if response.Delegation != nil {
+			fmt.Printf("SUSPENDED: %s run=%s request=%s authorities=%v\n%s\n", response.Delegation.Code, response.Delegation.RunID, response.Delegation.RequestFingerprint, response.Delegation.Authorities, response.Delegation.Description)
+			renderHumanIdentity(response.Delegation.HumanIdentity)
+			return nil
+		}
+		if response.Question != nil {
+			fmt.Printf("QUESTION: %s run=%s transition=%s\n%s\n", response.Question.ID, response.Question.RunID, response.Question.TransitionID, response.Question.Prompt)
+			if response.Question.HumanIdentity != nil {
+				renderHumanIdentity(*response.Question.HumanIdentity)
 			}
 			return nil
 		}

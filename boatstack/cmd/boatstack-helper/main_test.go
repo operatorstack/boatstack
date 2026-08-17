@@ -165,6 +165,24 @@ func TestHumanPublicationConfirmationBindsExactPreviewFingerprint(t *testing.T) 
 	}
 }
 
+func TestHumanAuthorityNeverFallsBackToEnvironmentOrGitIdentity(t *testing.T) {
+	t.Setenv("USER", "implicit-user")
+	t.Setenv("LOGNAME", "implicit-logname")
+	t.Setenv("USERNAME", "implicit-username")
+	authority, err := loadAuthority(commandOptions{}, "correlation", model.Objective{ID: "objective"}, nil, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, receipt := range authority.Receipts {
+		if receipt.Class == catalog.AuthorityHuman {
+			t.Fatalf("environment identity created human authority: %#v", receipt)
+		}
+	}
+	if _, err := loadAuthority(commandOptions{humanActor: "invalid actor"}, "correlation", model.Objective{ID: "objective"}, nil, time.Now().UTC()); err == nil {
+		t.Fatal("invalid explicit actor was accepted")
+	}
+}
+
 func TestRawCLIReconstructsExactCapabilityPrescription(t *testing.T) {
 	options := commandOptions{
 		transitionID: "installation.update", host: "cli", repository: ".", prescriptionID: "prx-test",

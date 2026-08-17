@@ -237,7 +237,7 @@ func TestStaleControlBundleStopsBeforeManagedStateOrRuntimePin(t *testing.T) {
 	runtimeRaw, _ := os.ReadFile(executable)
 	runtimeVersion := installTestRuntime(t, executable, runtimeRaw)
 	configPath := filepath.Join(t.TempDir(), "project.json")
-	configRaw := []byte("{\"schema_version\":2,\"project\":{\"name\":\"bundle\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
+	configRaw := []byte("{\"schema_version\":3,\"identity\":{\"human\":{\"kind\":\"literal\",\"value\":\"operator\"}},\"project\":{\"name\":\"bundle\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
 	if err := os.WriteFile(configPath, configRaw, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +302,7 @@ func TestControllerRejectsExactBundleRevisionDriftWithMatchingWorkingBytes(t *te
 	runtimeRaw, _ := os.ReadFile(executable)
 	runtimeVersion := installTestRuntime(t, executable, runtimeRaw)
 	configPath := filepath.Join(t.TempDir(), "project.json")
-	configRaw := []byte("{\"schema_version\":2,\"project\":{\"name\":\"revision\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
+	configRaw := []byte("{\"schema_version\":3,\"identity\":{\"human\":{\"kind\":\"literal\",\"value\":\"operator\"}},\"project\":{\"name\":\"revision\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
 	if err := os.WriteFile(configPath, configRaw, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -585,7 +585,7 @@ func TestExternalConfigurationAuthorityTransfersAcrossAttachAndDetach(t *testing
 	executable, _ = filepath.EvalSymlinks(executable)
 	runtimeRaw, _ := os.ReadFile(executable)
 	runtimeVersion := installTestRuntime(t, executable, runtimeRaw)
-	initialConfig := []byte("{\"schema_version\":2,\"project\":{\"name\":\"external-initial\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
+	initialConfig := []byte("{\"schema_version\":3,\"identity\":{\"human\":{\"kind\":\"literal\",\"value\":\"operator\"}},\"project\":{\"name\":\"external-initial\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
 	initialPath := filepath.Join(t.TempDir(), "initial.json")
 	if err := os.WriteFile(initialPath, initialConfig, 0o600); err != nil {
 		t.Fatal(err)
@@ -616,12 +616,26 @@ func TestExternalConfigurationAuthorityTransfersAcrossAttachAndDetach(t *testing
 		t.Fatalf("detached layout did not select external config: %#v", detachedLayout)
 	}
 	apply("engagement.begin", protocol.AuthorityBundle{}, true, nil)
-	updatedConfig := []byte("{\"schema_version\":2,\"project\":{\"name\":\"external-updated\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
+	updatedConfig := []byte("{\"schema_version\":3,\"identity\":{\"human\":{\"kind\":\"literal\",\"value\":\"updated-operator\"}},\"project\":{\"name\":\"external-updated\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
 	updatedPath := filepath.Join(t.TempDir(), "updated.json")
 	if err := os.WriteFile(updatedPath, updatedConfig, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	apply("configuration.mutate", human, false, protocol.Parameters{{Name: "config_path", Value: updatedPath}, {Name: "config_sha256", Value: configFingerprint(t, updatedConfig)}})
+	configResult := apply("configuration.mutate", human, false, protocol.Parameters{{Name: "config_path", Value: updatedPath}, {Name: "config_sha256", Value: configFingerprint(t, updatedConfig)}})
+	updated, _, err := protocol.ProjectConfigFingerprint(updatedConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedProvider, err := updated.Identity.Human.Fingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if admitted, err := effects.ConfigurationReprojectionAdmits(detachedLayout, "flow-external-config", detachedInvocation, updatedProvider, configResult.Receipt.ControlBundleTargetFingerprint); err != nil || !admitted {
+		t.Fatalf("accepted external identity reprojection admitted=%t err=%v", admitted, err)
+	}
+	if admitted, err := effects.ConfigurationReprojectionAdmits(detachedLayout, "flow-external-config", detachedInvocation, strings.Repeat("f", 64), configResult.Receipt.ControlBundleTargetFingerprint); err != nil || admitted {
+		t.Fatalf("foreign identity provider admitted=%t err=%v", admitted, err)
+	}
 	repositoryConfigPath := filepath.Join(repository, ".boatstack", "project.json")
 	if raw, err := os.ReadFile(repositoryConfigPath); err != nil || string(raw) != string(initialConfig) {
 		t.Fatalf("external mutation leaked into repository authority before detach: err=%v value=%q", err, raw)
@@ -671,7 +685,7 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 	runtimeRaw, _ := os.ReadFile(executable)
 	runtimeVersion := installTestRuntime(t, executable, runtimeRaw)
 	configPath := filepath.Join(t.TempDir(), "project.json")
-	configRaw := []byte("{\"schema_version\":2,\"project\":{\"name\":\"drift\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
+	configRaw := []byte("{\"schema_version\":3,\"identity\":{\"human\":{\"kind\":\"literal\",\"value\":\"operator\"}},\"project\":{\"name\":\"drift\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
 	if err := os.WriteFile(configPath, configRaw, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -926,7 +940,7 @@ func TestReferenceExtensionUsesKernelAdmissionVerificationAndReceiptPath(t *test
 	runtimeRaw, _ := os.ReadFile(executable)
 	runtimeVersion := installTestRuntime(t, executable, runtimeRaw)
 	configPath := filepath.Join(t.TempDir(), "project.json")
-	configRaw := []byte("{\"schema_version\":2,\"project\":{\"name\":\"extension\",\"default_branch\":\"main\",\"commands\":{\"build\":\"go version\",\"test\":\"go version\"}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
+	configRaw := []byte("{\"schema_version\":3,\"identity\":{\"human\":{\"kind\":\"literal\",\"value\":\"operator\"}},\"project\":{\"name\":\"extension\",\"default_branch\":\"main\",\"commands\":{\"build\":\"go version\",\"test\":\"go version\"}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
 	if err := os.WriteFile(configPath, configRaw, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1058,7 +1072,7 @@ func TestConcreteWorkflowPreservesConfigurationProofAndObjectiveTerminals(t *tes
 	runtimeRaw, _ := os.ReadFile(executable)
 	runtimeVersion := installTestRuntime(t, executable, runtimeRaw)
 	configPath := filepath.Join(t.TempDir(), "project-v2.json")
-	configRaw := []byte("{\"schema_version\":2,\"project\":{\"name\":\"integration\",\"default_branch\":\"main\",\"commands\":{\"build\":\"go version\",\"test\":\"go version\"}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
+	configRaw := []byte("{\"schema_version\":3,\"identity\":{\"human\":{\"kind\":\"literal\",\"value\":\"operator\"}},\"project\":{\"name\":\"integration\",\"default_branch\":\"main\",\"commands\":{\"build\":\"go version\",\"test\":\"go version\"}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
 	if err := os.WriteFile(configPath, configRaw, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1071,7 +1085,7 @@ func TestConcreteWorkflowPreservesConfigurationProofAndObjectiveTerminals(t *tes
 	apply(approvedObjective, "engagement.begin", authority(catalog.AuthorityRepository), nil)
 
 	updatedConfigPath := filepath.Join(t.TempDir(), "project-v2-updated.json")
-	updatedConfig := []byte("{\"schema_version\":2,\"project\":{\"name\":\"integration-updated\",\"default_branch\":\"main\",\"commands\":{\"build\":\"go version\",\"test\":\"go version\"}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
+	updatedConfig := []byte("{\"schema_version\":3,\"identity\":{\"human\":{\"kind\":\"literal\",\"value\":\"operator\"}},\"project\":{\"name\":\"integration-updated\",\"default_branch\":\"main\",\"commands\":{\"build\":\"go version\",\"test\":\"go version\"}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
 	if err := os.WriteFile(updatedConfigPath, updatedConfig, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1192,7 +1206,7 @@ func TestWorkspaceCutTransfersAuthorityToExactDestinationWorktree(t *testing.T) 
 	runtimeRaw, _ := os.ReadFile(executable)
 	runtimeVersion := installTestRuntime(t, executable, runtimeRaw)
 	configSource := filepath.Join(t.TempDir(), "project-v2.json")
-	configRaw := []byte("{\"schema_version\":2,\"project\":{\"name\":\"workspace\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
+	configRaw := []byte("{\"schema_version\":3,\"identity\":{\"human\":{\"kind\":\"literal\",\"value\":\"operator\"}},\"project\":{\"name\":\"workspace\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"]}\n")
 	if err := os.WriteFile(configSource, configRaw, 0o600); err != nil {
 		t.Fatal(err)
 	}

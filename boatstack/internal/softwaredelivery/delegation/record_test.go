@@ -1,9 +1,12 @@
 package delegation_test
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/delegation"
 )
@@ -13,7 +16,7 @@ func request() delegation.Request {
 		RunID: "run-example", ProgramID: "program", ProgramFingerprint: strings.Repeat("a", 64), ControlBundleFingerprint: strings.Repeat("c", 64), EntryID: "run",
 		TargetID: "done", ObjectiveID: "objective", DeliveryID: "delivery", InputFingerprints: []string{"b", "a"},
 		RepositoryID: "repository", GitCommonID: "common", InitialWorktreeID: "worktree", InitialRef: "refs/heads/main",
-		BindingFingerprint: strings.Repeat("b", 64), RequestedAuthorities: []string{"human", "autonomy"}, Description: "Run the program",
+		BindingFingerprint: strings.Repeat("b", 64), HumanIdentityProviderFingerprint: strings.Repeat("d", 64), RequestedAuthorities: []string{"human", "autonomy"}, Description: "Run the program",
 	}
 }
 
@@ -54,5 +57,44 @@ func TestRequestFingerprintCanonicalizesSetsAndBindsSemantics(t *testing.T) {
 	}
 	if changed == leftFingerprint {
 		t.Fatal("semantic request change preserved fingerprint")
+	}
+}
+
+func TestRecordRejectsPriorSchemaAndIdentityProvenanceMismatch(t *testing.T) {
+	value := request()
+	requestFingerprint, err := value.Fingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := delegation.Record{
+		Schema: delegation.Schema, SchemaRevision: delegation.SchemaRevision,
+		Request: value, RequestFingerprint: requestFingerprint, ReceiptID: "authorization-example",
+		Actor: "operator", ActorIdentityProviderFingerprint: value.HumanIdentityProviderFingerprint,
+		AuthorizedAt: time.Unix(1_700_000_000, 0).UTC(), Revision: 1, Status: "active",
+	}
+	write := func(value delegation.Record) string {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "record.json")
+		raw, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	if _, err := delegation.Load(write(record)); err != nil {
+		t.Fatal(err)
+	}
+	prior := record
+	prior.SchemaRevision--
+	if _, err := delegation.Load(write(prior)); err == nil {
+		t.Fatal("prior delegation schema was accepted")
+	}
+	drifted := record
+	drifted.ActorIdentityProviderFingerprint = strings.Repeat("e", 64)
+	if _, err := delegation.Load(write(drifted)); err == nil {
+		t.Fatal("identity provenance mismatch was accepted")
 	}
 }

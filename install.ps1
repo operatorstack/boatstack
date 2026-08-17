@@ -6,11 +6,14 @@ $ErrorActionPreference = "Stop"
 $Repository = if ($env:BOATSTACK_REPO) { $env:BOATSTACK_REPO } else { (Get-Location).Path }
 $Version = if ($env:BOATSTACK_VERSION) { $env:BOATSTACK_VERSION } else { "latest" }
 $Mode = if ($env:BOATSTACK_MODE) { $env:BOATSTACK_MODE } else { "install" }
-$Actor = if ($env:BOATSTACK_ACTOR) { $env:BOATSTACK_ACTOR } elseif ($env:USERNAME) { $env:USERNAME } else { "operator" }
+$Actor = if ($env:BOATSTACK_ACTOR) { $env:BOATSTACK_ACTOR } else { "" }
 $InstallDir = if ($env:BOATSTACK_INSTALL_DIR) { $env:BOATSTACK_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA "Boatstack\bin" }
 $BoatstackHome = if ($env:BOATSTACK_HOME) { $env:BOATSTACK_HOME } else { Join-Path $env:LOCALAPPDATA "Boatstack" }
 
 if ($Mode -notin @("install", "update", "hydrate")) { throw "Boatstack supports BOATSTACK_MODE=install, update, or hydrate" }
+if ($Mode -ne "hydrate" -and -not $Actor) {
+  throw "BOATSTACK_HUMAN_ACTOR_REQUIRED: install and update require an explicit BOATSTACK_ACTOR"
+}
 if ($Mode -eq "hydrate") {
   if ($Version -eq "latest") { throw "BOATSTACK_RUNTIME_PIN_INVALID: hydrate requires an exact BOATSTACK_VERSION" }
   if (-not $env:BOATSTACK_EXPECTED_RUNTIME_SHA256 -or $env:BOATSTACK_EXPECTED_RUNTIME_SHA256 -notmatch '^[0-9A-Fa-f]{64}$') {
@@ -113,7 +116,8 @@ try {
     if (-not $ConfigSource) {
       $ConfigSource = Join-Path $Temporary "project.json"
       $Config = [ordered]@{
-        schema_version = 2
+        schema_version = 3
+        identity = [ordered]@{ human = [ordered]@{ kind = "literal"; value = $Actor } }
         project = [ordered]@{ name = "repository"; default_branch = $DefaultBranch; commands = [ordered]@{} }
         policy = [ordered]@{ plan_approval = "human"; visual_evidence = "optional" }
         hosts = @("cli", "cursor", "codex", "claude", "gemini", "mcp")

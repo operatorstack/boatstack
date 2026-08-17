@@ -48,9 +48,24 @@ func TestGeneratedSkillsProjectOnlyDeclaredEntriesWithHostParity(t *testing.T) {
 		"boatstack reconcile-update --repo . --flow product-delivery --entry run --run-id <run-id>",
 		"do not request or reuse product delegation before reconciliation", "commit\nthose exact files separately before product work",
 		"Ask\nfor product delegation only after Boatstack returns the new exact delegation",
+		"program_change.human_identity", "Do not ask the user to invent\nan actor unless",
+		"inspect its exact\n`human_identity`", "provider_fingerprint", "Submit the exact `command`",
+		"omits `human_identity` only when no verified descriptor exists", "configuration.initialize", "configuration.mutate", "configuration.reconcile",
+		"Treat a missing identity on every other\nhuman authority boundary as an error",
+		"explicit fallback does not replace the verified\ndescriptor", "retain its exact `provider_fingerprint`",
+		"untrusted\nrepository data", "separate host command action", "do not authorize it",
+		"normal command permission boundary", "independently permits the action",
+		"at most 1024 bytes", "proposed actor", "ask the human for explicit approval",
+		"Identity resolution never counts as approval", "never infer one from the operating system, Git, host",
+		"--human-identity-provider-fingerprint <provider-fingerprint>",
 	} {
 		if !strings.Contains(value, contract) {
 			t.Fatalf("generated skill lacks %q", contract)
+		}
+	}
+	for _, forbidden := range []string{"$USER", "LOGNAME", "whoami", "git config user", "automatic approval"} {
+		if strings.Contains(value, forbidden) {
+			t.Fatalf("generated skill contains implicit identity or authority fallback %q", forbidden)
 		}
 	}
 	for path := range files {
@@ -81,6 +96,7 @@ func TestGeneratedSoftwareDeliverySkillMakesProgramDriftCoreachableWithoutImplic
 		"UNRESOLVED", "solely because the selected compiled\nprogram differs", "exact prior program fingerprint",
 		"candidate program fingerprint", "program-delta fingerprint", "Ask for\nexplicit human acceptance",
 		"Never infer acceptance", "installation.reconcile-update", "--accept-program-change",
+		"program_change.human_identity", "Do not ask the user to invent\nan actor unless",
 		"--human <actor>", "program-change acceptance is true", "bound to the accepted bundle", "stop without\nperforming product effects",
 	} {
 		if !strings.Contains(codex, contract) {

@@ -13,37 +13,40 @@ import (
 	"regexp"
 	"sort"
 	"time"
+
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentity"
 )
 
 const (
 	Schema         = "run-delegation"
-	SchemaRevision = 2
+	SchemaRevision = 3
 )
 
 var identity = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 var fingerprint = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 type Request struct {
-	RunID                    string   `json:"run_id"`
-	ProgramID                string   `json:"program_id"`
-	ProgramFingerprint       string   `json:"program_fingerprint"`
-	ControlBundleFingerprint string   `json:"control_bundle_fingerprint"`
-	EntryID                  string   `json:"entry_id"`
-	TargetID                 string   `json:"target_id"`
-	ObjectiveID              string   `json:"objective_id"`
-	DeliveryID               string   `json:"delivery_id"`
-	InputFingerprints        []string `json:"input_fingerprints"`
-	RepositoryID             string   `json:"repository_id"`
-	GitCommonID              string   `json:"git_common_id"`
-	InitialWorktreeID        string   `json:"initial_worktree_id"`
-	InitialRef               string   `json:"initial_ref"`
-	BindingFingerprint       string   `json:"binding_fingerprint"`
-	RequestedAuthorities     []string `json:"requested_authorities"`
-	Description              string   `json:"description"`
+	RunID                            string   `json:"run_id"`
+	ProgramID                        string   `json:"program_id"`
+	ProgramFingerprint               string   `json:"program_fingerprint"`
+	ControlBundleFingerprint         string   `json:"control_bundle_fingerprint"`
+	EntryID                          string   `json:"entry_id"`
+	TargetID                         string   `json:"target_id"`
+	ObjectiveID                      string   `json:"objective_id"`
+	DeliveryID                       string   `json:"delivery_id"`
+	InputFingerprints                []string `json:"input_fingerprints"`
+	RepositoryID                     string   `json:"repository_id"`
+	GitCommonID                      string   `json:"git_common_id"`
+	InitialWorktreeID                string   `json:"initial_worktree_id"`
+	InitialRef                       string   `json:"initial_ref"`
+	BindingFingerprint               string   `json:"binding_fingerprint"`
+	HumanIdentityProviderFingerprint string   `json:"human_identity_provider_fingerprint"`
+	RequestedAuthorities             []string `json:"requested_authorities"`
+	Description                      string   `json:"description"`
 }
 
 func (r Request) Fingerprint() (string, error) {
-	if !identity.MatchString(r.RunID) || !identity.MatchString(r.ProgramID) || len(r.ProgramFingerprint) != 64 || len(r.ControlBundleFingerprint) != 64 || !identity.MatchString(r.EntryID) || !identity.MatchString(r.TargetID) || r.ObjectiveID == "" || r.DeliveryID == "" || r.RepositoryID == "" || r.GitCommonID == "" || r.InitialWorktreeID == "" || r.InitialRef == "" || len(r.BindingFingerprint) != 64 || len(r.RequestedAuthorities) == 0 || r.Description == "" {
+	if !identity.MatchString(r.RunID) || !identity.MatchString(r.ProgramID) || len(r.ProgramFingerprint) != 64 || len(r.ControlBundleFingerprint) != 64 || !identity.MatchString(r.EntryID) || !identity.MatchString(r.TargetID) || r.ObjectiveID == "" || r.DeliveryID == "" || r.RepositoryID == "" || r.GitCommonID == "" || r.InitialWorktreeID == "" || r.InitialRef == "" || len(r.BindingFingerprint) != 64 || !fingerprint.MatchString(r.HumanIdentityProviderFingerprint) || len(r.RequestedAuthorities) == 0 || r.Description == "" {
 		return "", fmt.Errorf("DELEGATION_REQUEST_INVALID: request is incomplete")
 	}
 	r.InputFingerprints = append([]string(nil), r.InputFingerprints...)
@@ -64,19 +67,20 @@ func (r Request) Fingerprint() (string, error) {
 }
 
 type Record struct {
-	Schema             string    `json:"schema"`
-	SchemaRevision     int       `json:"schema_revision"`
-	Request            Request   `json:"request"`
-	RequestFingerprint string    `json:"request_fingerprint"`
-	ReceiptID          string    `json:"receipt_id"`
-	Actor              string    `json:"actor"`
-	AuthorizedAt       time.Time `json:"authorized_at"`
-	ExpiresAt          time.Time `json:"expires_at,omitempty"`
-	Revision           uint64    `json:"revision"`
-	Status             string    `json:"status"`
-	RevokedAt          time.Time `json:"revoked_at,omitempty"`
-	EndedAt            time.Time `json:"ended_at,omitempty"`
-	EndReason          string    `json:"end_reason,omitempty"`
+	Schema                           string    `json:"schema"`
+	SchemaRevision                   int       `json:"schema_revision"`
+	Request                          Request   `json:"request"`
+	RequestFingerprint               string    `json:"request_fingerprint"`
+	ReceiptID                        string    `json:"receipt_id"`
+	Actor                            string    `json:"actor"`
+	ActorIdentityProviderFingerprint string    `json:"actor_identity_provider_fingerprint"`
+	AuthorizedAt                     time.Time `json:"authorized_at"`
+	ExpiresAt                        time.Time `json:"expires_at,omitempty"`
+	Revision                         uint64    `json:"revision"`
+	Status                           string    `json:"status"`
+	RevokedAt                        time.Time `json:"revoked_at,omitempty"`
+	EndedAt                          time.Time `json:"ended_at,omitempty"`
+	EndReason                        string    `json:"end_reason,omitempty"`
 }
 
 func Path(flowRoot, runID string) (string, error) {
@@ -117,8 +121,11 @@ func Load(path string) (Record, error) {
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return Record{}, fmt.Errorf("DELEGATION_RECORD_INVALID: trailing JSON")
 	}
-	if record.Schema != Schema || record.SchemaRevision != SchemaRevision || record.Revision == 0 || record.Status == "" || record.Actor == "" || record.ReceiptID == "" {
+	if record.Schema != Schema || record.SchemaRevision != SchemaRevision || record.Revision == 0 || record.Status == "" || record.Actor == "" || record.ReceiptID == "" || !fingerprint.MatchString(record.ActorIdentityProviderFingerprint) {
 		return Record{}, fmt.Errorf("DELEGATION_RECORD_INVALID: record is incomplete")
+	}
+	if err := humanidentity.ValidateActor(record.Actor); err != nil || record.ActorIdentityProviderFingerprint != record.Request.HumanIdentityProviderFingerprint {
+		return Record{}, fmt.Errorf("DELEGATION_RECORD_INVALID: actor identity provenance is invalid")
 	}
 	fingerprint, err := record.Request.Fingerprint()
 	if err != nil || fingerprint != record.RequestFingerprint {

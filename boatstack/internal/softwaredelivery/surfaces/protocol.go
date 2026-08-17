@@ -12,6 +12,7 @@ import (
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/foregroundwork"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentity"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
@@ -19,7 +20,7 @@ import (
 	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
-const SchemaVersion = 13
+const SchemaVersion = 14
 
 var flowContextIdentity = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 var gitObjectIdentity = regexp.MustCompile(`^[0-9a-f]{40,64}$`)
@@ -228,11 +229,12 @@ type DoctorReport struct {
 }
 
 type ProgramChange struct {
-	PriorProgramFingerprint     string               `json:"prior_program_fingerprint"`
-	CandidateProgramFingerprint string               `json:"candidate_program_fingerprint"`
-	ProgramDeltaFingerprint     string               `json:"program_delta_fingerprint"`
-	RequiredTransition          catalog.TransitionID `json:"required_transition"`
-	AcceptanceFlag              string               `json:"acceptance_flag"`
+	PriorProgramFingerprint     string                      `json:"prior_program_fingerprint"`
+	CandidateProgramFingerprint string                      `json:"candidate_program_fingerprint"`
+	ProgramDeltaFingerprint     string                      `json:"program_delta_fingerprint"`
+	RequiredTransition          catalog.TransitionID        `json:"required_transition"`
+	AcceptanceFlag              string                      `json:"acceptance_flag"`
+	HumanIdentity               *humanidentity.Presentation `json:"human_identity,omitempty"`
 }
 
 type Response struct {
@@ -264,11 +266,12 @@ type Response struct {
 }
 
 type DelegationRequired struct {
-	Code               string                   `json:"code"`
-	RunID              string                   `json:"run_id"`
-	RequestFingerprint string                   `json:"request_fingerprint"`
-	Authorities        []catalog.AuthorityClass `json:"authorities"`
-	Description        string                   `json:"description"`
+	Code               string                     `json:"code"`
+	RunID              string                     `json:"run_id"`
+	RequestFingerprint string                     `json:"request_fingerprint"`
+	Authorities        []catalog.AuthorityClass   `json:"authorities"`
+	Description        string                     `json:"description"`
+	HumanIdentity      humanidentity.Presentation `json:"human_identity"`
 }
 
 // CommitRequired is a typed suspension at a repository revision boundary.
@@ -286,13 +289,14 @@ type CommitRequired struct {
 // required evidence and resolving again with the same run identity resumes the
 // existing command context.
 type Question struct {
-	ID           string                   `json:"id"`
-	RunID        string                   `json:"run_id"`
-	TransitionID catalog.TransitionID     `json:"transition_id"`
-	Prompt       string                   `json:"prompt,omitempty"`
-	Parameters   []catalog.ParameterSpec  `json:"parameters,omitempty"`
-	Authority    []catalog.AuthorityClass `json:"authority,omitempty"`
-	AuthorityAll []catalog.AuthorityClass `json:"authority_all,omitempty"`
+	ID            string                      `json:"id"`
+	RunID         string                      `json:"run_id"`
+	TransitionID  catalog.TransitionID        `json:"transition_id"`
+	Prompt        string                      `json:"prompt,omitempty"`
+	Parameters    []catalog.ParameterSpec     `json:"parameters,omitempty"`
+	Authority     []catalog.AuthorityClass    `json:"authority,omitempty"`
+	AuthorityAll  []catalog.AuthorityClass    `json:"authority_all,omitempty"`
+	HumanIdentity *humanidentity.Presentation `json:"human_identity,omitempty"`
 }
 
 func QuestionFor(runID, snapshotFingerprint string, decision supervisor.Decision) *Question {

@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/operatorstack/boatstack/boatstack/delivery"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentity"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 )
 
@@ -60,6 +61,7 @@ func TestRepositoryScopedProgramsAreIndependentUnderConcurrency(t *testing.T) {
 	x, y := extensions("fixture.echo"), extensions("fixture.second")
 	candidateConfig := protocol.ProjectConfig{
 		SchemaVersion: protocol.ConfigSchemaVersion,
+		Identity:      protocol.IdentitySettings{Human: humanidentity.Descriptor{Kind: humanidentity.KindLiteral, Value: "operator"}},
 		Project:       protocol.ProjectSettings{Name: "fixture", DefaultBranch: "main", Commands: map[string]string{}},
 		Policy:        protocol.PolicySettings{PlanApproval: "human", VisualEvidence: "optional"},
 		Hosts:         []string{"cli"}, Extensions: []protocol.SubprocessExtensionSettings{x},
@@ -189,6 +191,7 @@ func repositoryFixture(t *testing.T, extensions []protocol.SubprocessExtensionSe
 	if extensions != nil {
 		configuration := protocol.ProjectConfig{
 			SchemaVersion: protocol.ConfigSchemaVersion,
+			Identity:      protocol.IdentitySettings{Human: humanidentity.Descriptor{Kind: humanidentity.KindLiteral, Value: "operator"}},
 			Project:       protocol.ProjectSettings{Name: "fixture", DefaultBranch: "main", Commands: map[string]string{}},
 			Policy:        protocol.PolicySettings{PlanApproval: "human", VisualEvidence: "optional"},
 			Hosts:         []string{"cli"}, Extensions: extensions,

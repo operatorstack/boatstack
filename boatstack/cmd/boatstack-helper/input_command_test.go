@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -62,6 +63,51 @@ func TestFlowInputAnswerResumesSameRunAndConflictsFailClosed(t *testing.T) {
 	}
 	if _, err := captureStdout(t, func() error { return runFlowInput(arguments) }); err == nil || !strings.Contains(err.Error(), "FLOW_INPUT_ANSWER_CONFLICT") {
 		t.Fatalf("conflicting answer result = %v", err)
+	}
+}
+
+func TestFlowInputAnswerRejectsIdentityControlBundleDriftBeforeReceipt(t *testing.T) {
+	repository := flowRepositoryWithHumanSlice(t)
+	runFlowGit(t, repository, "init", "-q")
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-q", "-m", "fixture")
+	writeAdmittedFlowProgramState(t, repository, strings.Repeat("f", 64))
+
+	suspended, err := bindFlowEntry(context.Background(), commandOptions{
+		repository: repository, programID: "product-delivery", entryID: "run", host: "codex", transitionID: "delivery.slice.advance",
+	})
+	if err != nil || suspended.inputRequest == nil {
+		t.Fatalf("suspension = %#v, err=%v", suspended.inputRequest, err)
+	}
+	answerPath := filepath.Join(t.TempDir(), "answer.json")
+	if err := os.WriteFile(answerPath, []byte(`{"slice_id":"slice-one"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	arguments := []string{
+		"answer", "--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", suspended.runID,
+		"--request-fingerprint", suspended.inputRequest.Fingerprint, "--answer", answerPath, "--human", "operator", "--host", "codex", "--format", "json",
+	}
+	configPath := filepath.Join(repository, ".boatstack", "project.json")
+	original, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	drifted := bytes.Replace(original, []byte(`"value":"operator"`), []byte(`"value":"other-operator"`), 1)
+	if bytes.Equal(drifted, original) {
+		t.Fatal("fixture project configuration has no literal identity")
+	}
+	if err := os.WriteFile(configPath, drifted, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := captureStdout(t, func() error { return runFlowInput(arguments) }); err == nil || !strings.Contains(err.Error(), "HUMAN_IDENTITY_DRIFT") {
+		t.Fatalf("drifted answer result = %v", err)
+	}
+	if err := os.WriteFile(configPath, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := captureStdout(t, func() error { return runFlowInput(arguments) }); err != nil {
+		t.Fatalf("failed drift attempt contaminated immutable input receipts: %v", err)
 	}
 }
 

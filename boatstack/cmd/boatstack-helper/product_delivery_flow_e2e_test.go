@@ -57,7 +57,7 @@ func TestExactProductDeliveryFlowReachesPublishedPRWithFakeProvider(t *testing.T
 	runFlowGit(t, repository, "init", "-q", "-b", "main")
 	runFlowGit(t, repository, "config", "user.email", "fixture@example.invalid")
 	runFlowGit(t, repository, "config", "user.name", "Fixture")
-	writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":2,"project":{"name":"todo","default_branch":"main","commands":{"build":"true","test":"true"}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional","external_effect_authority":"human-or-autonomy-plus-provider","independent_review_for_high_risk":false},"hosts":["cli","codex","claude"]}`))
+	writeFixture(t, repository, ".boatstack/project.json", []byte(`{"schema_version":3,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"todo","default_branch":"main","commands":{"build":"true","test":"true"}},"policy":{"plan_approval":"human-or-autonomy","visual_evidence":"optional","external_effect_authority":"human-or-autonomy-plus-provider","independent_review_for_high_risk":false},"hosts":["cli","codex","claude"]}`))
 	writeFixture(t, repository, ".boatstack/plans/inbox/todo.md", []byte("# Add one todo\n"))
 	for path, content := range assets {
 		writeFixture(t, repository, path, content)
@@ -204,7 +204,9 @@ func TestExactProductDeliveryFlowReachesPublishedPRWithFakeProvider(t *testing.T
 	if _, err := captureStdout(t, func() error {
 		return runFlowAuthorize([]string{
 			"--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", runID,
-			"--request-fingerprint", delegated.Delegation.RequestFingerprint, "--human", "operator", "--host", "codex",
+			"--request-fingerprint", delegated.Delegation.RequestFingerprint,
+			"--human-identity-provider-fingerprint", delegated.Delegation.HumanIdentity.ProviderFingerprint,
+			"--human", "operator", "--host", "codex",
 		})
 	}); err != nil {
 		t.Fatal(err)

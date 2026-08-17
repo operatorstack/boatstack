@@ -117,10 +117,19 @@ Human or delegated approval remains an authority decision. The approving actor
 does not type deterministic values such as the admitted package fingerprint.
 Only `delivery.slice.advance.slice_id` is free-form in the standard lifecycle.
 A missing free-form input returns a typed `TRANSITION_INPUT_REQUIRED`
-suspension; record its answer with `boatstack flow input answer`, then resume
-the same run. If the value is semantically rejected, use
+suspension. Its immutable request and answer receipt bind the current verified
+control bundle and human-identity authority context. Record its answer with
+`boatstack flow input answer`, then resume the same run. Identity rotation
+therefore produces a fresh suspension instead of consuming an old answer. If
+the value is semantically rejected, use
 `boatstack flow input supersede` to issue a linked request generation. Do not
 edit or delete the old request or receipt.
+
+A declarative transition that requires human authority returns
+`AUTHORITY_REQUIRED` with an exact `authority_fingerprint`. After the operator
+approves the displayed transition and proposed actor, resume with both
+`--authority-fingerprint <fingerprint>` and `--human <actor>`. A changed
+authority or identity fingerprint requires a fresh approval.
 
 Prepare gate evidence at
 `.boatstack/evidence/<delivery-id>/<gate>.input.json`, visual evidence at

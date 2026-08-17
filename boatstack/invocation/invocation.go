@@ -17,11 +17,11 @@ import (
 
 const (
 	EvidenceSchema         = "transition-invocation"
-	EvidenceSchemaRevision = 2
+	EvidenceSchemaRevision = 3
 	RequestSchema          = "transition-input-request"
-	RequestSchemaRevision  = 2
+	RequestSchemaRevision  = 3
 	ReceiptSchema          = "transition-input-receipt"
-	ReceiptSchemaRevision  = 2
+	ReceiptSchemaRevision  = 3
 )
 
 type Context struct {
@@ -34,6 +34,7 @@ type Context struct {
 	StateRevision               uint64
 	ContextFingerprint          string
 	ControlBundleFingerprint    string
+	AuthorityContextFingerprint string
 	ExecutionScopeFingerprint   string
 	InputRequestGeneration      uint64
 	InputRequestSupersession    *InputRequestSupersession
@@ -80,6 +81,7 @@ type Evidence struct {
 	StateRevision               uint64              `json:"state_revision"`
 	ContextFingerprint          string              `json:"context_fingerprint"`
 	ControlBundleFingerprint    string              `json:"control_bundle_fingerprint,omitempty"`
+	AuthorityContextFingerprint string              `json:"authority_context_fingerprint,omitempty"`
 	Parameters                  []ResolvedParameter `json:"parameters"`
 	InvocationFingerprint       string              `json:"invocation_fingerprint"`
 }
@@ -106,7 +108,8 @@ type InputRequest struct {
 	Fingerprint                 string                    `json:"fingerprint"`
 	StateRevision               uint64                    `json:"state_revision"`
 	ContextFingerprint          string                    `json:"context_fingerprint"`
-	ControlBundleFingerprint    string                    `json:"control_bundle_fingerprint,omitempty"`
+	ControlBundleFingerprint    string                    `json:"control_bundle_fingerprint"`
+	AuthorityContextFingerprint string                    `json:"authority_context_fingerprint"`
 	ExecutionScopeFingerprint   string                    `json:"execution_scope_fingerprint"`
 	Generation                  uint64                    `json:"generation,omitempty"`
 	Supersession                *InputRequestSupersession `json:"supersession,omitempty"`
@@ -143,7 +146,8 @@ type InputReceipt struct {
 	RequestFingerprint          string                             `json:"request_fingerprint"`
 	StateRevision               uint64                             `json:"state_revision"`
 	ContextFingerprint          string                             `json:"context_fingerprint"`
-	ControlBundleFingerprint    string                             `json:"control_bundle_fingerprint,omitempty"`
+	ControlBundleFingerprint    string                             `json:"control_bundle_fingerprint"`
+	AuthorityContextFingerprint string                             `json:"authority_context_fingerprint"`
 	ExecutionScopeFingerprint   string                             `json:"execution_scope_fingerprint"`
 	Actor                       string                             `json:"actor"`
 	Host                        string                             `json:"host"`
@@ -166,7 +170,7 @@ type Blocker struct {
 }
 
 func (r InputRequest) Validate() error {
-	if r.Schema != RequestSchema || r.SchemaRevision != RequestSchemaRevision || r.ID == "" || r.Code != "TRANSITION_INPUT_REQUIRED" || r.RunID == "" || len(r.ProgramFingerprint) != 64 || len(r.ExecutionProgramFingerprint) != 64 || r.EntryID == "" || r.TargetID == "" || r.TransitionID == "" || len(r.ContextFingerprint) != 64 || len(r.ExecutionScopeFingerprint) != 64 || r.Fingerprint == "" || len(r.Parameters) == 0 {
+	if r.Schema != RequestSchema || r.SchemaRevision != RequestSchemaRevision || r.ID == "" || r.Code != "TRANSITION_INPUT_REQUIRED" || r.RunID == "" || len(r.ProgramFingerprint) != 64 || len(r.ExecutionProgramFingerprint) != 64 || r.EntryID == "" || r.TargetID == "" || r.TransitionID == "" || len(r.ContextFingerprint) != 64 || len(r.ControlBundleFingerprint) != 64 || len(r.AuthorityContextFingerprint) != 64 || len(r.ExecutionScopeFingerprint) != 64 || r.Fingerprint == "" || len(r.Parameters) == 0 {
 		return fmt.Errorf("input request envelope is invalid")
 	}
 	generation := r.EffectiveGeneration()
@@ -196,7 +200,7 @@ func (r InputRequest) EffectiveGeneration() uint64 {
 }
 
 func (e Evidence) Validate() error {
-	if e.Schema != EvidenceSchema || e.SchemaRevision != EvidenceSchemaRevision || e.RunID == "" || len(e.ProgramFingerprint) != 64 || len(e.ExecutionProgramFingerprint) != 64 || e.EntryID == "" || e.TargetID == "" || e.TransitionID == "" || len(e.ContextFingerprint) != 64 || len(e.InvocationFingerprint) != 64 {
+	if e.Schema != EvidenceSchema || e.SchemaRevision != EvidenceSchemaRevision || e.RunID == "" || len(e.ProgramFingerprint) != 64 || len(e.ExecutionProgramFingerprint) != 64 || e.EntryID == "" || e.TargetID == "" || e.TransitionID == "" || len(e.ContextFingerprint) != 64 || (e.AuthorityContextFingerprint != "" && len(e.AuthorityContextFingerprint) != 64) || len(e.InvocationFingerprint) != 64 {
 		return fmt.Errorf("invocation evidence envelope is invalid")
 	}
 	previous := ""
@@ -226,6 +230,9 @@ func Materialize(contracts []controlprogram.OperatorParameter, bindings []contro
 		byBinding[binding.Parameter] = binding.Producer
 	}
 	hostRequest := inputRequestForHostBindings(contracts, byBinding, context)
+	if hostRequest != nil && (len(context.ControlBundleFingerprint) != 64 || len(context.AuthorityContextFingerprint) != 64) {
+		return Result{}, fmt.Errorf("host input materialization requires exact control-bundle and authority-context fingerprints")
+	}
 	var parameters []ResolvedParameter
 	var requested []RequestedParameter
 	for _, contract := range contracts {
@@ -271,7 +278,7 @@ func Materialize(contracts []controlprogram.OperatorParameter, bindings []contro
 		return Result{Request: hostRequest}, nil
 	}
 	sort.Slice(parameters, func(i, j int) bool { return parameters[i].Name < parameters[j].Name })
-	evidence := Evidence{Schema: EvidenceSchema, SchemaRevision: EvidenceSchemaRevision, RunID: context.RunID, ProgramFingerprint: context.ProgramFingerprint, ExecutionProgramFingerprint: context.ExecutionProgramFingerprint, EntryID: context.EntryID, TargetID: context.TargetID, TransitionID: context.TransitionID, StateRevision: context.StateRevision, ContextFingerprint: context.ContextFingerprint, ControlBundleFingerprint: context.ControlBundleFingerprint, Parameters: parameters}
+	evidence := Evidence{Schema: EvidenceSchema, SchemaRevision: EvidenceSchemaRevision, RunID: context.RunID, ProgramFingerprint: context.ProgramFingerprint, ExecutionProgramFingerprint: context.ExecutionProgramFingerprint, EntryID: context.EntryID, TargetID: context.TargetID, TransitionID: context.TransitionID, StateRevision: context.StateRevision, ContextFingerprint: context.ContextFingerprint, ControlBundleFingerprint: context.ControlBundleFingerprint, AuthorityContextFingerprint: context.AuthorityContextFingerprint, Parameters: parameters}
 	evidence.InvocationFingerprint = fingerprintWithoutField(evidence, "InvocationFingerprint")
 	return Result{Ready: &evidence}, nil
 }
@@ -317,7 +324,7 @@ func materializeOne(contract controlprogram.OperatorParameter, producer controlp
 }
 
 func (r InputReceipt) ValidateCurrent(context Context, contract controlprogram.OperatorParameter, producer controlprogram.ParameterProducer, requestFingerprint string) error {
-	if r.Schema != ReceiptSchema || r.SchemaRevision != ReceiptSchemaRevision || r.ID == "" || r.Fingerprint == "" || r.Scope != "transition" || len(r.ExecutionProgramFingerprint) != 64 || len(r.ExecutionScopeFingerprint) != 64 || producer.Request == nil {
+	if r.Schema != ReceiptSchema || r.SchemaRevision != ReceiptSchemaRevision || r.ID == "" || r.Fingerprint == "" || r.Scope != "transition" || len(r.ExecutionProgramFingerprint) != 64 || len(r.ControlBundleFingerprint) != 64 || len(r.AuthorityContextFingerprint) != 64 || len(r.ExecutionScopeFingerprint) != 64 || producer.Request == nil {
 		return fmt.Errorf("input receipt envelope is invalid")
 	}
 	identity := r
@@ -335,6 +342,7 @@ func (r InputReceipt) ValidateCurrent(context Context, contract controlprogram.O
 		{"transition", r.TransitionID != context.TransitionID}, {"parameter", r.ParameterID != contract.ID},
 		{"state", r.StateRevision != context.StateRevision}, {"context", r.ContextFingerprint != context.ContextFingerprint},
 		{"control-bundle", r.ControlBundleFingerprint != context.ControlBundleFingerprint},
+		{"authority-context", r.AuthorityContextFingerprint != context.AuthorityContextFingerprint},
 		{"execution-scope", r.ExecutionScopeFingerprint != context.ExecutionScopeFingerprint},
 		{"request", r.RequestFingerprint != requestFingerprint},
 	}
@@ -403,7 +411,7 @@ func inputRequestForHostBindings(contracts []controlprogram.OperatorParameter, p
 		return nil
 	}
 	sort.Slice(requested, func(i, j int) bool { return requested[i].ID < requested[j].ID })
-	request := InputRequest{Schema: RequestSchema, SchemaRevision: RequestSchemaRevision, Code: "TRANSITION_INPUT_REQUIRED", RunID: context.RunID, ProgramFingerprint: context.ProgramFingerprint, ExecutionProgramFingerprint: context.ExecutionProgramFingerprint, EntryID: context.EntryID, TargetID: context.TargetID, TransitionID: context.TransitionID, StateRevision: context.StateRevision, ContextFingerprint: context.ContextFingerprint, ControlBundleFingerprint: context.ControlBundleFingerprint, ExecutionScopeFingerprint: context.ExecutionScopeFingerprint, Generation: context.InputRequestGeneration, Supersession: context.InputRequestSupersession, Parameters: requested}
+	request := InputRequest{Schema: RequestSchema, SchemaRevision: RequestSchemaRevision, Code: "TRANSITION_INPUT_REQUIRED", RunID: context.RunID, ProgramFingerprint: context.ProgramFingerprint, ExecutionProgramFingerprint: context.ExecutionProgramFingerprint, EntryID: context.EntryID, TargetID: context.TargetID, TransitionID: context.TransitionID, StateRevision: context.StateRevision, ContextFingerprint: context.ContextFingerprint, ControlBundleFingerprint: context.ControlBundleFingerprint, AuthorityContextFingerprint: context.AuthorityContextFingerprint, ExecutionScopeFingerprint: context.ExecutionScopeFingerprint, Generation: context.InputRequestGeneration, Supersession: context.InputRequestSupersession, Parameters: requested}
 	request.ID = "input-" + fingerprintWithoutField(request, "Fingerprint")[:24]
 	request.Fingerprint = fingerprintWithoutField(request, "Fingerprint")
 	return &request

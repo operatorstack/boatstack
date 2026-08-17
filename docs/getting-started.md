@@ -5,12 +5,18 @@
 Run the checksum-verifying installer from the repository root:
 
 ```sh
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/operatorstack/boatstack/main/install.sh)"
+BOATSTACK_ACTOR=alice \
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/operatorstack/boatstack/main/install.sh)"
 boatstack doctor --repo . --format text
 ```
 
 Windows users run `install.ps1` in PowerShell. The kernel creates
 `.boatstack/project.json`; review and commit that file before feature work.
+`BOATSTACK_ACTOR` is explicit installation authority and becomes the default
+literal `identity.human` in a generated configuration. The installer never
+infers an actor from the operating system. Replace the literal descriptor with
+a structured command descriptor when the repository should ask its host to
+resolve the proposed actor.
 
 ## Configure one exact objective
 
