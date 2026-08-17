@@ -708,7 +708,7 @@ func writeMaintenanceProjectionFixture(t *testing.T, repository string) {
 	arguments := append([]string{"add", "--"}, paths...)
 	runFlowGit(t, repository, arguments...)
 	if staged := runFlowGitOutput(t, repository, "diff", "--cached", "--name-only", "--"); staged != "" {
-		commitArguments := append([]string{"commit", "-q", "-m", "fixture maintenance projections", "--only", "--"}, paths...)
+		commitArguments := append([]string{"-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-q", "-m", "fixture maintenance projections", "--only", "--"}, paths...)
 		runFlowGit(t, repository, commitArguments...)
 	}
 }
