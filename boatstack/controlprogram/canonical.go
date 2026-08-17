@@ -12,6 +12,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentity"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
@@ -83,6 +84,11 @@ func compile(document Document, resolver BindingResolver, assets AssetResolver) 
 	}
 	if !validID(document.Program.ID) || document.Program.Version == "" {
 		return Compiled{}, invalid("program", "id and version are required")
+	}
+	if document.Program.HumanIdentity != "" {
+		if err := humanidentity.ValidateRole(document.Program.HumanIdentity); err != nil {
+			return Compiled{}, invalid("program.human_identity", err.Error())
+		}
 	}
 	var err error
 	if document.Declarations.Capabilities, err = normalizedReferenceSet("declarations.capabilities", document.Declarations.Capabilities); err != nil {

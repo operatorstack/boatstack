@@ -14,6 +14,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/plant"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/surfaces"
 )
 
 func TestPresentationUsesRepositoryConfigurationBoundByControlBundle(t *testing.T) {
@@ -26,7 +27,7 @@ func TestPresentationUsesRepositoryConfigurationBoundByControlBundle(t *testing.
 		t.Fatal(err)
 	}
 	externalBase := t.TempDir()
-	if _, err := PresentationForRepository(ctx, externalBase, repository, "sdk", "repository-unverified", &bundle, nil); err == nil || !strings.Contains(err.Error(), "HUMAN_IDENTITY_UNBOUND") {
+	if _, err := PresentationForRepository(ctx, externalBase, repository, "sdk", "repository-unverified", "developer", &bundle, nil); err == nil || !strings.Contains(err.Error(), "HUMAN_IDENTITY_UNBOUND") {
 		t.Fatalf("bundle bytes were treated as accepted configuration: %v", err)
 	}
 	resolver, err := plant.NewResolver(externalBase)
@@ -42,12 +43,12 @@ func TestPresentationUsesRepositoryConfigurationBoundByControlBundle(t *testing.
 		t.Fatal(err)
 	}
 	observed := &model.Snapshot{Observation: model.Observation{Invocation: invocation, Configuration: model.Known(model.ConfigurationVerified, model.Evidence{Source: "configuration:repository", Fingerprint: fingerprint})}}
-	presentation, err := PresentationForRepository(ctx, externalBase, repository, "sdk", "repository-config", &bundle, observed)
+	presentation, err := PresentationForRepository(ctx, externalBase, repository, "sdk", "repository-config", "developer", &bundle, observed)
 	if err != nil || presentation.Descriptor.Value != "repository-actor" {
 		t.Fatalf("presentation = %#v, err=%v", presentation, err)
 	}
 	writeIdentityFile(t, filepath.Join(repository, ".boatstack", "project.json"), identityConfig("changed-actor"))
-	if _, err := PresentationForRepository(ctx, externalBase, repository, "sdk", "repository-drift", &bundle, observed); err == nil || !strings.Contains(err.Error(), "HUMAN_IDENTITY_DRIFT") {
+	if _, err := PresentationForRepository(ctx, externalBase, repository, "sdk", "repository-drift", "developer", &bundle, observed); err == nil || !strings.Contains(err.Error(), "HUMAN_IDENTITY_DRIFT") {
 		t.Fatalf("unbound repository config change was accepted: %v", err)
 	}
 }
@@ -94,18 +95,18 @@ func TestPresentationUsesExternalConfigurationAuthorityAndVerifiedState(t *testi
 		t.Fatal(err)
 	}
 	observed := &model.Snapshot{Observation: model.Observation{Invocation: detached, Configuration: model.Known(model.ConfigurationVerified, model.Evidence{Source: "configuration:external", Fingerprint: fingerprint})}}
-	presentation, err := PresentationForRepository(ctx, externalBase, repository, "sdk", "external-observed", &bundle, observed)
+	presentation, err := PresentationForRepository(ctx, externalBase, repository, "sdk", "external-observed", "developer", &bundle, observed)
 	if err != nil || presentation.Descriptor.Value != "external-actor" {
 		t.Fatalf("external presentation = %#v, err=%v", presentation, err)
 	}
 	stale := *observed
 	stale.Configuration.Value = model.ConfigurationStale
-	if _, err := PresentationForRepository(ctx, externalBase, repository, "sdk", "external-stale", &bundle, &stale); err == nil || !strings.Contains(err.Error(), "not verified") {
+	if _, err := PresentationForRepository(ctx, externalBase, repository, "sdk", "external-stale", "developer", &bundle, &stale); err == nil || !strings.Contains(err.Error(), "not verified") {
 		t.Fatalf("stale configuration selected a human identity: %v", err)
 	}
 	wrongInvocation := *observed
 	wrongInvocation.Invocation.WorktreeID = "wt-different"
-	if _, err := PresentationForRepository(ctx, externalBase, repository, "sdk", "external-wrong-invocation", &bundle, &wrongInvocation); err == nil || !strings.Contains(err.Error(), "different invocation") {
+	if _, err := PresentationForRepository(ctx, externalBase, repository, "sdk", "external-wrong-invocation", "developer", &bundle, &wrongInvocation); err == nil || !strings.Contains(err.Error(), "different invocation") {
 		t.Fatalf("cross-invocation evidence was accepted: %v", err)
 	}
 
@@ -123,13 +124,24 @@ func TestPresentationUsesExternalConfigurationAuthorityAndVerifiedState(t *testi
 		t.Fatal(err)
 	}
 	writeIdentityFile(t, layout.StatePath, stateRaw)
-	presentation, err = PresentationForRepository(ctx, externalBase, repository, "sdk", "external-durable", &bundle, nil)
+	presentation, err = PresentationForRepository(ctx, externalBase, repository, "sdk", "external-durable", "developer", &bundle, nil)
 	if err != nil || presentation.Descriptor.Value != "external-actor" {
 		t.Fatalf("durable external presentation = %#v, err=%v", presentation, err)
 	}
+	genericReplacement, err := PresentationForProgramChange(ctx, externalBase, surfaces.Request{
+		Repository: repository, Host: "sdk", CorrelationID: "generic-program-change", ControlBundle: &boatstackruntime.ControlBundleContract{Source: bundle},
+	}, nil)
+	if err != nil || genericReplacement.Role != "developer" {
+		t.Fatalf("generic program replacement presentation = %#v, err=%v", genericReplacement, err)
+	}
+	if _, err := PresentationForProgramChange(ctx, externalBase, surfaces.Request{
+		Repository: repository, Host: "sdk", CorrelationID: "flow-program-change", ProgramID: "product-delivery", ControlBundle: &boatstackruntime.ControlBundleContract{Source: bundle},
+	}, nil); err == nil || !strings.Contains(err.Error(), "no prior admitted program role") {
+		t.Fatalf("Flow program replacement used the generic default: %v", err)
+	}
 
 	writeIdentityFile(t, filepath.Join(sharedRoot, "project.json"), identityConfig("changed-external-actor"))
-	if _, err := PresentationForRepository(ctx, externalBase, repository, "sdk", "external-drift", &bundle, observed); err == nil || !strings.Contains(err.Error(), "HUMAN_IDENTITY_DRIFT") {
+	if _, err := PresentationForRepository(ctx, externalBase, repository, "sdk", "external-drift", "developer", &bundle, observed); err == nil || !strings.Contains(err.Error(), "HUMAN_IDENTITY_DRIFT") {
 		t.Fatalf("external authority drift was accepted: %v", err)
 	}
 }
@@ -145,7 +157,7 @@ func identityRepository(t *testing.T) string {
 }
 
 func identityConfig(actor string) []byte {
-	return []byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"` + actor + `"}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli","sdk"],"projections":[]}`)
+	return []byte(`{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"literal","value":"` + actor + `"}}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli","sdk"],"projections":[]}`)
 }
 
 func writeIdentityFile(t *testing.T, path string, raw []byte) {

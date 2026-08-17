@@ -16,7 +16,7 @@ func request() delegation.Request {
 		RunID: "run-example", ProgramID: "program", ProgramFingerprint: strings.Repeat("a", 64), ControlBundleFingerprint: strings.Repeat("c", 64), EntryID: "run",
 		TargetID: "done", ObjectiveID: "objective", DeliveryID: "delivery", InputFingerprints: []string{"b", "a"},
 		RepositoryID: "repository", GitCommonID: "common", InitialWorktreeID: "worktree", InitialRef: "refs/heads/main",
-		BindingFingerprint: strings.Repeat("b", 64), HumanIdentityProviderFingerprint: strings.Repeat("d", 64), RequestedAuthorities: []string{"human", "autonomy"}, Description: "Run the program",
+		BindingFingerprint: strings.Repeat("b", 64), HumanIdentityRole: "developer", HumanIdentityProviderFingerprint: strings.Repeat("d", 64), RequestedAuthorities: []string{"human", "autonomy"}, Description: "Run the program",
 	}
 }
 
@@ -69,7 +69,7 @@ func TestRecordRejectsPriorSchemaAndIdentityProvenanceMismatch(t *testing.T) {
 	record := delegation.Record{
 		Schema: delegation.Schema, SchemaRevision: delegation.SchemaRevision,
 		Request: value, RequestFingerprint: requestFingerprint, ReceiptID: "authorization-example",
-		Actor: "operator", ActorIdentityProviderFingerprint: value.HumanIdentityProviderFingerprint,
+		Actor: "operator", ActorIdentityRole: value.HumanIdentityRole, ActorIdentityProviderFingerprint: value.HumanIdentityProviderFingerprint,
 		AuthorizedAt: time.Unix(1_700_000_000, 0).UTC(), Revision: 1, Status: "active",
 	}
 	write := func(value delegation.Record) string {

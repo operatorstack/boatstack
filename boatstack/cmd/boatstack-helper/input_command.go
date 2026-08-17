@@ -95,8 +95,9 @@ func runFlowInput(arguments []string) error {
 	if request.ControlBundleFingerprint != runtimeContext.controlBundle.Fingerprint {
 		return fmt.Errorf("HUMAN_IDENTITY_DRIFT: input request bundle %s does not match current verified bundle %s", request.ControlBundleFingerprint, runtimeContext.controlBundle.Fingerprint)
 	}
-	if request.AuthorityContextFingerprint != runtimeContext.humanIdentity.ProviderFingerprint {
-		return fmt.Errorf("HUMAN_IDENTITY_DRIFT: input request authority context %s does not match current verified identity provider %s", request.AuthorityContextFingerprint, runtimeContext.humanIdentity.ProviderFingerprint)
+	bindingFingerprint, bindingErr := runtimeContext.humanIdentity.BindingFingerprint()
+	if bindingErr != nil || request.AuthorityContextFingerprint != bindingFingerprint {
+		return fmt.Errorf("HUMAN_IDENTITY_DRIFT: input request authority context does not match current verified identity role and provider")
 	}
 	if action == "show" {
 		receipts, loadErr := store.LoadReceipts(options.runID, request.TransitionID)
@@ -208,7 +209,7 @@ func loadFlowInputContext(ctx context.Context, options flowInputOptions) (contro
 	if err != nil {
 		return controlprogram.Compiled{}, invocation.Store{}, flowInputRuntimeContext{}, err
 	}
-	presentation, err := humanIdentityPresentationForRepositoryBound(ctx, options.repository, options.host, "flow-input-"+options.runID, controlBundle.Source, nil)
+	presentation, err := humanIdentityPresentationForRepositoryBound(ctx, options.repository, options.host, "flow-input-"+options.runID, compiled.Document.Program.HumanIdentity, controlBundle.Source, nil)
 	if err != nil {
 		return controlprogram.Compiled{}, invocation.Store{}, flowInputRuntimeContext{}, err
 	}
@@ -253,8 +254,9 @@ func recordFlowInputAnswers(store invocation.Store, compiled controlprogram.Comp
 	if runtimeContext.executionScopeFingerprint != request.ExecutionScopeFingerprint {
 		return nil, fmt.Errorf("FLOW_INPUT_REQUEST_MISMATCH: execution scope changed after suspension")
 	}
-	if runtimeContext.humanIdentity.ProviderFingerprint != request.AuthorityContextFingerprint {
-		return nil, fmt.Errorf("HUMAN_IDENTITY_DRIFT: input request identity provider changed after suspension")
+	bindingFingerprint, bindingErr := runtimeContext.humanIdentity.BindingFingerprint()
+	if bindingErr != nil || bindingFingerprint != request.AuthorityContextFingerprint {
+		return nil, fmt.Errorf("HUMAN_IDENTITY_DRIFT: input request identity role or provider changed after suspension")
 	}
 	transition, ok := findCompiledTransition(compiled.Document.Transitions, request.TransitionID)
 	if !ok {

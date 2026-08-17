@@ -50,7 +50,7 @@ func TestConcurrentApplyConsumesOneRevisionExactlyOnce(t *testing.T) {
 	runtimeRaw, _ := os.ReadFile(executable)
 	runtimeVersion := installTestRuntime(t, executable, runtimeRaw)
 	configPath := filepath.Join(t.TempDir(), "project.json")
-	configRaw := []byte("{\"schema_version\":4,\"identity\":{\"human\":{\"kind\":\"literal\",\"value\":\"operator\"}},\"project\":{\"name\":\"cas\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"],\"projections\":[]}\n")
+	configRaw := []byte("{\"schema_version\":5,\"identity\":{\"default\":\"developer\",\"roles\":{\"developer\":{\"kind\":\"literal\",\"value\":\"operator\"}}},\"project\":{\"name\":\"cas\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"],\"projections\":[]}\n")
 	if err := os.WriteFile(configPath, configRaw, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestProgramChangeInvalidatesPriorPrescriptionBeforeEffects(t *testing.T) {
 	runtimeRaw, _ := os.ReadFile(executable)
 	runtimeVersion := installTestRuntime(t, executable, runtimeRaw)
 	configPath := filepath.Join(t.TempDir(), "project.json")
-	configRaw := []byte("{\"schema_version\":4,\"identity\":{\"human\":{\"kind\":\"literal\",\"value\":\"operator\"}},\"project\":{\"name\":\"program-cas\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"],\"projections\":[]}\n")
+	configRaw := []byte("{\"schema_version\":5,\"identity\":{\"default\":\"developer\",\"roles\":{\"developer\":{\"kind\":\"literal\",\"value\":\"operator\"}}},\"project\":{\"name\":\"program-cas\",\"default_branch\":\"main\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\"],\"projections\":[]}\n")
 	if err := os.WriteFile(configPath, configRaw, 0o600); err != nil {
 		t.Fatal(err)
 	}

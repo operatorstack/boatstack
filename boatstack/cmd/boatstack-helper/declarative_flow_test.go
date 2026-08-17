@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentity"
 )
 
 func declarativeInvocationDocument() controlprogram.Document {
@@ -17,7 +18,7 @@ func declarativeInvocationDocument() controlprogram.Document {
 	mitigated := "mitigated"
 	return controlprogram.Document{
 		Schema: controlprogram.SchemaName, SchemaRevision: controlprogram.SchemaRevision,
-		Program:      controlprogram.Program{ID: "incident-response-invocation", Version: "1"},
+		Program:      controlprogram.Program{ID: "incident-response-invocation", Version: "1", HumanIdentity: "developer"},
 		Declarations: controlprogram.Declarations{Authorities: []string{"human"}, Verifiers: []string{"state-effect"}},
 		Facets:       []controlprogram.Facet{{ID: "incident", Kind: "enum", Values: []string{"open", "mitigated"}}},
 		Evidence:     []controlprogram.Evidence{{ID: "state-effect", Subject: "incident", Kind: "state-observation"}},
@@ -68,7 +69,7 @@ func twoStepDeclarativeDocument() controlprogram.Document {
 	contained, mitigated := "contained", "mitigated"
 	return controlprogram.Document{
 		Schema: controlprogram.SchemaName, SchemaRevision: controlprogram.SchemaRevision,
-		Program:      controlprogram.Program{ID: "incident-response-invocation", Version: "1"},
+		Program:      controlprogram.Program{ID: "incident-response-invocation", Version: "1", HumanIdentity: "developer"},
 		Declarations: controlprogram.Declarations{Authorities: []string{"human"}, Verifiers: []string{"state-effect"}},
 		Facets:       []controlprogram.Facet{{ID: "incident", Kind: "enum", Values: []string{"open", "contained", "mitigated"}}},
 		Evidence:     []controlprogram.Evidence{{ID: "state-effect", Subject: "incident", Kind: "state-observation"}},
@@ -255,7 +256,15 @@ func TestDeclarativeIdentityRotationSupersedesInputAndAuthoritySuspensions(t *te
 	requestFingerprintA, _ := requestA["fingerprint"].(string)
 	authorityContextA, _ := requestA["authority_context_fingerprint"].(string)
 	identityA := start["human_identity"].(map[string]any)
-	if len(authorityContextA) != 64 || authorityContextA != identityA["provider_fingerprint"] {
+	presentationA, err := humanidentity.NewPresentation("developer", humanidentity.Descriptor{Kind: humanidentity.KindLiteral, Value: "operator"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bindingA, err := presentationA.BindingFingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(authorityContextA) != 64 || authorityContextA != bindingA || identityA["role"] != "developer" || identityA["provider_fingerprint"] != presentationA.ProviderFingerprint {
 		t.Fatalf("provider A suspension is not bound: %s", startRaw)
 	}
 

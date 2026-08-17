@@ -161,7 +161,8 @@ func authorizeDelegation(existing *delegation.Record, request delegation.Request
 			record := delegation.Record{
 				Schema: delegation.Schema, SchemaRevision: delegation.SchemaRevision,
 				Request: request, RequestFingerprint: requestFingerprint,
-				ReceiptID: authorizationReceiptID(requestFingerprint, actor, identityProviderFingerprint, existing.Revision+1, now), Actor: actor,
+				ReceiptID: authorizationReceiptID(requestFingerprint, actor, request.HumanIdentityRole, identityProviderFingerprint, existing.Revision+1, now), Actor: actor,
+				ActorIdentityRole:                request.HumanIdentityRole,
 				ActorIdentityProviderFingerprint: identityProviderFingerprint,
 				AuthorizedAt:                     now, Revision: existing.Revision + 1, Status: "active",
 			}
@@ -170,7 +171,7 @@ func authorizeDelegation(existing *delegation.Record, request delegation.Request
 			}
 			return record, true, nil
 		}
-		if existing.RequestFingerprint != requestFingerprint || existing.Actor != actor || existing.ActorIdentityProviderFingerprint != identityProviderFingerprint || existing.Status != "active" {
+		if existing.RequestFingerprint != requestFingerprint || existing.Actor != actor || existing.ActorIdentityRole != request.HumanIdentityRole || existing.ActorIdentityProviderFingerprint != identityProviderFingerprint || existing.Status != "active" {
 			return delegation.Record{}, false, fmt.Errorf("DELEGATION_CONFLICT: run already has a different authorization, actor, or status")
 		}
 		if existing.ExpiresAt.IsZero() || now.Before(existing.ExpiresAt) {
@@ -183,14 +184,15 @@ func authorizeDelegation(existing *delegation.Record, request delegation.Request
 		if expiresIn > 0 {
 			record.ExpiresAt = now.Add(expiresIn)
 		}
-		record.ReceiptID = authorizationReceiptID(requestFingerprint, actor, identityProviderFingerprint, record.Revision, now)
+		record.ReceiptID = authorizationReceiptID(requestFingerprint, actor, request.HumanIdentityRole, identityProviderFingerprint, record.Revision, now)
 		record.RevokedAt, record.EndedAt, record.EndReason = time.Time{}, time.Time{}, ""
 		return record, true, nil
 	}
 	record := delegation.Record{
 		Schema: delegation.Schema, SchemaRevision: delegation.SchemaRevision,
 		Request: request, RequestFingerprint: requestFingerprint,
-		ReceiptID: authorizationReceiptID(requestFingerprint, actor, identityProviderFingerprint, 1, now), Actor: actor,
+		ReceiptID: authorizationReceiptID(requestFingerprint, actor, request.HumanIdentityRole, identityProviderFingerprint, 1, now), Actor: actor,
+		ActorIdentityRole:                request.HumanIdentityRole,
 		ActorIdentityProviderFingerprint: identityProviderFingerprint,
 		AuthorizedAt:                     now, Revision: 1, Status: "active",
 	}
@@ -200,8 +202,8 @@ func authorizeDelegation(existing *delegation.Record, request delegation.Request
 	return record, true, nil
 }
 
-func authorizationReceiptID(requestFingerprint, actor, identityProviderFingerprint string, revision uint64, authorizedAt time.Time) string {
-	receiptDigest := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%s\x00%d\x00%s", requestFingerprint, actor, identityProviderFingerprint, revision, authorizedAt.UTC().Format(time.RFC3339Nano))))
+func authorizationReceiptID(requestFingerprint, actor, identityRole, identityProviderFingerprint string, revision uint64, authorizedAt time.Time) string {
+	receiptDigest := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%d\x00%s", requestFingerprint, actor, identityRole, identityProviderFingerprint, revision, authorizedAt.UTC().Format(time.RFC3339Nano))))
 	return "authorization-" + hex.EncodeToString(receiptDigest[:12])
 }
 

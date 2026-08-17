@@ -13,7 +13,7 @@ boatstack doctor --repo . --format text
 Windows users run `install.ps1` in PowerShell. The kernel creates
 `.boatstack/project.json`; review and commit that file before feature work.
 `BOATSTACK_ACTOR` is explicit installation authority and becomes the default
-literal `identity.human` in a generated configuration. The installer never
+literal `developer` role and `identity.default` in a generated configuration. The installer never
 infers an actor from the operating system. Replace the literal descriptor with
 a structured command descriptor when the repository should ask its host to
 resolve the proposed actor.
@@ -30,6 +30,8 @@ boatstack next --repo . --flow product-delivery --entry run --format json
 Repository authors can keep software-delivery policy explicit without
 repeating its canonical wiring by using the composition shape documented in
 [Writing a Flow](product-delivery/writing-a-flow.md).
+Software-delivery Flows must set `humanIdentity` to one role declared by the
+exact current project configuration.
 
 The first response returns an opaque run ID. Preserve the program, entry, run
 ID, objective, delivery, authority, and prescription through every subsequent

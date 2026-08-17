@@ -69,6 +69,7 @@ const lifecycle = [
 export default defineFlow({
   id: "product-delivery",
   version: "1",
+  human_identity: "developer",
   declarations: { input_resolvers: [planInboxResolver] },
   facets: softwareDeliveryFacets,
   evidence: softwareDeliveryEvidence,

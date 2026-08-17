@@ -19,7 +19,7 @@ import (
 
 const (
 	Schema         = "run-delegation"
-	SchemaRevision = 3
+	SchemaRevision = 4
 )
 
 var identity = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
@@ -40,13 +40,14 @@ type Request struct {
 	InitialWorktreeID                string   `json:"initial_worktree_id"`
 	InitialRef                       string   `json:"initial_ref"`
 	BindingFingerprint               string   `json:"binding_fingerprint"`
+	HumanIdentityRole                string   `json:"human_identity_role"`
 	HumanIdentityProviderFingerprint string   `json:"human_identity_provider_fingerprint"`
 	RequestedAuthorities             []string `json:"requested_authorities"`
 	Description                      string   `json:"description"`
 }
 
 func (r Request) Fingerprint() (string, error) {
-	if !identity.MatchString(r.RunID) || !identity.MatchString(r.ProgramID) || len(r.ProgramFingerprint) != 64 || len(r.ControlBundleFingerprint) != 64 || !identity.MatchString(r.EntryID) || !identity.MatchString(r.TargetID) || r.ObjectiveID == "" || r.DeliveryID == "" || r.RepositoryID == "" || r.GitCommonID == "" || r.InitialWorktreeID == "" || r.InitialRef == "" || len(r.BindingFingerprint) != 64 || !fingerprint.MatchString(r.HumanIdentityProviderFingerprint) || len(r.RequestedAuthorities) == 0 || r.Description == "" {
+	if !identity.MatchString(r.RunID) || !identity.MatchString(r.ProgramID) || len(r.ProgramFingerprint) != 64 || len(r.ControlBundleFingerprint) != 64 || !identity.MatchString(r.EntryID) || !identity.MatchString(r.TargetID) || r.ObjectiveID == "" || r.DeliveryID == "" || r.RepositoryID == "" || r.GitCommonID == "" || r.InitialWorktreeID == "" || r.InitialRef == "" || len(r.BindingFingerprint) != 64 || humanidentity.ValidateRole(r.HumanIdentityRole) != nil || !fingerprint.MatchString(r.HumanIdentityProviderFingerprint) || len(r.RequestedAuthorities) == 0 || r.Description == "" {
 		return "", fmt.Errorf("DELEGATION_REQUEST_INVALID: request is incomplete")
 	}
 	r.InputFingerprints = append([]string(nil), r.InputFingerprints...)
@@ -73,6 +74,7 @@ type Record struct {
 	RequestFingerprint               string    `json:"request_fingerprint"`
 	ReceiptID                        string    `json:"receipt_id"`
 	Actor                            string    `json:"actor"`
+	ActorIdentityRole                string    `json:"actor_identity_role"`
 	ActorIdentityProviderFingerprint string    `json:"actor_identity_provider_fingerprint"`
 	AuthorizedAt                     time.Time `json:"authorized_at"`
 	ExpiresAt                        time.Time `json:"expires_at,omitempty"`
@@ -124,7 +126,7 @@ func Load(path string) (Record, error) {
 	if record.Schema != Schema || record.SchemaRevision != SchemaRevision || record.Revision == 0 || record.Status == "" || record.Actor == "" || record.ReceiptID == "" || !fingerprint.MatchString(record.ActorIdentityProviderFingerprint) {
 		return Record{}, fmt.Errorf("DELEGATION_RECORD_INVALID: record is incomplete")
 	}
-	if err := humanidentity.ValidateActor(record.Actor); err != nil || record.ActorIdentityProviderFingerprint != record.Request.HumanIdentityProviderFingerprint {
+	if err := humanidentity.ValidateActor(record.Actor); err != nil || record.ActorIdentityRole != record.Request.HumanIdentityRole || record.ActorIdentityProviderFingerprint != record.Request.HumanIdentityProviderFingerprint {
 		return Record{}, fmt.Errorf("DELEGATION_RECORD_INVALID: actor identity provenance is invalid")
 	}
 	fingerprint, err := record.Request.Fingerprint()

@@ -413,6 +413,7 @@ import { softwareDelivery } from "@operatorstack/boatstack-software-delivery";
 export default defineFlow(softwareDelivery({
   id: "unknown-resolver",
   version: "1",
+  humanIdentity: "developer",
   lifecycle: [{ id: "plan.abandon", priority: 31 }],
   targets: [{ id: "done", predicate: { true: true } }],
   entries: [{ id: "run", target: "done", inputs: [{ id: "value", type: "text", required: true, resolver: "unknown.resolver" }] }],
@@ -468,6 +469,7 @@ const implementation = foregroundWork({
 export default defineFlow(softwareDelivery({
   id: "additional-work",
   version: "1",
+  humanIdentity: "developer",
   lifecycle: [{ id: "plan.activate", priority: 50, work: "implementation" }],
   work: [implementation],
   targets: [{ id: "done", predicate: { true: true } }],

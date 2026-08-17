@@ -17,11 +17,11 @@ import (
 
 const (
 	EvidenceSchema         = "transition-invocation"
-	EvidenceSchemaRevision = 3
+	EvidenceSchemaRevision = 4
 	RequestSchema          = "transition-input-request"
-	RequestSchemaRevision  = 3
+	RequestSchemaRevision  = 4
 	ReceiptSchema          = "transition-input-receipt"
-	ReceiptSchemaRevision  = 3
+	ReceiptSchemaRevision  = 4
 )
 
 type Context struct {

@@ -10,25 +10,25 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentity"
 )
 
-const literalIdentityJSON = `"identity":{"human":{"kind":"literal","value":"operator"}},`
+const literalIdentityJSON = `"identity":{"default":"developer","roles":{"developer":{"kind":"literal","value":"operator"}}},`
 
 func literalIdentity() IdentitySettings {
-	return IdentitySettings{Human: humanidentity.Descriptor{Kind: humanidentity.KindLiteral, Value: "operator"}}
+	return IdentitySettings{Default: "developer", Roles: map[string]humanidentity.Descriptor{"developer": {Kind: humanidentity.KindLiteral, Value: "operator"}}}
 }
 
 func TestProjectConfigurationIsStrictAndVersioned(t *testing.T) {
-	valid := []byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli","codex"],"projections":["codex"]}`)
+	valid := []byte(`{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"literal","value":"operator"}}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli","codex"],"projections":["codex"]}`)
 	if _, err := DecodeProjectConfig(valid); err != nil {
 		t.Fatal(err)
 	}
 	invalid := [][]byte{
-		[]byte(`{"schema_version":3,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":[]}`),
-		[]byte(`{"schema_version":4,"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":[]}`),
-		[]byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["unknown"],"projections":[]}`),
-		[]byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":[],"legacy":true}`),
-		[]byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"product","default_branch":"--upload-pack=bad","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":[]}`),
-		[]byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"]}`),
-		[]byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":null}`),
+		[]byte(`{"schema_version":4,"identity":{"default":"developer","roles":{"developer":{"kind":"literal","value":"operator"}}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":[]}`),
+		[]byte(`{"schema_version":5,"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":[]}`),
+		[]byte(`{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"literal","value":"operator"}}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["unknown"],"projections":[]}`),
+		[]byte(`{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"literal","value":"operator"}}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":[],"legacy":true}`),
+		[]byte(`{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"literal","value":"operator"}}},"project":{"name":"product","default_branch":"--upload-pack=bad","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":[]}`),
+		[]byte(`{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"literal","value":"operator"}}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"]}`),
+		[]byte(`{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"literal","value":"operator"}}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":null}`),
 	}
 	for _, value := range invalid {
 		if _, err := DecodeProjectConfig(value); err == nil {
@@ -96,8 +96,8 @@ func TestRepositorySubprocessExtensionsAreStrictAndSemanticallyFingerprinted(t *
 }
 
 func TestProjectConfigurationFingerprintIsSemanticAndStrict(t *testing.T) {
-	one := []byte("{\n  \"schema_version\": 4,\n  \"identity\": {\"human\": {\"kind\": \"literal\", \"value\": \"operator\"}},\n  \"project\": {\"name\": \"product\", \"default_branch\": \"main\", \"commands\": {\"test\": \"go test ./...\"}},\n  \"policy\": {\"plan_approval\": \"human\", \"visual_evidence\": \"optional\"},\n  \"hosts\": [\"codex\", \"cli\"],\n  \"projections\": [\"codex\"]\n}\n")
-	two := []byte("{\r\n\"hosts\":[\"cli\",\"codex\"],\r\n\"projections\":[\"codex\"],\r\n\"identity\":{\"human\":{\"value\":\"operator\",\"kind\":\"literal\"}},\r\n\"policy\":{\"external_effect_authority\":\"human-or-autonomy-plus-provider\",\"visual_evidence\":\"optional\",\"plan_approval\":\"human\"},\r\n\"project\":{\"commands\":{\"test\":\"go test ./...\"},\"default_branch\":\"main\",\"name\":\"product\"},\r\n\"schema_version\":4\r\n}\r\n")
+	one := []byte("{\n  \"schema_version\": 5,\n  \"identity\": {\"default\": \"developer\", \"roles\": {\"developer\": {\"kind\": \"literal\", \"value\": \"operator\"}}},\n  \"project\": {\"name\": \"product\", \"default_branch\": \"main\", \"commands\": {\"test\": \"go test ./...\"}},\n  \"policy\": {\"plan_approval\": \"human\", \"visual_evidence\": \"optional\"},\n  \"hosts\": [\"codex\", \"cli\"],\n  \"projections\": [\"codex\"]\n}\n")
+	two := []byte("{\r\n\"hosts\":[\"cli\",\"codex\"],\r\n\"projections\":[\"codex\"],\r\n\"identity\":{\"roles\":{\"developer\":{\"value\":\"operator\",\"kind\":\"literal\"}},\"default\":\"developer\"},\r\n\"policy\":{\"external_effect_authority\":\"human-or-autonomy-plus-provider\",\"visual_evidence\":\"optional\",\"plan_approval\":\"human\"},\r\n\"project\":{\"commands\":{\"test\":\"go test ./...\"},\"default_branch\":\"main\",\"name\":\"product\"},\r\n\"schema_version\":5\r\n}\r\n")
 	_, oneFingerprint, err := ProjectConfigFingerprint(one)
 	if err != nil {
 		t.Fatal(err)
@@ -110,7 +110,7 @@ func TestProjectConfigurationFingerprintIsSemanticAndStrict(t *testing.T) {
 		t.Fatalf("representation changed semantic fingerprint: %s != %s", oneFingerprint, twoFingerprint)
 	}
 
-	changed := []byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"product","default_branch":"main","commands":{"test":"go test ./..."}},"policy":{"plan_approval":"human","visual_evidence":"required"},"hosts":["cli","codex"],"projections":["codex"]}`)
+	changed := []byte(`{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"literal","value":"operator"}}},"project":{"name":"product","default_branch":"main","commands":{"test":"go test ./..."}},"policy":{"plan_approval":"human","visual_evidence":"required"},"hosts":["cli","codex"],"projections":["codex"]}`)
 	_, changedFingerprint, err := ProjectConfigFingerprint(changed)
 	if err != nil {
 		t.Fatal(err)
@@ -199,8 +199,8 @@ func TestProjectProjectionsAreExplicitCanonicalAndNonsemantic(t *testing.T) {
 }
 
 func TestProjectConfigurationBindsHumanIdentityDescriptor(t *testing.T) {
-	literal := []byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"example-operator"}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":[]}`)
-	command := []byte(`{"schema_version":4,"identity":{"human":{"kind":"command","command":"gh","args":["api","user","--jq",".login"]}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":[]}`)
+	literal := []byte(`{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"literal","value":"example-operator"}}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":[]}`)
+	command := []byte(`{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"command","command":"gh","args":["api","user","--jq",".login"]}}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":[]}`)
 	literalConfig, literalFingerprint, err := ProjectConfigFingerprint(literal)
 	if err != nil {
 		t.Fatal(err)
@@ -209,21 +209,77 @@ func TestProjectConfigurationBindsHumanIdentityDescriptor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if literalConfig.Identity.Human.Kind != humanidentity.KindLiteral || commandConfig.Identity.Human.Kind != humanidentity.KindCommand {
+	if literalConfig.Identity.Roles["developer"].Kind != humanidentity.KindLiteral || commandConfig.Identity.Roles["developer"].Kind != humanidentity.KindCommand {
 		t.Fatalf("decoded identities literal=%#v command=%#v", literalConfig.Identity, commandConfig.Identity)
 	}
 	if literalFingerprint == commandFingerprint {
 		t.Fatal("identity descriptor change preserved project configuration fingerprint")
 	}
 	for _, invalid := range [][]byte{
-		[]byte(`{"schema_version":4,"identity":{"human":{"kind":"command","command":"gh"}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":[]}`),
-		[]byte(`{"schema_version":4,"identity":{"human":{"kind":"command","command":"gh","args":null}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":[]}`),
-		[]byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"actor","command":""}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":[]}`),
-		[]byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"actor","unknown":true}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":[]}`),
+		[]byte(`{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"command","command":"gh"}}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":[]}`),
+		[]byte(`{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"command","command":"gh","args":null}}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":[]}`),
+		[]byte(`{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"literal","value":"actor","command":""}}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":[]}`),
+		[]byte(`{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"literal","value":"actor","unknown":true}}},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":[]}`),
 	} {
 		if _, err := DecodeProjectConfig(invalid); err == nil {
 			t.Fatalf("invalid identity config was accepted: %s", invalid)
 		}
+	}
+}
+
+func TestProjectConfigurationRequiresExplicitNamedRoles(t *testing.T) {
+	base := ProjectConfig{
+		SchemaVersion: ConfigSchemaVersion,
+		Identity: IdentitySettings{Default: "developer", Roles: map[string]humanidentity.Descriptor{
+			"developer":       {Kind: humanidentity.KindLiteral, Value: "operator"},
+			"release-manager": {Kind: humanidentity.KindLiteral, Value: "release-operator"},
+		}},
+		Project: ProjectSettings{Name: "product", DefaultBranch: "main", Commands: map[string]string{}},
+		Policy:  PolicySettings{PlanApproval: "human", VisualEvidence: "optional"}, Hosts: []string{"cli"}, Projections: []string{},
+	}
+	raw, _ := json.Marshal(base)
+	decoded, fingerprint, err := ProjectConfigFingerprint(raw)
+	if err != nil || decoded.Identity.Default != "developer" || len(fingerprint) != 64 {
+		t.Fatalf("named roles = %#v fingerprint=%q err=%v", decoded.Identity, fingerprint, err)
+	}
+	reordered := base
+	reordered.Identity.Roles = map[string]humanidentity.Descriptor{
+		"release-manager": base.Identity.Roles["release-manager"],
+		"developer":       base.Identity.Roles["developer"],
+	}
+	reorderedRaw, _ := json.Marshal(reordered)
+	_, reorderedFingerprint, err := ProjectConfigFingerprint(reorderedRaw)
+	if err != nil || reorderedFingerprint != fingerprint {
+		t.Fatalf("role map order changed fingerprint: %q != %q, %v", reorderedFingerprint, fingerprint, err)
+	}
+	changedDefault := base
+	changedDefault.Identity.Default = "release-manager"
+	changedRaw, _ := json.Marshal(changedDefault)
+	changedConfig, changedFingerprint, err := ProjectConfigFingerprint(changedRaw)
+	if err != nil || changedFingerprint == fingerprint {
+		t.Fatalf("changed default fingerprint=%q err=%v", changedFingerprint, err)
+	}
+	if !reflect.DeepEqual(decoded.ControlPolicy(), changedConfig.ControlPolicy()) {
+		t.Fatal("human identity roles changed runtime host policy")
+	}
+
+	for name, identity := range map[string]IdentitySettings{
+		"missing default": {Roles: base.Identity.Roles},
+		"unknown default": {Default: "unknown", Roles: base.Identity.Roles},
+		"empty roles":     {Default: "developer", Roles: map[string]humanidentity.Descriptor{}},
+		"null roles":      {Default: "developer", Roles: nil},
+		"invalid role":    {Default: "Developer", Roles: map[string]humanidentity.Descriptor{"Developer": base.Identity.Roles["developer"]}},
+	} {
+		candidate := base
+		candidate.Identity = identity
+		raw, _ := json.Marshal(candidate)
+		if _, err := DecodeProjectConfig(raw); err == nil {
+			t.Fatalf("%s identity was accepted: %s", name, raw)
+		}
+	}
+	unknown := []byte(`{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"literal","value":"operator"}},"implicit":true},"project":{"name":"product","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":[]}`)
+	if _, err := DecodeProjectConfig(unknown); err == nil {
+		t.Fatal("unknown identity field was accepted")
 	}
 }
 

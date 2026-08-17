@@ -16,7 +16,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 )
 
-const ConfigSchemaVersion = 4
+const ConfigSchemaVersion = 5
 
 type ProjectSettings struct {
 	Name          string            `json:"name"`
@@ -48,7 +48,8 @@ type SubprocessExtensionSettings struct {
 }
 
 type IdentitySettings struct {
-	Human humanidentity.Descriptor `json:"human"`
+	Default string                              `json:"default"`
+	Roles   map[string]humanidentity.Descriptor `json:"roles"`
 }
 
 type ProjectConfig struct {
@@ -108,7 +109,7 @@ func DecodeProjectConfig(value []byte) (ProjectConfig, error) {
 	return config, nil
 }
 
-// ProjectConfigFingerprint binds configuration authority to strict schema-4
+// ProjectConfigFingerprint binds configuration authority to strict schema-5
 // semantics rather than checkout-specific JSON bytes. Formatting, object-key
 // order, line endings, the defaulted external-effect policy, and host ordering
 // therefore cannot make an otherwise identical configuration stale.
@@ -157,10 +158,24 @@ func ProjectConfigFingerprint(value []byte) (ProjectConfig, string, error) {
 
 func (c ProjectConfig) Validate() error {
 	if c.SchemaVersion != ConfigSchemaVersion || c.Project.Name == "" || c.Project.DefaultBranch == "" || c.Project.Commands == nil {
-		return fmt.Errorf("Boatstack project configuration requires schema 4, project name, default branch, commands, and human identity")
+		return fmt.Errorf("Boatstack project configuration requires schema 5, project name, default branch, commands, and named human identities")
 	}
-	if err := c.Identity.Human.Validate(); err != nil {
+	if len(c.Identity.Roles) == 0 {
+		return fmt.Errorf("Boatstack project configuration requires at least one human identity role")
+	}
+	if err := humanidentity.ValidateRole(c.Identity.Default); err != nil {
 		return err
+	}
+	if _, ok := c.Identity.Roles[c.Identity.Default]; !ok {
+		return fmt.Errorf("HUMAN_IDENTITY_ROLE_UNBOUND: default role %q is not defined", c.Identity.Default)
+	}
+	for role, descriptor := range c.Identity.Roles {
+		if err := humanidentity.ValidateRole(role); err != nil {
+			return err
+		}
+		if err := descriptor.Validate(); err != nil {
+			return fmt.Errorf("human identity role %q: %w", role, err)
+		}
 	}
 	if err := ValidateGitBranch(c.Project.DefaultBranch); err != nil {
 		return fmt.Errorf("invalid default branch: %w", err)

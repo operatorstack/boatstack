@@ -20,8 +20,8 @@ func TestLiteralAndCommandDescriptorsHaveDeterministicDistinctFingerprints(t *te
 		if err != nil || first != second || len(first) != 64 {
 			t.Fatalf("nondeterministic fingerprint first=%q second=%q err=%v", first, second, err)
 		}
-		presentation, err := humanidentity.NewPresentation(descriptor)
-		if err != nil || presentation.ProviderFingerprint != first || presentation.Validate() != nil {
+		presentation, err := humanidentity.NewPresentation("developer", descriptor)
+		if err != nil || presentation.Role != "developer" || presentation.ProviderFingerprint != first || presentation.Validate() != nil {
 			t.Fatalf("presentation = %#v, err=%v", presentation, err)
 		}
 	}
@@ -30,6 +30,30 @@ func TestLiteralAndCommandDescriptorsHaveDeterministicDistinctFingerprints(t *te
 	commandFingerprint, _ := command.Fingerprint()
 	if literalFingerprint == changedFingerprint || literalFingerprint == commandFingerprint {
 		t.Fatal("descriptor change preserved provider fingerprint")
+	}
+}
+
+func TestRoleValidationAndBindingFingerprint(t *testing.T) {
+	for _, role := range []string{"developer", "release-manager", "team.one_operator"} {
+		if err := humanidentity.ValidateRole(role); err != nil {
+			t.Fatalf("valid role %q: %v", role, err)
+		}
+	}
+	for _, role := range []string{"", "Developer", "1developer", "developer role", strings.Repeat("x", humanidentity.MaxRoleBytes+1)} {
+		if err := humanidentity.ValidateRole(role); err == nil {
+			t.Fatalf("invalid role %q was accepted", role)
+		}
+	}
+	descriptor := humanidentity.Descriptor{Kind: humanidentity.KindLiteral, Value: "operator"}
+	developer, _ := humanidentity.NewPresentation("developer", descriptor)
+	release, _ := humanidentity.NewPresentation("release-manager", descriptor)
+	if developer.ProviderFingerprint != release.ProviderFingerprint {
+		t.Fatal("role changed descriptor-only provider fingerprint")
+	}
+	developerBinding, _ := developer.BindingFingerprint()
+	releaseBinding, _ := release.BindingFingerprint()
+	if developerBinding == releaseBinding {
+		t.Fatal("different roles shared a binding fingerprint")
 	}
 }
 

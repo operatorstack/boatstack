@@ -15,6 +15,7 @@ import {
 export default defineFlow({
   id: "incident-response-invocation",
   version: "1",
+  human_identity: "developer",
   declarations: {
     authorities: ["human"],
     verifiers: ["state-effect"],

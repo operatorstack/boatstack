@@ -10,6 +10,7 @@ import (
 var stateFieldFacets = map[string]model.StateFacet{
 	"SchemaVersion": model.StateFacetControl, "RepositoryID": model.StateFacetControl, "GitCommonID": model.StateFacetControl, "WorktreeID": model.StateFacetControl,
 	"ProgramFingerprint":       model.StateFacetProgram,
+	"ProgramHumanIdentityRole": model.StateFacetProgram,
 	"ControlBundleFingerprint": model.StateFacetControl,
 	"Revision":                 model.StateFacetControl, "Phase": model.StateFacetControl,
 	"Engagement": model.StateFacetProduct, "Delivery": model.StateFacetProduct, "Workspace": model.StateFacetProduct, "Plan": model.StateFacetProduct,

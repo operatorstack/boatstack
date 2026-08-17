@@ -35,7 +35,7 @@ func TestHumanIdentityPresentationIsBoundToVerifiedConfiguration(t *testing.T) {
 	if output, err := exec.Command("git", "init", "-q", repository).CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v: %s", err, output)
 	}
-	configRaw := []byte(`{"schema_version":4,"identity":{"human":{"kind":"command","command":"gh","args":["api","user","--jq",".login"]}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli","codex"],"projections":["codex"]}`)
+	configRaw := []byte(`{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"command","command":"gh","args":["api","user","--jq",".login"]},"release-manager":{"kind":"literal","value":"release-approver"}}},"project":{"name":"fixture","default_branch":"main","commands":{}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli","codex"],"projections":["codex"]}`)
 	configPath := filepath.Join(repository, ".boatstack", "project.json")
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
 		t.Fatal(err)
@@ -60,6 +60,8 @@ func TestHumanIdentityPresentationIsBoundToVerifiedConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	state := durable.Default(invocation, time.Now().UTC())
+	state.ProgramFingerprint = strings.Repeat("a", 64)
+	state.ProgramHumanIdentityRole = "release-manager"
 	policy := config.ControlPolicy()
 	state.Configuration, state.ConfigFingerprint = model.ConfigurationVerified, configFingerprint
 	state.PlanApprovalPolicy, state.VisualEvidencePolicy, state.ExternalEffectPolicy = policy.PlanApproval, policy.VisualEvidence, policy.ExternalEffectAuthority
@@ -99,8 +101,20 @@ func TestHumanIdentityPresentationIsBoundToVerifiedConfiguration(t *testing.T) {
 		PriorProgramFingerprint: strings.Repeat("a", 64), CandidateProgramFingerprint: strings.Repeat("b", 64),
 		ProgramDeltaFingerprint: strings.Repeat("c", 64), RequiredTransition: "installation.reconcile-update", AcceptanceFlag: "--accept-program-change",
 	}}}, request)
-	if err != nil || programChange.ProgramChange.HumanIdentity == nil || !reflect.DeepEqual(*programChange.ProgramChange.HumanIdentity, presentation) {
+	if err != nil || programChange.ProgramChange.HumanIdentity == nil || programChange.ProgramChange.HumanIdentity.Role != "release-manager" || programChange.ProgramChange.HumanIdentity.Descriptor.Value != "release-approver" {
 		t.Fatalf("program-change identity = %#v, err=%v", programChange.ProgramChange.HumanIdentity, err)
+	}
+	maintenance, err := bindStandaloneTransientHumanIdentity(context.Background(), commandOptions{
+		repository: repository, host: "cli", transitionID: "configuration.mutate", humanActor: "operator",
+	})
+	if err != nil || maintenance.humanIdentityRole != "developer" || maintenance.humanIdentityProviderFingerprint != presentation.ProviderFingerprint {
+		t.Fatalf("configuration mutation identity = role %q provider %q, err=%v", maintenance.humanIdentityRole, maintenance.humanIdentityProviderFingerprint, err)
+	}
+	replacement, err := bindStandaloneTransientHumanIdentity(context.Background(), commandOptions{
+		repository: repository, host: "cli", transitionID: "installation.reconcile-update", humanActor: "operator",
+	})
+	if err != nil || replacement.humanIdentityRole != "release-manager" || replacement.humanIdentityProviderFingerprint != programChange.ProgramChange.HumanIdentity.ProviderFingerprint {
+		t.Fatalf("program replacement identity = role %q provider %q, err=%v", replacement.humanIdentityRole, replacement.humanIdentityProviderFingerprint, err)
 	}
 
 	if err := os.WriteFile(configPath, []byte(strings.ReplaceAll(string(configRaw), ".login", ".name")), 0o600); err != nil {
@@ -159,7 +173,7 @@ func TestUnverifiedConfigurationRepairPreservesExplicitActorQuestion(t *testing.
 func TestHumanIdentityRenderingPreservesStructuredArgvWithoutExecutingIt(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "executed")
 	descriptor := humanidentity.Descriptor{Kind: humanidentity.KindCommand, Command: "touch", Args: []string{marker}}
-	presentation, err := humanidentity.NewPresentation(descriptor)
+	presentation, err := humanidentity.NewPresentation("developer", descriptor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,8 +213,8 @@ func TestHumanIdentityRenderingPreservesStructuredArgvWithoutExecutingIt(t *test
 func TestAuthorizationReceiptIdentityBindsIdentityProvider(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0).UTC()
 	requestFingerprint := strings.Repeat("a", 64)
-	first := authorizationReceiptID(requestFingerprint, "operator", strings.Repeat("b", 64), 1, now)
-	second := authorizationReceiptID(requestFingerprint, "operator", strings.Repeat("c", 64), 1, now)
+	first := authorizationReceiptID(requestFingerprint, "operator", "developer", strings.Repeat("b", 64), 1, now)
+	second := authorizationReceiptID(requestFingerprint, "operator", "developer", strings.Repeat("c", 64), 1, now)
 	if first == second {
 		t.Fatal("identity provider change preserved authorization receipt ID")
 	}

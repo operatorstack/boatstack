@@ -7,7 +7,7 @@ import "encoding/json"
 
 const (
 	SchemaName     = "control-program"
-	SchemaRevision = 4
+	SchemaRevision = 5
 )
 
 type Document struct {
@@ -26,9 +26,10 @@ type Document struct {
 }
 
 type Program struct {
-	ID          string `json:"id"`
-	Version     string `json:"version"`
-	Description string `json:"description,omitempty"`
+	ID            string `json:"id"`
+	Version       string `json:"version"`
+	HumanIdentity string `json:"human_identity,omitempty"`
+	Description   string `json:"description,omitempty"`
 }
 
 type Declarations struct {

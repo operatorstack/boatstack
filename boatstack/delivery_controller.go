@@ -15,6 +15,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/engine"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/foregroundwork"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentity"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/plant"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/ports"
@@ -80,7 +81,11 @@ func NewDeliveryController(externalStateRoot string, program delivery.ControlPro
 	if err != nil {
 		return DeliveryController{}, err
 	}
-	baseDriver, err := effects.NewProgramDriver(resolver, clock, effects.NewNativeBoundary(), program.ResourceOwnership())
+	programHumanIdentityRole, err := compiledProgramHumanIdentityRole(program)
+	if err != nil {
+		return DeliveryController{}, err
+	}
+	baseDriver, err := effects.NewProgramDriver(resolver, clock, effects.NewNativeBoundary(), program.ResourceOwnership(), programHumanIdentityRole)
 	if err != nil {
 		return DeliveryController{}, err
 	}
@@ -92,6 +97,25 @@ func NewDeliveryController(externalStateRoot string, program delivery.ControlPro
 		return DeliveryController{}, err
 	}
 	return DeliveryController{program: program, registry: registry, resolver: resolver, observer: observer, engine: runtimeEngine, clock: clock, work: workManager}, nil
+}
+
+func compiledProgramHumanIdentityRole(program delivery.ControlProgram) (string, error) {
+	settings := program.ProgramRuntime().Manifest.Settings
+	if len(settings) == 0 {
+		return "", nil
+	}
+	var value struct {
+		Role string `json:"human_identity_role"`
+	}
+	if err := json.Unmarshal(settings, &value); err != nil {
+		return "", fmt.Errorf("decode compiled program human identity role: %w", err)
+	}
+	if value.Role != "" {
+		if err := humanidentity.ValidateRole(value.Role); err != nil {
+			return "", fmt.Errorf("compiled program human identity role: %w", err)
+		}
+	}
+	return value.Role, nil
 }
 
 func (k DeliveryController) Handle(ctx context.Context, request surfaces.Request) (surfaces.Response, error) {

@@ -182,11 +182,14 @@ func runDeclarativeFlow(ctx context.Context, compiled controlprogram.Compiled, o
 	}
 	requiresHumanAuthority := declarativeRequiresHumanAuthority(transition, operator)
 	if requiresHumanAuthority || transitionUsesHostInput(transition) {
-		presentation, identityErr := humanIdentityPresentationForRepositoryBound(ctx, repository, options.host, "declarative-suspension", runtimeContext.controlBundle, nil)
+		presentation, identityErr := humanIdentityPresentationForRepositoryBound(ctx, repository, options.host, "declarative-suspension", compiled.Document.Program.HumanIdentity, runtimeContext.controlBundle, nil)
 		if identityErr != nil {
 			return identityErr
 		}
-		runtimeContext.authorityContextFingerprint = presentation.ProviderFingerprint
+		runtimeContext.authorityContextFingerprint, identityErr = presentation.BindingFingerprint()
+		if identityErr != nil {
+			return identityErr
+		}
 		runtimeContext.humanIdentity = &presentation
 	}
 	result, materializationContext, err := materializeDeclarativeInvocation(runtimeContext, transition, operator)
@@ -234,12 +237,13 @@ func runDeclarativeFlow(ctx context.Context, compiled controlprogram.Compiled, o
 		return err
 	}
 	if runtimeContext.humanIdentity != nil {
-		current, identityErr := humanIdentityPresentationForRepositoryBound(ctx, repository, options.host, "declarative-commit", runtimeContext.controlBundle, nil)
+		current, identityErr := humanIdentityPresentationForRepositoryBound(ctx, repository, options.host, "declarative-commit", compiled.Document.Program.HumanIdentity, runtimeContext.controlBundle, nil)
 		if identityErr != nil {
 			return identityErr
 		}
-		if current.ProviderFingerprint != runtimeContext.authorityContextFingerprint {
-			return fmt.Errorf("HUMAN_IDENTITY_DRIFT: verified identity provider changed before declarative state commit")
+		currentBinding, bindingErr := current.BindingFingerprint()
+		if bindingErr != nil || currentBinding != runtimeContext.authorityContextFingerprint {
+			return fmt.Errorf("HUMAN_IDENTITY_DRIFT: verified identity role or provider changed before declarative state commit")
 		}
 	}
 	fresh, err := invocation.Materialize(operator.Parameters, transition.Parameters, materializationContext, nil)

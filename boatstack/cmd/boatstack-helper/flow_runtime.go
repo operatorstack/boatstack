@@ -23,6 +23,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/foregroundwork"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentity"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/plant"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/ports"
@@ -91,7 +92,7 @@ func bindFlowCommitRequiredOperation(err error, operation surfaces.Operation) er
 
 func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions, error) {
 	if options.programID == "" && options.entryID == "" {
-		return options, nil
+		return bindStandaloneTransientHumanIdentity(ctx, options)
 	}
 	if !flowSegment.MatchString(options.programID) || !flowSegment.MatchString(options.entryID) {
 		return commandOptions{}, fmt.Errorf("FLOW_ENTRY_INVALID: --flow and --entry require semantic identifiers")
@@ -264,7 +265,7 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		if description == "" {
 			description = fmt.Sprintf("Run %s/%s to %s", options.programID, options.entryID, objective.TargetID)
 		}
-		presentation, presentationErr := humanIdentityPresentationForRepositoryBound(ctx, repository, host, "flow-delegation-request", bundle.Source, nil)
+		presentation, presentationErr := humanIdentityPresentationForRepositoryBound(ctx, repository, host, "flow-delegation-request", compiled.Document.Program.HumanIdentity, bundle.Source, nil)
 		if presentationErr != nil {
 			return commandOptions{}, presentationErr
 		}
@@ -275,6 +276,7 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 			InputFingerprints: []string{planFingerprint}, RepositoryID: invocation.RepositoryID, GitCommonID: invocation.GitCommonID,
 			InitialWorktreeID: invocation.WorktreeID, InitialRef: invocation.Ref,
 			BindingFingerprint: entry.Delegation.Fingerprint, RequestedAuthorities: append([]string(nil), entry.Delegation.Authorities...),
+			HumanIdentityRole:                presentation.Role,
 			HumanIdentityProviderFingerprint: presentation.ProviderFingerprint,
 			Description:                      description,
 		}
@@ -289,7 +291,7 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 		if record, loadErr := delegation.Load(recordPath); loadErr == nil {
 			bound := record.Request
 			inputDrift := !options.activeFlowBound && strings.Join(bound.InputFingerprints, "\x00") != strings.Join(delegationRequest.InputFingerprints, "\x00")
-			if bound.RunID != delegationRequest.RunID || bound.ProgramID != delegationRequest.ProgramID || bound.ProgramFingerprint != delegationRequest.ProgramFingerprint || bound.ControlBundleFingerprint != delegationRequest.ControlBundleFingerprint || bound.EntryID != delegationRequest.EntryID || bound.TargetID != delegationRequest.TargetID || bound.ObjectiveID != delegationRequest.ObjectiveID || bound.DeliveryID != delegationRequest.DeliveryID || inputDrift || bound.RepositoryID != delegationRequest.RepositoryID || bound.GitCommonID != delegationRequest.GitCommonID || bound.BindingFingerprint != delegationRequest.BindingFingerprint || bound.HumanIdentityProviderFingerprint != delegationRequest.HumanIdentityProviderFingerprint || strings.Join(bound.RequestedAuthorities, "\x00") != strings.Join(delegationRequest.RequestedAuthorities, "\x00") || bound.Description != delegationRequest.Description {
+			if bound.RunID != delegationRequest.RunID || bound.ProgramID != delegationRequest.ProgramID || bound.ProgramFingerprint != delegationRequest.ProgramFingerprint || bound.ControlBundleFingerprint != delegationRequest.ControlBundleFingerprint || bound.EntryID != delegationRequest.EntryID || bound.TargetID != delegationRequest.TargetID || bound.ObjectiveID != delegationRequest.ObjectiveID || bound.DeliveryID != delegationRequest.DeliveryID || inputDrift || bound.RepositoryID != delegationRequest.RepositoryID || bound.GitCommonID != delegationRequest.GitCommonID || bound.BindingFingerprint != delegationRequest.BindingFingerprint || bound.HumanIdentityRole != delegationRequest.HumanIdentityRole || bound.HumanIdentityProviderFingerprint != delegationRequest.HumanIdentityProviderFingerprint || strings.Join(bound.RequestedAuthorities, "\x00") != strings.Join(delegationRequest.RequestedAuthorities, "\x00") || bound.Description != delegationRequest.Description {
 				reprojected, reprojectErr := canReprojectDelegation(layout, invocation, bound, delegationRequest)
 				if reprojectErr != nil {
 					return commandOptions{}, reprojectErr
@@ -343,7 +345,119 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 			options.invocationEvidence = &boundEvidence
 		}
 	}
+	if options.humanActor != "" {
+		presentation, presentationErr := transientHumanIdentityPresentation(ctx, compiled, options)
+		if presentationErr != nil {
+			return commandOptions{}, presentationErr
+		}
+		options.humanIdentityRole = presentation.Role
+		options.humanIdentityProviderFingerprint = presentation.ProviderFingerprint
+	}
 	return options, nil
+}
+
+func bindStandaloneTransientHumanIdentity(ctx context.Context, options commandOptions) (commandOptions, error) {
+	if options.humanActor == "" {
+		return options, nil
+	}
+	switch options.transitionID {
+	case "installation.initialize", "configuration.initialize":
+		// True bootstrap has no trusted identity source. The explicit actor is
+		// intentionally the only provenance at this boundary.
+		return options, nil
+	case "configuration.mutate", "configuration.reconcile", "installation.update", "installation.reconcile-update":
+	default:
+		return options, nil
+	}
+	repository, err := filepath.Abs(options.repository)
+	if err != nil {
+		return commandOptions{}, err
+	}
+	repository, err = filepath.EvalSymlinks(repository)
+	if err != nil {
+		return commandOptions{}, err
+	}
+	host := options.host
+	if host == "" {
+		host = "cli"
+	}
+	var presentation humanidentity.Presentation
+	switch options.transitionID {
+	case "configuration.mutate", "configuration.reconcile":
+		presentation, err = humanIdentityPresentationForCurrentRepositoryDefault(ctx, repository, host, "transient-maintenance-human-authority")
+	case "installation.update", "installation.reconcile-update":
+		presentation, err = humanIdentityPresentationForCurrentProgramChange(ctx, repository, host, "transient-program-change-authority", options.transitionID)
+	}
+	if err != nil {
+		return commandOptions{}, err
+	}
+	options.repository = repository
+	options.humanIdentityRole = presentation.Role
+	options.humanIdentityProviderFingerprint = presentation.ProviderFingerprint
+	return options, nil
+}
+
+func transientHumanIdentityPresentation(ctx context.Context, compiled controlprogram.Compiled, options commandOptions) (humanidentity.Presentation, error) {
+	if options.controlBundle == nil {
+		return humanidentity.Presentation{}, nil
+	}
+	host := options.host
+	if host == "" {
+		host = "cli"
+	}
+	switch options.transitionID {
+	case "installation.initialize", "configuration.initialize":
+		// True bootstrap has no admitted role or verified default. The explicit
+		// actor remains the only authority provenance at this boundary.
+		return humanidentity.Presentation{}, nil
+	case "configuration.mutate", "configuration.reconcile":
+		return humanIdentityPresentationForRepositoryDefault(ctx, options.repository, host, "transient-human-authority", options.controlBundle.Source, nil)
+	case "installation.update", "installation.reconcile-update":
+		return humanIdentityPresentationForProgramChange(ctx, options.repository, host, "transient-program-change-authority", compiled.Document.Program.ID, options.transitionID, options.controlBundle.Source)
+	default:
+		if compiled.Document.Program.HumanIdentity == "" {
+			return humanidentity.Presentation{}, nil
+		}
+		if options.transitionID == "" {
+			hasState, stateErr := repositoryHasDurableState(ctx, options.repository, host)
+			if stateErr != nil {
+				return humanidentity.Presentation{}, stateErr
+			}
+			if !hasState {
+				// An unbound Flow command can only select bootstrap work before
+				// durable state exists. Preserve its explicit actor; once state
+				// exists, ordinary Flow authority must resolve the admitted role.
+				return humanidentity.Presentation{}, nil
+			}
+		}
+		return humanIdentityPresentationForRepositoryBound(ctx, options.repository, host, "transient-flow-authority", compiled.Document.Program.HumanIdentity, options.controlBundle.Source, nil)
+	}
+}
+
+func repositoryHasDurableState(ctx context.Context, repository, host string) (bool, error) {
+	resolver, err := plant.NewResolver("")
+	if err != nil {
+		return false, err
+	}
+	invocation, err := resolver.ResolveInvocation(ctx, repository, host, "transient-human-authority-state")
+	if err != nil {
+		return false, err
+	}
+	layout, _, err := resolver.ResolveLayout(ctx, invocation)
+	if err != nil {
+		return false, err
+	}
+	info, err := os.Lstat(layout.StatePath)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return false, fmt.Errorf("HUMAN_IDENTITY_UNBOUND: durable state is not a regular file")
+	}
+	return true, nil
 }
 
 // requireCommittedAcceptedFlowBundle makes an accepted installation result a
@@ -579,11 +693,14 @@ func materializeFlowInvocation(ctx context.Context, compiled controlprogram.Comp
 		if bundle == nil || len(bundleFingerprint) != 64 {
 			return commandOptions{}, fmt.Errorf("FLOW_INPUT_UNBOUND: host input requires an exact verified control bundle")
 		}
-		presentation, presentationErr := humanIdentityPresentationForRepositoryBound(ctx, options.repository, host, "flow-input-"+options.runID+"-"+transition.ID, bundle.Source, nil)
+		presentation, presentationErr := humanIdentityPresentationForRepositoryBound(ctx, options.repository, host, "flow-input-"+options.runID+"-"+transition.ID, compiled.Document.Program.HumanIdentity, bundle.Source, nil)
 		if presentationErr != nil {
 			return commandOptions{}, presentationErr
 		}
-		authorityContextFingerprint = presentation.ProviderFingerprint
+		authorityContextFingerprint, presentationErr = presentation.BindingFingerprint()
+		if presentationErr != nil {
+			return commandOptions{}, presentationErr
+		}
 	}
 	contextFingerprint, err := general.Fingerprint(struct {
 		Invocation       model.InvocationContext `json:"invocation"`

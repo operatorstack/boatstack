@@ -23,7 +23,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 )
 
-const flowCompilerVersion = "control-program.compiler.6"
+const flowCompilerVersion = "control-program.compiler.7"
 
 type flowCommandOptions struct {
 	repository string
@@ -107,7 +107,7 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 	if err != nil {
 		return err
 	}
-	configPath, configRaw, _, projections, err := loadProjectProjectionSelection(options.repository)
+	configPath, configRaw, _, config, projections, err := loadProjectProjectionSelection(options.repository)
 	if err != nil {
 		return err
 	}
@@ -141,6 +141,9 @@ func compileFlow(ctx context.Context, options flowCommandOptions) error {
 		return err
 	}
 	if err := validateCompiledFlow(ctx, options.repository, compiled, resolver); err != nil {
+		return err
+	}
+	if err := validateProgramHumanIdentity(compiled, config); err != nil {
 		return err
 	}
 	artifactPath, err := resolveArtifactPath(options.repository, options.artifact, compiled.Document.Program.ID)
@@ -623,32 +626,50 @@ func renderFlowResult(status, artifactPath string, artifact controlprogram.Artif
 	})
 }
 
-func loadProjectProjectionSelection(repository string) (string, []byte, string, []hostprojection.ID, error) {
+func loadProjectProjectionSelection(repository string) (string, []byte, string, protocol.ProjectConfig, []hostprojection.ID, error) {
 	path, err := exactRepositoryPath(repository, filepath.Join(".boatstack", "project.json"))
 	if err != nil {
-		return "", nil, "", nil, err
+		return "", nil, "", protocol.ProjectConfig{}, nil, err
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return "", nil, "", nil, fmt.Errorf("PROJECT_PROJECTIONS_REQUIRED: read project configuration: %w", err)
+		return "", nil, "", protocol.ProjectConfig{}, nil, fmt.Errorf("PROJECT_PROJECTIONS_REQUIRED: read project configuration: %w", err)
 	}
 	config, fingerprint, err := protocol.ProjectConfigFingerprint(raw)
 	if err != nil {
-		return "", nil, "", nil, err
+		return "", nil, "", protocol.ProjectConfig{}, nil, err
 	}
 	projections, err := config.ProjectionIDs()
 	if err != nil {
-		return "", nil, "", nil, err
+		return "", nil, "", protocol.ProjectConfig{}, nil, err
 	}
-	return path, raw, fingerprint, projections, nil
+	return path, raw, fingerprint, config, projections, nil
 }
 
 func checkArtifactForCurrentProject(repository string, artifact controlprogram.Artifact, resolver controlprogram.BindingResolver) (controlprogram.Compiled, error) {
-	_, _, _, projections, err := loadProjectProjectionSelection(repository)
+	_, _, _, config, projections, err := loadProjectProjectionSelection(repository)
 	if err != nil {
 		return controlprogram.Compiled{}, err
 	}
-	return controlprogram.CheckArtifact(repository, artifact, flowCompilerVersion, resolver, projections, generateSoftwareFlowProjections)
+	compiled, err := controlprogram.CheckArtifact(repository, artifact, flowCompilerVersion, resolver, projections, generateSoftwareFlowProjections)
+	if err != nil {
+		return controlprogram.Compiled{}, err
+	}
+	if err := validateProgramHumanIdentity(compiled, config); err != nil {
+		return controlprogram.Compiled{}, err
+	}
+	return compiled, nil
+}
+
+func validateProgramHumanIdentity(compiled controlprogram.Compiled, config protocol.ProjectConfig) error {
+	role := compiled.Document.Program.HumanIdentity
+	if role == "" {
+		return nil
+	}
+	if _, ok := config.Identity.Roles[role]; !ok {
+		return fmt.Errorf("CONTROL_PROGRAM_HUMAN_IDENTITY_UNBOUND: program %q requires identity role %q, but the current project configuration does not define it", compiled.Document.Program.ID, role)
+	}
+	return nil
 }
 
 func entryIDs(entries []controlprogram.Entry) []string {

@@ -143,7 +143,7 @@ if [[ "$mode" == install ]]; then
     config_source="$temporary/project.json"
     json_default_branch="${default_branch//\\/\\\\}"
     json_default_branch="${json_default_branch//\"/\\\"}"
-    printf '%s\n' "{\"schema_version\":4,\"identity\":{\"human\":{\"kind\":\"literal\",\"value\":\"$actor\"}},\"project\":{\"name\":\"repository\",\"default_branch\":\"$json_default_branch\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\",\"cursor\",\"codex\",\"claude\",\"gemini\",\"mcp\"],\"projections\":[\"codex\",\"claude\",\"cursor\",\"gemini\"]}" > "$config_source"
+    printf '%s\n' "{\"schema_version\":5,\"identity\":{\"default\":\"developer\",\"roles\":{\"developer\":{\"kind\":\"literal\",\"value\":\"$actor\"}}},\"project\":{\"name\":\"repository\",\"default_branch\":\"$json_default_branch\",\"commands\":{}},\"policy\":{\"plan_approval\":\"human\",\"visual_evidence\":\"optional\"},\"hosts\":[\"cli\",\"cursor\",\"codex\",\"claude\",\"gemini\",\"mcp\"],\"projections\":[\"codex\",\"claude\",\"cursor\",\"gemini\"]}" > "$config_source"
   fi
   "$runtime" init --repo "$repository" --human "$actor" --param "config_path=$config_source" --format text
 elif [[ "$mode" == update ]]; then

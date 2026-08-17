@@ -245,7 +245,7 @@ func installationReprojectionAdmits(records []journalRecord, flowID string, invo
 // committed configuration mutation in this Flow lineage and remain the
 // verified durable state. It permits a fresh delegation request only; prior
 // authority is never carried forward.
-func ConfigurationReprojectionAdmits(layout ports.ControllerLayout, flowID string, invocation model.InvocationContext, providerFingerprint, controlBundleFingerprint string) (bool, error) {
+func ConfigurationReprojectionAdmits(layout ports.ControllerLayout, flowID string, invocation model.InvocationContext, identityRole, providerFingerprint, controlBundleFingerprint string) (bool, error) {
 	configRaw, err := os.ReadFile(layout.ConfigPath)
 	if err != nil {
 		return false, err
@@ -254,7 +254,11 @@ func ConfigurationReprojectionAdmits(layout ports.ControllerLayout, flowID strin
 	if err != nil {
 		return false, err
 	}
-	actualProvider, err := config.Identity.Human.Fingerprint()
+	descriptor, ok := config.Identity.Roles[identityRole]
+	if !ok {
+		return false, nil
+	}
+	actualProvider, err := descriptor.Fingerprint()
 	if err != nil || actualProvider != providerFingerprint {
 		return false, nil
 	}

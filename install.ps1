@@ -116,8 +116,8 @@ try {
     if (-not $ConfigSource) {
       $ConfigSource = Join-Path $Temporary "project.json"
       $Config = [ordered]@{
-        schema_version = 4
-        identity = [ordered]@{ human = [ordered]@{ kind = "literal"; value = $Actor } }
+        schema_version = 5
+        identity = [ordered]@{ default = "developer"; roles = [ordered]@{ developer = [ordered]@{ kind = "literal"; value = $Actor } } }
         project = [ordered]@{ name = "repository"; default_branch = $DefaultBranch; commands = [ordered]@{} }
         policy = [ordered]@{ plan_approval = "human"; visual_evidence = "optional" }
         hosts = @("cli", "cursor", "codex", "claude", "gemini", "mcp")

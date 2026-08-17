@@ -51,7 +51,7 @@ func writeBoundaryConfig(t *testing.T, command string) ports.ControllerLayout {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	raw := []byte(`{"schema_version":4,"identity":{"human":{"kind":"literal","value":"operator"}},"project":{"name":"boundary","default_branch":"main","commands":{"build":"` + command + `"}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":[]}`)
+	raw := []byte(`{"schema_version":5,"identity":{"default":"developer","roles":{"developer":{"kind":"literal","value":"operator"}}},"project":{"name":"boundary","default_branch":"main","commands":{"build":"` + command + `"}},"policy":{"plan_approval":"human","visual_evidence":"optional"},"hosts":["cli"],"projections":[]}`)
 	if err := os.WriteFile(path, raw, 0o600); err != nil {
 		t.Fatal(err)
 	}

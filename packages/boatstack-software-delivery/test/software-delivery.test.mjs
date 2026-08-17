@@ -21,6 +21,7 @@ function definition(overrides = {}) {
   return {
     id: "example",
     version: "1",
+    humanIdentity: "developer",
     lifecycle: [{ id: "plan.activate", priority: 50 }],
     targets: [target],
     entries: [entry],
@@ -42,6 +43,7 @@ test("composes canonical domain wiring without hidden policy", () => {
   assert.equal(result.id, "example");
   assert.equal(result.version, "1");
   assert.equal(result.description, "Example");
+  assert.equal(result.human_identity, "developer");
   assert.deepEqual(result.facets, softwareDeliveryFacets);
   assert.deepEqual(result.evidence, softwareDeliveryEvidence);
   assert.deepEqual(
@@ -162,6 +164,15 @@ test("rejects duplicate work IDs including repeated planning work", () => {
   );
 });
 
+for (const humanIdentity of [undefined, "", "Developer", "1developer", "developer role", "x".repeat(129)]) {
+  test(`rejects invalid human identity ${String(humanIdentity)}`, () => {
+    assert.throws(
+      () => softwareDelivery(definition({ humanIdentity })),
+      /SOFTWARE_DELIVERY_HUMAN_IDENTITY_INVALID/,
+    );
+  });
+}
+
 test("rejects planning work without its admit step", () => {
   assert.throws(
     () =>
@@ -232,6 +243,7 @@ test("does not mutate inputs or expose mutable canonical arrays", () => {
   const input = Object.freeze({
     id: "example",
     version: "1",
+    humanIdentity: "developer",
     lifecycle,
     targets,
     entries,
