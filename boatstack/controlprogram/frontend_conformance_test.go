@@ -440,3 +440,66 @@ export default defineFlow(softwareDelivery({
 		t.Fatalf("unknown resolver trusted-boundary result = %v", err)
 	}
 }
+
+func TestSoftwareDeliverySugarBindsAdditionalWorkThroughProductionCompiler(t *testing.T) {
+	// control-law: helper-declared-work-is-explicitly-bound-before-compilation
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("cannot locate frontend")
+	}
+	moduleRoot := filepath.Clean(filepath.Join(filepath.Dir(file), ".."))
+	frontend := filepath.Join(filepath.Dir(moduleRoot), "node_modules", ".bin", "boatstack-flow-frontend")
+	if runtime.GOOS == "windows" {
+		frontend += ".cmd"
+	}
+	if _, err := os.Stat(frontend); err != nil {
+		t.Skip("Flow frontend dependencies are not installed")
+	}
+	directory := t.TempDir()
+	source := filepath.Join(directory, "additional-work.flow.ts")
+	content := `import { defineFlow, foregroundWork, instructionAsset, workArtifact } from "@operatorstack/boatstack";
+import { softwareDelivery } from "@operatorstack/boatstack-software-delivery";
+const implementation = foregroundWork({
+  id: "implementation",
+  instructions: instructionAsset("implementation.md"),
+  inputs: [],
+  outputs: [workArtifact({ id: "result", path: "result.md", media_type: "text/markdown", required: true })],
+});
+export default defineFlow(softwareDelivery({
+  id: "additional-work",
+  version: "1",
+  lifecycle: [{ id: "plan.activate", priority: 50, work: "implementation" }],
+  work: [implementation],
+  targets: [{ id: "done", predicate: { true: true } }],
+  entries: [{ id: "run", target: "done" }],
+}));
+`
+	if err := os.WriteFile(source, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "implementation.md"), []byte("Implement the approved plan.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := exec.Command(frontend, source).CombinedOutput()
+	if err != nil {
+		t.Fatalf("compile helper with additional work: %v\n%s", err, raw)
+	}
+	resolver, err := softwareflow.NewResolver(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiled, err := controlprogram.LoadWithAssets(
+		bytes.NewReader(raw),
+		resolver,
+		controlprogram.RepositoryAssetResolver{Repository: directory},
+	)
+	if err != nil {
+		t.Fatalf("load helper with additional work: %v", err)
+	}
+	if len(compiled.Document.Work) != 1 || compiled.Document.Work[0].ID != "implementation" {
+		t.Fatalf("compiled work = %#v", compiled.Document.Work)
+	}
+	if len(compiled.Document.Transitions) != 1 || compiled.Document.Transitions[0].Work != "implementation" {
+		t.Fatalf("compiled transitions = %#v", compiled.Document.Transitions)
+	}
+}

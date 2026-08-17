@@ -86,8 +86,9 @@ authority strengthening, and domain composition.
 
 | Input | Derived output |
 | --- | --- |
-| `lifecycle` | trusted operators and transitions |
+| `lifecycle` | trusted operators and transitions, including explicit additional-work bindings |
 | `planningPackageWork` | planning work registration and admit binding |
+| `work` | additional work registration in caller order; every contract ID must be referenced by a lifecycle step's `work` field |
 | entry input `resolver` | `declarations.input_resolvers` |
 | software-delivery domain | canonical facets and evidence |
 | `targets` | unchanged |
@@ -95,6 +96,12 @@ authority strengthening, and domain composition.
 
 The resulting committed IR artifact remains inspectable. The helper only
 removes coordinated mechanical wiring from the authoring source.
+
+Additional work remains explicit at both ends. Declare each contract in `work`
+and name its ID on every lifecycle step that requires it, for example
+`{ id: "plan.activate", priority: 50, work: "implementation" }`. The helper
+rejects unknown or unreferenced work IDs; it never chooses a transition for
+caller-owned work.
 
 The trusted package owns operator effects, minimum capabilities, trusted
 authority alternatives, verification, and recovery. The repository owns which

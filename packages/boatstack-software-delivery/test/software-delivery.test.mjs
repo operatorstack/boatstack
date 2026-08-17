@@ -66,7 +66,11 @@ test("registers planning work exactly once before additional work", () => {
   const additional = [work("implementation"), work("review")];
   const result = softwareDelivery(
     definition({
-      lifecycle: [planningPackageAdmit, { id: "plan.activate", priority: 50 }],
+      lifecycle: [
+        planningPackageAdmit,
+        { id: "plan.activate", priority: 50, work: "implementation" },
+        { id: "plan.abandon", priority: 31, work: "review" },
+      ],
       planningPackageWork: planning,
       work: additional,
     }),
@@ -78,7 +82,8 @@ test("registers planning work exactly once before additional work", () => {
     "review",
   ]);
   assert.equal(result.transitions[0].work, "planning-package");
-  assert.equal(result.transitions[1].work, undefined);
+  assert.equal(result.transitions[1].work, "implementation");
+  assert.equal(result.transitions[2].work, "review");
 });
 
 test("closes resolver declarations over exact first use", () => {
@@ -165,6 +170,59 @@ test("rejects planning work without its admit step", () => {
       ),
     /SOFTWARE_DELIVERY_PLANNING_WORK_UNUSED/,
   );
+});
+
+test("rejects additional work that is not bound to a lifecycle step", () => {
+  assert.throws(
+    () => softwareDelivery(definition({ work: [work("implementation")] })),
+    /SOFTWARE_DELIVERY_WORK_UNUSED/,
+  );
+});
+
+test("rejects lifecycle references to undeclared work", () => {
+  assert.throws(
+    () =>
+      softwareDelivery(
+        definition({
+          lifecycle: [
+            { id: "plan.activate", priority: 50, work: "implementation" },
+          ],
+        }),
+      ),
+    /SOFTWARE_DELIVERY_WORK_UNKNOWN/,
+  );
+});
+
+test("rejects empty lifecycle work references", () => {
+  assert.throws(
+    () =>
+      softwareDelivery(
+        definition({
+          lifecycle: [{ id: "plan.activate", priority: 50, work: "  " }],
+        }),
+      ),
+    /SOFTWARE_DELIVERY_WORK_REFERENCE_EMPTY/,
+  );
+});
+
+test("rejects replacing or repeating the planning work binding", () => {
+  const planning = work("planning-package");
+  for (const lifecycle of [
+    [{ ...planningPackageAdmit, work: "implementation" }],
+    [planningPackageAdmit, { id: "plan.activate", priority: 50, work: planning.id }],
+  ]) {
+    assert.throws(
+      () =>
+        softwareDelivery(
+          definition({
+            lifecycle,
+            planningPackageWork: planning,
+            work: [work("implementation")],
+          }),
+        ),
+      /SOFTWARE_DELIVERY_WORK_CONFLICT/,
+    );
+  }
 });
 
 test("does not mutate inputs or expose mutable canonical arrays", () => {
