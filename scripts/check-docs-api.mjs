@@ -5,7 +5,7 @@ const required = new Map([
   ["@operatorstack/boatstack", ["defineFlow", "entry", "marked"]],
   [
     "@operatorstack/boatstack-software-delivery",
-    ["inbox", "trustedDelegation", "trustedTransition"],
+    ["inbox", "softwareDelivery", "trustedDelegation", "trustedTransition"],
   ],
 ]);
 

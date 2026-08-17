@@ -20,10 +20,13 @@ import {
   trustedParameterResolver,
   transition,
   type EntryInputDefinition,
+  type EntryDefinition,
   type EvidenceDefinition,
   type FacetDefinition,
+  type FlowDefinition,
   type OperatorDefinition,
   type ParameterProducer,
+  type TargetDefinition,
   type TransitionDefinition,
   type DelegationBindingDefinition,
   type WorkContract,
@@ -84,6 +87,8 @@ export const softwareDeliveryEvidence: EvidenceDefinition[] = [
 export interface TrustedStep {
   id: string;
   priority: number;
+  /** Explicit additional work contract ID required by this transition. */
+  work?: string;
 }
 
 /** Admits a completed planning package into the delivery lifecycle. */
@@ -101,6 +106,178 @@ export const planningPackagePromote: TrustedStep = {
   id: "planning.package.promote",
   priority: 45,
 };
+
+/**
+ * Repository-owned policy composed with canonical software-delivery wiring.
+ *
+ * Lifecycle membership, priorities, work, targets, and entries remain explicit.
+ * This input contains data only and does not grant authority or execute code.
+ */
+export interface SoftwareDeliveryFlowDefinition {
+  /** Stable repository-selected Control Program identity. */
+  id: string;
+  /** Repository-selected Control Program version. */
+  version: string;
+  /** Optional human-readable description passed through unchanged. */
+  description?: string;
+  /** Explicit trusted lifecycle membership and repository-selected priorities. */
+  lifecycle: TrustedStep[];
+  /** Foreground work bound specifically to `planning.package.admit`. */
+  planningPackageWork?: WorkContract;
+  /** Additional explicit work contracts, in repository-selected order. */
+  work?: WorkContract[];
+  /** Explicit repository completion predicates. */
+  targets: TargetDefinition[];
+  /** Explicit repository invocation surfaces. */
+  entries: EntryDefinition[];
+}
+
+function validateSoftwareDeliveryDefinition(
+  definition: SoftwareDeliveryFlowDefinition,
+): void {
+  const lifecycleIDs = new Set<string>();
+  for (const step of definition.lifecycle) {
+    if (step.id.trim().length === 0) {
+      throw new Error(
+        "SOFTWARE_DELIVERY_LIFECYCLE_EMPTY: lifecycle IDs must be non-empty",
+      );
+    }
+    if (lifecycleIDs.has(step.id)) {
+      throw new Error(
+        `SOFTWARE_DELIVERY_LIFECYCLE_DUPLICATE: lifecycle ID ${JSON.stringify(step.id)} appears more than once`,
+      );
+    }
+    lifecycleIDs.add(step.id);
+    if (!Number.isSafeInteger(step.priority)) {
+      throw new Error(
+        `SOFTWARE_DELIVERY_PRIORITY_INVALID: priority for ${JSON.stringify(step.id)} must be a finite safe integer`,
+      );
+    }
+  }
+
+  const workIDs = new Set<string>();
+  const work = definition.planningPackageWork
+    ? [definition.planningPackageWork, ...(definition.work ?? [])]
+    : definition.work ?? [];
+  for (const contract of work) {
+    if (workIDs.has(contract.id)) {
+      throw new Error(
+        `SOFTWARE_DELIVERY_WORK_DUPLICATE: work ID ${JSON.stringify(contract.id)} appears more than once`,
+      );
+    }
+    workIDs.add(contract.id);
+  }
+
+  if (
+    definition.planningPackageWork &&
+    !lifecycleIDs.has(planningPackageAdmit.id)
+  ) {
+    throw new Error(
+      "SOFTWARE_DELIVERY_PLANNING_WORK_UNUSED: planningPackageWork requires exactly one planning.package.admit lifecycle step",
+    );
+  }
+
+  const additionalWorkIDs = new Set(
+    (definition.work ?? []).map((contract) => contract.id),
+  );
+  const referencedWorkIDs = new Set<string>();
+  for (const step of definition.lifecycle) {
+    if (step.work === undefined) {
+      continue;
+    }
+    if (step.work.trim().length === 0) {
+      throw new Error(
+        `SOFTWARE_DELIVERY_WORK_REFERENCE_EMPTY: work reference for ${JSON.stringify(step.id)} must be non-empty`,
+      );
+    }
+    if (
+      definition.planningPackageWork &&
+      (step.id === planningPackageAdmit.id ||
+        step.work === definition.planningPackageWork.id)
+    ) {
+      throw new Error(
+        `SOFTWARE_DELIVERY_WORK_CONFLICT: ${JSON.stringify(step.id)} cannot replace or repeat planningPackageWork`,
+      );
+    }
+    if (!additionalWorkIDs.has(step.work)) {
+      throw new Error(
+        `SOFTWARE_DELIVERY_WORK_UNKNOWN: lifecycle step ${JSON.stringify(step.id)} references undeclared work ${JSON.stringify(step.work)}`,
+      );
+    }
+    referencedWorkIDs.add(step.work);
+  }
+  for (const contract of definition.work ?? []) {
+    if (!referencedWorkIDs.has(contract.id)) {
+      throw new Error(
+        `SOFTWARE_DELIVERY_WORK_UNUSED: work ID ${JSON.stringify(contract.id)} is not referenced by a lifecycle step`,
+      );
+    }
+  }
+}
+
+function referencedInputResolvers(entries: EntryDefinition[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const entry of entries) {
+    for (const input of entry.inputs ?? []) {
+      if (!input.resolver || seen.has(input.resolver)) {
+        continue;
+      }
+      seen.add(input.resolver);
+      result.push(input.resolver);
+    }
+  }
+  return result;
+}
+
+/**
+ * Composes explicit repository policy with canonical software-delivery wiring.
+ *
+ * The returned value is a regular {@link FlowDefinition}; callers still pass it
+ * to `defineFlow`, the sole raw-IR lowering boundary. This helper selects no
+ * lifecycle members, priorities, targets, entries, authority, or delegation.
+ */
+export function softwareDelivery(
+  definition: SoftwareDeliveryFlowDefinition,
+): FlowDefinition {
+  validateSoftwareDeliveryDefinition(definition);
+
+  const inputResolvers = referencedInputResolvers(definition.entries);
+  const work = definition.planningPackageWork
+    ? [definition.planningPackageWork, ...(definition.work ?? [])]
+    : [...(definition.work ?? [])];
+  const transitions = trustedSoftwareDeliveryTransitions(definition.lifecycle, {
+    planningPackageWork: definition.planningPackageWork,
+  }).map((transitionDefinition, index) => {
+    const workID = definition.lifecycle[index].work;
+    return workID === undefined
+      ? transitionDefinition
+      : { ...transitionDefinition, work: workID };
+  });
+
+  return {
+    id: definition.id,
+    version: definition.version,
+    ...(definition.description === undefined
+      ? {}
+      : { description: definition.description }),
+    ...(inputResolvers.length === 0
+      ? {}
+      : { declarations: { input_resolvers: inputResolvers } }),
+    facets: softwareDeliveryFacets.map((facetDefinition) => ({
+      ...facetDefinition,
+      ...(facetDefinition.values ? { values: [...facetDefinition.values] } : {}),
+    })),
+    evidence: softwareDeliveryEvidence.map((evidenceDefinition) => ({
+      ...evidenceDefinition,
+    })),
+    work,
+    operators: trustedOperators(definition.lifecycle),
+    transitions,
+    targets: [...definition.targets],
+    entries: [...definition.entries],
+  };
+}
 
 /**
  * Repository-owned strengthening applied to a trusted transition.

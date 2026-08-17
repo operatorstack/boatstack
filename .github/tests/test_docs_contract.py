@@ -131,10 +131,19 @@ def assert_pages_contract(testcase: unittest.TestCase, workflow: str) -> None:
 
 
 class DocumentationContractTests(unittest.TestCase):
-    def test_required_ci_validates_documentation(self) -> None:
+    def test_required_ci_validates_flow_sdk_and_documentation(self) -> None:
         ci = (REPO / ".github" / "workflows" / "ci.yml").read_text()
         steps = workflow_jobs(ci)["flow-sdk"]["steps"]
-        self.assertIn("npm ci && npm run docs:check", [step.get("run") for step in steps])
+        commands = [step.get("run") for step in steps]
+        self.assertIn(
+            "npm ci && npm run test:flow-sdk && npm run docs:check", commands
+        )
+        self.assertTrue(
+            any(
+                command and "TestSoftwareDeliverySugar" in command
+                for command in commands
+            )
+        )
 
     def test_pages_deployment_is_main_only_and_release_independent(self) -> None:
         workflow = (REPO / ".github" / "workflows" / "docs-pages.yml").read_text()

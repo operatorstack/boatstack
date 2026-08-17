@@ -6,7 +6,7 @@
   ],
   "scripts": {
     "build:flow-sdk": "tsc -b packages/boatstack packages/boatstack-software-delivery",
-    "test:flow-sdk": "npm run build:flow-sdk",
+    "test:flow-sdk": "npm run build:flow-sdk && node --test packages/boatstack-software-delivery/test/*.test.mjs",
     "docs:build": "npm run build:flow-sdk && typedoc",
     "docs:check": "npm run docs:build && node --test scripts/check-docs-api.test.mjs && node scripts/check-docs-api.mjs"
   },

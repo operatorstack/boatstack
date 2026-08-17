@@ -7,6 +7,7 @@ const requiredFunctions = {
   "@operatorstack/boatstack": ["defineFlow", "entry", "marked"],
   "@operatorstack/boatstack-software-delivery": [
     "inbox",
+    "softwareDelivery",
     "trustedDelegation",
     "trustedTransition",
   ],
