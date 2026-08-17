@@ -17,15 +17,11 @@ import {
 } from "@operatorstack/boatstack";
 import {
   inbox,
-  planInboxResolver,
   planningPackageAdmit,
   planningPackageApprove,
   planningPackagePromote,
-  softwareDeliveryEvidence,
-  softwareDeliveryFacets,
+  softwareDelivery,
   trustedDelegation,
-  trustedOperators,
-  trustedSoftwareDeliveryTransitions,
   type TrustedStep,
 } from "@operatorstack/boatstack-software-delivery";
 
@@ -52,17 +48,11 @@ const planning = foregroundWork({
   ],
 });
 
-export default defineFlow({
+export default defineFlow(softwareDelivery({
   id: "product-delivery",
   version: "1",
-  declarations: { input_resolvers: [planInboxResolver] },
-  facets: softwareDeliveryFacets,
-  evidence: softwareDeliveryEvidence,
-  work: [planning],
-  operators: trustedOperators(lifecycle),
-  transitions: trustedSoftwareDeliveryTransitions(lifecycle, {
-    planningPackageWork: planning,
-  }),
+  lifecycle: lifecycle,
+  planningPackageWork: planning,
   targets: [
     marked(
       "published-pr",
@@ -83,8 +73,28 @@ export default defineFlow({
       diagnostics: { explain_on_suspend: true },
     }),
   ],
-});
+}));
 ```
+
+`defineFlow` remains the canonical raw-IR lowering boundary.
+`softwareDelivery` is a pure composition helper, not a framework, runtime, or
+second Flow language. It executes no repository code and grants no authority.
+It adds no lifecycle steps, priorities, targets, entries, or delegation; those
+control decisions remain visible in repository source. The low-level exports
+remain available for custom facets, evidence, bindings, parameter producers,
+authority strengthening, and domain composition.
+
+| Input | Derived output |
+| --- | --- |
+| `lifecycle` | trusted operators and transitions |
+| `planningPackageWork` | planning work registration and admit binding |
+| entry input `resolver` | `declarations.input_resolvers` |
+| software-delivery domain | canonical facets and evidence |
+| `targets` | unchanged |
+| `entries` | unchanged |
+
+The resulting committed IR artifact remains inspectable. The helper only
+removes coordinated mechanical wiring from the authoring source.
 
 The trusted package owns operator effects, minimum capabilities, trusted
 authority alternatives, verification, and recovery. The repository owns which

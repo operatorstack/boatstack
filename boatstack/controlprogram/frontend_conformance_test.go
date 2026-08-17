@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -58,6 +59,63 @@ func TestTypeScriptDSLAndRawIRHaveOneCanonicalFingerprint(t *testing.T) {
 	}
 	if fromTypeScript.Fingerprint != fromRaw.Fingerprint {
 		t.Fatalf("frontend fingerprints differ: %s != %s", fromTypeScript.Fingerprint, fromRaw.Fingerprint)
+	}
+}
+
+func TestSoftwareDeliverySugarIsByteAndProjectionEquivalent(t *testing.T) {
+	// control-law: software-delivery-sugar-derives-only-canonical-wiring
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("cannot locate frontend fixtures")
+	}
+	moduleRoot := filepath.Clean(filepath.Join(filepath.Dir(file), ".."))
+	repositoryRoot := filepath.Dir(moduleRoot)
+	frontend := filepath.Join(repositoryRoot, "node_modules", ".bin", "boatstack-flow-frontend")
+	if runtime.GOOS == "windows" {
+		frontend += ".cmd"
+	}
+	if _, err := os.Stat(frontend); err != nil {
+		t.Skip("Flow frontend dependencies are not installed")
+	}
+	compile := func(name string) []byte {
+		t.Helper()
+		raw, err := exec.Command(frontend, filepath.Join(moduleRoot, "testdata", "control-programs", name)).CombinedOutput()
+		if err != nil {
+			t.Fatalf("compile %s: %v\n%s", name, err, raw)
+		}
+		return raw
+	}
+	manualRaw := compile("product-delivery-planning-package-manual.flow.ts")
+	helperRaw := compile("product-delivery-planning-package.flow.ts")
+	if !bytes.Equal(manualRaw, helperRaw) {
+		t.Fatalf("manual and helper raw IR differ\nmanual: %s\nhelper: %s", manualRaw, helperRaw)
+	}
+	resolver, err := softwareflow.NewResolver(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	assets := controlprogram.RepositoryAssetResolver{Repository: repositoryRoot}
+	manual, err := controlprogram.LoadWithAssets(bytes.NewReader(manualRaw), resolver, assets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	helper, err := controlprogram.LoadWithAssets(bytes.NewReader(helperRaw), resolver, assets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manual.Fingerprint != helper.Fingerprint || !reflect.DeepEqual(manual.Document, helper.Document) {
+		t.Fatalf("canonical programs differ: manual=%s helper=%s", manual.Fingerprint, helper.Fingerprint)
+	}
+	manualProjections, err := softwareflow.GenerateProjections(manual, hostprojection.CanonicalIDs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	helperProjections, err := softwareflow.GenerateProjections(helper, hostprojection.CanonicalIDs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(manualProjections, helperProjections) {
+		t.Fatalf("manual and helper generated projections differ")
 	}
 }
 
@@ -287,5 +345,98 @@ func TestTypeScriptFrontendRejectsUnboundLocalImports(t *testing.T) {
 	output, err := exec.Command(frontend, source).CombinedOutput()
 	if err == nil || !strings.Contains(string(output), "trusted Boatstack SDKs") {
 		t.Fatalf("local import result = %v\n%s", err, output)
+	}
+}
+
+func TestTypeScriptFrontendKeepsDeclarativeExpressionBoundary(t *testing.T) {
+	// control-law: software-delivery-sugar-does-not-widen-the-frontend-language
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("cannot locate frontend")
+	}
+	moduleRoot := filepath.Clean(filepath.Join(filepath.Dir(file), ".."))
+	frontend := filepath.Join(filepath.Dir(moduleRoot), "node_modules", ".bin", "boatstack-flow-frontend")
+	if runtime.GOOS == "windows" {
+		frontend += ".cmd"
+	}
+	if _, err := os.Stat(frontend); err != nil {
+		t.Skip("Flow frontend dependencies are not installed")
+	}
+	cases := []struct {
+		name    string
+		source  string
+		message string
+	}{
+		{"object spread", "const base = {};\nexport default defineFlow({ ...base });\n", "explicit property assignments"},
+		{"array spread", "const values = [];\nexport default defineFlow({ facets: [...values] });\n", "Flow expression is not declarative"},
+		{"property call", "export default defineFlow.call(undefined, {});\n", "named trusted SDK imports"},
+		{"callback and map", "const values = [];\nexport default defineFlow({ facets: values.map((value) => value) });\n", "named trusted SDK imports"},
+		{"local function", "function local() { return {}; }\nexport default defineFlow(local());\n", "trusted imports and one default export"},
+		{"computed property", "export default defineFlow({ [\"id\"]: \"example\" });\n", "static identifiers or literals"},
+		{"arbitrary statement", "if (true) {}\nexport default defineFlow({});\n", "trusted imports and one default export"},
+		{"mutation", "const value = {};\nvalue.id = \"example\";\nexport default defineFlow(value);\n", "trusted imports and one default export"},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			directory := t.TempDir()
+			source := filepath.Join(directory, "invalid.flow.ts")
+			content := "import { defineFlow } from \"@operatorstack/boatstack\";\n" + test.source
+			if err := os.WriteFile(source, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			output, err := exec.Command(frontend, source).CombinedOutput()
+			if err == nil || !strings.Contains(string(output), test.message) {
+				t.Fatalf("frontend result = %v\n%s", err, output)
+			}
+		})
+	}
+}
+
+func TestSoftwareDeliverySugarLeavesUnknownResolversForTrustedInputValidation(t *testing.T) {
+	// control-law: trusted-input-boundary-remains-the-resolver-registry
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("cannot locate frontend")
+	}
+	moduleRoot := filepath.Clean(filepath.Join(filepath.Dir(file), ".."))
+	frontend := filepath.Join(filepath.Dir(moduleRoot), "node_modules", ".bin", "boatstack-flow-frontend")
+	if runtime.GOOS == "windows" {
+		frontend += ".cmd"
+	}
+	if _, err := os.Stat(frontend); err != nil {
+		t.Skip("Flow frontend dependencies are not installed")
+	}
+	directory := t.TempDir()
+	source := filepath.Join(directory, "unknown-resolver.flow.ts")
+	content := `import { defineFlow } from "@operatorstack/boatstack";
+import { softwareDelivery } from "@operatorstack/boatstack-software-delivery";
+export default defineFlow(softwareDelivery({
+  id: "unknown-resolver",
+  version: "1",
+  lifecycle: [{ id: "plan.abandon", priority: 31 }],
+  targets: [{ id: "done", predicate: { true: true } }],
+  entries: [{ id: "run", target: "done", inputs: [{ id: "value", type: "text", required: true, resolver: "unknown.resolver" }] }],
+}));
+`
+	if err := os.WriteFile(source, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := exec.Command(frontend, source).CombinedOutput()
+	if err != nil {
+		t.Fatalf("helper must emit the unknown reference: %v\n%s", err, raw)
+	}
+	resolver, err := softwareflow.NewResolver(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiled, err := controlprogram.Load(bytes.NewReader(raw), resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(compiled.Document.Declarations.InputResolvers) != 1 || compiled.Document.Declarations.InputResolvers[0] != "unknown.resolver" {
+		t.Fatalf("helper altered unknown resolver declaration: %#v", compiled.Document.Declarations.InputResolvers)
+	}
+	if _, err := softwareflow.PlanInboxForEntry(compiled.Document.Entries[0]); err == nil || !strings.Contains(err.Error(), softwareflow.PlanInboxResolver) {
+		t.Fatalf("unknown resolver trusted-boundary result = %v", err)
 	}
 }

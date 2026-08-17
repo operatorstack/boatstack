@@ -27,6 +27,10 @@ boatstack flow check --repo .
 boatstack next --repo . --flow product-delivery --entry run --format json
 ```
 
+Repository authors can keep software-delivery policy explicit without
+repeating its canonical wiring by using the composition shape documented in
+[Writing a Flow](product-delivery/writing-a-flow.md).
+
 The first response returns an opaque run ID. Preserve the program, entry, run
 ID, objective, delivery, authority, and prescription through every subsequent
 `next`, `apply`, question, and recovery call.

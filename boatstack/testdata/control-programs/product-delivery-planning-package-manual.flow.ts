@@ -12,11 +12,15 @@ import {
 } from "@operatorstack/boatstack";
 import {
   inbox,
+  planInboxResolver,
   planningPackageAdmit,
   planningPackageApprove,
   planningPackagePromote,
-  softwareDelivery,
+  softwareDeliveryEvidence,
+  softwareDeliveryFacets,
   trustedDelegation,
+  trustedOperators,
+  trustedSoftwareDeliveryTransitions,
 } from "@operatorstack/boatstack-software-delivery";
 
 const planning = foregroundWork({
@@ -62,11 +66,15 @@ const lifecycle = [
   { id: "publication.reconcile", priority: 1 },
 ];
 
-export default defineFlow(softwareDelivery({
+export default defineFlow({
   id: "product-delivery",
   version: "1",
-  lifecycle: lifecycle,
-  planningPackageWork: planning,
+  declarations: { input_resolvers: [planInboxResolver] },
+  facets: softwareDeliveryFacets,
+  evidence: softwareDeliveryEvidence,
+  work: [planning],
+  operators: trustedOperators(lifecycle),
+  transitions: trustedSoftwareDeliveryTransitions(lifecycle, { planningPackageWork: planning }),
   targets: [
     marked("published-pr", all(
       fact("verification", ["current"]),
@@ -92,4 +100,4 @@ export default defineFlow(softwareDelivery({
       inputs: [inbox(".boatstack/plans/inbox")],
     }),
   ],
-}));
+});
