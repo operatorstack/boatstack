@@ -6,7 +6,8 @@ Boatstack separates authoring languages from executable semantics:
 TypeScript Flow -> raw Control Program IR -> Go canonicalizer -> committed artifact -> kernel
 ```
 
-The `control-program` schema at revision `6` is domain-neutral. It declares
+The `control-program` schema is currently `schema_revision: 6`. It is
+domain-neutral and declares
 typed facets, evidence relations, predicate ASTs, operators, capabilities,
 authority, effects, verification, recovery, bounded foreground work,
 transitions, marked targets, and entries.

@@ -1,5 +1,8 @@
 # Prescription transaction boundary
 
+This is the current implementation deep dive for
+[prescriptions, verification, receipts, and recovery](../concepts/prescriptions-verification-receipts-and-recovery.md).
+
 Resolution and application form one compare-and-swap transaction over the
 durable logical state and the immutable executable Control Program.
 
@@ -61,3 +64,9 @@ pending journal keeps the transaction recovery-required and prevents duplicate
 execution. If it stops after journal finalization but before returning or
 projecting the receipt, idempotent retry discovers the canonical fact in the
 committed journal and returns it without executing the effect again.
+
+## Current implementation anchors
+
+- [Kernel runtime](../../boatstack/kernel/runtime.go)
+- [Software-delivery prescription](../../boatstack/internal/softwaredelivery/protocol/prescription.go)
+- [Prepared transaction tests](../../boatstack/internal/softwaredelivery/effects/prepared_test.go)

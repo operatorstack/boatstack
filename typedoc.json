@@ -18,11 +18,16 @@
     },
     "requiredToBeDocumented": ["Function", "Interface", "TypeAlias", "Variable"]
   },
-  "readme": "docs/product-delivery/index.md",
+  "readme": "docs/typescript/index.md",
   "projectDocuments": [
+    "docs/typescript/base-sdk.md",
+    "docs/typescript/software-delivery-sdk.md",
+    "docs/typescript/flow-anatomy.md",
     "docs/product-delivery/writing-a-flow.md",
     "docs/product-delivery/targets-and-entries.md",
     "docs/product-delivery/authority-and-delegation.md",
+    "docs/product-delivery/planning-and-foreground-work.md",
+    "docs/product-delivery/lifecycle-evidence-and-publication.md",
     "docs/product-delivery/diagnostics.md",
     "docs/product-delivery/documentation-architecture.md"
   ],

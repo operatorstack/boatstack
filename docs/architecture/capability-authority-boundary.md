@@ -1,5 +1,9 @@
 # Capability and authority boundary
 
+This is the current implementation deep dive for the stable distinctions in
+[Authority, identity, and delegation](../concepts/authority-identity-and-delegation.md)
+and [Transitions, operators, effects, and capabilities](../concepts/transitions-operators-effects-and-capabilities.md).
+
 A repository Control Program may narrow its executable surface. It cannot grant
 itself authority.
 
@@ -75,3 +79,9 @@ sandbox or external broker, these finer guarantees have the following scope:
 Boatstack does not claim process isolation. The capability boundary governs
 kernel-mediated effects; `command.execute` explicitly crosses into the host
 process trust domain.
+
+## Current implementation anchors
+
+- [Kernel capability types](../../boatstack/kernel/types.go)
+- [Software-delivery capability protocol](../../boatstack/internal/softwaredelivery/protocol/capability.go)
+- [Capability tests](../../boatstack/internal/softwaredelivery/protocol/capability_test.go)
