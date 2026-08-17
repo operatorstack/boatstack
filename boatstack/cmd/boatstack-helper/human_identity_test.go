@@ -123,6 +123,12 @@ func TestHumanIdentityPresentationIsBoundToVerifiedConfiguration(t *testing.T) {
 	if _, err := humanIdentityPresentationForRequest(request); err == nil || !strings.Contains(err.Error(), "HUMAN_IDENTITY_DRIFT") {
 		t.Fatalf("changed configuration was not rejected: %v", err)
 	}
+	recovery, err := bindStandaloneTransientHumanIdentity(context.Background(), commandOptions{
+		repository: repository, host: "cli", transitionID: "configuration.reconcile", humanActor: "operator",
+	})
+	if err != nil || recovery.humanIdentityRole != "" || recovery.humanIdentityProviderFingerprint != "" {
+		t.Fatalf("stale configuration reconciliation did not preserve explicit actor fallback: role=%q provider=%q err=%v", recovery.humanIdentityRole, recovery.humanIdentityProviderFingerprint, err)
+	}
 }
 
 func TestHumanIdentityIsAttachedOnlyToHumanAuthorityQuestions(t *testing.T) {

@@ -1617,6 +1617,99 @@ func TestRolelessStandardInstallationCanAdmitFirstRoleBoundFlow(t *testing.T) {
 	}
 }
 
+func TestDelegationAuthorizationRequiresAdmittedCandidateProgram(t *testing.T) {
+	// control-law: delegation bound to a candidate Flow cannot be authorized
+	// before installation reconciliation durably admits that candidate.
+	t.Setenv("BOATSTACK_STATE_ROOT", t.TempDir())
+	runtimeHome := t.TempDir()
+	t.Setenv(boatstackruntime.HomeEnvironment, runtimeHome)
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeRaw, err := os.ReadFile(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := boatstackruntime.InstallExecutable(executable, runtimeHome, boatstackruntime.Identity{Version: buildinfo.Version, SHA256: hash(runtimeRaw), SourceRevision: buildRevision()}); err != nil {
+		t.Fatal(err)
+	}
+	repository := flowRepository(t)
+	document := productDeliveryDocument("product-delivery")
+	document.Entries[0].Delegation = &controlprogram.DelegationBinding{Reference: "software-delivery/delegation/autonomy", Version: "1"}
+	writeFlowArtifact(t, repository, document, ".boatstack/flows/product-delivery.flow.ts", []byte("flow source"), "package-lock.json", []byte("lock"))
+	runFlowGit(t, repository, "init", "-q")
+	runFlowGit(t, repository, "config", "user.email", "fixture@example.invalid")
+	runFlowGit(t, repository, "config", "user.name", "Fixture")
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "fixture")
+	output, err := captureRunOutput(t,
+		"init", "--repo", repository,
+		"--param", "config_path="+filepath.Join(repository, ".boatstack", "project.json"), "--human", "operator", "--host", "codex", "--format", "json",
+	)
+	if err != nil {
+		t.Fatalf("initialize Standard program: %v\n%s", err, output)
+	}
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "commit initialized control bundle")
+
+	candidate, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex", delegationRequestProjection: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorize := func(bound commandOptions) error {
+		return runFlowAuthorize([]string{
+			"--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", bound.runID,
+			"--request-fingerprint", bound.delegationRequestFingerprint,
+			"--human-identity-provider-fingerprint", bound.delegationRequest.HumanIdentityProviderFingerprint,
+			"--human", "operator", "--host", "codex",
+		})
+	}
+	if err := authorize(candidate); err == nil || !strings.Contains(err.Error(), "DELEGATION_PROGRAM_UNADMITTED") {
+		t.Fatalf("pre-admission delegation authorization = %v", err)
+	}
+	resolver, err := plant.NewResolver("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, err := resolver.ResolveInvocation(context.Background(), repository, "codex", "pre-admission-delegation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, _, err := resolver.ResolveLayout(context.Background(), invocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordPath, err := delegation.Path(layout.FlowRoot, candidate.runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(recordPath); !os.IsNotExist(err) {
+		t.Fatalf("pre-admission authorization created delegation record: %v", err)
+	}
+
+	output, err = captureRunOutput(t,
+		"reconcile-update", "--repo", repository, "--flow", "product-delivery", "--entry", "run", "--run-id", candidate.runID,
+		"--accept-program-change", "--human", "operator", "--host", "codex", "--format", "json",
+	)
+	if err != nil {
+		t.Fatalf("admit delegated Flow: %v\n%s", err, output)
+	}
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "commit", "-q", "-m", "commit admitted Flow bundle")
+	admitted, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", runID: candidate.runID, host: "codex", delegationRequestProjection: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := captureStdout(t, func() error { return authorize(admitted) }); err != nil {
+		t.Fatalf("post-admission delegation authorization: %v", err)
+	}
+	if _, err := delegation.Load(recordPath); err != nil {
+		t.Fatalf("post-admission authorization did not store delegation: %v", err)
+	}
+}
+
 func TestAcceptedProgramReconciliationReprojectsSameFlowRun(t *testing.T) {
 	// control-law: an accepted program mutation is a hard reprojection boundary;
 	// the next product resolution uses the new program and preserves the run.

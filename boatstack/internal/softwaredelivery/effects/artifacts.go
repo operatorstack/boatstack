@@ -137,6 +137,14 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		if actual != expected {
 			return nil, fmt.Errorf("configuration fingerprint mismatch: got %s", actual)
 		}
+		if transition.ID == "configuration.mutate" {
+			// Role preservation is checked against the same hash-bound bytes used
+			// to construct the mutation below. No second source read can race this
+			// decision and installation.
+			if err := verifyCandidateConfigurationPreservesAdmittedRole(*state, config); err != nil {
+				return nil, err
+			}
+		}
 		mutation, mutationErr := mutationFor(layout.ConfigPath, raw, 0o644, false, false)
 		if mutationErr != nil {
 			return nil, mutationErr

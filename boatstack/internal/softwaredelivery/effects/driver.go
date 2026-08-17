@@ -117,9 +117,6 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 	if state.Revision != admission.ExpectedStateRevision {
 		return nil, fmt.Errorf("durable state revision changed after admission")
 	}
-	if err := verifyCandidateConfigurationPreservesAdmittedRole(state, admission, transition); err != nil {
-		return nil, err
-	}
 	resultingRevision, err := durable.NextRevision(state.Revision)
 	if err != nil {
 		return nil, err
@@ -361,21 +358,9 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 	return prepared, nil
 }
 
-func verifyCandidateConfigurationPreservesAdmittedRole(state durable.State, admission protocol.Admission, transition catalog.Transition) error {
-	if transition.ID != "configuration.mutate" || state.ProgramHumanIdentityRole == "" {
+func verifyCandidateConfigurationPreservesAdmittedRole(state durable.State, config protocol.ProjectConfig) error {
+	if state.ProgramHumanIdentityRole == "" {
 		return nil
-	}
-	path, ok := admission.Parameters.Get("config_path")
-	if !ok {
-		return fmt.Errorf("PROJECT_CONFIG_ADMITTED_HUMAN_IDENTITY_UNBOUND: configuration mutation is missing config_path")
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("read candidate configuration for admitted human identity: %w", err)
-	}
-	config, _, err := protocol.ProjectConfigFingerprint(raw)
-	if err != nil {
-		return err
 	}
 	if _, ok := config.Identity.Roles[state.ProgramHumanIdentityRole]; !ok {
 		return fmt.Errorf("PROJECT_CONFIG_ADMITTED_HUMAN_IDENTITY_UNBOUND: candidate configuration removes admitted program role %q", state.ProgramHumanIdentityRole)

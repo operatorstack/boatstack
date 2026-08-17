@@ -383,8 +383,13 @@ func bindStandaloneTransientHumanIdentity(ctx context.Context, options commandOp
 	}
 	var presentation humanidentity.Presentation
 	switch options.transitionID {
-	case "configuration.mutate", "configuration.reconcile":
+	case "configuration.mutate":
 		presentation, err = humanIdentityPresentationForCurrentRepositoryDefault(ctx, repository, host, "transient-maintenance-human-authority")
+	case "configuration.reconcile":
+		// Reconciliation exists specifically because the authoritative
+		// configuration is not verified. Preserve the explicit actor rather than
+		// treating the candidate bytes being repaired as identity provenance.
+		return options, nil
 	case "installation.update", "installation.reconcile-update":
 		presentation, err = humanIdentityPresentationForCurrentProgramChange(ctx, repository, host, "transient-program-change-authority", options.transitionID)
 	}
@@ -410,8 +415,10 @@ func transientHumanIdentityPresentation(ctx context.Context, compiled controlpro
 		// True bootstrap has no admitted role or verified default. The explicit
 		// actor remains the only authority provenance at this boundary.
 		return humanidentity.Presentation{}, nil
-	case "configuration.mutate", "configuration.reconcile":
+	case "configuration.mutate":
 		return humanIdentityPresentationForRepositoryDefault(ctx, options.repository, host, "transient-human-authority", options.controlBundle.Source, nil)
+	case "configuration.reconcile":
+		return humanidentity.Presentation{}, nil
 	case "installation.update", "installation.reconcile-update":
 		return humanIdentityPresentationForProgramChange(ctx, options.repository, host, "transient-program-change-authority", compiled.Document.Program.ID, options.transitionID, options.controlBundle.Source)
 	default:

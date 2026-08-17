@@ -80,6 +80,17 @@ func runFlowAuthorize(arguments []string) error {
 		}
 		return err
 	}
+	resolveRequest, err := buildRequest(surfaces.OperationResolve, bound)
+	if err != nil {
+		return err
+	}
+	programChange, err := preflightDelegatedProgramChange(context.Background(), resolveRequest)
+	if err != nil {
+		return err
+	}
+	if programChange != nil {
+		return fmt.Errorf("DELEGATION_PROGRAM_UNADMITTED: reconcile the exact candidate program before authorizing product delegation")
+	}
 	if bound.delegationRequestFingerprint == "" || requestFingerprint != bound.delegationRequestFingerprint || bound.runID != options.runID {
 		return fmt.Errorf("DELEGATION_REQUEST_MISMATCH: authorization does not match the exact current request")
 	}
