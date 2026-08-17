@@ -28,12 +28,12 @@ jobs:
           go-version-file: boatstack/go.mod
           cache-dependency-path: boatstack/go.sum
       - name: Build TypeScript frontends and documentation
-        run: npm ci && npm run docs:check
+        run: npm ci && npm run test:flow-sdk && npm run docs:check
       - name: Prove frontend canonical equivalence
         working-directory: boatstack
         env:
           BOATSTACK_REQUIRE_FLOW_FRONTEND: '1'
-        run: go test ./controlprogram -run 'TestTypeScriptDSLAndRawIRHaveOneCanonicalFingerprint|TestRepositoryOwnedSoftwareDeliveryFlowsShareOneRuntime'
+        run: go test ./controlprogram -run 'TestTypeScriptDSLAndRawIRHaveOneCanonicalFingerprint|TestRepositoryOwnedSoftwareDeliveryFlowsShareOneRuntime|TestSoftwareDeliverySugar'
 
   component:
     name: component-${{ matrix.name }}
