@@ -328,6 +328,26 @@ func TestRepositoryTransitionCannotWidenTrustedTargetIDs(t *testing.T) {
 	}
 }
 
+func TestApprovedWorkPackageEntryResolvesTrustedObjective(t *testing.T) {
+	truth := true
+	compiled, resolver := compiledFlow(t, controlprogram.Predicate{True: &truth})
+	document := compiled.Document
+	document.Facets = append(document.Facets, controlprogram.Facet{ID: "work-package", Kind: "string"})
+	document.Targets = []controlprogram.Target{{ID: "approved-package", Predicate: fact("work-package", "approved")}}
+	document.Entries = []controlprogram.Entry{{ID: "accept", Target: "approved-package"}}
+	accepted, err := controlprogram.Compile(document, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	objective, err := softwareflow.ObjectiveForEntry(context.Background(), accepted, resolver, "accept")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if objective.TrustedClass != model.ObjectiveApprovedWorkPackage || objective.TargetID != "approved-package" {
+		t.Fatalf("accepted-work objective = %#v", objective)
+	}
+}
+
 func TestAbandonmentEntryMakesTrustedAbandonmentObjectiveProgress(t *testing.T) {
 	truth := true
 	resolver, err := softwareflow.NewResolver(context.Background())

@@ -61,14 +61,7 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 	objectives := map[model.TargetID]EntryObjective{}
 	contracts := map[model.TargetID]delivery.ObjectiveContract{}
 	entriesByTarget := map[model.TargetID][]controlprogram.Entry{}
-	base.ObjectiveContracts = append(base.ObjectiveContracts, delivery.ObjectiveContract{
-		TargetID: model.ObjectiveApprovedWorkPackage,
-		Conditions: []delivery.FacetCondition{{
-			Facet:    model.FacetWorkPackage,
-			Statuses: []model.FactStatus{model.FactKnown},
-			Values:   []string{string(model.WorkPackageApproved)},
-		}},
-	})
+	addAcceptedWorkPackageObjective(&base)
 	for _, entry := range d.compiled.Document.Entries {
 		objective, objectiveErr := objectiveContractForEntry(d.compiled, base, entry.ID)
 		if objectiveErr != nil {
@@ -268,11 +261,23 @@ func uniqueAuthorities(values []delivery.AuthorityClass) []delivery.AuthorityCla
 	return result
 }
 
+func addAcceptedWorkPackageObjective(base *delivery.ProgramRuntimeManifest) {
+	base.ObjectiveContracts = append(base.ObjectiveContracts, delivery.ObjectiveContract{
+		TargetID: model.ObjectiveApprovedWorkPackage,
+		Conditions: []delivery.FacetCondition{{
+			Facet:    model.FacetWorkPackage,
+			Statuses: []model.FactStatus{model.FactKnown},
+			Values:   []string{string(model.WorkPackageApproved)},
+		}},
+	})
+}
+
 func ObjectiveForEntry(ctx context.Context, compiled controlprogram.Compiled, resolver Resolver, entryID string) (EntryObjective, error) {
 	base, err := standard.Definition().RuntimeManifest(ctx)
 	if err != nil {
 		return EntryObjective{}, err
 	}
+	addAcceptedWorkPackageObjective(&base)
 	return objectiveContractForEntry(compiled, base, entryID)
 }
 
