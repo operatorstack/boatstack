@@ -32,6 +32,14 @@ type preparedEffect struct {
 	requiredCapabilities  []catalog.Capability
 	effectiveCapabilities []catalog.Capability
 	changedStateFacets    []model.StateFacet
+	directorySync         func(string) error
+}
+
+func (p *preparedEffect) syncDirectory(path string) error {
+	if p.directorySync != nil {
+		return p.directorySync(path)
+	}
+	return syncDirectory(path)
 }
 
 type atomicTreeRemoval struct {
@@ -162,11 +170,11 @@ func (p *preparedEffect) Execute(ctx context.Context) (ports.EffectResult, error
 			if err := os.RemoveAll(root); err != nil {
 				return result, fmt.Errorf("remove immutable resource tree %s: %w", root, err)
 			}
-			if err := syncDirectory(filepath.Dir(root)); err != nil {
-				return result, fmt.Errorf("sync immutable resource tree parent %s: %w", root, err)
-			}
 			p.applied = append(p.applied, group...)
 			p.removedTreeGroups = append(p.removedTreeGroups, atomicTreeRemoval{root: root, mutations: group})
+			if err := p.syncDirectory(filepath.Dir(root)); err != nil {
+				return result, fmt.Errorf("sync immutable resource tree parent %s: %w", root, err)
+			}
 			continue
 		}
 		allExisting := true
@@ -180,11 +188,14 @@ func (p *preparedEffect) Execute(ctx context.Context) (ports.EffectResult, error
 			p.applied = append(p.applied, group...)
 			continue
 		}
-		if err := atomicInstallTree(root, group); err != nil {
+		if err := atomicInstallTree(root, group, p.syncDirectory); err != nil {
 			return result, fmt.Errorf("install immutable resource tree %s: %w", root, err)
 		}
 		p.applied = append(p.applied, group...)
 		p.appliedTreeRoots = append(p.appliedTreeRoots, root)
+		if err := p.syncDirectory(filepath.Dir(root)); err != nil {
+			return result, fmt.Errorf("sync immutable resource tree parent %s: %w", root, err)
+		}
 	}
 	for _, mutation := range regular {
 		var err error
@@ -226,7 +237,7 @@ func (p *preparedEffect) Rollback(context.Context) error {
 	for index := len(p.appliedTreeRoots) - 1; index >= 0; index-- {
 		if err := os.RemoveAll(p.appliedTreeRoots[index]); err != nil {
 			rollbackErrors = append(rollbackErrors, err)
-		} else if err := syncDirectory(filepath.Dir(p.appliedTreeRoots[index])); err != nil {
+		} else if err := p.syncDirectory(filepath.Dir(p.appliedTreeRoots[index])); err != nil {
 			rollbackErrors = append(rollbackErrors, err)
 		}
 	}
@@ -257,7 +268,9 @@ func (p *preparedEffect) Rollback(context.Context) error {
 			restore = append(restore, ports.ResourceMutation{Path: mutation.Path, Target: mutation.Prior, TargetLink: mutation.PriorLink, Mode: mutation.Mode, InstallLast: mutation.InstallLast, AtomicTreeRoot: removed.root})
 		}
 		if len(restore) > 0 {
-			if err := atomicInstallTree(removed.root, restore); err != nil {
+			if err := atomicInstallTree(removed.root, restore, p.syncDirectory); err != nil {
+				rollbackErrors = append(rollbackErrors, err)
+			} else if err := p.syncDirectory(filepath.Dir(removed.root)); err != nil {
 				rollbackErrors = append(rollbackErrors, err)
 			}
 		}
@@ -271,7 +284,7 @@ func (p *preparedEffect) Rollback(context.Context) error {
 	return errors.Join(rollbackErrors...)
 }
 
-func atomicInstallTree(root string, mutations []ports.ResourceMutation) error {
+func atomicInstallTree(root string, mutations []ports.ResourceMutation, syncDir func(string) error) error {
 	if !filepath.IsAbs(root) || len(mutations) == 0 {
 		return fmt.Errorf("atomic tree requires an absolute root and members")
 	}
@@ -299,11 +312,11 @@ func atomicInstallTree(root string, mutations []ports.ResourceMutation) error {
 			return err
 		}
 	}
-	if err := syncDirectory(stage); err != nil {
+	if err := syncDir(stage); err != nil {
 		return err
 	}
 	if err := os.Rename(stage, root); err != nil {
 		return err
 	}
-	return syncDirectory(parent)
+	return nil
 }

@@ -2,6 +2,7 @@ package softwaredelivery
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -76,5 +77,19 @@ func TestPlanningPackageWorkAcceptsRequiredPlanAndDomainOutputs(t *testing.T) {
 	}}
 	if err := validatePlanningPackageWorkContract(work, "plan"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPlanningPackageWorkRejectsContractAbovePortableMetadataBound(t *testing.T) {
+	work := delivery.WorkContract{ID: "planning", InstructionPath: "instructions.md", InstructionSHA256: strings.Repeat("a", 64), InstructionContent: "Plan."}
+	for index := 0; index < 17; index++ {
+		id := fmt.Sprintf("output-%02d", index)
+		work.Outputs = append(work.Outputs, delivery.WorkOutput{
+			ID: id, Path: id + ".json", MediaType: "application/json", Required: true, MaxBytes: 1,
+			SchemaPath: id + ".schema.json", SchemaSHA256: strings.Repeat("b", 64), SchemaContent: strings.Repeat("x", 1<<20),
+		})
+	}
+	if err := validatePlanningPackageWorkContract(work, "output-00"); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("oversized portable contract = %v", err)
 	}
 }

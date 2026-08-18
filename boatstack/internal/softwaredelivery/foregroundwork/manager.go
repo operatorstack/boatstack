@@ -462,7 +462,8 @@ func load(path string) (Record, error) {
 		return Record{}, fmt.Errorf("foreground work request fingerprint is invalid")
 	}
 	if record.Result != nil {
-		if err := record.Result.Validate(); err != nil || record.Result.RequestFingerprint != record.Request.Fingerprint {
+		if err := record.Result.Validate(); err != nil || record.Result.RequestID != record.Request.ID || record.Result.RequestFingerprint != record.Request.Fingerprint ||
+			record.Result.RunID != record.Request.RunID || record.Result.ProgramID != record.Request.ProgramID || record.Result.EntryID != record.Request.EntryID {
 			return Record{}, fmt.Errorf("foreground work result is invalid: %v", err)
 		}
 	}

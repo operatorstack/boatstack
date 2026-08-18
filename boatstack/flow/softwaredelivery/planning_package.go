@@ -100,22 +100,32 @@ func replacePlanCondition(values []delivery.FacetCondition, state model.PlanStat
 }
 
 func validatePlanningPackageWorkContract(work delivery.WorkContract, planOutputID string) error {
-	outputs := make([]planningpackage.WorkOutput, 0, len(work.Outputs))
+	portable := planningpackage.WorkContract{ID: work.ID, Fingerprint: work.Fingerprint, Instructions: planningpackage.Asset{Path: work.InstructionPath, SHA256: work.InstructionSHA256, Content: work.InstructionContent}}
+	for _, input := range work.Inputs {
+		portable.Inputs = append(portable.Inputs, planningpackage.WorkInput{ID: input.ID, EntryInput: input.EntryInput})
+	}
 	var planOutput *delivery.WorkOutput
 	for index := range work.Outputs {
 		output := &work.Outputs[index]
-		outputs = append(outputs, planningpackage.WorkOutput{ID: output.ID, Path: output.Path, MaxBytes: output.MaxBytes})
+		item := planningpackage.WorkOutput{ID: output.ID, Path: output.Path, MediaType: output.MediaType, Required: output.Required, MaxBytes: output.MaxBytes}
+		if output.GuidancePath != "" {
+			item.Guidance = &planningpackage.Asset{Path: output.GuidancePath, SHA256: output.GuidanceSHA256, Content: output.GuidanceContent}
+		}
+		if output.SchemaPath != "" {
+			item.Schema = &planningpackage.Asset{Path: output.SchemaPath, SHA256: output.SchemaSHA256, Content: output.SchemaContent}
+		}
+		portable.Outputs = append(portable.Outputs, item)
 		if output.ID == planOutputID {
 			planOutput = output
 		}
 	}
-	if err := planningpackage.ValidateOutputPaths(outputs); err != nil {
+	if err := planningpackage.ValidateOutputPaths(portable.Outputs); err != nil {
 		return err
 	}
 	if planOutput == nil || !planOutput.Required {
 		return fmt.Errorf("planning-package admission requires designated output %q to exist exactly once and be required", planOutputID)
 	}
-	return nil
+	return planningpackage.ValidateContractMetadata(portable, planOutputID)
 }
 
 func planningPackagePlanOutput(bindings []controlprogram.TransitionParameterBinding) (string, error) {

@@ -88,6 +88,7 @@ func (b AuthorityBundle) Fingerprint() (string, error) {
 	for _, receipt := range canonical.Receipts {
 		sources = append(sources, AuthoritySource{
 			ID: receipt.ID, Class: receipt.Class, Subject: receipt.Subject, Fingerprint: receipt.Fingerprint,
+			IdentityRole: receipt.IdentityRole, IdentityProviderFingerprint: receipt.IdentityProviderFingerprint,
 		})
 	}
 	return contentID("auth-", sources)

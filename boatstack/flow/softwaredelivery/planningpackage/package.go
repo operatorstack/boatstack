@@ -222,7 +222,15 @@ func SealContract(value Contract) (Contract, []byte, error) {
 	}
 	value.Fingerprint = fp
 	raw, err := Encode(value)
+	if err == nil && len(raw) > maxPackageMetadataBytes {
+		return Contract{}, nil, fmt.Errorf("planning package contract exceeds %d bytes", maxPackageMetadataBytes)
+	}
 	return value, raw, err
+}
+
+func ValidateContractMetadata(work WorkContract, planOutput string) error {
+	_, _, err := SealContract(Contract{Work: work, PlanOutput: planOutput})
+	return err
 }
 
 func SealWorkReceipt(value WorkReceipt) (WorkReceipt, []byte, error) {

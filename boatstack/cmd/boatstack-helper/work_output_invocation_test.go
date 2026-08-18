@@ -30,6 +30,7 @@ func TestWorkOutputProducerRejectsStaleExecutionScope(t *testing.T) {
 	objective := model.Objective{ID: "objective", TargetID: "target", TrustedClass: "target", DeliveryID: "delivery"}
 	result, err := protocol.SealWorkEvidence(protocol.WorkEvidence{
 		SchemaVersion: protocol.WorkEvidenceSchemaVersion, RequestID: "work-request", RequestFingerprint: requestFingerprint,
+		RunID: "run-1", ProgramID: "fixture", EntryID: "run",
 		ContractID: contract.ID, ContractFingerprint: contract.Fingerprint, TransitionID: "planning.admit",
 		ProgramFingerprint: programFingerprint, ContextFingerprint: contextFingerprint, StateRevision: 3,
 		RepositoryID: current.RepositoryID, WorktreeID: current.WorktreeID,

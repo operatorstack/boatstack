@@ -2,6 +2,7 @@ package effects
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -121,6 +122,70 @@ func TestPreparedEffectInstallsAndRecoversPlanningTreeAsOneResource(t *testing.T
 	}
 	if _, err := os.Lstat(root); !os.IsNotExist(err) {
 		t.Fatalf("transaction-created tree survived recovery: %v", err)
+	}
+}
+
+func TestPreparedEffectRollsBackTreeAfterPostRenameSyncFailure(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "package")
+	failed := false
+	prepared := &preparedEffect{
+		requiredCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite}, effectiveCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite},
+		mutations: []ports.ResourceMutation{{Path: filepath.Join(root, "manifest.json"), Target: []byte("manifest"), Mode: 0o644, AtomicTreeRoot: root}},
+		directorySync: func(path string) error {
+			if path == parent && !failed {
+				failed = true
+				return errors.New("injected parent sync failure")
+			}
+			return syncDirectory(path)
+		},
+	}
+	if _, err := prepared.Execute(context.Background()); err == nil || !failed {
+		t.Fatalf("post-rename sync failure = %v", err)
+	}
+	if err := prepared.Rollback(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(root); !os.IsNotExist(err) {
+		t.Fatalf("tree survived rollback after post-rename sync failure: %v", err)
+	}
+}
+
+func TestPreparedEffectRestoresTreeAfterPostRemovalSyncFailure(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "package")
+	manifest := filepath.Join(root, "manifest.json")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifest, []byte("manifest"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mutation, err := mutationForExactResource(manifest, nil, "", 0o644, true, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutation.AtomicTreeRoot = root
+	failed := false
+	prepared := &preparedEffect{
+		requiredCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite}, effectiveCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite},
+		mutations: []ports.ResourceMutation{mutation},
+		directorySync: func(path string) error {
+			if path == parent && !failed {
+				failed = true
+				return errors.New("injected parent sync failure")
+			}
+			return syncDirectory(path)
+		},
+	}
+	if _, err := prepared.Execute(context.Background()); err == nil || !failed {
+		t.Fatalf("post-removal sync failure = %v", err)
+	}
+	if err := prepared.Rollback(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if raw, err := os.ReadFile(manifest); err != nil || string(raw) != "manifest" {
+		t.Fatalf("prior tree was not restored: %q, %v", raw, err)
 	}
 }
 
