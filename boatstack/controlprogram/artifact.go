@@ -17,7 +17,7 @@ import (
 
 const (
 	ArtifactSchemaName     = "control-program-artifact"
-	ArtifactSchemaRevision = 6
+	ArtifactSchemaRevision = 7
 )
 
 type Artifact struct {
@@ -216,6 +216,9 @@ func workAssetBindings(document Document) map[string]string {
 	for _, contract := range document.Work {
 		result[contract.Instructions.Path] = contract.Instructions.SHA256
 		for _, output := range contract.Outputs {
+			if output.Guidance != nil {
+				result[output.Guidance.Path] = output.Guidance.SHA256
+			}
 			if output.Schema != nil {
 				result[output.Schema.Path] = output.Schema.SHA256
 			}
@@ -252,11 +255,35 @@ func (r RepositoryAssetResolver) ResolveAsset(path string, maxBytes int64) ([]by
 
 func digest(value []byte) string { sum := sha256.Sum256(value); return hex.EncodeToString(sum[:]) }
 func safeRelative(value string) bool {
-	if value == "" || filepath.IsAbs(value) || strings.Contains(value, `\\`) {
+	if value == "" || filepath.IsAbs(value) || strings.Contains(value, `\`) || len(value) >= 2 && value[1] == ':' {
 		return false
 	}
 	clean := filepath.Clean(filepath.FromSlash(value))
-	return clean != "." && clean != ".." && !strings.HasPrefix(clean, ".."+string(filepath.Separator)) && filepath.ToSlash(clean) == value
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) || filepath.ToSlash(clean) != value {
+		return false
+	}
+	for _, component := range strings.Split(value, "/") {
+		if !portableWindowsPathComponent(component) {
+			return false
+		}
+	}
+	return true
+}
+
+func portableWindowsPathComponent(value string) bool {
+	if value == "" || strings.HasSuffix(value, ".") || strings.HasSuffix(value, " ") || strings.ContainsAny(value, `<>:"|?*`) {
+		return false
+	}
+	for _, character := range value {
+		if character < 32 {
+			return false
+		}
+	}
+	base := strings.ToUpper(strings.SplitN(value, ".", 2)[0])
+	if base == "CON" || base == "PRN" || base == "AUX" || base == "NUL" {
+		return false
+	}
+	return !(len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && base[3] >= '1' && base[3] <= '9')
 }
 
 func readRepositoryFile(repository, relative string) ([]byte, error) {

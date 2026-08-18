@@ -16,7 +16,7 @@
 /** Canonical schema name emitted by {@link defineFlow}. */
 export const CONTROL_PROGRAM_SCHEMA = "control-program" as const;
 /** Current revision of the canonical Control Program schema. */
-export const CONTROL_PROGRAM_SCHEMA_REVISION = 6 as const;
+export const CONTROL_PROGRAM_SCHEMA_REVISION = 7 as const;
 
 /**
  * A declarative condition over runtime state facts.
@@ -216,6 +216,8 @@ export interface WorkArtifactDefinition {
   media_type: string;
   required: boolean;
   max_bytes?: number;
+  /** Artifact-local, compiler-bound generation guidance. */
+  guidance?: WorkAssetDefinition;
   schema?: WorkAssetDefinition;
 }
 
@@ -412,7 +414,11 @@ export function entryInput(id: string): WorkInputDefinition {
 export function workArtifact(
   definition: WorkArtifactDefinition,
 ): WorkArtifactDefinition {
-  return { ...definition };
+  return {
+    ...definition,
+    ...(definition.guidance ? { guidance: { ...definition.guidance } } : {}),
+    ...(definition.schema ? { schema: { ...definition.schema } } : {}),
+  };
 }
 
 /**

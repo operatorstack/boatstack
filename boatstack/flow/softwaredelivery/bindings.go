@@ -107,7 +107,12 @@ func (r Resolver) ResolveParameterResolver(reference, version string) (controlpr
 	}
 	switch {
 	case reference == ParameterResolverPrefix+"admitted-planning-package-fingerprint":
-		value.Dependencies = []string{"repository", "delivery_id", "admitted-planning-package-manifest"}
+		value.Dependencies = []string{"planning-package-fingerprint", "durable-state"}
+	case strings.HasPrefix(reference, planningPackagePlanOutputResolverPrefix):
+		if value := strings.TrimPrefix(reference, planningPackagePlanOutputResolverPrefix); !planningPackageSegment.MatchString(value) {
+			return controlprogram.ResolvedParameterResolver{}, fmt.Errorf("unknown software-delivery parameter resolver %q", reference)
+		}
+		value.Dependencies = []string{"compiled-planning-package-binding"}
 	case reference == ParameterResolverPrefix+"repository-default-branch":
 		value.Dependencies = []string{"repository", "verified-configuration"}
 	case reference == ParameterResolverPrefix+"delivery-branch":
@@ -228,6 +233,8 @@ func projectOperatorParameters(transition delivery.Transition) []controlprogram.
 		allowed := []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceHostInput}
 		switch {
 		case transition.ID == PlanningPackageApprove && parameter.Name == "package_fingerprint":
+			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceTrustedResolver}
+		case transition.ID == PlanningPackageAdmit && parameter.Name == "plan_output":
 			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceTrustedResolver}
 		case transition.ID == "workspace.cut":
 			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceTrustedResolver}

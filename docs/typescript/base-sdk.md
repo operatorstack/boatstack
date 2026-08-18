@@ -23,6 +23,10 @@ requires one compatible producer for each required reachable parameter.
 `foregroundWork` declares bounded candidate work. `instructionAsset` and
 `schemaAsset` name repository assets that the compiler later resolves and
 fingerprints. `entryInput` binds an input; `workArtifact` declares an output.
+An output may attach `guidance: instructionAsset(...)`; its exact UTF-8 bytes
+are embedded in the runtime request and participate in the work and program
+fingerprints. Package instructions coordinate all outputs, while guidance
+describes only its artifact. Neither grants authority or verifies content.
 Work completion does not independently advance Flow state.
 
 ## Authority

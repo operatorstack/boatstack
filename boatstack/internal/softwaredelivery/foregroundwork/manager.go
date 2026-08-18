@@ -23,7 +23,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
-const RecordSchemaVersion = 2
+const RecordSchemaVersion = 3
 
 type Status string
 
@@ -211,6 +211,7 @@ func (m Manager) Complete(ctx context.Context, invocation model.InvocationContex
 		}
 		evidence, err := protocol.SealWorkEvidence(protocol.WorkEvidence{
 			SchemaVersion: protocol.WorkEvidenceSchemaVersion, RequestID: record.Request.ID, RequestFingerprint: record.Request.Fingerprint,
+			RunID: record.Request.RunID, ProgramID: record.Request.ProgramID, EntryID: record.Request.EntryID,
 			ContractID: record.Request.Contract.ID, ContractFingerprint: record.Request.Contract.Fingerprint, TransitionID: record.Request.TransitionID,
 			ProgramFingerprint: record.Request.ProgramFingerprint, ContextFingerprint: record.Request.ContextFingerprint, StateRevision: record.Request.StateRevision,
 			RepositoryID: record.Request.RepositoryID, WorktreeID: record.Request.WorktreeID, Outputs: outputs,
@@ -461,7 +462,8 @@ func load(path string) (Record, error) {
 		return Record{}, fmt.Errorf("foreground work request fingerprint is invalid")
 	}
 	if record.Result != nil {
-		if err := record.Result.Validate(); err != nil || record.Result.RequestFingerprint != record.Request.Fingerprint {
+		if err := record.Result.Validate(); err != nil || record.Result.RequestID != record.Request.ID || record.Result.RequestFingerprint != record.Request.Fingerprint ||
+			record.Result.RunID != record.Request.RunID || record.Result.ProgramID != record.Request.ProgramID || record.Result.EntryID != record.Request.EntryID {
 			return Record{}, fmt.Errorf("foreground work result is invalid: %v", err)
 		}
 	}

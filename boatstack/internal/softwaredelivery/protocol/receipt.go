@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentity"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 )
 
@@ -147,10 +148,12 @@ type TransitionReceipt struct {
 }
 
 type AuthoritySource struct {
-	ID          string                 `json:"id"`
-	Class       catalog.AuthorityClass `json:"class"`
-	Subject     string                 `json:"subject"`
-	Fingerprint string                 `json:"fingerprint"`
+	ID                          string                 `json:"id"`
+	Class                       catalog.AuthorityClass `json:"class"`
+	Subject                     string                 `json:"subject"`
+	Fingerprint                 string                 `json:"fingerprint"`
+	IdentityRole                string                 `json:"identity_role,omitempty"`
+	IdentityProviderFingerprint string                 `json:"identity_provider_fingerprint,omitempty"`
 }
 
 func NewReceipt(flowID string, sequence uint64, program ProgramIdentity, admission Admission, transition catalog.Transition, target model.Snapshot, changedStateFacets []model.StateFacet, effects []EffectFact, outputs Parameters, exercised []catalog.Capability, startedAt, committedAt time.Time) (TransitionReceipt, error) {
@@ -178,7 +181,7 @@ func NewReceipt(flowID string, sequence uint64, program ProgramIdentity, admissi
 	}
 	sources := make([]AuthoritySource, 0, len(admission.Authority.Receipts))
 	for _, authority := range admission.Authority.Receipts {
-		sources = append(sources, AuthoritySource{ID: authority.ID, Class: authority.Class, Subject: authority.Subject, Fingerprint: authority.Fingerprint})
+		sources = append(sources, AuthoritySource{ID: authority.ID, Class: authority.Class, Subject: authority.Subject, Fingerprint: authority.Fingerprint, IdentityRole: authority.IdentityRole, IdentityProviderFingerprint: authority.IdentityProviderFingerprint})
 	}
 	terminal := model.TerminalUnknown
 	if target.Terminal.Status == model.FactKnown {
@@ -349,8 +352,13 @@ func (r TransitionReceipt) validate(schemaVersion int) error {
 	sources := append([]AuthoritySource(nil), r.AuthoritySources...)
 	sort.Slice(sources, func(i, j int) bool { return sources[i].ID < sources[j].ID })
 	for index, source := range sources {
-		if source.ID == "" || !source.Class.Valid() || source.Class == catalog.AuthorityNone || source.Subject == "" || source.Fingerprint == "" {
+		if source.ID == "" || !source.Class.Valid() || source.Class == catalog.AuthorityNone || source.Subject == "" || source.Fingerprint == "" || (source.IdentityRole == "") != (source.IdentityProviderFingerprint == "") {
 			return fmt.Errorf("receipt has invalid authority provenance")
+		}
+		if source.IdentityRole != "" {
+			if err := humanidentity.ValidateRole(source.IdentityRole); err != nil || !validSHA256(source.IdentityProviderFingerprint) {
+				return fmt.Errorf("receipt has invalid authority identity provenance")
+			}
 		}
 		if index > 0 && sources[index-1].ID == source.ID {
 			return fmt.Errorf("receipt duplicates authority source %q", source.ID)

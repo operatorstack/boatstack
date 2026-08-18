@@ -9,16 +9,19 @@ import (
 	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/humanidentity"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 )
 
 type AuthorityReceipt struct {
-	ID          string                 `json:"id"`
-	Class       catalog.AuthorityClass `json:"class"`
-	Subject     string                 `json:"subject"`
-	Fingerprint string                 `json:"fingerprint"`
-	IssuedAt    time.Time              `json:"issued_at"`
-	ExpiresAt   time.Time              `json:"expires_at,omitempty"`
+	ID                          string                 `json:"id"`
+	Class                       catalog.AuthorityClass `json:"class"`
+	Subject                     string                 `json:"subject"`
+	Fingerprint                 string                 `json:"fingerprint"`
+	IdentityRole                string                 `json:"identity_role,omitempty"`
+	IdentityProviderFingerprint string                 `json:"identity_provider_fingerprint,omitempty"`
+	IssuedAt                    time.Time              `json:"issued_at"`
+	ExpiresAt                   time.Time              `json:"expires_at,omitempty"`
 }
 
 func (r AuthorityReceipt) Validate(now time.Time) error {
@@ -27,6 +30,17 @@ func (r AuthorityReceipt) Validate(now time.Time) error {
 	}
 	if !r.Class.Valid() || r.Class == catalog.AuthorityNone {
 		return fmt.Errorf("authority receipt has invalid class %q", r.Class)
+	}
+	if (r.IdentityRole == "") != (r.IdentityProviderFingerprint == "") {
+		return fmt.Errorf("authority receipt has incomplete identity provenance")
+	}
+	if r.IdentityRole != "" {
+		if err := humanidentity.ValidateRole(r.IdentityRole); err != nil || len(r.IdentityProviderFingerprint) != 64 {
+			return fmt.Errorf("authority receipt has invalid identity provenance")
+		}
+		if _, err := hex.DecodeString(r.IdentityProviderFingerprint); err != nil {
+			return fmt.Errorf("authority receipt has invalid identity provenance")
+		}
 	}
 	if !r.ExpiresAt.IsZero() && !now.Before(r.ExpiresAt) {
 		return fmt.Errorf("authority receipt %q expired", r.ID)
@@ -74,6 +88,7 @@ func (b AuthorityBundle) Fingerprint() (string, error) {
 	for _, receipt := range canonical.Receipts {
 		sources = append(sources, AuthoritySource{
 			ID: receipt.ID, Class: receipt.Class, Subject: receipt.Subject, Fingerprint: receipt.Fingerprint,
+			IdentityRole: receipt.IdentityRole, IdentityProviderFingerprint: receipt.IdentityProviderFingerprint,
 		})
 	}
 	return contentID("auth-", sources)

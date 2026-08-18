@@ -514,6 +514,38 @@ func TestForegroundWorkIsDomainNeutralAndFingerprintBound(t *testing.T) {
 	}
 }
 
+func TestArtifactGuidanceIsCompilerBoundAndChangesProgramIdentity(t *testing.T) {
+	// control-law: artifact-local guidance is exact generation data, never authority
+	baseDocument := incidentWorkProgram()
+	guidance := "Write a concise diagnosis grounded in the incident input."
+	digest := sha256.Sum256([]byte(guidance))
+	baseDocument.Work[0].Outputs[0].Guidance = &controlprogram.WorkAsset{Path: "diagnosis-guidance.md", SHA256: hex.EncodeToString(digest[:]), Content: guidance}
+	base, err := controlprogram.Compile(baseDocument, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := base.Document.Work[0].Outputs[0]
+	if output.Guidance == nil || output.Guidance.Content != guidance || output.Guidance.SHA256 != hex.EncodeToString(digest[:]) {
+		t.Fatalf("guidance=%#v", output.Guidance)
+	}
+	changedDocument := baseDocument
+	changedDocument.Work = append([]controlprogram.WorkContract(nil), baseDocument.Work...)
+	changedDocument.Work[0].Outputs = append([]controlprogram.WorkOutput(nil), baseDocument.Work[0].Outputs...)
+	changed := guidance + " Include recovery evidence."
+	changedDigest := sha256.Sum256([]byte(changed))
+	changedDocument.Work[0].Outputs[0].Guidance = &controlprogram.WorkAsset{Path: "diagnosis-guidance.md", SHA256: hex.EncodeToString(changedDigest[:]), Content: changed}
+	semantic, err := controlprogram.Compile(changedDocument, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if semantic.Fingerprint == base.Fingerprint {
+		t.Fatal("guidance change preserved ProgramFingerprint")
+	}
+	if len(semantic.Document.Operators[0].Authority.AnyOf) != len(base.Document.Operators[0].Authority.AnyOf) {
+		t.Fatal("guidance changed authority")
+	}
+}
+
 func TestForegroundWorkRejectsUnboundAssetsInputsAndTransitions(t *testing.T) {
 	// control-law: every foreground-work dependency is declared and exactly referenced
 	for name, mutate := range map[string]func(*controlprogram.Document){

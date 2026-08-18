@@ -39,10 +39,11 @@ type RuntimeParameterResolver struct {
 // domain-neutral invocation value interface.
 func StateParameterValues(state durable.State) map[string]invocation.Value {
 	values := map[string]string{
-		"workspace_branch":    state.WorkspaceBranch,
-		"preview_fingerprint": state.PreviewFingerprint,
-		"publication_id":      state.PublicationID,
-		"transaction_id":      state.TransactionID,
+		"workspace_branch":             state.WorkspaceBranch,
+		"preview_fingerprint":          state.PreviewFingerprint,
+		"publication_id":               state.PublicationID,
+		"transaction_id":               state.TransactionID,
+		"planning_package_fingerprint": state.PlanningPackageFingerprint,
 	}
 	result := map[string]invocation.Value{}
 	for facet, value := range values {
@@ -91,11 +92,17 @@ func (r RuntimeParameterResolver) ResolveParameter(binding controlprogram.Parame
 	value := invocation.Value{Type: resolved.OutputType, ProducerFingerprint: resolved.Fingerprint}
 	switch {
 	case binding.Reference == ParameterResolverPrefix+"admitted-planning-package-fingerprint":
-		fingerprint, fingerprintErr := PlanningPackageFingerprint(r.Repository, r.DeliveryID)
-		if fingerprintErr != nil {
-			return invocation.Value{}, fingerprintErr
+		fingerprint, ok := materialization.State["planning_package_fingerprint"]
+		if !ok || len(fingerprint.Canonical) != 64 {
+			return invocation.Value{}, fmt.Errorf("admitted planning package fingerprint is unavailable from durable state")
 		}
-		value.Canonical, value.Provenance = fingerprint, "planning-package-manifest:"+fingerprint
+		value.Canonical, value.Provenance = fingerprint.Canonical, fingerprint.Provenance
+	case strings.HasPrefix(binding.Reference, planningPackagePlanOutputResolverPrefix):
+		planOutput := strings.TrimPrefix(binding.Reference, planningPackagePlanOutputResolverPrefix)
+		if !planningPackageSegment.MatchString(planOutput) {
+			return invocation.Value{}, fmt.Errorf("planning-package plan output binding is invalid")
+		}
+		value.Canonical, value.Provenance = planOutput, "compiled-planning-package-binding"
 	case binding.Reference == ParameterResolverPrefix+"repository-default-branch":
 		configPath := filepath.Join(r.Repository, ".boatstack", "project.json")
 		raw, readErr := os.ReadFile(configPath)

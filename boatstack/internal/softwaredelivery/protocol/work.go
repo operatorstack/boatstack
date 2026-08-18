@@ -47,6 +47,9 @@ type WorkEvidence struct {
 	RequestID           string               `json:"request_id"`
 	RequestFingerprint  string               `json:"request_fingerprint"`
 	ResultFingerprint   string               `json:"result_fingerprint"`
+	RunID               string               `json:"run_id,omitempty"`
+	ProgramID           string               `json:"program_id,omitempty"`
+	EntryID             string               `json:"entry_id,omitempty"`
 	ContractID          string               `json:"contract_id"`
 	ContractFingerprint string               `json:"contract_fingerprint"`
 	TransitionID        catalog.TransitionID `json:"transition_id"`
@@ -60,7 +63,7 @@ type WorkEvidence struct {
 
 func (e WorkEvidence) Validate() error {
 	if e.SchemaVersion != WorkEvidenceSchemaVersion || e.RequestID == "" || !validSHA256(e.RequestFingerprint) ||
-		!validSHA256(e.ResultFingerprint) || e.ContractID == "" || !validSHA256(e.ContractFingerprint) || e.TransitionID == "" ||
+		!validSHA256(e.ResultFingerprint) || e.RunID == "" || e.ProgramID == "" || e.EntryID == "" || e.ContractID == "" || !validSHA256(e.ContractFingerprint) || e.TransitionID == "" ||
 		!validSHA256(e.ProgramFingerprint) || !validSHA256(e.ContextFingerprint) || e.StateRevision == 0 || e.RepositoryID == "" || e.WorktreeID == "" || len(e.Outputs) == 0 {
 		return fmt.Errorf("foreground work evidence has incomplete identity")
 	}

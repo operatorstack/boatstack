@@ -19,7 +19,9 @@ recovery semantics.
 
 `planningPackageAdmit`, `planningPackageApprove`, and
 `planningPackagePromote` are optional trusted steps. A repository includes them
-explicitly. `planningPackageWork` binds foreground work only to admit.
+explicitly. `planningPackage: { work, planOutput }` binds foreground work and
+one required canonical plan output only to admit. The plan-output ID becomes a
+trusted compiled parameter binding; `plan` has no magic meaning.
 
 ## Authority and delegation
 

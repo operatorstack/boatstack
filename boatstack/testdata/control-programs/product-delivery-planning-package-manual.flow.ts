@@ -75,7 +75,9 @@ export default defineFlow({
   evidence: softwareDeliveryEvidence,
   work: [planning],
   operators: trustedOperators(lifecycle),
-  transitions: trustedSoftwareDeliveryTransitions(lifecycle, { planningPackageWork: planning }),
+  transitions: trustedSoftwareDeliveryTransitions(lifecycle, {
+    planningPackage: { work: planning, planOutput: "plan" },
+  }),
   targets: [
     marked("published-pr", all(
       fact("verification", ["current"]),

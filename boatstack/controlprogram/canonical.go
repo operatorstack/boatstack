@@ -212,6 +212,14 @@ func normalizeWork(document *Document, assets AssetResolver) (map[string]WorkCon
 			if output.MaxBytes < 1 || output.MaxBytes > maxOutputBytes {
 				return nil, invalid("work."+contract.ID+".outputs."+output.ID+".max_bytes", "must be between 1 and 16 MiB")
 			}
+			if output.Guidance != nil {
+				if err := resolveWorkAsset(output.Guidance, assets, maxInstructionBytes, "work."+contract.ID+".outputs."+output.ID+".guidance"); err != nil {
+					return nil, err
+				}
+				if strings.TrimSpace(output.Guidance.Content) == "" {
+					return nil, invalid("work."+contract.ID+".outputs."+output.ID+".guidance", "guidance asset must not be empty")
+				}
+			}
 			if output.Schema != nil {
 				if output.MediaType != "application/json" {
 					return nil, invalid("work."+contract.ID+".outputs."+output.ID+".schema", "schemas require application/json")

@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
@@ -22,12 +24,27 @@ type preparedEffect struct {
 	postVerify            func(context.Context) error
 	verifyInvocation      *model.InvocationContext
 	applied               []ports.ResourceMutation
+	appliedTreeRoots      []string
+	removedTreeGroups     []atomicTreeRemoval
 	boundarySettled       bool
 	effectResult          ports.EffectResult
 	transition            catalog.Transition
 	requiredCapabilities  []catalog.Capability
 	effectiveCapabilities []catalog.Capability
 	changedStateFacets    []model.StateFacet
+	directorySync         func(string) error
+}
+
+func (p *preparedEffect) syncDirectory(path string) error {
+	if p.directorySync != nil {
+		return p.directorySync(path)
+	}
+	return syncDirectory(path)
+}
+
+type atomicTreeRemoval struct {
+	root      string
+	mutations []ports.ResourceMutation
 }
 
 func (p *preparedEffect) ChangedStateFacets() []model.StateFacet {
@@ -123,7 +140,64 @@ func (p *preparedEffect) Execute(ctx context.Context) (ports.EffectResult, error
 		}
 		return ordered[i].Path < ordered[j].Path
 	})
+	treeGroups := map[string][]ports.ResourceMutation{}
+	regular := ordered[:0]
 	for _, mutation := range ordered {
+		if mutation.AtomicTreeRoot != "" {
+			treeGroups[mutation.AtomicTreeRoot] = append(treeGroups[mutation.AtomicTreeRoot], mutation)
+		} else {
+			regular = append(regular, mutation)
+		}
+	}
+	treeRoots := make([]string, 0, len(treeGroups))
+	for root := range treeGroups {
+		treeRoots = append(treeRoots, root)
+	}
+	sort.Strings(treeRoots)
+	for _, root := range treeRoots {
+		group := treeGroups[root]
+		allDelete := true
+		for _, mutation := range group {
+			allDelete = allDelete && mutation.Delete && mutation.TargetLink == "" && len(mutation.Target) == 0
+		}
+		if allDelete {
+			for _, mutation := range group {
+				relative, err := filepath.Rel(root, mutation.Path)
+				if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+					return result, fmt.Errorf("atomic tree deletion contains member outside root: %s", mutation.Path)
+				}
+			}
+			if err := os.RemoveAll(root); err != nil {
+				return result, fmt.Errorf("remove immutable resource tree %s: %w", root, err)
+			}
+			p.applied = append(p.applied, group...)
+			p.removedTreeGroups = append(p.removedTreeGroups, atomicTreeRemoval{root: root, mutations: group})
+			if err := p.syncDirectory(filepath.Dir(root)); err != nil {
+				return result, fmt.Errorf("sync immutable resource tree parent %s: %w", root, err)
+			}
+			continue
+		}
+		allExisting := true
+		for _, mutation := range group {
+			allExisting = allExisting && mutation.PriorExists
+		}
+		if allExisting {
+			// Recovery reconstructs an already-installed atomic tree as an
+			// exact no-op mutation group. It still committed every staged
+			// resource, so retain the group for exact effect facts.
+			p.applied = append(p.applied, group...)
+			continue
+		}
+		if err := atomicInstallTree(root, group, p.syncDirectory); err != nil {
+			return result, fmt.Errorf("install immutable resource tree %s: %w", root, err)
+		}
+		p.applied = append(p.applied, group...)
+		p.appliedTreeRoots = append(p.appliedTreeRoots, root)
+		if err := p.syncDirectory(filepath.Dir(root)); err != nil {
+			return result, fmt.Errorf("sync immutable resource tree parent %s: %w", root, err)
+		}
+	}
+	for _, mutation := range regular {
 		var err error
 		if mutation.Delete {
 			err = os.Remove(mutation.Path)
@@ -160,8 +234,18 @@ func bindPreparedCapabilities(effect *preparedEffect, admission protocol.Admissi
 
 func (p *preparedEffect) Rollback(context.Context) error {
 	var rollbackErrors []error
+	for index := len(p.appliedTreeRoots) - 1; index >= 0; index-- {
+		if err := os.RemoveAll(p.appliedTreeRoots[index]); err != nil {
+			rollbackErrors = append(rollbackErrors, err)
+		} else if err := p.syncDirectory(filepath.Dir(p.appliedTreeRoots[index])); err != nil {
+			rollbackErrors = append(rollbackErrors, err)
+		}
+	}
 	for index := len(p.applied) - 1; index >= 0; index-- {
 		mutation := p.applied[index]
+		if mutation.AtomicTreeRoot != "" {
+			continue
+		}
 		if mutation.PriorLink != "" {
 			if err := atomicSymlink(mutation.Path, mutation.PriorLink); err != nil {
 				rollbackErrors = append(rollbackErrors, err)
@@ -174,9 +258,65 @@ func (p *preparedEffect) Rollback(context.Context) error {
 			rollbackErrors = append(rollbackErrors, err)
 		}
 	}
+	for index := len(p.removedTreeGroups) - 1; index >= 0; index-- {
+		removed := p.removedTreeGroups[index]
+		restore := make([]ports.ResourceMutation, 0, len(removed.mutations))
+		for _, mutation := range removed.mutations {
+			if !mutation.PriorExists {
+				continue
+			}
+			restore = append(restore, ports.ResourceMutation{Path: mutation.Path, Target: mutation.Prior, TargetLink: mutation.PriorLink, Mode: mutation.Mode, InstallLast: mutation.InstallLast, AtomicTreeRoot: removed.root})
+		}
+		if len(restore) > 0 {
+			if err := atomicInstallTree(removed.root, restore, p.syncDirectory); err != nil {
+				rollbackErrors = append(rollbackErrors, err)
+			} else if err := p.syncDirectory(filepath.Dir(removed.root)); err != nil {
+				rollbackErrors = append(rollbackErrors, err)
+			}
+		}
+	}
 	p.applied = nil
+	p.appliedTreeRoots = nil
+	p.removedTreeGroups = nil
 	if p.boundarySettled {
 		rollbackErrors = append(rollbackErrors, fmt.Errorf("external effect settled and requires reconciliation or compensation"))
 	}
 	return errors.Join(rollbackErrors...)
+}
+
+func atomicInstallTree(root string, mutations []ports.ResourceMutation, syncDir func(string) error) error {
+	if !filepath.IsAbs(root) || len(mutations) == 0 {
+		return fmt.Errorf("atomic tree requires an absolute root and members")
+	}
+	if _, err := os.Lstat(root); err == nil {
+		return fmt.Errorf("atomic tree target already exists")
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	parent := filepath.Dir(root)
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		return err
+	}
+	stage, err := os.MkdirTemp(parent, ".boatstack-tree-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage)
+	for _, mutation := range mutations {
+		relative, relErr := filepath.Rel(root, mutation.Path)
+		if relErr != nil || relative == ".." || filepath.IsAbs(relative) || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("atomic tree member escapes root")
+		}
+		target := filepath.Join(stage, relative)
+		if err := atomicWrite(target, mutation.Target, os.FileMode(mutation.Mode)); err != nil {
+			return err
+		}
+	}
+	if err := syncDir(stage); err != nil {
+		return err
+	}
+	if err := os.Rename(stage, root); err != nil {
+		return err
+	}
+	return nil
 }

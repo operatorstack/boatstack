@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	planningpackage "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery/planningpackage"
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/durable"
@@ -502,24 +503,6 @@ type observedApproval struct {
 	ApprovedAt         time.Time `json:"approved_at"`
 }
 
-type observedPlanningPackageOutput struct {
-	ID        string `json:"id"`
-	Path      string `json:"path"`
-	MediaType string `json:"media_type"`
-	SHA256    string `json:"sha256"`
-	Size      int64  `json:"size"`
-}
-
-type observedPlanningPackageManifest struct {
-	SchemaVersion          int                             `json:"schema_version"`
-	DeliveryID             string                          `json:"delivery_id"`
-	WorkRequestFingerprint string                          `json:"work_request_fingerprint"`
-	WorkResultFingerprint  string                          `json:"work_result_fingerprint"`
-	PlanFingerprint        string                          `json:"plan_fingerprint"`
-	Outputs                []observedPlanningPackageOutput `json:"outputs"`
-	Fingerprint            string                          `json:"fingerprint"`
-}
-
 type observedGate struct {
 	SchemaVersion int       `json:"schema_version"`
 	DeliveryID    string    `json:"delivery_id"`
@@ -593,11 +576,17 @@ func observeRepositoryArtifacts(layout ports.ControllerLayout, state durable.Sta
 			if readErr != nil {
 				return plan, verification, terminal, nil, nil, readErr
 			}
-			var approval observedApproval
-			valid = valid && decodeStrictJSON(raw, &approval) == nil && approval.SchemaVersion == 1 &&
-				approval.DeliveryID == deliveryID && approval.PlanFingerprint == state.PlanFingerprint &&
-				approval.PackageFingerprint == state.PlanningPackageFingerprint &&
-				approval.Actor != "" && approval.AdmissionID != "" && !approval.ApprovedAt.IsZero()
+			if state.PlanningPackageFingerprint != "" {
+				var approval planningpackage.Approval
+				valid = valid && planningpackage.StrictDecode(raw, &approval) == nil && approval.SchemaVersion == planningpackage.ApprovalSchemaVersion &&
+					approval.DeliveryID == deliveryID && approval.PlanFingerprint == state.PlanFingerprint && approval.PackageFingerprint == state.PlanningPackageFingerprint &&
+					approval.Actor != "" && approval.AdmissionID != "" && !approval.ApprovedAt.IsZero()
+			} else {
+				var approval observedApproval
+				valid = valid && decodeStrictJSON(raw, &approval) == nil && approval.SchemaVersion == 1 &&
+					approval.DeliveryID == deliveryID && approval.PlanFingerprint == state.PlanFingerprint && approval.PackageFingerprint == "" &&
+					approval.Actor != "" && approval.AdmissionID != "" && !approval.ApprovedAt.IsZero()
+			}
 		}
 		if !valid {
 			plan, terminal = model.PlanStale, model.TerminalStale
@@ -680,9 +669,9 @@ func observeRepositoryArtifacts(layout ports.ControllerLayout, state durable.Sta
 }
 
 func observePlanningPackage(layout ports.ControllerLayout, state durable.State, now time.Time) ([]model.Evidence, bool, error) {
-	root := filepath.Join(layout.RepositoryRoot, ".boatstack", "planning-packages", state.Objective.DeliveryID)
+	root := filepath.Join(layout.RepositoryRoot, ".boatstack", "planning-packages", state.Objective.DeliveryID, state.PlanningPackageFingerprint)
 	manifestPath := filepath.Join(root, "manifest.json")
-	manifestEvidence, manifestFileFingerprint, exists, err := fileEvidence(manifestPath, "planning-package", now)
+	manifestEvidence, _, exists, err := fileEvidence(manifestPath, "planning-package", now)
 	evidence := []model.Evidence{manifestEvidence}
 	if err != nil || !exists {
 		return evidence, false, err
@@ -691,67 +680,20 @@ func observePlanningPackage(layout ports.ControllerLayout, state durable.State, 
 	if err != nil {
 		return evidence, false, err
 	}
-	var manifest observedPlanningPackageManifest
-	valid := decodeStrictJSON(manifestRaw, &manifest) == nil && manifest.SchemaVersion == 1 &&
-		manifest.DeliveryID == state.Objective.DeliveryID && len(manifest.WorkRequestFingerprint) == 64 && len(manifest.WorkResultFingerprint) == 64 &&
-		manifest.PlanFingerprint == state.PlanFingerprint && manifest.Fingerprint == state.PlanningPackageFingerprint && len(manifest.Outputs) > 0
-	if valid {
-		identity := manifest
-		identity.Fingerprint = ""
-		identityRaw, encodeErr := json.MarshalIndent(identity, "", "  ")
-		if encodeErr != nil {
-			return evidence, false, encodeErr
-		}
-		identityRaw = append(identityRaw, '\n')
-		valid = hashBytes(identityRaw) == manifest.Fingerprint && manifestFileFingerprint == hashBytes(manifestRaw)
+	var manifest planningpackage.Manifest
+	if planningpackage.StrictDecode(manifestRaw, &manifest) != nil {
+		return evidence, false, nil
 	}
-	planFound := false
-	seen, seenPaths := map[string]bool{}, map[string]bool{}
-	for _, output := range manifest.Outputs {
-		clean := filepath.Clean(filepath.FromSlash(output.Path))
-		if output.ID == "" || output.Path == "" || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) ||
-			filepath.ToSlash(clean) != output.Path || output.MediaType == "" || len(output.SHA256) != 64 || output.Size < 0 || seen[output.ID] || seenPaths[clean] {
-			valid = false
-			continue
-		}
-		seen[output.ID], seenPaths[clean] = true, true
-		outputPath := filepath.Join(root, clean)
-		outputEvidence, fingerprint, exists, outputErr := fileEvidence(outputPath, "planning-package-output-"+output.ID, now)
-		evidence = append(evidence, outputEvidence)
-		if outputErr != nil {
-			return evidence, false, outputErr
-		}
-		info, statErr := os.Lstat(outputPath)
-		if statErr != nil && !os.IsNotExist(statErr) {
-			return evidence, false, statErr
-		}
-		regular := statErr == nil && info.Mode().IsRegular()
-		sizeMatches := regular && info.Size() == output.Size
-		valid = valid && exists && regular && sizeMatches && fingerprint == output.SHA256
-		if output.ID == "plan" {
-			planFound = true
-			valid = valid && output.SHA256 == manifest.PlanFingerprint
-		}
-	}
-	if !planFound {
-		valid = false
-	}
+	result := planningpackage.Verify(layout.RepositoryRoot, state.Objective.DeliveryID, state.PlanningPackageFingerprint, nil)
+	valid := result.Integrity == planningpackage.Valid && result.Contract == planningpackage.Valid && manifest.PlanOutput.SHA256 == state.PlanFingerprint
 	if state.Plan == model.PlanPackageApproved {
-		approvalPath := filepath.Join(root, "approval.json")
-		approvalEvidence, _, approvalExists, approvalErr := fileEvidence(approvalPath, "planning-package-approval", now)
-		evidence = append(evidence, approvalEvidence)
-		if approvalErr != nil {
-			return evidence, false, approvalErr
+		valid = valid && result.Approval == planningpackage.Valid
+		if valid {
+			raw, _ := os.ReadFile(filepath.Join(root, "approval.json"))
+			var approval planningpackage.Approval
+			_ = planningpackage.StrictDecode(raw, &approval)
+			valid = planningpackage.Digest(raw) == state.ApprovalFingerprint
 		}
-		approvalRaw, readErr := os.ReadFile(approvalPath)
-		if readErr != nil && !os.IsNotExist(readErr) {
-			return evidence, false, readErr
-		}
-		var approval observedApproval
-		valid = valid && approvalExists && decodeStrictJSON(approvalRaw, &approval) == nil && approval.SchemaVersion == 1 &&
-			approval.DeliveryID == state.Objective.DeliveryID && approval.PlanFingerprint == manifest.PlanFingerprint && approval.PackageFingerprint == manifest.Fingerprint &&
-			approval.Actor != "" && approval.AdmissionID != "" && !approval.ApprovedAt.IsZero() &&
-			state.ApprovalFingerprint == hashBytes(append(append([]byte(nil), manifestRaw...), approvalRaw...))
 	}
 	return evidence, valid, nil
 }

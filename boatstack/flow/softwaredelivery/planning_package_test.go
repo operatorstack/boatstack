@@ -2,6 +2,7 @@ package softwaredelivery
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -16,14 +17,14 @@ func TestPlanningPackageWorkRequiresOwnedPlanOutput(t *testing.T) {
 		outputs []delivery.WorkOutput
 		want    string
 	}{
-		{name: "missing plan", outputs: []delivery.WorkOutput{{ID: "questions", Path: "questions.md", Required: true}}, want: `required output named "plan"`},
-		{name: "optional plan", outputs: []delivery.WorkOutput{{ID: "plan", Path: "plan.md"}}, want: `required output named "plan"`},
-		{name: "manifest collision", outputs: []delivery.WorkOutput{{ID: "plan", Path: "manifest.json", Required: true}}, want: "runtime-owned"},
-		{name: "approval descendant collision", outputs: []delivery.WorkOutput{{ID: "plan", Path: "plan.md", Required: true}, {ID: "evidence", Path: "approval.json/evidence", Required: true}}, want: "runtime-owned"},
+		{name: "missing plan", outputs: []delivery.WorkOutput{{ID: "questions", Path: "questions.md", Required: true, MaxBytes: 1}}, want: `designated output "plan"`},
+		{name: "optional plan", outputs: []delivery.WorkOutput{{ID: "plan", Path: "plan.md", MaxBytes: 1}}, want: `designated output "plan"`},
+		{name: "manifest collision", outputs: []delivery.WorkOutput{{ID: "plan", Path: "manifest.json", Required: true, MaxBytes: 1}}, want: "reserved"},
+		{name: "approval descendant collision", outputs: []delivery.WorkOutput{{ID: "plan", Path: "plan.md", Required: true, MaxBytes: 1}, {ID: "evidence", Path: "approval.json/evidence", Required: true, MaxBytes: 1}}, want: "reserved"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			err := validatePlanningPackageWorkContract(delivery.WorkContract{ID: "planning", Outputs: test.outputs})
+			err := validatePlanningPackageWorkContract(delivery.WorkContract{ID: "planning", Outputs: test.outputs}, "plan")
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("validation error = %v, want %q", err, test.want)
 			}
@@ -71,10 +72,24 @@ func containsString(values []string, want string) bool {
 
 func TestPlanningPackageWorkAcceptsRequiredPlanAndDomainOutputs(t *testing.T) {
 	work := delivery.WorkContract{ID: "planning", Outputs: []delivery.WorkOutput{
-		{ID: "plan", Path: "plan.md", Required: true},
-		{ID: "questions", Path: "questions.md", Required: true},
+		{ID: "plan", Path: "plan.md", Required: true, MaxBytes: 1},
+		{ID: "questions", Path: "questions.md", Required: true, MaxBytes: 1},
 	}}
-	if err := validatePlanningPackageWorkContract(work); err != nil {
+	if err := validatePlanningPackageWorkContract(work, "plan"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPlanningPackageWorkRejectsContractAbovePortableMetadataBound(t *testing.T) {
+	work := delivery.WorkContract{ID: "planning", InstructionPath: "instructions.md", InstructionSHA256: strings.Repeat("a", 64), InstructionContent: "Plan."}
+	for index := 0; index < 17; index++ {
+		id := fmt.Sprintf("output-%02d", index)
+		work.Outputs = append(work.Outputs, delivery.WorkOutput{
+			ID: id, Path: id + ".json", MediaType: "application/json", Required: true, MaxBytes: 1,
+			SchemaPath: id + ".schema.json", SchemaSHA256: strings.Repeat("b", 64), SchemaContent: strings.Repeat("x", 1<<20),
+		})
+	}
+	if err := validatePlanningPackageWorkContract(work, "output-00"); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("oversized portable contract = %v", err)
 	}
 }

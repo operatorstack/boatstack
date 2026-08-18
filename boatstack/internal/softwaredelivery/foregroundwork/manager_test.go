@@ -2,6 +2,7 @@ package foregroundwork_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -112,6 +113,41 @@ func TestForegroundWorkQuestionCompletionAndDrift(t *testing.T) {
 	record, err = manager.Ensure(ctx, invocation(), "run-1", "incident-response", "respond", objective, snapshot, transition, workInputs("incident.json", strings.Repeat("e", 64)))
 	if err != nil || record.Status != foregroundwork.StatusRequested || len(record.Events) < 4 || record.Events[len(record.Events)-2].Kind != "work.invalidated" {
 		t.Fatalf("drift reset = %#v err=%v", record, err)
+	}
+}
+
+func TestForegroundWorkRejectsResultFlowIdentityDifferentFromRequest(t *testing.T) {
+	manager, snapshot, transition, root := fixture(t)
+	ctx := context.Background()
+	objective := model.Objective{ID: "incident-1", TargetID: "mitigated", DeliveryID: "incident-1"}
+	record, err := manager.Ensure(ctx, invocation(), "run-1", "incident-response", "respond", objective, snapshot, transition, workInputs("incident.json", strings.Repeat("e", 64)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(record.Request.StagingRoot, "diagnosis.json"), []byte(`{"cause":"overload"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	record, err = manager.Complete(ctx, invocation(), "run-1", "diagnose")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tampered := *record.Result
+	tampered.ProgramID = "different-program"
+	tampered, err = protocol.SealWorkEvidence(tampered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.Result = &tampered
+	raw, err := json.MarshalIndent(record, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "flow", "work", "run-1", "diagnose", "record.json")
+	if err := os.WriteFile(path, append(raw, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := foregroundwork.LoadRecord(ports.ControllerLayout{FlowRoot: filepath.Join(root, "flow")}, "run-1", "diagnose"); err == nil || !strings.Contains(err.Error(), "result is invalid") {
+		t.Fatalf("mismatched result Flow identity = %v", err)
 	}
 }
 

@@ -83,18 +83,19 @@ type EffectResult struct {
 }
 
 type ResourceMutation struct {
-	Resource    string             `json:"resource"`
-	Owner       string             `json:"owner"`
-	Path        string             `json:"path"`
-	Prior       []byte             `json:"prior,omitempty"`
-	Target      []byte             `json:"target,omitempty"`
-	PriorLink   string             `json:"prior_link,omitempty"`
-	TargetLink  string             `json:"target_link,omitempty"`
-	PriorExists bool               `json:"prior_exists"`
-	Mode        uint32             `json:"mode"`
-	InstallLast bool               `json:"install_last,omitempty"`
-	Delete      bool               `json:"delete,omitempty"`
-	StateFacets []model.StateFacet `json:"state_facets,omitempty"`
+	Resource       string             `json:"resource"`
+	Owner          string             `json:"owner"`
+	Path           string             `json:"path"`
+	Prior          []byte             `json:"prior,omitempty"`
+	Target         []byte             `json:"target,omitempty"`
+	PriorLink      string             `json:"prior_link,omitempty"`
+	TargetLink     string             `json:"target_link,omitempty"`
+	PriorExists    bool               `json:"prior_exists"`
+	Mode           uint32             `json:"mode"`
+	InstallLast    bool               `json:"install_last,omitempty"`
+	AtomicTreeRoot string             `json:"atomic_tree_root,omitempty"`
+	Delete         bool               `json:"delete,omitempty"`
+	StateFacets    []model.StateFacet `json:"state_facets,omitempty"`
 }
 
 type PreparedEffect interface {

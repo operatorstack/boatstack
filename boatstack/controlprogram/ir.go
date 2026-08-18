@@ -7,7 +7,7 @@ import "encoding/json"
 
 const (
 	SchemaName     = "control-program"
-	SchemaRevision = 6
+	SchemaRevision = 7
 )
 
 type Document struct {
@@ -74,6 +74,7 @@ type WorkOutput struct {
 	MediaType string     `json:"media_type"`
 	Required  bool       `json:"required"`
 	MaxBytes  int64      `json:"max_bytes,omitempty"`
+	Guidance  *WorkAsset `json:"guidance,omitempty"`
 	Schema    *WorkAsset `json:"schema,omitempty"`
 }
 

@@ -536,6 +536,7 @@ func TestResolutionBindsForegroundWorkBeforeTrustedAdmission(t *testing.T) {
 	contentDigest := sha256.Sum256([]byte(content))
 	evidence, err := protocol.SealWorkEvidence(protocol.WorkEvidence{
 		SchemaVersion: protocol.WorkEvidenceSchemaVersion, RequestID: "work-request", RequestFingerprint: strings.Repeat("e", 64),
+		RunID: "flow", ProgramID: syntheticProgram.ID, EntryID: "entry",
 		ContractID: work.ID, ContractFingerprint: work.Fingerprint, TransitionID: "test.advance",
 		ProgramFingerprint: candidate.Snapshot.ProgramFingerprint, ContextFingerprint: mustWorkContextFingerprint(t, candidate.Snapshot), StateRevision: candidate.Snapshot.StateRevision,
 		RepositoryID: candidate.Snapshot.Invocation.RepositoryID, WorktreeID: candidate.Snapshot.Invocation.WorktreeID,

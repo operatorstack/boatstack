@@ -185,14 +185,17 @@ type WorkInput struct {
 }
 
 type WorkOutput struct {
-	ID            string `json:"id"`
-	Path          string `json:"path"`
-	MediaType     string `json:"media_type"`
-	Required      bool   `json:"required"`
-	MaxBytes      int64  `json:"max_bytes"`
-	SchemaPath    string `json:"schema_path,omitempty"`
-	SchemaSHA256  string `json:"schema_sha256,omitempty"`
-	SchemaContent string `json:"schema_content,omitempty"`
+	ID              string `json:"id"`
+	Path            string `json:"path"`
+	MediaType       string `json:"media_type"`
+	Required        bool   `json:"required"`
+	MaxBytes        int64  `json:"max_bytes"`
+	GuidancePath    string `json:"guidance_path,omitempty"`
+	GuidanceSHA256  string `json:"guidance_sha256,omitempty"`
+	GuidanceContent string `json:"guidance_content,omitempty"`
+	SchemaPath      string `json:"schema_path,omitempty"`
+	SchemaSHA256    string `json:"schema_sha256,omitempty"`
+	SchemaContent   string `json:"schema_content,omitempty"`
 }
 
 // StateEffectKind selects the software-delivery domain's durable-state

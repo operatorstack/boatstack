@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	planningpackage "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery/planningpackage"
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
@@ -25,52 +26,48 @@ func TestObserverValidatesAdmittedPlanningPackageWithoutPrematurePlanPromotion(t
 	// control-law: an admitted package is verified from its exact manifest while the canonical approved plan remains absent
 	repository := t.TempDir()
 	deliveryID := "delivery"
-	root := filepath.Join(repository, ".boatstack", "planning-packages", deliveryID)
+	plan := []byte("# Proposed plan\n")
+	planFingerprint := hashBytes(plan)
+	output := planningpackage.Output{ID: "implementation-plan", Path: "plan.md", MediaType: "text/markdown", Required: true, Size: int64(len(plan)), SHA256: planFingerprint}
+	portableWork := planningpackage.WorkContract{ID: "planning", Instructions: planningpackage.Asset{Path: "package.md", SHA256: hashBytes([]byte("coordinate")), Content: "coordinate"}, Outputs: []planningpackage.WorkOutput{{ID: output.ID, Path: output.Path, MediaType: output.MediaType, Required: true, MaxBytes: 1024}}}
+	workFingerprint, err := planningpackage.RuntimeWorkFingerprint(portableWork)
+	if err != nil {
+		t.Fatal(err)
+	}
+	portableWork.Fingerprint = workFingerprint
+	_, contractRaw, err := planningpackage.SealContract(planningpackage.Contract{Work: portableWork, PlanOutput: output.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, receiptRaw, err := planningpackage.SealWorkReceipt(planningpackage.WorkReceipt{RequestID: "request", RequestFingerprint: strings.Repeat("a", 64), ResultFingerprint: strings.Repeat("b", 64), ContractID: "planning", ContractFingerprint: workFingerprint, TransitionID: "planning.package.admit", ProgramFingerprint: strings.Repeat("d", 64), ContextFingerprint: strings.Repeat("e", 64), StateRevision: 2, RepositoryID: "repo", WorktreeID: "tree", Outputs: []planningpackage.Output{output}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, manifestRaw, err := planningpackage.SealManifest(planningpackage.Manifest{DeliveryID: deliveryID, ProgramID: "program", ProgramFingerprint: strings.Repeat("d", 64), EntryID: "run", RunID: "run-proof", TransitionID: "planning.package.admit", WorkContractID: "planning", WorkContractFingerprint: workFingerprint, WorkRequestFingerprint: strings.Repeat("a", 64), WorkResultFingerprint: strings.Repeat("b", 64), ContextFingerprint: strings.Repeat("e", 64), StateRevision: 2, PlanOutput: planningpackage.PlanOutput{ID: output.ID, Path: output.Path, MediaType: output.MediaType, SHA256: output.SHA256}, Contract: planningpackage.Reference{Path: "contract.json", SHA256: planningpackage.Digest(contractRaw)}, WorkReceipt: planningpackage.Reference{Path: "work-receipt.json", SHA256: planningpackage.Digest(receiptRaw)}, Outputs: []planningpackage.Output{output}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(repository, ".boatstack", "planning-packages", deliveryID, manifest.Fingerprint)
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	plan := []byte("# Proposed plan\n")
-	feature := []byte("# Feature specification\n")
-	planFingerprint := hashBytes(plan)
-	featureFingerprint := hashBytes(feature)
-	manifest := observedPlanningPackageManifest{
-		SchemaVersion: 1, DeliveryID: deliveryID, WorkRequestFingerprint: strings.Repeat("a", 64), WorkResultFingerprint: strings.Repeat("b", 64),
-		PlanFingerprint: planFingerprint, Outputs: []observedPlanningPackageOutput{
-			{ID: "plan", Path: "plan.md", MediaType: "text/markdown", SHA256: planFingerprint, Size: int64(len(plan))},
-			{ID: "feature-spec", Path: "feature-spec.md", MediaType: "text/markdown", SHA256: featureFingerprint, Size: int64(len(feature))},
-		},
-	}
-	identityRaw, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	manifest.Fingerprint = hashBytes(append(identityRaw, '\n'))
-	manifestRaw, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	manifestRaw = append(manifestRaw, '\n')
-	if err := os.WriteFile(filepath.Join(root, "plan.md"), plan, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "feature-spec.md"), feature, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "manifest.json"), manifestRaw, 0o600); err != nil {
-		t.Fatal(err)
+	for name, raw := range map[string][]byte{"manifest.json": manifestRaw, "contract.json": contractRaw, "work-receipt.json": receiptRaw, "plan.md": plan} {
+		if err := os.WriteFile(filepath.Join(root, name), raw, 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	state := durable.State{
 		Plan: model.PlanPackageValid, PlanFingerprint: planFingerprint, PlanningPackageFingerprint: manifest.Fingerprint,
 		Objective: model.Objective{ID: "objective", TargetID: model.ObjectiveOpenPR, DeliveryID: deliveryID},
 	}
 	evidence, valid, err := observePlanningPackage(ports.ControllerLayout{RepositoryRoot: repository}, state, time.Unix(100, 0).UTC())
-	if err != nil || !valid || len(evidence) != 3 {
+	if err != nil || !valid || len(evidence) != 1 {
 		t.Fatalf("planning package observation valid=%t evidence=%#v err=%v", valid, evidence, err)
 	}
 	if _, err := os.Stat(filepath.Join(repository, ".boatstack", "plans", deliveryID+".source")); !os.IsNotExist(err) {
 		t.Fatalf("admission prematurely created a canonical plan: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "feature-spec.md"), []byte("tampered"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "plan.md"), []byte("tampered"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, valid, err := observePlanningPackage(ports.ControllerLayout{RepositoryRoot: repository}, state, time.Unix(101, 0).UTC()); err != nil || valid {

@@ -13,7 +13,9 @@ import (
 func committedReceiptFixture(t *testing.T) (TransitionReceipt, Admission, catalog.Transition, model.Snapshot, time.Time) {
 	t.Helper()
 	now := time.Unix(200, 0).UTC()
-	authority := capabilityAuthority(now, catalog.AuthorityRepository, "policy")
+	authority := capabilityAuthority(now, catalog.AuthorityHuman, "operator")
+	authority.Receipts[0].IdentityRole = "developer"
+	authority.Receipts[0].IdentityProviderFingerprint = strings.Repeat("9", 64)
 	authorityFingerprint, err := authority.Fingerprint()
 	if err != nil {
 		t.Fatal(err)
@@ -72,6 +74,9 @@ func TestCommittedTransitionFactBindsProgramTransitionStateAuthorityEffectsAndVe
 	}
 	if receipt.AuthorityFingerprint != admission.AuthorityFingerprint || len(receipt.AuthoritySources) != 1 || len(receipt.RequiredCapabilities) != 1 || len(receipt.GrantedCapabilities) == 0 {
 		t.Fatalf("authority fact = %#v", receipt)
+	}
+	if receipt.AuthoritySources[0].IdentityRole != "developer" || receipt.AuthoritySources[0].IdentityProviderFingerprint != strings.Repeat("9", 64) {
+		t.Fatalf("authority identity provenance = %#v", receipt.AuthoritySources[0])
 	}
 	if len(receipt.ExercisedCapabilities) != 0 {
 		t.Fatalf("receipt fabricated capability exercise: %#v", receipt.ExercisedCapabilities)
