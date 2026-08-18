@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
+	"github.com/operatorstack/boatstack/boatstack/distribution"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
 	planningpackage "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery/planningpackage"
 )
@@ -119,6 +120,14 @@ func loadCurrentPlanningProgram(ctx context.Context, repository string) (plannin
 	if err != nil {
 		return planningpackage.CurrentProgram{}, err
 	}
+	definition, err := softwareflow.NewDefinition(compiled, resolver)
+	if err != nil {
+		return planningpackage.CurrentProgram{}, err
+	}
+	program, err := distribution.ProgramForRepository(ctx, distribution.RepositoryProgramRequest{Repository: repository}, definition)
+	if err != nil {
+		return planningpackage.CurrentProgram{}, err
+	}
 	workByID := map[string]controlprogram.WorkContract{}
 	for _, work := range compiled.Document.Work {
 		workByID[work.ID] = work
@@ -144,7 +153,7 @@ func loadCurrentPlanningProgram(ctx context.Context, repository string) (plannin
 		if planOutput == "" {
 			return planningpackage.CurrentProgram{}, fmt.Errorf("current planning-package plan output is missing")
 		}
-		return planningpackage.CurrentProgram{ProgramFingerprint: compiled.Fingerprint, WorkContractFingerprint: runtime.Fingerprint, PlanOutput: planOutput}, nil
+		return planningpackage.CurrentProgram{ProgramFingerprint: program.Fingerprint(), WorkContractFingerprint: runtime.Fingerprint, PlanOutput: planOutput}, nil
 	}
 	return planningpackage.CurrentProgram{}, fmt.Errorf("current Flow has no planning-package admission")
 }

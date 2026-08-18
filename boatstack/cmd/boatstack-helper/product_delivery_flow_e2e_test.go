@@ -18,6 +18,7 @@ import (
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
+	"github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery/planningpackage"
 	"github.com/operatorstack/boatstack/boatstack/internal/buildinfo"
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
@@ -350,6 +351,19 @@ func TestExactProductDeliveryFlowReachesPublishedPRWithFakeProvider(t *testing.T
 		if receipts[index].TransitionID != catalog.TransitionID(transitionID) {
 			t.Fatalf("trace transition %d = %s, want %s", index+1, receipts[index].TransitionID, transitionID)
 		}
+	}
+	packageRoot := filepath.Join(repository, ".boatstack", "planning-packages", "todo")
+	packages, err := os.ReadDir(packageRoot)
+	if err != nil || len(packages) != 1 || !packages[0].IsDir() {
+		t.Fatalf("planning package inventory = %#v, err=%v", packages, err)
+	}
+	currentProgram, err := loadCurrentPlanningProgram(context.Background(), repository)
+	if err != nil {
+		t.Fatalf("load current planning program: %v", err)
+	}
+	packageVerification := planningpackage.Verify(repository, "todo", packages[0].Name(), &currentProgram)
+	if packageVerification.Integrity != planningpackage.Valid || packageVerification.Contract != planningpackage.Valid || packageVerification.Approval != planningpackage.Valid || packageVerification.CurrentProgram != planningpackage.Match {
+		t.Fatalf("portable planning package verification = %#v", packageVerification)
 	}
 	last := receipts[len(receipts)-1]
 	if last.TransitionID != "publication.observe" || final.Snapshot.Publication.Value != model.PublicationOpen {
