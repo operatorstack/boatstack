@@ -149,6 +149,51 @@ func TestPlanningPackageAdmitApprovePromoteUsesExactV2Snapshot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(packageRoot, "manifest.json"), originalManifest, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	originalApproval := approvalRawAt(t, packageRoot)
+	var substitutedApproval planningpackage.Approval
+	if err := planningpackage.StrictDecode(originalApproval, &substitutedApproval); err != nil {
+		t.Fatal(err)
+	}
+	substitutedApproval.Actor = "substitute"
+	for index := range substitutedApproval.AuthoritySources {
+		substitutedApproval.AuthoritySources[index].Subject = substitutedApproval.Actor
+	}
+	_, substitutedApprovalRaw, err := planningpackage.SealApproval(substitutedApproval)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifyPlanningPackage = func(repository, deliveryID, packageFingerprint string, current *planningpackage.CurrentProgram) planningpackage.Result {
+		result := originalVerify(repository, deliveryID, packageFingerprint, current)
+		if err := os.WriteFile(filepath.Join(packageRoot, "approval.json"), substitutedApprovalRaw, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	if _, substitutionErr := prepareArtifacts(layout, promotion, promote, &state); substitutionErr == nil || !strings.Contains(substitutionErr.Error(), "approval") {
+		t.Fatalf("substituted approval fingerprint was not rejected: %v", substitutionErr)
+	}
+	verifyPlanningPackage = originalVerify
+	if err := os.WriteFile(filepath.Join(packageRoot, "approval.json"), originalApproval, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	originalContract, err := os.ReadFile(filepath.Join(packageRoot, "contract.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifyPlanningPackage = func(repository, deliveryID, packageFingerprint string, current *planningpackage.CurrentProgram) planningpackage.Result {
+		result := originalVerify(repository, deliveryID, packageFingerprint, current)
+		if err := os.WriteFile(filepath.Join(packageRoot, "contract.json"), append(append([]byte(nil), originalContract...), '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	if _, contractErr := prepareArtifacts(layout, promotion, promote, &state); contractErr == nil || !strings.Contains(contractErr.Error(), "verification failed") {
+		t.Fatalf("post-verification contract mutation was not rejected: %v", contractErr)
+	}
+	verifyPlanningPackage = originalVerify
+	if err := os.WriteFile(filepath.Join(packageRoot, "contract.json"), originalContract, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	mutations, err = prepareArtifacts(layout, promotion, promote, &state)
 	if err != nil {
 		t.Fatal(err)

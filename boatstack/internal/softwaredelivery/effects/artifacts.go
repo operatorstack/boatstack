@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -271,7 +273,21 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		if pinnedErr != nil || currentErr != nil || !os.SameFile(pinnedInfo, currentInfo) {
 			return nil, fmt.Errorf("immutable planning package changed during verification")
 		}
-		manifestRaw, loadErr := readRegularPlanningMember(packageRoot, "manifest.json")
+		snapshotRepository, cleanupSnapshot, snapshotErr := capturePinnedPlanningPackage(packageRoot, deliveryID, state.PlanningPackageFingerprint)
+		if snapshotErr != nil {
+			return nil, snapshotErr
+		}
+		defer cleanupSnapshot()
+		currentInfo, currentErr = os.Stat(packagePath)
+		if currentErr != nil || !os.SameFile(pinnedInfo, currentInfo) {
+			return nil, fmt.Errorf("immutable planning package changed during verification")
+		}
+		verified = verifyPlanningPackage(snapshotRepository, deliveryID, state.PlanningPackageFingerprint, nil)
+		if verified.Integrity != planningpackage.Valid || verified.Contract != planningpackage.Valid || verified.Approval != planningpackage.Valid {
+			return nil, fmt.Errorf("planning package verification failed: %s", strings.Join(verified.Diagnostics, "; "))
+		}
+		snapshotRoot := filepath.Join(snapshotRepository, ".boatstack", "planning-packages", deliveryID, state.PlanningPackageFingerprint)
+		manifestRaw, loadErr := os.ReadFile(filepath.Join(snapshotRoot, "manifest.json"))
 		if loadErr != nil {
 			return nil, loadErr
 		}
@@ -286,7 +302,7 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		if manifestEncodeErr != nil || manifestIdentityEncodeErr != nil || !bytes.Equal(manifestRaw, canonicalManifestRaw) || manifest.Fingerprint != state.PlanningPackageFingerprint || sha256Bytes(manifestIdentityRaw) != manifest.Fingerprint {
 			return nil, fmt.Errorf("pinned planning package manifest does not bind durable state")
 		}
-		approvalRaw, readErr := readRegularPlanningMember(packageRoot, "approval.json")
+		approvalRaw, readErr := os.ReadFile(filepath.Join(snapshotRoot, "approval.json"))
 		if readErr != nil {
 			return nil, fmt.Errorf("read planning package approval: %w", readErr)
 		}
@@ -294,10 +310,10 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		if decodeErr := planningpackage.StrictDecode(approvalRaw, &approval); decodeErr != nil {
 			return nil, fmt.Errorf("decode planning package approval: %w", decodeErr)
 		}
-		if approvalErr := planningpackage.ValidateApproval(approvalRaw, approval, manifest, deliveryID, state.PlanningPackageFingerprint); approvalErr != nil {
+		if approvalErr := planningpackage.ValidateApproval(approvalRaw, approval, manifest, deliveryID, state.PlanningPackageFingerprint); approvalErr != nil || approval.Fingerprint != state.ApprovalFingerprint {
 			return nil, fmt.Errorf("planning package approval does not bind the exact package")
 		}
-		planRaw, readErr := readRegularPlanningMember(packageRoot, manifest.PlanOutput.Path)
+		planRaw, readErr := os.ReadFile(filepath.Join(snapshotRoot, filepath.FromSlash(manifest.PlanOutput.Path)))
 		if readErr != nil || sha256Bytes(planRaw) != manifest.PlanOutput.SHA256 {
 			return nil, fmt.Errorf("planning package plan changed after approval")
 		}
@@ -485,15 +501,50 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 
 var verifyPlanningPackage = planningpackage.Verify
 
-func readRegularPlanningMember(root *os.Root, name string) ([]byte, error) {
-	info, err := root.Lstat(filepath.FromSlash(name))
+func capturePinnedPlanningPackage(root *os.Root, deliveryID, fingerprint string) (string, func(), error) {
+	repository, err := os.MkdirTemp("", "boatstack-planning-package-snapshot-")
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
-	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-		return nil, fmt.Errorf("planning package member is not regular: %s", name)
+	cleanup := func() { _ = os.RemoveAll(repository) }
+	destination := filepath.Join(repository, ".boatstack", "planning-packages", deliveryID, fingerprint)
+	if err := os.MkdirAll(destination, 0o700); err != nil {
+		cleanup()
+		return "", nil, err
 	}
-	return root.ReadFile(filepath.FromSlash(name))
+	err = fs.WalkDir(root.FS(), ".", func(name string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if name == "." {
+			return nil
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("planning package member is a symlink: %s", name)
+		}
+		target := filepath.Join(destination, filepath.FromSlash(name))
+		if entry.IsDir() {
+			return os.Mkdir(target, 0o700)
+		}
+		before, err := root.Lstat(filepath.FromSlash(name))
+		if err != nil || !before.Mode().IsRegular() || before.Mode()&os.ModeSymlink != 0 || runtime.GOOS != "windows" && before.Mode().Perm() != 0o644 {
+			return fmt.Errorf("planning package member is not canonical: %s", name)
+		}
+		raw, err := root.ReadFile(filepath.FromSlash(name))
+		if err != nil {
+			return err
+		}
+		after, err := root.Lstat(filepath.FromSlash(name))
+		if err != nil || !after.Mode().IsRegular() || !os.SameFile(before, after) || after.Size() != int64(len(raw)) || after.Mode().Perm() != before.Mode().Perm() {
+			return fmt.Errorf("planning package member changed while captured: %s", name)
+		}
+		return os.WriteFile(target, raw, 0o644)
+	})
+	if err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	return repository, cleanup, nil
 }
 
 // prepareWorkspacePlanTransfer carries runtime-owned plan artifacts into a

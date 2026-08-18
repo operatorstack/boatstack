@@ -34,6 +34,13 @@ func (d Driver) prepareRecoveryReplay(ctx context.Context, layout ports.Controll
 	if resume && len(record.Mutations) == 0 {
 		return nil, fmt.Errorf("transaction %s has no staged mutation manifest to resume", transactionID)
 	}
+	atomicTreePresent := map[string]bool{}
+	if resume {
+		atomicTreePresent, err = recoveryAtomicTreePresence(record.Mutations)
+		if err != nil {
+			return nil, err
+		}
+	}
 	mutations := make([]ports.ResourceMutation, 0, len(record.Mutations)+2)
 	for _, original := range record.Mutations {
 		if err := validateRecoveryPath(layout, record.Admission, original.Path); err != nil {
@@ -62,7 +69,7 @@ func (d Driver) prepareRecoveryReplay(ctx context.Context, layout ports.Controll
 		if mutationErr != nil {
 			return nil, mutationErr
 		}
-		if resume && original.AtomicTreeRoot != "" && !original.Delete {
+		if resume && original.AtomicTreeRoot != "" && !original.Delete && atomicTreePresent[original.AtomicTreeRoot] {
 			if !mutation.PriorExists || mutation.PriorLink != original.TargetLink || !bytes.Equal(mutation.Prior, original.Target) || mutation.Mode != original.Mode {
 				return nil, fmt.Errorf("installed immutable resource tree differs from staged transaction at %s", original.Path)
 			}
@@ -85,6 +92,30 @@ func (d Driver) prepareRecoveryReplay(ctx context.Context, layout ports.Controll
 	}
 	mutations = annotateStateFacetMutations(mutations, changed)
 	return &preparedEffect{mutations: mutations, changedStateFacets: changed}, nil
+}
+
+func recoveryAtomicTreePresence(mutations []ports.ResourceMutation) (map[string]bool, error) {
+	result := map[string]bool{}
+	for _, mutation := range mutations {
+		if mutation.AtomicTreeRoot == "" || mutation.Delete {
+			continue
+		}
+		if _, known := result[mutation.AtomicTreeRoot]; known {
+			continue
+		}
+		info, err := os.Lstat(mutation.AtomicTreeRoot)
+		switch {
+		case os.IsNotExist(err):
+			result[mutation.AtomicTreeRoot] = false
+		case err != nil:
+			return nil, err
+		case !info.IsDir() || info.Mode()&os.ModeSymlink != 0:
+			return nil, fmt.Errorf("installed immutable resource tree is unsafe: %s", mutation.AtomicTreeRoot)
+		default:
+			result[mutation.AtomicTreeRoot] = true
+		}
+	}
+	return result, nil
 }
 
 func (d Driver) prepareWorkspaceCutReconciliation(ctx context.Context, layout ports.ControllerLayout, admission protocol.Admission, record journalRecord, pendingPath string) (ports.PreparedEffect, error) {

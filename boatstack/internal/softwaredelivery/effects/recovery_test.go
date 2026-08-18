@@ -22,6 +22,21 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/testprogram"
 )
 
+func TestRecoveryAtomicTreePresenceAllowsAbsentAndRejectsUnsafeRoot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "package")
+	mutations := []ports.ResourceMutation{{Path: filepath.Join(root, "manifest.json"), Target: []byte("manifest"), Mode: 0o644, AtomicTreeRoot: root}}
+	presence, err := recoveryAtomicTreePresence(mutations)
+	if err != nil || presence[root] {
+		t.Fatalf("absent pre-install tree = %v, %v", presence, err)
+	}
+	if err := os.WriteFile(root, []byte("unsafe"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := recoveryAtomicTreePresence(mutations); err == nil {
+		t.Fatal("unsafe atomic-tree root was accepted")
+	}
+}
+
 type recoveryClock struct{ value time.Time }
 
 const testProgramFingerprint = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
