@@ -692,7 +692,7 @@ func observePlanningPackage(layout ports.ControllerLayout, state durable.State, 
 			raw, _ := os.ReadFile(filepath.Join(root, "approval.json"))
 			var approval planningpackage.Approval
 			_ = planningpackage.StrictDecode(raw, &approval)
-			valid = approval.Fingerprint == state.ApprovalFingerprint
+			valid = planningpackage.Digest(raw) == state.ApprovalFingerprint
 		}
 	}
 	return evidence, valid, nil

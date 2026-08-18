@@ -84,6 +84,9 @@ func TestPlanningPackageAdmitApprovePromoteUsesExactV2Snapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	installFixtureMutations(t, mutations)
+	if state.ApprovalFingerprint != sha256Bytes(approvalRawAt(t, packageRoot)) {
+		t.Fatal("durable approval fingerprint is not the canonical approval file digest")
+	}
 	result = planningpackage.Verify(repository, "delivery", state.PlanningPackageFingerprint, nil)
 	if result.Approval != planningpackage.Valid {
 		t.Fatalf("approval verification=%#v", result)
@@ -197,6 +200,9 @@ func TestPlanningPackageAdmitApprovePromoteUsesExactV2Snapshot(t *testing.T) {
 	mutations, err = prepareArtifacts(layout, promotion, promote, &state)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if _, err = prepareArtifacts(layout, promotion, promote, &state); err != nil {
+		t.Fatalf("repeated promotion preparation rejected unchanged package: %v", err)
 	}
 	installFixtureMutations(t, mutations)
 	current, _ := os.ReadFile(filepath.Join(repository, ".boatstack", "plans", "delivery.source"))

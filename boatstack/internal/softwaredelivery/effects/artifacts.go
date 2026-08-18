@@ -256,7 +256,7 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		if !mutation.PriorExists {
 			mutations = append(mutations, mutation)
 		}
-		state.PlanFingerprint, state.PlanningPackageFingerprint, state.ApprovalFingerprint = manifest.PlanOutput.SHA256, manifest.Fingerprint, approval.Fingerprint
+		state.PlanFingerprint, state.PlanningPackageFingerprint, state.ApprovalFingerprint = manifest.PlanOutput.SHA256, manifest.Fingerprint, sha256Bytes(raw)
 	case "planning.package.promote":
 		packagePath := filepath.Join(artifactRoot, "planning-packages", deliveryID, state.PlanningPackageFingerprint)
 		packageRoot, openErr := os.OpenRoot(packagePath)
@@ -310,7 +310,7 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		if decodeErr := planningpackage.StrictDecode(approvalRaw, &approval); decodeErr != nil {
 			return nil, fmt.Errorf("decode planning package approval: %w", decodeErr)
 		}
-		if approvalErr := planningpackage.ValidateApproval(approvalRaw, approval, manifest, deliveryID, state.PlanningPackageFingerprint); approvalErr != nil || approval.Fingerprint != state.ApprovalFingerprint {
+		if approvalErr := planningpackage.ValidateApproval(approvalRaw, approval, manifest, deliveryID, state.PlanningPackageFingerprint); approvalErr != nil || sha256Bytes(approvalRaw) != state.ApprovalFingerprint {
 			return nil, fmt.Errorf("planning package approval does not bind the exact package")
 		}
 		planRaw, readErr := os.ReadFile(filepath.Join(snapshotRoot, filepath.FromSlash(manifest.PlanOutput.Path)))
