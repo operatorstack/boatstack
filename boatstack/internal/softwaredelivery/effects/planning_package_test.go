@@ -69,13 +69,17 @@ func TestPlanningPackageAdmitApprovePromoteUsesExactV2Snapshot(t *testing.T) {
 
 	approve := catalog.Transition{ID: "planning.package.approve", TargetPhases: []model.ProtocolPhase{model.PhaseActive}, StateEffect: catalog.StateEffect{Kind: catalog.StateEffectNative, NativeHandler: "planning-package-approve"}}
 	providerFingerprint := strings.Repeat("9", 64)
-	approvalAdmission := protocol.Admission{ID: "adm-approve", Objective: objective, IssuedAt: now.Add(time.Minute), Parameters: protocol.Parameters{{Name: "package_fingerprint", Value: state.PlanningPackageFingerprint}}, Authority: protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{ID: "auth", Class: catalog.AuthorityHuman, Subject: "reviewer", Fingerprint: "human-proof", IdentityRole: "developer", IdentityProviderFingerprint: providerFingerprint, IssuedAt: now}}}}
+	approvalAdmission := protocol.Admission{ID: "adm-approve", Objective: objective, IssuedAt: now.Add(time.Minute), Parameters: protocol.Parameters{{Name: "package_fingerprint", Value: state.PlanningPackageFingerprint}}, Authority: protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{
+		{ID: "policy", Class: catalog.AuthorityRepository, Subject: "repository", Fingerprint: "policy-proof", IssuedAt: now},
+		{ID: "automation", Class: catalog.AuthorityAutonomy, Subject: "automation", Fingerprint: "autonomy-proof", IdentityRole: "developer", IdentityProviderFingerprint: strings.Repeat("8", 64), IssuedAt: now},
+		{ID: "auth", Class: catalog.AuthorityHuman, Subject: "reviewer", Fingerprint: "human-proof", IdentityRole: "developer", IdentityProviderFingerprint: providerFingerprint, IssuedAt: now},
+	}}}
 	if err := applyStateTransition(&state, approvalAdmission, approve); err != nil {
 		t.Fatal(err)
 	}
 	wrongRole := approvalAdmission
 	wrongRole.Authority.Receipts = append([]protocol.AuthorityReceipt(nil), approvalAdmission.Authority.Receipts...)
-	wrongRole.Authority.Receipts[0].IdentityRole = "release-manager"
+	wrongRole.Authority.Receipts[2].IdentityRole = "release-manager"
 	if _, mismatchErr := prepareArtifacts(layout, wrongRole, approve, &state, "developer"); mismatchErr == nil || !strings.Contains(mismatchErr.Error(), "does not match admitted program role") {
 		t.Fatalf("mismatched approval role was not rejected: %v", mismatchErr)
 	}
@@ -92,7 +96,7 @@ func TestPlanningPackageAdmitApprovePromoteUsesExactV2Snapshot(t *testing.T) {
 		t.Fatalf("approval verification=%#v", result)
 	}
 	var recordedApproval planningpackage.Approval
-	if err := planningpackage.StrictDecode(approvalRawAt(t, packageRoot), &recordedApproval); err != nil || recordedApproval.IdentityRole != "developer" || recordedApproval.IdentityProviderFingerprint != providerFingerprint {
+	if err := planningpackage.StrictDecode(approvalRawAt(t, packageRoot), &recordedApproval); err != nil || recordedApproval.Actor != "reviewer" || recordedApproval.IdentityRole != "developer" || recordedApproval.IdentityProviderFingerprint != providerFingerprint {
 		t.Fatalf("approval identity provenance=%#v err=%v", recordedApproval, err)
 	}
 

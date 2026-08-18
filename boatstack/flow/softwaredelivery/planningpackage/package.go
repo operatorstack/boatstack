@@ -28,6 +28,7 @@ const (
 	ContractSchemaVersion    = 1
 	WorkReceiptSchemaVersion = 1
 	ApprovalSchemaVersion    = 2
+	maxPackageMetadataBytes  = 16 << 20
 )
 
 var segment = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
@@ -300,11 +301,35 @@ func safeRelative(value string) bool {
 		return false
 	}
 	clean := pathpkg.Clean(value)
-	return clean != "." && clean != ".." && !strings.HasPrefix(clean, "../") && clean == value
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || clean != value {
+		return false
+	}
+	for _, component := range strings.Split(value, "/") {
+		if !portableWindowsComponent(component) {
+			return false
+		}
+	}
+	return true
 }
 
 func hasWindowsVolumePrefix(value string) bool {
 	return len(value) >= 2 && value[1] == ':' && ((value[0] >= 'a' && value[0] <= 'z') || (value[0] >= 'A' && value[0] <= 'Z'))
+}
+
+func portableWindowsComponent(value string) bool {
+	if value == "" || strings.HasSuffix(value, ".") || strings.HasSuffix(value, " ") || strings.ContainsAny(value, `<>:"|?*`) {
+		return false
+	}
+	for _, character := range value {
+		if character < 32 {
+			return false
+		}
+	}
+	base := strings.ToUpper(strings.SplitN(value, ".", 2)[0])
+	if base == "CON" || base == "PRN" || base == "AUX" || base == "NUL" {
+		return false
+	}
+	return !(len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && base[3] >= '1' && base[3] <= '9')
 }
 
 func Verify(repository, deliveryID, packageFingerprint string, current *CurrentProgram) Result {
@@ -325,7 +350,7 @@ func Verify(repository, deliveryID, packageFingerprint string, current *CurrentP
 	if info, err = os.Lstat(packageRoot); err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return fail("package directory is unavailable or unsafe")
 	}
-	manifestRaw, err := readRegular(filepath.Join(packageRoot, "manifest.json"))
+	manifestRaw, err := readRegular(filepath.Join(packageRoot, "manifest.json"), maxPackageMetadataBytes)
 	if err != nil {
 		return fail(err.Error())
 	}
@@ -342,7 +367,7 @@ func Verify(repository, deliveryID, packageFingerprint string, current *CurrentP
 	if identityErr := validateManifestIdentity(manifest, deliveryID, packageFingerprint, Digest(identityRaw)); identityErr != nil {
 		return fail("manifest identity is invalid: " + identityErr.Error())
 	}
-	contractRaw, err := readRegular(filepath.Join(packageRoot, "contract.json"))
+	contractRaw, err := readRegular(filepath.Join(packageRoot, "contract.json"), maxPackageMetadataBytes)
 	if err != nil || Digest(contractRaw) != manifest.Contract.SHA256 || manifest.Contract.Path != "contract.json" {
 		return fail("contract reference is invalid")
 	}
@@ -363,7 +388,7 @@ func Verify(repository, deliveryID, packageFingerprint string, current *CurrentP
 		return fail(err.Error())
 	}
 	result.Contract = Valid
-	receiptRaw, err := readRegular(filepath.Join(packageRoot, "work-receipt.json"))
+	receiptRaw, err := readRegular(filepath.Join(packageRoot, "work-receipt.json"), maxPackageMetadataBytes)
 	if err != nil || Digest(receiptRaw) != manifest.WorkReceipt.SHA256 || manifest.WorkReceipt.Path != "work-receipt.json" {
 		return fail("work receipt reference is invalid")
 	}
@@ -386,7 +411,7 @@ func Verify(repository, deliveryID, packageFingerprint string, current *CurrentP
 	}
 	approvalPath := filepath.Join(packageRoot, "approval.json")
 	if _, statErr := os.Lstat(approvalPath); statErr == nil {
-		approvalRaw, readErr := readRegular(approvalPath)
+		approvalRaw, readErr := readRegular(approvalPath, maxPackageMetadataBytes)
 		if readErr != nil {
 			result.Approval = Invalid
 			return fail(readErr.Error())
@@ -502,7 +527,7 @@ func validAuthorityClass(value string) bool {
 	}
 }
 
-func readRegular(path string) ([]byte, error) {
+func readRegular(path string, maxBytes int64) ([]byte, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, err
@@ -513,7 +538,23 @@ func readRegular(path string) ([]byte, error) {
 	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o644 {
 		return nil, fmt.Errorf("package member has non-canonical mode: %s", path)
 	}
-	return os.ReadFile(path)
+	if maxBytes < 0 || info.Size() > maxBytes {
+		return nil, fmt.Errorf("package member exceeds its byte bound: %s", path)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	raw, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	after, err := file.Stat()
+	if err != nil || !after.Mode().IsRegular() || !os.SameFile(info, after) || after.Size() != int64(len(raw)) || int64(len(raw)) > maxBytes {
+		return nil, fmt.Errorf("package member changed or exceeded its byte bound: %s", path)
+	}
+	return raw, nil
 }
 
 func validateContractAssets(work WorkContract) error {
@@ -625,7 +666,7 @@ func verifyOutputs(root string, manifest Manifest, contract Contract, receipt Wo
 		if (decl.Guidance == nil) != (o.GuidanceSHA256 == "") || decl.Guidance != nil && decl.Guidance.SHA256 != o.GuidanceSHA256 || (decl.Schema == nil) != (o.SchemaSHA256 == "") || decl.Schema != nil && decl.Schema.SHA256 != o.SchemaSHA256 {
 			return fmt.Errorf("output %q asset binding is invalid", o.ID)
 		}
-		raw, err := readRegular(filepath.Join(root, filepath.FromSlash(o.Path)))
+		raw, err := readRegular(filepath.Join(root, filepath.FromSlash(o.Path)), decl.MaxBytes)
 		if err != nil || int64(len(raw)) != o.Size || Digest(raw) != o.SHA256 {
 			return fmt.Errorf("output %q content is invalid", o.ID)
 		}

@@ -223,7 +223,7 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		if state.PlanningPackageFingerprint != manifest.Fingerprint {
 			return nil, fmt.Errorf("planning package state fingerprint is stale")
 		}
-		approval := planningpackage.Approval{DeliveryID: deliveryID, PackageFingerprint: manifest.Fingerprint, ManifestFingerprint: manifest.Fingerprint, PlanOutputID: manifest.PlanOutput.ID, PlanFingerprint: manifest.PlanOutput.SHA256, AdmissionID: admission.ID, Actor: authorityActor(admission), ApprovedAt: admission.IssuedAt.UTC()}
+		approval := planningpackage.Approval{DeliveryID: deliveryID, PackageFingerprint: manifest.Fingerprint, ManifestFingerprint: manifest.Fingerprint, PlanOutputID: manifest.PlanOutput.ID, PlanFingerprint: manifest.PlanOutput.SHA256, AdmissionID: admission.ID, ApprovedAt: admission.IssuedAt.UTC()}
 		for _, receipt := range admission.Authority.Receipts {
 			approval.AuthoritySources = append(approval.AuthoritySources, planningpackage.AuthoritySource{ID: receipt.ID, Class: string(receipt.Class), Subject: receipt.Subject, Fingerprint: receipt.Fingerprint})
 		}
@@ -231,13 +231,20 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		if len(humanIdentityRole) > 0 {
 			expectedRole = humanIdentityRole[0]
 		}
-		for _, receipt := range admission.Authority.Receipts {
-			if receipt.Subject == approval.Actor && receipt.IdentityRole != "" && receipt.IdentityProviderFingerprint != "" {
+		for _, authorityClass := range []catalog.AuthorityClass{catalog.AuthorityHuman, catalog.AuthorityAutonomy} {
+			for _, receipt := range admission.Authority.Receipts {
+				if receipt.Subject == "" || receipt.IdentityRole == "" || receipt.IdentityProviderFingerprint == "" || receipt.Class != authorityClass {
+					continue
+				}
 				if expectedRole != "" && receipt.IdentityRole != expectedRole {
 					return nil, fmt.Errorf("planning package approval identity role %q does not match admitted program role %q", receipt.IdentityRole, expectedRole)
 				}
-				approval.IdentityRole = receipt.IdentityRole
-				approval.IdentityProviderFingerprint = receipt.IdentityProviderFingerprint
+				if approval.Actor != "" && (receipt.Subject != approval.Actor || receipt.IdentityRole != approval.IdentityRole || receipt.IdentityProviderFingerprint != approval.IdentityProviderFingerprint) {
+					return nil, fmt.Errorf("planning package approval identity provenance is ambiguous")
+				}
+				approval.Actor, approval.IdentityRole, approval.IdentityProviderFingerprint = receipt.Subject, receipt.IdentityRole, receipt.IdentityProviderFingerprint
+			}
+			if approval.Actor != "" {
 				break
 			}
 		}

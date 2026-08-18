@@ -141,6 +141,8 @@ for (const [name, planning, error] of [
   ["unknown output", { work: work("planning"), planOutput: "missing" }, /SOFTWARE_DELIVERY_PLAN_OUTPUT_REQUIRED/],
   ["invalid output ID", { work: work("planning"), planOutput: "Implementation Plan" }, /SOFTWARE_DELIVERY_PLAN_OUTPUT_INVALID/],
   ["reserved path", { work: { ...work("planning"), outputs: [{ id: "implementation-plan", path: "Manifest.JSON", media_type: "text/markdown", required: true }] }, planOutput: "implementation-plan" }, /SOFTWARE_DELIVERY_OUTPUT_PATH_RESERVED/],
+  ["Windows device path", { work: { ...work("planning"), outputs: [{ id: "implementation-plan", path: "NUL.md", media_type: "text/markdown", required: true }] }, planOutput: "implementation-plan" }, /SOFTWARE_DELIVERY_OUTPUT_PATH_INVALID/],
+  ["Windows trailing-dot path", { work: { ...work("planning"), outputs: [{ id: "implementation-plan", path: "plan.", media_type: "text/markdown", required: true }] }, planOutput: "implementation-plan" }, /SOFTWARE_DELIVERY_OUTPUT_PATH_INVALID/],
   ["ancestor collision", { work: { ...work("planning"), outputs: [{ id: "implementation-plan", path: "planning", media_type: "text/markdown", required: true }, { id: "details", path: "planning/details.md", media_type: "text/markdown", required: true }] }, planOutput: "implementation-plan" }, /SOFTWARE_DELIVERY_OUTPUT_PATH_CONFLICT/],
 ]) {
   test(`rejects ${name}`, () => assert.throws(() => softwareDelivery(definition({ lifecycle: [planningPackageAdmit], planningPackage: planning })), error));

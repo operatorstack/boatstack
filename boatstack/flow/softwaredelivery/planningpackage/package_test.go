@@ -211,6 +211,14 @@ func TestSafeRelativeUsesPortableContractPathSemantics(t *testing.T) {
 		{value: "C:/escape", want: false},
 		{value: "C:escape", want: false},
 		{value: "a//escape", want: false},
+		{value: "NUL", want: false},
+		{value: "nested/con.txt", want: false},
+		{value: "COM1.log", want: false},
+		{value: "nested/LPT9", want: false},
+		{value: "plan.", want: false},
+		{value: "plan ", want: false},
+		{value: "nested/name:stream", want: false},
+		{value: "null.md", want: true},
 	}
 	for _, test := range tests {
 		t.Run(test.value, func(t *testing.T) {
@@ -218,6 +226,24 @@ func TestSafeRelativeUsesPortableContractPathSemantics(t *testing.T) {
 				t.Fatalf("safeRelative(%q) = %v, want %v", test.value, got, test.want)
 			}
 		})
+	}
+}
+
+func TestReadRegularRejectsOversizedSparseMemberBeforeLoading(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "member")
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(1 << 30); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readRegular(path, 1024); err == nil || !strings.Contains(err.Error(), "byte bound") {
+		t.Fatalf("oversized sparse member result = %v", err)
 	}
 }
 

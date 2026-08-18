@@ -131,6 +131,23 @@ export interface PlanningPackageDefinition {
   planOutput: string;
 }
 
+function portablePlanningPath(path: string): boolean {
+  if (path.length === 0 || path.startsWith("/") || path.includes("\\")) return false;
+  for (const component of path.split("/")) {
+    if (
+      component === "" ||
+      component === "." ||
+      component === ".." ||
+      component.endsWith(".") ||
+      component.endsWith(" ") ||
+      /[<>:"|?*\u0000-\u001f]/u.test(component)
+    ) return false;
+    const base = component.split(".", 1)[0].toUpperCase();
+    if (["CON", "PRN", "AUX", "NUL"].includes(base) || /^(COM|LPT)[1-9]$/u.test(base)) return false;
+  }
+  return true;
+}
+
 function validatePlanningPackage(planning: PlanningPackageDefinition): void {
   const { work, planOutput } = planning;
   if (!/^[a-z][a-z0-9._-]*$/.test(planOutput)) {
@@ -148,7 +165,7 @@ function validatePlanningPackage(planning: PlanningPackageDefinition): void {
   const reserved = ["manifest.json", "contract.json", "work-receipt.json", "approval.json"];
   for (const output of work.outputs) {
     const path = output.path.toLowerCase();
-    if (path.length === 0 || path.startsWith("/") || path.includes("\\") || path.split("/").some((part) => part === "" || part === "." || part === "..")) {
+    if (!portablePlanningPath(output.path)) {
       throw new Error(`SOFTWARE_DELIVERY_OUTPUT_PATH_INVALID: ${JSON.stringify(output.path)}`);
     }
     for (const owned of reserved) {
@@ -255,7 +272,7 @@ function validateSoftwareDeliveryDefinition(
     );
   }
   if (definition.planningPackage) {
-	validatePlanningPackage(definition.planningPackage);
+    validatePlanningPackage(definition.planningPackage);
   }
 
   const additionalWorkIDs = new Set(
