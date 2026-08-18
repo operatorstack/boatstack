@@ -38,6 +38,11 @@ func (d Driver) prepareRecoveryReplay(ctx context.Context, layout ports.Controll
 		if err := validateRecoveryPath(layout, record.Admission, original.Path); err != nil {
 			return nil, err
 		}
+		if original.AtomicTreeRoot != "" {
+			if err := validateRecoveryPath(layout, record.Admission, original.AtomicTreeRoot); err != nil {
+				return nil, err
+			}
+		}
 		var target []byte
 		var targetLink string
 		deleteResource := false
@@ -56,6 +61,7 @@ func (d Driver) prepareRecoveryReplay(ctx context.Context, layout ports.Controll
 		if mutationErr != nil {
 			return nil, mutationErr
 		}
+		mutation.AtomicTreeRoot = original.AtomicTreeRoot
 		mutations = append(mutations, mutation)
 	}
 	mutations, err = d.advanceRecoveredState(layout, admission, transition.ID, mutations)

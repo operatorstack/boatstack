@@ -149,7 +149,7 @@ type Approval struct {
 	AuthoritySources            []AuthoritySource `json:"authority_sources"`
 	Actor                       string            `json:"actor"`
 	IdentityRole                string            `json:"identity_role"`
-	IdentityProviderFingerprint string            `json:"identity_provider_fingerprint"`
+	IdentityProviderFingerprint string            `json:"identity_provider_fingerprint,omitempty"`
 	ApprovedAt                  time.Time         `json:"approved_at"`
 	Fingerprint                 string            `json:"fingerprint"`
 }
@@ -355,7 +355,7 @@ func Verify(repository, deliveryID, packageFingerprint string, current *CurrentP
 	contractIdentity := contract
 	contractIdentity.Fingerprint = ""
 	identityRaw, _ = Encode(contractIdentity)
-	if contract.SchemaVersion != ContractSchemaVersion || contract.Fingerprint != Digest(identityRaw) || contract.Work.Fingerprint != manifest.WorkContractFingerprint || contract.PlanOutput != manifest.PlanOutput.ID {
+	if contract.SchemaVersion != ContractSchemaVersion || contract.Fingerprint != Digest(identityRaw) || contract.Work.ID != manifest.WorkContractID || contract.Work.Fingerprint != manifest.WorkContractFingerprint || contract.PlanOutput != manifest.PlanOutput.ID {
 		return fail("contract identity is invalid")
 	}
 	if err = validateContractAssets(contract.Work); err != nil {
@@ -398,7 +398,8 @@ func Verify(repository, deliveryID, packageFingerprint string, current *CurrentP
 		identity := approval
 		identity.Fingerprint = ""
 		raw, _ := Encode(identity)
-		if approval.SchemaVersion != ApprovalSchemaVersion || approval.Fingerprint != Digest(raw) || approval.DeliveryID != deliveryID || approval.PackageFingerprint != packageFingerprint || approval.ManifestFingerprint != manifest.Fingerprint || approval.PlanOutputID != manifest.PlanOutput.ID || approval.PlanFingerprint != manifest.PlanOutput.SHA256 || approval.Actor == "" || approval.AdmissionID == "" || approval.IdentityRole == "" || !ValidFingerprint(approval.IdentityProviderFingerprint) || len(approval.AuthoritySources) == 0 || approval.ApprovedAt.IsZero() {
+		identityPresent := approval.IdentityRole != "" || approval.IdentityProviderFingerprint != ""
+		if approval.SchemaVersion != ApprovalSchemaVersion || approval.Fingerprint != Digest(raw) || approval.DeliveryID != deliveryID || approval.PackageFingerprint != packageFingerprint || approval.ManifestFingerprint != manifest.Fingerprint || approval.PlanOutputID != manifest.PlanOutput.ID || approval.PlanFingerprint != manifest.PlanOutput.SHA256 || approval.Actor == "" || approval.AdmissionID == "" || identityPresent && (approval.IdentityRole == "" || !ValidFingerprint(approval.IdentityProviderFingerprint)) || len(approval.AuthoritySources) == 0 || approval.ApprovedAt.IsZero() {
 			result.Approval = Invalid
 			return fail("approval identity is invalid")
 		}
@@ -458,11 +459,20 @@ func outputsSorted(outputs []Output) bool {
 
 func authoritySourcesSorted(sources []AuthoritySource) bool {
 	for index, source := range sources {
-		if source.ID == "" || source.Class == "" || source.Subject == "" || !ValidFingerprint(source.Fingerprint) || index > 0 && sources[index-1].ID >= source.ID {
+		if source.ID == "" || !validAuthorityClass(source.Class) || source.Subject == "" || source.Fingerprint == "" || index > 0 && sources[index-1].ID >= source.ID {
 			return false
 		}
 	}
 	return true
+}
+
+func validAuthorityClass(value string) bool {
+	switch value {
+	case "repository-policy", "human", "autonomy", "external-provider":
+		return true
+	default:
+		return false
+	}
 }
 
 func readRegular(path string) ([]byte, error) {
@@ -680,7 +690,10 @@ func Enumerate(repository string) ([][2]string, error) {
 		if !delivery.IsDir() || !ValidSegment(delivery.Name()) {
 			continue
 		}
-		packages, _ := os.ReadDir(filepath.Join(root, delivery.Name()))
+		packages, err := os.ReadDir(filepath.Join(root, delivery.Name()))
+		if err != nil {
+			return nil, fmt.Errorf("read planning-package delivery %q: %w", delivery.Name(), err)
+		}
 		for _, pkg := range packages {
 			if pkg.IsDir() && ValidFingerprint(pkg.Name()) {
 				result = append(result, [2]string{delivery.Name(), pkg.Name()})

@@ -225,12 +225,12 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		for _, receipt := range admission.Authority.Receipts {
 			approval.AuthoritySources = append(approval.AuthoritySources, planningpackage.AuthoritySource{ID: receipt.ID, Class: string(receipt.Class), Subject: receipt.Subject, Fingerprint: receipt.Fingerprint})
 		}
-		if len(admission.Authority.Receipts) > 0 {
-			approval.IdentityRole = string(admission.Authority.Receipts[0].Class)
-			if len(humanIdentityRole) > 0 && humanIdentityRole[0] != "" {
-				approval.IdentityRole = humanIdentityRole[0]
+		for _, receipt := range admission.Authority.Receipts {
+			if receipt.Subject == approval.Actor && receipt.IdentityRole != "" && receipt.IdentityProviderFingerprint != "" {
+				approval.IdentityRole = receipt.IdentityRole
+				approval.IdentityProviderFingerprint = receipt.IdentityProviderFingerprint
+				break
 			}
-			approval.IdentityProviderFingerprint = admission.Authority.Receipts[0].Fingerprint
 		}
 		approval, raw, encodeErr := planningpackage.SealApproval(approval)
 		if encodeErr != nil {
@@ -246,13 +246,30 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		}
 		state.PlanFingerprint, state.PlanningPackageFingerprint, state.ApprovalFingerprint = manifest.PlanOutput.SHA256, manifest.Fingerprint, approval.Fingerprint
 	case "planning.package.promote":
-		manifest, loadErr := loadPlanningPackageManifestV2(artifactRoot, deliveryID, state.PlanningPackageFingerprint)
+		packagePath := filepath.Join(artifactRoot, "planning-packages", deliveryID, state.PlanningPackageFingerprint)
+		packageRoot, openErr := os.OpenRoot(packagePath)
+		if openErr != nil {
+			return nil, fmt.Errorf("open immutable planning package: %w", openErr)
+		}
+		defer packageRoot.Close()
+		verified := verifyPlanningPackage(layout.RepositoryRoot, deliveryID, state.PlanningPackageFingerprint, nil)
+		if verified.Integrity != planningpackage.Valid || verified.Contract != planningpackage.Valid || verified.Approval != planningpackage.Valid {
+			return nil, fmt.Errorf("planning package verification failed: %s", strings.Join(verified.Diagnostics, "; "))
+		}
+		pinnedInfo, pinnedErr := packageRoot.Stat(".")
+		currentInfo, currentErr := os.Stat(packagePath)
+		if pinnedErr != nil || currentErr != nil || !os.SameFile(pinnedInfo, currentInfo) {
+			return nil, fmt.Errorf("immutable planning package changed during verification")
+		}
+		manifestRaw, loadErr := readRegularPlanningMember(packageRoot, "manifest.json")
 		if loadErr != nil {
 			return nil, loadErr
 		}
-		packageRoot := filepath.Join(artifactRoot, "planning-packages", deliveryID, manifest.Fingerprint)
-		approvalPath := filepath.Join(packageRoot, "approval.json")
-		approvalRaw, readErr := os.ReadFile(approvalPath)
+		var manifest planningpackage.Manifest
+		if decodeErr := planningpackage.StrictDecode(manifestRaw, &manifest); decodeErr != nil || manifest.Fingerprint != state.PlanningPackageFingerprint {
+			return nil, fmt.Errorf("pinned planning package manifest does not bind durable state")
+		}
+		approvalRaw, readErr := readRegularPlanningMember(packageRoot, "approval.json")
 		if readErr != nil {
 			return nil, fmt.Errorf("read planning package approval: %w", readErr)
 		}
@@ -260,11 +277,7 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		if decodeErr := planningpackage.StrictDecode(approvalRaw, &approval); decodeErr != nil || approval.SchemaVersion != planningpackage.ApprovalSchemaVersion || approval.DeliveryID != deliveryID || approval.PackageFingerprint != manifest.Fingerprint || approval.PlanFingerprint != manifest.PlanOutput.SHA256 || approval.Actor == "" || approval.AdmissionID == "" || approval.ApprovedAt.IsZero() {
 			return nil, fmt.Errorf("planning package approval does not bind the exact package")
 		}
-		planArtifact, pathErr := planningPackageOutputPath(packageRoot, manifest.PlanOutput.Path)
-		if pathErr != nil {
-			return nil, pathErr
-		}
-		planRaw, readErr := readRegularWorkspacePlanArtifact(planArtifact)
+		planRaw, readErr := readRegularPlanningMember(packageRoot, manifest.PlanOutput.Path)
 		if readErr != nil || sha256Bytes(planRaw) != manifest.PlanOutput.SHA256 {
 			return nil, fmt.Errorf("planning package plan changed after approval")
 		}
@@ -448,6 +461,19 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		mutations = append(mutations, hostMutations...)
 	}
 	return mutations, nil
+}
+
+var verifyPlanningPackage = planningpackage.Verify
+
+func readRegularPlanningMember(root *os.Root, name string) ([]byte, error) {
+	info, err := root.Lstat(filepath.FromSlash(name))
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("planning package member is not regular: %s", name)
+	}
+	return root.ReadFile(filepath.FromSlash(name))
 }
 
 // prepareWorkspacePlanTransfer carries runtime-owned plan artifacts into a

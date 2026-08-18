@@ -3,8 +3,10 @@ package planningpackage
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func installFixture(t *testing.T) (string, string, string, string) {
@@ -43,6 +45,94 @@ func installFixture(t *testing.T) (string, string, string, string) {
 		}
 	}
 	return repository, delivery, manifest.Fingerprint, workFP
+}
+
+func TestVerifyRejectsContradictoryEmbeddedWorkContractIdentity(t *testing.T) {
+	repository, delivery, fingerprint, _ := installFixture(t)
+	oldRoot := filepath.Join(repository, ".boatstack", "planning-packages", delivery, fingerprint)
+	contractRaw, _ := os.ReadFile(filepath.Join(oldRoot, "contract.json"))
+	var contract Contract
+	if err := StrictDecode(contractRaw, &contract); err != nil {
+		t.Fatal(err)
+	}
+	contract.Work.ID = "embedded-planning"
+	contract.Work.Fingerprint, _ = RuntimeWorkFingerprint(contract.Work)
+	_, contractRaw, _ = SealContract(contract)
+	receiptRaw, _ := os.ReadFile(filepath.Join(oldRoot, "work-receipt.json"))
+	var receipt WorkReceipt
+	if err := StrictDecode(receiptRaw, &receipt); err != nil {
+		t.Fatal(err)
+	}
+	receipt.ContractID = "manifest-planning"
+	receipt.ContractFingerprint = contract.Work.Fingerprint
+	_, receiptRaw, _ = SealWorkReceipt(receipt)
+	manifestRaw, _ := os.ReadFile(filepath.Join(oldRoot, "manifest.json"))
+	var manifest Manifest
+	if err := StrictDecode(manifestRaw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest.WorkContractID = receipt.ContractID
+	manifest.WorkContractFingerprint = contract.Work.Fingerprint
+	manifest.Contract.SHA256 = Digest(contractRaw)
+	manifest.WorkReceipt.SHA256 = Digest(receiptRaw)
+	manifest, manifestRaw, _ = SealManifest(manifest)
+	newRoot := filepath.Join(filepath.Dir(oldRoot), manifest.Fingerprint)
+	if err := os.Rename(oldRoot, newRoot); err != nil {
+		t.Fatal(err)
+	}
+	for name, raw := range map[string][]byte{"contract.json": contractRaw, "work-receipt.json": receiptRaw, "manifest.json": manifestRaw} {
+		if err := os.WriteFile(filepath.Join(newRoot, name), raw, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result := Verify(repository, delivery, manifest.Fingerprint, nil)
+	if result.Integrity != Invalid || result.Contract != Invalid {
+		t.Fatalf("contradictory identity result=%#v", result)
+	}
+}
+
+func TestVerifyApprovalUsesAuthorityReceiptContract(t *testing.T) {
+	repository, delivery, fingerprint, _ := installFixture(t)
+	root := filepath.Join(repository, ".boatstack", "planning-packages", delivery, fingerprint)
+	manifestRaw, _ := os.ReadFile(filepath.Join(root, "manifest.json"))
+	var manifest Manifest
+	if err := StrictDecode(manifestRaw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	approval := Approval{DeliveryID: delivery, PackageFingerprint: fingerprint, ManifestFingerprint: fingerprint, PlanOutputID: manifest.PlanOutput.ID, PlanFingerprint: manifest.PlanOutput.SHA256, AdmissionID: "admission", AuthoritySources: []AuthoritySource{{ID: "human", Class: "human", Subject: "operator", Fingerprint: "human-proof"}}, Actor: "operator", ApprovedAt: time.Unix(100, 0).UTC()}
+	_, raw, _ := SealApproval(approval)
+	if err := os.WriteFile(filepath.Join(root, "approval.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if result := Verify(repository, delivery, fingerprint, nil); result.Approval != Valid || result.Integrity != Valid {
+		t.Fatalf("opaque authority fingerprint result=%#v", result)
+	}
+	approval.AuthoritySources[0].Class = "unknown"
+	_, raw, _ = SealApproval(approval)
+	if err := os.WriteFile(filepath.Join(root, "approval.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if result := Verify(repository, delivery, fingerprint, nil); result.Approval != Invalid {
+		t.Fatalf("unknown authority class result=%#v", result)
+	}
+}
+
+func TestEnumeratePropagatesDeliveryReadFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission mode is Unix-specific")
+	}
+	repository := t.TempDir()
+	delivery := filepath.Join(repository, ".boatstack", "planning-packages", "proof")
+	if err := os.MkdirAll(delivery, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(delivery, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(delivery, 0o700) })
+	if _, err := Enumerate(repository); err == nil {
+		t.Fatal("unreadable delivery directory was silently skipped")
+	}
 }
 
 func TestVerifySeparatesIntegrityApprovalAndCurrentProgram(t *testing.T) {

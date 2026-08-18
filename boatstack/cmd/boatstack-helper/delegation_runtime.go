@@ -210,6 +210,7 @@ func prepareFlowAuthorization(ctx context.Context, request *surfaces.Request) (p
 		request.Authority.Receipts = append(request.Authority.Receipts, protocol.AuthorityReceipt{
 			ID: "delegation-" + hex.EncodeToString(receiptDigest[:8]), Class: authority,
 			Subject: record.Actor, Fingerprint: record.RequestFingerprint, IssuedAt: record.AuthorizedAt, ExpiresAt: record.ExpiresAt,
+			IdentityRole: record.ActorIdentityRole, IdentityProviderFingerprint: record.ActorIdentityProviderFingerprint,
 		})
 	}
 	return lock, nil, nil

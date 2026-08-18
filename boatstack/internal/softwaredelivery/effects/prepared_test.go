@@ -124,6 +124,43 @@ func TestPreparedEffectInstallsAndRecoversPlanningTreeAsOneResource(t *testing.T
 	}
 }
 
+func TestPreparedEffectRestartRollbackRemovesAndCanRestoreAtomicTree(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "package")
+	manifest := filepath.Join(root, "manifest.json")
+	output := filepath.Join(root, "compiled", "tasks.json")
+	if err := os.MkdirAll(filepath.Dir(output), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifest, []byte("manifest"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(output, []byte("tasks"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manifestDelete, err := mutationForExactResource(manifest, nil, "", 0o644, true, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outputDelete, err := mutationForExactResource(output, nil, "", 0o644, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestDelete.AtomicTreeRoot, outputDelete.AtomicTreeRoot = root, root
+	prepared := &preparedEffect{requiredCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite}, effectiveCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite}, mutations: []ports.ResourceMutation{manifestDelete, outputDelete}}
+	if _, err := prepared.Execute(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(root); !os.IsNotExist(err) {
+		t.Fatalf("restart rollback left atomic tree: %v", err)
+	}
+	if err := prepared.Rollback(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if raw, err := os.ReadFile(output); err != nil || string(raw) != "tasks" {
+		t.Fatalf("failed recovery rollback did not restore prior tree: %q, %v", raw, err)
+	}
+}
+
 func TestPreparedEffectPreservesConflictingPlanningTree(t *testing.T) {
 	// control-law: an existing fingerprint path is never replaced by staged installation
 	parent := t.TempDir()

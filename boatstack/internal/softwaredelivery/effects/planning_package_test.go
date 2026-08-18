@@ -68,7 +68,8 @@ func TestPlanningPackageAdmitApprovePromoteUsesExactV2Snapshot(t *testing.T) {
 	}
 
 	approve := catalog.Transition{ID: "planning.package.approve", TargetPhases: []model.ProtocolPhase{model.PhaseActive}, StateEffect: catalog.StateEffect{Kind: catalog.StateEffectNative, NativeHandler: "planning-package-approve"}}
-	approvalAdmission := protocol.Admission{ID: "adm-approve", Objective: objective, IssuedAt: now.Add(time.Minute), Parameters: protocol.Parameters{{Name: "package_fingerprint", Value: state.PlanningPackageFingerprint}}, Authority: protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{ID: "auth", Class: catalog.AuthorityHuman, Subject: "reviewer", Fingerprint: strings.Repeat("f", 64), IssuedAt: now}}}}
+	providerFingerprint := strings.Repeat("9", 64)
+	approvalAdmission := protocol.Admission{ID: "adm-approve", Objective: objective, IssuedAt: now.Add(time.Minute), Parameters: protocol.Parameters{{Name: "package_fingerprint", Value: state.PlanningPackageFingerprint}}, Authority: protocol.AuthorityBundle{Receipts: []protocol.AuthorityReceipt{{ID: "auth", Class: catalog.AuthorityHuman, Subject: "reviewer", Fingerprint: "human-proof", IdentityRole: "developer", IdentityProviderFingerprint: providerFingerprint, IssuedAt: now}}}}
 	if err := applyStateTransition(&state, approvalAdmission, approve); err != nil {
 		t.Fatal(err)
 	}
@@ -81,10 +82,36 @@ func TestPlanningPackageAdmitApprovePromoteUsesExactV2Snapshot(t *testing.T) {
 	if result.Approval != planningpackage.Valid {
 		t.Fatalf("approval verification=%#v", result)
 	}
+	var recordedApproval planningpackage.Approval
+	if err := planningpackage.StrictDecode(approvalRawAt(t, packageRoot), &recordedApproval); err != nil || recordedApproval.IdentityRole != "developer" || recordedApproval.IdentityProviderFingerprint != providerFingerprint {
+		t.Fatalf("approval identity provenance=%#v err=%v", recordedApproval, err)
+	}
 
 	promote := catalog.Transition{ID: "planning.package.promote", TargetPhases: []model.ProtocolPhase{model.PhaseActive}, StateEffect: catalog.StateEffect{Kind: catalog.StateEffectNative, NativeHandler: "planning-package-promote"}}
 	promotion := protocol.Admission{ID: "adm-promote", Objective: objective, IssuedAt: now.Add(2 * time.Minute)}
 	if err := applyStateTransition(&state, promotion, promote); err != nil {
+		t.Fatal(err)
+	}
+	originalVerify := verifyPlanningPackage
+	swappedRoot := packageRoot + ".swapped"
+	verifyPlanningPackage = func(repository, deliveryID, packageFingerprint string, current *planningpackage.CurrentProgram) planningpackage.Result {
+		result := originalVerify(repository, deliveryID, packageFingerprint, current)
+		if err := os.Rename(packageRoot, swappedRoot); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(packageRoot, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	if _, err := prepareArtifacts(layout, promotion, promote, &state); err == nil || !strings.Contains(err.Error(), "changed during verification") {
+		t.Fatalf("package replacement was not rejected: %v", err)
+	}
+	verifyPlanningPackage = originalVerify
+	if err := os.Remove(packageRoot); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(swappedRoot, packageRoot); err != nil {
 		t.Fatal(err)
 	}
 	mutations, err = prepareArtifacts(layout, promotion, promote, &state)

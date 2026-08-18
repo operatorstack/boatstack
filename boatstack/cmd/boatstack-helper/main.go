@@ -920,6 +920,7 @@ func loadAuthority(options commandOptions, correlation string, objective model.O
 		fingerprint := hash([]byte(strings.Join([]string{correlation, objective.ID, options.transitionID, options.humanActor, options.humanIdentityRole, options.humanIdentityProviderFingerprint, string(parameterRaw)}, "\x00")))
 		bundle.Receipts = append(bundle.Receipts, protocol.AuthorityReceipt{
 			ID: "human-" + fingerprint[:16], Class: catalog.AuthorityHuman, Subject: options.humanActor, Fingerprint: fingerprint,
+			IdentityRole: options.humanIdentityRole, IdentityProviderFingerprint: options.humanIdentityProviderFingerprint,
 			IssuedAt: now, ExpiresAt: now.Add(5 * time.Minute),
 		})
 	}

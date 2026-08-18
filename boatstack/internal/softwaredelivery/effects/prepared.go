@@ -25,12 +25,18 @@ type preparedEffect struct {
 	verifyInvocation      *model.InvocationContext
 	applied               []ports.ResourceMutation
 	appliedTreeRoots      []string
+	removedTreeGroups     []atomicTreeRemoval
 	boundarySettled       bool
 	effectResult          ports.EffectResult
 	transition            catalog.Transition
 	requiredCapabilities  []catalog.Capability
 	effectiveCapabilities []catalog.Capability
 	changedStateFacets    []model.StateFacet
+}
+
+type atomicTreeRemoval struct {
+	root      string
+	mutations []ports.ResourceMutation
 }
 
 func (p *preparedEffect) ChangedStateFacets() []model.StateFacet {
@@ -142,6 +148,27 @@ func (p *preparedEffect) Execute(ctx context.Context) (ports.EffectResult, error
 	sort.Strings(treeRoots)
 	for _, root := range treeRoots {
 		group := treeGroups[root]
+		allDelete := true
+		for _, mutation := range group {
+			allDelete = allDelete && mutation.Delete && mutation.TargetLink == "" && len(mutation.Target) == 0
+		}
+		if allDelete {
+			for _, mutation := range group {
+				relative, err := filepath.Rel(root, mutation.Path)
+				if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+					return result, fmt.Errorf("atomic tree deletion contains member outside root: %s", mutation.Path)
+				}
+			}
+			if err := os.RemoveAll(root); err != nil {
+				return result, fmt.Errorf("remove immutable resource tree %s: %w", root, err)
+			}
+			if err := syncDirectory(filepath.Dir(root)); err != nil {
+				return result, fmt.Errorf("sync immutable resource tree parent %s: %w", root, err)
+			}
+			p.applied = append(p.applied, group...)
+			p.removedTreeGroups = append(p.removedTreeGroups, atomicTreeRemoval{root: root, mutations: group})
+			continue
+		}
 		allExisting := true
 		for _, mutation := range group {
 			allExisting = allExisting && mutation.PriorExists
@@ -201,6 +228,9 @@ func (p *preparedEffect) Rollback(context.Context) error {
 	}
 	for index := len(p.applied) - 1; index >= 0; index-- {
 		mutation := p.applied[index]
+		if mutation.AtomicTreeRoot != "" {
+			continue
+		}
 		if mutation.PriorLink != "" {
 			if err := atomicSymlink(mutation.Path, mutation.PriorLink); err != nil {
 				rollbackErrors = append(rollbackErrors, err)
@@ -213,8 +243,24 @@ func (p *preparedEffect) Rollback(context.Context) error {
 			rollbackErrors = append(rollbackErrors, err)
 		}
 	}
+	for index := len(p.removedTreeGroups) - 1; index >= 0; index-- {
+		removed := p.removedTreeGroups[index]
+		restore := make([]ports.ResourceMutation, 0, len(removed.mutations))
+		for _, mutation := range removed.mutations {
+			if !mutation.PriorExists {
+				continue
+			}
+			restore = append(restore, ports.ResourceMutation{Path: mutation.Path, Target: mutation.Prior, TargetLink: mutation.PriorLink, Mode: mutation.Mode, InstallLast: mutation.InstallLast, AtomicTreeRoot: removed.root})
+		}
+		if len(restore) > 0 {
+			if err := atomicInstallTree(removed.root, restore); err != nil {
+				rollbackErrors = append(rollbackErrors, err)
+			}
+		}
+	}
 	p.applied = nil
 	p.appliedTreeRoots = nil
+	p.removedTreeGroups = nil
 	if p.boundarySettled {
 		rollbackErrors = append(rollbackErrors, fmt.Errorf("external effect settled and requires reconciliation or compensation"))
 	}
