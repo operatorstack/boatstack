@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -294,10 +295,15 @@ func ValidateOutputPaths(outputs []WorkOutput) error {
 }
 
 func safeRelative(value string) bool {
-	if value == "" || filepath.IsAbs(value) || filepath.Clean(value) != value || value == "." {
+	if value == "" || strings.Contains(value, `\`) || pathpkg.IsAbs(value) || hasWindowsVolumePrefix(value) {
 		return false
 	}
-	return value != ".." && !strings.HasPrefix(value, ".."+string(filepath.Separator)) && !strings.Contains(value, `\`)
+	clean := pathpkg.Clean(value)
+	return clean != "." && clean != ".." && !strings.HasPrefix(clean, "../") && clean == value
+}
+
+func hasWindowsVolumePrefix(value string) bool {
+	return len(value) >= 2 && value[1] == ':' && ((value[0] >= 'a' && value[0] <= 'z') || (value[0] >= 'A' && value[0] <= 'Z'))
 }
 
 func Verify(repository, deliveryID, packageFingerprint string, current *CurrentProgram) Result {

@@ -57,6 +57,29 @@ func TestVerifySeparatesIntegrityApprovalAndCurrentProgram(t *testing.T) {
 	}
 }
 
+func TestSafeRelativeUsesPortableContractPathSemantics(t *testing.T) {
+	tests := []struct {
+		value string
+		want  bool
+	}{
+		{value: "compiled/evidence.md", want: true},
+		{value: "/absolute", want: false},
+		{value: "../escape", want: false},
+		{value: "a/../escape", want: false},
+		{value: `a\escape`, want: false},
+		{value: "C:/escape", want: false},
+		{value: "C:escape", want: false},
+		{value: "a//escape", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.value, func(t *testing.T) {
+			if got := safeRelative(test.value); got != test.want {
+				t.Fatalf("safeRelative(%q) = %v, want %v", test.value, got, test.want)
+			}
+		})
+	}
+}
+
 func TestVerifyRejectsIndependentTampering(t *testing.T) {
 	cases := []string{"manifest.json", "contract.json", "work-receipt.json", "plan.md"}
 	for _, name := range cases {
