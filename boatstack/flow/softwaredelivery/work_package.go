@@ -83,6 +83,7 @@ func acceptedWorkTransitions(transitions map[string]delivery.Transition) ([]deli
 		model.FacetPlan, string(model.PlanAbsent),
 	)
 	promote.TargetConditions = replaceFacet(promote.TargetConditions, model.FacetPlan, string(model.PlanApproved))
+	promote.TargetIDs = appendUniqueTarget(promote.TargetIDs, model.ObjectiveApprovedPlan)
 	promote.OwnedResources = []string{"plan", "planning-package-promotion"}
 	promote.Interruption.ResumptionPredicate = "recovery-contract-for:" + PlanningPackagePromote
 
