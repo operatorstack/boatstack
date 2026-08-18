@@ -94,25 +94,36 @@ func TestPlanningPackageAdmitApprovePromoteUsesExactV2Snapshot(t *testing.T) {
 	}
 	originalVerify := verifyPlanningPackage
 	swappedRoot := packageRoot + ".swapped"
+	replacementPerformed := false
+	var replacementBlocked error
 	verifyPlanningPackage = func(repository, deliveryID, packageFingerprint string, current *planningpackage.CurrentProgram) planningpackage.Result {
 		result := originalVerify(repository, deliveryID, packageFingerprint, current)
 		if err := os.Rename(packageRoot, swappedRoot); err != nil {
-			t.Fatal(err)
+			replacementBlocked = err
+			return result
 		}
+		replacementPerformed = true
 		if err := os.Mkdir(packageRoot, 0o700); err != nil {
 			t.Fatal(err)
 		}
 		return result
 	}
-	if _, err := prepareArtifacts(layout, promotion, promote, &state); err == nil || !strings.Contains(err.Error(), "changed during verification") {
-		t.Fatalf("package replacement was not rejected: %v", err)
+	_, raceErr := prepareArtifacts(layout, promotion, promote, &state)
+	if replacementPerformed {
+		if raceErr == nil || !strings.Contains(raceErr.Error(), "changed during verification") {
+			t.Fatalf("package replacement was not rejected: %v", raceErr)
+		}
+	} else if replacementBlocked == nil || raceErr != nil {
+		t.Fatalf("host neither blocked replacement nor completed safe promotion: blocked=%v promotion=%v", replacementBlocked, raceErr)
 	}
 	verifyPlanningPackage = originalVerify
-	if err := os.Remove(packageRoot); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Rename(swappedRoot, packageRoot); err != nil {
-		t.Fatal(err)
+	if replacementPerformed {
+		if err := os.Remove(packageRoot); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(swappedRoot, packageRoot); err != nil {
+			t.Fatal(err)
+		}
 	}
 	mutations, err = prepareArtifacts(layout, promotion, promote, &state)
 	if err != nil {
