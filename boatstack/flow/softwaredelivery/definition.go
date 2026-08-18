@@ -110,7 +110,11 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 				return delivery.ProgramRuntimeManifest{}, fmt.Errorf("transition %q foreground work: %w", declaration.ID, err)
 			}
 			if transition.ID == PlanningPackageAdmit {
-				if err := validatePlanningPackageWorkContract(*transition.Work); err != nil {
+				planOutput, bindingErr := planningPackagePlanOutput(declaration.Parameters)
+				if bindingErr != nil {
+					return delivery.ProgramRuntimeManifest{}, fmt.Errorf("transition %q foreground work: %w", declaration.ID, bindingErr)
+				}
+				if err := validatePlanningPackageWorkContract(*transition.Work, planOutput); err != nil {
 					return delivery.ProgramRuntimeManifest{}, fmt.Errorf("transition %q foreground work: %w", declaration.ID, err)
 				}
 			}
@@ -203,6 +207,9 @@ func RuntimeWorkContract(declaration controlprogram.WorkContract) (*delivery.Wor
 	}
 	for _, output := range declaration.Outputs {
 		runtimeOutput := delivery.WorkOutput{ID: output.ID, Path: output.Path, MediaType: output.MediaType, Required: output.Required, MaxBytes: output.MaxBytes}
+		if output.Guidance != nil {
+			runtimeOutput.GuidancePath, runtimeOutput.GuidanceSHA256, runtimeOutput.GuidanceContent = output.Guidance.Path, output.Guidance.SHA256, output.Guidance.Content
+		}
 		if output.Schema != nil {
 			runtimeOutput.SchemaPath, runtimeOutput.SchemaSHA256, runtimeOutput.SchemaContent = output.Schema.Path, output.Schema.SHA256, output.Schema.Content
 		}

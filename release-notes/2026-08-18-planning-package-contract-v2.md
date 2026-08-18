@@ -1,0 +1,2 @@
+### Planning-package contract v2
+Repositories can attach content-bound guidance to individual foreground-work outputs and explicitly designate the canonical plan output. Planning packages are now immutable fingerprint-addressed snapshots with embedded contracts and portable work receipts, exact one-time approvals, and an offline verification command. This is a breaking alpha change: repositories must adopt the v2 `planningPackage` definition and regenerate prior planning-package state.

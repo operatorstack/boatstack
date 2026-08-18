@@ -1,19 +1,19 @@
 package softwaredelivery
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
-	"path"
-	"path/filepath"
 	"regexp"
 	"strings"
 
+	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	"github.com/operatorstack/boatstack/boatstack/delivery"
+	planningpackage "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery/planningpackage"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 )
 
 var planningPackageSegment = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+
+const planningPackagePlanOutputResolverPrefix = ParameterResolverPrefix + "planning-package-plan-output/"
 
 const (
 	PlanningPackageAdmit   = "planning.package.admit"
@@ -40,6 +40,7 @@ func planningPackageTransitions(transitions map[string]delivery.Transition) ([]d
 	// The planning-package effect consumes exact foreground-work evidence. The
 	// plan.create parameter contract is not part of this derived operation.
 	admit.Parameters = nil
+	admit.Parameters = []delivery.ParameterSpec{{Name: "plan_output", Required: true}}
 	admit.LocalEffects = []delivery.EffectID{PlanningPackageAdmit}
 	admit.Prescription.Operation = PlanningPackageAdmit
 	admit.Prescription.ExpectedPostcondition = "a schema-valid planning package is admitted"
@@ -98,44 +99,35 @@ func replacePlanCondition(values []delivery.FacetCondition, state model.PlanStat
 	return result
 }
 
-func validatePlanningPackageWorkContract(work delivery.WorkContract) error {
+func validatePlanningPackageWorkContract(work delivery.WorkContract, planOutputID string) error {
+	outputs := make([]planningpackage.WorkOutput, 0, len(work.Outputs))
 	var planOutput *delivery.WorkOutput
 	for index := range work.Outputs {
 		output := &work.Outputs[index]
-		for _, reserved := range []string{"manifest.json", "approval.json"} {
-			if output.Path == reserved || strings.HasPrefix(output.Path, reserved+"/") || strings.HasPrefix(reserved, output.Path+"/") {
-				return fmt.Errorf("output %q conflicts with runtime-owned planning-package metadata %q", output.ID, reserved)
-			}
-		}
-		if output.ID == "plan" {
+		outputs = append(outputs, planningpackage.WorkOutput{ID: output.ID, Path: output.Path, MaxBytes: output.MaxBytes})
+		if output.ID == planOutputID {
 			planOutput = output
 		}
 	}
-	if planOutput == nil || !planOutput.Required {
-		return fmt.Errorf("planning-package admission requires a required output named %q", "plan")
+	if err := planningpackage.ValidateOutputPaths(outputs); err != nil {
+		return err
 	}
-	if path.Clean(planOutput.Path) != planOutput.Path || planOutput.Path == "." {
-		return fmt.Errorf("planning-package plan output path is not canonical")
+	if planOutput == nil || !planOutput.Required {
+		return fmt.Errorf("planning-package admission requires designated output %q to exist exactly once and be required", planOutputID)
 	}
 	return nil
 }
 
-// PlanningPackageFingerprint reads the current repository package projection.
-// Effect preflight independently verifies the complete manifest before any
-// mutation; this helper only binds the candidate parameter for continuation.
-func PlanningPackageFingerprint(repository, deliveryID string) (string, error) {
-	if !planningPackageSegment.MatchString(deliveryID) {
-		return "", fmt.Errorf("invalid planning package delivery identity")
+func planningPackagePlanOutput(bindings []controlprogram.TransitionParameterBinding) (string, error) {
+	for _, binding := range bindings {
+		if binding.Parameter != "plan_output" || binding.Producer.Kind != controlprogram.ParameterSourceTrustedResolver || binding.Producer.Binding == nil {
+			continue
+		}
+		value, ok := strings.CutPrefix(binding.Producer.Binding.Reference, planningPackagePlanOutputResolverPrefix)
+		if !ok || !planningPackageSegment.MatchString(value) {
+			return "", fmt.Errorf("planning-package plan output binding is invalid")
+		}
+		return value, nil
 	}
-	raw, err := os.ReadFile(filepath.Join(repository, ".boatstack", "planning-packages", deliveryID, "manifest.json"))
-	if err != nil {
-		return "", err
-	}
-	var projection struct {
-		Fingerprint string `json:"fingerprint"`
-	}
-	if err := json.Unmarshal(raw, &projection); err != nil || len(projection.Fingerprint) != 64 {
-		return "", fmt.Errorf("planning package manifest has no valid fingerprint")
-	}
-	return projection.Fingerprint, nil
+	return "", fmt.Errorf("planning-package admit requires an explicit plan_output binding")
 }

@@ -99,6 +99,55 @@ func TestPreparedEffectRefusesMissingKernelCapabilityBeforeAnyEffect(t *testing.
 	}
 }
 
+func TestPreparedEffectInstallsAndRecoversPlanningTreeAsOneResource(t *testing.T) {
+	// control-law: recovery removes only the immutable tree created by this transaction
+	root := filepath.Join(t.TempDir(), "package")
+	prepared := &preparedEffect{
+		requiredCapabilities:  []catalog.Capability{catalog.CapabilityRepositoryWrite},
+		effectiveCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite},
+		mutations: []ports.ResourceMutation{
+			{Path: filepath.Join(root, "manifest.json"), Target: []byte("manifest"), Mode: 0o644, AtomicTreeRoot: root, InstallLast: true},
+			{Path: filepath.Join(root, "compiled", "tasks.json"), Target: []byte("tasks"), Mode: 0o644, AtomicTreeRoot: root},
+		},
+	}
+	if _, err := prepared.Execute(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if raw, err := os.ReadFile(filepath.Join(root, "compiled", "tasks.json")); err != nil || string(raw) != "tasks" {
+		t.Fatalf("installed tree member = %q, %v", raw, err)
+	}
+	if err := prepared.Rollback(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(root); !os.IsNotExist(err) {
+		t.Fatalf("transaction-created tree survived recovery: %v", err)
+	}
+}
+
+func TestPreparedEffectPreservesConflictingPlanningTree(t *testing.T) {
+	// control-law: an existing fingerprint path is never replaced by staged installation
+	parent := t.TempDir()
+	root := filepath.Join(parent, "package")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	prior := filepath.Join(root, "manifest.json")
+	if err := os.WriteFile(prior, []byte("prior"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prepared := &preparedEffect{
+		requiredCapabilities:  []catalog.Capability{catalog.CapabilityRepositoryWrite},
+		effectiveCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite},
+		mutations:             []ports.ResourceMutation{{Path: prior, Target: []byte("candidate"), Mode: 0o644, AtomicTreeRoot: root}},
+	}
+	if _, err := prepared.Execute(context.Background()); err == nil {
+		t.Fatal("conflicting immutable tree was replaced")
+	}
+	if raw, err := os.ReadFile(prior); err != nil || string(raw) != "prior" {
+		t.Fatalf("conflicting tree changed: %q, %v", raw, err)
+	}
+}
+
 func TestPreparedEffectReportsOnlyActuallyAppliedEffects(t *testing.T) {
 	root := t.TempDir()
 	target := filepath.Join(root, "state.json")

@@ -311,17 +311,26 @@ func TestGeneratedProjectionsProjectForegroundWorkProtocolWithHostParity(t *test
 		Work:    []controlprogram.WorkContract{{ID: "diagnose"}},
 		Entries: []controlprogram.Entry{{ID: "respond", Target: "mitigated"}},
 	}}
-	files, err := softwareflow.GenerateProjections(compiled, []hostprojection.ID{hostprojection.Codex, hostprojection.Claude})
+	files, err := softwareflow.GenerateProjections(compiled, hostprojection.CanonicalIDs())
 	if err != nil {
 		t.Fatal(err)
 	}
-	codex := string(files[".agents/skills/incident-response-respond/SKILL.md"])
-	claude := string(files[".claude/skills/incident-response-respond/SKILL.md"])
-	for _, contract := range []string{"not as a second Flow", "flow work input-required", "flow work answer", "flow work complete", "flow work block", "An answer is evidence, never authority", "Never edit the work record directly"} {
-		if !strings.Contains(codex, contract) {
-			t.Fatalf("generated foreground-work skill lacks %q", contract)
+	paths := map[string]string{
+		"codex":  ".agents/skills/incident-response-respond/SKILL.md",
+		"claude": ".claude/skills/incident-response-respond/SKILL.md",
+		"cursor": ".cursor/commands/incident-response-respond.md",
+		"gemini": ".gemini/skills/incident-response-respond/SKILL.md",
+	}
+	for host, path := range paths {
+		projection := string(files[path])
+		for _, contract := range []string{"not as a second Flow", "artifact-local guidance", "grants no authority", "does not verify an output", "flow work input-required", "flow work answer", "flow work complete", "flow work block", "An answer is evidence, never authority", "Never edit the work record directly"} {
+			if !strings.Contains(projection, contract) {
+				t.Fatalf("%s foreground-work projection lacks %q", host, contract)
+			}
 		}
 	}
+	codex := string(files[paths["codex"]])
+	claude := string(files[paths["claude"]])
 	if strings.ReplaceAll(codex, "--host codex", "--host HOST") != strings.ReplaceAll(claude, "--host claude", "--host HOST") {
 		t.Fatal("Codex and Claude foreground-work projections differ")
 	}

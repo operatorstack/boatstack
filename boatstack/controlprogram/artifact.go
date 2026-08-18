@@ -17,7 +17,7 @@ import (
 
 const (
 	ArtifactSchemaName     = "control-program-artifact"
-	ArtifactSchemaRevision = 6
+	ArtifactSchemaRevision = 7
 )
 
 type Artifact struct {
@@ -216,6 +216,9 @@ func workAssetBindings(document Document) map[string]string {
 	for _, contract := range document.Work {
 		result[contract.Instructions.Path] = contract.Instructions.SHA256
 		for _, output := range contract.Outputs {
+			if output.Guidance != nil {
+				result[output.Guidance.Path] = output.Guidance.SHA256
+			}
 			if output.Schema != nil {
 				result[output.Schema.Path] = output.Schema.SHA256
 			}

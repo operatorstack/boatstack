@@ -47,6 +47,9 @@ type WorkEvidence struct {
 	RequestID           string               `json:"request_id"`
 	RequestFingerprint  string               `json:"request_fingerprint"`
 	ResultFingerprint   string               `json:"result_fingerprint"`
+	RunID               string               `json:"run_id,omitempty"`
+	ProgramID           string               `json:"program_id,omitempty"`
+	EntryID             string               `json:"entry_id,omitempty"`
 	ContractID          string               `json:"contract_id"`
 	ContractFingerprint string               `json:"contract_fingerprint"`
 	TransitionID        catalog.TransitionID `json:"transition_id"`

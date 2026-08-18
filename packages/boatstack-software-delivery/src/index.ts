@@ -125,6 +125,46 @@ export const planningPackagePromote: TrustedStep = {
   priority: 45,
 };
 
+/** Repository-owned foreground-work contract and explicit canonical plan output. */
+export interface PlanningPackageDefinition {
+  work: WorkContract;
+  planOutput: string;
+}
+
+function validatePlanningPackage(planning: PlanningPackageDefinition): void {
+  const { work, planOutput } = planning;
+  if (!/^[a-z][a-z0-9._-]*$/.test(planOutput)) {
+    throw new Error(
+      "SOFTWARE_DELIVERY_PLAN_OUTPUT_INVALID: planOutput must be a canonical semantic artifact ID",
+    );
+  }
+  const selected = work.outputs.filter((output) => output.id === planOutput);
+  if (selected.length !== 1 || !selected[0].required) {
+    throw new Error(
+      "SOFTWARE_DELIVERY_PLAN_OUTPUT_REQUIRED: planOutput must select exactly one required output",
+    );
+  }
+  const paths = new Map<string, string>();
+  const reserved = ["manifest.json", "contract.json", "work-receipt.json", "approval.json"];
+  for (const output of work.outputs) {
+    const path = output.path.toLowerCase();
+    if (path.length === 0 || path.startsWith("/") || path.includes("\\") || path.split("/").some((part) => part === "" || part === "." || part === "..")) {
+      throw new Error(`SOFTWARE_DELIVERY_OUTPUT_PATH_INVALID: ${JSON.stringify(output.path)}`);
+    }
+    for (const owned of reserved) {
+      if (path === owned || path.startsWith(`${owned}/`) || owned.startsWith(`${path}/`)) {
+        throw new Error(`SOFTWARE_DELIVERY_OUTPUT_PATH_RESERVED: ${JSON.stringify(output.path)}`);
+      }
+    }
+    for (const [prior, id] of paths) {
+      if (path === prior || path.startsWith(`${prior}/`) || prior.startsWith(`${path}/`)) {
+        throw new Error(`SOFTWARE_DELIVERY_OUTPUT_PATH_CONFLICT: ${JSON.stringify(id)} and ${JSON.stringify(output.id)}`);
+      }
+    }
+    paths.set(path, output.id);
+  }
+}
+
 /**
  * Repository-owned policy composed with canonical software-delivery wiring.
  *
@@ -146,8 +186,8 @@ export interface SoftwareDeliveryFlowDefinition {
   description?: string;
   /** Explicit trusted lifecycle membership and repository-selected priorities. */
   lifecycle: TrustedStep[];
-  /** Foreground work bound specifically to `planning.package.admit`. */
-  planningPackageWork?: WorkContract;
+  /** Foreground work and explicit canonical plan output bound to admission. */
+  planningPackage?: PlanningPackageDefinition;
   /** Additional explicit work contracts, in repository-selected order. */
   work?: WorkContract[];
   /** Explicit repository completion predicates. */
@@ -189,8 +229,8 @@ function validateSoftwareDeliveryDefinition(
   }
 
   const workIDs = new Set<string>();
-  const work = definition.planningPackageWork
-    ? [definition.planningPackageWork, ...(definition.work ?? [])]
+  const work = definition.planningPackage
+    ? [definition.planningPackage.work, ...(definition.work ?? [])]
     : definition.work ?? [];
   for (const contract of work) {
     if (workIDs.has(contract.id)) {
@@ -202,12 +242,20 @@ function validateSoftwareDeliveryDefinition(
   }
 
   if (
-    definition.planningPackageWork &&
+    definition.planningPackage &&
     !lifecycleIDs.has(planningPackageAdmit.id)
   ) {
     throw new Error(
-      "SOFTWARE_DELIVERY_PLANNING_WORK_UNUSED: planningPackageWork requires exactly one planning.package.admit lifecycle step",
+      "SOFTWARE_DELIVERY_PLANNING_PACKAGE_UNUSED: planningPackage requires planning.package.admit in lifecycle",
     );
+  }
+  if (!definition.planningPackage && lifecycleIDs.has(planningPackageAdmit.id)) {
+    throw new Error(
+      "SOFTWARE_DELIVERY_PLANNING_PACKAGE_REQUIRED: planning.package.admit requires planningPackage",
+    );
+  }
+  if (definition.planningPackage) {
+	validatePlanningPackage(definition.planningPackage);
   }
 
   const additionalWorkIDs = new Set(
@@ -224,12 +272,12 @@ function validateSoftwareDeliveryDefinition(
       );
     }
     if (
-      definition.planningPackageWork &&
+      definition.planningPackage &&
       (step.id === planningPackageAdmit.id ||
-        step.work === definition.planningPackageWork.id)
+        step.work === definition.planningPackage.work.id)
     ) {
       throw new Error(
-        `SOFTWARE_DELIVERY_WORK_CONFLICT: ${JSON.stringify(step.id)} cannot replace or repeat planningPackageWork`,
+        `SOFTWARE_DELIVERY_WORK_CONFLICT: ${JSON.stringify(step.id)} cannot replace or repeat planningPackage.work`,
       );
     }
     if (!additionalWorkIDs.has(step.work)) {
@@ -278,11 +326,11 @@ export function softwareDelivery(
   validateSoftwareDeliveryDefinition(definition);
 
   const inputResolvers = referencedInputResolvers(definition.entries);
-  const work = definition.planningPackageWork
-    ? [definition.planningPackageWork, ...(definition.work ?? [])]
+  const work = definition.planningPackage
+    ? [definition.planningPackage.work, ...(definition.work ?? [])]
     : [...(definition.work ?? [])];
   const transitions = trustedSoftwareDeliveryTransitions(definition.lifecycle, {
-    planningPackageWork: definition.planningPackageWork,
+    planningPackage: definition.planningPackage,
   }).map((transitionDefinition, index) => {
     const workID = definition.lifecycle[index].work;
     return workID === undefined
@@ -616,15 +664,36 @@ export function trustedSoftwareDeliveryTransition(
  */
 export function trustedSoftwareDeliveryTransitions(
   steps: TrustedStep[],
-  options: { planningPackageWork?: WorkContract } = {},
+  options: { planningPackage?: PlanningPackageDefinition } = {},
 ): TransitionDefinition[] {
-  return steps.map((step) =>
-    trustedSoftwareDeliveryTransition(step, {
-      ...(step.id === planningPackageAdmit.id && options.planningPackageWork
-        ? { work: options.planningPackageWork }
-        : {}),
-    }),
-  );
+  const hasAdmit = steps.some((step) => step.id === planningPackageAdmit.id);
+  if (hasAdmit && !options.planningPackage) {
+    throw new Error("SOFTWARE_DELIVERY_PLANNING_PACKAGE_REQUIRED: planning.package.admit requires planningPackage");
+  }
+  if (!hasAdmit && options.planningPackage) {
+    throw new Error("SOFTWARE_DELIVERY_PLANNING_PACKAGE_UNUSED: planningPackage requires planning.package.admit");
+  }
+  if (options.planningPackage) validatePlanningPackage(options.planningPackage);
+  return steps.map((step) => {
+    const planning = step.id === planningPackageAdmit.id ? options.planningPackage : undefined;
+    const result = trustedSoftwareDeliveryTransition(step, {
+      ...(planning ? { work: planning.work } : {}),
+    });
+    if (!planning) return result;
+    return {
+      ...result,
+      parameters: [
+        ...(result.parameters ?? []),
+        {
+          parameter: "plan_output",
+          producer: trustedParameterResolver(
+            `${bindingPrefix}planning-package-plan-output/${planning.planOutput}`,
+            "1",
+          ),
+        },
+      ],
+    };
+  });
 }
 
 /**

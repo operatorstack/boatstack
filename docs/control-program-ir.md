@@ -6,7 +6,7 @@ Boatstack separates authoring languages from executable semantics:
 TypeScript Flow -> raw Control Program IR -> Go canonicalizer -> committed artifact -> kernel
 ```
 
-The `control-program` schema is currently `schema_revision: 6`. It is
+The `control-program` schema is currently `schema_revision: 7`. It is
 domain-neutral and declares
 typed facets, evidence relations, predicate ASTs, operators, capabilities,
 authority, effects, verification, recovery, bounded foreground work,
@@ -86,7 +86,7 @@ execute `flow.ts`. The artifact filename comes from the declared program ID,
 not the source filename.
 
 The artifact binds the source hash, compiler version, dependency-lock hash,
-foreground-work instruction and schema assets, trusted operator fingerprints,
+foreground-work instruction, artifact-guidance, and schema assets, trusted operator fingerprints,
 canonical program fingerprint, and generated skill hashes. Unknown fields,
 duplicate declarations, invalid references,
 undeclared inline effects, missing recovery, binding drift, and generated-file

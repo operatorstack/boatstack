@@ -2,8 +2,6 @@ package softwaredelivery
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -18,14 +16,6 @@ func TestAdmittedPlanningPackageFingerprintMaterializesManifestIdentity(t *testi
 	deliveryID := "todo-plan"
 	manifestFingerprint := strings.Repeat("a", 64)
 	workResultFingerprint := strings.Repeat("b", 64)
-	root := filepath.Join(repository, ".boatstack", "planning-packages", deliveryID)
-	if err := os.MkdirAll(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	manifest := []byte(`{"work_result_fingerprint":"` + workResultFingerprint + `","fingerprint":"` + manifestFingerprint + `"}`)
-	if err := os.WriteFile(filepath.Join(root, "manifest.json"), manifest, 0o600); err != nil {
-		t.Fatal(err)
-	}
 	resolver, err := NewResolver(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -44,6 +34,7 @@ func TestAdmittedPlanningPackageFingerprintMaterializesManifestIdentity(t *testi
 			RunID: "run-package", ProgramFingerprint: strings.Repeat("c", 64), ExecutionProgramFingerprint: strings.Repeat("d", 64),
 			EntryID: "run", TargetID: "published-pr", TransitionID: PlanningPackageApprove, StateRevision: 7,
 			ContextFingerprint: strings.Repeat("e", 64), ExecutionScopeFingerprint: strings.Repeat("f", 64),
+			State: map[string]invocation.Value{"planning_package_fingerprint": {Canonical: manifestFingerprint, Provenance: "durable-state:planning_package_fingerprint"}},
 		},
 		RuntimeParameterResolver{Context: context.Background(), Repository: repository, DeliveryID: deliveryID, Binding: resolver},
 	)

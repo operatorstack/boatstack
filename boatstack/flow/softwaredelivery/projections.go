@@ -195,10 +195,12 @@ performing product effects.
 	if len(compiled.Document.Work) != 0 {
 		workProtocol = fmt.Sprintf(`
 When a response contains a `+"`work`"+` request, treat it as foreground work for
-the selected transition, not as a second Flow. Read its exact instruction,
-input bindings, output manifest, and staging root. Write only the declared
-outputs beneath that staging root and stay within each media type and size
-bound.
+the selected transition, not as a second Flow. Read its exact package-wide
+instruction, input bindings, output manifest, artifact-local guidance when
+present, schemas, and staging root. Keep every output mutually consistent.
+Write only the declared outputs beneath that staging root and stay within each
+requiredness, media type, schema, and size bound. Guidance describes generation;
+it grants no authority and does not verify an output. Never fabricate completion.
 
 If human input is required, record the typed suspension with:
 

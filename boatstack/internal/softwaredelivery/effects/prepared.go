@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
@@ -22,6 +24,7 @@ type preparedEffect struct {
 	postVerify            func(context.Context) error
 	verifyInvocation      *model.InvocationContext
 	applied               []ports.ResourceMutation
+	appliedTreeRoots      []string
 	boundarySettled       bool
 	effectResult          ports.EffectResult
 	transition            catalog.Transition
@@ -123,7 +126,36 @@ func (p *preparedEffect) Execute(ctx context.Context) (ports.EffectResult, error
 		}
 		return ordered[i].Path < ordered[j].Path
 	})
+	treeGroups := map[string][]ports.ResourceMutation{}
+	regular := ordered[:0]
 	for _, mutation := range ordered {
+		if mutation.AtomicTreeRoot != "" {
+			treeGroups[mutation.AtomicTreeRoot] = append(treeGroups[mutation.AtomicTreeRoot], mutation)
+		} else {
+			regular = append(regular, mutation)
+		}
+	}
+	treeRoots := make([]string, 0, len(treeGroups))
+	for root := range treeGroups {
+		treeRoots = append(treeRoots, root)
+	}
+	sort.Strings(treeRoots)
+	for _, root := range treeRoots {
+		group := treeGroups[root]
+		allExisting := true
+		for _, mutation := range group {
+			allExisting = allExisting && mutation.PriorExists
+		}
+		if allExisting {
+			continue
+		}
+		if err := atomicInstallTree(root, group); err != nil {
+			return result, fmt.Errorf("install immutable resource tree %s: %w", root, err)
+		}
+		p.applied = append(p.applied, group...)
+		p.appliedTreeRoots = append(p.appliedTreeRoots, root)
+	}
+	for _, mutation := range regular {
 		var err error
 		if mutation.Delete {
 			err = os.Remove(mutation.Path)
@@ -160,6 +192,13 @@ func bindPreparedCapabilities(effect *preparedEffect, admission protocol.Admissi
 
 func (p *preparedEffect) Rollback(context.Context) error {
 	var rollbackErrors []error
+	for index := len(p.appliedTreeRoots) - 1; index >= 0; index-- {
+		if err := os.RemoveAll(p.appliedTreeRoots[index]); err != nil {
+			rollbackErrors = append(rollbackErrors, err)
+		} else if err := syncDirectory(filepath.Dir(p.appliedTreeRoots[index])); err != nil {
+			rollbackErrors = append(rollbackErrors, err)
+		}
+	}
 	for index := len(p.applied) - 1; index >= 0; index-- {
 		mutation := p.applied[index]
 		if mutation.PriorLink != "" {
@@ -175,8 +214,46 @@ func (p *preparedEffect) Rollback(context.Context) error {
 		}
 	}
 	p.applied = nil
+	p.appliedTreeRoots = nil
 	if p.boundarySettled {
 		rollbackErrors = append(rollbackErrors, fmt.Errorf("external effect settled and requires reconciliation or compensation"))
 	}
 	return errors.Join(rollbackErrors...)
+}
+
+func atomicInstallTree(root string, mutations []ports.ResourceMutation) error {
+	if !filepath.IsAbs(root) || len(mutations) == 0 {
+		return fmt.Errorf("atomic tree requires an absolute root and members")
+	}
+	if _, err := os.Lstat(root); err == nil {
+		return fmt.Errorf("atomic tree target already exists")
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	parent := filepath.Dir(root)
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		return err
+	}
+	stage, err := os.MkdirTemp(parent, ".boatstack-tree-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage)
+	for _, mutation := range mutations {
+		relative, relErr := filepath.Rel(root, mutation.Path)
+		if relErr != nil || relative == ".." || filepath.IsAbs(relative) || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("atomic tree member escapes root")
+		}
+		target := filepath.Join(stage, relative)
+		if err := atomicWrite(target, mutation.Target, os.FileMode(mutation.Mode)); err != nil {
+			return err
+		}
+	}
+	if err := syncDirectory(stage); err != nil {
+		return err
+	}
+	if err := os.Rename(stage, root); err != nil {
+		return err
+	}
+	return syncDirectory(parent)
 }

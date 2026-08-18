@@ -207,7 +207,7 @@ func (d Driver) Prepare(ctx context.Context, admission protocol.Admission, trans
 		next.WorkspaceSourceRef = ""
 	}
 
-	mutations, err := prepareArtifacts(layout, admission, transition, &next)
+	mutations, err := prepareArtifacts(layout, admission, transition, &next, d.programHumanIdentityRole)
 	if err != nil {
 		return nil, err
 	}

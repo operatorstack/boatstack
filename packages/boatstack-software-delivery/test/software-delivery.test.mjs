@@ -18,7 +18,7 @@ const work = (id) => ({
   id,
   instructions: { path: `${id}.md` },
   inputs: [],
-  outputs: [],
+  outputs: [{ id: "implementation-plan", path: `${id}.out.md`, media_type: "text/markdown", required: true }],
 });
 
 function definition(overrides = {}) {
@@ -77,7 +77,7 @@ test("registers planning work exactly once before additional work", () => {
         { id: "plan.activate", priority: 50, work: "implementation" },
         { id: "plan.abandon", priority: 31, work: "review" },
       ],
-      planningPackageWork: planning,
+      planningPackage: { work: planning, planOutput: "implementation-plan" },
       work: additional,
     }),
   );
@@ -125,11 +125,26 @@ test("planning work alone does not infer an input resolver", () => {
   const result = softwareDelivery(
     definition({
       lifecycle: [planningPackageAdmit],
-      planningPackageWork: work("planning-package"),
+      planningPackage: { work: work("planning-package"), planOutput: "implementation-plan" },
     }),
   );
   assert.equal(result.declarations, undefined);
 });
+
+test("binds the explicit plan output through trusted compiled semantics", () => {
+  const planning = work("planning-package");
+  const result = softwareDelivery(definition({ lifecycle: [planningPackageAdmit], planningPackage: { work: planning, planOutput: "implementation-plan" } }));
+  assert.deepEqual(result.transitions[0].parameters, [{ parameter: "plan_output", producer: { kind: "trusted-resolver", binding: { reference: "software-delivery/planning-package-plan-output/implementation-plan", version: "1" } } }]);
+});
+
+for (const [name, planning, error] of [
+  ["unknown output", { work: work("planning"), planOutput: "missing" }, /SOFTWARE_DELIVERY_PLAN_OUTPUT_REQUIRED/],
+  ["invalid output ID", { work: work("planning"), planOutput: "Implementation Plan" }, /SOFTWARE_DELIVERY_PLAN_OUTPUT_INVALID/],
+  ["reserved path", { work: { ...work("planning"), outputs: [{ id: "implementation-plan", path: "Manifest.JSON", media_type: "text/markdown", required: true }] }, planOutput: "implementation-plan" }, /SOFTWARE_DELIVERY_OUTPUT_PATH_RESERVED/],
+  ["ancestor collision", { work: { ...work("planning"), outputs: [{ id: "implementation-plan", path: "planning", media_type: "text/markdown", required: true }, { id: "details", path: "planning/details.md", media_type: "text/markdown", required: true }] }, planOutput: "implementation-plan" }, /SOFTWARE_DELIVERY_OUTPUT_PATH_CONFLICT/],
+]) {
+  test(`rejects ${name}`, () => assert.throws(() => softwareDelivery(definition({ lifecycle: [planningPackageAdmit], planningPackage: planning })), error));
+}
 
 for (const [name, lifecycle, prefix] of [
   ["blank lifecycle ID", [{ id: "  ", priority: 1 }], "SOFTWARE_DELIVERY_LIFECYCLE_EMPTY"],
@@ -160,7 +175,7 @@ test("rejects duplicate work IDs including repeated planning work", () => {
       softwareDelivery(
         definition({
           lifecycle: [planningPackageAdmit],
-          planningPackageWork: planning,
+          planningPackage: { work: planning, planOutput: "implementation-plan" },
           work: [planning],
         }),
       ),
@@ -181,9 +196,9 @@ test("rejects planning work without its admit step", () => {
   assert.throws(
     () =>
       softwareDelivery(
-        definition({ planningPackageWork: work("planning-package") }),
+        definition({ planningPackage: { work: work("planning-package"), planOutput: "implementation-plan" } }),
       ),
-    /SOFTWARE_DELIVERY_PLANNING_WORK_UNUSED/,
+    /SOFTWARE_DELIVERY_PLANNING_PACKAGE_UNUSED/,
   );
 });
 
@@ -231,7 +246,7 @@ test("rejects replacing or repeating the planning work binding", () => {
         softwareDelivery(
           definition({
             lifecycle,
-            planningPackageWork: planning,
+            planningPackage: { work: planning, planOutput: "implementation-plan" },
             work: [work("implementation")],
           }),
         ),

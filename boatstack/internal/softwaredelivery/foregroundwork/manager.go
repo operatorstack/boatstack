@@ -23,7 +23,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
-const RecordSchemaVersion = 2
+const RecordSchemaVersion = 3
 
 type Status string
 
@@ -211,6 +211,7 @@ func (m Manager) Complete(ctx context.Context, invocation model.InvocationContex
 		}
 		evidence, err := protocol.SealWorkEvidence(protocol.WorkEvidence{
 			SchemaVersion: protocol.WorkEvidenceSchemaVersion, RequestID: record.Request.ID, RequestFingerprint: record.Request.Fingerprint,
+			RunID: record.Request.RunID, ProgramID: record.Request.ProgramID, EntryID: record.Request.EntryID,
 			ContractID: record.Request.Contract.ID, ContractFingerprint: record.Request.Contract.Fingerprint, TransitionID: record.Request.TransitionID,
 			ProgramFingerprint: record.Request.ProgramFingerprint, ContextFingerprint: record.Request.ContextFingerprint, StateRevision: record.Request.StateRevision,
 			RepositoryID: record.Request.RepositoryID, WorktreeID: record.Request.WorktreeID, Outputs: outputs,

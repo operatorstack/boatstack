@@ -67,7 +67,7 @@ export default defineFlow(softwareDelivery({
   version: "1",
   humanIdentity: "developer",
   lifecycle: lifecycle,
-  planningPackageWork: planning,
+  planningPackage: { work: planning, planOutput: "plan" },
   targets: [
     marked("published-pr", all(
       fact("verification", ["current"]),

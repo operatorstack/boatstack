@@ -23,7 +23,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/protocol"
 )
 
-const flowCompilerVersion = "control-program.compiler.8"
+const flowCompilerVersion = "control-program.compiler.9"
 
 type flowCommandOptions struct {
 	repository string
@@ -53,6 +53,9 @@ func runFlowCommand(arguments []string) error {
 	}
 	if action == "input" {
 		return runFlowInput(arguments[1:])
+	}
+	if action == "planning-package" {
+		return runFlowPlanningPackage(arguments[1:])
 	}
 	flags := flag.NewFlagSet("flow "+action, flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)

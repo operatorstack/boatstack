@@ -39,11 +39,12 @@ const planning = foregroundWork({
   inputs: [entryInput("plan")],
   outputs: [
     workArtifact({
-      id: "plan",
+      id: "implementation-plan",
       path: "plan.md",
       media_type: "text/markdown",
       required: true,
       max_bytes: 262144,
+      guidance: instructionAsset(".boatstack/flows/assets/implementation-plan.md"),
     }),
   ],
 });
@@ -53,7 +54,10 @@ export default defineFlow(softwareDelivery({
   version: "1",
   humanIdentity: "developer",
   lifecycle: lifecycle,
-  planningPackageWork: planning,
+  planningPackage: {
+    work: planning,
+    planOutput: "implementation-plan",
+  },
   targets: [
     marked(
       "published-pr",
@@ -89,7 +93,7 @@ authority strengthening, and domain composition.
 | Input | Derived output |
 | --- | --- |
 | `lifecycle` | trusted operators and transitions, including explicit additional-work bindings |
-| `planningPackageWork` | planning work registration and admit binding |
+| `planningPackage` | planning work registration and explicit canonical plan-output binding |
 | `work` | additional work registration in caller order; every contract ID must be referenced by a lifecycle step's `work` field |
 | entry input `resolver` | `declarations.input_resolvers` |
 | software-delivery domain | canonical facets and evidence |
