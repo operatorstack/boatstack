@@ -15,13 +15,14 @@ bind operation IDs through the trusted registry. Repositories may strengthen
 authority but cannot replace minimum capability, effect, verification, or
 recovery semantics.
 
-## Planning
+## Accepted work and planning
 
-`planningPackageAdmit`, `planningPackageApprove`, and
-`planningPackagePromote` are optional trusted steps. A repository includes them
-explicitly. `planningPackage: { work, planOutput }` binds foreground work and
-one required canonical plan output only to admit. The plan-output ID becomes a
-trusted compiled parameter binding; `plan` has no magic meaning.
+`workPackageAdmit` and `workPackageApprove` are optional plan-neutral trusted
+steps. `workPackage({ work })` validates a generic accepted-work declaration.
+`planningPackage({ work, planOutput })` adds one optional specialization:
+`planningPackagePromote` binds the selected required output to canonical plan
+bytes. The plan-output ID is a trusted compiled promotion parameter; `plan`
+has no magic meaning.
 
 ## Authority and delegation
 
@@ -33,7 +34,7 @@ none of these helpers approves a run.
 ## Repository inputs and evidence
 
 Trusted producer helpers read the default branch, managed workspace identity,
-admitted planning manifest, current revision, gate evidence, publication body,
+admitted work-package manifest, current revision, gate evidence, publication body,
 visual evidence, and recovery transaction through runtime-owned boundaries.
 
 See [Product Delivery](../product-delivery/index.md) for lifecycle semantics and

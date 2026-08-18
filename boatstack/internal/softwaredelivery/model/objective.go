@@ -10,11 +10,12 @@ type TargetID string
 var safeObjectiveIdentity = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 const (
-	ObjectiveApprovedPlan TargetID = "approved-plan"
-	ObjectiveVerified     TargetID = "verified-implementation"
-	ObjectiveOpenPR       TargetID = "open-or-updated-pr"
-	ObjectiveMerged       TargetID = "merged-delivery"
-	ObjectiveAbandoned    TargetID = "safely-abandoned"
+	ObjectiveApprovedWorkPackage TargetID = "approved-work-package"
+	ObjectiveApprovedPlan        TargetID = "approved-plan"
+	ObjectiveVerified            TargetID = "verified-implementation"
+	ObjectiveOpenPR              TargetID = "open-or-updated-pr"
+	ObjectiveMerged              TargetID = "merged-delivery"
+	ObjectiveAbandoned           TargetID = "safely-abandoned"
 )
 
 func (k TargetID) Valid() bool {

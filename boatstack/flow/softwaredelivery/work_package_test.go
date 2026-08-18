@@ -32,7 +32,7 @@ func TestPlanningPackageWorkRequiresOwnedPlanOutput(t *testing.T) {
 	}
 }
 
-func TestPlanningPackageUsesDistinctPlanStateAndSharedPlanLease(t *testing.T) {
+func TestAcceptedWorkUsesDistinctFacetAndOnlyPromotionOwnsPlan(t *testing.T) {
 	manifest, err := standard.Definition().RuntimeManifest(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -41,23 +41,45 @@ func TestPlanningPackageUsesDistinctPlanStateAndSharedPlanLease(t *testing.T) {
 	for _, transition := range manifest.Transitions {
 		base[string(transition.ID)] = transition
 	}
-	transitions, err := planningPackageTransitions(base)
+	transitions, err := acceptedWorkTransitions(base)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, transition := range transitions {
-		if !containsString(transition.OwnedResources, "plan") {
-			t.Fatalf("%s does not serialize on the canonical plan resource: %v", transition.ID, transition.OwnedResources)
+	for _, transition := range transitions[:2] {
+		if containsString(transition.OwnedResources, "plan") {
+			t.Fatalf("%s unexpectedly owns the canonical plan resource: %v", transition.ID, transition.OwnedResources)
 		}
+		for _, condition := range append(append([]delivery.FacetCondition(nil), transition.SourceConditions...), transition.TargetConditions...) {
+			if condition.Facet == model.FacetPlan {
+				t.Fatalf("%s unexpectedly reaches plan state: %#v", transition.ID, condition)
+			}
+		}
+	}
+	if !containsString(transitions[2].OwnedResources, "plan") {
+		t.Fatalf("%s does not own the canonical plan resource: %v", transitions[2].ID, transitions[2].OwnedResources)
 	}
 	var got []string
 	for _, condition := range transitions[0].TargetConditions {
-		if condition.Facet == model.FacetPlan {
+		if condition.Facet == model.FacetWorkPackage {
 			got = condition.Values
 		}
 	}
-	if !containsString(got, string(model.PlanPackageValid)) || containsString(got, string(model.PlanValid)) {
-		t.Fatalf("planning-package admission target = %v", got)
+	if !containsString(got, string(model.WorkPackageValid)) {
+		t.Fatalf("work-package admission target = %v", got)
+	}
+	for _, condition := range transitions[0].SourceConditions {
+		if condition.Facet == model.FacetWorkPackage && !containsString(condition.Values, string(model.WorkPackageAbsent)) {
+			t.Fatalf("work-package admission source = %v", condition.Values)
+		}
+	}
+	foundPlanAbsent := false
+	for _, condition := range transitions[2].SourceConditions {
+		if condition.Facet == model.FacetPlan && containsString(condition.Values, string(model.PlanAbsent)) {
+			foundPlanAbsent = true
+		}
+	}
+	if !foundPlanAbsent {
+		t.Fatal("planning promotion can replay after canonical plan creation")
 	}
 }
 
@@ -76,6 +98,18 @@ func TestPlanningPackageWorkAcceptsRequiredPlanAndDomainOutputs(t *testing.T) {
 		{ID: "questions", Path: "questions.md", Required: true, MaxBytes: 1},
 	}}
 	if err := validatePlanningPackageWorkContract(work, "plan"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWorkPackageTreatsDomainNamedOutputsUniformly(t *testing.T) {
+	work := delivery.WorkContract{ID: "accepted-work", Outputs: []delivery.WorkOutput{
+		{ID: "architecture-plan", Path: "architecture-plan.md", Required: true, MaxBytes: 1},
+		{ID: "tasks", Path: "tasks.json", Required: true, MaxBytes: 1},
+		{ID: "verification-contract", Path: "verification.json", Required: true, MaxBytes: 1},
+		{ID: "journey", Path: "journey.md", Required: true, MaxBytes: 1},
+	}}
+	if err := validateWorkPackageContract(work); err != nil {
 		t.Fatal(err)
 	}
 }

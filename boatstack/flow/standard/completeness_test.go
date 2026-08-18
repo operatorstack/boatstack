@@ -46,6 +46,11 @@ func TestEveryControllingFacetAndEventIsClassifiedByTheRuntimeCatalog(t *testing
 		}
 	}
 	for _, facet := range model.ControllingFacets() {
+		if facet == model.FacetWorkPackage {
+			// Accepted work is an optional software-delivery adapter capability.
+			// StandardFlow does not select or infer its lifecycle.
+			continue
+		}
 		if !classified[facet] {
 			t.Errorf("controlling facet %s is absent from executable predicates", facet)
 		}

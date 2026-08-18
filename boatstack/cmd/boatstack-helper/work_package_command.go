@@ -13,14 +13,14 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	"github.com/operatorstack/boatstack/boatstack/distribution"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
-	planningpackage "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery/planningpackage"
+	workpackage "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery/workpackage"
 )
 
-func runFlowPlanningPackage(arguments []string) error {
+func runFlowWorkPackage(arguments []string) error {
 	if len(arguments) == 0 || arguments[0] != "verify" {
-		return fmt.Errorf("unknown planning-package action")
+		return fmt.Errorf("unknown work-package action")
 	}
-	flags := flag.NewFlagSet("flow planning-package verify", flag.ContinueOnError)
+	flags := flag.NewFlagSet("flow work-package verify", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	var repository, deliveryID, packageFingerprint, format string
 	var all, requireApproval, requireCurrent bool
@@ -54,27 +54,27 @@ func runFlowPlanningPackage(arguments []string) error {
 	if !all && (deliveryID == "" || packageFingerprint == "") {
 		return fmt.Errorf("--delivery and --package are required together")
 	}
-	var current *planningpackage.CurrentProgram
-	if value, currentErr := loadCurrentPlanningProgram(context.Background(), repository); currentErr == nil {
+	var current *workpackage.CurrentProgram
+	if value, currentErr := loadCurrentWorkProgram(context.Background(), repository); currentErr == nil {
 		current = &value
 	} else if requireCurrent {
 		return currentErr
 	}
 	var identities [][2]string
 	if all {
-		identities, err = planningpackage.Enumerate(repository)
+		identities, err = workpackage.Enumerate(repository)
 	} else {
 		identities = [][2]string{{deliveryID, packageFingerprint}}
 	}
 	if err != nil {
 		return err
 	}
-	results := make([]planningpackage.Result, 0, len(identities))
+	results := make([]workpackage.Result, 0, len(identities))
 	failed := false
 	for _, identity := range identities {
-		result := planningpackage.Verify(repository, identity[0], identity[1], current)
+		result := workpackage.Verify(repository, identity[0], identity[1], current)
 		results = append(results, result)
-		if result.Integrity != planningpackage.Valid || result.Contract != planningpackage.Valid || requireApproval && result.Approval != planningpackage.Valid || requireCurrent && result.CurrentProgram != planningpackage.Match {
+		if result.Integrity != workpackage.Valid || result.Contract != workpackage.Valid || requireApproval && result.Approval != workpackage.Valid || requireCurrent && result.CurrentProgram != workpackage.Match {
 			failed = true
 		}
 	}
@@ -94,66 +94,57 @@ func runFlowPlanningPackage(arguments []string) error {
 		}
 	}
 	if failed {
-		return fmt.Errorf("one or more planning packages failed required verification")
+		return fmt.Errorf("one or more work packages failed required verification")
 	}
 	return nil
 }
 
-func loadCurrentPlanningProgram(ctx context.Context, repository string) (planningpackage.CurrentProgram, error) {
+func loadCurrentWorkProgram(ctx context.Context, repository string) (workpackage.CurrentProgram, error) {
 	path, err := resolveCheckArtifact(repository, "")
 	if err != nil {
-		return planningpackage.CurrentProgram{}, err
+		return workpackage.CurrentProgram{}, err
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return planningpackage.CurrentProgram{}, err
+		return workpackage.CurrentProgram{}, err
 	}
 	artifact, err := controlprogram.LoadArtifact(bytes.NewReader(raw))
 	if err != nil {
-		return planningpackage.CurrentProgram{}, err
+		return workpackage.CurrentProgram{}, err
 	}
 	resolver, err := softwareflow.NewResolver(ctx)
 	if err != nil {
-		return planningpackage.CurrentProgram{}, err
+		return workpackage.CurrentProgram{}, err
 	}
 	compiled, err := checkArtifactForCurrentProject(repository, artifact, resolver)
 	if err != nil {
-		return planningpackage.CurrentProgram{}, err
+		return workpackage.CurrentProgram{}, err
 	}
 	definition, err := softwareflow.NewDefinition(compiled, resolver)
 	if err != nil {
-		return planningpackage.CurrentProgram{}, err
+		return workpackage.CurrentProgram{}, err
 	}
 	program, err := distribution.ProgramForRepository(ctx, distribution.RepositoryProgramRequest{Repository: repository}, definition)
 	if err != nil {
-		return planningpackage.CurrentProgram{}, err
+		return workpackage.CurrentProgram{}, err
 	}
 	workByID := map[string]controlprogram.WorkContract{}
 	for _, work := range compiled.Document.Work {
 		workByID[work.ID] = work
 	}
 	for _, transition := range compiled.Document.Transitions {
-		if transition.ID != softwareflow.PlanningPackageAdmit {
+		if transition.ID != softwareflow.WorkPackageAdmit {
 			continue
 		}
 		work, ok := workByID[transition.Work]
 		if !ok {
-			return planningpackage.CurrentProgram{}, fmt.Errorf("current planning-package work is missing")
+			return workpackage.CurrentProgram{}, fmt.Errorf("current work-package work is missing")
 		}
 		runtime, err := softwareflow.RuntimeWorkContract(work)
 		if err != nil {
-			return planningpackage.CurrentProgram{}, err
+			return workpackage.CurrentProgram{}, err
 		}
-		planOutput := ""
-		for _, binding := range transition.Parameters {
-			if binding.Parameter == "plan_output" && binding.Producer.Binding != nil {
-				planOutput = strings.TrimPrefix(binding.Producer.Binding.Reference, "software-delivery/planning-package-plan-output/")
-			}
-		}
-		if planOutput == "" {
-			return planningpackage.CurrentProgram{}, fmt.Errorf("current planning-package plan output is missing")
-		}
-		return planningpackage.CurrentProgram{ProgramFingerprint: program.Fingerprint(), WorkContractFingerprint: runtime.Fingerprint, PlanOutput: planOutput}, nil
+		return workpackage.CurrentProgram{ProgramFingerprint: program.Fingerprint(), WorkContractFingerprint: runtime.Fingerprint}, nil
 	}
-	return planningpackage.CurrentProgram{}, fmt.Errorf("current Flow has no planning-package admission")
+	return workpackage.CurrentProgram{}, fmt.Errorf("current Flow has no work-package admission")
 }

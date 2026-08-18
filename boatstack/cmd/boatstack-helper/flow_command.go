@@ -36,7 +36,7 @@ type flowCommandOptions struct {
 
 func runFlowCommand(arguments []string) error {
 	if len(arguments) == 0 {
-		return fmt.Errorf("usage: boatstack flow <compile|check|authorize|revoke|run|work|input> [flags]")
+		return fmt.Errorf("usage: boatstack flow <compile|check|authorize|revoke|run|work|work-package|input> [flags]")
 	}
 	action := arguments[0]
 	if action == "authorize" {
@@ -54,8 +54,8 @@ func runFlowCommand(arguments []string) error {
 	if action == "input" {
 		return runFlowInput(arguments[1:])
 	}
-	if action == "planning-package" {
-		return runFlowPlanningPackage(arguments[1:])
+	if action == "work-package" {
+		return runFlowWorkPackage(arguments[1:])
 	}
 	flags := flag.NewFlagSet("flow "+action, flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)

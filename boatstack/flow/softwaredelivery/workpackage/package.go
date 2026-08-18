@@ -1,6 +1,6 @@
-// Package planningpackage owns the portable, content-addressed planning-package
-// format. It is deliberately independent of live controller state and authority.
-package planningpackage
+// Package workpackage owns the portable, content-addressed accepted-work format.
+// It is deliberately independent of live controller state and plan semantics.
+package workpackage
 
 import (
 	"bytes"
@@ -24,10 +24,10 @@ import (
 )
 
 const (
-	ManifestSchemaVersion    = 2
+	ManifestSchemaVersion    = 1
 	ContractSchemaVersion    = 1
 	WorkReceiptSchemaVersion = 1
-	ApprovalSchemaVersion    = 2
+	ApprovalSchemaVersion    = 1
 	maxPackageMetadataBytes  = 16 << 20
 )
 
@@ -69,7 +69,6 @@ type WorkContract struct {
 type Contract struct {
 	SchemaVersion int          `json:"schema_version"`
 	Work          WorkContract `json:"work"`
-	PlanOutput    string       `json:"plan_output"`
 	Fingerprint   string       `json:"fingerprint"`
 }
 
@@ -88,13 +87,6 @@ type Reference struct {
 	Path   string `json:"path"`
 	SHA256 string `json:"sha256"`
 }
-type PlanOutput struct {
-	ID        string `json:"id"`
-	Path      string `json:"path"`
-	MediaType string `json:"media_type"`
-	SHA256    string `json:"sha256"`
-}
-
 type Manifest struct {
 	SchemaVersion           int        `json:"schema_version"`
 	DeliveryID              string     `json:"delivery_id"`
@@ -109,7 +101,6 @@ type Manifest struct {
 	WorkResultFingerprint   string     `json:"work_result_fingerprint"`
 	ContextFingerprint      string     `json:"context_fingerprint"`
 	StateRevision           uint64     `json:"state_revision"`
-	PlanOutput              PlanOutput `json:"plan_output"`
 	Contract                Reference  `json:"contract"`
 	WorkReceipt             Reference  `json:"work_receipt"`
 	Outputs                 []Output   `json:"outputs"`
@@ -145,8 +136,6 @@ type Approval struct {
 	DeliveryID                  string            `json:"delivery_id"`
 	PackageFingerprint          string            `json:"package_fingerprint"`
 	ManifestFingerprint         string            `json:"manifest_fingerprint"`
-	PlanOutputID                string            `json:"plan_output_id"`
-	PlanFingerprint             string            `json:"plan_fingerprint"`
 	AdmissionID                 string            `json:"admission_id"`
 	AuthoritySources            []AuthoritySource `json:"authority_sources"`
 	Actor                       string            `json:"actor"`
@@ -179,7 +168,7 @@ type Result struct {
 	Diagnostics         []string `json:"diagnostics,omitempty"`
 }
 
-type CurrentProgram struct{ ProgramFingerprint, WorkContractFingerprint, PlanOutput string }
+type CurrentProgram struct{ ProgramFingerprint, WorkContractFingerprint string }
 
 func Encode(value any) ([]byte, error) {
 	raw, err := json.MarshalIndent(value, "", "  ")
@@ -223,13 +212,13 @@ func SealContract(value Contract) (Contract, []byte, error) {
 	value.Fingerprint = fp
 	raw, err := Encode(value)
 	if err == nil && len(raw) > maxPackageMetadataBytes {
-		return Contract{}, nil, fmt.Errorf("planning package contract exceeds %d bytes", maxPackageMetadataBytes)
+		return Contract{}, nil, fmt.Errorf("work package contract exceeds %d bytes", maxPackageMetadataBytes)
 	}
 	return value, raw, err
 }
 
-func ValidateContractMetadata(work WorkContract, planOutput string) error {
-	_, _, err := SealContract(Contract{Work: work, PlanOutput: planOutput})
+func ValidateContractMetadata(work WorkContract) error {
+	_, _, err := SealContract(Contract{Work: work})
 	return err
 }
 
@@ -354,7 +343,7 @@ func Verify(repository, deliveryID, packageFingerprint string, current *CurrentP
 	if err != nil || !info.IsDir() {
 		return fail("repository root is unavailable")
 	}
-	packageRoot := filepath.Join(root, ".boatstack", "planning-packages", deliveryID, packageFingerprint)
+	packageRoot := filepath.Join(root, ".boatstack", "work-packages", deliveryID, packageFingerprint)
 	if info, err = os.Lstat(packageRoot); err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return fail("package directory is unavailable or unsafe")
 	}
@@ -389,7 +378,7 @@ func Verify(repository, deliveryID, packageFingerprint string, current *CurrentP
 	contractIdentity := contract
 	contractIdentity.Fingerprint = ""
 	identityRaw, _ = Encode(contractIdentity)
-	if contract.SchemaVersion != ContractSchemaVersion || contract.Fingerprint != Digest(identityRaw) || contract.Work.ID != manifest.WorkContractID || contract.Work.Fingerprint != manifest.WorkContractFingerprint || contract.PlanOutput != manifest.PlanOutput.ID {
+	if contract.SchemaVersion != ContractSchemaVersion || contract.Fingerprint != Digest(identityRaw) || contract.Work.ID != manifest.WorkContractID || contract.Work.Fingerprint != manifest.WorkContractFingerprint {
 		return fail("contract identity is invalid")
 	}
 	if err = validateContractAssets(contract.Work); err != nil {
@@ -443,7 +432,7 @@ func Verify(repository, deliveryID, packageFingerprint string, current *CurrentP
 	}
 	result.Integrity = Valid
 	if current != nil {
-		if current.ProgramFingerprint == manifest.ProgramFingerprint && current.WorkContractFingerprint == manifest.WorkContractFingerprint && current.PlanOutput == manifest.PlanOutput.ID {
+		if current.ProgramFingerprint == manifest.ProgramFingerprint && current.WorkContractFingerprint == manifest.WorkContractFingerprint {
 			result.CurrentProgram = Match
 		} else {
 			result.CurrentProgram = Different
@@ -464,10 +453,8 @@ func validateManifestIdentity(manifest Manifest, deliveryID, packageFingerprint,
 		return fmt.Errorf("semantic identity")
 	case !ValidFingerprint(manifest.ProgramFingerprint) || !ValidFingerprint(manifest.WorkContractFingerprint) || !ValidFingerprint(manifest.WorkRequestFingerprint) || !ValidFingerprint(manifest.WorkResultFingerprint) || !ValidFingerprint(manifest.ContextFingerprint):
 		return fmt.Errorf("lineage fingerprint")
-	case manifest.TransitionID != "planning.package.admit":
+	case manifest.TransitionID != "work.package.admit":
 		return fmt.Errorf("transition identity")
-	case !ValidSegment(manifest.PlanOutput.ID) || !safeRelative(manifest.PlanOutput.Path) || manifest.PlanOutput.MediaType == "" || !ValidFingerprint(manifest.PlanOutput.SHA256):
-		return fmt.Errorf("plan output identity")
 	default:
 		return nil
 	}
@@ -508,7 +495,7 @@ func ValidateApproval(raw []byte, approval Approval, manifest Manifest, delivery
 	if err != nil {
 		return err
 	}
-	if approval.SchemaVersion != ApprovalSchemaVersion || approval.Fingerprint != Digest(identityRaw) || approval.DeliveryID != deliveryID || approval.PackageFingerprint != packageFingerprint || approval.ManifestFingerprint != manifest.Fingerprint || approval.PlanOutputID != manifest.PlanOutput.ID || approval.PlanFingerprint != manifest.PlanOutput.SHA256 || approval.Actor == "" || approval.AdmissionID == "" || approval.ApprovedAt.IsZero() {
+	if approval.SchemaVersion != ApprovalSchemaVersion || approval.Fingerprint != Digest(identityRaw) || approval.DeliveryID != deliveryID || approval.PackageFingerprint != packageFingerprint || approval.ManifestFingerprint != manifest.Fingerprint || approval.Actor == "" || approval.AdmissionID == "" || approval.ApprovedAt.IsZero() {
 		return fmt.Errorf("lineage")
 	}
 	if len(approval.IdentityRole) == 0 || len(approval.IdentityRole) > 128 || !identityRole.MatchString(approval.IdentityRole) || !ValidFingerprint(approval.IdentityProviderFingerprint) {
@@ -708,15 +695,6 @@ func verifyOutputs(root string, manifest Manifest, contract Contract, receipt Wo
 			return fmt.Errorf("package is missing required output %q", id)
 		}
 	}
-	plan, ok := seen[manifest.PlanOutput.ID]
-	if !ok || !plan {
-		return fmt.Errorf("designated plan output is absent")
-	}
-	for _, o := range manifest.Outputs {
-		if o.ID == manifest.PlanOutput.ID && (o.Path != manifest.PlanOutput.Path || o.MediaType != manifest.PlanOutput.MediaType || o.SHA256 != manifest.PlanOutput.SHA256 || !o.Required) {
-			return fmt.Errorf("designated plan output is invalid")
-		}
-	}
 	return nil
 }
 
@@ -759,7 +737,7 @@ func rejectExtraFiles(root string, manifest Manifest, approval bool) error {
 }
 
 func Enumerate(repository string) ([][2]string, error) {
-	root := filepath.Join(repository, ".boatstack", "planning-packages")
+	root := filepath.Join(repository, ".boatstack", "work-packages")
 	entries, err := os.ReadDir(root)
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -774,7 +752,7 @@ func Enumerate(repository string) ([][2]string, error) {
 		}
 		packages, err := os.ReadDir(filepath.Join(root, delivery.Name()))
 		if err != nil {
-			return nil, fmt.Errorf("read planning-package delivery %q: %w", delivery.Name(), err)
+			return nil, fmt.Errorf("read work-package delivery %q: %w", delivery.Name(), err)
 		}
 		for _, pkg := range packages {
 			if pkg.IsDir() && ValidFingerprint(pkg.Name()) {

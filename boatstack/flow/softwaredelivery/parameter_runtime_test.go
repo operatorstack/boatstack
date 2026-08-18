@@ -11,7 +11,7 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/invocation"
 )
 
-func TestAdmittedPlanningPackageFingerprintMaterializesManifestIdentity(t *testing.T) {
+func TestAdmittedWorkPackageFingerprintMaterializesManifestIdentity(t *testing.T) {
 	repository := t.TempDir()
 	deliveryID := "todo-plan"
 	manifestFingerprint := strings.Repeat("a", 64)
@@ -20,21 +20,21 @@ func TestAdmittedPlanningPackageFingerprintMaterializesManifestIdentity(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	metadata, err := resolver.ResolveParameterResolver(ParameterResolverPrefix+"admitted-planning-package-fingerprint", "1")
+	metadata, err := resolver.ResolveParameterResolver(ParameterResolverPrefix+"admitted-work-package-fingerprint", "1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	producer := controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceTrustedResolver, Binding: &controlprogram.ParameterResolverBinding{
-		Reference: ParameterResolverPrefix + "admitted-planning-package-fingerprint", Version: "1", Fingerprint: metadata.Fingerprint,
+		Reference: ParameterResolverPrefix + "admitted-work-package-fingerprint", Version: "1", Fingerprint: metadata.Fingerprint,
 	}}
 	materialization, err := invocation.Materialize(
 		[]controlprogram.OperatorParameter{{ID: "package_fingerprint", Type: controlprogram.ValueTypeDefinition{Kind: "string"}, Required: true, AllowedSources: []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceTrustedResolver}}},
 		[]controlprogram.TransitionParameterBinding{{Parameter: "package_fingerprint", Producer: producer}},
 		invocation.Context{
 			RunID: "run-package", ProgramFingerprint: strings.Repeat("c", 64), ExecutionProgramFingerprint: strings.Repeat("d", 64),
-			EntryID: "run", TargetID: "published-pr", TransitionID: PlanningPackageApprove, StateRevision: 7,
+			EntryID: "run", TargetID: "published-pr", TransitionID: WorkPackageApprove, StateRevision: 8,
 			ContextFingerprint: strings.Repeat("e", 64), ExecutionScopeFingerprint: strings.Repeat("f", 64),
-			State: map[string]invocation.Value{"planning_package_fingerprint": {Canonical: manifestFingerprint, Provenance: "durable-state:planning_package_fingerprint"}},
+			State: map[string]invocation.Value{"work_package_fingerprint": {Canonical: manifestFingerprint, Provenance: "durable-state:work_package_fingerprint"}},
 		},
 		RuntimeParameterResolver{Context: context.Background(), Repository: repository, DeliveryID: deliveryID, Binding: resolver},
 	)

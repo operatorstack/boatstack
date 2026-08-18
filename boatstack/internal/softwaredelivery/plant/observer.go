@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	planningpackage "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery/planningpackage"
+	workpackage "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery/workpackage"
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/durable"
@@ -185,6 +185,20 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 	if artifactVerification != state.Verification {
 		verification = artifactVerification
 	}
+	workPackageEvidence := append([]model.Evidence(nil), stateEvidence...)
+	workPackageFact := model.Fact[model.WorkPackageState]{Status: model.FactKnown, Value: state.WorkPackage, Evidence: workPackageEvidence}
+	if state.WorkPackage != model.WorkPackageAbsent {
+		evidence, valid, workPackageErr := observeWorkPackage(layout, state, now)
+		if workPackageErr != nil {
+			return model.Observation{}, workPackageErr
+		}
+		workPackageEvidence = append(workPackageEvidence, evidence...)
+		workPackageFact.Evidence = workPackageEvidence
+		if !valid {
+			workPackageFact.Status = model.FactStale
+			artifactTerminal = model.TerminalStale
+		}
+	}
 	phase := state.Phase
 	delivery := state.Delivery
 	recoveryFact := model.Fact[model.RecoveryState]{Status: model.FactKnown, Value: state.Recovery, Evidence: stateEvidence}
@@ -267,6 +281,7 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 		Engagement:          model.Fact[model.EngagementState]{Status: model.FactKnown, Value: state.Engagement, Evidence: stateEvidence},
 		Delivery:            model.Fact[model.DeliveryState]{Status: model.FactKnown, Value: delivery, Evidence: deliveryEvidence},
 		Workspace:           model.Fact[model.WorkspaceState]{Status: model.FactKnown, Value: state.Workspace, Evidence: deliveryEvidence},
+		WorkPackage:         workPackageFact,
 		Plan:                model.Fact[model.PlanState]{Status: model.FactKnown, Value: plan, Evidence: planEvidence},
 		Configuration:       model.Fact[model.ConfigurationState]{Status: model.FactKnown, Value: configuration, Evidence: configurationEvidence},
 		ConfigurationPolicy: configurationPolicy,
@@ -463,7 +478,7 @@ func canonicalProductStatus(status string) string {
 
 func generatedBoatstackPath(name string) bool {
 	name = strings.TrimPrefix(filepath.ToSlash(name), "./")
-	for _, prefix := range []string{".boatstack/approvals/", ".boatstack/evidence/", ".boatstack/planning-packages/", ".boatstack/plans/", ".boatstack/publication/"} {
+	for _, prefix := range []string{".boatstack/approvals/", ".boatstack/evidence/", ".boatstack/work-packages/", ".boatstack/plans/", ".boatstack/publication/"} {
 		if strings.HasPrefix(name, prefix) {
 			return true
 		}
@@ -501,6 +516,18 @@ type observedApproval struct {
 	Actor              string    `json:"actor"`
 	AdmissionID        string    `json:"admission_id"`
 	ApprovedAt         time.Time `json:"approved_at"`
+}
+
+type observedPlanPromotion struct {
+	SchemaVersion                  int       `json:"schema_version"`
+	DeliveryID                     string    `json:"delivery_id"`
+	PlanFingerprint                string    `json:"plan_fingerprint"`
+	WorkPackageFingerprint         string    `json:"work_package_fingerprint"`
+	WorkPackageApprovalFingerprint string    `json:"work_package_approval_fingerprint"`
+	PlanOutputID                   string    `json:"plan_output_id"`
+	AdmissionID                    string    `json:"admission_id"`
+	PromotedAt                     time.Time `json:"promoted_at"`
+	Fingerprint                    string    `json:"fingerprint"`
 }
 
 type observedGate struct {
@@ -542,17 +569,7 @@ func observeRepositoryArtifacts(layout ports.ControllerLayout, state durable.Sta
 		return plan, verification, terminal, planEvidence, verificationEvidence, nil
 	}
 	deliveryID := state.Objective.DeliveryID
-	packagePlan := state.Plan == model.PlanPackageValid || state.Plan == model.PlanPackageApproved
-	if packagePlan {
-		evidence, valid, err := observePlanningPackage(layout, state, now)
-		if err != nil {
-			return plan, verification, terminal, nil, nil, err
-		}
-		planEvidence = append(planEvidence, evidence...)
-		if !valid {
-			plan, terminal = model.PlanStale, model.TerminalStale
-		}
-	} else if state.Plan != model.PlanAbsent {
+	if state.Plan != model.PlanAbsent {
 		path := filepath.Join(layout.RepositoryRoot, ".boatstack", "plans", deliveryID+".source")
 		evidence, fingerprint, exists, err := fileEvidence(path, "plan", now)
 		if err != nil {
@@ -576,11 +593,20 @@ func observeRepositoryArtifacts(layout ports.ControllerLayout, state durable.Sta
 			if readErr != nil {
 				return plan, verification, terminal, nil, nil, readErr
 			}
-			if state.PlanningPackageFingerprint != "" {
-				var approval planningpackage.Approval
-				valid = valid && planningpackage.StrictDecode(raw, &approval) == nil && approval.SchemaVersion == planningpackage.ApprovalSchemaVersion &&
-					approval.DeliveryID == deliveryID && approval.PlanFingerprint == state.PlanFingerprint && approval.PackageFingerprint == state.PlanningPackageFingerprint &&
-					approval.Actor != "" && approval.AdmissionID != "" && !approval.ApprovedAt.IsZero()
+			if state.WorkPackageFingerprint != "" {
+				var promotion observedPlanPromotion
+				valid = valid && decodeStrictJSON(raw, &promotion) == nil && promotion.SchemaVersion == 2 &&
+					promotion.DeliveryID == deliveryID && promotion.PlanFingerprint == state.PlanFingerprint &&
+					promotion.WorkPackageFingerprint == state.WorkPackageFingerprint &&
+					promotion.WorkPackageApprovalFingerprint == state.WorkPackageApprovalFingerprint &&
+					promotion.PlanOutputID != "" && promotion.AdmissionID != "" && !promotion.PromotedAt.IsZero()
+				if valid {
+					identity := promotion
+					identity.Fingerprint = ""
+					identityRaw, encodeErr := json.MarshalIndent(identity, "", "  ")
+					identityRaw = append(identityRaw, '\n')
+					valid = encodeErr == nil && promotion.Fingerprint == hashBytes(identityRaw)
+				}
 			} else {
 				var approval observedApproval
 				valid = valid && decodeStrictJSON(raw, &approval) == nil && approval.SchemaVersion == 1 &&
@@ -668,10 +694,10 @@ func observeRepositoryArtifacts(layout ports.ControllerLayout, state durable.Sta
 	return plan, verification, terminal, planEvidence, verificationEvidence, nil
 }
 
-func observePlanningPackage(layout ports.ControllerLayout, state durable.State, now time.Time) ([]model.Evidence, bool, error) {
-	root := filepath.Join(layout.RepositoryRoot, ".boatstack", "planning-packages", state.Objective.DeliveryID, state.PlanningPackageFingerprint)
+func observeWorkPackage(layout ports.ControllerLayout, state durable.State, now time.Time) ([]model.Evidence, bool, error) {
+	root := filepath.Join(layout.RepositoryRoot, ".boatstack", "work-packages", state.Objective.DeliveryID, state.WorkPackageFingerprint)
 	manifestPath := filepath.Join(root, "manifest.json")
-	manifestEvidence, _, exists, err := fileEvidence(manifestPath, "planning-package", now)
+	manifestEvidence, _, exists, err := fileEvidence(manifestPath, "work-package", now)
 	evidence := []model.Evidence{manifestEvidence}
 	if err != nil || !exists {
 		return evidence, false, err
@@ -680,19 +706,19 @@ func observePlanningPackage(layout ports.ControllerLayout, state durable.State, 
 	if err != nil {
 		return evidence, false, err
 	}
-	var manifest planningpackage.Manifest
-	if planningpackage.StrictDecode(manifestRaw, &manifest) != nil {
+	var manifest workpackage.Manifest
+	if workpackage.StrictDecode(manifestRaw, &manifest) != nil {
 		return evidence, false, nil
 	}
-	result := planningpackage.Verify(layout.RepositoryRoot, state.Objective.DeliveryID, state.PlanningPackageFingerprint, nil)
-	valid := result.Integrity == planningpackage.Valid && result.Contract == planningpackage.Valid && manifest.PlanOutput.SHA256 == state.PlanFingerprint
-	if state.Plan == model.PlanPackageApproved {
-		valid = valid && result.Approval == planningpackage.Valid
+	result := workpackage.Verify(layout.RepositoryRoot, state.Objective.DeliveryID, state.WorkPackageFingerprint, nil)
+	valid := result.Integrity == workpackage.Valid && result.Contract == workpackage.Valid
+	if state.WorkPackage == model.WorkPackageApproved {
+		valid = valid && result.Approval == workpackage.Valid
 		if valid {
 			raw, _ := os.ReadFile(filepath.Join(root, "approval.json"))
-			var approval planningpackage.Approval
-			_ = planningpackage.StrictDecode(raw, &approval)
-			valid = planningpackage.Digest(raw) == state.ApprovalFingerprint
+			var approval workpackage.Approval
+			_ = workpackage.StrictDecode(raw, &approval)
+			valid = approval.Fingerprint == state.WorkPackageApprovalFingerprint
 		}
 	}
 	return evidence, valid, nil

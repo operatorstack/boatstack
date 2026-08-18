@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const SnapshotSchemaVersion = 5
+const SnapshotSchemaVersion = 6
 
 const foregroundWorkContextIdentity = "foreground-work-context"
 
@@ -132,8 +132,6 @@ const (
 	PlanAbsent            PlanState = "absent"
 	PlanDraft             PlanState = "draft"
 	PlanValid             PlanState = "valid"
-	PlanPackageValid      PlanState = "package-valid"
-	PlanPackageApproved   PlanState = "package-approved"
 	PlanApproved          PlanState = "approved"
 	PlanLocked            PlanState = "locked"
 	PlanStale             PlanState = "stale"
@@ -143,7 +141,24 @@ const (
 
 func (s PlanState) Valid() bool {
 	switch s {
-	case PlanAbsent, PlanDraft, PlanValid, PlanPackageValid, PlanPackageApproved, PlanApproved, PlanLocked, PlanStale, PlanInvalid, PlanAmendmentRequired:
+	case PlanAbsent, PlanDraft, PlanValid, PlanApproved, PlanLocked, PlanStale, PlanInvalid, PlanAmendmentRequired:
+		return true
+	default:
+		return false
+	}
+}
+
+type WorkPackageState string
+
+const (
+	WorkPackageAbsent   WorkPackageState = "absent"
+	WorkPackageValid    WorkPackageState = "valid"
+	WorkPackageApproved WorkPackageState = "approved"
+)
+
+func (s WorkPackageState) Valid() bool {
+	switch s {
+	case WorkPackageAbsent, WorkPackageValid, WorkPackageApproved:
 		return true
 	default:
 		return false
@@ -402,6 +417,7 @@ type Observation struct {
 	Engagement                 Fact[EngagementState]     `json:"engagement"`
 	Delivery                   Fact[DeliveryState]       `json:"delivery"`
 	Workspace                  Fact[WorkspaceState]      `json:"workspace"`
+	WorkPackage                Fact[WorkPackageState]    `json:"work_package"`
 	Plan                       Fact[PlanState]           `json:"plan"`
 	Configuration              Fact[ConfigurationState]  `json:"configuration"`
 	ConfigurationPolicy        Fact[ConfigurationPolicy] `json:"configuration_policy"`
@@ -459,6 +475,9 @@ func Canonicalize(observation Observation) (Snapshot, error) {
 	if observation.Program.Status == "" && observation.ProgramFingerprint == "" {
 		observation.Program = Known(ProgramUnbound, Evidence{Source: "control-program:unbound", Fingerprint: "unbound", ObservedAt: observation.ObservedAt})
 	}
+	if observation.WorkPackage.Status == "" {
+		observation.WorkPackage = Known(WorkPackageAbsent, Evidence{Source: "work-package:absent", Fingerprint: "absent", ObservedAt: time.Unix(0, 0).UTC()})
+	}
 	if observation.ProgramFingerprint != "" && len(observation.ProgramFingerprint) != 64 {
 		return Snapshot{}, fmt.Errorf("snapshot: invalid program fingerprint")
 	}
@@ -474,6 +493,7 @@ func Canonicalize(observation Observation) (Snapshot, error) {
 		{"engagement", observation.Engagement.Validate("engagement")},
 		{"delivery", observation.Delivery.Validate("delivery")},
 		{"workspace", observation.Workspace.Validate("workspace")},
+		{"work_package", observation.WorkPackage.Validate("work_package")},
 		{"plan", observation.Plan.Validate("plan")},
 		{"configuration", observation.Configuration.Validate("configuration")},
 		{"configuration_policy", observation.ConfigurationPolicy.Validate("configuration_policy")},
@@ -504,6 +524,7 @@ func Canonicalize(observation Observation) (Snapshot, error) {
 		{"engagement", observation.Engagement.Status == FactKnown, observation.Engagement.Value.Valid()},
 		{"delivery", observation.Delivery.Status == FactKnown, observation.Delivery.Value.Valid()},
 		{"workspace", observation.Workspace.Status == FactKnown, observation.Workspace.Value.Valid()},
+		{"work_package", observation.WorkPackage.Status == FactKnown, observation.WorkPackage.Value.Valid()},
 		{"plan", observation.Plan.Status == FactKnown, observation.Plan.Value.Valid()},
 		{"configuration", observation.Configuration.Status == FactKnown, observation.Configuration.Value.Valid()},
 		{"runtime", observation.Runtime.Status == FactKnown, observation.Runtime.Value.Valid()},
@@ -624,6 +645,7 @@ func observationFingerprint(observation Observation) (string, error) {
 	zeroEvidenceTimes(&projection.Engagement)
 	zeroEvidenceTimes(&projection.Delivery)
 	zeroEvidenceTimes(&projection.Workspace)
+	zeroEvidenceTimes(&projection.WorkPackage)
 	zeroEvidenceTimes(&projection.Plan)
 	zeroEvidenceTimes(&projection.Configuration)
 	zeroEvidenceTimes(&projection.ConfigurationPolicy)

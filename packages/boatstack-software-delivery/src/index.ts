@@ -52,6 +52,7 @@ export const softwareDeliveryFacets: FacetDefinition[] = [
   "objective",
   "delivery",
   "workspace",
+  "work-package",
   "plan",
   "configuration",
   "configuration-policy",
@@ -103,18 +104,18 @@ export interface TrustedStep {
   work?: string;
 }
 
-/** Admits a completed planning package into the delivery lifecycle.
- * @category Planning
+/** Admits a completed generic work package.
+ * @category Accepted work
  */
-export const planningPackageAdmit: TrustedStep = {
-  id: "planning.package.admit",
+export const workPackageAdmit: TrustedStep = {
+  id: "work.package.admit",
   priority: 43,
 };
-/** Records approval of the exact admitted planning package.
- * @category Planning
+/** Records approval of the exact admitted generic work package.
+ * @category Accepted work
  */
-export const planningPackageApprove: TrustedStep = {
-  id: "planning.package.approve",
+export const workPackageApprove: TrustedStep = {
+  id: "work.package.approve",
   priority: 44,
 };
 /** Promotes an approved planning package into the active delivery plan.
@@ -125,13 +126,22 @@ export const planningPackagePromote: TrustedStep = {
   priority: 45,
 };
 
-/** Repository-owned foreground-work contract and explicit canonical plan output. */
+/** Repository-owned foreground-work contract accepted as one immutable package.
+ * @category Accepted work
+ */
+export interface WorkPackageDefinition {
+  work: WorkContract;
+}
+
+/** Repository-owned accepted work specialized with one canonical plan output.
+ * @category Planning
+ */
 export interface PlanningPackageDefinition {
   work: WorkContract;
   planOutput: string;
 }
 
-function portablePlanningPath(path: string): boolean {
+function portableWorkPackagePath(path: string): boolean {
   if (path.length === 0 || path.startsWith("/") || path.includes("\\")) return false;
   for (const component of path.split("/")) {
     if (
@@ -148,24 +158,13 @@ function portablePlanningPath(path: string): boolean {
   return true;
 }
 
-function validatePlanningPackage(planning: PlanningPackageDefinition): void {
-  const { work, planOutput } = planning;
-  if (!/^[a-z][a-z0-9._-]*$/.test(planOutput)) {
-    throw new Error(
-      "SOFTWARE_DELIVERY_PLAN_OUTPUT_INVALID: planOutput must be a canonical semantic artifact ID",
-    );
-  }
-  const selected = work.outputs.filter((output) => output.id === planOutput);
-  if (selected.length !== 1 || !selected[0].required) {
-    throw new Error(
-      "SOFTWARE_DELIVERY_PLAN_OUTPUT_REQUIRED: planOutput must select exactly one required output",
-    );
-  }
+function validateWorkPackage(definition: WorkPackageDefinition): void {
+  const { work } = definition;
   const paths = new Map<string, string>();
   const reserved = ["manifest.json", "contract.json", "work-receipt.json", "approval.json"];
   for (const output of work.outputs) {
     const path = output.path.toLowerCase();
-    if (!portablePlanningPath(output.path)) {
+    if (!portableWorkPackagePath(output.path)) {
       throw new Error(`SOFTWARE_DELIVERY_OUTPUT_PATH_INVALID: ${JSON.stringify(output.path)}`);
     }
     for (const owned of reserved) {
@@ -180,6 +179,38 @@ function validatePlanningPackage(planning: PlanningPackageDefinition): void {
     }
     paths.set(path, output.id);
   }
+}
+
+function validatePlanningPackage(planning: PlanningPackageDefinition): void {
+  const { work, planOutput } = planning;
+  validateWorkPackage({ work });
+  if (!/^[a-z][a-z0-9._-]*$/.test(planOutput)) {
+    throw new Error(
+      "SOFTWARE_DELIVERY_PLAN_OUTPUT_INVALID: planOutput must be a canonical semantic artifact ID",
+    );
+  }
+  const selected = work.outputs.filter((output) => output.id === planOutput);
+  if (selected.length !== 1 || !selected[0].required) {
+    throw new Error(
+      "SOFTWARE_DELIVERY_PLAN_OUTPUT_REQUIRED: planOutput must select exactly one required output",
+    );
+  }
+}
+
+/** Validates and returns a plan-neutral accepted-work declaration.
+ * @category Accepted work
+ */
+export function workPackage(definition: WorkPackageDefinition): WorkPackageDefinition {
+  validateWorkPackage(definition);
+  return definition;
+}
+
+/** Validates and returns an accepted-work declaration with one plan promotion output.
+ * @category Planning
+ */
+export function planningPackage(definition: PlanningPackageDefinition): PlanningPackageDefinition {
+  validatePlanningPackage(definition);
+  return definition;
 }
 
 /**
@@ -203,7 +234,9 @@ export interface SoftwareDeliveryFlowDefinition {
   description?: string;
   /** Explicit trusted lifecycle membership and repository-selected priorities. */
   lifecycle: TrustedStep[];
-  /** Foreground work and explicit canonical plan output bound to admission. */
+  /** Plan-neutral foreground work admitted and approved as one package. */
+  workPackage?: WorkPackageDefinition;
+  /** Foreground work plus one output bound only to planning promotion. */
   planningPackage?: PlanningPackageDefinition;
   /** Additional explicit work contracts, in repository-selected order. */
   work?: WorkContract[];
@@ -245,9 +278,15 @@ function validateSoftwareDeliveryDefinition(
     }
   }
 
+  if (definition.workPackage && definition.planningPackage) {
+    throw new Error(
+      "SOFTWARE_DELIVERY_PACKAGE_EXCLUSIVE: workPackage and planningPackage are mutually exclusive",
+    );
+  }
+  const acceptedPackage = definition.workPackage ?? definition.planningPackage;
   const workIDs = new Set<string>();
-  const work = definition.planningPackage
-    ? [definition.planningPackage.work, ...(definition.work ?? [])]
+  const work = acceptedPackage
+    ? [acceptedPackage.work, ...(definition.work ?? [])]
     : definition.work ?? [];
   for (const contract of work) {
     if (workIDs.has(contract.id)) {
@@ -258,18 +297,29 @@ function validateSoftwareDeliveryDefinition(
     workIDs.add(contract.id);
   }
 
-  if (
-    definition.planningPackage &&
-    !lifecycleIDs.has(planningPackageAdmit.id)
-  ) {
+  const packageSteps = [workPackageAdmit.id, workPackageApprove.id];
+  if (acceptedPackage && packageSteps.some((id) => !lifecycleIDs.has(id))) {
     throw new Error(
-      "SOFTWARE_DELIVERY_PLANNING_PACKAGE_UNUSED: planningPackage requires planning.package.admit in lifecycle",
+      "SOFTWARE_DELIVERY_WORK_PACKAGE_UNUSED: a package requires work.package.admit and work.package.approve in lifecycle",
     );
   }
-  if (!definition.planningPackage && lifecycleIDs.has(planningPackageAdmit.id)) {
+  if (!acceptedPackage && packageSteps.some((id) => lifecycleIDs.has(id))) {
     throw new Error(
-      "SOFTWARE_DELIVERY_PLANNING_PACKAGE_REQUIRED: planning.package.admit requires planningPackage",
+      "SOFTWARE_DELIVERY_WORK_PACKAGE_REQUIRED: accepted-work lifecycle steps require workPackage or planningPackage",
     );
+  }
+  if (definition.planningPackage && !lifecycleIDs.has(planningPackagePromote.id)) {
+    throw new Error(
+      "SOFTWARE_DELIVERY_PLANNING_PACKAGE_UNUSED: planningPackage requires planning.package.promote in lifecycle",
+    );
+  }
+  if (!definition.planningPackage && lifecycleIDs.has(planningPackagePromote.id)) {
+    throw new Error(
+      "SOFTWARE_DELIVERY_PLANNING_PACKAGE_REQUIRED: planning.package.promote requires planningPackage",
+    );
+  }
+  if (definition.workPackage) {
+    validateWorkPackage(definition.workPackage);
   }
   if (definition.planningPackage) {
     validatePlanningPackage(definition.planningPackage);
@@ -289,12 +339,12 @@ function validateSoftwareDeliveryDefinition(
       );
     }
     if (
-      definition.planningPackage &&
-      (step.id === planningPackageAdmit.id ||
-        step.work === definition.planningPackage.work.id)
+      acceptedPackage &&
+      (step.id === workPackageAdmit.id ||
+        step.work === acceptedPackage.work.id)
     ) {
       throw new Error(
-        `SOFTWARE_DELIVERY_WORK_CONFLICT: ${JSON.stringify(step.id)} cannot replace or repeat planningPackage.work`,
+        `SOFTWARE_DELIVERY_WORK_CONFLICT: ${JSON.stringify(step.id)} cannot replace or repeat accepted package work`,
       );
     }
     if (!additionalWorkIDs.has(step.work)) {
@@ -343,10 +393,12 @@ export function softwareDelivery(
   validateSoftwareDeliveryDefinition(definition);
 
   const inputResolvers = referencedInputResolvers(definition.entries);
-  const work = definition.planningPackage
-    ? [definition.planningPackage.work, ...(definition.work ?? [])]
+  const acceptedPackage = definition.workPackage ?? definition.planningPackage;
+  const work = acceptedPackage
+    ? [acceptedPackage.work, ...(definition.work ?? [])]
     : [...(definition.work ?? [])];
   const transitions = trustedSoftwareDeliveryTransitions(definition.lifecycle, {
+    workPackage: definition.workPackage,
     planningPackage: definition.planningPackage,
   }).map((transitionDefinition, index) => {
     const workID = definition.lifecycle[index].work;
@@ -424,12 +476,12 @@ export function managedWorktreeDestination(): ParameterProducer {
   );
 }
 
-/** Reads the exact fingerprint of the planning-package manifest admitted for this delivery.
+/** Reads the exact fingerprint of the work-package manifest admitted for this delivery.
  * @category Parameter producers
  */
-export function admittedPlanningPackageFingerprint(): ParameterProducer {
+export function admittedWorkPackageFingerprint(): ParameterProducer {
   return trustedParameterResolver(
-    "software-delivery/admitted-planning-package-fingerprint",
+    "software-delivery/admitted-work-package-fingerprint",
     "1",
   );
 }
@@ -497,8 +549,8 @@ function canonicalGateParameters(gate: "build" | "test" | "review" | "change" | 
  */
 export function standardSoftwareDeliveryParameters(step: TrustedStep): Record<string, ParameterProducer> {
   switch (step.id) {
-    case "planning.package.approve":
-      return { package_fingerprint: admittedPlanningPackageFingerprint() };
+    case "work.package.approve":
+      return { package_fingerprint: admittedWorkPackageFingerprint() };
     case "workspace.cut":
       return {
         branch: deliveryBranch(),
@@ -681,22 +733,38 @@ export function trustedSoftwareDeliveryTransition(
  */
 export function trustedSoftwareDeliveryTransitions(
   steps: TrustedStep[],
-  options: { planningPackage?: PlanningPackageDefinition } = {},
+  options: {
+    workPackage?: WorkPackageDefinition;
+    planningPackage?: PlanningPackageDefinition;
+  } = {},
 ): TransitionDefinition[] {
-  const hasAdmit = steps.some((step) => step.id === planningPackageAdmit.id);
-  if (hasAdmit && !options.planningPackage) {
-    throw new Error("SOFTWARE_DELIVERY_PLANNING_PACKAGE_REQUIRED: planning.package.admit requires planningPackage");
+  if (options.workPackage && options.planningPackage) {
+    throw new Error("SOFTWARE_DELIVERY_PACKAGE_EXCLUSIVE: workPackage and planningPackage are mutually exclusive");
   }
-  if (!hasAdmit && options.planningPackage) {
-    throw new Error("SOFTWARE_DELIVERY_PLANNING_PACKAGE_UNUSED: planningPackage requires planning.package.admit");
+  const acceptedPackage = options.workPackage ?? options.planningPackage;
+  const hasAdmit = steps.some((step) => step.id === workPackageAdmit.id);
+  const hasApprove = steps.some((step) => step.id === workPackageApprove.id);
+  const hasPromote = steps.some((step) => step.id === planningPackagePromote.id);
+  if ((hasAdmit || hasApprove) && !acceptedPackage) {
+    throw new Error("SOFTWARE_DELIVERY_WORK_PACKAGE_REQUIRED: accepted-work lifecycle steps require a package");
   }
+  if ((!hasAdmit || !hasApprove) && acceptedPackage) {
+    throw new Error("SOFTWARE_DELIVERY_WORK_PACKAGE_UNUSED: a package requires admit and approve lifecycle steps");
+  }
+  if (hasPromote && !options.planningPackage) {
+    throw new Error("SOFTWARE_DELIVERY_PLANNING_PACKAGE_REQUIRED: planning.package.promote requires planningPackage");
+  }
+  if (!hasPromote && options.planningPackage) {
+    throw new Error("SOFTWARE_DELIVERY_PLANNING_PACKAGE_UNUSED: planningPackage requires planning.package.promote");
+  }
+  if (options.workPackage) validateWorkPackage(options.workPackage);
   if (options.planningPackage) validatePlanningPackage(options.planningPackage);
   return steps.map((step) => {
-    const planning = step.id === planningPackageAdmit.id ? options.planningPackage : undefined;
+    const packageAdmission = step.id === workPackageAdmit.id ? acceptedPackage : undefined;
     const result = trustedSoftwareDeliveryTransition(step, {
-      ...(planning ? { work: planning.work } : {}),
+      ...(packageAdmission ? { work: packageAdmission.work } : {}),
     });
-    if (!planning) return result;
+    if (step.id !== planningPackagePromote.id || !options.planningPackage) return result;
     return {
       ...result,
       parameters: [
@@ -704,7 +772,7 @@ export function trustedSoftwareDeliveryTransitions(
         {
           parameter: "plan_output",
           producer: trustedParameterResolver(
-            `${bindingPrefix}planning-package-plan-output/${planning.planOutput}`,
+            `${bindingPrefix}planning-package-plan-output/${options.planningPackage.planOutput}`,
             "1",
           ),
         },

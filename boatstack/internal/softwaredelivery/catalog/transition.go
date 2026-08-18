@@ -326,7 +326,7 @@ func (c FacetCondition) Evaluate(snapshot model.Snapshot) (bool, string) {
 func traceSafeFacetValue(facet model.FacetName) bool {
 	switch facet {
 	case model.FacetPhase, model.FacetProgram, model.FacetTopology, model.FacetEngagement,
-		model.FacetDelivery, model.FacetWorkspace, model.FacetPlan, model.FacetConfiguration,
+		model.FacetDelivery, model.FacetWorkspace, model.FacetWorkPackage, model.FacetPlan, model.FacetConfiguration,
 		model.FacetRuntime, model.FacetPublication, model.FacetVerification, model.FacetRecovery,
 		model.FacetTransaction, model.FacetTerminal:
 		return true

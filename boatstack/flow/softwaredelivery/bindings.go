@@ -34,11 +34,11 @@ func NewResolver(ctx context.Context) (Resolver, error) {
 	for _, transition := range manifest.Transitions {
 		transitions[string(transition.ID)] = transition
 	}
-	planning, err := planningPackageTransitions(transitions)
+	acceptedWork, err := acceptedWorkTransitions(transitions)
 	if err != nil {
 		return Resolver{}, err
 	}
-	for _, transition := range planning {
+	for _, transition := range acceptedWork {
 		transitions[string(transition.ID)] = transition
 	}
 	return Resolver{transitions: transitions}, nil
@@ -106,10 +106,10 @@ func (r Resolver) ResolveParameterResolver(reference, version string) (controlpr
 		StabilityScope: "invocation",
 	}
 	switch {
-	case reference == ParameterResolverPrefix+"admitted-planning-package-fingerprint":
-		value.Dependencies = []string{"planning-package-fingerprint", "durable-state"}
+	case reference == ParameterResolverPrefix+"admitted-work-package-fingerprint":
+		value.Dependencies = []string{"work-package-fingerprint", "durable-state"}
 	case strings.HasPrefix(reference, planningPackagePlanOutputResolverPrefix):
-		if value := strings.TrimPrefix(reference, planningPackagePlanOutputResolverPrefix); !planningPackageSegment.MatchString(value) {
+		if value := strings.TrimPrefix(reference, planningPackagePlanOutputResolverPrefix); !workPackageSegment.MatchString(value) {
 			return controlprogram.ResolvedParameterResolver{}, fmt.Errorf("unknown software-delivery parameter resolver %q", reference)
 		}
 		value.Dependencies = []string{"compiled-planning-package-binding"}
@@ -232,9 +232,9 @@ func projectOperatorParameters(transition delivery.Transition) []controlprogram.
 	for _, parameter := range transition.Parameters {
 		allowed := []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceHostInput}
 		switch {
-		case transition.ID == PlanningPackageApprove && parameter.Name == "package_fingerprint":
+		case transition.ID == WorkPackageApprove && parameter.Name == "package_fingerprint":
 			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceTrustedResolver}
-		case transition.ID == PlanningPackageAdmit && parameter.Name == "plan_output":
+		case transition.ID == PlanningPackagePromote && parameter.Name == "plan_output":
 			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceTrustedResolver}
 		case transition.ID == "workspace.cut":
 			allowed = []controlprogram.ParameterSourceKind{controlprogram.ParameterSourceTrustedResolver}

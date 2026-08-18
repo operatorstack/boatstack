@@ -3,7 +3,7 @@
 
 Registry size: **63** transitions. Event classes: authority 9; owned-local 32; owned-external 2; recovery 7; observed-external 13.
 
-Controlling facets: `phase`, `program`, `topology`, `engagement`, `delivery`, `workspace`, `plan`, `configuration`, `configuration-policy`, `runtime`, `publication`, `verification`, `recovery`, `transaction`, `recovery-info`, `transaction-info`, `terminal`, `objective`.
+Controlling facets: `phase`, `program`, `topology`, `engagement`, `delivery`, `workspace`, `work-package`, `plan`, `configuration`, `configuration-policy`, `runtime`, `publication`, `verification`, `recovery`, `transaction`, `recovery-info`, `transaction-info`, `terminal`, `objective`.
 
 | Transition | Origin | Owner | Selection | Class | Source phases | Target phases | Authority | Required capabilities | Parameters | Owned resources | Verifier | Recovery | Cost |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|

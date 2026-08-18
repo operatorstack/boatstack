@@ -25,14 +25,17 @@ const requiredFunctions = {
   ],
   "@operatorstack/boatstack-software-delivery": [
     "SoftwareDeliveryFlowDefinition",
+    "WorkPackageDefinition",
     "inbox",
-    "planningPackageAdmit",
-    "planningPackageApprove",
+    "planningPackage",
     "planningPackagePromote",
     "softwareDelivery",
     "trustedDelegation",
     "trustedSoftwareDeliveryTransitions",
     "trustedTransition",
+    "workPackage",
+    "workPackageAdmit",
+    "workPackageApprove",
   ],
 };
 

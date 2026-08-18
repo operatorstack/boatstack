@@ -13,16 +13,20 @@ run and validates required outputs, media types, size limits, and schemas. Work
 produces candidate artifacts only; completion does not advance Flow state or
 create authority.
 
-The Product Delivery planning package uses three independent trusted
-operations when the repository includes them:
+Accepted foreground work uses two plan-neutral trusted operations:
 
-1. `planning.package.admit` verifies and stores an immutable fingerprint-addressed snapshot;
-2. `planning.package.approve` records exact admitted authority and actor provenance;
-3. `planning.package.promote` publishes the approved canonical plan.
+1. `work.package.admit` verifies and stores an immutable fingerprint-addressed snapshot;
+2. `work.package.approve` records exact admitted authority and actor provenance.
+
+The optional `planning.package.promote` specialization selects one
+compiler-bound required output from an approved package and publishes its exact
+bytes as the canonical plan. Generic admission and approval do not read or
+change plan state. The promotion receipt alone gives that output plan meaning.
 
 Repositories choose whether these operations belong to their lifecycle, their
-priorities, and the target they serve. `planningPackage.work` and its explicit
-`planOutput` are bound only to admit. No output ID is implicitly special.
+priorities, and the target they serve. `workPackage.work` and
+`planningPackage.work` bind foreground work only to generic admission.
+`planningPackage.planOutput` binds only promotion. No output ID is implicitly special.
 Additional work must be explicitly registered and named
 by every lifecycle step that consumes it.
 
@@ -38,14 +42,14 @@ delegated authority.
 
 ## Immutable packages and verification
 
-Admission writes `.boatstack/planning-packages/<delivery>/<full-sha256>/` with
+Admission writes `.boatstack/work-packages/<delivery>/<full-sha256>/` with
 `manifest.json`, `contract.json`, `work-receipt.json`, and the exact output
 bytes. `approval.json` is a one-time immutable sidecar. Historical verification
 uses the embedded contract and never needs the old Flow or controller state.
 
 ```sh
-boatstack flow planning-package verify --repo . --all --format json
-boatstack flow planning-package verify --repo . --delivery <delivery> \
+boatstack flow work-package verify --repo . --all --format json
+boatstack flow work-package verify --repo . --delivery <delivery> \
   --package <fingerprint> --require-approval --require-current-program --format json
 ```
 
@@ -56,11 +60,11 @@ origin authenticity as `not-proven`.
 ## Related API
 
 - [`foregroundWork`, assets, and work outputs](../typescript/base-sdk.md#foreground-work)
-- [Planning helpers](../typescript/software-delivery-sdk.md#planning)
+- [Accepted-work and planning helpers](../typescript/software-delivery-sdk.md#accepted-work-and-planning)
 - [Writing a Flow](writing-a-flow.md)
 
 ## Current implementation anchors
 
-- [Planning-package binding](../../boatstack/flow/softwaredelivery/planning_package.go)
+- [Accepted-work binding](../../boatstack/flow/softwaredelivery/work_package.go)
 - [Foreground-work manager](../../boatstack/internal/softwaredelivery/foregroundwork/manager.go)
 - [Journal/work conformance](../../boatstack/internal/softwaredelivery/effects/journal_work_test.go)
