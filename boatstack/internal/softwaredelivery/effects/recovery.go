@@ -1,6 +1,7 @@
 package effects
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -60,6 +61,11 @@ func (d Driver) prepareRecoveryReplay(ctx context.Context, layout ports.Controll
 		mutation, mutationErr := mutationForExactResource(original.Path, target, targetLink, os.FileMode(original.Mode), original.InstallLast, deleteResource)
 		if mutationErr != nil {
 			return nil, mutationErr
+		}
+		if resume && original.AtomicTreeRoot != "" && !original.Delete {
+			if !mutation.PriorExists || mutation.PriorLink != original.TargetLink || !bytes.Equal(mutation.Prior, original.Target) || mutation.Mode != original.Mode {
+				return nil, fmt.Errorf("installed immutable resource tree differs from staged transaction at %s", original.Path)
+			}
 		}
 		mutation.AtomicTreeRoot = original.AtomicTreeRoot
 		mutations = append(mutations, mutation)

@@ -99,13 +99,21 @@ func TestVerifyApprovalUsesAuthorityReceiptContract(t *testing.T) {
 	if err := StrictDecode(manifestRaw, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	approval := Approval{DeliveryID: delivery, PackageFingerprint: fingerprint, ManifestFingerprint: fingerprint, PlanOutputID: manifest.PlanOutput.ID, PlanFingerprint: manifest.PlanOutput.SHA256, AdmissionID: "admission", AuthoritySources: []AuthoritySource{{ID: "human", Class: "human", Subject: "operator", Fingerprint: "human-proof"}}, Actor: "operator", ApprovedAt: time.Unix(100, 0).UTC()}
+	approval := Approval{DeliveryID: delivery, PackageFingerprint: fingerprint, ManifestFingerprint: fingerprint, PlanOutputID: manifest.PlanOutput.ID, PlanFingerprint: manifest.PlanOutput.SHA256, AdmissionID: "admission", AuthoritySources: []AuthoritySource{{ID: "human", Class: "human", Subject: "operator", Fingerprint: "human-proof"}}, Actor: "operator", IdentityRole: "developer", IdentityProviderFingerprint: strings.Repeat("9", 64), ApprovedAt: time.Unix(100, 0).UTC()}
 	_, raw, _ := SealApproval(approval)
 	if err := os.WriteFile(filepath.Join(root, "approval.json"), raw, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if result := Verify(repository, delivery, fingerprint, nil); result.Approval != Valid || result.Integrity != Valid {
 		t.Fatalf("opaque authority fingerprint result=%#v", result)
+	}
+	approval.AuthoritySources[0].Class = "autonomy"
+	_, raw, _ = SealApproval(approval)
+	if err := os.WriteFile(filepath.Join(root, "approval.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if result := Verify(repository, delivery, fingerprint, nil); result.Approval != Valid || result.Integrity != Valid {
+		t.Fatalf("delegated autonomy approval result=%#v", result)
 	}
 	approval.AuthoritySources[0].Class = "unknown"
 	_, raw, _ = SealApproval(approval)
@@ -114,6 +122,49 @@ func TestVerifyApprovalUsesAuthorityReceiptContract(t *testing.T) {
 	}
 	if result := Verify(repository, delivery, fingerprint, nil); result.Approval != Invalid {
 		t.Fatalf("unknown authority class result=%#v", result)
+	}
+	approval.AuthoritySources = []AuthoritySource{{ID: "repository", Class: "repository-policy", Subject: "repository", Fingerprint: "policy-proof"}}
+	_, raw, _ = SealApproval(approval)
+	if err := os.WriteFile(filepath.Join(root, "approval.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if result := Verify(repository, delivery, fingerprint, nil); result.Approval != Invalid {
+		t.Fatalf("repository-only approval result=%#v", result)
+	}
+}
+
+func TestVerifyRejectsContractOutsideRuntimeABI(t *testing.T) {
+	repository, delivery, fingerprint, _ := installFixture(t)
+	oldRoot := filepath.Join(repository, ".boatstack", "planning-packages", delivery, fingerprint)
+	contractRaw, _ := os.ReadFile(filepath.Join(oldRoot, "contract.json"))
+	var contract Contract
+	if err := StrictDecode(contractRaw, &contract); err != nil {
+		t.Fatal(err)
+	}
+	contract.Work.Outputs[0].Schema = &Asset{Path: "schema.json", Content: `{}`, SHA256: Digest([]byte(`{}`))}
+	contract.Work.Fingerprint, _ = RuntimeWorkFingerprint(contract.Work)
+	_, contractRaw, _ = SealContract(contract)
+	manifestRaw, _ := os.ReadFile(filepath.Join(oldRoot, "manifest.json"))
+	var manifest Manifest
+	if err := StrictDecode(manifestRaw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest.WorkContractFingerprint = contract.Work.Fingerprint
+	manifest.Contract.SHA256 = Digest(contractRaw)
+	manifest, manifestRaw, _ = SealManifest(manifest)
+	newRoot := filepath.Join(filepath.Dir(oldRoot), manifest.Fingerprint)
+	if err := os.Rename(oldRoot, newRoot); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(newRoot, "contract.json"), contractRaw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(newRoot, "manifest.json"), manifestRaw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result := Verify(repository, delivery, manifest.Fingerprint, nil)
+	if result.Contract != Invalid || result.Integrity != Invalid {
+		t.Fatalf("non-JSON schema contract result=%#v", result)
 	}
 }
 

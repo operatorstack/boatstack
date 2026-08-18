@@ -73,7 +73,13 @@ func TestPlanningPackageAdmitApprovePromoteUsesExactV2Snapshot(t *testing.T) {
 	if err := applyStateTransition(&state, approvalAdmission, approve); err != nil {
 		t.Fatal(err)
 	}
-	mutations, err = prepareArtifacts(layout, approvalAdmission, approve, &state)
+	wrongRole := approvalAdmission
+	wrongRole.Authority.Receipts = append([]protocol.AuthorityReceipt(nil), approvalAdmission.Authority.Receipts...)
+	wrongRole.Authority.Receipts[0].IdentityRole = "release-manager"
+	if _, mismatchErr := prepareArtifacts(layout, wrongRole, approve, &state, "developer"); mismatchErr == nil || !strings.Contains(mismatchErr.Error(), "does not match admitted program role") {
+		t.Fatalf("mismatched approval role was not rejected: %v", mismatchErr)
+	}
+	mutations, err = prepareArtifacts(layout, approvalAdmission, approve, &state, "developer")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,6 +130,24 @@ func TestPlanningPackageAdmitApprovePromoteUsesExactV2Snapshot(t *testing.T) {
 		if err := os.Rename(swappedRoot, packageRoot); err != nil {
 			t.Fatal(err)
 		}
+	}
+	originalManifest, err := os.ReadFile(filepath.Join(packageRoot, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifyPlanningPackage = func(repository, deliveryID, packageFingerprint string, current *planningpackage.CurrentProgram) planningpackage.Result {
+		result := originalVerify(repository, deliveryID, packageFingerprint, current)
+		if err := os.WriteFile(filepath.Join(packageRoot, "manifest.json"), append(append([]byte(nil), originalManifest...), '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	if _, mutationErr := prepareArtifacts(layout, promotion, promote, &state); mutationErr == nil || !strings.Contains(mutationErr.Error(), "manifest") {
+		t.Fatalf("in-place package mutation was not rejected: %v", mutationErr)
+	}
+	verifyPlanningPackage = originalVerify
+	if err := os.WriteFile(filepath.Join(packageRoot, "manifest.json"), originalManifest, 0o644); err != nil {
+		t.Fatal(err)
 	}
 	mutations, err = prepareArtifacts(layout, promotion, promote, &state)
 	if err != nil {

@@ -225,12 +225,22 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		for _, receipt := range admission.Authority.Receipts {
 			approval.AuthoritySources = append(approval.AuthoritySources, planningpackage.AuthoritySource{ID: receipt.ID, Class: string(receipt.Class), Subject: receipt.Subject, Fingerprint: receipt.Fingerprint})
 		}
+		expectedRole := ""
+		if len(humanIdentityRole) > 0 {
+			expectedRole = humanIdentityRole[0]
+		}
 		for _, receipt := range admission.Authority.Receipts {
 			if receipt.Subject == approval.Actor && receipt.IdentityRole != "" && receipt.IdentityProviderFingerprint != "" {
+				if expectedRole != "" && receipt.IdentityRole != expectedRole {
+					return nil, fmt.Errorf("planning package approval identity role %q does not match admitted program role %q", receipt.IdentityRole, expectedRole)
+				}
 				approval.IdentityRole = receipt.IdentityRole
 				approval.IdentityProviderFingerprint = receipt.IdentityProviderFingerprint
 				break
 			}
+		}
+		if approval.IdentityRole == "" || approval.IdentityProviderFingerprint == "" {
+			return nil, fmt.Errorf("planning package approval requires admitted identity provenance matching actor %q", approval.Actor)
 		}
 		approval, raw, encodeErr := planningpackage.SealApproval(approval)
 		if encodeErr != nil {
@@ -266,7 +276,14 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 			return nil, loadErr
 		}
 		var manifest planningpackage.Manifest
-		if decodeErr := planningpackage.StrictDecode(manifestRaw, &manifest); decodeErr != nil || manifest.Fingerprint != state.PlanningPackageFingerprint {
+		if decodeErr := planningpackage.StrictDecode(manifestRaw, &manifest); decodeErr != nil {
+			return nil, fmt.Errorf("decode pinned planning package manifest: %w", decodeErr)
+		}
+		canonicalManifestRaw, manifestEncodeErr := planningpackage.Encode(manifest)
+		manifestIdentity := manifest
+		manifestIdentity.Fingerprint = ""
+		manifestIdentityRaw, manifestIdentityEncodeErr := planningpackage.Encode(manifestIdentity)
+		if manifestEncodeErr != nil || manifestIdentityEncodeErr != nil || !bytes.Equal(manifestRaw, canonicalManifestRaw) || manifest.Fingerprint != state.PlanningPackageFingerprint || sha256Bytes(manifestIdentityRaw) != manifest.Fingerprint {
 			return nil, fmt.Errorf("pinned planning package manifest does not bind durable state")
 		}
 		approvalRaw, readErr := readRegularPlanningMember(packageRoot, "approval.json")
@@ -274,7 +291,10 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 			return nil, fmt.Errorf("read planning package approval: %w", readErr)
 		}
 		var approval planningpackage.Approval
-		if decodeErr := planningpackage.StrictDecode(approvalRaw, &approval); decodeErr != nil || approval.SchemaVersion != planningpackage.ApprovalSchemaVersion || approval.DeliveryID != deliveryID || approval.PackageFingerprint != manifest.Fingerprint || approval.PlanFingerprint != manifest.PlanOutput.SHA256 || approval.Actor == "" || approval.AdmissionID == "" || approval.ApprovedAt.IsZero() {
+		if decodeErr := planningpackage.StrictDecode(approvalRaw, &approval); decodeErr != nil {
+			return nil, fmt.Errorf("decode planning package approval: %w", decodeErr)
+		}
+		if approvalErr := planningpackage.ValidateApproval(approvalRaw, approval, manifest, deliveryID, state.PlanningPackageFingerprint); approvalErr != nil {
 			return nil, fmt.Errorf("planning package approval does not bind the exact package")
 		}
 		planRaw, readErr := readRegularPlanningMember(packageRoot, manifest.PlanOutput.Path)

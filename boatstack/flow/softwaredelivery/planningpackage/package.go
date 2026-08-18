@@ -32,6 +32,7 @@ const (
 
 var segment = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 var fingerprint = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var identityRole = regexp.MustCompile(`^[a-z][a-z0-9._-]*$`)
 
 var Reserved = []string{"approval.json", "contract.json", "manifest.json", "work-receipt.json"}
 
@@ -395,13 +396,9 @@ func Verify(repository, deliveryID, packageFingerprint string, current *CurrentP
 			result.Approval = Invalid
 			return fail("approval is invalid")
 		}
-		identity := approval
-		identity.Fingerprint = ""
-		raw, _ := Encode(identity)
-		identityPresent := approval.IdentityRole != "" || approval.IdentityProviderFingerprint != ""
-		if approval.SchemaVersion != ApprovalSchemaVersion || approval.Fingerprint != Digest(raw) || approval.DeliveryID != deliveryID || approval.PackageFingerprint != packageFingerprint || approval.ManifestFingerprint != manifest.Fingerprint || approval.PlanOutputID != manifest.PlanOutput.ID || approval.PlanFingerprint != manifest.PlanOutput.SHA256 || approval.Actor == "" || approval.AdmissionID == "" || identityPresent && (approval.IdentityRole == "" || !ValidFingerprint(approval.IdentityProviderFingerprint)) || len(approval.AuthoritySources) == 0 || approval.ApprovedAt.IsZero() {
+		if err := ValidateApproval(approvalRaw, approval, manifest, deliveryID, packageFingerprint); err != nil {
 			result.Approval = Invalid
-			return fail("approval identity is invalid")
+			return fail("approval identity is invalid: " + err.Error())
 		}
 		result.Approval = Valid
 	} else if !os.IsNotExist(statErr) {
@@ -466,6 +463,36 @@ func authoritySourcesSorted(sources []AuthoritySource) bool {
 	return true
 }
 
+// ValidateApproval checks the complete portable approval admission contract
+// against the exact manifest it authorizes.
+func ValidateApproval(raw []byte, approval Approval, manifest Manifest, deliveryID, packageFingerprint string) error {
+	if !canonicalEncoding(raw, approval) || !authoritySourcesSorted(approval.AuthoritySources) {
+		return fmt.Errorf("encoding or authority sources")
+	}
+	identity := approval
+	identity.Fingerprint = ""
+	identityRaw, err := Encode(identity)
+	if err != nil {
+		return err
+	}
+	if approval.SchemaVersion != ApprovalSchemaVersion || approval.Fingerprint != Digest(identityRaw) || approval.DeliveryID != deliveryID || approval.PackageFingerprint != packageFingerprint || approval.ManifestFingerprint != manifest.Fingerprint || approval.PlanOutputID != manifest.PlanOutput.ID || approval.PlanFingerprint != manifest.PlanOutput.SHA256 || approval.Actor == "" || approval.AdmissionID == "" || approval.ApprovedAt.IsZero() {
+		return fmt.Errorf("lineage")
+	}
+	if len(approval.IdentityRole) == 0 || len(approval.IdentityRole) > 128 || !identityRole.MatchString(approval.IdentityRole) || !ValidFingerprint(approval.IdentityProviderFingerprint) {
+		return fmt.Errorf("human identity provenance")
+	}
+	matchingActor := false
+	for _, source := range approval.AuthoritySources {
+		if source.Subject == approval.Actor {
+			matchingActor = true
+		}
+	}
+	if !matchingActor {
+		return fmt.Errorf("authority does not match actor")
+	}
+	return nil
+}
+
 func validAuthorityClass(value string) bool {
 	switch value {
 	case "repository-policy", "human", "autonomy", "external-provider":
@@ -490,7 +517,7 @@ func readRegular(path string) ([]byte, error) {
 }
 
 func validateContractAssets(work WorkContract) error {
-	if !ValidSegment(work.ID) || !ValidFingerprint(work.Fingerprint) || !safeRelative(work.Instructions.Path) || Digest([]byte(work.Instructions.Content)) != work.Instructions.SHA256 || !utf8.ValidString(work.Instructions.Content) {
+	if !ValidSegment(work.ID) || !ValidFingerprint(work.Fingerprint) || !safeRelative(work.Instructions.Path) || strings.TrimSpace(work.Instructions.Content) == "" || Digest([]byte(work.Instructions.Content)) != work.Instructions.SHA256 || !utf8.ValidString(work.Instructions.Content) || len(work.Outputs) == 0 {
 		return fmt.Errorf("embedded work contract is invalid")
 	}
 	inputIDs := map[string]bool{}
@@ -508,15 +535,21 @@ func validateContractAssets(work WorkContract) error {
 		return fmt.Errorf("embedded work contract fingerprint is invalid")
 	}
 	for _, o := range work.Outputs {
-		if o.MediaType == "" {
-			return fmt.Errorf("output %q has no media type", o.ID)
+		if o.MaxBytes < 1 || o.MaxBytes > 16<<20 {
+			return fmt.Errorf("output %q has an invalid byte limit", o.ID)
+		}
+		if o.MediaType != "text/markdown" && o.MediaType != "text/plain" && o.MediaType != "application/json" {
+			return fmt.Errorf("output %q has unsupported media type", o.ID)
 		}
 		for _, a := range []*Asset{o.Guidance, o.Schema} {
-			if a != nil && (!safeRelative(a.Path) || !utf8.ValidString(a.Content) || Digest([]byte(a.Content)) != a.SHA256) {
+			if a != nil && (!safeRelative(a.Path) || strings.TrimSpace(a.Content) == "" || !utf8.ValidString(a.Content) || Digest([]byte(a.Content)) != a.SHA256) {
 				return fmt.Errorf("output %q has invalid embedded asset", o.ID)
 			}
 		}
 		if o.Schema != nil {
+			if o.MediaType != "application/json" {
+				return fmt.Errorf("output %q has a schema for a non-JSON media type", o.ID)
+			}
 			var schema any
 			if json.Unmarshal([]byte(o.Schema.Content), &schema) != nil {
 				return fmt.Errorf("output %q has invalid embedded schema JSON", o.ID)

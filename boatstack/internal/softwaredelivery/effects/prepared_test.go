@@ -124,6 +124,27 @@ func TestPreparedEffectInstallsAndRecoversPlanningTreeAsOneResource(t *testing.T
 	}
 }
 
+func TestPreparedEffectReportsAlreadyInstalledAtomicTreeFacts(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "package")
+	manifest := filepath.Join(root, "manifest.json")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifest, []byte("manifest"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mutation := ports.ResourceMutation{Path: manifest, Prior: []byte("manifest"), Target: []byte("manifest"), PriorExists: true, Mode: 0o644, AtomicTreeRoot: root}
+	transition := catalog.Transition{ID: "recovery.resume", Effect: "recovery.resume", Owner: "kernel", OwnedResources: []string{"transaction.journal"}}
+	prepared := &preparedEffect{transition: transition, requiredCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite}, effectiveCapabilities: []catalog.Capability{catalog.CapabilityRepositoryWrite}, mutations: []ports.ResourceMutation{mutation}}
+	if _, err := prepared.Execute(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	facts := prepared.CommittedEffects()
+	if len(facts) != 1 || facts[0].Target != manifest || facts[0].Operation != "update" {
+		t.Fatalf("already-installed atomic tree facts = %#v", facts)
+	}
+}
+
 func TestPreparedEffectRestartRollbackRemovesAndCanRestoreAtomicTree(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "package")
 	manifest := filepath.Join(root, "manifest.json")

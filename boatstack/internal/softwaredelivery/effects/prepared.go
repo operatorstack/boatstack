@@ -174,6 +174,10 @@ func (p *preparedEffect) Execute(ctx context.Context) (ports.EffectResult, error
 			allExisting = allExisting && mutation.PriorExists
 		}
 		if allExisting {
+			// Recovery reconstructs an already-installed atomic tree as an
+			// exact no-op mutation group. It still committed every staged
+			// resource, so retain the group for exact effect facts.
+			p.applied = append(p.applied, group...)
 			continue
 		}
 		if err := atomicInstallTree(root, group); err != nil {
