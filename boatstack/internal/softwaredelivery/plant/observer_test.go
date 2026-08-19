@@ -103,6 +103,120 @@ func TestObserverValidatesAdmittedWorkPackageWithoutPrematurePlanPromotion(t *te
 	}
 }
 
+func TestObserverProjectsTamperedApprovedPackageToRecoverableAdmission(t *testing.T) {
+	// control-law: stale accepted work reopens the existing explicit admission path
+	repository := t.TempDir()
+	runGit(t, repository, "init", "-q")
+	runGit(t, repository, "config", "user.email", "boatstack@example.invalid")
+	runGit(t, repository, "config", "user.name", "Boatstack Test")
+	if err := os.WriteFile(filepath.Join(repository, "README.md"), []byte("fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repository, "add", "README.md")
+	runGit(t, repository, "commit", "-q", "-m", "fixture")
+
+	deliveryID := "accepted-package"
+	outputRaw := []byte("accepted evidence\n")
+	output := workpackage.Output{ID: "evidence", Path: "evidence.md", MediaType: "text/markdown", Required: true, Size: int64(len(outputRaw)), SHA256: hashBytes(outputRaw)}
+	portableWork := workpackage.WorkContract{
+		ID: "accepted-work", Instructions: workpackage.Asset{Path: "accepted.md", SHA256: hashBytes([]byte("accept")), Content: "accept"},
+		Outputs: []workpackage.WorkOutput{{ID: output.ID, Path: output.Path, MediaType: output.MediaType, Required: true, MaxBytes: 1024}},
+	}
+	workFingerprint, err := workpackage.RuntimeWorkFingerprint(portableWork)
+	if err != nil {
+		t.Fatal(err)
+	}
+	portableWork.Fingerprint = workFingerprint
+	_, contractRaw, err := workpackage.SealContract(workpackage.Contract{Work: portableWork})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, receiptRaw, err := workpackage.SealWorkReceipt(workpackage.WorkReceipt{
+		RequestID: "request", RequestFingerprint: strings.Repeat("a", 64), ResultFingerprint: strings.Repeat("b", 64),
+		ContractID: portableWork.ID, ContractFingerprint: workFingerprint, TransitionID: "work.package.admit",
+		ProgramFingerprint: strings.Repeat("d", 64), ContextFingerprint: strings.Repeat("e", 64), StateRevision: 2,
+		RepositoryID: "repo", WorktreeID: "tree", Outputs: []workpackage.Output{output},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, manifestRaw, err := workpackage.SealManifest(workpackage.Manifest{
+		DeliveryID: deliveryID, ProgramID: "program", ProgramFingerprint: strings.Repeat("d", 64), EntryID: "accept", RunID: "run-proof",
+		TransitionID: "work.package.admit", WorkContractID: portableWork.ID, WorkContractFingerprint: workFingerprint,
+		WorkRequestFingerprint: strings.Repeat("a", 64), WorkResultFingerprint: strings.Repeat("b", 64), ContextFingerprint: strings.Repeat("e", 64), StateRevision: 2,
+		Contract:    workpackage.Reference{Path: "contract.json", SHA256: workpackage.Digest(contractRaw)},
+		WorkReceipt: workpackage.Reference{Path: "work-receipt.json", SHA256: workpackage.Digest(receiptRaw)}, Outputs: []workpackage.Output{output},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	approval, approvalRaw, err := workpackage.SealApproval(workpackage.Approval{
+		DeliveryID: deliveryID, PackageFingerprint: manifest.Fingerprint, ManifestFingerprint: manifest.Fingerprint,
+		AdmissionID: "adm-approve", Actor: "reviewer", IdentityRole: "developer", IdentityProviderFingerprint: strings.Repeat("9", 64),
+		ApprovedAt: time.Unix(99, 0).UTC(), AuthoritySources: []workpackage.AuthoritySource{{ID: "human", Class: "human", Subject: "reviewer", Fingerprint: "authority-proof"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packageRoot := filepath.Join(repository, ".boatstack", "work-packages", deliveryID, manifest.Fingerprint)
+	if err := os.MkdirAll(packageRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, raw := range map[string][]byte{
+		"manifest.json": manifestRaw, "contract.json": contractRaw, "work-receipt.json": receiptRaw,
+		"approval.json": approvalRaw, output.Path: outputRaw,
+	} {
+		if err := os.WriteFile(filepath.Join(packageRoot, name), raw, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(packageRoot, output.Path), []byte("tampered\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	resolver, err := NewResolver(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, err := resolver.ResolveInvocation(context.Background(), repository, "cli", "stale-package-recovery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, _, err := resolver.ResolveLayout(context.Background(), invocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := durable.Default(invocation, time.Unix(100, 0).UTC())
+	state.Objective = model.Objective{ID: "objective", TargetID: model.ObjectiveApprovedWorkPackage, TrustedClass: model.ObjectiveApprovedWorkPackage, DeliveryID: deliveryID}
+	state.Engagement, state.Delivery, state.Phase, state.Terminal = model.EngagementActive, model.DeliveryApproved, model.PhaseTerminal, model.TerminalEstablished
+	state.WorkPackage, state.WorkPackageFingerprint, state.WorkPackageApprovalFingerprint = model.WorkPackageApproved, manifest.Fingerprint, approval.Fingerprint
+	state.Plan = model.PlanAbsent
+	stateRaw, err := durable.EncodeState(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(layout.StatePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(layout.StatePath, stateRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	observer, err := NewObserver(resolver, observerClock{now: time.Unix(101, 0).UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed, err := observer.Observe(context.Background(), ports.ObservationRequest{Invocation: invocation})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observed.WorkPackage.Status != model.FactStale || observed.WorkPackage.Value != model.WorkPackageAbsent {
+		t.Fatalf("tampered package projection = status %s value %s", observed.WorkPackage.Status, observed.WorkPackage.Value)
+	}
+	if observed.Phase.Value != model.PhaseActive || observed.Delivery.Value != model.DeliveryPlanning || observed.Terminal.Value != model.TerminalStale {
+		t.Fatalf("tampered package recovery frontier = phase %s delivery %s terminal %s", observed.Phase.Value, observed.Delivery.Value, observed.Terminal.Value)
+	}
+}
+
 func runGit(t *testing.T, directory string, arguments ...string) {
 	t.Helper()
 	command := exec.Command("git", append([]string{"-C", directory}, arguments...)...)

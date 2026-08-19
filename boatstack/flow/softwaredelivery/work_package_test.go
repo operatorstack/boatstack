@@ -68,22 +68,35 @@ func TestAcceptedWorkUsesDistinctFacetAndOnlyPromotionOwnsPlan(t *testing.T) {
 		t.Fatalf("work-package admission target = %v", got)
 	}
 	for _, condition := range transitions[0].SourceConditions {
-		if condition.Facet == model.FacetWorkPackage && !containsString(condition.Values, string(model.WorkPackageAbsent)) {
-			t.Fatalf("work-package admission source = %v", condition.Values)
+		if condition.Facet != model.FacetWorkPackage {
+			continue
+		}
+		if len(condition.Values) != 1 || condition.Values[0] != string(model.WorkPackageAbsent) ||
+			!containsStatus(condition.Statuses, model.FactKnown) || !containsStatus(condition.Statuses, model.FactStale) {
+			t.Fatalf("work-package admission source = statuses %v values %v", condition.Statuses, condition.Values)
 		}
 	}
-	foundPlanAbsent := false
+	foundRecoverablePlan := false
 	for _, condition := range transitions[2].SourceConditions {
-		if condition.Facet == model.FacetPlan && containsString(condition.Values, string(model.PlanAbsent)) {
-			foundPlanAbsent = true
+		if condition.Facet == model.FacetPlan && containsString(condition.Values, string(model.PlanAbsent)) && containsString(condition.Values, string(model.PlanStale)) {
+			foundRecoverablePlan = true
 		}
 	}
-	if !foundPlanAbsent {
-		t.Fatal("planning promotion can replay after canonical plan creation")
+	if !foundRecoverablePlan {
+		t.Fatal("planning promotion cannot recover a stale canonical plan")
 	}
 }
 
 func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsStatus(values []model.FactStatus, want model.FactStatus) bool {
 	for _, value := range values {
 		if value == want {
 			return true

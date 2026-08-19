@@ -196,6 +196,12 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 		workPackageFact.Evidence = workPackageEvidence
 		if !valid {
 			workPackageFact.Status = model.FactStale
+			// The durable value records what was last admitted. Once its
+			// immutable evidence is invalid, the resolver must not treat that
+			// value as a current valid or approved package. Project absence with
+			// explicit staleness so the already-selected admission transition is
+			// the only package-domain recovery path.
+			workPackageFact.Value = model.WorkPackageAbsent
 			artifactTerminal = model.TerminalStale
 		}
 	}
@@ -214,7 +220,7 @@ func (o Observer) Observe(ctx context.Context, request ports.ObservationRequest)
 		if runtimeState == model.RuntimeAbsent {
 			phase = model.PhaseObserved
 		}
-	} else if class == model.ObjectiveApprovedPlan && terminal == model.TerminalStale {
+	} else if (class == model.ObjectiveApprovedPlan || class == model.ObjectiveApprovedWorkPackage) && terminal == model.TerminalStale {
 		phase, delivery = model.PhaseActive, model.DeliveryPlanning
 	}
 	if class == model.ObjectiveMerged && state.Publication == model.PublicationMerged && state.Delivery == model.DeliveryTerminal &&

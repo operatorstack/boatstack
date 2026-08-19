@@ -245,6 +245,30 @@ func TestWorkPackageAdmitApprovePromoteUsesExactGenericSnapshot(t *testing.T) {
 	}
 }
 
+func TestWorkPackageReadmissionPreservesStalePlanForExplicitPromotion(t *testing.T) {
+	// control-law: generic package recovery cannot acquire plan authority
+	state := durable.State{
+		WorkPackage: model.WorkPackageApproved,
+		Plan:        model.PlanStale,
+		Delivery:    model.DeliveryPlanning,
+		Phase:       model.PhaseActive,
+		Terminal:    model.TerminalStale,
+	}
+	transition := catalog.Transition{
+		ID: "work.package.admit", TargetPhases: []model.ProtocolPhase{model.PhaseActive},
+		StateEffect: catalog.StateEffect{Kind: catalog.StateEffectNative, NativeHandler: "work-package-admit"},
+	}
+	if err := applyStateTransition(&state, protocol.Admission{Objective: model.Objective{ID: "objective", TargetID: model.ObjectiveApprovedPlan, DeliveryID: "delivery"}}, transition); err != nil {
+		t.Fatal(err)
+	}
+	if state.WorkPackage != model.WorkPackageValid || state.Terminal != model.TerminalNonterminal || state.Phase != model.PhaseActive {
+		t.Fatalf("re-admission state = package=%s terminal=%s phase=%s", state.WorkPackage, state.Terminal, state.Phase)
+	}
+	if state.Plan != model.PlanStale {
+		t.Fatalf("generic re-admission changed plan state to %s", state.Plan)
+	}
+}
+
 func TestPlanningPackagePromotePhaseFollowsObjective(t *testing.T) {
 	transition := catalog.Transition{
 		ID:           "planning.package.promote",

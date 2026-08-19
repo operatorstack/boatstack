@@ -42,7 +42,12 @@ func acceptedWorkTransitions(transitions map[string]delivery.Transition) ([]deli
 	admit.SourcePredicate, admit.AdmissionPredicate, admit.TargetPredicate = "work-package-admit-source", "exact-work-and-transition-admission", "work-package-valid"
 	admit.Verifier = "verifier:fresh-observation:" + WorkPackageAdmit
 	admit.StateEffect = delivery.StateEffect{Kind: delivery.StateEffectNative, NativeHandler: "work-package-admit"}
-	admit.SourceConditions = withFacet(withoutFacet(admit.SourceConditions, model.FacetPlan), model.FacetWorkPackage, string(model.WorkPackageAbsent))
+	admit.SourceConditions = withFacetStatuses(
+		withoutFacet(admit.SourceConditions, model.FacetPlan),
+		model.FacetWorkPackage,
+		[]model.FactStatus{model.FactKnown, model.FactStale},
+		string(model.WorkPackageAbsent),
+	)
 	admit.TargetConditions = withFacet(withoutFacet(admit.TargetConditions, model.FacetPlan), model.FacetWorkPackage, string(model.WorkPackageValid))
 	admit.TargetIDs = appendUniqueTarget(admit.TargetIDs, model.ObjectiveApprovedWorkPackage)
 	admit.OwnedResources = []string{"work-package"}
@@ -78,9 +83,11 @@ func acceptedWorkTransitions(transitions map[string]delivery.Transition) ([]deli
 	promote.SourcePredicate, promote.AdmissionPredicate, promote.TargetPredicate = "work-package-approved", "exact-package-output-promotion", "plan-approved"
 	promote.Verifier = "verifier:fresh-observation:" + PlanningPackagePromote
 	promote.StateEffect = delivery.StateEffect{Kind: delivery.StateEffectNative, NativeHandler: "planning-package-promote"}
-	promote.SourceConditions = withFacet(
+	promote.SourceConditions = withFacetStatuses(
 		withFacet(withoutFacet(promote.SourceConditions, model.FacetPlan), model.FacetWorkPackage, string(model.WorkPackageApproved)),
-		model.FacetPlan, string(model.PlanAbsent),
+		model.FacetPlan,
+		[]model.FactStatus{model.FactKnown},
+		string(model.PlanAbsent), string(model.PlanStale),
 	)
 	promote.TargetConditions = replaceFacet(promote.TargetConditions, model.FacetPlan, string(model.PlanApproved))
 	promote.TargetPhases = appendUniquePhase(promote.TargetPhases, model.PhaseTerminal)
@@ -103,6 +110,12 @@ func withoutFacet(values []delivery.FacetCondition, facet model.FacetName) []del
 
 func withFacet(values []delivery.FacetCondition, facet model.FacetName, value string) []delivery.FacetCondition {
 	return append(values, delivery.FacetCondition{Facet: facet, Statuses: []model.FactStatus{model.FactKnown}, Values: []string{value}})
+}
+
+func withFacetStatuses(values []delivery.FacetCondition, facet model.FacetName, statuses []model.FactStatus, valuesAllowed ...string) []delivery.FacetCondition {
+	return append(values, delivery.FacetCondition{
+		Facet: facet, Statuses: append([]model.FactStatus(nil), statuses...), Values: append([]string(nil), valuesAllowed...),
+	})
 }
 
 func replaceFacet(values []delivery.FacetCondition, facet model.FacetName, value string) []delivery.FacetCondition {
