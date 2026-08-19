@@ -301,8 +301,11 @@ func normalizeWorkInputProducers(document *Document, work map[string]WorkContrac
 				if len(producers) != 1 {
 					return invalid(field, "work output does not have exactly one producer transition")
 				}
+				producer := producers[0]
+				if !predicateImplies(producer.Target, producer.Guard) {
+					return invalid(field, "work output producer is not refreshable at its target")
+				}
 				for _, consumer := range transitionsByWork[contract.ID] {
-					producer := producers[0]
 					if producer.ID == consumer.ID || producer.Priority >= consumer.Priority || !predicateImplies(consumer.Guard, producer.Target) {
 						return invalid(field, "work output is not guaranteed before the consuming foreground work")
 					}

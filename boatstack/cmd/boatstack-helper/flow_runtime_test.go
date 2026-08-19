@@ -1531,35 +1531,7 @@ func TestMissingCommittedInputRebindsProducerWithSatisfiedFlowTarget(t *testing.
 	}
 }
 
-func TestWorkDependencyRejectsInapplicableProducerGuard(t *testing.T) {
-	// control-law: a repository Flow cannot admit a Work dependency whose
-	// producer adds an unrelated source guard that can be false at consumption.
-	repository := flowRepositoryWithWorkDependencyProducerGuard(t, flowFact("producer_gate", "open"))
-	bound, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	request, err := buildRequest(surfaces.OperationResolve, bound)
-	if err != nil {
-		t.Fatal(err)
-	}
-	definition, err := loadFlowDefinition(context.Background(), repository, "product-delivery")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = distribution.ProgramForRepository(context.Background(), distribution.RepositoryProgramRequest{Repository: repository, Host: "codex", CorrelationID: request.CorrelationID}, definition)
-	if err == nil || !strings.Contains(err.Error(), "invalid or phase-duplicating facet condition") {
-		t.Fatalf("inapplicable producer guard result = %v", err)
-	}
-}
-
 func flowRepositoryWithWorkDependency(t *testing.T) string {
-	t.Helper()
-	truth := true
-	return flowRepositoryWithWorkDependencyProducerGuard(t, controlprogram.Predicate{True: &truth})
-}
-
-func flowRepositoryWithWorkDependencyProducerGuard(t *testing.T, producerGuard controlprogram.Predicate) string {
 	t.Helper()
 	repository := flowRepository(t)
 	document := productDeliveryDocument("product-delivery")
@@ -1574,10 +1546,9 @@ func flowRepositoryWithWorkDependencyProducerGuard(t *testing.T, producerGuard c
 	document.Operators = append(document.Operators, controlprogram.Operator{ID: "publication.execute", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/publication.execute", Version: "1"}})
 	document.Operators = append(document.Operators, controlprogram.Operator{ID: "publication.reconcile", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/publication.reconcile", Version: "1"}})
 	document.Facets = append(document.Facets, controlprogram.Facet{ID: softwareflow.RecoveryTransactionFacet, Kind: "string"})
-	document.Facets = append(document.Facets, controlprogram.Facet{ID: "producer_gate", Kind: "string"})
 	available := flowKnown("preview_fingerprint")
 	document.Transitions = append(document.Transitions, controlprogram.Transition{
-		ID: "publication.execute", Operator: "publication.execute", Work: "producer", Guard: producerGuard, Target: controlprogram.Predicate{True: &truth}, Priority: 76,
+		ID: "publication.execute", Operator: "publication.execute", Work: "producer", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 76,
 		Parameters: []controlprogram.TransitionParameterBinding{{Parameter: "preview_fingerprint", Producer: controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceState, Facet: "preview_fingerprint", AvailableWhen: &available}}},
 	})
 	document.Transitions = append(document.Transitions, controlprogram.Transition{

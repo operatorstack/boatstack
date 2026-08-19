@@ -568,6 +568,9 @@ func TestForegroundWorkRejectsUnboundAssetsInputsAndTransitions(t *testing.T) {
 
 func foregroundWorkDependencyProgram() controlprogram.Document {
 	document := incidentWorkProgram()
+	document.Transitions[0].Guard = controlprogram.Predicate{Any: []controlprogram.Predicate{
+		fact("incident", "open"), fact("incident", "mitigated"),
+	}}
 	instructions := "Use the committed diagnosis to produce a response."
 	digest := sha256.Sum256([]byte(instructions))
 	document.Work = append(document.Work, controlprogram.WorkContract{
@@ -600,6 +603,9 @@ func TestForegroundWorkInputsRequireOnePriorCommittedProducer(t *testing.T) {
 		"optional-output":  {func(value *controlprogram.Document) { value.Work[0].Outputs[0].Required = false }, "optional or unknown"},
 		"invalid-order":    {func(value *controlprogram.Document) { value.Transitions[1].Priority = 5 }, "not guaranteed"},
 		"unimplied-target": {func(value *controlprogram.Document) { value.Transitions[1].Guard = fact("incident", "open") }, "not guaranteed"},
+		"non-refreshable-producer": {func(value *controlprogram.Document) {
+			value.Transitions[0].Guard = fact("incident", "open")
+		}, "not refreshable"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			document := foregroundWorkDependencyProgram()
@@ -608,6 +614,20 @@ func TestForegroundWorkInputsRequireOnePriorCommittedProducer(t *testing.T) {
 				t.Fatalf("compile result = %v", err)
 			}
 		})
+	}
+}
+
+func TestForegroundWorkDependencyAcceptsNestedTargetImplication(t *testing.T) {
+	document := foregroundWorkDependencyProgram()
+	for index := range document.Transitions {
+		if document.Transitions[index].ID == "dispatch" {
+			document.Transitions[index].Guard = controlprogram.Predicate{All: []controlprogram.Predicate{{All: []controlprogram.Predicate{
+				fact("incident", "mitigated"), fact("service", "degraded"),
+			}}}}
+		}
+	}
+	if _, err := controlprogram.Compile(document, nil); err != nil {
+		t.Fatal(err)
 	}
 }
 

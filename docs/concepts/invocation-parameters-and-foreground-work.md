@@ -24,6 +24,7 @@ evidence for parameter materialization, not authority to perform an effect.
 - Foreground-work completion does not independently advance Flow state.
 - Same-transition parameters consume the candidate result being admitted.
 - Later transitions and Work contracts consume only the applicable committed result.
+- A cross-transition Work producer remains source-admissible at its own target so current-program evidence can be refreshed.
 - A later result commits the exact producer receipt, result, contract, output, and byte identities.
 - Requests and answers are correlated to the exact run and generation.
 - Restart and resume preserve the same run and request lineage.
