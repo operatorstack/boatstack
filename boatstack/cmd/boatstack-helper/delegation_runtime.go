@@ -47,6 +47,26 @@ func canReprojectDelegation(layout ports.ControllerLayout, invocation model.Invo
 	)
 }
 
+// revokedDelegationCanReachProgramPreflight permits no authority. It only lets
+// an otherwise exact revoked request reach the read-only program-change probe
+// that runs before delegation preparation. If that probe does not return the
+// exact typed reconciliation suspension, ordinary delegation drift checks still
+// reject the unadmitted candidate.
+func revokedDelegationCanReachProgramPreflight(record delegation.Record, current delegation.Request) bool {
+	prior := record.Request
+	return record.Status == "revoked" &&
+		prior.RunID == current.RunID && prior.ProgramID == current.ProgramID &&
+		prior.EntryID == current.EntryID && prior.TargetID == current.TargetID &&
+		prior.ObjectiveID == current.ObjectiveID && prior.DeliveryID == current.DeliveryID &&
+		prior.RepositoryID == current.RepositoryID && prior.GitCommonID == current.GitCommonID &&
+		prior.InitialWorktreeID == current.InitialWorktreeID && prior.InitialRef == current.InitialRef &&
+		prior.BindingFingerprint == current.BindingFingerprint && prior.Description == current.Description &&
+		prior.HumanIdentityRole == current.HumanIdentityRole && prior.HumanIdentityProviderFingerprint == current.HumanIdentityProviderFingerprint &&
+		equalEntryInputFingerprints(prior.InputFingerprints, current.InputFingerprints) &&
+		sameStringSet(prior.EntryActivationAuthorities, current.EntryActivationAuthorities) &&
+		sameStringSet(prior.RequestedAuthorities, current.RequestedAuthorities)
+}
+
 func admittedDelegationReprojection(prior, current delegation.Request, configurationAdmits, installationAdmits func() (bool, error)) (bool, error) {
 	configurationChanged := prior.ControlBundleFingerprint != current.ControlBundleFingerprint || prior.HumanIdentityRole != current.HumanIdentityRole || prior.HumanIdentityProviderFingerprint != current.HumanIdentityProviderFingerprint
 	if prior.ProgramFingerprint == current.ProgramFingerprint && configurationChanged {
