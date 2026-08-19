@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
+	"github.com/operatorstack/boatstack/boatstack/distribution"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
 	"github.com/operatorstack/boatstack/boatstack/internal/buildinfo"
 	"github.com/operatorstack/boatstack/boatstack/internal/hostprojection"
@@ -1162,7 +1164,7 @@ func TestFlowRunIdentitySurvivesWorkspaceTransfer(t *testing.T) {
 	if resumed.runID != initial.runID {
 		t.Fatalf("workspace transfer changed Flow run identity: %q != %q", resumed.runID, initial.runID)
 	}
-	if source, ok := resumed.workInputs["plan"]; !ok || source.Value != filepath.Join(resumed.repository, ".boatstack", "plans", "delivery-one.source") {
+	if source, ok := resumed.entryInputValues["plan"]; !ok || source.Value != filepath.Join(resumed.repository, ".boatstack", "plans", "delivery-one.source") {
 		t.Fatalf("destination entry input = %#v, %t", source, ok)
 	}
 
@@ -1428,6 +1430,174 @@ func TestFlowEntryRejectsCallerOverridesDuringUntargetedResolution(t *testing.T)
 	if err == nil || !strings.Contains(err.Error(), "FLOW_PARAMETER_BYPASS") {
 		t.Fatalf("untargeted override result = %v", err)
 	}
+}
+
+func TestFlowEntryDoesNotResolveCommittedInputsBeforeTransitionSelection(t *testing.T) {
+	// control-law: unrelated transitions do not depend on committed Work inputs
+	// that only another transition consumes.
+	repository := flowRepositoryWithWorkDependency(t)
+	resolver, err := plant.NewResolver("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, err := resolver.ResolveInvocation(context.Background(), repository, "codex", "irrelevant-committed-input")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, _, err := resolver.ResolveLayout(context.Background(), invocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, layout.JournalRoot, "irrelevant.committed", []byte("not a journal record"))
+
+	bound, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bound.transitionID != "" || len(bound.workInputs) != 0 {
+		t.Fatalf("untargeted binding resolved transition Work inputs: transition=%q inputs=%#v", bound.transitionID, bound.workInputs)
+	}
+}
+
+func TestMissingCommittedInputRebindsProducerWithSatisfiedFlowTarget(t *testing.T) {
+	// control-law: missing committed evidence redirects resolution to the exact
+	// producer even when its state target is already satisfied.
+	repository := flowRepositoryWithWorkDependency(t)
+	bound, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := buildRequest(surfaces.OperationResolve, bound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, err := loadFlowDefinition(context.Background(), repository, "product-delivery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := distribution.ProgramForRepository(context.Background(), distribution.RepositoryProgramRequest{Repository: repository, Host: "codex", CorrelationID: request.CorrelationID}, definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeAdmittedFlowProgramState(t, repository, program.Fingerprint())
+	resolver, err := plant.NewResolver("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, err := resolver.ResolveInvocation(context.Background(), repository, "codex", "producer-prerequisite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, _, err := resolver.ResolveLayout(context.Background(), invocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(layout.StatePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := durable.DecodeState(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.PreviewFingerprint = strings.Repeat("a", 64)
+	raw, err = durable.EncodeState(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(layout.StatePath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	candidate := surfaces.Response{Prescription: &protocol.Prescription{SchemaVersion: protocol.PrescriptionSchemaVersion, TransitionID: "publication.observe"}}
+	_, changed, err := bindPrescribedRepositoryInvocation(context.Background(), request, candidate)
+	var producerRequired *committedWorkProducerRequiredError
+	if changed || !errors.As(err, &producerRequired) {
+		t.Fatalf("missing producer result = changed %t error %v", changed, err)
+	}
+	rebound, err := rebindRepositoryTransition(context.Background(), request, catalog.TransitionID(producerRequired.TransitionID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rebound.TransitionID != "publication.execute" || rebound.InvocationEvidence == nil {
+		t.Fatalf("producer prerequisite rebound = transition %q evidence %#v", rebound.TransitionID, rebound.InvocationEvidence)
+	}
+	stabilizedRequest, stabilized, stabilizedChanged, err := stabilizeRepositoryPrescription(context.Background(), request, candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stabilizedChanged || stabilizedRequest.TransitionID != "publication.execute" || stabilized.Decision == nil {
+		t.Fatalf("stabilized prerequisite = changed %t transition %q decision %#v", stabilizedChanged, stabilizedRequest.TransitionID, stabilized.Decision)
+	}
+}
+
+func flowRepositoryWithWorkDependency(t *testing.T) string {
+	t.Helper()
+	repository := flowRepository(t)
+	document := productDeliveryDocument("product-delivery")
+	instructions := "Produce the declared foreground-work output."
+	producerAsset := controlprogram.WorkAsset{Path: ".boatstack/work/producer.md", SHA256: hash([]byte(instructions)), Content: instructions}
+	consumerAsset := controlprogram.WorkAsset{Path: ".boatstack/work/consumer.md", SHA256: hash([]byte(instructions)), Content: instructions}
+	document.Work = []controlprogram.WorkContract{
+		{ID: "producer", Instructions: producerAsset, Outputs: []controlprogram.WorkOutput{{ID: "architecture", Path: "architecture.md", MediaType: "text/markdown", Required: true, MaxBytes: 4096}}},
+		{ID: "consumer", Instructions: consumerAsset, Inputs: []controlprogram.WorkInput{{ID: "architecture", Producer: controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceWorkOutput, Work: "producer", Output: "architecture"}}}, Outputs: []controlprogram.WorkOutput{{ID: "result", Path: "result.md", MediaType: "text/markdown", Required: true, MaxBytes: 4096}}},
+	}
+	truth := true
+	document.Operators = append(document.Operators, controlprogram.Operator{ID: "publication.execute", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/publication.execute", Version: "1"}})
+	document.Operators = append(document.Operators, controlprogram.Operator{ID: "publication.reconcile", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/publication.reconcile", Version: "1"}})
+	document.Facets = append(document.Facets, controlprogram.Facet{ID: softwareflow.RecoveryTransactionFacet, Kind: "string"})
+	available := flowKnown("preview_fingerprint")
+	document.Transitions = append(document.Transitions, controlprogram.Transition{
+		ID: "publication.execute", Operator: "publication.execute", Work: "producer", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 76,
+		Parameters: []controlprogram.TransitionParameterBinding{{Parameter: "preview_fingerprint", Producer: controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceState, Facet: "preview_fingerprint", AvailableWhen: &available}}},
+	})
+	document.Transitions = append(document.Transitions, controlprogram.Transition{
+		ID: "publication.reconcile", Operator: "publication.reconcile", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 75,
+		Parameters: []controlprogram.TransitionParameterBinding{{Parameter: "transaction_id", Producer: controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceState, Facet: softwareflow.RecoveryTransactionFacet, AvailableWhen: ptrPredicate(flowKnown(softwareflow.RecoveryTransactionFacet))}}},
+	})
+	document.Transitions[0].Work = "consumer"
+	softwareResolver, err := softwareflow.NewResolver(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	execute, err := softwareResolver.ResolveOperator("software-delivery/publication.execute", "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reconcile, err := softwareResolver.ResolveOperator("software-delivery/publication.reconcile", "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared := map[string]bool{}
+	for _, facet := range document.Facets {
+		declared[facet.ID] = true
+	}
+	for _, resolved := range []controlprogram.ResolvedOperator{execute, reconcile} {
+		for _, precondition := range resolved.StateEffect.Preconditions {
+			if !declared[precondition.Facet] {
+				document.Facets = append(document.Facets, controlprogram.Facet{ID: precondition.Facet, Kind: "string"})
+				declared[precondition.Facet] = true
+			}
+		}
+		for _, assignment := range resolved.StateEffect.Assignments {
+			if !declared[assignment.Facet] {
+				document.Facets = append(document.Facets, controlprogram.Facet{ID: assignment.Facet, Kind: "string"})
+				declared[assignment.Facet] = true
+			}
+		}
+	}
+	writeFixture(t, repository, producerAsset.Path, []byte(instructions))
+	writeFixture(t, repository, consumerAsset.Path, []byte(instructions))
+	writeFlowArtifact(t, repository, document, ".boatstack/flows/product-delivery.flow.ts", []byte("flow source"), "package-lock.json", []byte("lock"))
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
+	if err := os.RemoveAll(filepath.Join(repository, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	runFlowGit(t, repository, "init", "-q")
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-q", "-m", "fixture")
+
+	return repository
 }
 
 func TestFlowEntryDoesNotMaterializeInternalKernelTransition(t *testing.T) {
@@ -2449,7 +2619,7 @@ func TestFreshFlowEntryPreservesInboxProducerAcrossDelegationContext(t *testing.
 	if resumed.runID != initial.runID {
 		t.Fatalf("run identity changed: %s != %s", resumed.runID, initial.runID)
 	}
-	if source, ok := resumed.workInputs["plan"]; !ok || source.Value != filepath.Join(resumed.repository, ".boatstack", "plans", "inbox", "delivery-one.md") {
+	if source, ok := resumed.entryInputValues["plan"]; !ok || source.Value != filepath.Join(resumed.repository, ".boatstack", "plans", "inbox", "delivery-one.md") {
 		t.Fatalf("resumed entry input = %#v, present=%t", source, ok)
 	}
 }
@@ -2784,7 +2954,7 @@ func TestFlowEntryPreservesSelectedPlanFilenameBeforeMaterialization(t *testing.
 		t.Fatal(err)
 	}
 	expected := filepath.Join(initial.repository, ".boatstack", "plans", "inbox", "delivery.MD")
-	if source, ok := resumed.workInputs["plan"]; !ok || source.Value != expected {
+	if source, ok := resumed.entryInputValues["plan"]; !ok || source.Value != expected {
 		t.Fatalf("resumed entry input = %#v, present=%t; want %q", source, ok, expected)
 	}
 }
@@ -2806,7 +2976,7 @@ func TestFlowEntryResumeIgnoresUnrelatedNewInboxPlan(t *testing.T) {
 		t.Fatal(err)
 	}
 	expected := filepath.Join(initial.repository, ".boatstack", "plans", "inbox", "delivery.md")
-	if source, ok := resumed.workInputs["plan"]; !ok || source.Value != expected {
+	if source, ok := resumed.entryInputValues["plan"]; !ok || source.Value != expected {
 		t.Fatalf("resumed entry input = %#v, present=%t; want %q", source, ok, expected)
 	}
 }

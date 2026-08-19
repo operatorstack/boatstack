@@ -230,8 +230,8 @@ func requireReachableEntryInputs(transition delivery.Transition, entriesByTarget
 				declared[input.ID] = true
 			}
 			for _, input := range transition.Work.Inputs {
-				if !declared[input.EntryInput] {
-					return fmt.Errorf("transition %q foreground work %q requires entry input %q, but reachable entry %q does not declare it", transition.ID, transition.Work.ID, input.EntryInput, entry.ID)
+				if input.Producer.Kind == controlprogram.ParameterSourceEntryInput && !declared[input.Producer.Input] {
+					return fmt.Errorf("transition %q foreground work %q requires entry input %q, but reachable entry %q does not declare it", transition.ID, transition.Work.ID, input.Producer.Input, entry.ID)
 				}
 			}
 		}
@@ -247,7 +247,7 @@ func RuntimeWorkContract(declaration controlprogram.WorkContract) (*delivery.Wor
 		InstructionSHA256: declaration.Instructions.SHA256, InstructionContent: declaration.Instructions.Content,
 	}
 	for _, input := range declaration.Inputs {
-		work.Inputs = append(work.Inputs, delivery.WorkInput{ID: input.ID, EntryInput: input.EntryInput})
+		work.Inputs = append(work.Inputs, delivery.WorkInput{ID: input.ID, Producer: input.Producer})
 	}
 	for _, output := range declaration.Outputs {
 		runtimeOutput := delivery.WorkOutput{ID: output.ID, Path: output.Path, MediaType: output.MediaType, Required: output.Required, MaxBytes: output.MaxBytes}

@@ -22,7 +22,7 @@ Flow TypeScript
 ## Control Program document
 
 The current document identifies `schema: "control-program"` and
-`schema_revision: 7`. Its top-level sections are:
+`schema_revision: 8`. Its top-level sections are:
 
 | Section | Purpose |
 | --- | --- |
@@ -58,7 +58,7 @@ directories are never claimed wholesale.
 ## Artifact envelope
 
 The committed artifact identifies `schema: "control-program-artifact"` and
-`schema_revision: 7`. It contains the compiler version; source and dependency
+`schema_revision: 8`. It contains the compiler version; source and dependency
 lock paths and hashes; the program fingerprint; the canonical projection
 selection and its fingerprint; hashes of every generated projection; hashes
 of referenced work assets; and the compiled Control Program document.

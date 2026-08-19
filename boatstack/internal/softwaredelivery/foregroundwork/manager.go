@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/ports"
@@ -23,7 +24,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
-const RecordSchemaVersion = 3
+const RecordSchemaVersion = 4
 
 type Status string
 
@@ -36,10 +37,10 @@ const (
 )
 
 type InputBinding struct {
-	ID          string `json:"id"`
-	EntryInput  string `json:"entry_input"`
-	Value       string `json:"value"`
-	Fingerprint string `json:"fingerprint"`
+	ID          string                         `json:"id"`
+	Value       string                         `json:"value"`
+	Fingerprint string                         `json:"fingerprint"`
+	WorkOutput  *protocol.WorkOutputProvenance `json:"work_output,omitempty"`
 }
 
 type Question struct {
@@ -209,12 +210,16 @@ func (m Manager) Complete(ctx context.Context, invocation model.InvocationContex
 		if err != nil {
 			return err
 		}
+		inputs := make([]protocol.WorkInputEvidence, 0, len(record.Request.Inputs))
+		for _, input := range record.Request.Inputs {
+			inputs = append(inputs, protocol.WorkInputEvidence{ID: input.ID, Fingerprint: input.Fingerprint, WorkOutput: input.WorkOutput})
+		}
 		evidence, err := protocol.SealWorkEvidence(protocol.WorkEvidence{
 			SchemaVersion: protocol.WorkEvidenceSchemaVersion, RequestID: record.Request.ID, RequestFingerprint: record.Request.Fingerprint,
 			RunID: record.Request.RunID, ProgramID: record.Request.ProgramID, EntryID: record.Request.EntryID,
 			ContractID: record.Request.Contract.ID, ContractFingerprint: record.Request.Contract.Fingerprint, TransitionID: record.Request.TransitionID,
 			ProgramFingerprint: record.Request.ProgramFingerprint, ContextFingerprint: record.Request.ContextFingerprint, StateRevision: record.Request.StateRevision,
-			RepositoryID: record.Request.RepositoryID, WorktreeID: record.Request.WorktreeID, Outputs: outputs,
+			RepositoryID: record.Request.RepositoryID, WorktreeID: record.Request.WorktreeID, Inputs: inputs, Outputs: outputs,
 		})
 		if err != nil {
 			return err
@@ -299,11 +304,23 @@ func newRequest(store ports.RuntimeStore, layout ports.ControllerLayout, now tim
 	work := *transition.Work
 	bindings := make([]InputBinding, 0, len(work.Inputs))
 	for _, input := range work.Inputs {
-		value, ok := values[input.EntryInput]
+		value, ok := values[work.ID+"/"+input.ID]
 		if !ok || value.Validate() != nil {
-			return Request{}, fmt.Errorf("foreground work input %q is not bound by entry input %q", input.ID, input.EntryInput)
+			return Request{}, fmt.Errorf("foreground work input %q is not bound", input.ID)
 		}
-		bindings = append(bindings, InputBinding{ID: input.ID, EntryInput: input.EntryInput, Value: value.Value, Fingerprint: value.Fingerprint})
+		switch input.Producer.Kind {
+		case controlprogram.ParameterSourceEntryInput:
+			if value.WorkOutput != nil {
+				return Request{}, fmt.Errorf("foreground work entry input %q invents work-output provenance", input.ID)
+			}
+		case controlprogram.ParameterSourceWorkOutput:
+			if value.WorkOutput == nil || value.WorkOutput.WorkID != input.Producer.Work || value.WorkOutput.OutputID != input.Producer.Output {
+				return Request{}, fmt.Errorf("foreground work input %q does not match its declared producer", input.ID)
+			}
+		default:
+			return Request{}, fmt.Errorf("foreground work input %q has an unsupported producer", input.ID)
+		}
+		bindings = append(bindings, InputBinding{ID: input.ID, Value: value.Value, Fingerprint: value.Fingerprint, WorkOutput: value.WorkOutput})
 	}
 	sort.Slice(bindings, func(i, j int) bool { return bindings[i].ID < bindings[j].ID })
 	contextFingerprint, err := model.ForegroundWorkContextFingerprint(snapshot)

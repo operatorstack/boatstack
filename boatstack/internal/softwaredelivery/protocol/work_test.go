@@ -49,3 +49,30 @@ func TestWorkEvidenceSchemaBindsRequiredExecutionIdentity(t *testing.T) {
 		t.Fatalf("schema-2 work evidence validation = %v", err)
 	}
 }
+
+func TestWorkEvidenceIdentityBindsProducerResultProvenance(t *testing.T) {
+	base := workEvidenceFixture()
+	base.Inputs = []WorkInputEvidence{{
+		ID: "architecture", Fingerprint: strings.Repeat("a", 64),
+		WorkOutput: &WorkOutputProvenance{
+			ReceiptID: "trc-producer", TransitionID: "work-a", WorkID: "work-a", OutputID: "architecture",
+			ResultFingerprint: strings.Repeat("b", 64), ContractFingerprint: strings.Repeat("c", 64), OutputSHA256: strings.Repeat("a", 64),
+		},
+	}}
+	first, err := SealWorkEvidence(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	substituted := base
+	substituted.Inputs = append([]WorkInputEvidence(nil), base.Inputs...)
+	producer := *base.Inputs[0].WorkOutput
+	producer.ResultFingerprint = strings.Repeat("d", 64)
+	substituted.Inputs[0].WorkOutput = &producer
+	second, err := SealWorkEvidence(substituted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ResultFingerprint == second.ResultFingerprint {
+		t.Fatal("same input bytes from a different producer result preserved downstream identity")
+	}
+}

@@ -20,7 +20,7 @@ import (
 	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
-const SchemaVersion = 16
+const SchemaVersion = 17
 
 var flowContextIdentity = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 var gitObjectIdentity = regexp.MustCompile(`^[0-9a-f]{40,64}$`)
@@ -148,7 +148,8 @@ func (r Request) Validate(now time.Time) error {
 		}
 	}
 	for id, input := range r.WorkInputs {
-		if !flowContextIdentity.MatchString(id) {
+		parts := strings.Split(id, "/")
+		if len(parts) != 2 || !flowContextIdentity.MatchString(parts[0]) || !flowContextIdentity.MatchString(parts[1]) {
 			return fmt.Errorf("surface foreground work input has invalid identity %q", id)
 		}
 		if err := input.Validate(); err != nil {

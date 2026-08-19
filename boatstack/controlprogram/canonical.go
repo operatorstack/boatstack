@@ -150,6 +150,9 @@ func compile(document Document, resolver BindingResolver, assets AssetResolver) 
 	if err := normalizeTransitions(&document, facets, operators, work); err != nil {
 		return Compiled{}, err
 	}
+	if err := normalizeWorkInputProducers(&document, work); err != nil {
+		return Compiled{}, err
+	}
 	if err := normalizeInvocationCompleteness(&document, operators, work, facets, resolver); err != nil {
 		return Compiled{}, err
 	}
@@ -170,12 +173,6 @@ func compile(document Document, resolver BindingResolver, assets AssetResolver) 
 }
 
 func normalizeWork(document *Document, assets AssetResolver) (map[string]WorkContract, error) {
-	entryInputs := map[string]bool{}
-	for _, entry := range document.Entries {
-		for _, input := range entry.Inputs {
-			entryInputs[input.ID] = true
-		}
-	}
 	seen := map[string]WorkContract{}
 	for i := range document.Work {
 		contract := &document.Work[i]
@@ -191,7 +188,7 @@ func normalizeWork(document *Document, assets AssetResolver) (map[string]WorkCon
 		inputIDs := map[string]bool{}
 		for j := range contract.Inputs {
 			input := &contract.Inputs[j]
-			if !validID(input.ID) || !validID(input.EntryInput) || inputIDs[input.ID] || !entryInputs[input.EntryInput] {
+			if !validID(input.ID) || inputIDs[input.ID] {
 				return nil, invalid(fmt.Sprintf("work.%s.inputs[%d]", contract.ID, j), "invalid or duplicate work input")
 			}
 			inputIDs[input.ID] = true
@@ -255,6 +252,68 @@ func normalizeWork(document *Document, assets AssetResolver) (map[string]WorkCon
 	}
 	sort.Slice(document.Work, func(i, j int) bool { return document.Work[i].ID < document.Work[j].ID })
 	return seen, nil
+}
+
+func normalizeWorkInputProducers(document *Document, work map[string]WorkContract) error {
+	entryInputs := map[string]bool{}
+	for _, entry := range document.Entries {
+		for _, input := range entry.Inputs {
+			entryInputs[input.ID] = true
+		}
+	}
+	transitionsByWork := map[string][]Transition{}
+	for _, transition := range document.Transitions {
+		if transition.Work != "" {
+			transitionsByWork[transition.Work] = append(transitionsByWork[transition.Work], transition)
+		}
+	}
+	for i := range document.Work {
+		contract := &document.Work[i]
+		for j := range contract.Inputs {
+			input := &contract.Inputs[j]
+			field := fmt.Sprintf("work.%s.inputs[%d].producer", contract.ID, j)
+			if input.Producer.Kind != ParameterSourceEntryInput && input.Producer.Kind != ParameterSourceWorkOutput {
+				return invalid(field, "foreground-work inputs require an entry-input or work-output producer")
+			}
+			if err := rejectProducerExtraneousFields(input.Producer, field); err != nil {
+				return err
+			}
+			switch input.Producer.Kind {
+			case ParameterSourceEntryInput:
+				if !validID(input.Producer.Input) || !entryInputs[input.Producer.Input] {
+					return invalid(field, "references an unknown entry input")
+				}
+			case ParameterSourceWorkOutput:
+				source, ok := work[input.Producer.Work]
+				if !ok || source.ID == contract.ID || !validID(input.Producer.Output) {
+					return invalid(field, "references an unknown or self-produced foreground-work output")
+				}
+				found := false
+				for _, output := range source.Outputs {
+					if output.ID == input.Producer.Output {
+						found = output.Required
+					}
+				}
+				if !found {
+					return invalid(field, "references an optional or unknown foreground-work output")
+				}
+				producers := transitionsByWork[source.ID]
+				if len(producers) != 1 {
+					return invalid(field, "work output does not have exactly one producer transition")
+				}
+				producer := producers[0]
+				if !predicateImplies(producer.Target, producer.Guard) {
+					return invalid(field, "work output producer is not refreshable at its target")
+				}
+				for _, consumer := range transitionsByWork[contract.ID] {
+					if producer.ID == consumer.ID || producer.Priority >= consumer.Priority || !predicateImplies(consumer.Guard, producer.Target) {
+						return invalid(field, "work output is not guaranteed before the consuming foreground work")
+					}
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func resolveWorkAsset(asset *WorkAsset, resolver AssetResolver, limit int64, field string) error {

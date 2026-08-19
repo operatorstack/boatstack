@@ -814,7 +814,7 @@ func buildWorkPackage(admission protocol.Admission, transition catalog.Transitio
 	}
 	work := workpackage.WorkContract{ID: transition.Work.ID, Fingerprint: transition.Work.Fingerprint, Instructions: workpackage.Asset{Path: transition.Work.InstructionPath, SHA256: transition.Work.InstructionSHA256, Content: transition.Work.InstructionContent}}
 	for _, input := range transition.Work.Inputs {
-		work.Inputs = append(work.Inputs, workpackage.WorkInput{ID: input.ID, EntryInput: input.EntryInput})
+		work.Inputs = append(work.Inputs, workpackage.WorkInput{ID: input.ID, Producer: input.Producer})
 	}
 	declarations := map[string]catalog.WorkOutput{}
 	for _, output := range transition.Work.Outputs {

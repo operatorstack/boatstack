@@ -470,9 +470,29 @@ func predicateImplies(guard, condition Predicate) bool {
 	if string(wanted) == string(actual) {
 		return true
 	}
+	if len(condition.All) != 0 {
+		for _, child := range condition.All {
+			if !predicateImplies(guard, child) {
+				return false
+			}
+		}
+		return true
+	}
+	if len(guard.Any) != 0 {
+		for _, child := range guard.Any {
+			if !predicateImplies(child, condition) {
+				return false
+			}
+		}
+		return true
+	}
 	for _, child := range guard.All {
-		encoded, _ := json.Marshal(child)
-		if string(encoded) == string(wanted) {
+		if predicateImplies(child, condition) {
+			return true
+		}
+	}
+	for _, child := range condition.Any {
+		if predicateImplies(guard, child) {
 			return true
 		}
 	}

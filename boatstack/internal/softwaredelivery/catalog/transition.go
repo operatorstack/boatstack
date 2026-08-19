@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
 	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
@@ -180,8 +181,8 @@ type WorkContract struct {
 }
 
 type WorkInput struct {
-	ID         string `json:"id"`
-	EntryInput string `json:"entry_input"`
+	ID       string                           `json:"id"`
+	Producer controlprogram.ParameterProducer `json:"producer"`
 }
 
 type WorkOutput struct {
@@ -701,7 +702,10 @@ func validateWorkContract(t Transition) error {
 	}
 	inputs := map[string]bool{}
 	for _, input := range work.Inputs {
-		if !semanticID.MatchString(input.ID) || !semanticID.MatchString(input.EntryInput) || inputs[input.ID] {
+		producer := input.Producer
+		validProducer := producer.Kind == controlprogram.ParameterSourceEntryInput && semanticID.MatchString(producer.Input) && producer.Facet == "" && producer.AvailableWhen == nil && producer.Transition == "" && producer.Field == "" && producer.Work == "" && producer.Output == "" && producer.Binding == nil && producer.Request == nil ||
+			producer.Kind == controlprogram.ParameterSourceWorkOutput && semanticID.MatchString(producer.Work) && semanticID.MatchString(producer.Output) && producer.Input == "" && producer.Facet == "" && producer.AvailableWhen == nil && producer.Transition == "" && producer.Field == "" && producer.Binding == nil && producer.Request == nil
+		if !semanticID.MatchString(input.ID) || !validProducer || inputs[input.ID] {
 			return fmt.Errorf("%s: foreground work inputs must be semantic and unique", t.ID)
 		}
 		inputs[input.ID] = true

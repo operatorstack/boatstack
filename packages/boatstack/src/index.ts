@@ -16,7 +16,7 @@
 /** Canonical schema name emitted by {@link defineFlow}. */
 export const CONTROL_PROGRAM_SCHEMA = "control-program" as const;
 /** Current revision of the canonical Control Program schema. */
-export const CONTROL_PROGRAM_SCHEMA_REVISION = 7 as const;
+export const CONTROL_PROGRAM_SCHEMA_REVISION = 8 as const;
 
 /**
  * A declarative condition over runtime state facts.
@@ -203,10 +203,15 @@ export interface WorkAssetDefinition {
   content?: string;
 }
 
-/** Binds one foreground-work input to a declared entry input. */
+/** Sources accepted foreground-work input bytes from an entry or prior Work output. */
+export type WorkInputProducer =
+  | Extract<ParameterProducer, { kind: "entry-input" }>
+  | Extract<ParameterProducer, { kind: "work-output" }>;
+
+/** Binds one foreground-work input to one explicit producer. */
 export interface WorkInputDefinition {
   id: string;
-  entry_input: string;
+  producer: WorkInputProducer;
 }
 
 /** Declares one bounded staged output of foreground work. */
@@ -401,11 +406,21 @@ export function schemaAsset(path: string): WorkAssetDefinition {
   return { path };
 }
 
+/** Binds a foreground-work input to one explicit entry or Work-output producer.
+ * @category Foreground work
+ */
+export function workInput(definition: {
+  id: string;
+  producer: WorkInputProducer;
+}): WorkInputDefinition {
+  return { id: definition.id, producer: { ...definition.producer } };
+}
+
 /** Binds a foreground-work input to one entry input ID.
  * @category Foreground work
  */
 export function entryInput(id: string): WorkInputDefinition {
-  return { id, entry_input: id };
+  return workInput({ id, producer: fromEntryInput(id) });
 }
 
 /** Declares one bounded foreground-work output artifact.
@@ -437,7 +452,9 @@ export function foregroundWork(definition: WorkContract): WorkContract {
 /** Resolves a transition parameter from one declared entry input.
  * @category Invocation and parameters
  */
-export function fromEntryInput(input: string): ParameterProducer {
+export function fromEntryInput(
+  input: string,
+): Extract<ParameterProducer, { kind: "entry-input" }> {
   return { kind: "entry-input", input };
 }
 
@@ -489,7 +506,7 @@ export function fromStateOrReceipt(definition: {
 export function fromWorkOutput(definition: {
   work: string;
   output: string;
-}): ParameterProducer {
+}): Extract<ParameterProducer, { kind: "work-output" }> {
   return { kind: "work-output", ...definition };
 }
 

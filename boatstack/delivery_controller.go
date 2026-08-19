@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	"github.com/operatorstack/boatstack/boatstack/delivery"
 	"github.com/operatorstack/boatstack/boatstack/internal/buildinfo"
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
@@ -169,6 +170,10 @@ func (k DeliveryController) Handle(ctx context.Context, request surfaces.Request
 		resolveRequest := engine.ResolveRequest{Invocation: invocation, Objective: request.Objective, Authority: request.Authority, Parameters: request.Parameters, Requested: request.TransitionID, Trace: explain, ControlBundle: request.ControlBundle, ControlBundleRevision: request.ControlBundleRevision, InvocationEvidence: request.InvocationEvidence}
 		resolution, resolveErr := k.engine.Resolve(ctx, resolveRequest)
 		if !explain && resolveErr == nil && resolution.Decision.Kind == supervisor.DecisionCandidate && resolution.Decision.Transition != nil && resolution.Decision.Transition.Work != nil {
+			if verifyErr := k.verifyCommittedWorkInputs(ctx, invocation, request.FlowID, request.ProgramID, request.EntryID, resolution.Objective, resolution.Snapshot, *resolution.Decision.Transition, request.WorkInputs); verifyErr != nil {
+				response.Error = verifyErr.Error()
+				return response, verifyErr
+			}
 			record, workErr := k.work.Ensure(ctx, invocation, request.FlowID, request.ProgramID, request.EntryID, resolution.Objective, resolution.Snapshot, *resolution.Decision.Transition, request.WorkInputs)
 			if workErr != nil {
 				response.Error = workErr.Error()
@@ -352,6 +357,74 @@ func (k DeliveryController) Handle(ctx context.Context, request surfaces.Request
 	default:
 		return response, fmt.Errorf("unsupported surface operation %q", request.Operation)
 	}
+}
+
+func (k DeliveryController) verifyCommittedWorkInputs(ctx context.Context, invocation model.InvocationContext, flowID, programID, entryID string, objective model.Objective, snapshot model.Snapshot, transition catalog.Transition, inputs map[string]protocol.WorkInputValue) error {
+	if transition.Work == nil {
+		return nil
+	}
+	var layout ports.ControllerLayout
+	layoutResolved := false
+	for _, input := range transition.Work.Inputs {
+		if input.Producer.Kind != controlprogram.ParameterSourceWorkOutput {
+			continue
+		}
+		value, found := inputs[transition.Work.ID+"/"+input.ID]
+		if !found || value.WorkOutput == nil {
+			return fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q input %q lacks committed producer provenance", transition.Work.ID, input.ID)
+		}
+		producer, err := uniqueRuntimeWorkProducer(k.registry.All(), input.Producer.Work)
+		if err != nil {
+			return err
+		}
+		if !layoutResolved {
+			var current model.InvocationContext
+			layout, current, err = k.resolver.ResolveLayout(ctx, invocation)
+			if err != nil {
+				return err
+			}
+			invocation = current
+			layoutResolved = true
+		}
+		committed, applicable, err := effects.FindApplicableCommittedWorkOutput(layout, effects.CommittedWorkOutputSelector{
+			FlowID: flowID, ProgramID: programID, ProgramFingerprint: snapshot.ProgramFingerprint, EntryID: entryID,
+			Objective: objective, Invocation: invocation, TransitionID: producer.ID, Work: *producer.Work,
+			OutputID: input.Producer.Output, MaximumRevision: snapshot.StateRevision,
+		})
+		if err != nil {
+			return fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q input %q: %w", transition.Work.ID, input.ID, err)
+		}
+		if !applicable || !matchesCommittedWorkInput(value, committed) {
+			return fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q input %q does not match an applicable committed producer result", transition.Work.ID, input.ID)
+		}
+	}
+	return nil
+}
+
+func uniqueRuntimeWorkProducer(transitions []catalog.Transition, workID string) (catalog.Transition, error) {
+	var producer catalog.Transition
+	for _, transition := range transitions {
+		if transition.Work == nil || transition.Work.ID != workID {
+			continue
+		}
+		if producer.ID != "" {
+			return catalog.Transition{}, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q has ambiguous producer transitions", workID)
+		}
+		producer = transition
+	}
+	if producer.ID == "" {
+		return catalog.Transition{}, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q has no producer transition", workID)
+	}
+	return producer, nil
+}
+
+func matchesCommittedWorkInput(value protocol.WorkInputValue, committed effects.CommittedWorkOutput) bool {
+	provenance := value.WorkOutput
+	return provenance != nil && value.Value == committed.Output.Content && value.Fingerprint == committed.Output.SHA256 &&
+		provenance.ReceiptID == committed.Receipt.ID && provenance.TransitionID == committed.Receipt.TransitionID &&
+		provenance.WorkID == committed.Work.ContractID && provenance.OutputID == committed.Output.ID &&
+		provenance.ResultFingerprint == committed.Work.ResultFingerprint && provenance.ContractFingerprint == committed.Work.ContractFingerprint &&
+		provenance.OutputSHA256 == committed.Output.SHA256
 }
 
 func programChangeFor(snapshot *model.Snapshot) *surfaces.ProgramChange {

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -508,6 +509,11 @@ func executeContinuationStep(ctx context.Context, options commandOptions) (surfa
 // the command boundary. It is shared by next, RPC, and Flow continuation.
 func stabilizeRepositoryPrescription(ctx context.Context, request surfaces.Request, response surfaces.Response) (surfaces.Request, surfaces.Response, bool, error) {
 	rebound, changed, err := bindPrescribedRepositoryInvocation(ctx, request, response)
+	var producerRequired *committedWorkProducerRequiredError
+	if errors.As(err, &producerRequired) {
+		rebound, err = rebindRepositoryTransition(ctx, request, catalog.TransitionID(producerRequired.TransitionID))
+		changed = true
+	}
 	if err != nil || !changed {
 		return request, response, changed, err
 	}

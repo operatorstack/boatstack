@@ -49,6 +49,16 @@ type flowCommitRequiredError struct {
 	cause                    error
 }
 
+type committedWorkProducerRequiredError struct {
+	TransitionID string
+	WorkID       string
+	OutputID     string
+}
+
+func (e *committedWorkProducerRequiredError) Error() string {
+	return fmt.Sprintf("FLOW_WORK_PRODUCER_REQUIRED: transition %q must commit work %q output %q before the selected consumer", e.TransitionID, e.WorkID, e.OutputID)
+}
+
 func (e *flowCommitRequiredError) Error() string {
 	return fmt.Sprintf("%s: commit the exact Boatstack control bundle at revision %s before product delegation or repository work: %v", controlBundleCommitRequiredCode, e.revision, e.cause)
 }
@@ -168,10 +178,21 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	} else if options.runID == "" {
 		return commandOptions{}, fmt.Errorf("FLOW_ACTIVE_RUN_INVALID: active abandonment has no committed run identity")
 	}
+	options.entryInputValues = map[string]protocol.WorkInputValue{}
 	options.workInputs = map[string]protocol.WorkInputValue{}
 	for _, input := range entry.Inputs {
 		if plan != "" {
-			options.workInputs[input.ID] = protocol.WorkInputValue{Value: plan, Fingerprint: planFingerprint}
+			options.entryInputValues[input.ID] = protocol.WorkInputValue{Value: plan, Fingerprint: planFingerprint}
+		}
+	}
+	for _, work := range compiled.Document.Work {
+		for _, input := range work.Inputs {
+			if input.Producer.Kind != controlprogram.ParameterSourceEntryInput {
+				continue
+			}
+			if value, found := options.entryInputValues[input.Producer.Input]; found {
+				options.workInputs[foregroundWorkInputKey(work.ID, input.ID)] = value
+			}
 		}
 	}
 	options.repository = repository
@@ -281,7 +302,7 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 			RunID: options.runID, ProgramID: options.programID, ProgramFingerprint: compiled.Fingerprint,
 			ControlBundleFingerprint: bundleFingerprint,
 			EntryID:                  options.entryID, TargetID: string(objective.TargetID), ObjectiveID: options.objectiveID, DeliveryID: deliveryID,
-			InputFingerprints: entryInputFingerprints(options.workInputs), RepositoryID: invocation.RepositoryID, GitCommonID: invocation.GitCommonID,
+			InputFingerprints: entryInputFingerprints(options.entryInputValues), RepositoryID: invocation.RepositoryID, GitCommonID: invocation.GitCommonID,
 			InitialWorktreeID: invocation.WorktreeID, InitialRef: invocation.Ref,
 			EntryActivationAuthorities: append([]string(nil), entry.Requires.Authorities...),
 			BindingFingerprint:         bindingFingerprint, RequestedAuthorities: delegatedAuthorities,
@@ -756,7 +777,7 @@ func materializeFlowInvocation(ctx context.Context, compiled controlprogram.Comp
 		return commandOptions{}, fmt.Errorf("FLOW_PROGRAM_UNBOUND: repository transition invocation requires an admitted executable program")
 	}
 	entryInputs := map[string]invocation.Value{}
-	for id, value := range options.workInputs {
+	for id, value := range options.entryInputValues {
 		entryInputs[id] = invocation.Value{Type: controlprogram.ValueTypeDefinition{Kind: "string"}, Canonical: value.Value, Provenance: "entry-input:" + value.Fingerprint}
 	}
 	stateValues := softwareflow.StateParameterValues(state)
@@ -793,6 +814,10 @@ func materializeFlowInvocation(ctx context.Context, compiled controlprogram.Comp
 	for _, work := range compiled.Document.Work {
 		workByID[work.ID] = work
 	}
+	options.workInputs, err = resolveForegroundWorkInputs(layout, state.Revision, state.ProgramFingerprint, invocationContext, compiled, entry, *transition, options, workByID)
+	if err != nil {
+		return commandOptions{}, err
+	}
 	for _, binding := range transition.Parameters {
 		if binding.Producer.Kind != controlprogram.ParameterSourceWorkOutput {
 			continue
@@ -801,34 +826,47 @@ func materializeFlowInvocation(ctx context.Context, compiled controlprogram.Comp
 		if !declared {
 			return commandOptions{}, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: producer references unknown work %q", binding.Producer.Work)
 		}
-		record, loadErr := foregroundwork.LoadRecord(layout, options.runID, work.ID)
-		if loadErr != nil {
-			if os.IsNotExist(loadErr) {
-				return commandOptions{}, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q has no current result", work.ID)
+		producerTransition, producerErr := uniqueWorkProducerTransition(compiled.Document.Transitions, work.ID)
+		if producerErr != nil {
+			return commandOptions{}, producerErr
+		}
+		var output protocol.WorkOutputEvidence
+		var resultFingerprint, provenance string
+		if producerTransition.ID == transition.ID {
+			record, loadErr := foregroundwork.LoadRecord(layout, options.runID, work.ID)
+			if loadErr != nil {
+				if os.IsNotExist(loadErr) {
+					return commandOptions{}, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q has no current result", work.ID)
+				}
+				return commandOptions{}, loadErr
 			}
-			return commandOptions{}, loadErr
-		}
-		if record.Status != foregroundwork.StatusCompleted || record.Result == nil {
-			return commandOptions{}, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q is not complete", work.ID)
-		}
-		if err := validateWorkOutputProducer(record, work, compiled, entry, options, invocationContext); err != nil {
-			return commandOptions{}, err
-		}
-		foundOutput := false
-		for _, output := range record.Result.Outputs {
-			if output.ID != binding.Producer.Output {
-				continue
+			if record.Status != foregroundwork.StatusCompleted || record.Result == nil {
+				return commandOptions{}, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q is not complete", work.ID)
 			}
-			foundOutput = true
-			kind := "string"
-			if output.MediaType == "application/json" {
-				kind = "json"
+			if err := validateWorkOutputProducer(record, work, compiled, entry, options, invocationContext); err != nil {
+				return commandOptions{}, err
 			}
-			workOutputs[work.ID+"/"+output.ID] = invocation.Value{Type: controlprogram.ValueTypeDefinition{Kind: kind}, Canonical: output.Content, Provenance: "work-output:" + output.SHA256, ProducerFingerprint: record.Result.ResultFingerprint}
+			var found bool
+			output, found = workOutputByID(record.Result.Outputs, binding.Producer.Output)
+			if !found {
+				return commandOptions{}, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q lacks output %q", work.ID, binding.Producer.Output)
+			}
+			resultFingerprint, provenance = record.Result.ResultFingerprint, "work-output-candidate:"+output.SHA256
+		} else {
+			committed, found, resolveErr := resolveCommittedWorkOutput(layout, state.Revision, state.ProgramFingerprint, invocationContext, compiled, entry, options, producerTransition, work, binding.Producer.Output)
+			if resolveErr != nil {
+				return commandOptions{}, resolveErr
+			}
+			if !found {
+				return commandOptions{}, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q has no applicable committed result", work.ID)
+			}
+			output, resultFingerprint, provenance = committed.Output, committed.Work.ResultFingerprint, "work-output-committed:"+committed.Receipt.ID
 		}
-		if !foundOutput {
-			return commandOptions{}, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q lacks output %q", work.ID, binding.Producer.Output)
+		kind := "string"
+		if output.MediaType == "application/json" {
+			kind = "json"
 		}
+		workOutputs[work.ID+"/"+output.ID] = invocation.Value{Type: controlprogram.ValueTypeDefinition{Kind: kind}, Canonical: output.Content, Provenance: provenance, ProducerFingerprint: resultFingerprint}
 	}
 	store := invocation.Store{Root: layout.FlowRoot, Writer: effects.NewRuntimeStore()}
 	inputReceipts, err := store.LoadReceipts(options.runID, transition.ID)
@@ -892,6 +930,101 @@ func transitionUsesHostInput(transition controlprogram.Transition) bool {
 	return false
 }
 
+func uniqueWorkProducerTransition(transitions []controlprogram.Transition, workID string) (controlprogram.Transition, error) {
+	var producer controlprogram.Transition
+	for _, candidate := range transitions {
+		if candidate.Work != workID {
+			continue
+		}
+		if producer.ID != "" {
+			return controlprogram.Transition{}, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q has ambiguous producer transitions", workID)
+		}
+		producer = candidate
+	}
+	if producer.ID == "" {
+		return controlprogram.Transition{}, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q has no producer transition", workID)
+	}
+	return producer, nil
+}
+
+func workOutputByID(outputs []protocol.WorkOutputEvidence, outputID string) (protocol.WorkOutputEvidence, bool) {
+	for _, output := range outputs {
+		if output.ID == outputID {
+			return output, true
+		}
+	}
+	return protocol.WorkOutputEvidence{}, false
+}
+
+func foregroundWorkInputKey(workID, inputID string) string { return workID + "/" + inputID }
+
+func resolveCommittedWorkOutput(layout ports.ControllerLayout, maximumRevision uint64, executionProgramFingerprint string, current model.InvocationContext, compiled controlprogram.Compiled, entry controlprogram.Entry, options commandOptions, producerTransition controlprogram.Transition, work controlprogram.WorkContract, outputID string) (effects.CommittedWorkOutput, bool, error) {
+	contract, err := softwareflow.RuntimeWorkContract(work)
+	if err != nil {
+		return effects.CommittedWorkOutput{}, false, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: %w", err)
+	}
+	objective := boundFlowObjective(options)
+	committed, found, err := effects.FindApplicableCommittedWorkOutput(layout, effects.CommittedWorkOutputSelector{
+		FlowID: options.runID, ProgramID: compiled.Document.Program.ID, ProgramFingerprint: executionProgramFingerprint, EntryID: entry.ID,
+		Objective: objective, Invocation: current, TransitionID: catalog.TransitionID(producerTransition.ID), Work: *contract, OutputID: outputID, MaximumRevision: maximumRevision,
+	})
+	if err != nil {
+		return effects.CommittedWorkOutput{}, false, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q output %q: %w", work.ID, outputID, err)
+	}
+	return committed, found, nil
+}
+
+func resolveForegroundWorkInputs(layout ports.ControllerLayout, maximumRevision uint64, executionProgramFingerprint string, current model.InvocationContext, compiled controlprogram.Compiled, entry controlprogram.Entry, transition controlprogram.Transition, options commandOptions, workByID map[string]controlprogram.WorkContract) (map[string]protocol.WorkInputValue, error) {
+	values := map[string]protocol.WorkInputValue{}
+	for key, value := range options.workInputs {
+		values[key] = value
+	}
+	if transition.Work == "" {
+		return values, nil
+	}
+	work, ok := workByID[transition.Work]
+	if !ok {
+		return nil, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: transition %q references unknown work %q", transition.ID, transition.Work)
+	}
+	for _, input := range work.Inputs {
+		switch input.Producer.Kind {
+		case controlprogram.ParameterSourceEntryInput:
+			value, found := options.entryInputValues[input.Producer.Input]
+			if !found {
+				return nil, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q entry input %q is unavailable", work.ID, input.Producer.Input)
+			}
+			values[foregroundWorkInputKey(work.ID, input.ID)] = value
+		case controlprogram.ParameterSourceWorkOutput:
+			source, declared := workByID[input.Producer.Work]
+			if !declared {
+				return nil, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q input %q references unknown work %q", work.ID, input.ID, input.Producer.Work)
+			}
+			producer, producerErr := uniqueWorkProducerTransition(compiled.Document.Transitions, source.ID)
+			if producerErr != nil {
+				return nil, producerErr
+			}
+			if producer.ID == transition.ID {
+				return nil, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q input %q cannot consume its own candidate result", work.ID, input.ID)
+			}
+			committed, found, resolveErr := resolveCommittedWorkOutput(layout, maximumRevision, executionProgramFingerprint, current, compiled, entry, options, producer, source, input.Producer.Output)
+			if resolveErr != nil {
+				return nil, resolveErr
+			}
+			if !found {
+				return nil, &committedWorkProducerRequiredError{TransitionID: producer.ID, WorkID: source.ID, OutputID: input.Producer.Output}
+			}
+			provenance := protocol.WorkOutputProvenance{
+				ReceiptID: committed.Receipt.ID, TransitionID: committed.Receipt.TransitionID, WorkID: committed.Work.ContractID, OutputID: committed.Output.ID,
+				ResultFingerprint: committed.Work.ResultFingerprint, ContractFingerprint: committed.Work.ContractFingerprint, OutputSHA256: committed.Output.SHA256,
+			}
+			values[foregroundWorkInputKey(work.ID, input.ID)] = protocol.WorkInputValue{Value: committed.Output.Content, Fingerprint: committed.Output.SHA256, WorkOutput: &provenance}
+		default:
+			return nil, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q input %q has an unsupported producer", work.ID, input.ID)
+		}
+	}
+	return values, nil
+}
+
 func validateWorkOutputProducer(record foregroundwork.Record, work controlprogram.WorkContract, compiled controlprogram.Compiled, entry controlprogram.Entry, options commandOptions, current model.InvocationContext) error {
 	contract, err := softwareflow.RuntimeWorkContract(work)
 	if err != nil {
@@ -916,9 +1049,9 @@ func validateWorkOutputProducer(record foregroundwork.Record, work controlprogra
 	}
 	expectedInputs := map[string]protocol.WorkInputValue{}
 	for _, input := range work.Inputs {
-		value, ok := options.workInputs[input.EntryInput]
+		value, ok := options.workInputs[foregroundWorkInputKey(work.ID, input.ID)]
 		if !ok {
-			return fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q entry input %q is unavailable", work.ID, input.EntryInput)
+			return fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q input %q is unavailable", work.ID, input.ID)
 		}
 		expectedInputs[input.ID] = value
 	}
@@ -927,7 +1060,9 @@ func validateWorkOutputProducer(record foregroundwork.Record, work controlprogra
 	}
 	for _, input := range request.Inputs {
 		expected, ok := expectedInputs[input.ID]
-		if !ok || input.Value != expected.Value || input.Fingerprint != expected.Fingerprint {
+		provenanceMatches := input.WorkOutput == nil && expected.WorkOutput == nil ||
+			input.WorkOutput != nil && expected.WorkOutput != nil && *input.WorkOutput == *expected.WorkOutput
+		if !ok || input.Value != expected.Value || input.Fingerprint != expected.Fingerprint || !provenanceMatches {
 			return fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q input binding changed", work.ID)
 		}
 	}
@@ -1068,6 +1203,7 @@ func bindCommittedActiveRun(options commandOptions, active model.Objective, rece
 	}
 	options.runID, options.deliveryID = receipt.FlowID, active.DeliveryID
 	options.objectiveID, options.targetID, options.trustedObjectiveClass = active.ID, string(active.TargetID), string(active.TrustedObjectiveClass())
+	options.objectiveFrontierIsStop = active.FrontierIsStop
 	options.activeFlowBound = true
 	return options, nil
 }
@@ -1100,7 +1236,8 @@ func bindRPCFlowEntryWithMaintenance(ctx context.Context, request surfaces.Reque
 		repository: request.Repository, host: request.Host, correlationID: request.CorrelationID, programID: request.ProgramID, entryID: request.EntryID,
 		flowProgramFingerprint: request.ProgramFingerprint,
 		runID:                  request.FlowID, objectiveID: request.Objective.ID, targetID: string(request.Objective.TargetID), trustedObjectiveClass: string(request.Objective.TrustedObjectiveClass()), deliveryID: request.Objective.DeliveryID,
-		transitionID: string(request.TransitionID), parameters: parameterFlags, maintenanceParameterSurface: maintenanceParameterSurface && request.TransitionID != "" && !repositoryTransition,
+		objectiveFrontierIsStop: request.Objective.FrontierIsStop,
+		transitionID:            string(request.TransitionID), parameters: parameterFlags, maintenanceParameterSurface: maintenanceParameterSurface && request.TransitionID != "" && !repositoryTransition,
 		controlBundleRevision: request.ControlBundleRevision,
 	})
 	if err != nil {
@@ -1117,6 +1254,7 @@ func bindRPCFlowEntryWithMaintenance(ctx context.Context, request surfaces.Reque
 	request.Objective.TargetID = model.TargetID(bound.targetID)
 	request.Objective.TrustedClass = model.TargetID(bound.trustedObjectiveClass)
 	request.Objective.DeliveryID = bound.deliveryID
+	request.Objective.FrontierIsStop = bound.objectiveFrontierIsStop
 	request.Parameters = parameters
 	request.DelegationBindingFingerprint = bound.delegationBindingFingerprint
 	request.DelegationRequestFingerprint = bound.delegationRequestFingerprint
@@ -1215,21 +1353,36 @@ func bindPrescribedRepositoryInvocation(ctx context.Context, request surfaces.Re
 	if response.Prescription.InvocationFingerprint != "" {
 		return surfaces.Request{}, false, fmt.Errorf("FLOW_INVOCATION_INVALID: unmaterialized repository prescription carries invocation identity")
 	}
+	rebound, err := rebindRepositoryTransition(ctx, request, response.Prescription.TransitionID)
+	if err != nil {
+		return surfaces.Request{}, false, err
+	}
+	return rebound, true, nil
+}
+
+func rebindRepositoryTransition(ctx context.Context, request surfaces.Request, transitionID catalog.TransitionID) (surfaces.Request, error) {
 	rebound := request
-	rebound.TransitionID = response.Prescription.TransitionID
+	rebound.TransitionID = transitionID
 	rebound.Parameters = nil
 	rebound.Prescription = protocol.Prescription{}
 	rebound.IdempotencyKey = ""
 	rebound.InvocationEvidence = nil
 	rebound.InputRequest = nil
-	rebound, err = bindRPCFlowEntry(ctx, rebound)
+	rebound, err := bindRPCFlowEntry(ctx, rebound)
 	if err != nil {
-		return surfaces.Request{}, false, err
+		return surfaces.Request{}, err
 	}
 	if rebound.InputRequest == nil && rebound.InvocationEvidence == nil {
-		return surfaces.Request{}, false, fmt.Errorf("FLOW_INVOCATION_INCOMPLETE: selected repository transition produced neither an input request nor invocation evidence")
+		return surfaces.Request{}, fmt.Errorf("FLOW_INVOCATION_INCOMPLETE: selected repository transition produced neither an input request nor invocation evidence")
 	}
-	return rebound, true, nil
+	return rebound, nil
+}
+
+func boundFlowObjective(options commandOptions) model.Objective {
+	return model.Objective{
+		ID: options.objectiveID, TargetID: model.TargetID(options.targetID), TrustedClass: model.TargetID(options.trustedObjectiveClass),
+		DeliveryID: options.deliveryID, FrontierIsStop: options.objectiveFrontierIsStop,
+	}
 }
 
 func resolveBoundPlan(repository string, entry controlprogram.Entry, entryObjective softwareflow.EntryObjective, options commandOptions) (string, string, error) {

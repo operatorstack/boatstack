@@ -47,6 +47,7 @@ type commandOptions struct {
 	objectiveID                         string
 	targetID                            string
 	trustedObjectiveClass               string
+	objectiveFrontierIsStop             bool
 	deliveryID                          string
 	programID                           string
 	flowProgramFingerprint              string
@@ -86,6 +87,7 @@ type commandOptions struct {
 	delegationRequest                   delegation.Request
 	delegationReprojection              bool
 	delegationRequestProjection         bool
+	entryInputValues                    map[string]protocol.WorkInputValue
 	workInputs                          map[string]protocol.WorkInputValue
 	workID                              string
 	workQuestionPrompt                  string
@@ -749,7 +751,7 @@ func buildRequest(operation surfaces.Operation, options commandOptions) (surface
 	}
 	objective := model.Objective{}
 	if options.targetID != "" || options.objectiveID != "" || options.deliveryID != "" {
-		objective = model.Objective{ID: options.objectiveID, TargetID: model.TargetID(options.targetID), TrustedClass: model.TargetID(options.trustedObjectiveClass), DeliveryID: options.deliveryID}
+		objective = boundFlowObjective(options)
 		if err := objective.Validate(); err != nil {
 			return surfaces.Request{}, err
 		}

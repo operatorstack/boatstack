@@ -30,6 +30,11 @@ priorities, and the target they serve. `workPackage.work` and
 Additional work must be explicitly registered and named
 by every lifecycle step that consumes it.
 
+A Work input may name a required output from one earlier Work transition. The
+compiler proves ordering and target reachability. At runtime, the consumer
+reads only the applicable canonical committed journal record. Mutable Work
+records, staging paths, and filenames cannot substitute that evidence.
+
 Missing actor-owned parameters create `TRANSITION_INPUT_REQUIRED` suspension.
 The immutable request binds the run, control bundle, transition, parameter,
 and identity context. `boatstack flow input answer` records a correlated answer

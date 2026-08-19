@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/foregroundwork"
@@ -37,7 +38,7 @@ func invocation() model.InvocationContext {
 }
 
 func workInputs(value, fingerprint string) map[string]protocol.WorkInputValue {
-	return map[string]protocol.WorkInputValue{"incident": {Value: value, Fingerprint: fingerprint}}
+	return map[string]protocol.WorkInputValue{"diagnose/incident": {Value: value, Fingerprint: fingerprint}}
 }
 
 func fixture(t *testing.T) (foregroundwork.Manager, model.Snapshot, catalog.Transition, string) {
@@ -57,7 +58,7 @@ func fixture(t *testing.T) (foregroundwork.Manager, model.Snapshot, catalog.Tran
 		SchemaPath: "schema.json", SchemaSHA256: strings.Repeat("b", 64),
 		SchemaContent: `{"type":"object","properties":{"cause":{"type":"string"}},"required":["cause"],"additionalProperties":false}`,
 	}}
-	work := &catalog.WorkContract{ID: "diagnose", InstructionPath: "instructions.md", InstructionSHA256: strings.Repeat("a", 64), InstructionContent: "Diagnose.", Inputs: []catalog.WorkInput{{ID: "incident", EntryInput: "incident"}}, Outputs: outputs}
+	work := &catalog.WorkContract{ID: "diagnose", InstructionPath: "instructions.md", InstructionSHA256: strings.Repeat("a", 64), InstructionContent: "Diagnose.", Inputs: []catalog.WorkInput{{ID: "incident", Producer: controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceEntryInput, Input: "incident"}}}, Outputs: outputs}
 	fingerprint, err := general.Fingerprint(struct {
 		ID                 string               `json:"id"`
 		InstructionPath    string               `json:"instruction_path"`
@@ -207,6 +208,52 @@ func TestForegroundWorkInputFingerprintInvalidatesOutputsAndStaging(t *testing.T
 	}
 	if _, err := manager.Complete(ctx, invocation(), "run-1", "diagnose"); err == nil {
 		t.Fatalf("invalidated output completed new request: %v", err)
+	}
+}
+
+func TestForegroundWorkCommitsProducerProvenanceAndRejectsResultSubstitution(t *testing.T) {
+	manager, snapshot, transition, _ := fixture(t)
+	transition.Work.Inputs[0].Producer = controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceWorkOutput, Work: "work-a", Output: "architecture"}
+	fingerprint, err := general.Fingerprint(struct {
+		ID                 string               `json:"id"`
+		InstructionPath    string               `json:"instruction_path"`
+		InstructionSHA256  string               `json:"instruction_sha256"`
+		InstructionContent string               `json:"instruction_content"`
+		Inputs             []catalog.WorkInput  `json:"inputs,omitempty"`
+		Outputs            []catalog.WorkOutput `json:"outputs"`
+	}{transition.Work.ID, transition.Work.InstructionPath, transition.Work.InstructionSHA256, transition.Work.InstructionContent, transition.Work.Inputs, transition.Work.Outputs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	transition.Work.Fingerprint = fingerprint
+	value := protocol.WorkInputValue{Value: "architecture", Fingerprint: strings.Repeat("a", 64), WorkOutput: &protocol.WorkOutputProvenance{
+		ReceiptID: "trc-a", TransitionID: "produce-a", WorkID: "work-a", OutputID: "architecture",
+		ResultFingerprint: strings.Repeat("b", 64), ContractFingerprint: strings.Repeat("c", 64), OutputSHA256: strings.Repeat("a", 64),
+	}}
+	inputs := map[string]protocol.WorkInputValue{"diagnose/incident": value}
+	objective := model.Objective{ID: "incident-1", TargetID: "mitigated", DeliveryID: "incident-1"}
+	first, err := manager.Ensure(context.Background(), invocation(), "run-1", "incident-response", "respond", objective, snapshot, transition, inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(first.Request.StagingRoot, "diagnosis.json"), []byte(`{"cause":"accepted architecture"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	completed, err := manager.Complete(context.Background(), invocation(), "run-1", "diagnose")
+	if err != nil || completed.Result == nil || len(completed.Result.Inputs) != 1 || completed.Result.Inputs[0].WorkOutput == nil || completed.Result.Inputs[0].WorkOutput.ReceiptID != "trc-a" {
+		t.Fatalf("committed input evidence = %#v err=%v", completed.Result, err)
+	}
+
+	substituted := value
+	provenance := *value.WorkOutput
+	provenance.ResultFingerprint = strings.Repeat("d", 64)
+	substituted.WorkOutput = &provenance
+	second, err := manager.Ensure(context.Background(), invocation(), "run-1", "incident-response", "respond", objective, snapshot, transition, map[string]protocol.WorkInputValue{"diagnose/incident": substituted})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Request.Fingerprint == first.Request.Fingerprint || second.Request.StagingRoot == first.Request.StagingRoot {
+		t.Fatal("different producer result reused the downstream request identity")
 	}
 }
 
