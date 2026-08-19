@@ -114,6 +114,34 @@ func compiledPackageLifecycle(t *testing.T, targetID string, target controlprogr
 	return compiled, resolver
 }
 
+func packageRecoverySnapshot(t *testing.T, objective model.Objective, workPackage model.Fact[model.WorkPackageState], plan model.PlanState) model.Snapshot {
+	t.Helper()
+	evidence := model.Evidence{Source: "fixture", Fingerprint: "fixture", ObservedAt: time.Unix(10, 0).UTC()}
+	snapshot, err := model.Canonicalize(model.Observation{
+		SchemaVersion: model.SnapshotSchemaVersion, StateRevision: 7,
+		Invocation: model.InvocationContext{
+			RepositoryID: "repo", GitCommonID: "git", WorktreeID: "wt", Ref: "refs/heads/feature",
+			ControllerID: "controller", InvokingPath: filepath.Join(t.TempDir(), "repo"), RuntimeVersion: "runtime",
+			RuntimePath: filepath.Join(t.TempDir(), "boatstack"), RuntimeFingerprint: "fingerprint",
+			Topology: model.TopologyEmbedded, Host: "cursor", Correlation: "correlation",
+		},
+		Program: model.Known(model.ProgramCurrent, evidence), Phase: model.Known(model.PhaseActive, evidence),
+		Engagement: model.Known(model.EngagementActive, evidence), Delivery: model.Known(model.DeliveryPlanning, evidence),
+		Workspace: model.Known(model.WorkspaceAbsent, evidence), WorkPackage: workPackage, Plan: model.Known(plan, evidence),
+		Configuration: model.Known(model.ConfigurationVerified, evidence), Runtime: model.Known(model.RuntimeVerified, evidence),
+		ConfigurationPolicy: model.Known(model.ConfigurationPolicy{PlanApproval: "human", VisualEvidence: "optional", ExternalEffectAuthority: "human-or-autonomy-plus-provider", Hosts: []string{"cli", "cursor"}}, evidence),
+		Publication:         model.Known(model.PublicationNone, evidence), Verification: model.Known(model.VerificationUnverified, evidence),
+		Recovery: model.Known(model.RecoveryNone, evidence), Transaction: model.Known(model.TransactionNone, evidence),
+		RecoveryInfo: model.Absent[model.RecoveryContext]("none", evidence), TransactionInfo: model.Absent[model.TransactionContext]("none", evidence),
+		Terminal: model.Known(model.TerminalStale, evidence), Objective: model.Known(objective, evidence),
+		ObservedAt: time.Unix(10, 0).UTC(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return snapshot
+}
+
 func TestTrustedFlowLowersThroughStandardStateEffectBoundary(t *testing.T) {
 	// control-law: repository-flow-selects-trusted-semantics-without-redeclaring-native-effects
 	truth := true
@@ -479,6 +507,55 @@ func TestRuntimeManifestRejectsIncompleteWorkPackageLifecycles(t *testing.T) {
 			}
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("incomplete lifecycle result = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestStalePackageAndPlanObservationsRetainRecoveryTransitions(t *testing.T) {
+	evidence := model.Evidence{Source: "fixture", Fingerprint: "fixture", ObservedAt: time.Unix(10, 0).UTC()}
+	tests := []struct {
+		name        string
+		targetID    string
+		target      controlprogram.Predicate
+		trusted     model.TargetID
+		transitions []string
+		workPackage model.Fact[model.WorkPackageState]
+		plan        model.PlanState
+		want        delivery.TransitionID
+	}{
+		{
+			name: "corrupted generic package is re-admitted", targetID: "approved-package", target: fact("work-package", "approved"),
+			trusted: model.ObjectiveApprovedWorkPackage, transitions: []string{softwareflow.WorkPackageAdmit, softwareflow.WorkPackageApprove},
+			workPackage: model.Fact[model.WorkPackageState]{Status: model.FactStale, Value: model.WorkPackageAbsent, Evidence: []model.Evidence{evidence}},
+			plan:        model.PlanAbsent, want: softwareflow.WorkPackageAdmit,
+		},
+		{
+			name: "corrupted promoted plan is re-promoted", targetID: "approved-plan", target: fact("plan", "approved"),
+			trusted: model.ObjectiveApprovedPlan, transitions: []string{softwareflow.WorkPackageAdmit, softwareflow.WorkPackageApprove, softwareflow.PlanningPackagePromote},
+			workPackage: model.Known(model.WorkPackageApproved, evidence), plan: model.PlanStale, want: softwareflow.PlanningPackagePromote,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			compiled, resolver := compiledPackageLifecycle(t, test.targetID, test.target, test.transitions...)
+			definition, err := softwareflow.NewDefinition(compiled, resolver)
+			if err != nil {
+				t.Fatal(err)
+			}
+			program, err := delivery.Compile(context.Background(), delivery.CompileRequest{
+				KernelVersion: "v2.0.0", Core: core.System(), Runtime: definition, Settings: map[string]string{"repo": "fixture"},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			objective := model.Objective{ID: "objective", TargetID: model.TargetID(test.targetID), TrustedClass: test.trusted, DeliveryID: "delivery"}
+			snapshot := packageRecoverySnapshot(t, objective, test.workPackage, test.plan)
+			decision := supervisor.New(program.RuntimeRegistry(), program.RuntimeObjectiveContracts()).Resolve(
+				snapshot, objective, catalog.AuthoritySet{catalog.AuthorityAutonomy: true, catalog.AuthorityRepository: true}, "",
+			)
+			if decision.Kind != supervisor.DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != test.want {
+				t.Fatalf("stale recovery decision = %#v, want %s", decision, test.want)
 			}
 		})
 	}

@@ -48,6 +48,12 @@ func acceptedWorkTransitions(transitions map[string]delivery.Transition) ([]deli
 		[]model.FactStatus{model.FactKnown, model.FactStale},
 		string(model.WorkPackageAbsent),
 	)
+	admit.SourceConditions = withFacetStatuses(
+		withoutFacet(admit.SourceConditions, model.FacetTerminal),
+		model.FacetTerminal,
+		[]model.FactStatus{model.FactKnown},
+		string(model.TerminalNonterminal), string(model.TerminalStale),
+	)
 	admit.TargetConditions = withFacet(withoutFacet(admit.TargetConditions, model.FacetPlan), model.FacetWorkPackage, string(model.WorkPackageValid))
 	admit.TargetIDs = appendUniqueTarget(admit.TargetIDs, model.ObjectiveApprovedWorkPackage)
 	admit.OwnedResources = []string{"work-package"}
@@ -88,6 +94,12 @@ func acceptedWorkTransitions(transitions map[string]delivery.Transition) ([]deli
 		model.FacetPlan,
 		[]model.FactStatus{model.FactKnown},
 		string(model.PlanAbsent), string(model.PlanStale),
+	)
+	promote.SourceConditions = withFacetStatuses(
+		withoutFacet(promote.SourceConditions, model.FacetTerminal),
+		model.FacetTerminal,
+		[]model.FactStatus{model.FactKnown},
+		string(model.TerminalNonterminal), string(model.TerminalStale),
 	)
 	promote.TargetConditions = replaceFacet(promote.TargetConditions, model.FacetPlan, string(model.PlanApproved))
 	promote.TargetPhases = appendUniquePhase(promote.TargetPhases, model.PhaseTerminal)

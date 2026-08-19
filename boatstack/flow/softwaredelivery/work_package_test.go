@@ -85,6 +85,20 @@ func TestAcceptedWorkUsesDistinctFacetAndOnlyPromotionOwnsPlan(t *testing.T) {
 	if !foundRecoverablePlan {
 		t.Fatal("planning promotion cannot recover a stale canonical plan")
 	}
+	for _, transition := range []delivery.Transition{transitions[0], transitions[2]} {
+		foundRecoverableTerminal := false
+		for _, condition := range transition.SourceConditions {
+			if condition.Facet == model.FacetTerminal && containsString(condition.Values, string(model.TerminalNonterminal)) && containsString(condition.Values, string(model.TerminalStale)) {
+				if len(condition.Statuses) != 1 || condition.Statuses[0] != model.FactKnown || len(condition.Values) != 2 {
+					t.Fatalf("%s widened terminal recovery condition: %#v", transition.ID, condition)
+				}
+				foundRecoverableTerminal = true
+			}
+		}
+		if !foundRecoverableTerminal {
+			t.Fatalf("%s cannot recover observer-projected stale terminal state", transition.ID)
+		}
+	}
 }
 
 func containsString(values []string, want string) bool {
