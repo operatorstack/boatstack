@@ -467,6 +467,7 @@ func parkedSourceState(state durable.State, resultingRevision uint64, transition
 	state.Engagement = model.EngagementDormant
 	state.Delivery = model.DeliveryUninitialized
 	state.Workspace = model.WorkspaceAbsent
+	state.WorkPackage = model.WorkPackageAbsent
 	state.Plan = model.PlanAbsent
 	state.Publication = model.PublicationNone
 	state.Verification = model.VerificationUnverified
@@ -477,6 +478,8 @@ func parkedSourceState(state durable.State, resultingRevision uint64, transition
 	state.SourceRevision = ""
 	state.WorktreeFingerprint = ""
 	state.PlanFingerprint = ""
+	state.WorkPackageFingerprint = ""
+	state.WorkPackageApprovalFingerprint = ""
 	state.WorkspaceBranch = ""
 	state.WorkspacePath = ""
 	state.WorkspaceBaseRef = ""
