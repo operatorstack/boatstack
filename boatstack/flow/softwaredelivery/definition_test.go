@@ -403,6 +403,17 @@ func TestApprovedWorkPackageEntryResolvesTrustedObjective(t *testing.T) {
 	if decision.Kind != supervisor.DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "objective.bind" {
 		t.Fatalf("accepted-work objective decision = %#v, want objective.bind", decision)
 	}
+	snapshot.Objective = model.Known(requested, evidence)
+	snapshot, err = model.Canonicalize(snapshot.Observation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision = supervisor.New(program.RuntimeRegistry(), program.RuntimeObjectiveContracts()).Resolve(
+		snapshot, requested, catalog.AuthoritySet{catalog.AuthorityHuman: true, catalog.AuthorityAutonomy: true, catalog.AuthorityRepository: true}, "",
+	)
+	if decision.Kind != supervisor.DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "engagement.begin" {
+		t.Fatalf("accepted-work engagement decision = %#v, want engagement.begin", decision)
+	}
 	spoofed := requested
 	spoofed.TrustedClass = model.ObjectiveApprovedPlan
 	decision = supervisor.New(program.RuntimeRegistry(), program.RuntimeObjectiveContracts()).Resolve(snapshot, spoofed, nil, "")

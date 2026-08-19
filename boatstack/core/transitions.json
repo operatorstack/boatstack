@@ -19,13 +19,6 @@
       "OBSERVED",
       "ACTIVE"
     ],
-    "target_ids": [
-      "approved-plan",
-      "verified-implementation",
-      "open-or-updated-pr",
-      "merged-delivery",
-      "safely-abandoned"
-    ],
     "required_identity": [
       "repository-id",
       "git-common-id",
