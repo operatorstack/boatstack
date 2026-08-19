@@ -380,7 +380,7 @@ func TestForegroundWorkInputsMustExistOnEveryReachableEntry(t *testing.T) {
 	digest := sha256.Sum256([]byte(instructions))
 	document.Work = []controlprogram.WorkContract{{
 		ID: "planning", Instructions: controlprogram.WorkAsset{Path: "planning.md", SHA256: hex.EncodeToString(digest[:]), Content: instructions},
-		Inputs:  []controlprogram.WorkInput{{ID: "plan", EntryInput: "plan"}},
+		Inputs:  []controlprogram.WorkInput{{ID: "plan", Producer: controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceEntryInput, Input: "plan"}}},
 		Outputs: []controlprogram.WorkOutput{{ID: "result", Path: "result.md", MediaType: "text/markdown", Required: true}},
 	}}
 	document.Transitions[0].Work = "planning"

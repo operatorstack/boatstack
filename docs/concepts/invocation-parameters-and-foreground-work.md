@@ -22,7 +22,9 @@ evidence for parameter materialization, not authority to perform an effect.
 - Each required parameter has exactly one compatible producer.
 - Trusted resolvers are immutable references and do not grant authority.
 - Foreground-work completion does not independently advance Flow state.
-- The selected transition consumes verified work output.
+- Same-transition parameters consume the candidate result being admitted.
+- Later transitions and Work contracts consume only the applicable committed result.
+- A later result commits the exact producer receipt, result, contract, output, and byte identities.
 - Requests and answers are correlated to the exact run and generation.
 - Restart and resume preserve the same run and request lineage.
 

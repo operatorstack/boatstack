@@ -1162,7 +1162,7 @@ func TestFlowRunIdentitySurvivesWorkspaceTransfer(t *testing.T) {
 	if resumed.runID != initial.runID {
 		t.Fatalf("workspace transfer changed Flow run identity: %q != %q", resumed.runID, initial.runID)
 	}
-	if source, ok := resumed.workInputs["plan"]; !ok || source.Value != filepath.Join(resumed.repository, ".boatstack", "plans", "delivery-one.source") {
+	if source, ok := resumed.entryInputValues["plan"]; !ok || source.Value != filepath.Join(resumed.repository, ".boatstack", "plans", "delivery-one.source") {
 		t.Fatalf("destination entry input = %#v, %t", source, ok)
 	}
 
@@ -2449,7 +2449,7 @@ func TestFreshFlowEntryPreservesInboxProducerAcrossDelegationContext(t *testing.
 	if resumed.runID != initial.runID {
 		t.Fatalf("run identity changed: %s != %s", resumed.runID, initial.runID)
 	}
-	if source, ok := resumed.workInputs["plan"]; !ok || source.Value != filepath.Join(resumed.repository, ".boatstack", "plans", "inbox", "delivery-one.md") {
+	if source, ok := resumed.entryInputValues["plan"]; !ok || source.Value != filepath.Join(resumed.repository, ".boatstack", "plans", "inbox", "delivery-one.md") {
 		t.Fatalf("resumed entry input = %#v, present=%t", source, ok)
 	}
 }
@@ -2784,7 +2784,7 @@ func TestFlowEntryPreservesSelectedPlanFilenameBeforeMaterialization(t *testing.
 		t.Fatal(err)
 	}
 	expected := filepath.Join(initial.repository, ".boatstack", "plans", "inbox", "delivery.MD")
-	if source, ok := resumed.workInputs["plan"]; !ok || source.Value != expected {
+	if source, ok := resumed.entryInputValues["plan"]; !ok || source.Value != expected {
 		t.Fatalf("resumed entry input = %#v, present=%t; want %q", source, ok, expected)
 	}
 }
@@ -2806,7 +2806,7 @@ func TestFlowEntryResumeIgnoresUnrelatedNewInboxPlan(t *testing.T) {
 		t.Fatal(err)
 	}
 	expected := filepath.Join(initial.repository, ".boatstack", "plans", "inbox", "delivery.md")
-	if source, ok := resumed.workInputs["plan"]; !ok || source.Value != expected {
+	if source, ok := resumed.entryInputValues["plan"]; !ok || source.Value != expected {
 		t.Fatalf("resumed entry input = %#v, present=%t; want %q", source, ok, expected)
 	}
 }

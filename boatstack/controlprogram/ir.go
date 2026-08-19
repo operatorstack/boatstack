@@ -7,7 +7,7 @@ import "encoding/json"
 
 const (
 	SchemaName     = "control-program"
-	SchemaRevision = 7
+	SchemaRevision = 8
 )
 
 type Document struct {
@@ -64,8 +64,8 @@ type WorkAsset struct {
 }
 
 type WorkInput struct {
-	ID         string `json:"id"`
-	EntryInput string `json:"entry_input"`
+	ID       string            `json:"id"`
+	Producer ParameterProducer `json:"producer"`
 }
 
 type WorkOutput struct {

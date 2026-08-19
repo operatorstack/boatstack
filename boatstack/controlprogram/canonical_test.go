@@ -478,7 +478,7 @@ func incidentWorkProgram() controlprogram.Document {
 	digest := sha256.Sum256([]byte(instructions))
 	document.Work = []controlprogram.WorkContract{{
 		ID: "diagnose", Instructions: controlprogram.WorkAsset{Path: "instructions.md", SHA256: hex.EncodeToString(digest[:]), Content: instructions},
-		Inputs:      []controlprogram.WorkInput{{ID: "incident", EntryInput: "incident"}},
+		Inputs:      []controlprogram.WorkInput{{ID: "incident", Producer: controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceEntryInput, Input: "incident"}}},
 		Outputs:     []controlprogram.WorkOutput{{ID: "diagnosis", Path: "diagnosis.md", MediaType: "text/markdown", Required: true, MaxBytes: 4096}},
 		Description: "presentation only",
 	}}
@@ -552,7 +552,7 @@ func TestForegroundWorkRejectsUnboundAssetsInputsAndTransitions(t *testing.T) {
 		"unresolved-asset": func(value *controlprogram.Document) {
 			value.Work[0].Instructions.Content, value.Work[0].Instructions.SHA256 = "", ""
 		},
-		"unknown-entry-input": func(value *controlprogram.Document) { value.Work[0].Inputs[0].EntryInput = "missing" },
+		"unknown-entry-input": func(value *controlprogram.Document) { value.Work[0].Inputs[0].Producer.Input = "missing" },
 		"unreferenced-work":   func(value *controlprogram.Document) { value.Transitions[0].Work = "" },
 		"unknown-work":        func(value *controlprogram.Document) { value.Transitions[0].Work = "missing" },
 	} {
@@ -561,6 +561,51 @@ func TestForegroundWorkRejectsUnboundAssetsInputsAndTransitions(t *testing.T) {
 			mutate(&document)
 			if _, err := controlprogram.Compile(document, nil); err == nil {
 				t.Fatalf("%s was accepted", name)
+			}
+		})
+	}
+}
+
+func foregroundWorkDependencyProgram() controlprogram.Document {
+	document := incidentWorkProgram()
+	instructions := "Use the committed diagnosis to produce a response."
+	digest := sha256.Sum256([]byte(instructions))
+	document.Work = append(document.Work, controlprogram.WorkContract{
+		ID: "respond", Instructions: controlprogram.WorkAsset{Path: "respond.md", SHA256: hex.EncodeToString(digest[:]), Content: instructions},
+		Inputs:  []controlprogram.WorkInput{{ID: "diagnosis", Producer: controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceWorkOutput, Work: "diagnose", Output: "diagnosis"}}},
+		Outputs: []controlprogram.WorkOutput{{ID: "response", Path: "response.md", MediaType: "text/markdown", Required: true, MaxBytes: 4096}},
+	})
+	operator := document.Operators[0]
+	operator.ID = "dispatch"
+	document.Operators = append(document.Operators, operator)
+	document.Transitions = append(document.Transitions, controlprogram.Transition{
+		ID: "dispatch", Operator: "dispatch", Work: "respond", Priority: 20,
+		Guard: fact("incident", "mitigated"), Target: fact("incident", "mitigated"),
+	})
+	return document
+}
+
+func TestForegroundWorkInputsRequireOnePriorCommittedProducer(t *testing.T) {
+	if _, err := controlprogram.Compile(foregroundWorkDependencyProgram(), nil); err != nil {
+		t.Fatal(err)
+	}
+	for name, test := range map[string]struct {
+		mutate  func(*controlprogram.Document)
+		witness string
+	}{
+		"unsupported-source": {func(value *controlprogram.Document) {
+			value.Work[1].Inputs[0].Producer = controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceState, Facet: "incident"}
+		}, "entry-input or work-output"},
+		"self-dependency":  {func(value *controlprogram.Document) { value.Work[1].Inputs[0].Producer.Work = "respond" }, "self-produced"},
+		"optional-output":  {func(value *controlprogram.Document) { value.Work[0].Outputs[0].Required = false }, "optional or unknown"},
+		"invalid-order":    {func(value *controlprogram.Document) { value.Transitions[1].Priority = 5 }, "not guaranteed"},
+		"unimplied-target": {func(value *controlprogram.Document) { value.Transitions[1].Guard = fact("incident", "open") }, "not guaranteed"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			document := foregroundWorkDependencyProgram()
+			test.mutate(&document)
+			if _, err := controlprogram.Compile(document, nil); err == nil || !strings.Contains(err.Error(), test.witness) {
+				t.Fatalf("compile result = %v", err)
 			}
 		})
 	}

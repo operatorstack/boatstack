@@ -162,7 +162,7 @@ func appendUniqueTarget(values []model.TargetID, target model.TargetID) []model.
 func validateWorkPackageContract(work delivery.WorkContract) error {
 	portable := workpackage.WorkContract{ID: work.ID, Fingerprint: work.Fingerprint, Instructions: workpackage.Asset{Path: work.InstructionPath, SHA256: work.InstructionSHA256, Content: work.InstructionContent}}
 	for _, input := range work.Inputs {
-		portable.Inputs = append(portable.Inputs, workpackage.WorkInput{ID: input.ID, EntryInput: input.EntryInput})
+		portable.Inputs = append(portable.Inputs, workpackage.WorkInput{ID: input.ID, Producer: input.Producer})
 	}
 	for _, output := range work.Outputs {
 		item := workpackage.WorkOutput{ID: output.ID, Path: output.Path, MediaType: output.MediaType, Required: output.Required, MaxBytes: output.MaxBytes}

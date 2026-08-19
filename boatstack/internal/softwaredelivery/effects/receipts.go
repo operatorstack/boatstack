@@ -2,6 +2,8 @@ package effects
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -98,6 +100,116 @@ func scanCommittedReceipts(layout ports.ControllerLayout, visit func(journalReco
 		}
 	}
 	return nil
+}
+
+// CommittedWorkOutputSelector identifies the one producer occurrence that is
+// an ancestor of the current Flow state. Program and contract checks are
+// applied to that occurrence after selection, so stale current facts cannot
+// cause fallback to an older compatible result.
+type CommittedWorkOutputSelector struct {
+	FlowID             string
+	ProgramID          string
+	ProgramFingerprint string
+	EntryID            string
+	Objective          model.Objective
+	Invocation         model.InvocationContext
+	TransitionID       catalog.TransitionID
+	Work               catalog.WorkContract
+	OutputID           string
+	MaximumRevision    uint64
+}
+
+// CommittedWorkOutput is an ephemeral read projection of identities already
+// present in the canonical committed journal.
+type CommittedWorkOutput struct {
+	Receipt protocol.TransitionReceipt
+	Work    protocol.WorkEvidence
+	Output  protocol.WorkOutputEvidence
+}
+
+// FindApplicableCommittedWorkOutput resolves one exact committed producer
+// occurrence. It never consults foreground-work records or staging paths.
+func FindApplicableCommittedWorkOutput(layout ports.ControllerLayout, selector CommittedWorkOutputSelector) (CommittedWorkOutput, bool, error) {
+	records := []journalRecord{}
+	if err := scanCommittedReceipts(layout, func(record journalRecord) error {
+		records = append(records, record)
+		return nil
+	}); err != nil {
+		return CommittedWorkOutput{}, false, err
+	}
+	return findApplicableCommittedWorkOutput(records, selector)
+}
+
+func findApplicableCommittedWorkOutput(records []journalRecord, selector CommittedWorkOutputSelector) (CommittedWorkOutput, bool, error) {
+	if selector.FlowID == "" || selector.ProgramID == "" || len(selector.ProgramFingerprint) != 64 || selector.EntryID == "" ||
+		selector.Objective.Validate() != nil || selector.Invocation.Validate(true) != nil || selector.TransitionID == "" ||
+		selector.Work.ID == "" || len(selector.Work.Fingerprint) != 64 || selector.OutputID == "" || selector.MaximumRevision == 0 {
+		return CommittedWorkOutput{}, false, fmt.Errorf("committed work-output selector is incomplete")
+	}
+	var selected *journalRecord
+	for index := range records {
+		record := &records[index]
+		receipt := *record.Receipt
+		if receipt.FlowID != selector.FlowID || receipt.TransitionID != selector.TransitionID || receipt.ResultingStateRevision > selector.MaximumRevision {
+			continue
+		}
+		authorized := sameStateLineage(record.Admission.Invocation, selector.Invocation)
+		if !authorized && record.Admission.Invocation.ControllerID == selector.Invocation.ControllerID {
+			var err error
+			authorized, err = invocationAuthorizedByRecords(records, selector.FlowID, record.Admission.Invocation, selector.Invocation)
+			if err != nil {
+				return CommittedWorkOutput{}, false, err
+			}
+		}
+		if !authorized {
+			continue
+		}
+		if selected == nil || receipt.Sequence > selected.Receipt.Sequence {
+			selected = record
+			continue
+		}
+		if receipt.Sequence == selected.Receipt.Sequence && receipt.ID != selected.Receipt.ID {
+			return CommittedWorkOutput{}, false, fmt.Errorf("committed work-output producer occurrence is ambiguous at sequence %d", receipt.Sequence)
+		}
+	}
+	if selected == nil {
+		return CommittedWorkOutput{}, false, nil
+	}
+	receipt, admission := *selected.Receipt, selected.Admission
+	work := admission.Work
+	if receipt.Program.ID != selector.ProgramID || receipt.Program.Fingerprint != selector.ProgramFingerprint || admission.ExpectedProgramFingerprint != selector.ProgramFingerprint ||
+		!sameObjectiveIdentity(admission.Objective, selector.Objective) || work == nil || work.RunID != selector.FlowID || work.ProgramID != selector.ProgramID ||
+		work.EntryID != selector.EntryID || work.TransitionID != selector.TransitionID || work.ProgramFingerprint != selector.ProgramFingerprint ||
+		work.StateRevision != receipt.PriorStateRevision || work.StateRevision != admission.ExpectedStateRevision ||
+		work.RepositoryID != admission.Invocation.RepositoryID || work.WorktreeID != admission.Invocation.WorktreeID ||
+		work.ContractID != selector.Work.ID || work.ContractFingerprint != selector.Work.Fingerprint || receipt.WorkResultFingerprint != work.ResultFingerprint {
+		return CommittedWorkOutput{}, false, fmt.Errorf("committed work-output producer occurrence is stale or incompatible")
+	}
+	var declaration *catalog.WorkOutput
+	for index := range selector.Work.Outputs {
+		if selector.Work.Outputs[index].ID == selector.OutputID {
+			declaration = &selector.Work.Outputs[index]
+			break
+		}
+	}
+	if declaration == nil || !declaration.Required {
+		return CommittedWorkOutput{}, false, fmt.Errorf("committed work-output selector references an optional or unknown output")
+	}
+	for _, output := range work.Outputs {
+		if output.ID != selector.OutputID {
+			continue
+		}
+		digest := sha256.Sum256([]byte(output.Content))
+		if output.Path != declaration.Path || output.MediaType != declaration.MediaType || output.Size > declaration.MaxBytes || output.Size != int64(len(output.Content)) || output.SHA256 != hex.EncodeToString(digest[:]) {
+			return CommittedWorkOutput{}, false, fmt.Errorf("committed work-output does not match its current contract")
+		}
+		return CommittedWorkOutput{Receipt: receipt, Work: *work, Output: output}, true, nil
+	}
+	return CommittedWorkOutput{}, false, fmt.Errorf("committed work-output producer result lacks output %q", selector.OutputID)
+}
+
+func sameObjectiveIdentity(left, right model.Objective) bool {
+	return left.ID == right.ID && left.TargetID == right.TargetID && left.TrustedClass == right.TrustedClass && left.DeliveryID == right.DeliveryID && left.FrontierIsStop == right.FrontierIsStop
 }
 
 // FindLatestCommittedFlowForObjective returns the authoritative committed flow

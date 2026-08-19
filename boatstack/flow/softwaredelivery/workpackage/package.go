@@ -19,13 +19,14 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	general "github.com/operatorstack/boatstack/boatstack/kernel"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 const (
 	ManifestSchemaVersion    = 1
-	ContractSchemaVersion    = 1
+	ContractSchemaVersion    = 2
 	WorkReceiptSchemaVersion = 1
 	ApprovalSchemaVersion    = 1
 	maxPackageMetadataBytes  = 16 << 20
@@ -54,8 +55,8 @@ type WorkOutput struct {
 }
 
 type WorkInput struct {
-	ID         string `json:"id"`
-	EntryInput string `json:"entry_input"`
+	ID       string                           `json:"id"`
+	Producer controlprogram.ParameterProducer `json:"producer"`
 }
 
 type WorkContract struct {
@@ -622,7 +623,10 @@ func validateContractAssets(work WorkContract) error {
 	}
 	inputIDs := map[string]bool{}
 	for _, input := range work.Inputs {
-		if !ValidSegment(input.ID) || !ValidSegment(input.EntryInput) || inputIDs[input.ID] {
+		producer := input.Producer
+		validProducer := producer.Kind == controlprogram.ParameterSourceEntryInput && ValidSegment(producer.Input) && producer.Facet == "" && producer.AvailableWhen == nil && producer.Transition == "" && producer.Field == "" && producer.Work == "" && producer.Output == "" && producer.Binding == nil && producer.Request == nil ||
+			producer.Kind == controlprogram.ParameterSourceWorkOutput && ValidSegment(producer.Work) && ValidSegment(producer.Output) && producer.Input == "" && producer.Facet == "" && producer.AvailableWhen == nil && producer.Transition == "" && producer.Field == "" && producer.Binding == nil && producer.Request == nil
+		if !ValidSegment(input.ID) || !validProducer || inputIDs[input.ID] {
 			return fmt.Errorf("embedded work input %q is invalid", input.ID)
 		}
 		inputIDs[input.ID] = true

@@ -16,7 +16,7 @@ func TestWorkOutputProducerRejectsStaleExecutionScope(t *testing.T) {
 	// entry, objective, source scope, contract, transition, and entry inputs.
 	work := controlprogram.WorkContract{
 		ID: "planning-package", Instructions: controlprogram.WorkAsset{Path: "instructions.md", SHA256: strings.Repeat("a", 64), Content: "Plan."},
-		Inputs:  []controlprogram.WorkInput{{ID: "plan", EntryInput: "plan"}},
+		Inputs:  []controlprogram.WorkInput{{ID: "plan", Producer: controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceEntryInput, Input: "plan"}}},
 		Outputs: []controlprogram.WorkOutput{{ID: "result", Path: "result.json", MediaType: "application/json", Required: true, MaxBytes: 1024}},
 	}
 	contract, err := softwareflow.RuntimeWorkContract(work)
@@ -41,7 +41,7 @@ func TestWorkOutputProducerRejectsStaleExecutionScope(t *testing.T) {
 	}
 	record := foregroundwork.Record{Status: foregroundwork.StatusCompleted, Request: foregroundwork.Request{
 		ID: "work-request", Fingerprint: requestFingerprint, RunID: "run-1", ProgramID: "fixture", EntryID: "run", Objective: objective,
-		TransitionID: "planning.admit", Contract: *contract, Inputs: []foregroundwork.InputBinding{{ID: "plan", EntryInput: "plan", Value: "plan.md", Fingerprint: strings.Repeat("e", 64)}},
+		TransitionID: "planning.admit", Contract: *contract, Inputs: []foregroundwork.InputBinding{{ID: "plan", Value: "plan.md", Fingerprint: strings.Repeat("e", 64)}},
 		RepositoryID: current.RepositoryID, GitCommonID: current.GitCommonID, WorktreeID: current.WorktreeID, Ref: current.Ref,
 		ProgramFingerprint: programFingerprint, ContextFingerprint: contextFingerprint, StateRevision: 3,
 	}, Result: &result}
@@ -50,7 +50,7 @@ func TestWorkOutputProducerRejectsStaleExecutionScope(t *testing.T) {
 		Transitions: []controlprogram.Transition{{ID: "planning.admit", Work: work.ID}},
 	}}
 	entry := controlprogram.Entry{ID: "run"}
-	options := commandOptions{runID: "run-1", objectiveID: objective.ID, targetID: string(objective.TargetID), deliveryID: objective.DeliveryID, workInputs: map[string]protocol.WorkInputValue{"plan": {Value: "plan.md", Fingerprint: strings.Repeat("e", 64)}}}
+	options := commandOptions{runID: "run-1", objectiveID: objective.ID, targetID: string(objective.TargetID), deliveryID: objective.DeliveryID, workInputs: map[string]protocol.WorkInputValue{"planning-package/plan": {Value: "plan.md", Fingerprint: strings.Repeat("e", 64)}}}
 	if err := validateWorkOutputProducer(record, work, compiled, entry, options, current); err != nil {
 		t.Fatal(err)
 	}
