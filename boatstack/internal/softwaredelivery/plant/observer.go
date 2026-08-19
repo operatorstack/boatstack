@@ -702,27 +702,19 @@ func observeWorkPackage(layout ports.ControllerLayout, state durable.State, now 
 	if err != nil || !exists {
 		return evidence, false, err
 	}
-	manifestRaw, err := os.ReadFile(manifestPath)
-	if err != nil {
-		return evidence, false, err
-	}
-	var manifest workpackage.Manifest
-	if workpackage.StrictDecode(manifestRaw, &manifest) != nil {
-		return evidence, false, nil
-	}
-	result := workpackage.Verify(layout.RepositoryRoot, state.Objective.DeliveryID, state.WorkPackageFingerprint, nil)
+	result := verifyObservedWorkPackage(layout.RepositoryRoot, state.Objective.DeliveryID, state.WorkPackageFingerprint, nil)
 	valid := result.Integrity == workpackage.Valid && result.Contract == workpackage.Valid
 	if state.WorkPackage == model.WorkPackageApproved {
 		valid = valid && result.Approval == workpackage.Valid
 		if valid {
-			raw, _ := os.ReadFile(filepath.Join(root, "approval.json"))
-			var approval workpackage.Approval
-			_ = workpackage.StrictDecode(raw, &approval)
-			valid = approval.Fingerprint == state.WorkPackageApprovalFingerprint
+			verified, approvalErr := workpackage.ReadVerifiedApproval(layout.RepositoryRoot, state.Objective.DeliveryID, state.WorkPackageFingerprint)
+			valid = approvalErr == nil && verified.Approval.Fingerprint == state.WorkPackageApprovalFingerprint
 		}
 	}
 	return evidence, valid, nil
 }
+
+var verifyObservedWorkPackage = workpackage.Verify
 
 type pendingJournalHeader struct {
 	SchemaVersion     int    `json:"schema_version"`

@@ -171,6 +171,15 @@ type Result struct {
 
 type CurrentProgram struct{ ProgramFingerprint, WorkContractFingerprint string }
 
+// VerifiedApproval is the exact portable approval evidence read after full
+// package verification. Raw contains the canonical approval bytes validated
+// against Manifest.
+type VerifiedApproval struct {
+	Manifest Manifest
+	Approval Approval
+	Raw      []byte
+}
+
 func Encode(value any) ([]byte, error) {
 	raw, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
@@ -441,6 +450,59 @@ func Verify(repository, deliveryID, packageFingerprint string, current *CurrentP
 		}
 	}
 	return result
+}
+
+// ReadVerifiedApproval rereads and validates the current manifest and
+// approval together. Callers use it after Verify when durable or transferred
+// state must bind the exact approval bytes that remain present.
+func ReadVerifiedApproval(repository, deliveryID, packageFingerprint string) (VerifiedApproval, error) {
+	if !ValidSegment(deliveryID) || !ValidFingerprint(packageFingerprint) {
+		return VerifiedApproval{}, fmt.Errorf("package path identity is invalid")
+	}
+	root, err := filepath.Abs(repository)
+	if err != nil {
+		return VerifiedApproval{}, err
+	}
+	info, err := os.Lstat(root)
+	if err != nil || !info.IsDir() {
+		return VerifiedApproval{}, fmt.Errorf("repository root is unavailable")
+	}
+	packageRoot := filepath.Join(root, ".boatstack", "work-packages", deliveryID, packageFingerprint)
+	if info, err = os.Lstat(packageRoot); err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return VerifiedApproval{}, fmt.Errorf("package directory is unavailable or unsafe")
+	}
+	manifestRaw, err := readRegular(filepath.Join(packageRoot, "manifest.json"), maxPackageMetadataBytes)
+	if err != nil {
+		return VerifiedApproval{}, err
+	}
+	var manifest Manifest
+	if err := StrictDecode(manifestRaw, &manifest); err != nil {
+		return VerifiedApproval{}, fmt.Errorf("manifest: %w", err)
+	}
+	if !canonicalEncoding(manifestRaw, manifest) || !outputsSorted(manifest.Outputs) {
+		return VerifiedApproval{}, fmt.Errorf("manifest encoding or output order is non-canonical")
+	}
+	manifestIdentity := manifest
+	manifestIdentity.Fingerprint = ""
+	identityRaw, err := Encode(manifestIdentity)
+	if err != nil {
+		return VerifiedApproval{}, err
+	}
+	if err := validateManifestIdentity(manifest, deliveryID, packageFingerprint, Digest(identityRaw)); err != nil {
+		return VerifiedApproval{}, fmt.Errorf("manifest identity is invalid: %w", err)
+	}
+	approvalRaw, err := readRegular(filepath.Join(packageRoot, "approval.json"), maxPackageMetadataBytes)
+	if err != nil {
+		return VerifiedApproval{}, err
+	}
+	var approval Approval
+	if err := StrictDecode(approvalRaw, &approval); err != nil {
+		return VerifiedApproval{}, fmt.Errorf("approval: %w", err)
+	}
+	if err := ValidateApproval(approvalRaw, approval, manifest, deliveryID, packageFingerprint); err != nil {
+		return VerifiedApproval{}, fmt.Errorf("approval identity is invalid: %w", err)
+	}
+	return VerifiedApproval{Manifest: manifest, Approval: approval, Raw: approvalRaw}, nil
 }
 
 func validateManifestIdentity(manifest Manifest, deliveryID, packageFingerprint, identityFingerprint string) error {

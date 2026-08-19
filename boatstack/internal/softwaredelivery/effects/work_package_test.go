@@ -214,6 +214,22 @@ func TestWorkPackageAdmitApprovePromoteUsesExactGenericSnapshot(t *testing.T) {
 		t.Fatalf("promoted plan=%q", current)
 	}
 	workspace := t.TempDir()
+	originalTransfer := prepareWorkspaceWorkPackageTransferFn
+	t.Cleanup(func() { prepareWorkspaceWorkPackageTransferFn = originalTransfer })
+	prepareWorkspaceWorkPackageTransferFn = func(repositoryRoot, workspacePath, deliveryID, packageFingerprint, expectedApprovalFingerprint string) ([]ports.ResourceMutation, error) {
+		if err := os.WriteFile(filepath.Join(packageRoot, "approval.json"), substitutedApprovalRaw, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return originalTransfer(repositoryRoot, workspacePath, deliveryID, packageFingerprint, expectedApprovalFingerprint)
+	}
+	_, transferSubstitutionErr := prepareWorkspacePlanTransfer(repository, workspace, "delivery", state.PlanFingerprint, state.ApprovalFingerprint)
+	prepareWorkspaceWorkPackageTransferFn = originalTransfer
+	if err := os.WriteFile(filepath.Join(packageRoot, "approval.json"), originalApproval, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if transferSubstitutionErr == nil || !strings.Contains(transferSubstitutionErr.Error(), "promotion lineage") {
+		t.Fatalf("workspace transfer accepted substituted package approval: %v", transferSubstitutionErr)
+	}
 	transfers, err := prepareWorkspacePlanTransfer(repository, workspace, "delivery", state.PlanFingerprint, state.ApprovalFingerprint)
 	if err != nil {
 		t.Fatal(err)

@@ -66,6 +66,35 @@ func TestObserverValidatesAdmittedWorkPackageWithoutPrematurePlanPromotion(t *te
 	if _, err := os.Stat(filepath.Join(repository, ".boatstack", "plans", deliveryID+".source")); !os.IsNotExist(err) {
 		t.Fatalf("admission prematurely created a canonical plan: %v", err)
 	}
+	approval, approvalRaw, err := workpackage.SealApproval(workpackage.Approval{
+		DeliveryID: deliveryID, PackageFingerprint: manifest.Fingerprint, ManifestFingerprint: manifest.Fingerprint,
+		AdmissionID: "adm-approve", Actor: "reviewer", IdentityRole: "developer", IdentityProviderFingerprint: strings.Repeat("9", 64), ApprovedAt: time.Unix(99, 0).UTC(),
+		AuthoritySources: []workpackage.AuthoritySource{{ID: "human", Class: "human", Subject: "reviewer", Fingerprint: "authority-proof"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "approval.json"), approvalRaw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	state.WorkPackage = model.WorkPackageApproved
+	state.WorkPackageApprovalFingerprint = approval.Fingerprint
+	originalVerify := verifyObservedWorkPackage
+	t.Cleanup(func() { verifyObservedWorkPackage = originalVerify })
+	verifyObservedWorkPackage = func(repository, deliveryID, packageFingerprint string, current *workpackage.CurrentProgram) workpackage.Result {
+		result := originalVerify(repository, deliveryID, packageFingerprint, current)
+		if err := os.WriteFile(filepath.Join(root, "approval.json"), append(append([]byte(nil), approvalRaw...), '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	if _, valid, err := observeWorkPackage(ports.ControllerLayout{RepositoryRoot: repository}, state, time.Unix(100, 0).UTC()); err != nil || valid {
+		t.Fatalf("post-verification approval substitution valid=%t err=%v", valid, err)
+	}
+	verifyObservedWorkPackage = originalVerify
+	if err := os.WriteFile(filepath.Join(root, "approval.json"), approvalRaw, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(root, "plan.md"), []byte("tampered"), 0o644); err != nil {
 		t.Fatal(err)
 	}

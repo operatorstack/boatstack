@@ -553,6 +553,7 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 }
 
 var verifyWorkPackage = workpackage.Verify
+var prepareWorkspaceWorkPackageTransferFn = prepareWorkspaceWorkPackageTransfer
 
 func capturePinnedWorkPackage(root *os.Root, deliveryID, fingerprint string) (string, func(), error) {
 	repository, err := os.MkdirTemp("", "boatstack-work-package-snapshot-")
@@ -647,7 +648,7 @@ func prepareWorkspacePlanTransfer(repositoryRoot, workspacePath, deliveryID, exp
 	mutations := []ports.ResourceMutation{planMutation, approvalMutation}
 	var promotion planPromotionReceipt
 	if decodeStrictArtifact(approvalRaw, &promotion) == nil && promotion.SchemaVersion == 2 {
-		packageMutations, packageErr := prepareWorkspaceWorkPackageTransfer(repositoryRoot, workspacePath, deliveryID, promotion.WorkPackageFingerprint)
+		packageMutations, packageErr := prepareWorkspaceWorkPackageTransferFn(repositoryRoot, workspacePath, deliveryID, promotion.WorkPackageFingerprint, promotion.WorkPackageApprovalFingerprint)
 		if packageErr != nil {
 			return nil, packageErr
 		}
@@ -656,7 +657,7 @@ func prepareWorkspacePlanTransfer(repositoryRoot, workspacePath, deliveryID, exp
 	return mutations, nil
 }
 
-func prepareWorkspaceWorkPackageTransfer(repositoryRoot, workspacePath, deliveryID, packageFingerprint string) ([]ports.ResourceMutation, error) {
+func prepareWorkspaceWorkPackageTransfer(repositoryRoot, workspacePath, deliveryID, packageFingerprint, expectedApprovalFingerprint string) ([]ports.ResourceMutation, error) {
 	sourcePath := filepath.Join(repositoryRoot, ".boatstack", "work-packages", deliveryID, packageFingerprint)
 	root, err := os.OpenRoot(sourcePath)
 	if err != nil {
@@ -679,6 +680,10 @@ func prepareWorkspaceWorkPackageTransfer(repositoryRoot, workspacePath, delivery
 	verified := workpackage.Verify(snapshotRepository, deliveryID, packageFingerprint, nil)
 	if verified.Integrity != workpackage.Valid || verified.Contract != workpackage.Valid || verified.Approval != workpackage.Valid {
 		return nil, fmt.Errorf("workspace work package verification failed: %s", strings.Join(verified.Diagnostics, "; "))
+	}
+	verifiedApproval, err := workpackage.ReadVerifiedApproval(snapshotRepository, deliveryID, packageFingerprint)
+	if err != nil || verifiedApproval.Approval.Fingerprint != expectedApprovalFingerprint {
+		return nil, fmt.Errorf("workspace work package approval does not bind promotion lineage")
 	}
 	snapshotRoot := filepath.Join(snapshotRepository, ".boatstack", "work-packages", deliveryID, packageFingerprint)
 	destinationRoot := filepath.Join(workspacePath, ".boatstack", "work-packages", deliveryID, packageFingerprint)
@@ -706,6 +711,12 @@ func prepareWorkspaceWorkPackageTransfer(repositoryRoot, workspacePath, delivery
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			return err
+		}
+		if filepath.ToSlash(relative) == "approval.json" {
+			if !bytes.Equal(raw, verifiedApproval.Raw) {
+				return fmt.Errorf("workspace work package approval changed after verification")
+			}
+			raw = verifiedApproval.Raw
 		}
 		mutation, err := immutableWorkPackageMutation(filepath.Join(destinationRoot, relative), raw)
 		if err != nil {
@@ -754,18 +765,11 @@ func validateWorkspaceApproval(repositoryRoot, deliveryID, expectedPlanFingerpri
 		if verified.Integrity != workpackage.Valid || verified.Contract != workpackage.Valid || verified.Approval != workpackage.Valid {
 			return fmt.Errorf("schema-2 promotion package is invalid")
 		}
-		packageRoot := filepath.Join(repositoryRoot, ".boatstack", "work-packages", deliveryID, promotion.WorkPackageFingerprint)
-		approvalRaw, err := os.ReadFile(filepath.Join(packageRoot, "approval.json"))
-		var approval workpackage.Approval
-		if err != nil || workpackage.StrictDecode(approvalRaw, &approval) != nil || approval.Fingerprint != promotion.WorkPackageApprovalFingerprint {
+		verifiedApproval, err := workpackage.ReadVerifiedApproval(repositoryRoot, deliveryID, promotion.WorkPackageFingerprint)
+		if err != nil || verifiedApproval.Approval.Fingerprint != promotion.WorkPackageApprovalFingerprint {
 			return fmt.Errorf("schema-2 promotion approval lineage is invalid")
 		}
-		manifestRaw, err := os.ReadFile(filepath.Join(packageRoot, "manifest.json"))
-		var manifest workpackage.Manifest
-		if err != nil || workpackage.StrictDecode(manifestRaw, &manifest) != nil {
-			return fmt.Errorf("schema-2 promotion manifest is invalid")
-		}
-		for _, output := range manifest.Outputs {
+		for _, output := range verifiedApproval.Manifest.Outputs {
 			if output.ID == promotion.PlanOutputID && output.Required && output.SHA256 == expectedPlanFingerprint {
 				return nil
 			}
