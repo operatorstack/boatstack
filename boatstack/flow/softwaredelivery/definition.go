@@ -164,6 +164,9 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 			return delivery.ProgramRuntimeManifest{}, fmt.Errorf("%s: %w", PlanningPackagePromote, err)
 		}
 	}
+	if err := requireCompleteWorkPackageLifecycle(seen, selected, objectives); err != nil {
+		return delivery.ProgramRuntimeManifest{}, err
+	}
 	if len(selected) == 0 {
 		return delivery.ProgramRuntimeManifest{}, fmt.Errorf("software-delivery Flow selects no transitions")
 	}
@@ -191,6 +194,29 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 	base.Transitions, base.OwnedResources, base.Effects, base.Verifiers = selected, resources, effects, verifiers
 	base.Capabilities, base.RecoveryTransitions, base.Settings = capabilities, recoveries, settings
 	return base, nil
+}
+
+func requireCompleteWorkPackageLifecycle(selectedIDs map[delivery.TransitionID]bool, transitions []delivery.Transition, objectives map[model.TargetID]EntryObjective) error {
+	hasPackageLifecycle := selectedIDs[WorkPackageAdmit] || selectedIDs[WorkPackageApprove] || selectedIDs[PlanningPackagePromote]
+	if hasPackageLifecycle || hasTrustedClass(objectives, model.ObjectiveApprovedWorkPackage) {
+		if !selectedIDs[WorkPackageAdmit] || !selectedIDs[WorkPackageApprove] {
+			return fmt.Errorf("software-delivery work-package lifecycle requires %s and %s", WorkPackageAdmit, WorkPackageApprove)
+		}
+	}
+	if !hasPackageLifecycle || selectedIDs[PlanningPackagePromote] {
+		return nil
+	}
+	for _, transition := range transitions {
+		if transition.ID != WorkPackageAdmit && transition.ID != WorkPackageApprove {
+			continue
+		}
+		for _, targetID := range transition.TargetIDs {
+			if objective, ok := objectives[targetID]; ok && objective.TrustedClass != model.ObjectiveApprovedWorkPackage {
+				return fmt.Errorf("software-delivery work-package lifecycle for target %q requires %s", targetID, PlanningPackagePromote)
+			}
+		}
+	}
+	return nil
 }
 
 func requireReachableEntryInputs(transition delivery.Transition, entriesByTarget map[model.TargetID][]controlprogram.Entry) error {

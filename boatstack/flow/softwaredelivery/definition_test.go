@@ -1,9 +1,12 @@
 package softwaredelivery_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -55,6 +58,60 @@ func publicationIDStateParameter(_ controlprogram.Predicate) []controlprogram.Tr
 
 func fact(facet, value string) controlprogram.Predicate {
 	return controlprogram.Predicate{Fact: &controlprogram.FactPredicate{Facet: facet, Statuses: []string{"known"}, Values: []string{value}}}
+}
+
+func compiledPackageLifecycle(t *testing.T, targetID string, target controlprogram.Predicate, transitionIDs ...string) (controlprogram.Compiled, softwareflow.Resolver) {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "control-programs", "product-delivery-planning-package.raw.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document controlprogram.Document
+	if err := json.Unmarshal(raw, &document); err != nil {
+		t.Fatal(err)
+	}
+	selected := make(map[string]bool, len(transitionIDs))
+	for _, id := range transitionIDs {
+		selected[id] = true
+	}
+	operators := document.Operators[:0]
+	for _, operator := range document.Operators {
+		if selected[operator.ID] {
+			operators = append(operators, operator)
+		}
+	}
+	document.Operators = operators
+	transitions := document.Transitions[:0]
+	for _, transition := range document.Transitions {
+		if selected[transition.ID] {
+			transitions = append(transitions, transition)
+		}
+	}
+	document.Transitions = transitions
+	if !selected[softwareflow.WorkPackageAdmit] {
+		document.Work = nil
+	}
+	document.Targets = []controlprogram.Target{{ID: targetID, Predicate: target}}
+	document.Entries = document.Entries[:1]
+	document.Entries[0].ID = "accept"
+	document.Entries[0].Target = targetID
+	resolver, err := softwareflow.NewResolver(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutated, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", "..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiled, err := controlprogram.LoadWithAssets(bytes.NewReader(mutated), resolver, controlprogram.RepositoryAssetResolver{Repository: repositoryRoot})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return compiled, resolver
 }
 
 func TestTrustedFlowLowersThroughStandardStateEffectBoundary(t *testing.T) {
@@ -333,29 +390,7 @@ func TestRepositoryTransitionCannotWidenTrustedTargetIDs(t *testing.T) {
 }
 
 func TestApprovedWorkPackageEntryResolvesTrustedObjective(t *testing.T) {
-	truth := true
-	compiled, resolver := compiledFlow(t, controlprogram.Predicate{True: &truth})
-	document := compiled.Document
-	document.Facets = append(document.Facets, controlprogram.Facet{ID: "work-package", Kind: "string"})
-	document.Targets = []controlprogram.Target{{ID: "approved-package", Predicate: fact("work-package", "approved")}}
-	document.Entries = []controlprogram.Entry{{ID: "accept", Target: "approved-package"}}
-	document.Operators = []controlprogram.Operator{{ID: "work.package.approve", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/work.package.approve", Version: "1"}}}
-	metadata, err := resolver.ResolveParameterResolver(softwareflow.ParameterResolverPrefix+"admitted-work-package-fingerprint", "1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	document.Transitions = []controlprogram.Transition{{
-		ID: "work.package.approve", Operator: "work.package.approve", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 44,
-		Parameters: []controlprogram.TransitionParameterBinding{{Parameter: "package_fingerprint", Producer: controlprogram.ParameterProducer{
-			Kind: controlprogram.ParameterSourceTrustedResolver, Binding: &controlprogram.ParameterResolverBinding{
-				Reference: softwareflow.ParameterResolverPrefix + "admitted-work-package-fingerprint", Version: "1", Fingerprint: metadata.Fingerprint,
-			},
-		}}},
-	}}
-	accepted, err := controlprogram.Compile(document, resolver)
-	if err != nil {
-		t.Fatal(err)
-	}
+	accepted, resolver := compiledPackageLifecycle(t, "approved-package", fact("work-package", "approved"), softwareflow.WorkPackageAdmit, softwareflow.WorkPackageApprove)
 	objective, err := softwareflow.ObjectiveForEntry(context.Background(), accepted, resolver, "accept")
 	if err != nil {
 		t.Fatal(err)
@@ -419,6 +454,33 @@ func TestApprovedWorkPackageEntryResolvesTrustedObjective(t *testing.T) {
 	decision = supervisor.New(program.RuntimeRegistry(), program.RuntimeObjectiveContracts()).Resolve(snapshot, spoofed, nil, "")
 	if decision.Kind != supervisor.DecisionRefused || decision.Transition != nil {
 		t.Fatalf("spoofed accepted-work objective decision = %#v, want REFUSED", decision)
+	}
+}
+
+func TestRuntimeManifestRejectsIncompleteWorkPackageLifecycles(t *testing.T) {
+	tests := []struct {
+		name        string
+		targetID    string
+		target      controlprogram.Predicate
+		transitions []string
+		want        string
+	}{
+		{name: "approve only", targetID: "approved-package", target: fact("work-package", "approved"), transitions: []string{softwareflow.WorkPackageApprove}, want: "requires work.package.admit and work.package.approve"},
+		{name: "admit only", targetID: "approved-package", target: fact("work-package", "approved"), transitions: []string{softwareflow.WorkPackageAdmit}, want: "requires work.package.admit and work.package.approve"},
+		{name: "admit and promote", targetID: "approved-plan", target: fact("plan", "approved"), transitions: []string{softwareflow.WorkPackageAdmit, softwareflow.PlanningPackagePromote}, want: "requires work.package.admit and work.package.approve"},
+		{name: "package approval cannot satisfy plan", targetID: "approved-plan", target: fact("plan", "approved"), transitions: []string{softwareflow.WorkPackageAdmit, softwareflow.WorkPackageApprove}, want: "requires planning.package.promote"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			compiled, resolver := compiledPackageLifecycle(t, test.targetID, test.target, test.transitions...)
+			definition, err := softwareflow.NewDefinition(compiled, resolver)
+			if err == nil {
+				_, err = definition.RuntimeManifest(context.Background())
+			}
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("incomplete lifecycle result = %v, want %q", err, test.want)
+			}
+		})
 	}
 }
 
