@@ -4,14 +4,18 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	"github.com/operatorstack/boatstack/boatstack/core"
 	"github.com/operatorstack/boatstack/boatstack/delivery"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
+	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/supervisor"
 )
 
 func compiledFlow(t *testing.T, guard controlprogram.Predicate) (controlprogram.Compiled, softwareflow.Resolver) {
@@ -335,6 +339,19 @@ func TestApprovedWorkPackageEntryResolvesTrustedObjective(t *testing.T) {
 	document.Facets = append(document.Facets, controlprogram.Facet{ID: "work-package", Kind: "string"})
 	document.Targets = []controlprogram.Target{{ID: "approved-package", Predicate: fact("work-package", "approved")}}
 	document.Entries = []controlprogram.Entry{{ID: "accept", Target: "approved-package"}}
+	document.Operators = []controlprogram.Operator{{ID: "work.package.approve", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/work.package.approve", Version: "1"}}}
+	metadata, err := resolver.ResolveParameterResolver(softwareflow.ParameterResolverPrefix+"admitted-work-package-fingerprint", "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	document.Transitions = []controlprogram.Transition{{
+		ID: "work.package.approve", Operator: "work.package.approve", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 44,
+		Parameters: []controlprogram.TransitionParameterBinding{{Parameter: "package_fingerprint", Producer: controlprogram.ParameterProducer{
+			Kind: controlprogram.ParameterSourceTrustedResolver, Binding: &controlprogram.ParameterResolverBinding{
+				Reference: softwareflow.ParameterResolverPrefix + "admitted-work-package-fingerprint", Version: "1", Fingerprint: metadata.Fingerprint,
+			},
+		}}},
+	}}
 	accepted, err := controlprogram.Compile(document, resolver)
 	if err != nil {
 		t.Fatal(err)
@@ -345,6 +362,52 @@ func TestApprovedWorkPackageEntryResolvesTrustedObjective(t *testing.T) {
 	}
 	if objective.TrustedClass != model.ObjectiveApprovedWorkPackage || objective.TargetID != "approved-package" {
 		t.Fatalf("accepted-work objective = %#v", objective)
+	}
+	definition, err := softwareflow.NewDefinition(accepted, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := delivery.Compile(context.Background(), delivery.CompileRequest{
+		KernelVersion: "v2.0.0", Core: core.System(), Runtime: definition, Settings: map[string]string{"repo": "fixture"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requested := model.Objective{ID: "accepted-package", TargetID: objective.TargetID, TrustedClass: objective.TrustedClass, DeliveryID: "delivery"}
+	evidence := model.Evidence{Source: "fixture", Fingerprint: "fixture", ObservedAt: time.Unix(10, 0).UTC()}
+	snapshot, err := model.Canonicalize(model.Observation{
+		SchemaVersion: model.SnapshotSchemaVersion, StateRevision: 1,
+		Invocation: model.InvocationContext{
+			RepositoryID: "repo", GitCommonID: "git", WorktreeID: "wt", Ref: "refs/heads/feature",
+			ControllerID: "controller", InvokingPath: filepath.Join(t.TempDir(), "repo"), RuntimeVersion: "runtime",
+			RuntimePath: filepath.Join(t.TempDir(), "boatstack"), RuntimeFingerprint: "fingerprint",
+			Topology: model.TopologyEmbedded, Host: "cursor", Correlation: "correlation",
+		},
+		Program: model.Known(model.ProgramCurrent, evidence), Phase: model.Known(model.PhaseObserved, evidence),
+		Engagement: model.Known(model.EngagementDormant, evidence), Delivery: model.Known(model.DeliveryUninitialized, evidence),
+		Workspace: model.Known(model.WorkspaceAbsent, evidence), Plan: model.Known(model.PlanAbsent, evidence),
+		Configuration: model.Known(model.ConfigurationVerified, evidence), Runtime: model.Known(model.RuntimeVerified, evidence),
+		ConfigurationPolicy: model.Known(model.ConfigurationPolicy{PlanApproval: "human", VisualEvidence: "optional", ExternalEffectAuthority: "human-or-autonomy-plus-provider", Hosts: []string{"cli", "cursor"}}, evidence),
+		Publication:         model.Known(model.PublicationNone, evidence), Verification: model.Known(model.VerificationUnverified, evidence),
+		Recovery: model.Known(model.RecoveryNone, evidence), Transaction: model.Known(model.TransactionNone, evidence),
+		RecoveryInfo: model.Absent[model.RecoveryContext]("none", evidence), TransactionInfo: model.Absent[model.TransactionContext]("none", evidence),
+		Terminal: model.Known(model.TerminalNonterminal, evidence), Objective: model.Absent[model.Objective]("not configured", evidence),
+		ObservedAt: time.Unix(10, 0).UTC(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision := supervisor.New(program.RuntimeRegistry(), program.RuntimeObjectiveContracts()).Resolve(
+		snapshot, requested, catalog.AuthoritySet{catalog.AuthorityHuman: true, catalog.AuthorityAutonomy: true}, "",
+	)
+	if decision.Kind != supervisor.DecisionPrescribed || decision.Transition == nil || decision.Transition.ID != "objective.bind" {
+		t.Fatalf("accepted-work objective decision = %#v, want objective.bind", decision)
+	}
+	spoofed := requested
+	spoofed.TrustedClass = model.ObjectiveApprovedPlan
+	decision = supervisor.New(program.RuntimeRegistry(), program.RuntimeObjectiveContracts()).Resolve(snapshot, spoofed, nil, "")
+	if decision.Kind != supervisor.DecisionRefused || decision.Transition != nil {
+		t.Fatalf("spoofed accepted-work objective decision = %#v, want REFUSED", decision)
 	}
 }
 
