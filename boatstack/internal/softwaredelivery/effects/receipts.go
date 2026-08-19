@@ -177,7 +177,7 @@ func findApplicableCommittedWorkOutput(records []journalRecord, selector Committ
 	}
 	receipt, admission := *selected.Receipt, selected.Admission
 	work := admission.Work
-	if receipt.Program.ID != selector.ProgramID || receipt.Program.Fingerprint != selector.ProgramFingerprint || admission.ExpectedProgramFingerprint != selector.ProgramFingerprint ||
+	if receipt.Program.Fingerprint != selector.ProgramFingerprint || admission.ExpectedProgramFingerprint != selector.ProgramFingerprint ||
 		!sameObjectiveIdentity(admission.Objective, selector.Objective) || work == nil || work.RunID != selector.FlowID || work.ProgramID != selector.ProgramID ||
 		work.EntryID != selector.EntryID || work.TransitionID != selector.TransitionID || work.ProgramFingerprint != selector.ProgramFingerprint ||
 		work.StateRevision != receipt.PriorStateRevision || work.StateRevision != admission.ExpectedStateRevision ||

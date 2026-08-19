@@ -29,7 +29,7 @@ func committedWorkOutputFixture(t *testing.T, sequence, revision uint64) (journa
 	}
 	receipt := protocol.TransitionReceipt{
 		ID: "trc-producer", FlowID: "run-proof", Sequence: sequence, TransitionID: "produce-a", PriorStateRevision: revision - 1, ResultingStateRevision: revision,
-		Program: protocol.ProgramIdentity{ID: "proof", Fingerprint: strings.Repeat("3", 64)}, WorkResultFingerprint: work.ResultFingerprint,
+		Program: protocol.ProgramIdentity{ID: "boatstack.standard", Fingerprint: strings.Repeat("3", 64)}, WorkResultFingerprint: work.ResultFingerprint,
 	}
 	record := journalRecord{Admission: protocol.Admission{
 		Invocation: invocation, Objective: objective, ExpectedProgramFingerprint: strings.Repeat("3", 64), ExpectedStateRevision: revision - 1, Work: work,

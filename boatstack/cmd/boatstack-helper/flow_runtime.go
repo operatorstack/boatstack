@@ -808,7 +808,7 @@ func materializeFlowInvocation(ctx context.Context, compiled controlprogram.Comp
 	for _, work := range compiled.Document.Work {
 		workByID[work.ID] = work
 	}
-	options.workInputs, err = resolveForegroundWorkInputs(layout, state.Revision, invocationContext, compiled, entry, *transition, options, workByID)
+	options.workInputs, err = resolveForegroundWorkInputs(layout, state.Revision, state.ProgramFingerprint, invocationContext, compiled, entry, *transition, options, workByID)
 	if err != nil {
 		return commandOptions{}, err
 	}
@@ -847,7 +847,7 @@ func materializeFlowInvocation(ctx context.Context, compiled controlprogram.Comp
 			}
 			resultFingerprint, provenance = record.Result.ResultFingerprint, "work-output-candidate:"+output.SHA256
 		} else {
-			committed, found, resolveErr := resolveCommittedWorkOutput(layout, state.Revision, invocationContext, compiled, entry, options, producerTransition, work, binding.Producer.Output)
+			committed, found, resolveErr := resolveCommittedWorkOutput(layout, state.Revision, state.ProgramFingerprint, invocationContext, compiled, entry, options, producerTransition, work, binding.Producer.Output)
 			if resolveErr != nil {
 				return commandOptions{}, resolveErr
 			}
@@ -1009,7 +1009,7 @@ func bindAvailableCommittedWorkInputs(ctx context.Context, compiled controlprogr
 			if producerErr != nil {
 				return commandOptions{}, producerErr
 			}
-			committed, found, resolveErr := resolveCommittedWorkOutput(layout, state.Revision, current, compiled, entry, options, producer, source, input.Producer.Output)
+			committed, found, resolveErr := resolveCommittedWorkOutput(layout, state.Revision, state.ProgramFingerprint, current, compiled, entry, options, producer, source, input.Producer.Output)
 			if resolveErr != nil {
 				return commandOptions{}, resolveErr
 			}
@@ -1026,7 +1026,7 @@ func bindAvailableCommittedWorkInputs(ctx context.Context, compiled controlprogr
 	return options, nil
 }
 
-func resolveCommittedWorkOutput(layout ports.ControllerLayout, maximumRevision uint64, current model.InvocationContext, compiled controlprogram.Compiled, entry controlprogram.Entry, options commandOptions, producerTransition controlprogram.Transition, work controlprogram.WorkContract, outputID string) (effects.CommittedWorkOutput, bool, error) {
+func resolveCommittedWorkOutput(layout ports.ControllerLayout, maximumRevision uint64, executionProgramFingerprint string, current model.InvocationContext, compiled controlprogram.Compiled, entry controlprogram.Entry, options commandOptions, producerTransition controlprogram.Transition, work controlprogram.WorkContract, outputID string) (effects.CommittedWorkOutput, bool, error) {
 	contract, err := softwareflow.RuntimeWorkContract(work)
 	if err != nil {
 		return effects.CommittedWorkOutput{}, false, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: %w", err)
@@ -1035,7 +1035,7 @@ func resolveCommittedWorkOutput(layout ports.ControllerLayout, maximumRevision u
 		ID: options.objectiveID, TargetID: model.TargetID(options.targetID), TrustedClass: model.TargetID(options.trustedObjectiveClass), DeliveryID: options.deliveryID,
 	}
 	committed, found, err := effects.FindApplicableCommittedWorkOutput(layout, effects.CommittedWorkOutputSelector{
-		FlowID: options.runID, ProgramID: compiled.Document.Program.ID, ProgramFingerprint: compiled.Fingerprint, EntryID: entry.ID,
+		FlowID: options.runID, ProgramID: compiled.Document.Program.ID, ProgramFingerprint: executionProgramFingerprint, EntryID: entry.ID,
 		Objective: objective, Invocation: current, TransitionID: catalog.TransitionID(producerTransition.ID), Work: *contract, OutputID: outputID, MaximumRevision: maximumRevision,
 	})
 	if err != nil {
@@ -1044,7 +1044,7 @@ func resolveCommittedWorkOutput(layout ports.ControllerLayout, maximumRevision u
 	return committed, found, nil
 }
 
-func resolveForegroundWorkInputs(layout ports.ControllerLayout, maximumRevision uint64, current model.InvocationContext, compiled controlprogram.Compiled, entry controlprogram.Entry, transition controlprogram.Transition, options commandOptions, workByID map[string]controlprogram.WorkContract) (map[string]protocol.WorkInputValue, error) {
+func resolveForegroundWorkInputs(layout ports.ControllerLayout, maximumRevision uint64, executionProgramFingerprint string, current model.InvocationContext, compiled controlprogram.Compiled, entry controlprogram.Entry, transition controlprogram.Transition, options commandOptions, workByID map[string]controlprogram.WorkContract) (map[string]protocol.WorkInputValue, error) {
 	values := map[string]protocol.WorkInputValue{}
 	for key, value := range options.workInputs {
 		values[key] = value
@@ -1076,7 +1076,7 @@ func resolveForegroundWorkInputs(layout ports.ControllerLayout, maximumRevision 
 			if producer.ID == transition.ID {
 				return nil, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q input %q cannot consume its own candidate result", work.ID, input.ID)
 			}
-			committed, found, resolveErr := resolveCommittedWorkOutput(layout, maximumRevision, current, compiled, entry, options, producer, source, input.Producer.Output)
+			committed, found, resolveErr := resolveCommittedWorkOutput(layout, maximumRevision, executionProgramFingerprint, current, compiled, entry, options, producer, source, input.Producer.Output)
 			if resolveErr != nil {
 				return nil, resolveErr
 			}
