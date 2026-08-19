@@ -17,17 +17,18 @@ import {
 } from "@operatorstack/boatstack";
 import {
   inbox,
-  planningPackageAdmit,
-  planningPackageApprove,
+  planningPackage,
   planningPackagePromote,
   softwareDelivery,
   trustedDelegation,
+  workPackageAdmit,
+  workPackageApprove,
   type TrustedStep,
 } from "@operatorstack/boatstack-software-delivery";
 
 const lifecycle = [
-  planningPackageAdmit,
-  planningPackageApprove,
+  workPackageAdmit,
+  workPackageApprove,
   planningPackagePromote,
   { id: "workspace.cut", priority: 52 },
   // Add the repository's trusted execution, gate, and publication steps here.
@@ -54,10 +55,10 @@ export default defineFlow(softwareDelivery({
   version: "1",
   humanIdentity: "developer",
   lifecycle: lifecycle,
-  planningPackage: {
+  planningPackage: planningPackage({
     work: planning,
     planOutput: "implementation-plan",
-  },
+  }),
   targets: [
     marked(
       "published-pr",
@@ -128,7 +129,7 @@ The standard producer ownership is:
 
 | Value | Canonical producer |
 | --- | --- |
-| admitted planning-package fingerprint | trusted manifest resolver |
+| admitted work-package fingerprint | trusted manifest resolver |
 | workspace branch, preview fingerprint, recovery IDs | durable state |
 | publication ID | `publication.execute` effect receipt |
 | gate evidence path and fingerprint | trusted canonical-artifact resolver |
@@ -160,10 +161,11 @@ Prepare gate evidence at
 request body at `.boatstack/publication/<delivery-id>.body.md`. Boatstack binds
 the exact path and content fingerprint when the transition is materialized.
 
-The planning-package operations are optional trusted mechanisms. A repository
-that includes them owns the planning instruction, output contract, transition
-order, approval policy, target, and entry. `planning.package.admit` atomically
-stores the verified package, `planning.package.approve` binds approval to its
-exact manifest, and `planning.package.promote` publishes the approved canonical
-plan. Repositories that omit these operations retain the existing plan path;
-StandardFlow does not add them automatically.
+Accepted-work operations are optional trusted mechanisms. A repository that
+includes them owns the instruction, output contract, transition order,
+approval policy, target, and entry. `work.package.admit` atomically stores the
+verified generic package and `work.package.approve` binds approval to its
+exact manifest without changing plan state. A `planningPackage` may also
+select `planning.package.promote`, which alone binds its explicit
+`planOutput` to canonical plan bytes and a plan-promotion receipt.
+StandardFlow adds none of these operations automatically.

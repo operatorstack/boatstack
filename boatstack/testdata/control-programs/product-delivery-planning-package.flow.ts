@@ -12,11 +12,12 @@ import {
 } from "@operatorstack/boatstack";
 import {
   inbox,
-  planningPackageAdmit,
-  planningPackageApprove,
+  planningPackage,
   planningPackagePromote,
   softwareDelivery,
   trustedDelegation,
+  workPackageAdmit,
+  workPackageApprove,
 } from "@operatorstack/boatstack-software-delivery";
 
 const planning = foregroundWork({
@@ -38,8 +39,8 @@ const planning = foregroundWork({
 });
 
 const lifecycle = [
-  planningPackageAdmit,
-  planningPackageApprove,
+  workPackageAdmit,
+  workPackageApprove,
   planningPackagePromote,
   { id: "plan.abandon", priority: 31 },
   { id: "plan.activate", priority: 50 },
@@ -67,7 +68,7 @@ export default defineFlow(softwareDelivery({
   version: "1",
   humanIdentity: "developer",
   lifecycle: lifecycle,
-  planningPackage: { work: planning, planOutput: "plan" },
+  planningPackage: planningPackage({ work: planning, planOutput: "plan" }),
   targets: [
     marked("published-pr", all(
       fact("verification", ["current"]),

@@ -3308,6 +3308,58 @@ func TestExplicitAuthorizationCanReplaceRevokedPreReconciliationRequest(t *testi
 	}
 }
 
+func TestRevokedDelegationMayOnlyReachProgramPreflightWithExactStructuralContext(t *testing.T) {
+	// control-law: a revoked product delegation carries no authority while an
+	// exact request may still expose the installation reconciliation boundary.
+	prior := delegation.Request{
+		RunID: "run-example", ProgramID: "product-delivery", ProgramFingerprint: strings.Repeat("a", 64), ControlBundleFingerprint: strings.Repeat("b", 64),
+		EntryID: "run", TargetID: "published-pr", ObjectiveID: "objective", DeliveryID: "delivery", InputFingerprints: []delegation.InputFingerprint{{ID: "plan", Fingerprint: strings.Repeat("1", 64)}},
+		RepositoryID: "repository", GitCommonID: "common", InitialWorktreeID: "worktree", InitialRef: "refs/heads/feature",
+		BindingFingerprint: strings.Repeat("c", 64), HumanIdentityRole: "developer", HumanIdentityProviderFingerprint: strings.Repeat("f", 64),
+		EntryActivationAuthorities: []string{"human"}, RequestedAuthorities: []string{"autonomy"}, Description: "Run product delivery",
+	}
+	record := delegation.Record{Request: prior, Status: "revoked"}
+	candidate := prior
+	candidate.ProgramFingerprint = strings.Repeat("d", 64)
+	candidate.ControlBundleFingerprint = strings.Repeat("e", 64)
+	if !revokedDelegationCanReachProgramPreflight(record, candidate) {
+		t.Fatal("exact revoked program candidate could not reach program preflight")
+	}
+	active := record
+	active.Status = "active"
+	if revokedDelegationCanReachProgramPreflight(active, candidate) {
+		t.Fatal("active authority crossed an unadmitted program boundary")
+	}
+	tests := []struct {
+		name   string
+		mutate func(*delegation.Request)
+	}{
+		{name: "entry", mutate: func(request *delegation.Request) { request.EntryID = "other" }},
+		{name: "objective", mutate: func(request *delegation.Request) { request.ObjectiveID = "other" }},
+		{name: "input", mutate: func(request *delegation.Request) { request.InputFingerprints[0].Fingerprint = strings.Repeat("2", 64) }},
+		{name: "repository", mutate: func(request *delegation.Request) { request.RepositoryID = "other" }},
+		{name: "worktree", mutate: func(request *delegation.Request) { request.InitialWorktreeID = "other" }},
+		{name: "ref", mutate: func(request *delegation.Request) { request.InitialRef = "refs/heads/other" }},
+		{name: "binding", mutate: func(request *delegation.Request) { request.BindingFingerprint = strings.Repeat("9", 64) }},
+		{name: "identity", mutate: func(request *delegation.Request) { request.HumanIdentityRole = "other" }},
+		{name: "activation authority", mutate: func(request *delegation.Request) { request.EntryActivationAuthorities = []string{"repository-policy"} }},
+		{name: "delegated authority", mutate: func(request *delegation.Request) { request.RequestedAuthorities = []string{"external-provider"} }},
+		{name: "description", mutate: func(request *delegation.Request) { request.Description = "other" }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			changed := candidate
+			changed.InputFingerprints = append([]delegation.InputFingerprint(nil), candidate.InputFingerprints...)
+			changed.EntryActivationAuthorities = append([]string(nil), candidate.EntryActivationAuthorities...)
+			changed.RequestedAuthorities = append([]string(nil), candidate.RequestedAuthorities...)
+			test.mutate(&changed)
+			if revokedDelegationCanReachProgramPreflight(record, changed) {
+				t.Fatal("structural delegation drift reached program preflight")
+			}
+		})
+	}
+}
+
 func TestDelegationReprojectionRejectsUnadmittedContextChanges(t *testing.T) {
 	// control-law: ordinary input or objective drift cannot be relabeled as an
 	// installation or configuration-identity reprojection.

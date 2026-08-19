@@ -61,6 +61,7 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 	objectives := map[model.TargetID]EntryObjective{}
 	contracts := map[model.TargetID]delivery.ObjectiveContract{}
 	entriesByTarget := map[model.TargetID][]controlprogram.Entry{}
+	addAcceptedWorkPackageObjective(&base)
 	for _, entry := range d.compiled.Document.Entries {
 		objective, objectiveErr := objectiveContractForEntry(d.compiled, base, entry.ID)
 		if objectiveErr != nil {
@@ -72,6 +73,8 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 
 	selected := make([]delivery.Transition, 0, len(d.compiled.Document.Transitions))
 	seen := map[delivery.TransitionID]bool{}
+	var admittedPackageWork *delivery.WorkContract
+	var promotionPlanOutput string
 	for _, declaration := range d.compiled.Document.Transitions {
 		operator := operatorByID[declaration.Operator]
 		if operator.Binding == nil {
@@ -109,16 +112,23 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 			if err != nil {
 				return delivery.ProgramRuntimeManifest{}, fmt.Errorf("transition %q foreground work: %w", declaration.ID, err)
 			}
-			if transition.ID == PlanningPackageAdmit {
-				planOutput, bindingErr := planningPackagePlanOutput(declaration.Parameters)
-				if bindingErr != nil {
-					return delivery.ProgramRuntimeManifest{}, fmt.Errorf("transition %q foreground work: %w", declaration.ID, bindingErr)
-				}
-				if err := validatePlanningPackageWorkContract(*transition.Work, planOutput); err != nil {
+			if transition.ID == WorkPackageAdmit {
+				if err := validateWorkPackageContract(*transition.Work); err != nil {
 					return delivery.ProgramRuntimeManifest{}, fmt.Errorf("transition %q foreground work: %w", declaration.ID, err)
 				}
+				copy := *transition.Work
+				admittedPackageWork = &copy
 			}
 			transition.OwnedResources = append(transition.OwnedResources, "foreground-work-"+transition.Work.ID)
+		}
+		if transition.ID == WorkPackageAdmit && transition.Work == nil {
+			return delivery.ProgramRuntimeManifest{}, fmt.Errorf("transition %q requires foreground work", declaration.ID)
+		}
+		if transition.ID == PlanningPackagePromote {
+			promotionPlanOutput, err = planningPackagePlanOutput(declaration.Parameters)
+			if err != nil {
+				return delivery.ProgramRuntimeManifest{}, fmt.Errorf("transition %q: %w", declaration.ID, err)
+			}
 		}
 		for _, authority := range declaration.Requires.Authorities {
 			transition.AuthorityAll = append(transition.AuthorityAll, delivery.AuthorityClass(authority))
@@ -145,6 +155,17 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 			return delivery.ProgramRuntimeManifest{}, err
 		}
 		selected = append(selected, transition)
+	}
+	if promotionPlanOutput != "" {
+		if admittedPackageWork == nil {
+			return delivery.ProgramRuntimeManifest{}, fmt.Errorf("%s requires %s with foreground work", PlanningPackagePromote, WorkPackageAdmit)
+		}
+		if err := validatePlanningPackageWorkContract(*admittedPackageWork, promotionPlanOutput); err != nil {
+			return delivery.ProgramRuntimeManifest{}, fmt.Errorf("%s: %w", PlanningPackagePromote, err)
+		}
+	}
+	if err := requireCompleteWorkPackageLifecycle(seen, selected, objectives); err != nil {
+		return delivery.ProgramRuntimeManifest{}, err
 	}
 	if len(selected) == 0 {
 		return delivery.ProgramRuntimeManifest{}, fmt.Errorf("software-delivery Flow selects no transitions")
@@ -173,6 +194,29 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 	base.Transitions, base.OwnedResources, base.Effects, base.Verifiers = selected, resources, effects, verifiers
 	base.Capabilities, base.RecoveryTransitions, base.Settings = capabilities, recoveries, settings
 	return base, nil
+}
+
+func requireCompleteWorkPackageLifecycle(selectedIDs map[delivery.TransitionID]bool, transitions []delivery.Transition, objectives map[model.TargetID]EntryObjective) error {
+	hasPackageLifecycle := selectedIDs[WorkPackageAdmit] || selectedIDs[WorkPackageApprove] || selectedIDs[PlanningPackagePromote]
+	if hasPackageLifecycle || hasTrustedClass(objectives, model.ObjectiveApprovedWorkPackage) {
+		if !selectedIDs[WorkPackageAdmit] || !selectedIDs[WorkPackageApprove] {
+			return fmt.Errorf("software-delivery work-package lifecycle requires %s and %s", WorkPackageAdmit, WorkPackageApprove)
+		}
+	}
+	if !hasPackageLifecycle || selectedIDs[PlanningPackagePromote] {
+		return nil
+	}
+	for _, transition := range transitions {
+		if transition.ID != WorkPackageAdmit && transition.ID != WorkPackageApprove {
+			continue
+		}
+		for _, targetID := range transition.TargetIDs {
+			if objective, ok := objectives[targetID]; ok && objective.TrustedClass != model.ObjectiveApprovedWorkPackage {
+				return fmt.Errorf("software-delivery work-package lifecycle for target %q requires %s", targetID, PlanningPackagePromote)
+			}
+		}
+	}
+	return nil
 }
 
 func requireReachableEntryInputs(transition delivery.Transition, entriesByTarget map[model.TargetID][]controlprogram.Entry) error {
@@ -243,11 +287,23 @@ func uniqueAuthorities(values []delivery.AuthorityClass) []delivery.AuthorityCla
 	return result
 }
 
+func addAcceptedWorkPackageObjective(base *delivery.ProgramRuntimeManifest) {
+	base.ObjectiveContracts = append(base.ObjectiveContracts, delivery.ObjectiveContract{
+		TargetID: model.ObjectiveApprovedWorkPackage,
+		Conditions: []delivery.FacetCondition{{
+			Facet:    model.FacetWorkPackage,
+			Statuses: []model.FactStatus{model.FactKnown},
+			Values:   []string{string(model.WorkPackageApproved)},
+		}},
+	})
+}
+
 func ObjectiveForEntry(ctx context.Context, compiled controlprogram.Compiled, resolver Resolver, entryID string) (EntryObjective, error) {
 	base, err := standard.Definition().RuntimeManifest(ctx)
 	if err != nil {
 		return EntryObjective{}, err
 	}
+	addAcceptedWorkPackageObjective(&base)
 	return objectiveContractForEntry(compiled, base, entryID)
 }
 

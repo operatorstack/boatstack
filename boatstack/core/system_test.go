@@ -44,6 +44,42 @@ func TestInstallationInitializationAcceptsExplicitlyDelegatedAutonomy(t *testing
 	t.Fatal("installation.initialize is absent")
 }
 
+func TestObjectiveBindingIsTargetNeutral(t *testing.T) {
+	// control-law: core-binds-only-domain-admitted-objectives-without-owning-domain-vocabulary
+	manifest, err := core.System().CoreManifest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, transition := range manifest.Transitions {
+		if transition.ID != "objective.bind" {
+			continue
+		}
+		if len(transition.TargetIDs) != 0 {
+			t.Fatalf("objective.bind owns domain targets %v", transition.TargetIDs)
+		}
+		return
+	}
+	t.Fatal("objective.bind is absent")
+}
+
+func TestEngagementBeginningIsTargetNeutral(t *testing.T) {
+	// control-law: core-engages-only-domain-admitted-objectives-without-owning-domain-vocabulary
+	manifest, err := core.System().CoreManifest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, transition := range manifest.Transitions {
+		if transition.ID != "engagement.begin" {
+			continue
+		}
+		if len(transition.TargetIDs) != 0 {
+			t.Fatalf("engagement.begin owns domain targets %v", transition.TargetIDs)
+		}
+		return
+	}
+	t.Fatal("engagement.begin is absent")
+}
+
 func hasPrefix(value string, prefixes ...string) bool {
 	for _, prefix := range prefixes {
 		if strings.HasPrefix(value, prefix) {

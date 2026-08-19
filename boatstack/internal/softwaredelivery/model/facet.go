@@ -19,6 +19,7 @@ const (
 	FacetEngagement          FacetName = "engagement"
 	FacetDelivery            FacetName = "delivery"
 	FacetWorkspace           FacetName = "workspace"
+	FacetWorkPackage         FacetName = "work-package"
 	FacetPlan                FacetName = "plan"
 	FacetConfiguration       FacetName = "configuration"
 	FacetConfigurationPolicy FacetName = "configuration-policy"
@@ -35,7 +36,7 @@ const (
 
 var controllingFacets = []FacetName{
 	FacetPhase, FacetProgram, FacetTopology, FacetEngagement, FacetDelivery, FacetWorkspace,
-	FacetPlan, FacetConfiguration, FacetConfigurationPolicy, FacetRuntime, FacetPublication,
+	FacetWorkPackage, FacetPlan, FacetConfiguration, FacetConfigurationPolicy, FacetRuntime, FacetPublication,
 	FacetVerification, FacetRecovery, FacetTransaction, FacetRecoveryInfo,
 	FacetTransactionInfo, FacetTerminal, FacetObjective,
 }
@@ -74,6 +75,8 @@ func (s Snapshot) Facet(name FacetName) (FactStatus, string, bool) {
 		return s.Delivery.Status, string(s.Delivery.Value), true
 	case FacetWorkspace:
 		return s.Workspace.Status, string(s.Workspace.Value), true
+	case FacetWorkPackage:
+		return s.WorkPackage.Status, string(s.WorkPackage.Value), true
 	case FacetPlan:
 		return s.Plan.Status, string(s.Plan.Value), true
 	case FacetConfiguration:

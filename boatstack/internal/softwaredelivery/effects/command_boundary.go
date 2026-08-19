@@ -416,7 +416,7 @@ func publicationProductStatus(status string) string {
 
 func publicationGeneratedPath(name string) bool {
 	for _, prefix := range []string{
-		".boatstack/approvals/", ".boatstack/evidence/", ".boatstack/planning-packages/",
+		".boatstack/approvals/", ".boatstack/evidence/", ".boatstack/work-packages/",
 		".boatstack/plans/", ".boatstack/publication/",
 	} {
 		if strings.HasPrefix(name, prefix) {

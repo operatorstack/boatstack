@@ -181,7 +181,7 @@ func TestRepositoryOwnedSoftwareDeliveryFlowsShareOneRuntime(t *testing.T) {
 				if compiled.Fingerprint != reference.Fingerprint {
 					t.Fatalf("checked product-delivery IR is stale: frontend=%s checked=%s", compiled.Fingerprint, reference.Fingerprint)
 				}
-				var packageProducer, publicationProducer controlprogram.ParameterProducer
+				var packageProducer, promotionProducer, publicationProducer controlprogram.ParameterProducer
 				publicationStateInputDeclared, publicationReceiptInputDeclared := false, false
 				for _, operator := range compiled.Document.Operators {
 					if operator.ID == "publication.observe" && len(operator.StateInputs) == 1 && operator.StateInputs[0].Parameter == "publication_id" && operator.StateInputs[0].Facet == "publication_id" {
@@ -196,16 +196,25 @@ func TestRepositoryOwnedSoftwareDeliveryFlowsShareOneRuntime(t *testing.T) {
 						if parameter.Producer.Kind == controlprogram.ParameterSourceHostInput && (transition.ID != "delivery.slice.advance" || parameter.Parameter != "slice_id") {
 							t.Fatalf("deterministic parameter requires human text input: %s/%s", transition.ID, parameter.Parameter)
 						}
-						if transition.ID == "planning.package.approve" && parameter.Parameter == "package_fingerprint" {
+						if transition.ID == "work.package.approve" && parameter.Parameter == "package_fingerprint" {
 							packageProducer = parameter.Producer
+						}
+						if transition.ID == "planning.package.promote" && parameter.Parameter == "plan_output" {
+							promotionProducer = parameter.Producer
+						}
+						if parameter.Parameter == "plan_output" && transition.ID != "planning.package.promote" {
+							t.Fatalf("plan-output semantics escaped promotion: %s", transition.ID)
 						}
 						if transition.ID == "publication.observe" && parameter.Parameter == "publication_id" {
 							publicationProducer = parameter.Producer
 						}
 					}
 				}
-				if packageProducer.Kind != controlprogram.ParameterSourceTrustedResolver || packageProducer.Binding == nil || packageProducer.Binding.Reference != "software-delivery/admitted-planning-package-fingerprint" {
-					t.Fatalf("planning package producer = %#v", packageProducer)
+				if packageProducer.Kind != controlprogram.ParameterSourceTrustedResolver || packageProducer.Binding == nil || packageProducer.Binding.Reference != "software-delivery/admitted-work-package-fingerprint" {
+					t.Fatalf("work package producer = %#v", packageProducer)
+				}
+				if promotionProducer.Kind != controlprogram.ParameterSourceTrustedResolver || promotionProducer.Binding == nil || promotionProducer.Binding.Reference != "software-delivery/planning-package-plan-output/plan" {
+					t.Fatalf("planning promotion producer = %#v", promotionProducer)
 				}
 				if publicationProducer.Kind != controlprogram.ParameterSourceStateOrReceipt || publicationProducer.Facet != "publication_id" || publicationProducer.Transition != "publication.execute" || publicationProducer.Field != "publication_id" {
 					t.Fatalf("publication identity producer = %#v", publicationProducer)

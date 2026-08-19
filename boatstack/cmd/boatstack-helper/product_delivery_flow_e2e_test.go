@@ -18,7 +18,7 @@ import (
 
 	"github.com/operatorstack/boatstack/boatstack/controlprogram"
 	softwareflow "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery"
-	"github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery/planningpackage"
+	"github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery/workpackage"
 	"github.com/operatorstack/boatstack/boatstack/internal/buildinfo"
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
@@ -314,7 +314,7 @@ func TestExactProductDeliveryFlowReachesPublishedPRWithFakeProvider(t *testing.T
 			continue
 		}
 		if final.Receipt == nil || final.Prescription == nil {
-			t.Fatalf("unexpected non-terminal continuation response at step %d: %#v", step, final)
+			t.Fatalf("unexpected non-terminal continuation response at step %d: decision=%#v work=%#v response=%#v", step, final.Decision, final.Work, final)
 		}
 		if err := advanceContinuation(&continuation, final); err != nil {
 			t.Fatal(err)
@@ -332,7 +332,7 @@ func TestExactProductDeliveryFlowReachesPublishedPRWithFakeProvider(t *testing.T
 	}
 	wantTrace := []string{
 		"installation.initialize", "objective.bind", "engagement.begin",
-		"planning.package.admit", "planning.package.approve", "planning.package.promote", "plan.activate",
+		"work.package.admit", "work.package.approve", "planning.package.promote", "plan.activate",
 		"workspace.cut", "workspace.activate",
 		"gate.build.record", "gate.test.record", "gate.review.record",
 		"publication.preview", "publication.execute", "publication.observe",
@@ -352,18 +352,29 @@ func TestExactProductDeliveryFlowReachesPublishedPRWithFakeProvider(t *testing.T
 			t.Fatalf("trace transition %d = %s, want %s", index+1, receipts[index].TransitionID, transitionID)
 		}
 	}
-	packageRoot := filepath.Join(repository, ".boatstack", "planning-packages", "todo")
+	packageRoot := filepath.Join(repository, ".boatstack", "work-packages", "todo")
 	packages, err := os.ReadDir(packageRoot)
 	if err != nil || len(packages) != 1 || !packages[0].IsDir() {
 		t.Fatalf("planning package inventory = %#v, err=%v", packages, err)
 	}
-	currentProgram, err := loadCurrentPlanningProgram(context.Background(), repository)
+	writeFixture(t, repository, ".boatstack/flows/unrelated.flow.ir.json", []byte("must not be selected\n"))
+	currentProgram, err := loadCurrentWorkProgram(context.Background(), repository, "product-delivery")
 	if err != nil {
 		t.Fatalf("load current planning program: %v", err)
 	}
-	packageVerification := planningpackage.Verify(repository, "todo", packages[0].Name(), &currentProgram)
-	if packageVerification.Integrity != planningpackage.Valid || packageVerification.Contract != planningpackage.Valid || packageVerification.Approval != planningpackage.Valid || packageVerification.CurrentProgram != planningpackage.Match {
+	packageVerification := workpackage.Verify(repository, "todo", packages[0].Name(), &currentProgram)
+	if packageVerification.Integrity != workpackage.Valid || packageVerification.Contract != workpackage.Valid || packageVerification.Approval != workpackage.Valid || packageVerification.CurrentProgram != workpackage.Match {
 		t.Fatalf("portable planning package verification = %#v", packageVerification)
+	}
+	verificationRaw, err := captureStdout(t, func() error {
+		return runFlowWorkPackage([]string{"verify", "--repo", repository, "--delivery", "todo", "--package", packages[0].Name(), "--require-approval", "--require-current-program", "--format", "json"})
+	})
+	if err != nil {
+		t.Fatalf("multi-Flow package-bound verification: %v", err)
+	}
+	var commandVerification workpackage.Result
+	if err := json.Unmarshal(verificationRaw, &commandVerification); err != nil || commandVerification.ProgramID != "product-delivery" || commandVerification.CurrentProgram != workpackage.Match {
+		t.Fatalf("multi-Flow package-bound result = %#v, decode=%v", commandVerification, err)
 	}
 	last := receipts[len(receipts)-1]
 	if last.TransitionID != "publication.observe" || final.Snapshot.Publication.Value != model.PublicationOpen {

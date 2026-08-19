@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	planningpackage "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery/planningpackage"
+	workpackage "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery/workpackage"
 	"github.com/operatorstack/boatstack/boatstack/internal/hostprojection"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/durable"
@@ -48,6 +48,30 @@ type approvalArtifact struct {
 	Actor              string    `json:"actor"`
 	AdmissionID        string    `json:"admission_id"`
 	ApprovedAt         time.Time `json:"approved_at"`
+}
+
+type planPromotionReceipt struct {
+	SchemaVersion                  int       `json:"schema_version"`
+	DeliveryID                     string    `json:"delivery_id"`
+	PlanFingerprint                string    `json:"plan_fingerprint"`
+	WorkPackageFingerprint         string    `json:"work_package_fingerprint"`
+	WorkPackageApprovalFingerprint string    `json:"work_package_approval_fingerprint"`
+	PlanOutputID                   string    `json:"plan_output_id"`
+	AdmissionID                    string    `json:"admission_id"`
+	PromotedAt                     time.Time `json:"promoted_at"`
+	Fingerprint                    string    `json:"fingerprint"`
+}
+
+func sealPlanPromotionReceipt(value planPromotionReceipt) (planPromotionReceipt, []byte, error) {
+	value.SchemaVersion = 2
+	value.Fingerprint = ""
+	identity, err := encodeJSON(value)
+	if err != nil {
+		return planPromotionReceipt{}, nil, err
+	}
+	value.Fingerprint = sha256Bytes(identity)
+	raw, err := encodeJSON(value)
+	return value, raw, err
 }
 
 type gateArtifact struct {
@@ -172,33 +196,32 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 		}
 		mutations = append(mutations, approvalMutation)
 		state.PlanFingerprint = fingerprint
-		state.PlanningPackageFingerprint = ""
+		state.WorkPackage, state.WorkPackageFingerprint, state.WorkPackageApprovalFingerprint = model.WorkPackageAbsent, "", ""
 		state.ApprovalFingerprint = ""
-	case "planning.package.admit":
+	case "work.package.admit":
 		if admission.Work == nil || len(admission.Work.Outputs) == 0 {
-			return nil, fmt.Errorf("planning package admission requires exact foreground work evidence")
+			return nil, fmt.Errorf("work package admission requires exact foreground work evidence")
 		}
-		planOutput, _ := admission.Parameters.Get("plan_output")
-		manifest, files, buildErr := buildPlanningPackage(admission, transition, deliveryID, planOutput)
+		manifest, files, buildErr := buildWorkPackage(admission, transition, deliveryID)
 		if buildErr != nil {
 			return nil, buildErr
 		}
-		packageRoot := filepath.Join(artifactRoot, "planning-packages", deliveryID, manifest.Fingerprint)
+		packageRoot := filepath.Join(artifactRoot, "work-packages", deliveryID, manifest.Fingerprint)
 		rootExists := false
 		if info, statErr := os.Lstat(packageRoot); statErr == nil {
 			if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-				return nil, fmt.Errorf("immutable planning package root is unsafe")
+				return nil, fmt.Errorf("immutable work package root is unsafe")
 			}
 			rootExists = true
-			verified := planningpackage.Verify(layout.RepositoryRoot, deliveryID, manifest.Fingerprint, nil)
-			if verified.Integrity != planningpackage.Valid || verified.Contract != planningpackage.Valid || verified.Approval == planningpackage.Invalid {
-				return nil, fmt.Errorf("existing immutable planning package conflicts: %s", strings.Join(verified.Diagnostics, "; "))
+			verified := workpackage.Verify(layout.RepositoryRoot, deliveryID, manifest.Fingerprint, nil)
+			if verified.Integrity != workpackage.Valid || verified.Contract != workpackage.Valid || verified.Approval == workpackage.Invalid {
+				return nil, fmt.Errorf("existing immutable work package conflicts: %s", strings.Join(verified.Diagnostics, "; "))
 			}
 		} else if !os.IsNotExist(statErr) {
 			return nil, statErr
 		}
 		for relative, raw := range files {
-			mutation, mutationErr := immutablePlanningMutation(filepath.Join(packageRoot, filepath.FromSlash(relative)), raw)
+			mutation, mutationErr := immutableWorkPackageMutation(filepath.Join(packageRoot, filepath.FromSlash(relative)), raw)
 			if mutationErr != nil {
 				return nil, mutationErr
 			}
@@ -210,22 +233,22 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 			}
 			mutations = append(mutations, mutation)
 		}
-		state.PlanFingerprint, state.PlanningPackageFingerprint, state.ApprovalFingerprint = manifest.PlanOutput.SHA256, manifest.Fingerprint, ""
-	case "planning.package.approve":
+		state.WorkPackageFingerprint, state.WorkPackageApprovalFingerprint = manifest.Fingerprint, ""
+	case "work.package.approve":
 		expected, _ := admission.Parameters.Get("package_fingerprint")
-		manifest, loadErr := loadPlanningPackageManifestV2(artifactRoot, deliveryID, expected)
+		manifest, loadErr := loadWorkPackageManifest(artifactRoot, deliveryID, expected)
 		if loadErr != nil {
 			return nil, loadErr
 		}
 		if expected == "" || expected != manifest.Fingerprint {
-			return nil, fmt.Errorf("planning package approval fingerprint is stale")
+			return nil, fmt.Errorf("work package approval fingerprint is stale")
 		}
-		if state.PlanningPackageFingerprint != manifest.Fingerprint {
-			return nil, fmt.Errorf("planning package state fingerprint is stale")
+		if state.WorkPackageFingerprint != manifest.Fingerprint {
+			return nil, fmt.Errorf("work package state fingerprint is stale")
 		}
-		approval := planningpackage.Approval{DeliveryID: deliveryID, PackageFingerprint: manifest.Fingerprint, ManifestFingerprint: manifest.Fingerprint, PlanOutputID: manifest.PlanOutput.ID, PlanFingerprint: manifest.PlanOutput.SHA256, AdmissionID: admission.ID, ApprovedAt: admission.IssuedAt.UTC()}
+		approval := workpackage.Approval{DeliveryID: deliveryID, PackageFingerprint: manifest.Fingerprint, ManifestFingerprint: manifest.Fingerprint, AdmissionID: admission.ID, ApprovedAt: admission.IssuedAt.UTC()}
 		for _, receipt := range admission.Authority.Receipts {
-			approval.AuthoritySources = append(approval.AuthoritySources, planningpackage.AuthoritySource{ID: receipt.ID, Class: string(receipt.Class), Subject: receipt.Subject, Fingerprint: receipt.Fingerprint})
+			approval.AuthoritySources = append(approval.AuthoritySources, workpackage.AuthoritySource{ID: receipt.ID, Class: string(receipt.Class), Subject: receipt.Subject, Fingerprint: receipt.Fingerprint})
 		}
 		expectedRole := ""
 		if len(humanIdentityRole) > 0 {
@@ -237,10 +260,10 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 					continue
 				}
 				if expectedRole != "" && receipt.IdentityRole != expectedRole {
-					return nil, fmt.Errorf("planning package approval identity role %q does not match admitted program role %q", receipt.IdentityRole, expectedRole)
+					return nil, fmt.Errorf("work package approval identity role %q does not match admitted program role %q", receipt.IdentityRole, expectedRole)
 				}
 				if approval.Actor != "" && (receipt.Subject != approval.Actor || receipt.IdentityRole != approval.IdentityRole || receipt.IdentityProviderFingerprint != approval.IdentityProviderFingerprint) {
-					return nil, fmt.Errorf("planning package approval identity provenance is ambiguous")
+					return nil, fmt.Errorf("work package approval identity provenance is ambiguous")
 				}
 				approval.Actor, approval.IdentityRole, approval.IdentityProviderFingerprint = receipt.Subject, receipt.IdentityRole, receipt.IdentityProviderFingerprint
 			}
@@ -249,91 +272,114 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 			}
 		}
 		if approval.IdentityRole == "" || approval.IdentityProviderFingerprint == "" {
-			return nil, fmt.Errorf("planning package approval requires admitted identity provenance matching actor %q", approval.Actor)
+			return nil, fmt.Errorf("work package approval requires admitted identity provenance matching actor %q", approval.Actor)
 		}
-		approval, raw, encodeErr := planningpackage.SealApproval(approval)
+		approval, raw, encodeErr := workpackage.SealApproval(approval)
 		if encodeErr != nil {
 			return nil, encodeErr
 		}
-		approvalPath := filepath.Join(artifactRoot, "planning-packages", deliveryID, manifest.Fingerprint, "approval.json")
-		mutation, mutationErr := immutablePlanningMutation(approvalPath, raw)
+		approvalPath := filepath.Join(artifactRoot, "work-packages", deliveryID, manifest.Fingerprint, "approval.json")
+		mutation, mutationErr := immutableWorkPackageMutation(approvalPath, raw)
 		if mutationErr != nil {
 			return nil, mutationErr
 		}
 		if !mutation.PriorExists {
 			mutations = append(mutations, mutation)
 		}
-		state.PlanFingerprint, state.PlanningPackageFingerprint, state.ApprovalFingerprint = manifest.PlanOutput.SHA256, manifest.Fingerprint, sha256Bytes(raw)
+		state.WorkPackageFingerprint, state.WorkPackageApprovalFingerprint = manifest.Fingerprint, approval.Fingerprint
 	case "planning.package.promote":
-		packagePath := filepath.Join(artifactRoot, "planning-packages", deliveryID, state.PlanningPackageFingerprint)
+		planOutputID, _ := admission.Parameters.Get("plan_output")
+		if planOutputID == "" {
+			return nil, fmt.Errorf("planning promotion requires a compiler-bound plan output")
+		}
+		packagePath := filepath.Join(artifactRoot, "work-packages", deliveryID, state.WorkPackageFingerprint)
 		packageRoot, openErr := os.OpenRoot(packagePath)
 		if openErr != nil {
-			return nil, fmt.Errorf("open immutable planning package: %w", openErr)
+			return nil, fmt.Errorf("open immutable work package: %w", openErr)
 		}
 		defer packageRoot.Close()
-		verified := verifyPlanningPackage(layout.RepositoryRoot, deliveryID, state.PlanningPackageFingerprint, nil)
-		if verified.Integrity != planningpackage.Valid || verified.Contract != planningpackage.Valid || verified.Approval != planningpackage.Valid {
-			return nil, fmt.Errorf("planning package verification failed: %s", strings.Join(verified.Diagnostics, "; "))
+		verified := verifyWorkPackage(layout.RepositoryRoot, deliveryID, state.WorkPackageFingerprint, nil)
+		if verified.Integrity != workpackage.Valid || verified.Contract != workpackage.Valid || verified.Approval != workpackage.Valid {
+			return nil, fmt.Errorf("work package verification failed: %s", strings.Join(verified.Diagnostics, "; "))
 		}
 		pinnedInfo, pinnedErr := packageRoot.Stat(".")
 		currentInfo, currentErr := os.Stat(packagePath)
 		if pinnedErr != nil || currentErr != nil || !os.SameFile(pinnedInfo, currentInfo) {
-			return nil, fmt.Errorf("immutable planning package changed during verification")
+			return nil, fmt.Errorf("immutable work package changed during verification")
 		}
-		snapshotRepository, cleanupSnapshot, snapshotErr := capturePinnedPlanningPackage(packageRoot, deliveryID, state.PlanningPackageFingerprint)
+		snapshotRepository, cleanupSnapshot, snapshotErr := capturePinnedWorkPackage(packageRoot, deliveryID, state.WorkPackageFingerprint)
 		if snapshotErr != nil {
 			return nil, snapshotErr
 		}
 		defer cleanupSnapshot()
 		currentInfo, currentErr = os.Stat(packagePath)
 		if currentErr != nil || !os.SameFile(pinnedInfo, currentInfo) {
-			return nil, fmt.Errorf("immutable planning package changed during verification")
+			return nil, fmt.Errorf("immutable work package changed during verification")
 		}
-		verified = verifyPlanningPackage(snapshotRepository, deliveryID, state.PlanningPackageFingerprint, nil)
-		if verified.Integrity != planningpackage.Valid || verified.Contract != planningpackage.Valid || verified.Approval != planningpackage.Valid {
-			return nil, fmt.Errorf("planning package verification failed: %s", strings.Join(verified.Diagnostics, "; "))
+		verified = verifyWorkPackage(snapshotRepository, deliveryID, state.WorkPackageFingerprint, nil)
+		if verified.Integrity != workpackage.Valid || verified.Contract != workpackage.Valid || verified.Approval != workpackage.Valid {
+			return nil, fmt.Errorf("work package verification failed: %s", strings.Join(verified.Diagnostics, "; "))
 		}
-		snapshotRoot := filepath.Join(snapshotRepository, ".boatstack", "planning-packages", deliveryID, state.PlanningPackageFingerprint)
+		snapshotRoot := filepath.Join(snapshotRepository, ".boatstack", "work-packages", deliveryID, state.WorkPackageFingerprint)
 		manifestRaw, loadErr := os.ReadFile(filepath.Join(snapshotRoot, "manifest.json"))
 		if loadErr != nil {
 			return nil, loadErr
 		}
-		var manifest planningpackage.Manifest
-		if decodeErr := planningpackage.StrictDecode(manifestRaw, &manifest); decodeErr != nil {
-			return nil, fmt.Errorf("decode pinned planning package manifest: %w", decodeErr)
+		var manifest workpackage.Manifest
+		if decodeErr := workpackage.StrictDecode(manifestRaw, &manifest); decodeErr != nil {
+			return nil, fmt.Errorf("decode pinned work package manifest: %w", decodeErr)
 		}
-		canonicalManifestRaw, manifestEncodeErr := planningpackage.Encode(manifest)
+		canonicalManifestRaw, manifestEncodeErr := workpackage.Encode(manifest)
 		manifestIdentity := manifest
 		manifestIdentity.Fingerprint = ""
-		manifestIdentityRaw, manifestIdentityEncodeErr := planningpackage.Encode(manifestIdentity)
-		if manifestEncodeErr != nil || manifestIdentityEncodeErr != nil || !bytes.Equal(manifestRaw, canonicalManifestRaw) || manifest.Fingerprint != state.PlanningPackageFingerprint || sha256Bytes(manifestIdentityRaw) != manifest.Fingerprint {
-			return nil, fmt.Errorf("pinned planning package manifest does not bind durable state")
+		manifestIdentityRaw, manifestIdentityEncodeErr := workpackage.Encode(manifestIdentity)
+		if manifestEncodeErr != nil || manifestIdentityEncodeErr != nil || !bytes.Equal(manifestRaw, canonicalManifestRaw) || manifest.Fingerprint != state.WorkPackageFingerprint || sha256Bytes(manifestIdentityRaw) != manifest.Fingerprint {
+			return nil, fmt.Errorf("pinned work package manifest does not bind durable state")
 		}
 		approvalRaw, readErr := os.ReadFile(filepath.Join(snapshotRoot, "approval.json"))
 		if readErr != nil {
-			return nil, fmt.Errorf("read planning package approval: %w", readErr)
+			return nil, fmt.Errorf("read work package approval: %w", readErr)
 		}
-		var approval planningpackage.Approval
-		if decodeErr := planningpackage.StrictDecode(approvalRaw, &approval); decodeErr != nil {
-			return nil, fmt.Errorf("decode planning package approval: %w", decodeErr)
+		var approval workpackage.Approval
+		if decodeErr := workpackage.StrictDecode(approvalRaw, &approval); decodeErr != nil {
+			return nil, fmt.Errorf("decode work package approval: %w", decodeErr)
 		}
-		if approvalErr := planningpackage.ValidateApproval(approvalRaw, approval, manifest, deliveryID, state.PlanningPackageFingerprint); approvalErr != nil || sha256Bytes(approvalRaw) != state.ApprovalFingerprint {
-			return nil, fmt.Errorf("planning package approval does not bind the exact package")
+		if approvalErr := workpackage.ValidateApproval(approvalRaw, approval, manifest, deliveryID, state.WorkPackageFingerprint); approvalErr != nil || approval.Fingerprint != state.WorkPackageApprovalFingerprint {
+			return nil, fmt.Errorf("work package approval does not bind the exact package")
 		}
-		planRaw, readErr := os.ReadFile(filepath.Join(snapshotRoot, filepath.FromSlash(manifest.PlanOutput.Path)))
-		if readErr != nil || sha256Bytes(planRaw) != manifest.PlanOutput.SHA256 {
-			return nil, fmt.Errorf("planning package plan changed after approval")
+		var selected workpackage.Output
+		for _, output := range manifest.Outputs {
+			if output.ID == planOutputID {
+				selected = output
+				break
+			}
+		}
+		if selected.ID == "" || !selected.Required {
+			return nil, fmt.Errorf("compiler-bound plan output %q is absent or optional", planOutputID)
+		}
+		planRaw, readErr := os.ReadFile(filepath.Join(snapshotRoot, filepath.FromSlash(selected.Path)))
+		if readErr != nil || sha256Bytes(planRaw) != selected.SHA256 {
+			return nil, fmt.Errorf("work package plan changed after approval")
+		}
+		promotion, promotionRaw, promotionErr := sealPlanPromotionReceipt(planPromotionReceipt{
+			DeliveryID: deliveryID, PlanFingerprint: selected.SHA256,
+			WorkPackageFingerprint: manifest.Fingerprint, WorkPackageApprovalFingerprint: approval.Fingerprint,
+			PlanOutputID: selected.ID, AdmissionID: admission.ID, PromotedAt: admission.IssuedAt.UTC(),
+		})
+		if promotionErr != nil {
+			return nil, promotionErr
 		}
 		planMutation, mutationErr := mutationFor(filepath.Join(artifactRoot, "plans", deliveryID+".source"), planRaw, 0o644, false, false)
 		if mutationErr != nil {
 			return nil, mutationErr
 		}
-		approvalMutation, mutationErr := mutationFor(filepath.Join(artifactRoot, "approvals", deliveryID+".json"), approvalRaw, 0o644, false, false)
+		approvalMutation, mutationErr := mutationFor(filepath.Join(artifactRoot, "approvals", deliveryID+".json"), promotionRaw, 0o644, false, false)
 		if mutationErr != nil {
 			return nil, mutationErr
 		}
 		mutations = append(mutations, planMutation, approvalMutation)
-		state.PlanFingerprint, state.PlanningPackageFingerprint, state.ApprovalFingerprint = manifest.PlanOutput.SHA256, manifest.Fingerprint, sha256Bytes(approvalRaw)
+		state.PlanFingerprint, state.ApprovalFingerprint = selected.SHA256, sha256Bytes(promotionRaw)
+		_ = promotion
 	case "plan.validate":
 		path := filepath.Join(artifactRoot, "plans", deliveryID+".source")
 		raw, readErr := os.ReadFile(path)
@@ -341,7 +387,7 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 			return nil, fmt.Errorf("validate source plan %s: %w", path, readErr)
 		}
 		state.PlanFingerprint = sha256Bytes(raw)
-		state.PlanningPackageFingerprint = ""
+		state.WorkPackage, state.WorkPackageFingerprint, state.WorkPackageApprovalFingerprint = model.WorkPackageAbsent, "", ""
 	case "plan.approve", "plan.approve-amendment":
 		fingerprint, _ := admission.Parameters.Get("plan_fingerprint")
 		actor, _ := admission.Parameters.Get("actor")
@@ -506,15 +552,16 @@ func prepareArtifacts(layout ports.ControllerLayout, admission protocol.Admissio
 	return mutations, nil
 }
 
-var verifyPlanningPackage = planningpackage.Verify
+var verifyWorkPackage = workpackage.Verify
+var prepareWorkspaceWorkPackageTransferFn = prepareWorkspaceWorkPackageTransfer
 
-func capturePinnedPlanningPackage(root *os.Root, deliveryID, fingerprint string) (string, func(), error) {
-	repository, err := os.MkdirTemp("", "boatstack-planning-package-snapshot-")
+func capturePinnedWorkPackage(root *os.Root, deliveryID, fingerprint string) (string, func(), error) {
+	repository, err := os.MkdirTemp("", "boatstack-work-package-snapshot-")
 	if err != nil {
 		return "", nil, err
 	}
 	cleanup := func() { _ = os.RemoveAll(repository) }
-	destination := filepath.Join(repository, ".boatstack", "planning-packages", deliveryID, fingerprint)
+	destination := filepath.Join(repository, ".boatstack", "work-packages", deliveryID, fingerprint)
 	if err := os.MkdirAll(destination, 0o700); err != nil {
 		cleanup()
 		return "", nil, err
@@ -527,7 +574,7 @@ func capturePinnedPlanningPackage(root *os.Root, deliveryID, fingerprint string)
 			return nil
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
-			return fmt.Errorf("planning package member is a symlink: %s", name)
+			return fmt.Errorf("work package member is a symlink: %s", name)
 		}
 		target := filepath.Join(destination, filepath.FromSlash(name))
 		if entry.IsDir() {
@@ -535,7 +582,7 @@ func capturePinnedPlanningPackage(root *os.Root, deliveryID, fingerprint string)
 		}
 		before, err := root.Lstat(filepath.FromSlash(name))
 		if err != nil || !before.Mode().IsRegular() || before.Mode()&os.ModeSymlink != 0 || runtime.GOOS != "windows" && before.Mode().Perm() != 0o644 {
-			return fmt.Errorf("planning package member is not canonical: %s", name)
+			return fmt.Errorf("work package member is not canonical: %s", name)
 		}
 		raw, err := root.ReadFile(filepath.FromSlash(name))
 		if err != nil {
@@ -543,7 +590,7 @@ func capturePinnedPlanningPackage(root *os.Root, deliveryID, fingerprint string)
 		}
 		after, err := root.Lstat(filepath.FromSlash(name))
 		if err != nil || !after.Mode().IsRegular() || !os.SameFile(before, after) || after.Size() != int64(len(raw)) || after.Mode().Perm() != before.Mode().Perm() {
-			return fmt.Errorf("planning package member changed while captured: %s", name)
+			return fmt.Errorf("work package member changed while captured: %s", name)
 		}
 		return os.WriteFile(target, raw, 0o644)
 	})
@@ -598,7 +645,93 @@ func prepareWorkspacePlanTransfer(repositoryRoot, workspacePath, deliveryID, exp
 	if err != nil {
 		return nil, err
 	}
-	return []ports.ResourceMutation{planMutation, approvalMutation}, nil
+	mutations := []ports.ResourceMutation{planMutation, approvalMutation}
+	var promotion planPromotionReceipt
+	if decodeStrictArtifact(approvalRaw, &promotion) == nil && promotion.SchemaVersion == 2 {
+		packageMutations, packageErr := prepareWorkspaceWorkPackageTransferFn(repositoryRoot, workspacePath, deliveryID, promotion.WorkPackageFingerprint, promotion.WorkPackageApprovalFingerprint)
+		if packageErr != nil {
+			return nil, packageErr
+		}
+		mutations = append(mutations, packageMutations...)
+	}
+	return mutations, nil
+}
+
+func prepareWorkspaceWorkPackageTransfer(repositoryRoot, workspacePath, deliveryID, packageFingerprint, expectedApprovalFingerprint string) ([]ports.ResourceMutation, error) {
+	sourcePath := filepath.Join(repositoryRoot, ".boatstack", "work-packages", deliveryID, packageFingerprint)
+	root, err := os.OpenRoot(sourcePath)
+	if err != nil {
+		return nil, fmt.Errorf("open immutable work package for workspace transfer: %w", err)
+	}
+	defer root.Close()
+	pinnedInfo, err := root.Stat(".")
+	if err != nil {
+		return nil, err
+	}
+	snapshotRepository, cleanup, err := capturePinnedWorkPackage(root, deliveryID, packageFingerprint)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+	currentInfo, err := os.Stat(sourcePath)
+	if err != nil || !os.SameFile(pinnedInfo, currentInfo) {
+		return nil, fmt.Errorf("immutable work package changed during workspace transfer")
+	}
+	verified := workpackage.Verify(snapshotRepository, deliveryID, packageFingerprint, nil)
+	if verified.Integrity != workpackage.Valid || verified.Contract != workpackage.Valid || verified.Approval != workpackage.Valid {
+		return nil, fmt.Errorf("workspace work package verification failed: %s", strings.Join(verified.Diagnostics, "; "))
+	}
+	verifiedApproval, err := workpackage.ReadVerifiedApproval(snapshotRepository, deliveryID, packageFingerprint)
+	if err != nil || verifiedApproval.Approval.Fingerprint != expectedApprovalFingerprint {
+		return nil, fmt.Errorf("workspace work package approval does not bind promotion lineage")
+	}
+	snapshotRoot := filepath.Join(snapshotRepository, ".boatstack", "work-packages", deliveryID, packageFingerprint)
+	destinationRoot := filepath.Join(workspacePath, ".boatstack", "work-packages", deliveryID, packageFingerprint)
+	destinationExists := false
+	if info, statErr := os.Lstat(destinationRoot); statErr == nil {
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return nil, fmt.Errorf("workspace work package destination is unsafe")
+		}
+		destinationExists = true
+	} else if !os.IsNotExist(statErr) {
+		return nil, statErr
+	}
+	var mutations []ports.ResourceMutation
+	err = filepath.WalkDir(snapshotRoot, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		relative, err := filepath.Rel(snapshotRoot, path)
+		if err != nil {
+			return err
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if filepath.ToSlash(relative) == "approval.json" {
+			if !bytes.Equal(raw, verifiedApproval.Raw) {
+				return fmt.Errorf("workspace work package approval changed after verification")
+			}
+			raw = verifiedApproval.Raw
+		}
+		mutation, err := immutableWorkPackageMutation(filepath.Join(destinationRoot, relative), raw)
+		if err != nil {
+			return err
+		}
+		if filepath.ToSlash(relative) == "manifest.json" {
+			mutation.InstallLast = true
+		}
+		if !destinationExists {
+			mutation.AtomicTreeRoot = destinationRoot
+		}
+		mutations = append(mutations, mutation)
+		return nil
+	})
+	return mutations, err
 }
 
 func validateWorkspaceApproval(repositoryRoot, deliveryID, expectedPlanFingerprint string, raw []byte) error {
@@ -615,20 +748,33 @@ func validateWorkspaceApproval(repositoryRoot, deliveryID, expectedPlanFingerpri
 			return fmt.Errorf("schema-1 approval identity is invalid")
 		}
 		return nil
-	case planningpackage.ApprovalSchemaVersion:
-		var approval planningpackage.Approval
-		if err := planningpackage.StrictDecode(raw, &approval); err != nil || approval.DeliveryID != deliveryID || approval.PlanFingerprint != expectedPlanFingerprint || !planningpackage.ValidFingerprint(approval.PackageFingerprint) {
-			return fmt.Errorf("schema-2 approval identity is invalid")
+	case 2:
+		var promotion planPromotionReceipt
+		if err := decodeStrictArtifact(raw, &promotion); err != nil || promotion.DeliveryID != deliveryID || promotion.PlanFingerprint != expectedPlanFingerprint ||
+			!workpackage.ValidFingerprint(promotion.WorkPackageFingerprint) || !workpackage.ValidFingerprint(promotion.WorkPackageApprovalFingerprint) ||
+			promotion.PlanOutputID == "" || promotion.AdmissionID == "" || promotion.PromotedAt.IsZero() {
+			return fmt.Errorf("schema-2 plan promotion identity is invalid")
 		}
-		verified := planningpackage.Verify(repositoryRoot, deliveryID, approval.PackageFingerprint, nil)
-		if verified.Integrity != planningpackage.Valid || verified.Contract != planningpackage.Valid || verified.Approval != planningpackage.Valid {
-			return fmt.Errorf("schema-2 approval package is invalid")
+		identity := promotion
+		identity.Fingerprint = ""
+		identityRaw, err := encodeJSON(identity)
+		if err != nil || promotion.Fingerprint != sha256Bytes(identityRaw) {
+			return fmt.Errorf("schema-2 plan promotion fingerprint is invalid")
 		}
-		snapshotRaw, err := os.ReadFile(filepath.Join(repositoryRoot, ".boatstack", "planning-packages", deliveryID, approval.PackageFingerprint, "approval.json"))
-		if err != nil || !bytes.Equal(snapshotRaw, raw) {
-			return fmt.Errorf("schema-2 approval projection differs from immutable snapshot")
+		verified := workpackage.Verify(repositoryRoot, deliveryID, promotion.WorkPackageFingerprint, nil)
+		if verified.Integrity != workpackage.Valid || verified.Contract != workpackage.Valid || verified.Approval != workpackage.Valid {
+			return fmt.Errorf("schema-2 promotion package is invalid")
 		}
-		return nil
+		verifiedApproval, err := workpackage.ReadVerifiedApproval(repositoryRoot, deliveryID, promotion.WorkPackageFingerprint)
+		if err != nil || verifiedApproval.Approval.Fingerprint != promotion.WorkPackageApprovalFingerprint {
+			return fmt.Errorf("schema-2 promotion approval lineage is invalid")
+		}
+		for _, output := range verifiedApproval.Manifest.Outputs {
+			if output.ID == promotion.PlanOutputID && output.Required && output.SHA256 == expectedPlanFingerprint {
+				return nil
+			}
+		}
+		return fmt.Errorf("schema-2 promotion output is not bound")
 	default:
 		return fmt.Errorf("unsupported approval schema %d", envelope.SchemaVersion)
 	}
@@ -652,7 +798,7 @@ func readRegularWorkspacePlanArtifact(path string) ([]byte, error) {
 func transitionUsesDeliveryArtifacts(id catalog.TransitionID) bool {
 	switch id {
 	case "plan.create", "plan.amend", "plan.validate", "plan.approve", "plan.approve-amendment",
-		"planning.package.admit", "planning.package.approve", "planning.package.promote",
+		"work.package.admit", "work.package.approve", "planning.package.promote",
 		"evidence.approval.revoke", "gate.build.record", "gate.test.record", "gate.review.record",
 		"gate.change.record", "gate.journey.record", "evidence.visual.attach", "publication.preview",
 		"publication.execute", "publication.correct":
@@ -662,70 +808,56 @@ func transitionUsesDeliveryArtifacts(id catalog.TransitionID) bool {
 	}
 }
 
-func planningPackageOutputPath(root, relative string) (string, error) {
-	if relative == "" || filepath.IsAbs(relative) || filepath.Clean(relative) != relative || relative == "." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("planning package output path is unsafe")
+func buildWorkPackage(admission protocol.Admission, transition catalog.Transition, deliveryID string) (workpackage.Manifest, map[string][]byte, error) {
+	if admission.Work == nil || transition.Work == nil {
+		return workpackage.Manifest{}, nil, fmt.Errorf("work package requires work evidence and contract")
 	}
-	return filepath.Join(root, relative), nil
-}
-
-func buildPlanningPackage(admission protocol.Admission, transition catalog.Transition, deliveryID, planOutputID string) (planningpackage.Manifest, map[string][]byte, error) {
-	if admission.Work == nil || transition.Work == nil || planOutputID == "" {
-		return planningpackage.Manifest{}, nil, fmt.Errorf("planning package requires work evidence, contract, and explicit plan output")
-	}
-	work := planningpackage.WorkContract{ID: transition.Work.ID, Fingerprint: transition.Work.Fingerprint, Instructions: planningpackage.Asset{Path: transition.Work.InstructionPath, SHA256: transition.Work.InstructionSHA256, Content: transition.Work.InstructionContent}}
+	work := workpackage.WorkContract{ID: transition.Work.ID, Fingerprint: transition.Work.Fingerprint, Instructions: workpackage.Asset{Path: transition.Work.InstructionPath, SHA256: transition.Work.InstructionSHA256, Content: transition.Work.InstructionContent}}
 	for _, input := range transition.Work.Inputs {
-		work.Inputs = append(work.Inputs, planningpackage.WorkInput{ID: input.ID, EntryInput: input.EntryInput})
+		work.Inputs = append(work.Inputs, workpackage.WorkInput{ID: input.ID, EntryInput: input.EntryInput})
 	}
 	declarations := map[string]catalog.WorkOutput{}
 	for _, output := range transition.Work.Outputs {
 		declarations[output.ID] = output
-		item := planningpackage.WorkOutput{ID: output.ID, Path: output.Path, MediaType: output.MediaType, Required: output.Required, MaxBytes: output.MaxBytes}
+		item := workpackage.WorkOutput{ID: output.ID, Path: output.Path, MediaType: output.MediaType, Required: output.Required, MaxBytes: output.MaxBytes}
 		if output.GuidancePath != "" {
-			item.Guidance = &planningpackage.Asset{Path: output.GuidancePath, SHA256: output.GuidanceSHA256, Content: output.GuidanceContent}
+			item.Guidance = &workpackage.Asset{Path: output.GuidancePath, SHA256: output.GuidanceSHA256, Content: output.GuidanceContent}
 		}
 		if output.SchemaPath != "" {
-			item.Schema = &planningpackage.Asset{Path: output.SchemaPath, SHA256: output.SchemaSHA256, Content: output.SchemaContent}
+			item.Schema = &workpackage.Asset{Path: output.SchemaPath, SHA256: output.SchemaSHA256, Content: output.SchemaContent}
 		}
 		work.Outputs = append(work.Outputs, item)
 	}
-	if err := planningpackage.ValidateOutputPaths(work.Outputs); err != nil {
-		return planningpackage.Manifest{}, nil, err
+	if err := workpackage.ValidateOutputPaths(work.Outputs); err != nil {
+		return workpackage.Manifest{}, nil, err
 	}
-	contract, contractRaw, err := planningpackage.SealContract(planningpackage.Contract{Work: work, PlanOutput: planOutputID})
+	contract, contractRaw, err := workpackage.SealContract(workpackage.Contract{Work: work})
 	if err != nil {
-		return planningpackage.Manifest{}, nil, err
+		return workpackage.Manifest{}, nil, err
 	}
-	receipt := planningpackage.WorkReceipt{RequestID: admission.Work.RequestID, RequestFingerprint: admission.Work.RequestFingerprint, ResultFingerprint: admission.Work.ResultFingerprint, ContractID: admission.Work.ContractID, ContractFingerprint: admission.Work.ContractFingerprint, TransitionID: string(admission.Work.TransitionID), ProgramFingerprint: admission.Work.ProgramFingerprint, ContextFingerprint: admission.Work.ContextFingerprint, StateRevision: admission.Work.StateRevision, RepositoryID: admission.Work.RepositoryID, WorktreeID: admission.Work.WorktreeID}
+	receipt := workpackage.WorkReceipt{RequestID: admission.Work.RequestID, RequestFingerprint: admission.Work.RequestFingerprint, ResultFingerprint: admission.Work.ResultFingerprint, ContractID: admission.Work.ContractID, ContractFingerprint: admission.Work.ContractFingerprint, TransitionID: string(admission.Work.TransitionID), ProgramFingerprint: admission.Work.ProgramFingerprint, ContextFingerprint: admission.Work.ContextFingerprint, StateRevision: admission.Work.StateRevision, RepositoryID: admission.Work.RepositoryID, WorktreeID: admission.Work.WorktreeID}
 	files := map[string][]byte{"contract.json": contractRaw}
-	var plan planningpackage.PlanOutput
 	for _, evidence := range admission.Work.Outputs {
 		declaration, ok := declarations[evidence.ID]
 		if !ok {
-			return planningpackage.Manifest{}, nil, fmt.Errorf("planning package output %q is undeclared", evidence.ID)
+			return workpackage.Manifest{}, nil, fmt.Errorf("work package output %q is undeclared", evidence.ID)
 		}
-		output := planningpackage.Output{ID: evidence.ID, Path: evidence.Path, MediaType: evidence.MediaType, Required: declaration.Required, Size: evidence.Size, SHA256: evidence.SHA256, GuidanceSHA256: declaration.GuidanceSHA256, SchemaSHA256: declaration.SchemaSHA256}
+		output := workpackage.Output{ID: evidence.ID, Path: evidence.Path, MediaType: evidence.MediaType, Required: declaration.Required, Size: evidence.Size, SHA256: evidence.SHA256, GuidanceSHA256: declaration.GuidanceSHA256, SchemaSHA256: declaration.SchemaSHA256}
 		receipt.Outputs = append(receipt.Outputs, output)
 		files[evidence.Path] = []byte(evidence.Content)
-		if evidence.ID == planOutputID {
-			plan = planningpackage.PlanOutput{ID: evidence.ID, Path: evidence.Path, MediaType: evidence.MediaType, SHA256: evidence.SHA256}
-		}
 	}
-	if plan.ID == "" || !declarations[planOutputID].Required {
-		return planningpackage.Manifest{}, nil, fmt.Errorf("designated plan output %q is missing or optional", planOutputID)
-	}
-	receipt, receiptRaw, err := planningpackage.SealWorkReceipt(receipt)
+	receipt, receiptRaw, err := workpackage.SealWorkReceipt(receipt)
 	if err != nil {
-		return planningpackage.Manifest{}, nil, err
+		return workpackage.Manifest{}, nil, err
 	}
 	files["work-receipt.json"] = receiptRaw
-	manifest := planningpackage.Manifest{DeliveryID: deliveryID, ProgramID: admission.Work.ProgramID, ProgramFingerprint: admission.Work.ProgramFingerprint, EntryID: admission.Work.EntryID, RunID: admission.Work.RunID, TransitionID: string(transition.ID), WorkContractID: transition.Work.ID, WorkContractFingerprint: transition.Work.Fingerprint, WorkRequestFingerprint: admission.Work.RequestFingerprint, WorkResultFingerprint: admission.Work.ResultFingerprint, ContextFingerprint: admission.Work.ContextFingerprint, StateRevision: admission.Work.StateRevision, PlanOutput: plan, Contract: planningpackage.Reference{Path: "contract.json", SHA256: planningpackage.Digest(contractRaw)}, WorkReceipt: planningpackage.Reference{Path: "work-receipt.json", SHA256: planningpackage.Digest(receiptRaw)}, Outputs: receipt.Outputs}
+	manifest := workpackage.Manifest{DeliveryID: deliveryID, ProgramID: admission.Work.ProgramID, ProgramFingerprint: admission.Work.ProgramFingerprint, EntryID: admission.Work.EntryID, RunID: admission.Work.RunID, TransitionID: string(transition.ID), WorkContractID: transition.Work.ID, WorkContractFingerprint: transition.Work.Fingerprint, WorkRequestFingerprint: admission.Work.RequestFingerprint, WorkResultFingerprint: admission.Work.ResultFingerprint, ContextFingerprint: admission.Work.ContextFingerprint, StateRevision: admission.Work.StateRevision, Contract: workpackage.Reference{Path: "contract.json", SHA256: workpackage.Digest(contractRaw)}, WorkReceipt: workpackage.Reference{Path: "work-receipt.json", SHA256: workpackage.Digest(receiptRaw)}, Outputs: receipt.Outputs}
 	if manifest.ProgramID == "" || manifest.EntryID == "" || manifest.RunID == "" {
-		return planningpackage.Manifest{}, nil, fmt.Errorf("planning package work evidence lacks Flow identity")
+		return workpackage.Manifest{}, nil, fmt.Errorf("work package work evidence lacks Flow identity")
 	}
-	manifest, manifestRaw, err := planningpackage.SealManifest(manifest)
+	manifest, manifestRaw, err := workpackage.SealManifest(manifest)
 	if err != nil {
-		return planningpackage.Manifest{}, nil, err
+		return workpackage.Manifest{}, nil, err
 	}
 	files["manifest.json"] = manifestRaw
 	_ = contract
@@ -733,29 +865,29 @@ func buildPlanningPackage(admission protocol.Admission, transition catalog.Trans
 	return manifest, files, nil
 }
 
-func immutablePlanningMutation(path string, target []byte) (ports.ResourceMutation, error) {
+func immutableWorkPackageMutation(path string, target []byte) (ports.ResourceMutation, error) {
 	mutation, err := mutationFor(path, target, 0o644, false, false)
 	if err != nil {
 		return ports.ResourceMutation{}, err
 	}
 	if mutation.PriorExists && !bytes.Equal(mutation.Prior, target) {
-		return ports.ResourceMutation{}, fmt.Errorf("immutable planning package member conflicts: %s", path)
+		return ports.ResourceMutation{}, fmt.Errorf("immutable work package member conflicts: %s", path)
 	}
 	return mutation, nil
 }
 
-func loadPlanningPackageManifestV2(artifactRoot, deliveryID, packageFingerprint string) (planningpackage.Manifest, error) {
-	result := planningpackage.Verify(filepath.Dir(artifactRoot), deliveryID, packageFingerprint, nil)
-	if result.Integrity != planningpackage.Valid || result.Contract != planningpackage.Valid {
-		return planningpackage.Manifest{}, fmt.Errorf("planning package verification failed: %s", strings.Join(result.Diagnostics, "; "))
+func loadWorkPackageManifest(artifactRoot, deliveryID, packageFingerprint string) (workpackage.Manifest, error) {
+	result := workpackage.Verify(filepath.Dir(artifactRoot), deliveryID, packageFingerprint, nil)
+	if result.Integrity != workpackage.Valid || result.Contract != workpackage.Valid {
+		return workpackage.Manifest{}, fmt.Errorf("work package verification failed: %s", strings.Join(result.Diagnostics, "; "))
 	}
-	raw, err := os.ReadFile(filepath.Join(artifactRoot, "planning-packages", deliveryID, packageFingerprint, "manifest.json"))
+	raw, err := os.ReadFile(filepath.Join(artifactRoot, "work-packages", deliveryID, packageFingerprint, "manifest.json"))
 	if err != nil {
-		return planningpackage.Manifest{}, err
+		return workpackage.Manifest{}, err
 	}
-	var manifest planningpackage.Manifest
-	if err := planningpackage.StrictDecode(raw, &manifest); err != nil {
-		return planningpackage.Manifest{}, err
+	var manifest workpackage.Manifest
+	if err := workpackage.StrictDecode(raw, &manifest); err != nil {
+		return workpackage.Manifest{}, err
 	}
 	return manifest, nil
 }

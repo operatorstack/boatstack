@@ -306,9 +306,12 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 					return commandOptions{}, reprojectErr
 				}
 				if !reprojected {
-					return commandOptions{}, fmt.Errorf("DELEGATION_DRIFT: current Flow context does not match the authorized request (bundle %s, authorized %s)", delegationRequest.ControlBundleFingerprint, bound.ControlBundleFingerprint)
+					if !revokedDelegationCanReachProgramPreflight(record, delegationRequest) {
+						return commandOptions{}, fmt.Errorf("DELEGATION_DRIFT: current Flow context does not match the authorized request (bundle %s, authorized %s)", delegationRequest.ControlBundleFingerprint, bound.ControlBundleFingerprint)
+					}
+				} else {
+					options.delegationReprojection = true
 				}
-				options.delegationReprojection = true
 			} else {
 				delegationRequest = bound
 			}

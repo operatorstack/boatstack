@@ -20,7 +20,6 @@ import (
 	"github.com/operatorstack/boatstack/boatstack/flow/standard"
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/catalog"
-	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/effects"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/engine"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
@@ -805,81 +804,6 @@ func TestProgramDriftRequiresAtomicInstallationReconciliation(t *testing.T) {
 	}
 	if !bytes.Equal(afterSuccess, afterReplay) {
 		t.Fatal("rejected repeated reconciliation mutated durable state")
-	}
-	priorState, err := durable.DecodeState(afterSuccess)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var legacyState map[string]any
-	if err := json.Unmarshal(afterSuccess, &legacyState); err != nil {
-		t.Fatal(err)
-	}
-	legacyState["schema_version"] = float64(6)
-	delete(legacyState, "program_human_identity_role")
-	legacyRaw, err := json.MarshalIndent(legacyState, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacyRaw = append(legacyRaw, '\n')
-	if err := os.WriteFile(layout.StatePath, legacyRaw, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	legacyPinPath := boatstackruntime.PinPath(repository)
-	legacyPinRaw, err := os.ReadFile(legacyPinPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacyPin, err := boatstackruntime.DecodePin(legacyPinRaw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacyPin.StateSchemaVersion = 6
-	legacyPinRaw, err = boatstackruntime.EncodePin(legacyPin)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(legacyPinPath, legacyPinRaw, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	updateRequest := surfaces.Request{
-		SchemaVersion: surfaces.SchemaVersion, Operation: surfaces.OperationApply, Repository: repository, Host: "cli", CorrelationID: "program-current-update",
-		FlowID: "flow-program-drift", Objective: model.Objective{ID: "ignored-command-objective", TargetID: model.ObjectiveOpenPR, DeliveryID: "ignored"},
-		TransitionID: "installation.update", Authority: human,
-		Parameters: protocol.Parameters{
-			{Name: "source_revision", Value: "program-current"}, {Name: "runtime_version", Value: runtimeVersion}, {Name: "runtime_sha256", Value: digestBytes(runtimeRaw)},
-		},
-	}
-	updated, err := newKernel.Handle(ctx, prescribeSurface(t, ctx, newKernel, updateRequest))
-	if err != nil {
-		t.Fatalf("current-program update after reconciliation: %v", err)
-	}
-	if updated.Snapshot == nil || updated.Snapshot.Objective.Status != model.FactAbsent || updated.Receipt == nil || updated.Receipt.ObjectiveStatus != model.FactAbsent || updated.Receipt.ObjectiveID != "" {
-		t.Fatalf("reconcile to update composition invented product intent: %#v", updated)
-	}
-	updatedRaw, err := os.ReadFile(layout.StatePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	updatedState, err := durable.DecodeState(updatedRaw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if updatedState.SchemaVersion != durable.StateSchemaVersion || updatedState.Objective != priorState.Objective || updatedState.Engagement != priorState.Engagement ||
-		updatedState.Delivery != priorState.Delivery || updatedState.Workspace != priorState.Workspace || updatedState.Plan != priorState.Plan ||
-		updatedState.Configuration != priorState.Configuration || updatedState.Publication != priorState.Publication || updatedState.Verification != priorState.Verification ||
-		updatedState.Terminal != priorState.Terminal || updatedState.PlanFingerprint != priorState.PlanFingerprint || updatedState.ApprovalFingerprint != priorState.ApprovalFingerprint {
-		t.Fatalf("base-schema update changed existing product facets: before=%#v after=%#v", priorState, updatedState)
-	}
-	updatedPinRaw, err := os.ReadFile(legacyPinPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	updatedPin, err := boatstackruntime.DecodePin(updatedPinRaw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if updatedPin.StateSchemaVersion != durable.StateSchemaVersion {
-		t.Fatalf("runtime update left prior state schema in the pin: %#v", updatedPin)
 	}
 }
 

@@ -1,8 +1,7 @@
 package durable
 
 import (
-	"bytes"
-	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,7 +18,7 @@ func TestStateRejectsPriorObjectiveSchema(t *testing.T) {
 func TestStateSchemaPermitsLegacyApprovedStateWithoutApprovalFingerprint(t *testing.T) {
 	state := State{
 		SchemaVersion: StateSchemaVersion, RepositoryID: "repo", GitCommonID: "common", WorktreeID: "worktree", Revision: 1,
-		Phase: model.PhaseActive, Engagement: model.EngagementActive, Delivery: model.DeliveryApproved, Workspace: model.WorkspaceAbsent,
+		Phase: model.PhaseActive, Engagement: model.EngagementActive, Delivery: model.DeliveryApproved, Workspace: model.WorkspaceAbsent, WorkPackage: model.WorkPackageAbsent,
 		Plan: model.PlanApproved, Configuration: model.ConfigurationUnsupported, Runtime: model.RuntimeAbsent, Publication: model.PublicationNone,
 		Verification: model.VerificationUnverified, Recovery: model.RecoveryNone, Transaction: model.TransactionNone, Terminal: model.TerminalNonterminal,
 		Objective: model.Objective{ID: "objective", TargetID: model.ObjectiveOpenPR, DeliveryID: "delivery"}, PlanFingerprint: "legacy-plan", UpdatedAt: time.Unix(1, 0).UTC(),
@@ -37,10 +36,10 @@ func TestStateSchemaPermitsLegacyApprovedStateWithoutApprovalFingerprint(t *test
 	}
 }
 
-func TestDecodeStatePromotesExactBaseSchemaWithoutChangingPriorBytes(t *testing.T) {
+func TestDecodeStateRejectsSchemaSevenWithoutMigration(t *testing.T) {
 	state := State{
 		SchemaVersion: StateSchemaVersion, RepositoryID: "repo", GitCommonID: "common", WorktreeID: "worktree", Revision: 7,
-		Phase: model.PhaseActive, Engagement: model.EngagementActive, Delivery: model.DeliveryApproved, Workspace: model.WorkspaceAbsent,
+		Phase: model.PhaseActive, Engagement: model.EngagementActive, Delivery: model.DeliveryApproved, Workspace: model.WorkspaceAbsent, WorkPackage: model.WorkPackageAbsent,
 		Plan: model.PlanApproved, Configuration: model.ConfigurationUnsupported, Runtime: model.RuntimeAbsent, Publication: model.PublicationNone,
 		Verification: model.VerificationUnverified, Recovery: model.RecoveryNone, Transaction: model.TransactionNone, Terminal: model.TerminalNonterminal,
 		Objective: model.Objective{ID: "objective", TargetID: model.ObjectiveOpenPR, DeliveryID: "delivery"}, PlanFingerprint: "legacy-plan", UpdatedAt: time.Unix(1, 0).UTC(),
@@ -49,27 +48,9 @@ func TestDecodeStatePromotesExactBaseSchemaWithoutChangingPriorBytes(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	var legacy map[string]any
-	if err := json.Unmarshal(current, &legacy); err != nil {
-		t.Fatal(err)
-	}
-	legacy["schema_version"] = float64(priorStateSchemaVersion)
-	delete(legacy, "program_human_identity_role")
-	prior, err := json.MarshalIndent(legacy, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	prior = append(prior, '\n')
-	rollback := append([]byte(nil), prior...)
-	decoded, err := DecodeState(prior)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if decoded.SchemaVersion != StateSchemaVersion || decoded.Revision != state.Revision || decoded.Objective != state.Objective {
-		t.Fatalf("promoted state = %#v", decoded)
-	}
-	if !bytes.Equal(prior, rollback) {
-		t.Fatal("schema promotion changed prior rollback bytes")
+	prior := []byte(strings.Replace(string(current), `"schema_version": 8`, `"schema_version": 7`, 1))
+	if _, err := DecodeState(prior); err == nil {
+		t.Fatal("schema 7 was migrated instead of rejected")
 	}
 }
 

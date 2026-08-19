@@ -69,6 +69,8 @@ func ValidDeclaredStateLiteral(field, value string) bool {
 		return model.WorkspaceState(value).Valid()
 	case "plan":
 		return model.PlanState(value).Valid()
+	case "work_package":
+		return model.WorkPackageState(value).Valid()
 	case "configuration":
 		return model.ConfigurationState(value).Valid()
 	case "runtime":
@@ -104,6 +106,8 @@ func DeclaredStateResolverFacet(field string) (model.FacetName, bool) {
 		return model.FacetWorkspace, true
 	case "plan":
 		return model.FacetPlan, true
+	case "work_package":
+		return model.FacetWorkPackage, true
 	case "configuration":
 		return model.FacetConfiguration, true
 	case "runtime":

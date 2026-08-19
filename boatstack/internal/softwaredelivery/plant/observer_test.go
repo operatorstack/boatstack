@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	planningpackage "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery/planningpackage"
+	workpackage "github.com/operatorstack/boatstack/boatstack/flow/softwaredelivery/workpackage"
 	boatstackruntime "github.com/operatorstack/boatstack/boatstack/internal/runtime"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/durable"
 	"github.com/operatorstack/boatstack/boatstack/internal/softwaredelivery/model"
@@ -22,32 +22,31 @@ type observerClock struct{ now time.Time }
 
 func (c observerClock) Now() time.Time { return c.now }
 
-func TestObserverValidatesAdmittedPlanningPackageWithoutPrematurePlanPromotion(t *testing.T) {
+func TestObserverValidatesAdmittedWorkPackageWithoutPrematurePlanPromotion(t *testing.T) {
 	// control-law: an admitted package is verified from its exact manifest while the canonical approved plan remains absent
 	repository := t.TempDir()
 	deliveryID := "delivery"
 	plan := []byte("# Proposed plan\n")
-	planFingerprint := hashBytes(plan)
-	output := planningpackage.Output{ID: "implementation-plan", Path: "plan.md", MediaType: "text/markdown", Required: true, Size: int64(len(plan)), SHA256: planFingerprint}
-	portableWork := planningpackage.WorkContract{ID: "planning", Instructions: planningpackage.Asset{Path: "package.md", SHA256: hashBytes([]byte("coordinate")), Content: "coordinate"}, Outputs: []planningpackage.WorkOutput{{ID: output.ID, Path: output.Path, MediaType: output.MediaType, Required: true, MaxBytes: 1024}}}
-	workFingerprint, err := planningpackage.RuntimeWorkFingerprint(portableWork)
+	output := workpackage.Output{ID: "implementation-plan", Path: "plan.md", MediaType: "text/markdown", Required: true, Size: int64(len(plan)), SHA256: hashBytes(plan)}
+	portableWork := workpackage.WorkContract{ID: "planning", Instructions: workpackage.Asset{Path: "package.md", SHA256: hashBytes([]byte("coordinate")), Content: "coordinate"}, Outputs: []workpackage.WorkOutput{{ID: output.ID, Path: output.Path, MediaType: output.MediaType, Required: true, MaxBytes: 1024}}}
+	workFingerprint, err := workpackage.RuntimeWorkFingerprint(portableWork)
 	if err != nil {
 		t.Fatal(err)
 	}
 	portableWork.Fingerprint = workFingerprint
-	_, contractRaw, err := planningpackage.SealContract(planningpackage.Contract{Work: portableWork, PlanOutput: output.ID})
+	_, contractRaw, err := workpackage.SealContract(workpackage.Contract{Work: portableWork})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, receiptRaw, err := planningpackage.SealWorkReceipt(planningpackage.WorkReceipt{RequestID: "request", RequestFingerprint: strings.Repeat("a", 64), ResultFingerprint: strings.Repeat("b", 64), ContractID: "planning", ContractFingerprint: workFingerprint, TransitionID: "planning.package.admit", ProgramFingerprint: strings.Repeat("d", 64), ContextFingerprint: strings.Repeat("e", 64), StateRevision: 2, RepositoryID: "repo", WorktreeID: "tree", Outputs: []planningpackage.Output{output}})
+	_, receiptRaw, err := workpackage.SealWorkReceipt(workpackage.WorkReceipt{RequestID: "request", RequestFingerprint: strings.Repeat("a", 64), ResultFingerprint: strings.Repeat("b", 64), ContractID: "planning", ContractFingerprint: workFingerprint, TransitionID: "work.package.admit", ProgramFingerprint: strings.Repeat("d", 64), ContextFingerprint: strings.Repeat("e", 64), StateRevision: 2, RepositoryID: "repo", WorktreeID: "tree", Outputs: []workpackage.Output{output}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest, manifestRaw, err := planningpackage.SealManifest(planningpackage.Manifest{DeliveryID: deliveryID, ProgramID: "program", ProgramFingerprint: strings.Repeat("d", 64), EntryID: "run", RunID: "run-proof", TransitionID: "planning.package.admit", WorkContractID: "planning", WorkContractFingerprint: workFingerprint, WorkRequestFingerprint: strings.Repeat("a", 64), WorkResultFingerprint: strings.Repeat("b", 64), ContextFingerprint: strings.Repeat("e", 64), StateRevision: 2, PlanOutput: planningpackage.PlanOutput{ID: output.ID, Path: output.Path, MediaType: output.MediaType, SHA256: output.SHA256}, Contract: planningpackage.Reference{Path: "contract.json", SHA256: planningpackage.Digest(contractRaw)}, WorkReceipt: planningpackage.Reference{Path: "work-receipt.json", SHA256: planningpackage.Digest(receiptRaw)}, Outputs: []planningpackage.Output{output}})
+	manifest, manifestRaw, err := workpackage.SealManifest(workpackage.Manifest{DeliveryID: deliveryID, ProgramID: "program", ProgramFingerprint: strings.Repeat("d", 64), EntryID: "run", RunID: "run-proof", TransitionID: "work.package.admit", WorkContractID: "planning", WorkContractFingerprint: workFingerprint, WorkRequestFingerprint: strings.Repeat("a", 64), WorkResultFingerprint: strings.Repeat("b", 64), ContextFingerprint: strings.Repeat("e", 64), StateRevision: 2, Contract: workpackage.Reference{Path: "contract.json", SHA256: workpackage.Digest(contractRaw)}, WorkReceipt: workpackage.Reference{Path: "work-receipt.json", SHA256: workpackage.Digest(receiptRaw)}, Outputs: []workpackage.Output{output}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	root := filepath.Join(repository, ".boatstack", "planning-packages", deliveryID, manifest.Fingerprint)
+	root := filepath.Join(repository, ".boatstack", "work-packages", deliveryID, manifest.Fingerprint)
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -57,21 +56,164 @@ func TestObserverValidatesAdmittedPlanningPackageWithoutPrematurePlanPromotion(t
 		}
 	}
 	state := durable.State{
-		Plan: model.PlanPackageValid, PlanFingerprint: planFingerprint, PlanningPackageFingerprint: manifest.Fingerprint,
+		WorkPackage: model.WorkPackageValid, Plan: model.PlanAbsent, WorkPackageFingerprint: manifest.Fingerprint,
 		Objective: model.Objective{ID: "objective", TargetID: model.ObjectiveOpenPR, DeliveryID: deliveryID},
 	}
-	evidence, valid, err := observePlanningPackage(ports.ControllerLayout{RepositoryRoot: repository}, state, time.Unix(100, 0).UTC())
+	evidence, valid, err := observeWorkPackage(ports.ControllerLayout{RepositoryRoot: repository}, state, time.Unix(100, 0).UTC())
 	if err != nil || !valid || len(evidence) != 1 {
 		t.Fatalf("planning package observation valid=%t evidence=%#v err=%v", valid, evidence, err)
 	}
 	if _, err := os.Stat(filepath.Join(repository, ".boatstack", "plans", deliveryID+".source")); !os.IsNotExist(err) {
 		t.Fatalf("admission prematurely created a canonical plan: %v", err)
 	}
+	approval, approvalRaw, err := workpackage.SealApproval(workpackage.Approval{
+		DeliveryID: deliveryID, PackageFingerprint: manifest.Fingerprint, ManifestFingerprint: manifest.Fingerprint,
+		AdmissionID: "adm-approve", Actor: "reviewer", IdentityRole: "developer", IdentityProviderFingerprint: strings.Repeat("9", 64), ApprovedAt: time.Unix(99, 0).UTC(),
+		AuthoritySources: []workpackage.AuthoritySource{{ID: "human", Class: "human", Subject: "reviewer", Fingerprint: "authority-proof"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "approval.json"), approvalRaw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	state.WorkPackage = model.WorkPackageApproved
+	state.WorkPackageApprovalFingerprint = approval.Fingerprint
+	originalVerify := verifyObservedWorkPackage
+	t.Cleanup(func() { verifyObservedWorkPackage = originalVerify })
+	verifyObservedWorkPackage = func(repository, deliveryID, packageFingerprint string, current *workpackage.CurrentProgram) workpackage.Result {
+		result := originalVerify(repository, deliveryID, packageFingerprint, current)
+		if err := os.WriteFile(filepath.Join(root, "approval.json"), append(append([]byte(nil), approvalRaw...), '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	if _, valid, err := observeWorkPackage(ports.ControllerLayout{RepositoryRoot: repository}, state, time.Unix(100, 0).UTC()); err != nil || valid {
+		t.Fatalf("post-verification approval substitution valid=%t err=%v", valid, err)
+	}
+	verifyObservedWorkPackage = originalVerify
+	if err := os.WriteFile(filepath.Join(root, "approval.json"), approvalRaw, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(root, "plan.md"), []byte("tampered"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, valid, err := observePlanningPackage(ports.ControllerLayout{RepositoryRoot: repository}, state, time.Unix(101, 0).UTC()); err != nil || valid {
+	if _, valid, err := observeWorkPackage(ports.ControllerLayout{RepositoryRoot: repository}, state, time.Unix(101, 0).UTC()); err != nil || valid {
 		t.Fatalf("tampered planning package valid=%t err=%v", valid, err)
+	}
+}
+
+func TestObserverProjectsTamperedApprovedPackageToRecoverableAdmission(t *testing.T) {
+	// control-law: stale accepted work reopens the existing explicit admission path
+	repository := t.TempDir()
+	runGit(t, repository, "init", "-q")
+	runGit(t, repository, "config", "user.email", "boatstack@example.invalid")
+	runGit(t, repository, "config", "user.name", "Boatstack Test")
+	if err := os.WriteFile(filepath.Join(repository, "README.md"), []byte("fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repository, "add", "README.md")
+	runGit(t, repository, "commit", "-q", "-m", "fixture")
+
+	deliveryID := "accepted-package"
+	outputRaw := []byte("accepted evidence\n")
+	output := workpackage.Output{ID: "evidence", Path: "evidence.md", MediaType: "text/markdown", Required: true, Size: int64(len(outputRaw)), SHA256: hashBytes(outputRaw)}
+	portableWork := workpackage.WorkContract{
+		ID: "accepted-work", Instructions: workpackage.Asset{Path: "accepted.md", SHA256: hashBytes([]byte("accept")), Content: "accept"},
+		Outputs: []workpackage.WorkOutput{{ID: output.ID, Path: output.Path, MediaType: output.MediaType, Required: true, MaxBytes: 1024}},
+	}
+	workFingerprint, err := workpackage.RuntimeWorkFingerprint(portableWork)
+	if err != nil {
+		t.Fatal(err)
+	}
+	portableWork.Fingerprint = workFingerprint
+	_, contractRaw, err := workpackage.SealContract(workpackage.Contract{Work: portableWork})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, receiptRaw, err := workpackage.SealWorkReceipt(workpackage.WorkReceipt{
+		RequestID: "request", RequestFingerprint: strings.Repeat("a", 64), ResultFingerprint: strings.Repeat("b", 64),
+		ContractID: portableWork.ID, ContractFingerprint: workFingerprint, TransitionID: "work.package.admit",
+		ProgramFingerprint: strings.Repeat("d", 64), ContextFingerprint: strings.Repeat("e", 64), StateRevision: 2,
+		RepositoryID: "repo", WorktreeID: "tree", Outputs: []workpackage.Output{output},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, manifestRaw, err := workpackage.SealManifest(workpackage.Manifest{
+		DeliveryID: deliveryID, ProgramID: "program", ProgramFingerprint: strings.Repeat("d", 64), EntryID: "accept", RunID: "run-proof",
+		TransitionID: "work.package.admit", WorkContractID: portableWork.ID, WorkContractFingerprint: workFingerprint,
+		WorkRequestFingerprint: strings.Repeat("a", 64), WorkResultFingerprint: strings.Repeat("b", 64), ContextFingerprint: strings.Repeat("e", 64), StateRevision: 2,
+		Contract:    workpackage.Reference{Path: "contract.json", SHA256: workpackage.Digest(contractRaw)},
+		WorkReceipt: workpackage.Reference{Path: "work-receipt.json", SHA256: workpackage.Digest(receiptRaw)}, Outputs: []workpackage.Output{output},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	approval, approvalRaw, err := workpackage.SealApproval(workpackage.Approval{
+		DeliveryID: deliveryID, PackageFingerprint: manifest.Fingerprint, ManifestFingerprint: manifest.Fingerprint,
+		AdmissionID: "adm-approve", Actor: "reviewer", IdentityRole: "developer", IdentityProviderFingerprint: strings.Repeat("9", 64),
+		ApprovedAt: time.Unix(99, 0).UTC(), AuthoritySources: []workpackage.AuthoritySource{{ID: "human", Class: "human", Subject: "reviewer", Fingerprint: "authority-proof"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packageRoot := filepath.Join(repository, ".boatstack", "work-packages", deliveryID, manifest.Fingerprint)
+	if err := os.MkdirAll(packageRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, raw := range map[string][]byte{
+		"manifest.json": manifestRaw, "contract.json": contractRaw, "work-receipt.json": receiptRaw,
+		"approval.json": approvalRaw, output.Path: outputRaw,
+	} {
+		if err := os.WriteFile(filepath.Join(packageRoot, name), raw, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(packageRoot, output.Path), []byte("tampered\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	resolver, err := NewResolver(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, err := resolver.ResolveInvocation(context.Background(), repository, "cli", "stale-package-recovery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, _, err := resolver.ResolveLayout(context.Background(), invocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := durable.Default(invocation, time.Unix(100, 0).UTC())
+	state.Objective = model.Objective{ID: "objective", TargetID: model.ObjectiveApprovedWorkPackage, TrustedClass: model.ObjectiveApprovedWorkPackage, DeliveryID: deliveryID}
+	state.Engagement, state.Delivery, state.Phase, state.Terminal = model.EngagementActive, model.DeliveryApproved, model.PhaseTerminal, model.TerminalEstablished
+	state.WorkPackage, state.WorkPackageFingerprint, state.WorkPackageApprovalFingerprint = model.WorkPackageApproved, manifest.Fingerprint, approval.Fingerprint
+	state.Plan = model.PlanAbsent
+	stateRaw, err := durable.EncodeState(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(layout.StatePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(layout.StatePath, stateRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	observer, err := NewObserver(resolver, observerClock{now: time.Unix(101, 0).UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed, err := observer.Observe(context.Background(), ports.ObservationRequest{Invocation: invocation})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observed.WorkPackage.Status != model.FactStale || observed.WorkPackage.Value != model.WorkPackageAbsent {
+		t.Fatalf("tampered package projection = status %s value %s", observed.WorkPackage.Status, observed.WorkPackage.Value)
+	}
+	if observed.Phase.Value != model.PhaseActive || observed.Delivery.Value != model.DeliveryPlanning || observed.Terminal.Value != model.TerminalStale {
+		t.Fatalf("tampered package recovery frontier = phase %s delivery %s terminal %s", observed.Phase.Value, observed.Delivery.Value, observed.Terminal.Value)
 	}
 }
 

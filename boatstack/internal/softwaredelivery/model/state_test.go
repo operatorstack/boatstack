@@ -119,6 +119,7 @@ func TestEveryControllingFacetChangesCanonicalIdentity(t *testing.T) {
 		FacetEngagement:    func(o *Observation) { o.Engagement = Known(EngagementCommand, evidence) },
 		FacetDelivery:      func(o *Observation) { o.Delivery = Known(DeliveryApproved, evidence) },
 		FacetWorkspace:     func(o *Observation) { o.Workspace = Known(WorkspaceCut, evidence) },
+		FacetWorkPackage:   func(o *Observation) { o.WorkPackage = Known(WorkPackageValid, evidence) },
 		FacetPlan:          func(o *Observation) { o.Plan = Known(PlanValid, evidence) },
 		FacetConfiguration: func(o *Observation) { o.Configuration = Known(ConfigurationStale, evidence) },
 		FacetConfigurationPolicy: func(o *Observation) {

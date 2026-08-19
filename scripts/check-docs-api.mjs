@@ -28,14 +28,17 @@ const required = new Map([
     "@operatorstack/boatstack-software-delivery",
     [
       "SoftwareDeliveryFlowDefinition",
+      "WorkPackageDefinition",
       "inbox",
-      "planningPackageAdmit",
-      "planningPackageApprove",
+      "planningPackage",
       "planningPackagePromote",
       "softwareDelivery",
       "trustedDelegation",
       "trustedSoftwareDeliveryTransitions",
       "trustedTransition",
+      "workPackage",
+      "workPackageAdmit",
+      "workPackageApprove",
     ],
   ],
 ]);
@@ -57,6 +60,7 @@ const requiredCategories = new Map([
     "@operatorstack/boatstack-software-delivery",
     [
       "Authority and delegation",
+      "Accepted work",
       "Flow composition",
       "Parameter producers",
       "Planning",

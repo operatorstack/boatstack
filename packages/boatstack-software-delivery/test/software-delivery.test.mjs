@@ -2,10 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  planningPackageAdmit,
+  planningPackage,
+  planningPackagePromote,
   softwareDelivery,
   softwareDeliveryEvidence,
   softwareDeliveryFacets,
+  workPackage,
+  workPackageAdmit,
+  workPackageApprove,
 } from "../dist/index.js";
 
 const target = { id: "done", predicate: { true: true } };
@@ -73,11 +77,13 @@ test("registers planning work exactly once before additional work", () => {
   const result = softwareDelivery(
     definition({
       lifecycle: [
-        planningPackageAdmit,
+        workPackageAdmit,
+        workPackageApprove,
+        planningPackagePromote,
         { id: "plan.activate", priority: 50, work: "implementation" },
         { id: "plan.abandon", priority: 31, work: "review" },
       ],
-      planningPackage: { work: planning, planOutput: "implementation-plan" },
+      planningPackage: planningPackage({ work: planning, planOutput: "implementation-plan" }),
       work: additional,
     }),
   );
@@ -88,8 +94,8 @@ test("registers planning work exactly once before additional work", () => {
     "review",
   ]);
   assert.equal(result.transitions[0].work, "planning-package");
-  assert.equal(result.transitions[1].work, "implementation");
-  assert.equal(result.transitions[2].work, "review");
+  assert.equal(result.transitions[3].work, "implementation");
+  assert.equal(result.transitions[4].work, "review");
 });
 
 test("closes resolver declarations over exact first use", () => {
@@ -124,8 +130,8 @@ test("closes resolver declarations over exact first use", () => {
 test("planning work alone does not infer an input resolver", () => {
   const result = softwareDelivery(
     definition({
-      lifecycle: [planningPackageAdmit],
-      planningPackage: { work: work("planning-package"), planOutput: "implementation-plan" },
+      lifecycle: [workPackageAdmit, workPackageApprove, planningPackagePromote],
+      planningPackage: planningPackage({ work: work("planning-package"), planOutput: "implementation-plan" }),
     }),
   );
   assert.equal(result.declarations, undefined);
@@ -133,8 +139,38 @@ test("planning work alone does not infer an input resolver", () => {
 
 test("binds the explicit plan output through trusted compiled semantics", () => {
   const planning = work("planning-package");
-  const result = softwareDelivery(definition({ lifecycle: [planningPackageAdmit], planningPackage: { work: planning, planOutput: "implementation-plan" } }));
-  assert.deepEqual(result.transitions[0].parameters, [{ parameter: "plan_output", producer: { kind: "trusted-resolver", binding: { reference: "software-delivery/planning-package-plan-output/implementation-plan", version: "1" } } }]);
+  const result = softwareDelivery(definition({ lifecycle: [workPackageAdmit, workPackageApprove, planningPackagePromote], planningPackage: planningPackage({ work: planning, planOutput: "implementation-plan" }) }));
+  assert.equal(result.transitions[0].parameters, undefined);
+  assert.deepEqual(result.transitions[2].parameters, [{ parameter: "plan_output", producer: { kind: "trusted-resolver", binding: { reference: "software-delivery/planning-package-plan-output/implementation-plan", version: "1" } } }]);
+});
+
+test("generic work package binds no plan semantics", () => {
+  const accepted = work("accepted-work");
+  accepted.outputs.push(
+    { id: "architecture-plan", path: "architecture-plan.md", media_type: "text/markdown", required: true },
+    { id: "tasks", path: "tasks.json", media_type: "application/json", required: true },
+    { id: "verification", path: "verification.json", media_type: "application/json", required: true },
+    { id: "journey", path: "journey.md", media_type: "text/markdown", required: true },
+  );
+  const result = softwareDelivery(definition({
+    lifecycle: [workPackageAdmit, workPackageApprove],
+    workPackage: workPackage({ work: accepted }),
+  }));
+  assert.equal(result.transitions[0].work, accepted.id);
+  assert.equal(result.transitions[0].parameters, undefined);
+  assert.equal(result.transitions.some(({ id }) => id === "planning.package.promote"), false);
+});
+
+test("rejects simultaneous generic and planning package declarations", () => {
+  const accepted = work("accepted-work");
+  assert.throws(
+    () => softwareDelivery(definition({
+      lifecycle: [workPackageAdmit, workPackageApprove, planningPackagePromote],
+      workPackage: workPackage({ work: accepted }),
+      planningPackage: planningPackage({ work: accepted, planOutput: "implementation-plan" }),
+    })),
+    /SOFTWARE_DELIVERY_PACKAGE_EXCLUSIVE/,
+  );
 });
 
 for (const [name, planning, error] of [
@@ -145,7 +181,7 @@ for (const [name, planning, error] of [
   ["Windows trailing-dot path", { work: { ...work("planning"), outputs: [{ id: "implementation-plan", path: "plan.", media_type: "text/markdown", required: true }] }, planOutput: "implementation-plan" }, /SOFTWARE_DELIVERY_OUTPUT_PATH_INVALID/],
   ["ancestor collision", { work: { ...work("planning"), outputs: [{ id: "implementation-plan", path: "planning", media_type: "text/markdown", required: true }, { id: "details", path: "planning/details.md", media_type: "text/markdown", required: true }] }, planOutput: "implementation-plan" }, /SOFTWARE_DELIVERY_OUTPUT_PATH_CONFLICT/],
 ]) {
-  test(`rejects ${name}`, () => assert.throws(() => softwareDelivery(definition({ lifecycle: [planningPackageAdmit], planningPackage: planning })), error));
+  test(`rejects ${name}`, () => assert.throws(() => softwareDelivery(definition({ lifecycle: [workPackageAdmit, workPackageApprove, planningPackagePromote], planningPackage: planning })), error));
 }
 
 for (const [name, lifecycle, prefix] of [
@@ -176,8 +212,8 @@ test("rejects duplicate work IDs including repeated planning work", () => {
     () =>
       softwareDelivery(
         definition({
-          lifecycle: [planningPackageAdmit],
-          planningPackage: { work: planning, planOutput: "implementation-plan" },
+          lifecycle: [workPackageAdmit, workPackageApprove, planningPackagePromote],
+          planningPackage: planningPackage({ work: planning, planOutput: "implementation-plan" }),
           work: [planning],
         }),
       ),
@@ -194,13 +230,13 @@ for (const humanIdentity of [undefined, "", "Developer", "1developer", "develope
   });
 }
 
-test("rejects planning work without its admit step", () => {
+test("rejects planning work without its complete package lifecycle", () => {
   assert.throws(
     () =>
       softwareDelivery(
-        definition({ planningPackage: { work: work("planning-package"), planOutput: "implementation-plan" } }),
+        definition({ planningPackage: planningPackage({ work: work("planning-package"), planOutput: "implementation-plan" }) }),
       ),
-    /SOFTWARE_DELIVERY_PLANNING_PACKAGE_UNUSED/,
+    /SOFTWARE_DELIVERY_WORK_PACKAGE_UNUSED/,
   );
 });
 
@@ -240,15 +276,15 @@ test("rejects empty lifecycle work references", () => {
 test("rejects replacing or repeating the planning work binding", () => {
   const planning = work("planning-package");
   for (const lifecycle of [
-    [{ ...planningPackageAdmit, work: "implementation" }],
-    [planningPackageAdmit, { id: "plan.activate", priority: 50, work: planning.id }],
+    [{ ...workPackageAdmit, work: "implementation" }, workPackageApprove, planningPackagePromote],
+    [workPackageAdmit, workPackageApprove, planningPackagePromote, { id: "plan.activate", priority: 50, work: planning.id }],
   ]) {
     assert.throws(
       () =>
         softwareDelivery(
           definition({
             lifecycle,
-            planningPackage: { work: planning, planOutput: "implementation-plan" },
+            planningPackage: planningPackage({ work: planning, planOutput: "implementation-plan" }),
             work: [work("implementation")],
           }),
         ),

@@ -85,8 +85,8 @@ var nativeStateHandlers = map[string]nativeStateHandler{
 	"catalog-reconcile":              applyCatalogReconcile,
 	"objective-bind":                 applyObjectiveBind,
 	"plan-approve":                   applyPlanApprove,
-	"planning-package-admit":         applyPlanningPackageAdmit,
-	"planning-package-approve":       applyPlanningPackageApprove,
+	"work-package-admit":             applyWorkPackageAdmit,
+	"work-package-approve":           applyWorkPackageApprove,
 	"planning-package-promote":       applyPlanningPackagePromote,
 	"abandon-delivery":               applyAbandonDelivery,
 	"workspace-cleanup":              applyWorkspaceCleanup,
@@ -372,10 +372,10 @@ func applyObjectiveBind(state *durable.State, admission protocol.Admission, _ ca
 }
 
 func resetDeliveryState(state *durable.State) {
-	state.Delivery, state.Plan = model.DeliveryUninitialized, model.PlanAbsent
+	state.Delivery, state.WorkPackage, state.Plan = model.DeliveryUninitialized, model.WorkPackageAbsent, model.PlanAbsent
 	state.Workspace = model.WorkspaceAbsent
 	state.Publication, state.Verification = model.PublicationNone, model.VerificationUnverified
-	state.PlanFingerprint, state.PlanningPackageFingerprint, state.ApprovalFingerprint, state.PublicationID, state.PublicationURL, state.PreviewFingerprint = "", "", "", "", "", ""
+	state.PlanFingerprint, state.WorkPackageFingerprint, state.WorkPackageApprovalFingerprint, state.ApprovalFingerprint, state.PublicationID, state.PublicationURL, state.PreviewFingerprint = "", "", "", "", "", "", ""
 	state.WorkspaceBranch, state.WorkspacePath, state.WorkspaceBaseRef = "", "", ""
 	state.WorkspaceSourcePath, state.WorkspaceSourceID, state.WorkspaceSourceRef = "", "", ""
 	state.Gates = nil
@@ -389,13 +389,16 @@ func applyPlanApprove(state *durable.State, admission protocol.Admission, _ cata
 	return nil
 }
 
-func applyPlanningPackageAdmit(state *durable.State, _ protocol.Admission, _ catalog.Transition) error {
-	state.Plan, state.Delivery, state.Phase, state.Terminal = model.PlanPackageValid, model.DeliveryPlanning, model.PhaseActive, model.TerminalNonterminal
+func applyWorkPackageAdmit(state *durable.State, _ protocol.Admission, _ catalog.Transition) error {
+	state.WorkPackage, state.Delivery, state.Phase, state.Terminal = model.WorkPackageValid, model.DeliveryPlanning, model.PhaseActive, model.TerminalNonterminal
 	return nil
 }
 
-func applyPlanningPackageApprove(state *durable.State, _ protocol.Admission, _ catalog.Transition) error {
-	state.Plan, state.Delivery, state.Phase, state.Terminal = model.PlanPackageApproved, model.DeliveryPlanning, model.PhaseActive, model.TerminalNonterminal
+func applyWorkPackageApprove(state *durable.State, admission protocol.Admission, _ catalog.Transition) error {
+	state.WorkPackage, state.Delivery, state.Phase = model.WorkPackageApproved, model.DeliveryApproved, model.PhaseActive
+	if admission.Objective.TrustedObjectiveClass() == model.ObjectiveApprovedWorkPackage {
+		establishTerminal(state, model.PhaseTerminal)
+	}
 	return nil
 }
 

@@ -1,4 +1,4 @@
-package planningpackage
+package workpackage
 
 import (
 	"os"
@@ -14,32 +14,45 @@ func installFixture(t *testing.T) (string, string, string, string) {
 	repository := t.TempDir()
 	delivery := "proof"
 	plan := []byte("# plan\n")
+	architecture := []byte("# architecture\n")
+	tasks := []byte("{\"items\":[]}\n")
+	verification := []byte("# verification\n")
+	journey := []byte("# journey\n")
 	programFP := strings.Repeat("b", 64)
-	output := Output{ID: "implementation-plan", Path: "plan.md", MediaType: "text/markdown", Required: true, Size: int64(len(plan)), SHA256: Digest(plan)}
-	work := WorkContract{ID: "planning", Instructions: Asset{Path: "package.md", SHA256: Digest([]byte("coordinate")), Content: "coordinate"}, Outputs: []WorkOutput{{ID: output.ID, Path: output.Path, MediaType: output.MediaType, Required: true, MaxBytes: 1024}}}
+	outputs := []Output{
+		{ID: "implementation-plan", Path: "plan.md", MediaType: "text/markdown", Required: true, Size: int64(len(plan)), SHA256: Digest(plan)},
+		{ID: "architecture-plan", Path: "architecture.md", MediaType: "text/markdown", Required: true, Size: int64(len(architecture)), SHA256: Digest(architecture)},
+		{ID: "tasks", Path: "tasks.json", MediaType: "application/json", Required: true, Size: int64(len(tasks)), SHA256: Digest(tasks)},
+		{ID: "verification-contract", Path: "verification.md", MediaType: "text/markdown", Required: true, Size: int64(len(verification)), SHA256: Digest(verification)},
+		{ID: "journey", Path: "journey.md", MediaType: "text/markdown", Required: true, Size: int64(len(journey)), SHA256: Digest(journey)},
+	}
+	work := WorkContract{ID: "planning", Instructions: Asset{Path: "package.md", SHA256: Digest([]byte("coordinate")), Content: "coordinate"}}
+	for _, output := range outputs {
+		work.Outputs = append(work.Outputs, WorkOutput{ID: output.ID, Path: output.Path, MediaType: output.MediaType, Required: true, MaxBytes: 1024})
+	}
 	var err error
 	work.Fingerprint, err = RuntimeWorkFingerprint(work)
 	if err != nil {
 		t.Fatal(err)
 	}
 	workFP := work.Fingerprint
-	_, contractRaw, err := SealContract(Contract{Work: work, PlanOutput: output.ID})
+	_, contractRaw, err := SealContract(Contract{Work: work})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, receiptRaw, err := SealWorkReceipt(WorkReceipt{RequestID: "request", RequestFingerprint: strings.Repeat("c", 64), ResultFingerprint: strings.Repeat("d", 64), ContractID: "planning", ContractFingerprint: workFP, TransitionID: "planning.package.admit", ProgramFingerprint: programFP, ContextFingerprint: strings.Repeat("e", 64), StateRevision: 2, RepositoryID: "repo", WorktreeID: "tree", Outputs: []Output{output}})
+	_, receiptRaw, err := SealWorkReceipt(WorkReceipt{RequestID: "request", RequestFingerprint: strings.Repeat("c", 64), ResultFingerprint: strings.Repeat("d", 64), ContractID: "planning", ContractFingerprint: workFP, TransitionID: "work.package.admit", ProgramFingerprint: programFP, ContextFingerprint: strings.Repeat("e", 64), StateRevision: 2, RepositoryID: "repo", WorktreeID: "tree", Outputs: outputs})
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest, manifestRaw, err := SealManifest(Manifest{DeliveryID: delivery, ProgramID: "program", ProgramFingerprint: programFP, EntryID: "run", RunID: "run-proof", TransitionID: "planning.package.admit", WorkContractID: "planning", WorkContractFingerprint: workFP, WorkRequestFingerprint: strings.Repeat("c", 64), WorkResultFingerprint: strings.Repeat("d", 64), ContextFingerprint: strings.Repeat("e", 64), StateRevision: 2, PlanOutput: PlanOutput{ID: output.ID, Path: output.Path, MediaType: output.MediaType, SHA256: output.SHA256}, Contract: Reference{Path: "contract.json", SHA256: Digest(contractRaw)}, WorkReceipt: Reference{Path: "work-receipt.json", SHA256: Digest(receiptRaw)}, Outputs: []Output{output}})
+	manifest, manifestRaw, err := SealManifest(Manifest{DeliveryID: delivery, ProgramID: "program", ProgramFingerprint: programFP, EntryID: "run", RunID: "run-proof", TransitionID: "work.package.admit", WorkContractID: "planning", WorkContractFingerprint: workFP, WorkRequestFingerprint: strings.Repeat("c", 64), WorkResultFingerprint: strings.Repeat("d", 64), ContextFingerprint: strings.Repeat("e", 64), StateRevision: 2, Contract: Reference{Path: "contract.json", SHA256: Digest(contractRaw)}, WorkReceipt: Reference{Path: "work-receipt.json", SHA256: Digest(receiptRaw)}, Outputs: outputs})
 	if err != nil {
 		t.Fatal(err)
 	}
-	root := filepath.Join(repository, ".boatstack", "planning-packages", delivery, manifest.Fingerprint)
+	root := filepath.Join(repository, ".boatstack", "work-packages", delivery, manifest.Fingerprint)
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for name, raw := range map[string][]byte{"manifest.json": manifestRaw, "contract.json": contractRaw, "work-receipt.json": receiptRaw, "plan.md": plan} {
+	for name, raw := range map[string][]byte{"manifest.json": manifestRaw, "contract.json": contractRaw, "work-receipt.json": receiptRaw, "plan.md": plan, "architecture.md": architecture, "tasks.json": tasks, "verification.md": verification, "journey.md": journey} {
 		if err := os.WriteFile(filepath.Join(root, name), raw, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -49,7 +62,7 @@ func installFixture(t *testing.T) (string, string, string, string) {
 
 func TestVerifyRejectsContradictoryEmbeddedWorkContractIdentity(t *testing.T) {
 	repository, delivery, fingerprint, _ := installFixture(t)
-	oldRoot := filepath.Join(repository, ".boatstack", "planning-packages", delivery, fingerprint)
+	oldRoot := filepath.Join(repository, ".boatstack", "work-packages", delivery, fingerprint)
 	contractRaw, _ := os.ReadFile(filepath.Join(oldRoot, "contract.json"))
 	var contract Contract
 	if err := StrictDecode(contractRaw, &contract); err != nil {
@@ -93,13 +106,8 @@ func TestVerifyRejectsContradictoryEmbeddedWorkContractIdentity(t *testing.T) {
 
 func TestVerifyApprovalUsesAuthorityReceiptContract(t *testing.T) {
 	repository, delivery, fingerprint, _ := installFixture(t)
-	root := filepath.Join(repository, ".boatstack", "planning-packages", delivery, fingerprint)
-	manifestRaw, _ := os.ReadFile(filepath.Join(root, "manifest.json"))
-	var manifest Manifest
-	if err := StrictDecode(manifestRaw, &manifest); err != nil {
-		t.Fatal(err)
-	}
-	approval := Approval{DeliveryID: delivery, PackageFingerprint: fingerprint, ManifestFingerprint: fingerprint, PlanOutputID: manifest.PlanOutput.ID, PlanFingerprint: manifest.PlanOutput.SHA256, AdmissionID: "admission", AuthoritySources: []AuthoritySource{{ID: "human", Class: "human", Subject: "operator", Fingerprint: "human-proof"}}, Actor: "operator", IdentityRole: "developer", IdentityProviderFingerprint: strings.Repeat("9", 64), ApprovedAt: time.Unix(100, 0).UTC()}
+	root := filepath.Join(repository, ".boatstack", "work-packages", delivery, fingerprint)
+	approval := Approval{DeliveryID: delivery, PackageFingerprint: fingerprint, ManifestFingerprint: fingerprint, AdmissionID: "admission", AuthoritySources: []AuthoritySource{{ID: "human", Class: "human", Subject: "operator", Fingerprint: "human-proof"}}, Actor: "operator", IdentityRole: "developer", IdentityProviderFingerprint: strings.Repeat("9", 64), ApprovedAt: time.Unix(100, 0).UTC()}
 	_, raw, _ := SealApproval(approval)
 	if err := os.WriteFile(filepath.Join(root, "approval.json"), raw, 0o644); err != nil {
 		t.Fatal(err)
@@ -133,9 +141,26 @@ func TestVerifyApprovalUsesAuthorityReceiptContract(t *testing.T) {
 	}
 }
 
+func TestGenericContractManifestAndApprovalContainNoPlanFields(t *testing.T) {
+	repository, delivery, fingerprint, _ := installFixture(t)
+	root := filepath.Join(repository, ".boatstack", "work-packages", delivery, fingerprint)
+	manifestRaw, _ := os.ReadFile(filepath.Join(root, "manifest.json"))
+	approval := Approval{DeliveryID: delivery, PackageFingerprint: fingerprint, ManifestFingerprint: fingerprint, AdmissionID: "admission", AuthoritySources: []AuthoritySource{{ID: "human", Class: "human", Subject: "operator", Fingerprint: "human-proof"}}, Actor: "operator", IdentityRole: "developer", IdentityProviderFingerprint: strings.Repeat("9", 64), ApprovedAt: time.Unix(100, 0).UTC()}
+	_, approvalRaw, err := SealApproval(approval)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contractRaw, _ := os.ReadFile(filepath.Join(root, "contract.json"))
+	for name, raw := range map[string][]byte{"contract": contractRaw, "manifest": manifestRaw, "approval": approvalRaw} {
+		if strings.Contains(string(raw), "plan_output") || strings.Contains(string(raw), "plan_fingerprint") {
+			t.Fatalf("%s contains privileged plan fields: %s", name, raw)
+		}
+	}
+}
+
 func TestVerifyRejectsContractOutsideRuntimeABI(t *testing.T) {
 	repository, delivery, fingerprint, _ := installFixture(t)
-	oldRoot := filepath.Join(repository, ".boatstack", "planning-packages", delivery, fingerprint)
+	oldRoot := filepath.Join(repository, ".boatstack", "work-packages", delivery, fingerprint)
 	contractRaw, _ := os.ReadFile(filepath.Join(oldRoot, "contract.json"))
 	var contract Contract
 	if err := StrictDecode(contractRaw, &contract); err != nil {
@@ -173,7 +198,7 @@ func TestEnumeratePropagatesDeliveryReadFailure(t *testing.T) {
 		t.Skip("permission mode is Unix-specific")
 	}
 	repository := t.TempDir()
-	delivery := filepath.Join(repository, ".boatstack", "planning-packages", "proof")
+	delivery := filepath.Join(repository, ".boatstack", "work-packages", "proof")
 	if err := os.MkdirAll(delivery, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +213,7 @@ func TestEnumeratePropagatesDeliveryReadFailure(t *testing.T) {
 
 func TestVerifySeparatesIntegrityApprovalAndCurrentProgram(t *testing.T) {
 	repository, delivery, fingerprint, workFingerprint := installFixture(t)
-	result := Verify(repository, delivery, fingerprint, &CurrentProgram{ProgramFingerprint: strings.Repeat("b", 64), WorkContractFingerprint: workFingerprint, PlanOutput: "implementation-plan"})
+	result := Verify(repository, delivery, fingerprint, &CurrentProgram{ProgramFingerprint: strings.Repeat("b", 64), WorkContractFingerprint: workFingerprint})
 	if result.Integrity != Valid || result.Contract != Valid || result.Approval != Missing || result.CurrentProgram != Match || result.SemanticCorrectness != "not-evaluated" || result.OriginAuthenticity != "not-proven" {
 		t.Fatalf("result=%#v", result)
 	}
@@ -252,7 +277,7 @@ func TestVerifyRejectsIndependentTampering(t *testing.T) {
 	for _, name := range cases {
 		t.Run(name, func(t *testing.T) {
 			repository, delivery, fingerprint, _ := installFixture(t)
-			path := filepath.Join(repository, ".boatstack", "planning-packages", delivery, fingerprint, name)
+			path := filepath.Join(repository, ".boatstack", "work-packages", delivery, fingerprint, name)
 			raw, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)
@@ -270,7 +295,7 @@ func TestVerifyRejectsIndependentTampering(t *testing.T) {
 func TestVerifyRejectsUndeclaredAndSymlinkMembers(t *testing.T) {
 	for _, symlink := range []bool{false, true} {
 		repository, delivery, fingerprint, _ := installFixture(t)
-		path := filepath.Join(repository, ".boatstack", "planning-packages", delivery, fingerprint, "extra")
+		path := filepath.Join(repository, ".boatstack", "work-packages", delivery, fingerprint, "extra")
 		var err error
 		if symlink {
 			err = os.Symlink("plan.md", path)
