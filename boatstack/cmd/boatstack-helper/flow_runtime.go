@@ -202,10 +202,6 @@ func bindFlowEntry(ctx context.Context, options commandOptions) (commandOptions,
 	if options.targetID != string(objective.TargetID) || options.trustedObjectiveClass != string(objective.TrustedClass) || options.deliveryID != deliveryID || options.objectiveID != expectedObjectiveID {
 		return commandOptions{}, fmt.Errorf("FLOW_CONTEXT_MISMATCH: objective or delivery changed across the run")
 	}
-	options, err = bindAvailableCommittedWorkInputs(ctx, compiled, entry, options)
-	if err != nil {
-		return commandOptions{}, err
-	}
 	bundle, bundleFingerprint, err := bindControlBundle(ctx, repository, "", nil)
 	if err != nil {
 		return commandOptions{}, err
@@ -951,80 +947,6 @@ func workOutputByID(outputs []protocol.WorkOutputEvidence, outputID string) (pro
 }
 
 func foregroundWorkInputKey(workID, inputID string) string { return workID + "/" + inputID }
-
-func bindAvailableCommittedWorkInputs(ctx context.Context, compiled controlprogram.Compiled, entry controlprogram.Entry, options commandOptions) (commandOptions, error) {
-	hasCommittedInputs := false
-	for _, work := range compiled.Document.Work {
-		for _, input := range work.Inputs {
-			if input.Producer.Kind == controlprogram.ParameterSourceWorkOutput {
-				hasCommittedInputs = true
-				break
-			}
-		}
-	}
-	if !hasCommittedInputs {
-		return options, nil
-	}
-	host := options.host
-	if host == "" {
-		host = "cli"
-	}
-	resolver, err := plant.NewResolver("")
-	if err != nil {
-		return commandOptions{}, err
-	}
-	current, err := resolver.ResolveInvocation(ctx, options.repository, host, "flow-work-inputs-"+options.runID)
-	if err != nil {
-		return commandOptions{}, err
-	}
-	layout, current, err := resolver.ResolveLayout(ctx, current)
-	if err != nil {
-		return commandOptions{}, err
-	}
-	raw, err := os.ReadFile(layout.StatePath)
-	if os.IsNotExist(err) {
-		return options, nil
-	}
-	if err != nil {
-		return commandOptions{}, err
-	}
-	state, err := durable.DecodeState(raw)
-	if err != nil {
-		return commandOptions{}, fmt.Errorf("FLOW_ACTIVE_RUN_INVALID: decode durable state: %w", err)
-	}
-	workByID := map[string]controlprogram.WorkContract{}
-	for _, work := range compiled.Document.Work {
-		workByID[work.ID] = work
-	}
-	for _, consumer := range compiled.Document.Work {
-		for _, input := range consumer.Inputs {
-			if input.Producer.Kind != controlprogram.ParameterSourceWorkOutput {
-				continue
-			}
-			source, ok := workByID[input.Producer.Work]
-			if !ok {
-				return commandOptions{}, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q input %q references unknown work %q", consumer.ID, input.ID, input.Producer.Work)
-			}
-			producer, producerErr := uniqueWorkProducerTransition(compiled.Document.Transitions, source.ID)
-			if producerErr != nil {
-				return commandOptions{}, producerErr
-			}
-			committed, found, resolveErr := resolveCommittedWorkOutput(layout, state.Revision, state.ProgramFingerprint, current, compiled, entry, options, producer, source, input.Producer.Output)
-			if resolveErr != nil {
-				return commandOptions{}, resolveErr
-			}
-			if !found {
-				continue
-			}
-			provenance := protocol.WorkOutputProvenance{
-				ReceiptID: committed.Receipt.ID, TransitionID: committed.Receipt.TransitionID, WorkID: committed.Work.ContractID, OutputID: committed.Output.ID,
-				ResultFingerprint: committed.Work.ResultFingerprint, ContractFingerprint: committed.Work.ContractFingerprint, OutputSHA256: committed.Output.SHA256,
-			}
-			options.workInputs[foregroundWorkInputKey(consumer.ID, input.ID)] = protocol.WorkInputValue{Value: committed.Output.Content, Fingerprint: committed.Output.SHA256, WorkOutput: &provenance}
-		}
-	}
-	return options, nil
-}
 
 func resolveCommittedWorkOutput(layout ports.ControllerLayout, maximumRevision uint64, executionProgramFingerprint string, current model.InvocationContext, compiled controlprogram.Compiled, entry controlprogram.Entry, options commandOptions, producerTransition controlprogram.Transition, work controlprogram.WorkContract, outputID string) (effects.CommittedWorkOutput, bool, error) {
 	contract, err := softwareflow.RuntimeWorkContract(work)

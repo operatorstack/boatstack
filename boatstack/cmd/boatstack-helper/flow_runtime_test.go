@@ -1430,6 +1430,78 @@ func TestFlowEntryRejectsCallerOverridesDuringUntargetedResolution(t *testing.T)
 	}
 }
 
+func TestFlowEntryDoesNotResolveCommittedInputsBeforeTransitionSelection(t *testing.T) {
+	// control-law: unrelated transitions do not depend on committed Work inputs
+	// that only another transition consumes.
+	repository := flowRepository(t)
+	document := productDeliveryDocument("product-delivery")
+	instructions := "Produce the declared foreground-work output."
+	producerAsset := controlprogram.WorkAsset{Path: ".boatstack/work/producer.md", SHA256: hash([]byte(instructions)), Content: instructions}
+	consumerAsset := controlprogram.WorkAsset{Path: ".boatstack/work/consumer.md", SHA256: hash([]byte(instructions)), Content: instructions}
+	document.Work = []controlprogram.WorkContract{
+		{ID: "producer", Instructions: producerAsset, Outputs: []controlprogram.WorkOutput{{ID: "architecture", Path: "architecture.md", MediaType: "text/markdown", Required: true, MaxBytes: 4096}}},
+		{ID: "consumer", Instructions: consumerAsset, Inputs: []controlprogram.WorkInput{{ID: "architecture", Producer: controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceWorkOutput, Work: "producer", Output: "architecture"}}}, Outputs: []controlprogram.WorkOutput{{ID: "result", Path: "result.md", MediaType: "text/markdown", Required: true, MaxBytes: 4096}}},
+	}
+	truth := true
+	document.Operators = append(document.Operators, controlprogram.Operator{ID: "publication.execute", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/publication.execute", Version: "1"}})
+	available := flowKnown("preview_fingerprint")
+	document.Transitions = append(document.Transitions, controlprogram.Transition{
+		ID: "publication.execute", Operator: "publication.execute", Work: "producer", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 76,
+		Parameters: []controlprogram.TransitionParameterBinding{{Parameter: "preview_fingerprint", Producer: controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceState, Facet: "preview_fingerprint", AvailableWhen: &available}}},
+	})
+	document.Transitions[0].Work = "consumer"
+	softwareResolver, err := softwareflow.NewResolver(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	execute, err := softwareResolver.ResolveOperator("software-delivery/publication.execute", "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared := map[string]bool{}
+	for _, facet := range document.Facets {
+		declared[facet.ID] = true
+	}
+	for _, assignment := range execute.StateEffect.Assignments {
+		if !declared[assignment.Facet] {
+			document.Facets = append(document.Facets, controlprogram.Facet{ID: assignment.Facet, Kind: "string"})
+			declared[assignment.Facet] = true
+		}
+	}
+	writeFixture(t, repository, producerAsset.Path, []byte(instructions))
+	writeFixture(t, repository, consumerAsset.Path, []byte(instructions))
+	writeFlowArtifact(t, repository, document, ".boatstack/flows/product-delivery.flow.ts", []byte("flow source"), "package-lock.json", []byte("lock"))
+	writeFixture(t, repository, ".boatstack/plans/inbox/delivery-one.md", []byte("plan"))
+	if err := os.RemoveAll(filepath.Join(repository, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	runFlowGit(t, repository, "init", "-q")
+	runFlowGit(t, repository, "add", ".")
+	runFlowGit(t, repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-q", "-m", "fixture")
+
+	resolver, err := plant.NewResolver("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, err := resolver.ResolveInvocation(context.Background(), repository, "codex", "irrelevant-committed-input")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, _, err := resolver.ResolveLayout(context.Background(), invocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, layout.JournalRoot, "irrelevant.committed", []byte("not a journal record"))
+
+	bound, err := bindFlowEntry(context.Background(), commandOptions{repository: repository, programID: "product-delivery", entryID: "run", host: "codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bound.transitionID != "" || len(bound.workInputs) != 0 {
+		t.Fatalf("untargeted binding resolved transition Work inputs: transition=%q inputs=%#v", bound.transitionID, bound.workInputs)
+	}
+}
+
 func TestFlowEntryDoesNotMaterializeInternalKernelTransition(t *testing.T) {
 	// control-law: repository invocation contracts govern only transitions in
 	// canonical Flow IR; internal kernel transitions retain their trusted path.
