@@ -16,7 +16,7 @@
 /** Canonical schema name emitted by {@link defineFlow}. */
 export const CONTROL_PROGRAM_SCHEMA = "control-program" as const;
 /** Current revision of the canonical Control Program schema. */
-export const CONTROL_PROGRAM_SCHEMA_REVISION = 7 as const;
+export const CONTROL_PROGRAM_SCHEMA_REVISION = 8 as const;
 
 /**
  * A declarative condition over runtime state facts.

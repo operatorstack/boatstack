@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  CONTROL_PROGRAM_SCHEMA_REVISION,
+  defineFlow,
+} from "@operatorstack/boatstack";
+
+import {
   planningPackage,
   planningPackagePromote,
   softwareDelivery,
@@ -36,6 +41,12 @@ function definition(overrides = {}) {
     ...overrides,
   };
 }
+
+test("emits the current Control Program schema revision", () => {
+  const result = defineFlow(softwareDelivery(definition()));
+  assert.equal(CONTROL_PROGRAM_SCHEMA_REVISION, 8);
+  assert.equal(result.schema_revision, 8);
+});
 
 test("composes canonical domain wiring without hidden policy", () => {
   const result = softwareDelivery(
