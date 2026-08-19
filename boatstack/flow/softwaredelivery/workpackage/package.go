@@ -88,23 +88,23 @@ type Reference struct {
 	SHA256 string `json:"sha256"`
 }
 type Manifest struct {
-	SchemaVersion           int        `json:"schema_version"`
-	DeliveryID              string     `json:"delivery_id"`
-	ProgramID               string     `json:"program_id"`
-	ProgramFingerprint      string     `json:"program_fingerprint"`
-	EntryID                 string     `json:"entry_id"`
-	RunID                   string     `json:"run_id"`
-	TransitionID            string     `json:"transition_id"`
-	WorkContractID          string     `json:"work_contract_id"`
-	WorkContractFingerprint string     `json:"work_contract_fingerprint"`
-	WorkRequestFingerprint  string     `json:"work_request_fingerprint"`
-	WorkResultFingerprint   string     `json:"work_result_fingerprint"`
-	ContextFingerprint      string     `json:"context_fingerprint"`
-	StateRevision           uint64     `json:"state_revision"`
-	Contract                Reference  `json:"contract"`
-	WorkReceipt             Reference  `json:"work_receipt"`
-	Outputs                 []Output   `json:"outputs"`
-	Fingerprint             string     `json:"fingerprint"`
+	SchemaVersion           int       `json:"schema_version"`
+	DeliveryID              string    `json:"delivery_id"`
+	ProgramID               string    `json:"program_id"`
+	ProgramFingerprint      string    `json:"program_fingerprint"`
+	EntryID                 string    `json:"entry_id"`
+	RunID                   string    `json:"run_id"`
+	TransitionID            string    `json:"transition_id"`
+	WorkContractID          string    `json:"work_contract_id"`
+	WorkContractFingerprint string    `json:"work_contract_fingerprint"`
+	WorkRequestFingerprint  string    `json:"work_request_fingerprint"`
+	WorkResultFingerprint   string    `json:"work_result_fingerprint"`
+	ContextFingerprint      string    `json:"context_fingerprint"`
+	StateRevision           uint64    `json:"state_revision"`
+	Contract                Reference `json:"contract"`
+	WorkReceipt             Reference `json:"work_receipt"`
+	Outputs                 []Output  `json:"outputs"`
+	Fingerprint             string    `json:"fingerprint"`
 }
 
 type WorkReceipt struct {
@@ -159,6 +159,7 @@ const (
 type Result struct {
 	DeliveryID          string   `json:"delivery_id"`
 	PackageFingerprint  string   `json:"package_fingerprint"`
+	ProgramID           string   `json:"program_id,omitempty"`
 	Integrity           Status   `json:"integrity"`
 	Contract            Status   `json:"contract"`
 	Approval            Status   `json:"approval"`
@@ -364,6 +365,7 @@ func Verify(repository, deliveryID, packageFingerprint string, current *CurrentP
 	if identityErr := validateManifestIdentity(manifest, deliveryID, packageFingerprint, Digest(identityRaw)); identityErr != nil {
 		return fail("manifest identity is invalid: " + identityErr.Error())
 	}
+	result.ProgramID = manifest.ProgramID
 	contractRaw, err := readRegular(filepath.Join(packageRoot, "contract.json"), maxPackageMetadataBytes)
 	if err != nil || Digest(contractRaw) != manifest.Contract.SHA256 || manifest.Contract.Path != "contract.json" {
 		return fail("contract reference is invalid")

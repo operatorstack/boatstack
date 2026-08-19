@@ -357,13 +357,24 @@ func TestExactProductDeliveryFlowReachesPublishedPRWithFakeProvider(t *testing.T
 	if err != nil || len(packages) != 1 || !packages[0].IsDir() {
 		t.Fatalf("planning package inventory = %#v, err=%v", packages, err)
 	}
-	currentProgram, err := loadCurrentWorkProgram(context.Background(), repository)
+	writeFixture(t, repository, ".boatstack/flows/unrelated.flow.ir.json", []byte("must not be selected\n"))
+	currentProgram, err := loadCurrentWorkProgram(context.Background(), repository, "product-delivery")
 	if err != nil {
 		t.Fatalf("load current planning program: %v", err)
 	}
 	packageVerification := workpackage.Verify(repository, "todo", packages[0].Name(), &currentProgram)
 	if packageVerification.Integrity != workpackage.Valid || packageVerification.Contract != workpackage.Valid || packageVerification.Approval != workpackage.Valid || packageVerification.CurrentProgram != workpackage.Match {
 		t.Fatalf("portable planning package verification = %#v", packageVerification)
+	}
+	verificationRaw, err := captureStdout(t, func() error {
+		return runFlowWorkPackage([]string{"verify", "--repo", repository, "--delivery", "todo", "--package", packages[0].Name(), "--require-approval", "--require-current-program", "--format", "json"})
+	})
+	if err != nil {
+		t.Fatalf("multi-Flow package-bound verification: %v", err)
+	}
+	var commandVerification workpackage.Result
+	if err := json.Unmarshal(verificationRaw, &commandVerification); err != nil || commandVerification.ProgramID != "product-delivery" || commandVerification.CurrentProgram != workpackage.Match {
+		t.Fatalf("multi-Flow package-bound result = %#v, decode=%v", commandVerification, err)
 	}
 	last := receipts[len(receipts)-1]
 	if last.TransitionID != "publication.observe" || final.Snapshot.Publication.Value != model.PublicationOpen {

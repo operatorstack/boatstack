@@ -54,12 +54,6 @@ func runFlowWorkPackage(arguments []string) error {
 	if !all && (deliveryID == "" || packageFingerprint == "") {
 		return fmt.Errorf("--delivery and --package are required together")
 	}
-	var current *workpackage.CurrentProgram
-	if value, currentErr := loadCurrentWorkProgram(context.Background(), repository); currentErr == nil {
-		current = &value
-	} else if requireCurrent {
-		return currentErr
-	}
 	var identities [][2]string
 	if all {
 		identities, err = workpackage.Enumerate(repository)
@@ -72,7 +66,15 @@ func runFlowWorkPackage(arguments []string) error {
 	results := make([]workpackage.Result, 0, len(identities))
 	failed := false
 	for _, identity := range identities {
-		result := workpackage.Verify(repository, identity[0], identity[1], current)
+		result := workpackage.Verify(repository, identity[0], identity[1], nil)
+		if result.Integrity == workpackage.Valid && result.ProgramID != "" {
+			current, currentErr := loadCurrentWorkProgram(context.Background(), repository, result.ProgramID)
+			if currentErr == nil {
+				result = workpackage.Verify(repository, identity[0], identity[1], &current)
+			} else if requireCurrent {
+				return currentErr
+			}
+		}
 		results = append(results, result)
 		if result.Integrity != workpackage.Valid || result.Contract != workpackage.Valid || requireApproval && result.Approval != workpackage.Valid || requireCurrent && result.CurrentProgram != workpackage.Match {
 			failed = true
@@ -99,8 +101,8 @@ func runFlowWorkPackage(arguments []string) error {
 	return nil
 }
 
-func loadCurrentWorkProgram(ctx context.Context, repository string) (workpackage.CurrentProgram, error) {
-	path, err := resolveCheckArtifact(repository, "")
+func loadCurrentWorkProgram(ctx context.Context, repository, programID string) (workpackage.CurrentProgram, error) {
+	path, err := resolveCheckArtifact(repository, filepath.Join(".boatstack", "flows", programID+".flow.ir.json"))
 	if err != nil {
 		return workpackage.CurrentProgram{}, err
 	}

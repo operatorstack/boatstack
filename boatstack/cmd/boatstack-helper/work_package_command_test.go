@@ -22,13 +22,28 @@ func TestWorkPackageVerifyCommandReportsSeparateStatuses(t *testing.T) {
 	if err := json.Unmarshal(output, &result); err != nil {
 		t.Fatalf("single-package JSON is not an object: %v\n%s", err, output)
 	}
-	if result.Integrity != workpackage.Valid || result.Contract != workpackage.Valid || result.Approval != workpackage.Missing || result.CurrentProgram != workpackage.Unavailable || result.SemanticCorrectness != "not-evaluated" || result.OriginAuthenticity != "not-proven" {
+	if result.ProgramID != "program" || result.Integrity != workpackage.Valid || result.Contract != workpackage.Valid || result.Approval != workpackage.Missing || result.CurrentProgram != workpackage.Unavailable || result.SemanticCorrectness != "not-evaluated" || result.OriginAuthenticity != "not-proven" {
 		t.Fatalf("verification result = %#v", result)
 	}
 	if _, err := captureStdout(t, func() error {
 		return runFlowWorkPackage([]string{"verify", "--repo", repository, "--delivery", deliveryID, "--package", packageFingerprint, "--require-approval", "--format", "json"})
 	}); err == nil {
 		t.Fatal("missing approval satisfied --require-approval")
+	}
+	manifestPath := filepath.Join(repository, ".boatstack", "work-packages", deliveryID, packageFingerprint, "manifest.json")
+	manifestRaw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestRaw = []byte(strings.Replace(string(manifestRaw), `"program_id": "program"`, `"program_id": "missing"`, 1))
+	if err := os.WriteFile(manifestPath, manifestRaw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err = captureStdout(t, func() error {
+		return runFlowWorkPackage([]string{"verify", "--repo", repository, "--delivery", deliveryID, "--package", packageFingerprint, "--require-current-program", "--format", "json"})
+	})
+	if err == nil || !strings.Contains(err.Error(), "failed required verification") || strings.Contains(err.Error(), "missing.flow.ir.json") {
+		t.Fatalf("invalid manifest selected a Flow artifact: %v", err)
 	}
 }
 
