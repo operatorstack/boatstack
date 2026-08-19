@@ -229,6 +229,46 @@ func TestWorkPackageAdmitApprovePromoteUsesExactGenericSnapshot(t *testing.T) {
 	}
 }
 
+func TestPlanningPackagePromotePhaseFollowsObjective(t *testing.T) {
+	transition := catalog.Transition{
+		ID:           "planning.package.promote",
+		TargetPhases: []model.ProtocolPhase{model.PhaseActive, model.PhaseTerminal},
+		StateEffect:  catalog.StateEffect{Kind: catalog.StateEffectNative, NativeHandler: "planning-package-promote"},
+	}
+	base := durable.State{
+		WorkPackage: model.WorkPackageApproved,
+		Plan:        model.PlanAbsent,
+		Delivery:    model.DeliveryApproved,
+		Phase:       model.PhaseActive,
+		Terminal:    model.TerminalNonterminal,
+	}
+
+	approvedPlan := base
+	admission := protocol.Admission{Objective: model.Objective{ID: "plan", TargetID: model.ObjectiveApprovedPlan, DeliveryID: "delivery"}}
+	if err := applyStateTransition(&approvedPlan, admission, transition); err != nil {
+		t.Fatal(err)
+	}
+	if approvedPlan.Plan != model.PlanApproved || approvedPlan.Phase != model.PhaseTerminal {
+		t.Fatalf("approved-plan promotion = %#v", approvedPlan)
+	}
+
+	longerDelivery := base
+	admission.Objective = model.Objective{ID: "pull-request", TargetID: model.ObjectiveOpenPR, DeliveryID: "delivery"}
+	if err := applyStateTransition(&longerDelivery, admission, transition); err != nil {
+		t.Fatal(err)
+	}
+	if longerDelivery.Plan != model.PlanApproved || longerDelivery.Phase != model.PhaseActive || longerDelivery.Terminal != model.TerminalNonterminal {
+		t.Fatalf("longer-delivery promotion = %#v", longerDelivery)
+	}
+
+	undeclared := base
+	admission.Objective = model.Objective{ID: "plan", TargetID: model.ObjectiveApprovedPlan, DeliveryID: "delivery"}
+	transition.TargetPhases = []model.ProtocolPhase{model.PhaseActive}
+	if err := applyStateTransition(&undeclared, admission, transition); err == nil || !strings.Contains(err.Error(), "undeclared target phase TERMINAL") {
+		t.Fatalf("undeclared terminal phase error = %v", err)
+	}
+}
+
 func approvalRawAt(t *testing.T, packageRoot string) []byte {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join(packageRoot, "approval.json"))

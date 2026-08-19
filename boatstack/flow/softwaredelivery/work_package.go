@@ -83,6 +83,7 @@ func acceptedWorkTransitions(transitions map[string]delivery.Transition) ([]deli
 		model.FacetPlan, string(model.PlanAbsent),
 	)
 	promote.TargetConditions = replaceFacet(promote.TargetConditions, model.FacetPlan, string(model.PlanApproved))
+	promote.TargetPhases = appendUniquePhase(promote.TargetPhases, model.PhaseTerminal)
 	promote.TargetIDs = appendUniqueTarget(promote.TargetIDs, model.ObjectiveApprovedPlan)
 	promote.OwnedResources = []string{"plan", "planning-package-promotion"}
 	promote.Interruption.ResumptionPredicate = "recovery-contract-for:" + PlanningPackagePromote
@@ -113,6 +114,15 @@ func replaceFacet(values []delivery.FacetCondition, facet model.FacetName, value
 		}
 	}
 	return result
+}
+
+func appendUniquePhase(values []model.ProtocolPhase, phase model.ProtocolPhase) []model.ProtocolPhase {
+	for _, value := range values {
+		if value == phase {
+			return values
+		}
+	}
+	return append(values, phase)
 }
 
 func appendUniqueTarget(values []model.TargetID, target model.TargetID) []model.TargetID {

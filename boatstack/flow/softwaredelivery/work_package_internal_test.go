@@ -26,6 +26,9 @@ func TestPlanningPackagePromoteSupportsApprovedPlanObjective(t *testing.T) {
 		if transition.ID != PlanningPackagePromote {
 			continue
 		}
+		if !containsPhase(transition.TargetPhases, model.PhaseActive) || !containsPhase(transition.TargetPhases, model.PhaseTerminal) {
+			t.Fatalf("planning promotion target phases = %#v", transition.TargetPhases)
+		}
 		for _, target := range transition.TargetIDs {
 			if target == model.ObjectiveApprovedPlan {
 				return
@@ -34,6 +37,15 @@ func TestPlanningPackagePromoteSupportsApprovedPlanObjective(t *testing.T) {
 		t.Fatalf("planning promotion targets = %#v", transition.TargetIDs)
 	}
 	t.Fatal("planning promotion transition is missing")
+}
+
+func containsPhase(values []model.ProtocolPhase, want model.ProtocolPhase) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestWorkPackageAdmitRequiresEstablishedEngagement(t *testing.T) {
