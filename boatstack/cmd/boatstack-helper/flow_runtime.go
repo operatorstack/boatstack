@@ -49,6 +49,16 @@ type flowCommitRequiredError struct {
 	cause                    error
 }
 
+type committedWorkProducerRequiredError struct {
+	TransitionID string
+	WorkID       string
+	OutputID     string
+}
+
+func (e *committedWorkProducerRequiredError) Error() string {
+	return fmt.Sprintf("FLOW_WORK_PRODUCER_REQUIRED: transition %q must commit work %q output %q before the selected consumer", e.TransitionID, e.WorkID, e.OutputID)
+}
+
 func (e *flowCommitRequiredError) Error() string {
 	return fmt.Sprintf("%s: commit the exact Boatstack control bundle at revision %s before product delegation or repository work: %v", controlBundleCommitRequiredCode, e.revision, e.cause)
 }
@@ -953,9 +963,7 @@ func resolveCommittedWorkOutput(layout ports.ControllerLayout, maximumRevision u
 	if err != nil {
 		return effects.CommittedWorkOutput{}, false, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: %w", err)
 	}
-	objective := model.Objective{
-		ID: options.objectiveID, TargetID: model.TargetID(options.targetID), TrustedClass: model.TargetID(options.trustedObjectiveClass), DeliveryID: options.deliveryID,
-	}
+	objective := boundFlowObjective(options)
 	committed, found, err := effects.FindApplicableCommittedWorkOutput(layout, effects.CommittedWorkOutputSelector{
 		FlowID: options.runID, ProgramID: compiled.Document.Program.ID, ProgramFingerprint: executionProgramFingerprint, EntryID: entry.ID,
 		Objective: objective, Invocation: current, TransitionID: catalog.TransitionID(producerTransition.ID), Work: *contract, OutputID: outputID, MaximumRevision: maximumRevision,
@@ -1003,7 +1011,7 @@ func resolveForegroundWorkInputs(layout ports.ControllerLayout, maximumRevision 
 				return nil, resolveErr
 			}
 			if !found {
-				return nil, fmt.Errorf("FLOW_WORK_EVIDENCE_STALE: work %q input %q has no applicable committed producer result", work.ID, input.ID)
+				return nil, &committedWorkProducerRequiredError{TransitionID: producer.ID, WorkID: source.ID, OutputID: input.Producer.Output}
 			}
 			provenance := protocol.WorkOutputProvenance{
 				ReceiptID: committed.Receipt.ID, TransitionID: committed.Receipt.TransitionID, WorkID: committed.Work.ContractID, OutputID: committed.Output.ID,
@@ -1195,6 +1203,7 @@ func bindCommittedActiveRun(options commandOptions, active model.Objective, rece
 	}
 	options.runID, options.deliveryID = receipt.FlowID, active.DeliveryID
 	options.objectiveID, options.targetID, options.trustedObjectiveClass = active.ID, string(active.TargetID), string(active.TrustedObjectiveClass())
+	options.objectiveFrontierIsStop = active.FrontierIsStop
 	options.activeFlowBound = true
 	return options, nil
 }
@@ -1227,7 +1236,8 @@ func bindRPCFlowEntryWithMaintenance(ctx context.Context, request surfaces.Reque
 		repository: request.Repository, host: request.Host, correlationID: request.CorrelationID, programID: request.ProgramID, entryID: request.EntryID,
 		flowProgramFingerprint: request.ProgramFingerprint,
 		runID:                  request.FlowID, objectiveID: request.Objective.ID, targetID: string(request.Objective.TargetID), trustedObjectiveClass: string(request.Objective.TrustedObjectiveClass()), deliveryID: request.Objective.DeliveryID,
-		transitionID: string(request.TransitionID), parameters: parameterFlags, maintenanceParameterSurface: maintenanceParameterSurface && request.TransitionID != "" && !repositoryTransition,
+		objectiveFrontierIsStop: request.Objective.FrontierIsStop,
+		transitionID:            string(request.TransitionID), parameters: parameterFlags, maintenanceParameterSurface: maintenanceParameterSurface && request.TransitionID != "" && !repositoryTransition,
 		controlBundleRevision: request.ControlBundleRevision,
 	})
 	if err != nil {
@@ -1244,6 +1254,7 @@ func bindRPCFlowEntryWithMaintenance(ctx context.Context, request surfaces.Reque
 	request.Objective.TargetID = model.TargetID(bound.targetID)
 	request.Objective.TrustedClass = model.TargetID(bound.trustedObjectiveClass)
 	request.Objective.DeliveryID = bound.deliveryID
+	request.Objective.FrontierIsStop = bound.objectiveFrontierIsStop
 	request.Parameters = parameters
 	request.DelegationBindingFingerprint = bound.delegationBindingFingerprint
 	request.DelegationRequestFingerprint = bound.delegationRequestFingerprint
@@ -1342,21 +1353,36 @@ func bindPrescribedRepositoryInvocation(ctx context.Context, request surfaces.Re
 	if response.Prescription.InvocationFingerprint != "" {
 		return surfaces.Request{}, false, fmt.Errorf("FLOW_INVOCATION_INVALID: unmaterialized repository prescription carries invocation identity")
 	}
+	rebound, err := rebindRepositoryTransition(ctx, request, response.Prescription.TransitionID)
+	if err != nil {
+		return surfaces.Request{}, false, err
+	}
+	return rebound, true, nil
+}
+
+func rebindRepositoryTransition(ctx context.Context, request surfaces.Request, transitionID catalog.TransitionID) (surfaces.Request, error) {
 	rebound := request
-	rebound.TransitionID = response.Prescription.TransitionID
+	rebound.TransitionID = transitionID
 	rebound.Parameters = nil
 	rebound.Prescription = protocol.Prescription{}
 	rebound.IdempotencyKey = ""
 	rebound.InvocationEvidence = nil
 	rebound.InputRequest = nil
-	rebound, err = bindRPCFlowEntry(ctx, rebound)
+	rebound, err := bindRPCFlowEntry(ctx, rebound)
 	if err != nil {
-		return surfaces.Request{}, false, err
+		return surfaces.Request{}, err
 	}
 	if rebound.InputRequest == nil && rebound.InvocationEvidence == nil {
-		return surfaces.Request{}, false, fmt.Errorf("FLOW_INVOCATION_INCOMPLETE: selected repository transition produced neither an input request nor invocation evidence")
+		return surfaces.Request{}, fmt.Errorf("FLOW_INVOCATION_INCOMPLETE: selected repository transition produced neither an input request nor invocation evidence")
 	}
-	return rebound, true, nil
+	return rebound, nil
+}
+
+func boundFlowObjective(options commandOptions) model.Objective {
+	return model.Objective{
+		ID: options.objectiveID, TargetID: model.TargetID(options.targetID), TrustedClass: model.TargetID(options.trustedObjectiveClass),
+		DeliveryID: options.deliveryID, FrontierIsStop: options.objectiveFrontierIsStop,
+	}
 }
 
 func resolveBoundPlan(repository string, entry controlprogram.Entry, entryObjective softwareflow.EntryObjective, options commandOptions) (string, string, error) {
