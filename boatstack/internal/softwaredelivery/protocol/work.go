@@ -11,7 +11,7 @@ import (
 	general "github.com/operatorstack/boatstack/boatstack/kernel"
 )
 
-const WorkEvidenceSchemaVersion = 2
+const WorkEvidenceSchemaVersion = 3
 
 // WorkInputValue binds the value presented to foreground work to the exact
 // bytes selected by the trusted entry-input resolver. Value is an ergonomic
