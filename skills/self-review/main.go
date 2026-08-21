@@ -62,6 +62,28 @@ type showOutput struct {
 	Review json.RawMessage `json:"review"`
 }
 
+// writeCandidate stages the encoded candidate through bounded chunks so no
+// single command string approaches the platform's per-argument size cap
+// (MAX_ARG_STRLEN on Linux), which a large multi-finding review could
+// otherwise exceed.
+func writeCandidate(ctx *yield.Context, idPrefix string, review []byte) {
+	encoded := base64.StdEncoding.EncodeToString(review)
+	const chunkSize = 65536
+	for i, part := 0, 1; i < len(encoded); i, part = i+chunkSize, part+1 {
+		end := i + chunkSize
+		if end > len(encoded) {
+			end = len(encoded)
+		}
+		redirect := ">>"
+		if i == 0 {
+			redirect = ">"
+		}
+		written := ctx.RunCommand(fmt.Sprintf("%s-part-%d", idPrefix, part),
+			prelude+`printf '%s' '`+encoded[i:end]+`' `+redirect+` "$tmp/candidate.b64"`, 60)
+		ctx.Require(written.ExitCode == 0, "the candidate chunk is staged", written)
+	}
+}
+
 func resolveState(ctx *yield.Context, id string) (resolveOutput, error) {
 	result := ctx.RunCommand(id,
 		prelude+`"$reviewer" resolve --repo "$repo" --base "$base" --actor `+actor, 120)
@@ -79,8 +101,10 @@ func main() {
 			prelude+`go build -C "$root/boatstack" -o "$reviewer" ./cmd/boatstack-reviewer`, 600)
 		ctx.Require(build.ExitCode == 0, "boatstack-reviewer builds from the current tree", build)
 
+		// Track only tracked content, mirroring the reviewer's worktree law:
+		// untracked files never affect what a review can bind.
 		before := ctx.RunCommand("worktree-before",
-			prelude+`git -C "$repo" status --porcelain`, 60)
+			prelude+`git -C "$repo" status --porcelain --untracked-files=no`, 60)
 		ctx.Require(before.ExitCode == 0, "the repository state is observable", before)
 
 		resolved, err := resolveState(ctx, "resolve")
@@ -135,9 +159,9 @@ func main() {
 			},
 			json.RawMessage(schema.Stdout))
 
-		encoded := base64.StdEncoding.EncodeToString(review)
+		writeCandidate(ctx, "candidate", review)
 		submit := ctx.RunCommand("submit",
-			prelude+`printf '%s' '`+encoded+`' | base64 -d > "$tmp/candidate.json"
+			prelude+`base64 -d < "$tmp/candidate.b64" > "$tmp/candidate.json"
 "$reviewer" submit --repo "$repo" --base "$base" --findings "$tmp/candidate.json" --actor `+actor, 120)
 		if submit.ExitCode != 0 {
 			return yield.Outcome{}, ctx.Blocked(
@@ -153,7 +177,7 @@ func main() {
 		}
 
 		after := ctx.RunCommand("worktree-after",
-			prelude+`git -C "$repo" status --porcelain`, 60)
+			prelude+`git -C "$repo" status --porcelain --untracked-files=no`, 60)
 		ctx.Require(after.ExitCode == 0 && after.Stdout == before.Stdout,
 			"the review changed no files in the repository", map[string]any{
 				"before": before.Stdout, "after": after.Stdout,

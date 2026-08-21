@@ -24,4 +24,8 @@ git -C "$scratch" checkout -qb feature
 printf 'package subject\n\nfunc Value() int { return 1 }\n' > "$scratch/subject.go"
 git -C "$scratch" commit -qam "change under review"
 
+# Regression: untracked files never affect what a review binds, so the
+# workflow's gates must ignore them just as the reviewer does.
+printf 'editor scratch\n' > "$scratch/untracked-note.txt"
+
 touch "$PWD/fixtures/tmp/active"

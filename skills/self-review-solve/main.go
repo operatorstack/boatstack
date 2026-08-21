@@ -116,7 +116,10 @@ func main() {
 		for attempt := 1; mode != "converged" && attempt <= maxAttempts; attempt++ {
 			tag := fmt.Sprintf("-%d", attempt)
 
-			if mode == "findings-open" {
+			// Fix only when the open findings still describe the current
+			// tree; if commits already landed since the round was recorded,
+			// the fixes may exist and a fresh review is what decides.
+			if mode == "findings-open" && !observed.treeDrifted() {
 				shown := show(ctx, "open-findings"+tag)
 				fixRaw := ctx.AgentTask("fix"+tag,
 					"Fix every finding of this recorded review in the repository under review: edit the code, "+
@@ -132,8 +135,11 @@ func main() {
 					return yield.Outcome{}, err
 				}
 				ctx.Require(fix.Committed, "the fixes are committed", fix)
+				// Mirror the reviewer's worktree law: untracked files never
+				// affect what a review can bind, so only tracked changes
+				// count as an uncommitted fix.
 				clean := ctx.RunCommand("worktree"+tag,
-					prelude+`git -C "$repo" status --porcelain`, 60)
+					prelude+`git -C "$repo" status --porcelain --untracked-files=no`, 60)
 				ctx.Require(clean.ExitCode == 0 && clean.Stdout == "",
 					"the worktree is clean after the fix commit", clean)
 			}
@@ -157,9 +163,9 @@ func main() {
 				map[string]any{"review_range": resolved.Instructions.ReviewRange},
 				json.RawMessage(schema.Stdout))
 
-			encoded := base64.StdEncoding.EncodeToString(review)
+			writeCandidate(ctx, "candidate"+tag, review)
 			submit := ctx.RunCommand("submit"+tag,
-				prelude+`printf '%s' '`+encoded+`' | base64 -d > "$tmp/candidate.json"
+				prelude+`base64 -d < "$tmp/candidate.b64" > "$tmp/candidate.json"
 "$reviewer" submit --repo "$repo" --base "$base" --findings "$tmp/candidate.json" --actor `+actor, 120)
 			if submit.ExitCode != 0 {
 				return yield.Outcome{}, ctx.Blocked(
@@ -212,6 +218,28 @@ fi`, 60)
 			"guidance":      "push the branch; the review-verified CI job verifies the receipt deterministically",
 		})
 	})
+}
+
+// writeCandidate stages the encoded candidate through bounded chunks so no
+// single command string approaches the platform's per-argument size cap
+// (MAX_ARG_STRLEN on Linux), which a large multi-finding review could
+// otherwise exceed.
+func writeCandidate(ctx *yield.Context, idPrefix string, review []byte) {
+	encoded := base64.StdEncoding.EncodeToString(review)
+	const chunkSize = 65536
+	for i, part := 0, 1; i < len(encoded); i, part = i+chunkSize, part+1 {
+		end := i + chunkSize
+		if end > len(encoded) {
+			end = len(encoded)
+		}
+		redirect := ">>"
+		if i == 0 {
+			redirect = ">"
+		}
+		written := ctx.RunCommand(fmt.Sprintf("%s-part-%d", idPrefix, part),
+			prelude+`printf '%s' '`+encoded[i:end]+`' `+redirect+` "$tmp/candidate.b64"`, 60)
+		ctx.Require(written.ExitCode == 0, "the candidate chunk is staged", written)
+	}
 }
 
 func (o statusOutput) measures() []int {
