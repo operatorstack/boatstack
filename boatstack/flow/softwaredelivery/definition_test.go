@@ -615,6 +615,103 @@ func TestAbandonmentEntryMakesTrustedAbandonmentObjectiveProgress(t *testing.T) 
 	t.Fatal("trusted plan.abandon transition was not selected")
 }
 
+func abandonmentWorkDependencyDocument(t *testing.T, producerID string, producerPriority int) controlprogram.Document {
+	t.Helper()
+	truth := true
+	summary := "Summarize the delivery outcome."
+	summaryDigest := sha256.Sum256([]byte(summary))
+	note := "Publish the closing note from the summary report."
+	noteDigest := sha256.Sum256([]byte(note))
+	document := controlprogram.Document{
+		Schema: controlprogram.SchemaName, SchemaRevision: controlprogram.SchemaRevision,
+		Program: controlprogram.Program{ID: "product-delivery", Version: "1"},
+		Facets: []controlprogram.Facet{
+			{ID: "publication", Kind: "string"}, {ID: "verification", Kind: "string"},
+			{ID: "configuration", Kind: "string"}, {ID: "runtime", Kind: "string"},
+			{ID: "delivery", Kind: "string"}, {ID: "workspace", Kind: "string"},
+			{ID: "publication_id", Kind: "string"}, {ID: "plan", Kind: "string"},
+			{ID: "phase", Kind: "string"}, {ID: "terminal", Kind: "string"},
+		},
+		Operators: []controlprogram.Operator{
+			{ID: "publication.observe", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/publication.observe", Version: "1"}},
+			{ID: "plan.abandon", Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/plan.abandon", Version: "1"}},
+		},
+		Work: []controlprogram.WorkContract{
+			{
+				ID: "summary", Instructions: controlprogram.WorkAsset{Path: "summary.md", SHA256: hex.EncodeToString(summaryDigest[:]), Content: summary},
+				Outputs: []controlprogram.WorkOutput{{ID: "report", Path: "report.md", MediaType: "text/markdown", Required: true}},
+			},
+			{
+				ID: "publish-note", Instructions: controlprogram.WorkAsset{Path: "publish-note.md", SHA256: hex.EncodeToString(noteDigest[:]), Content: note},
+				Inputs:  []controlprogram.WorkInput{{ID: "report", Producer: controlprogram.ParameterProducer{Kind: controlprogram.ParameterSourceWorkOutput, Work: "summary", Output: "report"}}},
+				Outputs: []controlprogram.WorkOutput{{ID: "note", Path: "note.md", MediaType: "text/markdown", Required: true}},
+			},
+		},
+		Transitions: []controlprogram.Transition{
+			{ID: "publication.observe", Operator: "publication.observe", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 77, Work: "publish-note", Parameters: publicationIDStateParameter(controlprogram.Predicate{True: &truth})},
+			{ID: "plan.abandon", Operator: "plan.abandon", Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: 31},
+		},
+		Targets: []controlprogram.Target{
+			{ID: "published-pr", Predicate: controlprogram.Predicate{All: []controlprogram.Predicate{fact("verification", "current"), fact("configuration", "verified"), fact("runtime", "verified"), fact("publication", "open")}}},
+			{ID: "safely-abandoned", Predicate: controlprogram.Predicate{All: []controlprogram.Predicate{fact("delivery", "discarded"), {Fact: &controlprogram.FactPredicate{Facet: "workspace", Statuses: []string{"known"}, Values: []string{"abandoned", "absent"}}}}}},
+		},
+		Entries: []controlprogram.Entry{{ID: "run", Target: "published-pr"}, {ID: "abandon", Target: "safely-abandoned"}},
+	}
+	attached := false
+	for index := range document.Transitions {
+		if document.Transitions[index].ID == producerID {
+			document.Transitions[index].Work, document.Transitions[index].Priority = "summary", producerPriority
+			attached = true
+		}
+	}
+	if !attached {
+		truth := true
+		document.Operators = append(document.Operators, controlprogram.Operator{ID: producerID, Binding: &controlprogram.OperatorBinding{Reference: "software-delivery/" + producerID, Version: "1"}})
+		document.Transitions = append(document.Transitions, controlprogram.Transition{ID: producerID, Operator: producerID, Guard: controlprogram.Predicate{True: &truth}, Target: controlprogram.Predicate{True: &truth}, Priority: producerPriority, Work: "summary"})
+	}
+	return document
+}
+
+func TestWorkOutputProducerMustCoverConsumerTargets(t *testing.T) {
+	// control-law: every objective that can select a work-output consumer must
+	// also admit its required producer transition. Compilation proves only
+	// predicate and priority ordering, so a program may attach producer work to
+	// plan.abandon (safely-abandoned only) and dependent consumer work to
+	// publication.observe (published-pr): a published-pr run then selects the
+	// consumer, redirects to the missing producer output, targeted resolution
+	// refuses plan.abandon for that objective, and the unchanged state
+	// re-selects the consumer — a permanent zero-progress path.
+	resolver, err := softwareflow.NewResolver(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	uncovered, err := controlprogram.Compile(abandonmentWorkDependencyDocument(t, "plan.abandon", 31), resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, err := softwareflow.NewDefinition(uncovered, resolver)
+	if err == nil {
+		_, err = definition.RuntimeManifest(context.Background())
+	}
+	if err == nil || !strings.Contains(err.Error(), "do not cover consumer targets") {
+		t.Fatalf("uncovered work dependency result = %v", err)
+	}
+
+	// plan.validate supports every trusted class the consumer supports, so the
+	// same dependency with a covering producer must stay admissible.
+	covered, err := controlprogram.Compile(abandonmentWorkDependencyDocument(t, "plan.validate", 50), resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, err = softwareflow.NewDefinition(covered, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = definition.RuntimeManifest(context.Background()); err != nil {
+		t.Fatalf("covered work dependency was rejected: %v", err)
+	}
+}
+
 func TestCompiledBindingDriftFailsClosed(t *testing.T) {
 	truth := true
 	compiled, resolver := compiledFlow(t, controlprogram.Predicate{True: &truth})

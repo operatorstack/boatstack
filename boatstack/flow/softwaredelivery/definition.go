@@ -73,6 +73,7 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 
 	selected := make([]delivery.Transition, 0, len(d.compiled.Document.Transitions))
 	seen := map[delivery.TransitionID]bool{}
+	targetsByTransition := map[string][]model.TargetID{}
 	var admittedPackageWork *delivery.WorkContract
 	var promotionPlanOutput string
 	for _, declaration := range d.compiled.Document.Transitions {
@@ -154,7 +155,11 @@ func (d Definition) RuntimeManifest(ctx context.Context) (delivery.ProgramRuntim
 		if err := requireReachableEntryInputs(transition, entriesByTarget); err != nil {
 			return delivery.ProgramRuntimeManifest{}, err
 		}
+		targetsByTransition[declaration.ID] = append([]model.TargetID(nil), transition.TargetIDs...)
 		selected = append(selected, transition)
+	}
+	if err := requireWorkOutputTargetCoverage(d.compiled.Document, targetsByTransition); err != nil {
+		return delivery.ProgramRuntimeManifest{}, err
 	}
 	if promotionPlanOutput != "" {
 		if admittedPackageWork == nil {
@@ -213,6 +218,63 @@ func requireCompleteWorkPackageLifecycle(selectedIDs map[delivery.TransitionID]b
 		for _, targetID := range transition.TargetIDs {
 			if objective, ok := objectives[targetID]; ok && objective.TrustedClass != model.ObjectiveApprovedWorkPackage {
 				return fmt.Errorf("software-delivery work-package lifecycle for target %q requires %s", targetID, PlanningPackagePromote)
+			}
+		}
+	}
+	return nil
+}
+
+// requireWorkOutputTargetCoverage rejects work-output dependencies whose
+// producer transition cannot be selected under every objective that can
+// select the consumer. Compilation proves only predicate and priority
+// ordering; it never sees trusted TargetIDs. Without this check, a run
+// targeting a consumer-only objective redirects to a producer transition
+// that targeted resolution refuses, and the unchanged state re-selects the
+// consumer: a permanent zero-progress path. Per-edge coverage extends
+// transitively across dependency chains.
+func requireWorkOutputTargetCoverage(document controlprogram.Document, targetsByTransition map[string][]model.TargetID) error {
+	producersByWork := map[string][]string{}
+	for _, declaration := range document.Transitions {
+		if declaration.Work != "" {
+			producersByWork[declaration.Work] = append(producersByWork[declaration.Work], declaration.ID)
+		}
+	}
+	workByID := map[string]controlprogram.WorkContract{}
+	for _, work := range document.Work {
+		workByID[work.ID] = work
+	}
+	requireCoverage := func(consumerID, producerWork string) error {
+		producers := producersByWork[producerWork]
+		if len(producers) != 1 {
+			return fmt.Errorf("transition %q work output %q does not have exactly one producer transition", consumerID, producerWork)
+		}
+		producerID := producers[0]
+		if producerID == consumerID {
+			return nil
+		}
+		if !containsAll(targetsByTransition[producerID], targetsByTransition[consumerID]) {
+			return fmt.Errorf("transition %q consumes work output of transition %q, whose supported targets %v do not cover consumer targets %v", consumerID, producerID, targetsByTransition[producerID], targetsByTransition[consumerID])
+		}
+		return nil
+	}
+	for _, declaration := range document.Transitions {
+		for _, binding := range declaration.Parameters {
+			if binding.Producer.Kind != controlprogram.ParameterSourceWorkOutput {
+				continue
+			}
+			if err := requireCoverage(declaration.ID, binding.Producer.Work); err != nil {
+				return err
+			}
+		}
+		if declaration.Work == "" {
+			continue
+		}
+		for _, input := range workByID[declaration.Work].Inputs {
+			if input.Producer.Kind != controlprogram.ParameterSourceWorkOutput {
+				continue
+			}
+			if err := requireCoverage(declaration.ID, input.Producer.Work); err != nil {
+				return err
 			}
 		}
 	}
