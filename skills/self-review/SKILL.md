@@ -3,10 +3,13 @@ name: self-review
 description: "Run the Boatstack supervisory-control self-review for the current branch and report the verdict without changing code."
 ---
 
-Run one review round for the current branch against `origin/main` and show
-the recorded verdict. This skill never edits code: the review is performed
-read-only, `boatstack-reviewer` admits or refuses the candidate, and the
-round is recorded in the repository's local review store.
+Run one review round for the current branch against `origin/main` and report
+the recorded verdict — nothing else. This skill is report-only: the review is
+performed read-only, `boatstack-reviewer` admits or refuses the candidate,
+and the round is recorded in the repository's local review store. It never
+seals a receipt, never commits, and never pushes; when the run completes,
+report the verdict in the conversation and stop. Sealing and committing
+belong to the `self-review-solve` skill or an explicit user request.
 
 Run from the repository root:
 

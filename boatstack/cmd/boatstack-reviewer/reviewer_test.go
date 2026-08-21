@@ -371,29 +371,46 @@ func TestLoopConvergesSealsAndVerifies(t *testing.T) {
 		t.Fatalf("mode is %q after convergence", mode(t, loop))
 	}
 
-	// Seal, commit the receipt, and verify: committing the sealed receipt
-	// must not invalidate its own tree binding.
+	// Seal: the full receipt verifies at seal time; only the minimal
+	// attestation is committed, and committing it must not invalidate its
+	// own tree binding.
 	sealed, err := buildSealedReceipt(scratch.repo, loop.store, policy, loop.program, "main", time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
+	if report := verifyFullReceipt(scratch.repo, sealed, "", "main", "HEAD"); !report.Verified {
+		t.Fatalf("full receipt did not verify at seal time: %v", report.Failures)
+	}
 	receiptPath := filepath.Join(scratch.repo.receiptDirectoryPath(), "feature.receipt.json")
-	if err := writeSealedReceipt(receiptPath, sealed); err != nil {
+	if err := writeAttestation(receiptPath, attestationOf(sealed)); err != nil {
 		t.Fatal(err)
 	}
-	scratch.commitAll("sealed review receipt")
-	report := verifySealedReceipt(scratch.repo, sealed, receiptPath, "main", "HEAD")
+	scratch.commitAll("sealed review attestation")
+	report := verifyAttestation(scratch.repo, attestationOf(sealed), receiptPath, "main", "HEAD")
 	if !report.Verified {
-		t.Fatalf("converged receipt did not verify: %v", report.Failures)
+		t.Fatalf("converged attestation did not verify: %v", report.Failures)
 	}
 
-	// Directory scan finds the same receipt for the head tree.
+	// The committed artifact carries exactly the two admitted facts.
+	var raw map[string]json.RawMessage
+	value, err := os.ReadFile(receiptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) != 2 {
+		t.Fatalf("the committed attestation carries %d fields, not the minimal 2: %v", len(raw), raw)
+	}
+
+	// Directory scan finds the same attestation for the head tree.
 	found, foundPath, err := findReceiptForHead(scratch.repo, scratch.repo.receiptDirectoryPath(), "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if found.Fingerprint != sealed.Fingerprint || foundPath != receiptPath {
-		t.Fatal("directory scan did not find the sealed receipt for the head tree")
+	if found != attestationOf(sealed) || foundPath != receiptPath {
+		t.Fatal("directory scan did not find the attestation for the head tree")
 	}
 }
 
@@ -516,7 +533,7 @@ func TestStallEscalatesAndHumanReopens(t *testing.T) {
 }
 
 // converge drives a scratch repository to a sealed, committed, verified
-// receipt and returns it with its path.
+// attestation and returns the full receipt with the attestation path.
 func converge(t *testing.T, scratch *scratchRepo, loop *loopContext) (SealedReceipt, string) {
 	t.Helper()
 	if _, _, err := submit(t, loop, correctReview()); err != nil {
@@ -526,13 +543,16 @@ func converge(t *testing.T, scratch *scratchRepo, loop *loopContext) (SealedRece
 	if err != nil {
 		t.Fatal(err)
 	}
+	if report := verifyFullReceipt(scratch.repo, sealed, "", "main", "HEAD"); !report.Verified {
+		t.Fatalf("baseline full receipt did not verify at seal time: %v", report.Failures)
+	}
 	path := filepath.Join(scratch.repo.receiptDirectoryPath(), "feature.receipt.json")
-	if err := writeSealedReceipt(path, sealed); err != nil {
+	if err := writeAttestation(path, attestationOf(sealed)); err != nil {
 		t.Fatal(err)
 	}
-	scratch.commitAll("sealed review receipt")
-	if report := verifySealedReceipt(scratch.repo, sealed, path, "main", "HEAD"); !report.Verified {
-		t.Fatalf("baseline receipt did not verify: %v", report.Failures)
+	scratch.commitAll("sealed review attestation")
+	if report := verifyAttestation(scratch.repo, attestationOf(sealed), path, "main", "HEAD"); !report.Verified {
+		t.Fatalf("baseline attestation did not verify: %v", report.Failures)
 	}
 	return sealed, path
 }
@@ -543,17 +563,18 @@ func TestVerificationRejectsTamperingForgeryAndBypass(t *testing.T) {
 	loop := newTestLoop(t, scratch, policy)
 	sealed, path := converge(t, scratch, loop)
 
-	// Tampered content: any edit breaks the content identity.
+	// Seal-time law — tampered content: any edit breaks the content
+	// identity of the full receipt.
 	tampered := sealed
 	tampered.Rounds = append([]journalRound(nil), sealed.Rounds...)
 	tampered.Rounds[0].Verdict = verdictIncorrect
-	if report := verifySealedReceipt(scratch.repo, tampered, path, "main", "HEAD"); report.Verified {
+	if report := verifyFullReceipt(scratch.repo, tampered, path, "main", "HEAD"); report.Verified {
 		t.Fatal("a tampered receipt verified")
 	}
 
-	// Forged verdict: rewriting the final review and re-fingerprinting the
-	// envelope still fails, because the kernel receipt chain committed the
-	// original candidate fingerprint.
+	// Seal-time law — forged verdict: rewriting the final review and
+	// re-fingerprinting the envelope still fails, because the kernel
+	// receipt chain committed the original candidate fingerprint.
 	forged := sealed
 	forged.FinalReview = json.RawMessage(strings.Replace(
 		string(sealed.FinalReview), "patch is correct", "patch is incorrect", 1))
@@ -562,35 +583,78 @@ func TestVerificationRejectsTamperingForgeryAndBypass(t *testing.T) {
 		t.Fatal(err)
 	}
 	forged.Fingerprint = refingered
-	report := verifySealedReceipt(scratch.repo, forged, path, "main", "HEAD")
-	if report.Verified {
+	if report := verifyFullReceipt(scratch.repo, forged, path, "main", "HEAD"); report.Verified {
 		t.Fatal("a forged final review verified")
 	}
 
-	// Bypass: new commits after convergence leave the receipt bound to the
-	// old tree, so the new head is not review-verified.
-	scratch.writeFile("subject.go", "package subject\n\nfunc Value() int { return 99 }\n")
-	scratch.commitAll("unreviewed change")
-	if report := verifySealedReceipt(scratch.repo, sealed, path, "main", "HEAD"); report.Verified {
-		t.Fatal("a receipt for an older tree verified a new head")
+	// CI law — attestation tampering: a mutated tree or fingerprint fails.
+	wrongTree := attestationOf(sealed)
+	wrongTree.ReviewedTree = strings.Repeat("0", 40)
+	if report := verifyAttestation(scratch.repo, wrongTree, path, "main", "HEAD"); report.Verified {
+		t.Fatal("an attestation for a different tree verified")
 	}
-	if _, _, err := findReceiptForHead(scratch.repo, scratch.repo.receiptDirectoryPath(), "HEAD"); err == nil {
-		t.Fatal("directory scan bound an unreviewed head to an old receipt")
+	wrongProgram := attestationOf(sealed)
+	wrongProgram.ProgramFingerprint = strings.Repeat("0", 64)
+	if report := verifyAttestation(scratch.repo, wrongProgram, path, "main", "HEAD"); report.Verified {
+		t.Fatal("an attestation under an unadmitted program verified")
 	}
 
-	// Policy drift: a base whose admitted prompt differs refuses admission.
+	// CI law — strictness: unknown fields, missing facts, and receipts of
+	// the superseded full format are not the admitted artifact.
+	padded := filepath.Join(scratch.repo.receiptDirectoryPath(), "padded.receipt.json")
+	if err := os.WriteFile(padded, []byte(`{"reviewed_tree":"`+sealed.ReviewedTree+`","program_fingerprint":"`+sealed.Program.Fingerprint+`","note":"extra"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readAttestation(padded); err == nil {
+		t.Fatal("an attestation with unknown fields decoded")
+	}
+	if err := os.WriteFile(padded, []byte(`{"reviewed_tree":"`+sealed.ReviewedTree+`"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readAttestation(padded); err == nil {
+		t.Fatal("an attestation missing the program fingerprint decoded")
+	}
+	fullFormat := filepath.Join(scratch.repo.receiptDirectoryPath(), "old-format.receipt.json")
+	if err := writeSealedReceipt(fullFormat, sealed); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readAttestation(fullFormat); err == nil {
+		t.Fatal("a superseded full-format receipt decoded as an attestation")
+	}
+	if err := os.Remove(padded); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(fullFormat); err != nil {
+		t.Fatal(err)
+	}
+
+	// Bypass: new commits after convergence leave the attestation bound to
+	// the old tree, so the new head is not review-verified.
+	scratch.writeFile("subject.go", "package subject\n\nfunc Value() int { return 99 }\n")
+	scratch.commitAll("unreviewed change")
+	if report := verifyAttestation(scratch.repo, attestationOf(sealed), path, "main", "HEAD"); report.Verified {
+		t.Fatal("an attestation for an older tree verified a new head")
+	}
+	if _, _, err := findReceiptForHead(scratch.repo, scratch.repo.receiptDirectoryPath(), "HEAD"); err == nil {
+		t.Fatal("directory scan bound an unreviewed head to an old attestation")
+	}
+
+	// Policy drift: a base whose admitted prompt differs recompiles to a
+	// different program, so the attested fingerprint refuses.
 	scratch.git("checkout", "-q", "main")
 	scratch.writeFile(policyPromptPath, "entirely different review policy\n")
 	scratch.commitAll("policy change on main")
 	scratch.git("checkout", "-q", "feature")
-	if report := verifySealedReceipt(scratch.repo, sealed, path, "main", "HEAD"); report.Verified {
-		t.Fatal("a receipt sealed under a superseded policy verified")
+	if report := verifyAttestation(scratch.repo, attestationOf(sealed), path, "main", "HEAD"); report.Verified {
+		t.Fatal("an attestation sealed under a superseded policy verified")
 	}
 }
 
 func TestVerificationRejectsReceiptDeclaredBoundsDrift(t *testing.T) {
 	// Regression for round 1, finding 1: a receipt sealed under weakened
-	// convergence bounds must not verify against the admitted policy.
+	// convergence bounds must not verify against the admitted policy —
+	// neither at seal time (bounds check) nor in CI, where the weakened
+	// bounds change the program fingerprint the attestation carries.
 	scratch := newScratchRepo(t)
 	weakened := testPolicy(t, scratch)
 	weakened.MaxRounds = 1000
@@ -604,22 +668,37 @@ func TestVerificationRejectsReceiptDeclaredBoundsDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(scratch.repo.receiptDirectoryPath(), "feature.receipt.json")
-	if err := writeSealedReceipt(path, sealed); err != nil {
+	if err := writeAttestation(path, attestationOf(sealed)); err != nil {
 		t.Fatal(err)
 	}
 	scratch.commitAll("sealed under weakened bounds")
-	report := verifySealedReceipt(scratch.repo, sealed, path, "main", "HEAD")
-	if report.Verified {
-		t.Fatal("a receipt sealed under weakened convergence bounds verified")
+
+	fullReport := verifyFullReceipt(scratch.repo, sealed, "", "main", "HEAD")
+	if fullReport.Verified {
+		t.Fatal("a full receipt sealed under weakened convergence bounds verified at seal time")
 	}
 	boundsNamed := false
-	for _, failure := range report.Failures {
+	for _, failure := range fullReport.Failures {
 		if strings.Contains(failure, "convergence bounds") {
 			boundsNamed = true
 		}
 	}
 	if !boundsNamed {
-		t.Fatalf("the failure does not name the bounds drift: %v", report.Failures)
+		t.Fatalf("the seal-time failure does not name the bounds drift: %v", fullReport.Failures)
+	}
+
+	report := verifyAttestation(scratch.repo, attestationOf(sealed), path, "main", "HEAD")
+	if report.Verified {
+		t.Fatal("an attestation sealed under weakened convergence bounds verified")
+	}
+	programNamed := false
+	for _, failure := range report.Failures {
+		if strings.Contains(failure, "does not match the program recompiled") {
+			programNamed = true
+		}
+	}
+	if !programNamed {
+		t.Fatalf("the CI failure does not name the program mismatch: %v", report.Failures)
 	}
 }
 
@@ -779,7 +858,7 @@ func TestCLIVerifyCommandExitsNonZeroWithoutReceipt(t *testing.T) {
 	if err == nil {
 		t.Fatal("verify succeeded with no sealed receipt present")
 	}
-	if !strings.Contains(err.Error(), "no sealed review receipt") {
+	if !strings.Contains(err.Error(), "no review attestation") {
 		t.Fatalf("failure does not tell the operator what to do: %v", err)
 	}
 }

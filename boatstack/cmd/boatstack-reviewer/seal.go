@@ -14,11 +14,25 @@ import (
 
 const sealedReceiptSchemaVersion = 1
 
-// SealedReceipt is the one artifact that travels with a pull request. It
-// binds the exact reviewed (receipt-excluded) tree, the exact admitted
-// policy, the exact program identity, the round trajectory, the final
-// review bytes, and the complete kernel receipt chain. CI verifies it
-// deterministically; no reviewer runs there.
+// committedAttestation is the one artifact that travels with a pull request,
+// reduced to the minimal facts CI cannot re-derive: which receipt-excluded
+// tree the converged review bound, and under which program it converged.
+// Everything else — policy hashes, convergence bounds, weights, transition
+// law — is already inside the program fingerprint, which the verifier
+// recompiles from the base-revision admitted policy. The full sealed
+// receipt (round trajectory, kernel receipt chain, final review bytes)
+// stays in the local review store and never enters a commit.
+type committedAttestation struct {
+	ReviewedTree       string `json:"reviewed_tree"`
+	ProgramFingerprint string `json:"program_fingerprint"`
+}
+
+// SealedReceipt is the full local sealing artifact. It binds the exact
+// reviewed (receipt-excluded) tree, the exact admitted policy, the exact
+// program identity, the round trajectory, the final review bytes, and the
+// complete kernel receipt chain. It is verified in full at seal time and
+// archived in the local store; only the committedAttestation travels with
+// the pull request.
 type SealedReceipt struct {
 	SchemaVersion int                    `json:"schema_version"`
 	Instance      string                 `json:"instance"`
@@ -150,6 +164,44 @@ func readSealedReceipt(path string) (SealedReceipt, error) {
 	return receipt, nil
 }
 
+func attestationOf(receipt SealedReceipt) committedAttestation {
+	return committedAttestation{
+		ReviewedTree:       receipt.ReviewedTree,
+		ProgramFingerprint: receipt.Program.Fingerprint,
+	}
+}
+
+func writeAttestation(path string, attestation committedAttestation) error {
+	encoded, err := json.MarshalIndent(attestation, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(path, append(encoded, '\n'))
+}
+
+// readAttestation decodes strictly: an attestation with unknown fields or
+// missing facts is not the admitted artifact and must not verify.
+func readAttestation(path string) (committedAttestation, error) {
+	value, err := os.ReadFile(path)
+	if err != nil {
+		return committedAttestation{}, err
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(value)))
+	decoder.DisallowUnknownFields()
+	var attestation committedAttestation
+	if err := decoder.Decode(&attestation); err != nil {
+		return committedAttestation{}, fmt.Errorf("review attestation %s does not decode: %w", path, err)
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); err == nil {
+		return committedAttestation{}, fmt.Errorf("review attestation %s carries trailing content", path)
+	}
+	if attestation.ReviewedTree == "" || attestation.ProgramFingerprint == "" {
+		return committedAttestation{}, fmt.Errorf("review attestation %s is missing required facts", path)
+	}
+	return attestation, nil
+}
+
 // verificationReport is the deterministic CI answer.
 type verificationReport struct {
 	Verified    bool     `json:"verified"`
@@ -161,13 +213,82 @@ type verificationReport struct {
 	Warnings    []string `json:"warnings"`
 }
 
-// verifySealedReceipt is the CI-side control law:
+// verifyAttestation is the CI-side control law:
 //
-//	a pull request head is review-verified only when a sealed receipt
-//	binds its exact receipt-excluded tree, under the review program
-//	whose policy assets are admitted at the pull request base revision,
-//	with an integral kernel receipt chain ending in convergence.
-func verifySealedReceipt(repo *gitRepo, receipt SealedReceipt, receiptPath, baseRevision, headRevision string) verificationReport {
+//	a pull request head is review-verified only when a committed
+//	attestation binds its exact receipt-excluded tree under the review
+//	program recompiled from the policy admitted at the pull request base
+//	revision.
+//
+// The attestation carries nothing else, so there is nothing else to check
+// here: the program fingerprint already hashes the policy assets, the
+// convergence bounds, the weights, and the transition law. The round
+// trajectory, kernel receipt chain, and final review bytes were verified in
+// full at seal time and stay in the local review store.
+func verifyAttestation(repo *gitRepo, attestation committedAttestation, receiptPath, baseRevision, headRevision string) verificationReport {
+	report := verificationReport{
+		ReceiptPath: receiptPath,
+		Program:     attestation.ProgramFingerprint,
+		Checks:      []string{},
+		Failures:    []string{},
+		Warnings:    []string{},
+	}
+	pass := func(check string) { report.Checks = append(report.Checks, check) }
+	fail := func(format string, args ...any) {
+		report.Failures = append(report.Failures, fmt.Sprintf(format, args...))
+	}
+
+	// Program identity: recompile the review program from the policy
+	// admitted at the pull request base revision under this binary's
+	// transition law. The attestation's fingerprint is never trusted as a
+	// description of anything; it must equal the recompiled identity.
+	basePolicy, err := loadRevisionPolicy(repo, baseRevision)
+	if err != nil {
+		fail("base revision policy admission failed: %v", err)
+		return report
+	}
+	program, err := compileReviewProgram(basePolicy)
+	if err != nil {
+		fail("admitted review program does not compile: %v", err)
+		return report
+	}
+	if program.Fingerprint != attestation.ProgramFingerprint {
+		fail("attested program fingerprint %s does not match the program recompiled from the base-revision admitted policy %s", attestation.ProgramFingerprint, program.Fingerprint)
+	} else {
+		pass("attested program matches the base-revision admitted policy and transition law")
+	}
+
+	// Tree binding: the pull request head, receipts excluded, must be the
+	// exact tree the converged review bound.
+	head, err := repo.revParse(headRevision)
+	if err != nil {
+		fail("head revision %s is unavailable: %v", headRevision, err)
+		return report
+	}
+	reviewedTree, err := repo.reviewedTree(head)
+	if err != nil {
+		fail("reviewed tree of %s is unavailable: %v", head, err)
+		return report
+	}
+	if reviewedTree != attestation.ReviewedTree {
+		fail("attestation binds tree %s but the head reviewed tree is %s; the reviewed content changed after convergence", attestation.ReviewedTree, reviewedTree)
+	} else {
+		pass("attestation binds the exact head reviewed tree")
+	}
+
+	report.Verified = len(report.Failures) == 0
+	return report
+}
+
+// verifyFullReceipt is the seal-time control law over the full local
+// receipt:
+//
+//	a converged loop seals only when the receipt binds the exact
+//	receipt-excluded head tree, under the review program whose policy
+//	assets are admitted at the base revision, with an integral kernel
+//	receipt chain ending in convergence and final review bytes that
+//	revalidate.
+func verifyFullReceipt(repo *gitRepo, receipt SealedReceipt, receiptPath, baseRevision, headRevision string) verificationReport {
 	report := verificationReport{
 		ReceiptPath: receiptPath,
 		Instance:    receipt.Instance,
@@ -357,23 +478,25 @@ func verifySealedReceipt(repo *gitRepo, receipt SealedReceipt, receiptPath, base
 	return report
 }
 
-// findReceiptForHead scans a receipt directory for the sealed receipt that
-// binds the exact head reviewed tree.
-func findReceiptForHead(repo *gitRepo, directory, headRevision string) (SealedReceipt, string, error) {
+// findReceiptForHead scans a receipt directory for the committed
+// attestation that binds the exact head reviewed tree. Files that are not
+// strict attestations (including receipts of the superseded full format)
+// are skipped: they are not the admitted artifact.
+func findReceiptForHead(repo *gitRepo, directory, headRevision string) (committedAttestation, string, error) {
 	head, err := repo.revParse(headRevision)
 	if err != nil {
-		return SealedReceipt{}, "", err
+		return committedAttestation{}, "", err
 	}
 	reviewedTree, err := repo.reviewedTree(head)
 	if err != nil {
-		return SealedReceipt{}, "", err
+		return committedAttestation{}, "", err
 	}
 	entries, err := os.ReadDir(directory)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return SealedReceipt{}, "", fmt.Errorf("no sealed review receipt binds reviewed tree %s: %s does not exist; run the local review loop and commit the sealed receipt", reviewedTree, directory)
+			return committedAttestation{}, "", fmt.Errorf("no review attestation binds reviewed tree %s: %s does not exist; run the local review loop and commit the sealed attestation", reviewedTree, directory)
 		}
-		return SealedReceipt{}, "", err
+		return committedAttestation{}, "", err
 	}
 	var names []string
 	for _, entry := range entries {
@@ -384,13 +507,13 @@ func findReceiptForHead(repo *gitRepo, directory, headRevision string) (SealedRe
 	sort.Strings(names)
 	for _, name := range names {
 		path := filepath.Join(directory, name)
-		receipt, err := readSealedReceipt(path)
+		attestation, err := readAttestation(path)
 		if err != nil {
 			continue
 		}
-		if receipt.ReviewedTree == reviewedTree {
-			return receipt, path, nil
+		if attestation.ReviewedTree == reviewedTree {
+			return attestation, path, nil
 		}
 	}
-	return SealedReceipt{}, "", fmt.Errorf("no sealed review receipt in %s binds reviewed tree %s; run the local review loop to convergence, seal, and commit the receipt", directory, reviewedTree)
+	return committedAttestation{}, "", fmt.Errorf("no review attestation in %s binds reviewed tree %s; run the local review loop to convergence, seal, and commit the attestation", directory, reviewedTree)
 }

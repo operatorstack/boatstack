@@ -53,10 +53,14 @@ Work on a branch, commit your change, then:
 3. Fix the recorded findings, commit, and repeat. The measure must trend
    down; convergence requires a fresh review of the fixed tree whose verdict
    is `patch is correct`.
-4. `boatstack-reviewer seal` — writes
-   `.github/reviews/<instance>.receipt.json`. Commit that file with the pull
-   request. The receipt directory is excluded from the tree binding, so
-   committing the receipt does not invalidate it.
+4. `boatstack-reviewer seal` — verifies the full receipt (round trajectory,
+   kernel receipt chain, final review bytes) locally, archives it in the
+   local store, and writes only a minimal attestation to
+   `.github/reviews/<instance>.receipt.json`: the reviewed tree and the
+   program fingerprint — the two facts CI cannot re-derive. Commit that file
+   with the pull request; pushing can wait until you are ready. The receipt
+   directory is excluded from the tree binding, so committing the
+   attestation does not invalidate it.
 5. `boatstack-reviewer show` prints a recorded review itself — the exact
    archived findings of the latest round (`--round <n>` for earlier ones) and
    any staged, not-yet-submitted candidate — without resolving or changing
@@ -71,13 +75,16 @@ so any registered coding agent drives the loop through recorded, resumable
 operations instead of remembering the command order (adapters are registered
 for Cursor, Codex, and Claude Code under their skill directories):
 
-- `skills/self-review` — one review round, no code changes: builds the
-  reviewer from the current tree, resolves the control state, has the agent
-  review exactly the admitted range under the admitted schema, submits, and
-  reports the recorded verdict. It verifies afterwards that no file changed.
+- `skills/self-review` — report-only: builds the reviewer from the current
+  tree, resolves the control state, has the agent review exactly the
+  admitted range under the admitted schema, submits, and reports the
+  recorded verdict in the conversation. It changes no code, verifies
+  afterwards that no tracked file changed, and never seals, commits, or
+  pushes.
 - `skills/self-review-solve` — drives to convergence: fixes open findings in
   code (committed by the agent), re-reviews the fixed tree, repeats within a
-  bounded attempt budget, then seals the receipt and commits it. An escalated
+  bounded attempt budget, then seals and commits the minimal attestation
+  locally. It never pushes; pushing is the user's decision. An escalated
   loop asks the human before reopening.
 
 Run either with `.yield/bin/yskill run 'skills/<name>'` from the repository
@@ -88,18 +95,23 @@ touches real review state.
 CI (`.github/workflows/review-verified.yml`) rebuilds the verifier and runs
 `boatstack-reviewer verify --dir .github/reviews --base <base> --head <head>`,
 which re-admits the policy from the base revision, recompiles the program
-fingerprint, recomputes the receipt-excluded head tree, and checks the kernel
-receipt chain and the final review bytes.
+fingerprint, recomputes the receipt-excluded head tree, and checks that the
+committed attestation names exactly those two facts. Nothing else travels
+with the pull request: the attestation is deliberately minimal because the
+program fingerprint already hashes the prompt bytes, the schema bytes, the
+round bound, the stall window, and the priority weights.
 
-## What the receipt does and does not prove
+## What the attestation does and does not prove
 
-Like work-package verification, the sealed receipt is honest about its
-boundary: it proves the declared review program ran to convergence over the
-exact bound tree under the admitted policy. It does not prove the review was
-semantically right, and it does not prove who performed it — the receipt
-records `semantic_correctness: not-evaluated` and `origin_authenticity:
-not-proven`. Branch protection and human judgment remain the authority for
-merging.
+Like work-package verification, the committed attestation is honest about
+its boundary: it proves a review program with the base-admitted identity
+sealed a convergence over the exact bound tree. The full evidence — round
+trajectory, kernel receipt chain, final review bytes, and the honesty
+markers `semantic_correctness: not-evaluated` and `origin_authenticity:
+not-proven` — is verified in full at seal time and archived in the local
+store, not in the commit. The attestation does not prove the review was
+semantically right, and it does not prove who performed it. Branch
+protection and human judgment remain the authority for merging.
 
-Local review state lives under `.git/boatstack-review/<instance>/` and never
-enters a commit.
+Local review state, including the archived full receipt, lives under
+`.git/boatstack-review/<instance>/` and never enters a commit.

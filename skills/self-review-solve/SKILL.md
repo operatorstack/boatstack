@@ -7,7 +7,10 @@ Drive the supervisory-control self-review of the current branch to
 convergence. The workflow decides from the committed control state what is
 needed: open findings are fixed in code and committed, an unreviewed tree
 gets a fresh review, an escalated loop asks before reopening, and a
-converged loop is sealed and the receipt committed.
+converged loop is sealed — the minimal attestation (reviewed tree + program
+fingerprint) is committed locally. This skill never pushes: pushing the
+branch is the user's decision, and CI verifies the attestation whenever the
+push happens.
 
 Run from the repository root:
 

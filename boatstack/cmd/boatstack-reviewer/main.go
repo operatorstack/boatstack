@@ -461,19 +461,31 @@ func commandSeal(arguments []string) error {
 	if err != nil {
 		return err
 	}
+	// The full receipt is verified here, at seal time, and archived in the
+	// local store. Only the minimal attestation enters the commit.
+	report := verifyFullReceipt(loop.repo, receipt, "", loop.baseRef, "HEAD")
+	if !report.Verified {
+		return fmt.Errorf("seal refused: the full receipt does not verify: %s", strings.Join(report.Failures, "; "))
+	}
+	archive := filepath.Join(loop.store.dir, "sealed-receipt.json")
+	if err := writeSealedReceipt(archive, receipt); err != nil {
+		return err
+	}
 	path := *output
 	if path == "" {
 		path = filepath.Join(loop.repo.receiptDirectoryPath(), loop.instance+".receipt.json")
 	}
-	if err := writeSealedReceipt(path, receipt); err != nil {
+	if err := writeAttestation(path, attestationOf(receipt)); err != nil {
 		return err
 	}
 	return printJSON(struct {
 		Sealed       string `json:"sealed"`
 		Fingerprint  string `json:"fingerprint"`
 		ReviewedTree string `json:"reviewed_tree"`
+		Archive      string `json:"full_receipt"`
 		Guidance     string `json:"guidance"`
-	}{path, receipt.Fingerprint, receipt.ReviewedTree, "commit this file with the pull request; CI verifies it deterministically"})
+	}{path, receipt.Program.Fingerprint, receipt.ReviewedTree, archive,
+		"commit the attestation with the pull request; CI verifies it deterministically — pushing can wait until you are ready"})
 }
 
 func commandVerify(arguments []string) error {
@@ -493,22 +505,22 @@ func commandVerify(arguments []string) error {
 	if err != nil {
 		return err
 	}
-	var receipt SealedReceipt
+	var attestation committedAttestation
 	path := *receiptPath
 	if path != "" {
-		receipt, err = readSealedReceipt(path)
+		attestation, err = readAttestation(path)
 	} else {
 		scanDir := *directory
 		if !filepath.IsAbs(scanDir) {
 			scanDir = filepath.Join(repo.Root, filepath.FromSlash(scanDir))
 		}
-		receipt, path, err = findReceiptForHead(repo, scanDir, *headRevision)
+		attestation, path, err = findReceiptForHead(repo, scanDir, *headRevision)
 	}
 	if err != nil {
 		printJSON(verificationReport{Failures: []string{err.Error()}, Checks: []string{}, Warnings: []string{}})
 		return err
 	}
-	report := verifySealedReceipt(repo, receipt, path, *baseRevision, *headRevision)
+	report := verifyAttestation(repo, attestation, path, *baseRevision, *headRevision)
 	if err := printJSON(report); err != nil {
 		return err
 	}
