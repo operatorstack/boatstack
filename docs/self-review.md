@@ -64,6 +64,27 @@ Work on a branch, commit your change, then:
    escalation or to re-review a settled generation), and `recover --actor
    <name>` (after an interrupted effect) complete the surface.
 
+## Yield skill workflows
+
+Two [Yield](https://yield.operatorstack.systems/) workflows wrap this surface
+so any registered coding agent drives the loop through recorded, resumable
+operations instead of remembering the command order (adapters are registered
+for Cursor, Codex, and Claude Code under their skill directories):
+
+- `skills/self-review` — one review round, no code changes: builds the
+  reviewer from the current tree, resolves the control state, has the agent
+  review exactly the admitted range under the admitted schema, submits, and
+  reports the recorded verdict. It verifies afterwards that no file changed.
+- `skills/self-review-solve` — drives to convergence: fixes open findings in
+  code (committed by the agent), re-reviews the fixed tree, repeats within a
+  bounded attempt budget, then seals the receipt and commits it. An escalated
+  loop asks the human before reopening.
+
+Run either with `.yield/bin/yskill run 'skills/<name>'` from the repository
+root. `yskill doctor 'skills/<name>' --test` exercises each workflow against
+a scratch repository (fixture-created, sentinel-switched), so testing never
+touches real review state.
+
 CI (`.github/workflows/review-verified.yml`) rebuilds the verifier and runs
 `boatstack-reviewer verify --dir .github/reviews --base <base> --head <head>`,
 which re-admits the policy from the base revision, recompiles the program
