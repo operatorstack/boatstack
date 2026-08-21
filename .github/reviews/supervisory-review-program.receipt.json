@@ -22,34 +22,16 @@
   },
   "base_ref": "origin/main",
   "merge_base": "fffbab0e806fe87cd16323a708bf696c0cfceca3",
-  "head_commit": "f884706880067286d71904ac30b1381d62083e06",
-  "reviewed_tree": "1b3bb5aa78caa87ee53d9e578dac092b8c705cf9",
-  "generation": 2,
+  "head_commit": "fec374ddf36c0a1e2375c5e1f31eba88d3bfb4b1",
+  "reviewed_tree": "3aa9458d3bdfd48e74b70fc111883c2582489c31",
+  "generation": 3,
   "rounds": [
     {
-      "generation": 2,
+      "generation": 3,
       "index": 1,
-      "candidate_fingerprint": "c4ae2b6387fe9b5e382ac9fe68d2c780f49d613323a838a20c2784895e60820a",
-      "reviewed_tree": "ba53671058a38f2b8c105140c1cefd09565bb416",
-      "head_commit": "5161076f83d59f0f8ced4a36c07394ce8d2c9ca9",
-      "merge_base": "fffbab0e806fe87cd16323a708bf696c0cfceca3",
-      "verdict": "patch is incorrect",
-      "measure": 12,
-      "finding_count": 3,
-      "priorities": [
-        0,
-        0,
-        1,
-        2
-      ],
-      "transition": "review.findings.record"
-    },
-    {
-      "generation": 2,
-      "index": 2,
-      "candidate_fingerprint": "a8887afe41be3cf56685b18373174189c28dc22380da0152aaf8af46f59e7894",
-      "reviewed_tree": "1b3bb5aa78caa87ee53d9e578dac092b8c705cf9",
-      "head_commit": "f884706880067286d71904ac30b1381d62083e06",
+      "candidate_fingerprint": "66de8c7b85be8ff74b99df18518ee01dd9a9320c656b35f7bc62ddee7e44ebfc",
+      "reviewed_tree": "3aa9458d3bdfd48e74b70fc111883c2582489c31",
+      "head_commit": "fec374ddf36c0a1e2375c5e1f31eba88d3bfb4b1",
       "merge_base": "fffbab0e806fe87cd16323a708bf696c0cfceca3",
       "verdict": "patch is correct",
       "measure": 0,
@@ -66,12 +48,12 @@
   "final_review": {
     "findings": [],
     "overall_correctness": "patch is correct",
-    "overall_explanation": "Round 2 over fffbab0e..f8847068. All three round-1 findings are closed by the head commit: (1) the solve clean gate and the review no-change gates now use git status --porcelain --untracked-files=no, matching the reviewer's worktree law that only tracked modifications make a tree unbindable, with a fixture regression placing an untracked file in the scratch repository; (2) the fix agent task is skipped when the latest recorded round's reviewed tree differs from the current tree, so pre-fixed findings route to a fresh review instead of demanding an impossible commit — and if that fresh review re-records findings for the current tree, the next attempt runs the fix task as before; (3) the candidate now travels in bounded 64 KiB chunks appended to a truncate-first staging file and is decoded from the file, keeping every command string far below the platform per-argument cap. Adjacent-case pass over the fix commit: the truncate-on-first-chunk semantics prevent stale staging content from an interrupted prior run; the chunk alphabet (standard base64) contains no shell metacharacters inside the single-quoted string; the drift-skip check reads the status observation refreshed after each submitted round, so it cannot mask unfixed findings across attempts. No new defect introduced by this delta was established. Model-level verification before merge: not recommended.",
+    "overall_explanation": "Round over fffbab0e..fec374dd. The delta since the last converged round is the sealed generation-2 receipt plus a .gitattributes pin declaring .github/codex/** and .github/reviews/*.receipt.json as text eol=lf. The pin closes a real cross-platform admission defect surfaced by CI: on Windows runners (core.autocrlf=true) the checkout materialized the policy assets with CRLF, so the seal-time worktree policy hashes (092a1752/d68222f2, verified equal to the CRLF variants) could never match the base-revision admitted blobs (66c4c711/113b02c5, the LF bytes), failing verification in TestLoopConvergesSealsAndVerifies and TestVerificationRejectsTamperingForgeryAndBypass. Adjacent-case pass: every committed blob for the pinned paths is already LF, so adding the attribute triggers no renormalization and changes no committed hash on any platform; the scratch-repo fixtures copy the checked-out assets, which now materialize as LF everywhere, and scratch git-show reads raw blobs, so worktree and revision admission agree; sealed receipts are written with LF and the receipt directory remains excluded from the reviewed tree, so the pin cannot invalidate an existing receipt. No new defect introduced by this delta was established. Model-level verification before merge: not recommended.",
     "overall_confidence_score": 0.85
   },
   "control_state": {
     "mode": "converged",
-    "revision": 11
+    "revision": 15
   },
   "kernel_receipts": [
     {
@@ -223,12 +205,72 @@
       "result_observation": "868a1e74eab2952c67ec0592973cb556fa36134849b09839fcc4ebc860b40a0a",
       "verification": "satisfied",
       "committed_at": "2026-08-21T02:18:35.533334Z"
+    },
+    {
+      "schema_version": 3,
+      "id": "rcp-a00414357805e89f1ca93b9596d35045a8a5af3a937cd574294c2d5d4f1d2b6a",
+      "instance_id": "supervisory-review-program",
+      "prescription_id": "prx-240e898ff3b3813b88cffeb0e0eb43b17316ece34ceb691463ec4e9b2826ee8e",
+      "program": {
+        "id": "boatstack-reviewer",
+        "version": "1",
+        "fingerprint": "76680abd47f9e920ebfe807d3b3f226cbb48bd1a531b0a0a068cd27fd3e6f6e6"
+      },
+      "transition_id": "review.reopen",
+      "prior_state_revision": 11,
+      "attempt_state_revision": 12,
+      "result_state_revision": 13,
+      "authority_fingerprint": "e958cbf68de68708cad034d304915c9a3dd2d0d3a08936b6d1974ff314cd246e",
+      "capabilities": [
+        "review.human"
+      ],
+      "effects": [
+        {
+          "facet": "review.round",
+          "operation": "review.reopen",
+          "fingerprint": "generation-3"
+        }
+      ],
+      "prior_observation": "12894eb1320889e6bcc88c1e7cbc09edfbf6d4773e861df554f09f2fb4e50fe7",
+      "result_observation": "b6bf0cef3a39cb57b52bd57699e2f3febe206815462027078b62d69de3b9f19b",
+      "verification": "satisfied",
+      "committed_at": "2026-08-21T02:26:32.023904Z"
+    },
+    {
+      "schema_version": 3,
+      "id": "rcp-c01fc323bd5431330d47451fb4e1db82a715bcb371310312b80b97e02b0de091",
+      "instance_id": "supervisory-review-program",
+      "prescription_id": "prx-0ebcfcfb545ca0fc73fe7f4cdf7e1b9444165a5a64b8b31a5181106015d6a80a",
+      "program": {
+        "id": "boatstack-reviewer",
+        "version": "1",
+        "fingerprint": "76680abd47f9e920ebfe807d3b3f226cbb48bd1a531b0a0a068cd27fd3e6f6e6"
+      },
+      "transition_id": "review.converge",
+      "prior_state_revision": 13,
+      "attempt_state_revision": 14,
+      "result_state_revision": 15,
+      "authority_fingerprint": "99aaf65d7e429d765b1b6bae85b3158a23eb427b0bcbad2d8cec87b9583cc448",
+      "capabilities": [
+        "review.submit"
+      ],
+      "effects": [
+        {
+          "facet": "review.round",
+          "operation": "review.converge",
+          "fingerprint": "66de8c7b85be8ff74b99df18518ee01dd9a9320c656b35f7bc62ddee7e44ebfc"
+        }
+      ],
+      "prior_observation": "383f96bd9dd9b8a59f450d5f804db9ce18cc6246a7bd2cfcf92e6737b98fb815",
+      "result_observation": "219dea3026ab1d69c00f36b14392796f5a42ee9da7c248c0cd63d6994879c8e8",
+      "verification": "satisfied",
+      "committed_at": "2026-08-21T02:27:03.244993Z"
     }
   ],
   "honesty": {
     "semantic_correctness": "not-evaluated",
     "origin_authenticity": "not-proven"
   },
-  "sealed_at": "2026-08-21T02:18:35.946005Z",
-  "fingerprint": "266f5820e6d1a0724a679e382bc85317f4790c3706d630f386487d3f29879a55"
+  "sealed_at": "2026-08-21T02:27:03.663388Z",
+  "fingerprint": "e6ec3a381e204e7574611a9308743d1a575978e1ead795cf1271529931dcb4b9"
 }
