@@ -1,0 +1,8 @@
+{
+  "review": {
+    "findings": [],
+    "overall_correctness": "patch is correct",
+    "overall_explanation": "Fixture review of the scratch change: the single-function addition is self-contained, anchored entirely inside the review range, and introduces no defect at the reporting threshold.",
+    "overall_confidence_score": 0.9
+  }
+}

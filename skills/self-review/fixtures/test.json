@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "setup": [["bash", "fixtures/setup.sh"]],
+  "after_response": {},
+  "teardown": [["bash", "fixtures/teardown.sh"]]
+}
