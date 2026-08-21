@@ -22,34 +22,34 @@
   },
   "base_ref": "origin/main",
   "merge_base": "fffbab0e806fe87cd16323a708bf696c0cfceca3",
-  "head_commit": "bf9ef686ea70e75242d8a7e8a4a49b1cc1f718fd",
-  "reviewed_tree": "ec4b313d349fdc4d783d173332647287073632c2",
-  "generation": 1,
+  "head_commit": "f884706880067286d71904ac30b1381d62083e06",
+  "reviewed_tree": "1b3bb5aa78caa87ee53d9e578dac092b8c705cf9",
+  "generation": 2,
   "rounds": [
     {
-      "generation": 1,
+      "generation": 2,
       "index": 1,
-      "candidate_fingerprint": "c1e46f7e821c4a362181525ddc7cb015741867a179ad372b574c916cc7029476",
-      "reviewed_tree": "b31da9bc17ca28f8089fa1bd483304a29c56d415",
-      "head_commit": "12743e1442a1f09f3928eec5a4f79324a0deae40",
+      "candidate_fingerprint": "c4ae2b6387fe9b5e382ac9fe68d2c780f49d613323a838a20c2784895e60820a",
+      "reviewed_tree": "ba53671058a38f2b8c105140c1cefd09565bb416",
+      "head_commit": "5161076f83d59f0f8ced4a36c07394ce8d2c9ca9",
       "merge_base": "fffbab0e806fe87cd16323a708bf696c0cfceca3",
       "verdict": "patch is incorrect",
-      "measure": 11,
-      "finding_count": 2,
+      "measure": 12,
+      "finding_count": 3,
       "priorities": [
         0,
         0,
         1,
-        1
+        2
       ],
       "transition": "review.findings.record"
     },
     {
-      "generation": 1,
+      "generation": 2,
       "index": 2,
-      "candidate_fingerprint": "816ff42b6b75b61238802e9a3da8fc3419c2c462b7c8f7d681b7b09015dbd343",
-      "reviewed_tree": "ec4b313d349fdc4d783d173332647287073632c2",
-      "head_commit": "bf9ef686ea70e75242d8a7e8a4a49b1cc1f718fd",
+      "candidate_fingerprint": "a8887afe41be3cf56685b18373174189c28dc22380da0152aaf8af46f59e7894",
+      "reviewed_tree": "1b3bb5aa78caa87ee53d9e578dac092b8c705cf9",
+      "head_commit": "f884706880067286d71904ac30b1381d62083e06",
       "merge_base": "fffbab0e806fe87cd16323a708bf696c0cfceca3",
       "verdict": "patch is correct",
       "measure": 0,
@@ -66,12 +66,12 @@
   "final_review": {
     "findings": [],
     "overall_correctness": "patch is correct",
-    "overall_explanation": "Both round-1 findings are resolved with regression tests: the verifier now refuses receipts whose declared convergence bounds or weights differ from the admitted policy, and untargeted resolve surfaces the domain's exact submission disposition. The deterministic admission path (schema, diff anchors, tree binding), the kernel receipt chain, the sealed-receipt verification, and the CI swap all hold; no remaining actionable findings at the reporting threshold.",
+    "overall_explanation": "Round 2 over fffbab0e..f8847068. All three round-1 findings are closed by the head commit: (1) the solve clean gate and the review no-change gates now use git status --porcelain --untracked-files=no, matching the reviewer's worktree law that only tracked modifications make a tree unbindable, with a fixture regression placing an untracked file in the scratch repository; (2) the fix agent task is skipped when the latest recorded round's reviewed tree differs from the current tree, so pre-fixed findings route to a fresh review instead of demanding an impossible commit — and if that fresh review re-records findings for the current tree, the next attempt runs the fix task as before; (3) the candidate now travels in bounded 64 KiB chunks appended to a truncate-first staging file and is decoded from the file, keeping every command string far below the platform per-argument cap. Adjacent-case pass over the fix commit: the truncate-on-first-chunk semantics prevent stale staging content from an interrupted prior run; the chunk alphabet (standard base64) contains no shell metacharacters inside the single-quoted string; the drift-skip check reads the status observation refreshed after each submitted round, so it cannot mask unfixed findings across attempts. No new defect introduced by this delta was established. Model-level verification before merge: not recommended.",
     "overall_confidence_score": 0.85
   },
   "control_state": {
     "mode": "converged",
-    "revision": 5
+    "revision": 11
   },
   "kernel_receipts": [
     {
@@ -133,12 +133,102 @@
       "result_observation": "a8c8d1352c96583f79679f05fc543f621d09a99b4c05b8e5758f2ce6d8198f03",
       "verification": "satisfied",
       "committed_at": "2026-08-21T01:48:51.282881Z"
+    },
+    {
+      "schema_version": 3,
+      "id": "rcp-6dac967d6831833dfe32701c08f4558c36124a7ba01677edfd831b28bb6ef707",
+      "instance_id": "supervisory-review-program",
+      "prescription_id": "prx-4c03d610c22c85aa11095cb0e77f42670e1054cb49bece7eb58629a3a4be4405",
+      "program": {
+        "id": "boatstack-reviewer",
+        "version": "1",
+        "fingerprint": "76680abd47f9e920ebfe807d3b3f226cbb48bd1a531b0a0a068cd27fd3e6f6e6"
+      },
+      "transition_id": "review.reopen",
+      "prior_state_revision": 5,
+      "attempt_state_revision": 6,
+      "result_state_revision": 7,
+      "authority_fingerprint": "612af2b28e108bf69b10cec77dd688adac1ade9e73143b6ee5be1fe88c9d3d0b",
+      "capabilities": [
+        "review.human"
+      ],
+      "effects": [
+        {
+          "facet": "review.round",
+          "operation": "review.reopen",
+          "fingerprint": "generation-2"
+        }
+      ],
+      "prior_observation": "9787090456e6836381b1d3702f630a88506c4e1ac42f658d4d5674de43b8058a",
+      "result_observation": "c546633650586d5243b531805e3d7460b2e7501dfbe60e2606a452dbd143786a",
+      "verification": "satisfied",
+      "committed_at": "2026-08-21T02:13:18.819099Z"
+    },
+    {
+      "schema_version": 3,
+      "id": "rcp-0cb388ab91385fcff8a34f017a83e9c8c64a26ede241bf2479be5abf1b9d2e4b",
+      "instance_id": "supervisory-review-program",
+      "prescription_id": "prx-0ae09a9dc531642f0a52d09df7f116c328b2df61d2a6d353bb3e24f8894dfce2",
+      "program": {
+        "id": "boatstack-reviewer",
+        "version": "1",
+        "fingerprint": "76680abd47f9e920ebfe807d3b3f226cbb48bd1a531b0a0a068cd27fd3e6f6e6"
+      },
+      "transition_id": "review.findings.record",
+      "prior_state_revision": 7,
+      "attempt_state_revision": 8,
+      "result_state_revision": 9,
+      "authority_fingerprint": "75ada7d57808df1c3a9341cf60d064cd0f82c613cd1903de417751c6b2cc144a",
+      "capabilities": [
+        "review.submit"
+      ],
+      "effects": [
+        {
+          "facet": "review.round",
+          "operation": "review.findings.record",
+          "fingerprint": "c4ae2b6387fe9b5e382ac9fe68d2c780f49d613323a838a20c2784895e60820a"
+        }
+      ],
+      "prior_observation": "410089929bd05ea5e6a61cf670e4bf7b51b912332d9312ff6a06b233b5a42622",
+      "result_observation": "a9ad87e432d5cfbfb439bc9635f4906058f8dd37599dbcbb0e70083f0c2a5a08",
+      "verification": "satisfied",
+      "committed_at": "2026-08-21T02:16:25.169665Z"
+    },
+    {
+      "schema_version": 3,
+      "id": "rcp-80a66988028811f154353a6e07af1eb12cf2f58a8eebf849a848896f354e64d0",
+      "instance_id": "supervisory-review-program",
+      "prescription_id": "prx-1bdc304995ab4531cffdfc27d2cc94382086ac7bc932b86574214d3a72cab41a",
+      "program": {
+        "id": "boatstack-reviewer",
+        "version": "1",
+        "fingerprint": "76680abd47f9e920ebfe807d3b3f226cbb48bd1a531b0a0a068cd27fd3e6f6e6"
+      },
+      "transition_id": "review.converge",
+      "prior_state_revision": 9,
+      "attempt_state_revision": 10,
+      "result_state_revision": 11,
+      "authority_fingerprint": "1f9c39e910112b5074d0169b3d1ce7d59d97eaade92e8226dd62822180ee2136",
+      "capabilities": [
+        "review.submit"
+      ],
+      "effects": [
+        {
+          "facet": "review.round",
+          "operation": "review.converge",
+          "fingerprint": "a8887afe41be3cf56685b18373174189c28dc22380da0152aaf8af46f59e7894"
+        }
+      ],
+      "prior_observation": "545b8012b511db8b58ed6f3fe5806dbd74400a2d1dde7a5388a95581c35a6e60",
+      "result_observation": "868a1e74eab2952c67ec0592973cb556fa36134849b09839fcc4ebc860b40a0a",
+      "verification": "satisfied",
+      "committed_at": "2026-08-21T02:18:35.533334Z"
     }
   ],
   "honesty": {
     "semantic_correctness": "not-evaluated",
     "origin_authenticity": "not-proven"
   },
-  "sealed_at": "2026-08-21T01:48:58.376919Z",
-  "fingerprint": "82ab2379f0931a80cb4aa6b8b9d0690e7a48cb948e7c1a409607a3302e303f1d"
+  "sealed_at": "2026-08-21T02:18:35.946005Z",
+  "fingerprint": "266f5820e6d1a0724a679e382bc85317f4790c3706d630f386487d3f29879a55"
 }
