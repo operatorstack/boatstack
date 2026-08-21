@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "instance": "speed-up-local-test-runner",
+  "program": {
+    "id": "boatstack-reviewer",
+    "version": "1",
+    "fingerprint": "76680abd47f9e920ebfe807d3b3f226cbb48bd1a531b0a0a068cd27fd3e6f6e6"
+  },
+  "policy": {
+    "prompt_path": ".github/codex/review-prompt.md",
+    "prompt_sha256": "66c4c7111f200de489f4fed0852b261e36cbd1e962c61320c1e4ea2dd2641986",
+    "schema_path": ".github/codex/review-output-schema.json",
+    "schema_sha256": "113b02c5cca93156692031c3dedd038e5c2b80cbc4a56337ce06e536110e3e6a",
+    "max_rounds": 16,
+    "stall_window": 3,
+    "weights": [
+      1000,
+      100,
+      10,
+      1
+    ]
+  },
+  "base_ref": "origin/main",
+  "merge_base": "1cb20b6862d34831898037792c1eea06cfdd0122",
+  "head_commit": "b27992fb3c827ad22041e70f667082295ba36220",
+  "reviewed_tree": "d0705c1c64d482191bec8c9d5a957dec98979569",
+  "generation": 1,
+  "rounds": [
+    {
+      "generation": 1,
+      "index": 1,
+      "candidate_fingerprint": "32fc0219bbe4164255b3fa328a515883b1377db4f032d9d27a015c9fdb2718e3",
+      "reviewed_tree": "d0705c1c64d482191bec8c9d5a957dec98979569",
+      "head_commit": "b27992fb3c827ad22041e70f667082295ba36220",
+      "merge_base": "1cb20b6862d34831898037792c1eea06cfdd0122",
+      "verdict": "patch is correct",
+      "measure": 0,
+      "finding_count": 0,
+      "priorities": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "transition": "review.converge"
+    }
+  ],
+  "final_review": {
+    "findings": [],
+    "overall_correctness": "patch is correct",
+    "overall_explanation": "The patch changes only the local test runner (.github/scripts/run_go_tests.py, ci_shard.py), its unit tests, and adds a release note; no Boatstack kernel, control-program, or CI-workflow behavior changes. Reviewed to closure: (1) package attribution in read_test_packages depends on go test printing each package's -list block contiguously, which the go tool guarantees via per-package output buffering; a ? [no test files] block cannot split another package's names from its ok line. (2) Tests with the same name in multiple packages keep every owner and the shard scope is the union, so scoping cannot drop an owner that ./... would have run. (3) verified_package_scope fails closed: an enumerated test with no owning package or outside its shard scope refuses the run before any worker spawns, and both the rejecting and accepting directions have unit tests. (4) LPT weights are strictly positive (load_timings filters v\u003e0, default weight 1.0) and shard count is capped at len(names), so no shard can be empty; an empty regex additionally refuses. (5) Timings persistence goes to the user cache with atomic os.replace, degrades to count-balancing on missing or malformed data, and the runner is local-only so CI never touches it; the Windows CI path through read_test_names is byte-identical. (6) -count=1, the jobs cap, and process isolation are unchanged, so fresh execution and seam isolation invariants hold. Questions for model-level verification (not defects): none newly reachable; the runner state machine gains only a refusing pre-spawn gate, which cannot introduce a blocking state because refusal exits the run. Model-level verification before merge is not required.",
+    "overall_confidence_score": 0.85
+  },
+  "control_state": {
+    "mode": "converged",
+    "revision": 3
+  },
+  "kernel_receipts": [
+    {
+      "schema_version": 3,
+      "id": "rcp-a2307a2aed0e2372749a7022830a74b324476865ce91018533379e28d56cbe6e",
+      "instance_id": "speed-up-local-test-runner",
+      "prescription_id": "prx-76a2977343c8aee6ee7bf0368087461caf9c2b457bfe8a55588b62d8fb58df57",
+      "program": {
+        "id": "boatstack-reviewer",
+        "version": "1",
+        "fingerprint": "76680abd47f9e920ebfe807d3b3f226cbb48bd1a531b0a0a068cd27fd3e6f6e6"
+      },
+      "transition_id": "review.converge",
+      "prior_state_revision": 1,
+      "attempt_state_revision": 2,
+      "result_state_revision": 3,
+      "authority_fingerprint": "38a1c3289b7f87426b560c99da0f3734b2a379475db8a915ab55d82f9bbd3846",
+      "capabilities": [
+        "review.submit"
+      ],
+      "effects": [
+        {
+          "facet": "review.round",
+          "operation": "review.converge",
+          "fingerprint": "32fc0219bbe4164255b3fa328a515883b1377db4f032d9d27a015c9fdb2718e3"
+        }
+      ],
+      "prior_observation": "5611ccc070fff3754879649c3522b8280ad0243ba86b9b00ea2c0739e7fd4a41",
+      "result_observation": "6a7c27ba3f797fcb50d94824e5fe8068d2763b960dbdccdbbbf671db3e2ff487",
+      "verification": "satisfied",
+      "committed_at": "2026-08-21T04:25:28.501588Z"
+    }
+  ],
+  "honesty": {
+    "semantic_correctness": "not-evaluated",
+    "origin_authenticity": "not-proven"
+  },
+  "sealed_at": "2026-08-21T04:26:27.391146Z",
+  "fingerprint": "d857c5f2ec72e78388ec491979890ee82f34ad5a7d627d7dbd6d270c506662e6"
+}

@@ -1,0 +1,3 @@
+### Speed up the local Go test runner with package-scoped, timing-balanced shards
+
+`python3 .github/scripts/run_go_tests.py` now scopes each isolated shard to only the packages that own its tests instead of sweeping every package, balances shards with per-test durations persisted in the user cache (`~/.cache/boatstack/test-timings.json`, never the repository), and reports each shard's true elapsed time. The full local suite drops about 22% in wall-clock on a 10-core-performance machine while keeping fresh execution (`-count=1`), process isolation, the jobs cap, and the exact-partition refusal; a new coverage gate refuses any scoped run that could silently skip an enumerated test.

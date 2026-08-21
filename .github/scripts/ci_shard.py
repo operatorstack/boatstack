@@ -51,6 +51,10 @@ import sys
 # beginning with "Test"; keep only those.
 TEST_NAME = re.compile(r"^Test[A-Za-z0-9_]*$")
 
+# The per-package summary line that follows that package's test names.
+# Packages without test files print "?   <pkg>   [no test files]" instead.
+PACKAGE_SUMMARY = re.compile(r"^ok\s+(\S+)")
+
 
 def read_test_names(stream) -> list[str]:
     """Parse `go test -list` output from a stream into a sorted, de-duped list."""
@@ -60,6 +64,32 @@ def read_test_names(stream) -> list[str]:
         if TEST_NAME.match(name):
             names.add(name)
     return sorted(names)
+
+
+def read_test_packages(stream) -> dict[str, tuple[str, ...]]:
+    """Parse `go test -list` output into a test-name -> owning-packages mapping.
+
+    `go test -list ./...` interleaves each package's test names with that
+    package's trailing "ok  <pkg>  <t>" summary line, so names are attributed
+    to the next summary line seen. A name can legitimately exist in more than
+    one package; every owner is kept (sorted, de-duped). Names never followed
+    by a package summary are dropped — callers that need completeness must
+    verify the mapping covers their enumeration and fail closed on a gap.
+    """
+    owners: dict[str, set[str]] = {}
+    pending: list[str] = []
+    for line in stream:
+        stripped = line.strip()
+        if TEST_NAME.match(stripped):
+            pending.append(stripped)
+            continue
+        summary = PACKAGE_SUMMARY.match(stripped)
+        if summary:
+            package = summary.group(1)
+            for name in pending:
+                owners.setdefault(name, set()).add(package)
+            pending = []
+    return {name: tuple(sorted(packages)) for name, packages in owners.items()}
 
 
 def assign_shards(names: list[str], total: int, timings: dict[str, float]) -> list[list[str]]:
