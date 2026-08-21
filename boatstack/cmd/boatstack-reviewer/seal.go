@@ -206,12 +206,19 @@ func verifySealedReceipt(repo *gitRepo, receipt SealedReceipt, receiptPath, base
 	}
 
 	// Program identity: recompile the review program from the admitted
-	// policy bytes plus the receipt's declared bounds under this binary's
-	// transition law.
+	// policy bytes under this binary's transition law and compiled
+	// convergence bounds. The receipt's declared bounds are never trusted:
+	// a receipt sealed under weakened bounds or weights must not verify.
 	admittedPolicy := basePolicy
-	admittedPolicy.MaxRounds = receipt.Policy.MaxRounds
-	admittedPolicy.StallWindow = receipt.Policy.StallWindow
-	admittedPolicy.Weights = receipt.Policy.Weights
+	if receipt.Policy.MaxRounds != admittedPolicy.MaxRounds ||
+		receipt.Policy.StallWindow != admittedPolicy.StallWindow ||
+		receipt.Policy.Weights != admittedPolicy.Weights {
+		fail("sealed receipt declares convergence bounds (rounds %d, stall %d, weights %v) that differ from the admitted policy (rounds %d, stall %d, weights %v)",
+			receipt.Policy.MaxRounds, receipt.Policy.StallWindow, receipt.Policy.Weights,
+			admittedPolicy.MaxRounds, admittedPolicy.StallWindow, admittedPolicy.Weights)
+	} else {
+		pass("convergence bounds and weights match the admitted policy")
+	}
 	program, err := compileReviewProgram(admittedPolicy)
 	if err != nil {
 		fail("admitted review program does not compile: %v", err)

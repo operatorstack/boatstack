@@ -137,6 +137,13 @@ func printJSON(value any) error {
 	return encoder.Encode(value)
 }
 
+// dispositionView reports which submission transition the current
+// observation admits (empty when none does) and the exact domain reason.
+type dispositionView struct {
+	Admits string `json:"admits,omitempty"`
+	Reason string `json:"reason"`
+}
+
 type instructionsView struct {
 	PromptPath    string `json:"prompt_path"`
 	PromptSHA256  string `json:"prompt_sha256"`
@@ -179,11 +186,16 @@ func commandResolve(arguments []string) error {
 	if err != nil {
 		return err
 	}
+	// The kernel's decision reason is generic by design; the domain's
+	// submission disposition names the exact blocking or admitting
+	// condition so a driver never has to infer it from the observation.
+	admits, reason := submissionDisposition(loop.policy, observed)
 	return printJSON(struct {
 		Instance     string                 `json:"instance"`
 		Program      kernel.ProgramIdentity `json:"program"`
 		State        kernel.ControlState    `json:"state"`
 		Decision     kernel.Decision        `json:"decision"`
+		Disposition  dispositionView        `json:"submission_disposition"`
 		Prescription *kernel.Prescription   `json:"prescription,omitempty"`
 		Observation  observationValue       `json:"observation"`
 		Instructions instructionsView       `json:"instructions"`
@@ -192,6 +204,7 @@ func commandResolve(arguments []string) error {
 		Program:      loop.program.Identity(),
 		State:        resolution.State,
 		Decision:     resolution.Decision,
+		Disposition:  dispositionView{Admits: admits, Reason: reason},
 		Prescription: resolution.Prescription,
 		Observation:  observed,
 		Instructions: instructionsView{

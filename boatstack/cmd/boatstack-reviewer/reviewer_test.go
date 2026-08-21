@@ -588,6 +588,75 @@ func TestVerificationRejectsTamperingForgeryAndBypass(t *testing.T) {
 	}
 }
 
+func TestVerificationRejectsReceiptDeclaredBoundsDrift(t *testing.T) {
+	// Regression for round 1, finding 1: a receipt sealed under weakened
+	// convergence bounds must not verify against the admitted policy.
+	scratch := newScratchRepo(t)
+	weakened := testPolicy(t, scratch)
+	weakened.MaxRounds = 1000
+	weakened.StallWindow = 500
+	loop := newTestLoop(t, scratch, weakened)
+	if _, _, err := submit(t, loop, correctReview()); err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := buildSealedReceipt(scratch.repo, loop.store, weakened, loop.program, "main", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(scratch.repo.receiptDirectoryPath(), "feature.receipt.json")
+	if err := writeSealedReceipt(path, sealed); err != nil {
+		t.Fatal(err)
+	}
+	scratch.commitAll("sealed under weakened bounds")
+	report := verifySealedReceipt(scratch.repo, sealed, path, "main", "HEAD")
+	if report.Verified {
+		t.Fatal("a receipt sealed under weakened convergence bounds verified")
+	}
+	boundsNamed := false
+	for _, failure := range report.Failures {
+		if strings.Contains(failure, "convergence bounds") {
+			boundsNamed = true
+		}
+	}
+	if !boundsNamed {
+		t.Fatalf("the failure does not name the bounds drift: %v", report.Failures)
+	}
+}
+
+func TestResolveSurfacesTheDomainRefusalReason(t *testing.T) {
+	// Regression for round 1, finding 2: an untargeted resolve must name the
+	// exact domain condition, not only the kernel's generic reason.
+	scratch := newScratchRepo(t)
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := os.Stdout
+	os.Stdout = writer
+	runErr := run([]string{"resolve", "--repo", scratch.repo.Root, "--delivery", "feature", "--base", "main"})
+	os.Stdout = original
+	writer.Close()
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runErr != nil {
+		t.Fatal(runErr)
+	}
+	var resolved struct {
+		Disposition dispositionView `json:"submission_disposition"`
+	}
+	if err := json.Unmarshal(output, &resolved); err != nil {
+		t.Fatalf("resolve output does not decode: %v", err)
+	}
+	if resolved.Disposition.Admits != "" {
+		t.Fatalf("nothing is staged but disposition admits %q", resolved.Disposition.Admits)
+	}
+	if !strings.Contains(resolved.Disposition.Reason, "no candidate review is staged") {
+		t.Fatalf("disposition reason does not name the staging requirement: %q", resolved.Disposition.Reason)
+	}
+}
+
 func TestRecoveryClearsInterruptedEffect(t *testing.T) {
 	scratch := newScratchRepo(t)
 	policy := testPolicy(t, scratch)
