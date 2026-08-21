@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "instance": "supervisory-review-program",
+  "program": {
+    "id": "boatstack-reviewer",
+    "version": "1",
+    "fingerprint": "76680abd47f9e920ebfe807d3b3f226cbb48bd1a531b0a0a068cd27fd3e6f6e6"
+  },
+  "policy": {
+    "prompt_path": ".github/codex/review-prompt.md",
+    "prompt_sha256": "66c4c7111f200de489f4fed0852b261e36cbd1e962c61320c1e4ea2dd2641986",
+    "schema_path": ".github/codex/review-output-schema.json",
+    "schema_sha256": "113b02c5cca93156692031c3dedd038e5c2b80cbc4a56337ce06e536110e3e6a",
+    "max_rounds": 16,
+    "stall_window": 3,
+    "weights": [
+      1000,
+      100,
+      10,
+      1
+    ]
+  },
+  "base_ref": "origin/main",
+  "merge_base": "fffbab0e806fe87cd16323a708bf696c0cfceca3",
+  "head_commit": "bf9ef686ea70e75242d8a7e8a4a49b1cc1f718fd",
+  "reviewed_tree": "ec4b313d349fdc4d783d173332647287073632c2",
+  "generation": 1,
+  "rounds": [
+    {
+      "generation": 1,
+      "index": 1,
+      "candidate_fingerprint": "c1e46f7e821c4a362181525ddc7cb015741867a179ad372b574c916cc7029476",
+      "reviewed_tree": "b31da9bc17ca28f8089fa1bd483304a29c56d415",
+      "head_commit": "12743e1442a1f09f3928eec5a4f79324a0deae40",
+      "merge_base": "fffbab0e806fe87cd16323a708bf696c0cfceca3",
+      "verdict": "patch is incorrect",
+      "measure": 11,
+      "finding_count": 2,
+      "priorities": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "transition": "review.findings.record"
+    },
+    {
+      "generation": 1,
+      "index": 2,
+      "candidate_fingerprint": "816ff42b6b75b61238802e9a3da8fc3419c2c462b7c8f7d681b7b09015dbd343",
+      "reviewed_tree": "ec4b313d349fdc4d783d173332647287073632c2",
+      "head_commit": "bf9ef686ea70e75242d8a7e8a4a49b1cc1f718fd",
+      "merge_base": "fffbab0e806fe87cd16323a708bf696c0cfceca3",
+      "verdict": "patch is correct",
+      "measure": 0,
+      "finding_count": 0,
+      "priorities": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "transition": "review.converge"
+    }
+  ],
+  "final_review": {
+    "findings": [],
+    "overall_correctness": "patch is correct",
+    "overall_explanation": "Both round-1 findings are resolved with regression tests: the verifier now refuses receipts whose declared convergence bounds or weights differ from the admitted policy, and untargeted resolve surfaces the domain's exact submission disposition. The deterministic admission path (schema, diff anchors, tree binding), the kernel receipt chain, the sealed-receipt verification, and the CI swap all hold; no remaining actionable findings at the reporting threshold.",
+    "overall_confidence_score": 0.85
+  },
+  "control_state": {
+    "mode": "converged",
+    "revision": 5
+  },
+  "kernel_receipts": [
+    {
+      "schema_version": 3,
+      "id": "rcp-e6d32467705e31011c25a975b966aafaa14dc02300ed96bccfe443edf50efb42",
+      "instance_id": "supervisory-review-program",
+      "prescription_id": "prx-b0bd59f4bd3768e4fe65ebf2c0b92280a8577f25c9617a7b4e6d7bd129e4422a",
+      "program": {
+        "id": "boatstack-reviewer",
+        "version": "1",
+        "fingerprint": "76680abd47f9e920ebfe807d3b3f226cbb48bd1a531b0a0a068cd27fd3e6f6e6"
+      },
+      "transition_id": "review.findings.record",
+      "prior_state_revision": 1,
+      "attempt_state_revision": 2,
+      "result_state_revision": 3,
+      "authority_fingerprint": "e1f9d0143447daa7e9a3d11d7497659642b964a06018d671855c4496afbb30f2",
+      "capabilities": [
+        "review.submit"
+      ],
+      "effects": [
+        {
+          "facet": "review.round",
+          "operation": "review.findings.record",
+          "fingerprint": "c1e46f7e821c4a362181525ddc7cb015741867a179ad372b574c916cc7029476"
+        }
+      ],
+      "prior_observation": "9552cd99ee5c3a388a72f838b89a33a20d740c4089ee9051bb0ff8c9e3f71e92",
+      "result_observation": "459317767812b8de53fd8871cc1d4dea51ce827874deb4ff3edcef6c4ad71691",
+      "verification": "satisfied",
+      "committed_at": "2026-08-21T01:43:08.248706Z"
+    },
+    {
+      "schema_version": 3,
+      "id": "rcp-ce98819998897d509f34460ab279d8f0890e0874bc4bab0db6be3f964fdf723d",
+      "instance_id": "supervisory-review-program",
+      "prescription_id": "prx-81b9b269e4dbd8656e7865f8990a90b81fc561e0544b818e7c16fe9830fc1edc",
+      "program": {
+        "id": "boatstack-reviewer",
+        "version": "1",
+        "fingerprint": "76680abd47f9e920ebfe807d3b3f226cbb48bd1a531b0a0a068cd27fd3e6f6e6"
+      },
+      "transition_id": "review.converge",
+      "prior_state_revision": 3,
+      "attempt_state_revision": 4,
+      "result_state_revision": 5,
+      "authority_fingerprint": "2c120eaf9382cfe382abda5b83c3b5b95548e844c3e404b9905976dc35bdeeb5",
+      "capabilities": [
+        "review.submit"
+      ],
+      "effects": [
+        {
+          "facet": "review.round",
+          "operation": "review.converge",
+          "fingerprint": "816ff42b6b75b61238802e9a3da8fc3419c2c462b7c8f7d681b7b09015dbd343"
+        }
+      ],
+      "prior_observation": "d7eefc02a8a8f45cfc5583c1eebcc64adce7ff20894ed21d45edb92dfc9a1aae",
+      "result_observation": "a8c8d1352c96583f79679f05fc543f621d09a99b4c05b8e5758f2ce6d8198f03",
+      "verification": "satisfied",
+      "committed_at": "2026-08-21T01:48:51.282881Z"
+    }
+  ],
+  "honesty": {
+    "semantic_correctness": "not-evaluated",
+    "origin_authenticity": "not-proven"
+  },
+  "sealed_at": "2026-08-21T01:48:58.376919Z",
+  "fingerprint": "82ab2379f0931a80cb4aa6b8b9d0690e7a48cb948e7c1a409607a3302e303f1d"
+}
