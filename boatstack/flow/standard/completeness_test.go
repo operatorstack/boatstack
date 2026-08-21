@@ -148,11 +148,11 @@ func TestSourceInventoryHasNoWriterOrLifecycleAuthorityOutsideOwnedPackages(t *t
 				return true
 			}
 			importPath := imports[owner.Name]
-			if importPath == "os" && writerCalls[selector.Sel.Name] && !strings.HasPrefix(relative, "internal/softwaredelivery/effects/") && !strings.HasPrefix(relative, "internal/runtime/") {
+			if importPath == "os" && writerCalls[selector.Sel.Name] && !strings.HasPrefix(relative, "internal/softwaredelivery/effects/") && !strings.HasPrefix(relative, "internal/runtime/") && !reviewerWriterFile(relative) {
 				t.Errorf("managed writer os.%s escaped effects package in %s", selector.Sel.Name, relative)
 			}
 			if importPath == "os/exec" && (selector.Sel.Name == "Command" || selector.Sel.Name == "CommandContext") {
-				if relative != "internal/softwaredelivery/effects/command_boundary.go" && relative != "internal/softwaredelivery/plant/resolver.go" && relative != "extension/subprocess/subprocess.go" && relative != "internal/runtime/exec_windows.go" && relative != "internal/runtime/flow_files.go" && relative != "internal/runtime/control_bundle.go" {
+				if relative != "internal/softwaredelivery/effects/command_boundary.go" && relative != "internal/softwaredelivery/plant/resolver.go" && relative != "extension/subprocess/subprocess.go" && relative != "internal/runtime/exec_windows.go" && relative != "internal/runtime/flow_files.go" && relative != "internal/runtime/control_bundle.go" && relative != "cmd/boatstack-reviewer/gitrepo.go" {
 					t.Errorf("unclassified command boundary in %s", relative)
 				}
 			}
@@ -453,8 +453,17 @@ func TestPackageImportsPreserveControlProgramDependencyDirection(t *testing.T) {
 	}
 }
 
+// reviewerWriterFile scopes the self-review control plane's writer boundary:
+// boatstack-reviewer is its own control program on the generic kernel (never
+// a software-delivery adapter), and only its durable store and its temporary
+// git-index observer may write.
+func reviewerWriterFile(relative string) bool {
+	return relative == "cmd/boatstack-reviewer/store.go" || relative == "cmd/boatstack-reviewer/gitrepo.go"
+}
+
 func classifiedProductionFile(relative string) bool {
 	return relative == "delivery_controller.go" || relative == "program_effects.go" || relative == "program_observer.go" || strings.HasPrefix(relative, "cmd/boatstack-helper/") ||
+		strings.HasPrefix(relative, "cmd/boatstack-reviewer/") ||
 		strings.HasPrefix(relative, "controlprogram/") ||
 		strings.HasPrefix(relative, "invocation/") ||
 		strings.HasPrefix(relative, "delivery/") || strings.HasPrefix(relative, "core/") ||

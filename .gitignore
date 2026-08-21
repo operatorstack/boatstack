@@ -1,5 +1,10 @@
 boatstack/boatstack-helper
 boatstack/boatstack-helper.exe
+boatstack/boatstack-reviewer
+boatstack/boatstack-reviewer.exe
+.yield/
+skills/*/.yield-runs/
+skills/*/fixtures/tmp/
 dist/
 build/docs/
 node_modules/

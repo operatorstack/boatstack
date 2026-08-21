@@ -24,6 +24,7 @@ Control Program model.
 - [Generated files and ownership](generated-files.md)
 - [Runtime selection](runtime-selection.md)
 - [Safety boundaries](safety.md)
+- [Self-review loop](self-review.md)
 - [Troubleshooting](troubleshooting.md)
 - [Public-surface contract](public-surface.md)
 
