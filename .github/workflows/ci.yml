@@ -50,7 +50,7 @@ jobs:
           - name: extension-conformance
             packages: ./extension/... ./distribution
           - name: surface-parity
-            packages: ./internal/softwaredelivery/surfaces ./sdk ./cmd/boatstack-helper
+            packages: ./internal/softwaredelivery/surfaces ./sdk ./cmd/boatstack-helper ./cmd/boatstack-reviewer
           - name: plant-integration
             packages: ./internal/softwaredelivery/plant ./internal/softwaredelivery/effects ./internal/softwaredelivery/engine
     runs-on: ubuntu-latest

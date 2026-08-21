@@ -1,0 +1,80 @@
+# Boatstack-owned deterministic review verification plane.
+#
+# The review itself runs locally through `boatstack-reviewer`: a coding agent
+# or human drives the supervisory-control review loop to convergence and
+# commits the sealed receipt under .github/reviews/. This workflow runs no
+# reviewer, no model, and no API key: it deterministically verifies that a
+# sealed receipt binds the exact pull request head tree under the review
+# policy admitted at the pull request base revision.
+name: Review verified
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: review-verified-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review-verified:
+    name: review-verified
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Checkout pull request merge commit
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+
+      - name: Fetch exact base and head revisions
+        shell: bash
+        run: |
+          git fetch --no-tags origin \
+            "+refs/pull/${PR_NUMBER}/head:refs/remotes/origin/review-verified-head"
+          git cat-file -e "$BASE_SHA^{commit}"
+          test "$(git rev-parse refs/remotes/origin/review-verified-head)" = "$HEAD_SHA"
+
+      - name: Check admitted review policy
+        id: policy
+        shell: bash
+        run: |
+          if ! git cat-file -e "$BASE_SHA:.github/codex/review-prompt.md" || \
+             ! git cat-file -e "$BASE_SHA:.github/codex/review-output-schema.json"; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Review verification is skipped because the base revision has no admitted review policy." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        if: steps.policy.outputs.enabled == 'true'
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: boatstack/go.mod
+          cache-dependency-path: boatstack/go.sum
+
+      - name: Build the review verifier
+        if: steps.policy.outputs.enabled == 'true'
+        shell: bash
+        working-directory: boatstack
+        run: go build -o "$RUNNER_TEMP/boatstack-reviewer" ./cmd/boatstack-reviewer
+
+      - name: Verify the sealed review receipt
+        if: steps.policy.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/boatstack-reviewer" verify \
+            --repo . \
+            --dir .github/reviews \
+            --base "$BASE_SHA" \
+            --head "$HEAD_SHA" | tee -a "$GITHUB_STEP_SUMMARY"

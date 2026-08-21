@@ -196,32 +196,41 @@ class RepositoryContract(unittest.TestCase):
             self.assertNotIn("sync/intelligence-flow-", value, workflow)
             self.assertNotIn("UPSTREAM.json", value, workflow)
 
-    def test_codex_review_is_secret_scoped_read_only_and_structured(self) -> None:
-        workflow = (REPO / ".github" / "workflows" / "codex-review.yml").read_text()
+    def test_review_verification_is_deterministic_and_policy_admitted(self) -> None:
+        # control-law: CI verifies a sealed local review receipt; no reviewer,
+        # model, or API key runs in CI.
+        workflows = REPO / ".github" / "workflows"
+        self.assertFalse((workflows / "codex-review.yml").exists())
+        workflow = (workflows / "review-verified.yml").read_text()
         prompt = (REPO / ".github" / "codex" / "review-prompt.md").read_text()
         schema = json.loads((REPO / ".github" / "codex" / "review-output-schema.json").read_text())
 
         self.assertIn("pull_request:", workflow)
         self.assertNotIn("pull_request_target", workflow)
-        self.assertIn("CODEX_REVIEWER_API", workflow)
-        self.assertIn("head.repo.full_name", workflow)
-        self.assertIn("not configured", workflow)
         self.assertIn("persist-credentials: false", workflow)
-        self.assertIn('git merge-base "$BASE_SHA" "$HEAD_SHA"', workflow)
-        self.assertIn('git show "$BASE_SHA:.github/codex/review-prompt.md"', workflow)
-        self.assertIn('git show "$BASE_SHA:.github/codex/review-output-schema.json"', workflow)
-        self.assertIn("output-schema-file: ${{ steps.policy.outputs.schema }}", workflow)
-        self.assertNotIn("cp .github/codex/review-prompt.md", workflow)
-        self.assertIn("base revision has no admitted review policy", workflow)
-        self.assertIn("first 200 shown", workflow)
-        self.assertNotIn('diff --unified=5 "$BASE_SHA" "$HEAD_SHA"', workflow)
-        self.assertIn("permission-profile: \":read-only\"", workflow)
-        self.assertIn("safety-strategy: drop-sudo", workflow)
-        self.assertRegex(workflow, r"openai/codex-action@[0-9a-f]{40}")
-        self.assertIn("pull-requests: write", workflow)
         self.assertIn("contents: read", workflow)
-        self.assertIn("gpt-5.6-sol", workflow)
-        self.assertIn("CODEX_REVIEW_EFFORT || 'high'", workflow)
+        self.assertNotIn("pull-requests: write", workflow)
+        self.assertNotIn("secrets.", workflow)
+        self.assertIn("base revision has no admitted review policy", workflow)
+        self.assertIn('git cat-file -e "$BASE_SHA:.github/codex/review-prompt.md"', workflow)
+        self.assertIn('git cat-file -e "$BASE_SHA:.github/codex/review-output-schema.json"', workflow)
+        self.assertIn("go build -o \"$RUNNER_TEMP/boatstack-reviewer\" ./cmd/boatstack-reviewer", workflow)
+        self.assertIn("--dir .github/reviews", workflow)
+        self.assertIn('--base "$BASE_SHA"', workflow)
+        self.assertIn('--head "$HEAD_SHA"', workflow)
+        for banned in ("codex-action", "openai-api-key", "output-schema-file"):
+            for active in workflows.glob("*.yml"):
+                self.assertNotIn(banned, active.read_text(), active)
+
+        # The reviewer performs base-revision policy admission and binds the
+        # receipt-excluded head tree inside the verifier itself.
+        reviewer = REPO / "boatstack" / "cmd" / "boatstack-reviewer"
+        seal_source = (reviewer / "seal.go").read_text()
+        self.assertIn("loadRevisionPolicy", seal_source)
+        self.assertIn("reviewedTree", seal_source)
+        git_source = (reviewer / "gitrepo.go").read_text()
+        self.assertIn('receiptDirectory = ".github/reviews"', git_source)
+
         self.assertIn("untrusted data", prompt)
         self.assertIn("`LEFT` for deleted lines", prompt)
         self.assertIn("Resolver / apply agreement", prompt)
@@ -245,10 +254,11 @@ class RepositoryContract(unittest.TestCase):
         location = finding["properties"]["code_location"]
         self.assertIn("side", location["required"])
         self.assertEqual(location["properties"]["side"]["enum"], ["LEFT", "RIGHT"])
-        self.assertIn("build_codex_github_review.py", workflow)
-        publisher = (REPO / ".github" / "scripts" / "build_codex_github_review.py").read_text()
-        self.assertIn('"side": side', publisher)
-        self.assertIn("Findings without inline diff anchors", publisher)
+        self.assertFalse((REPO / ".github" / "scripts" / "build_codex_github_review.py").exists())
+        anchors = (reviewer / "candidate.go").read_text()
+        self.assertIn("anchorFailure", anchors)
+        self.assertIn("changedLines", anchors)
+        self.assertIn("is not part of the review diff", anchors)
         self.assertFalse((REPO / "UPSTREAM.json").exists())
 
     def test_release_builds_six_checksum_bound_v2_runtimes(self) -> None:
@@ -633,10 +643,10 @@ class RepositoryContract(unittest.TestCase):
                 ],
             )
 
-    @unittest.expectedFailure
-    def test_kernel_runtime_has_no_production_consumer_yet(self) -> None:
-        # Migration task T5 must replace this marker with a permanent positive
-        # production-reachability assertion when the generic runtime is adopted.
+    def test_kernel_runtime_has_a_production_consumer(self) -> None:
+        # Permanent positive production-reachability assertion: the generic
+        # kernel runtime is adopted by boatstack-reviewer, the supervisory
+        # control review program.
         production_files = [
             path
             for path in sorted((REPO / "boatstack").rglob("*.go"))
@@ -653,8 +663,8 @@ class RepositoryContract(unittest.TestCase):
             if metadata["runtime_consumers"]
         ]
         self.assertTrue(
-            consumers,
-            "migration T5 has not connected the generic kernel runtime to production code",
+            any(consumer.startswith("boatstack/cmd/boatstack-reviewer/") for consumer in consumers),
+            f"the generic kernel runtime lost its production consumer: {consumers}",
         )
 
     def test_invocation_runtime_is_domain_neutral(self) -> None:

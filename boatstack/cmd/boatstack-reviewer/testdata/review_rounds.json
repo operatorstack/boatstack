@@ -1,0 +1,748 @@
+{
+  "description": "Codex automated-review rounds mined from the last 30 merged pull requests (2026-08-12 to 2026-08-21). Each round is one structured review the codex-review workflow published on the pull request. This fixture calibrates the boatstack-reviewer convergence policy: the round bound must cover the maximum observed round count.",
+  "mined_at": "2026-08-21",
+  "source": "gh api repos/operatorstack/boatstack/pulls/<n>/reviews (github-actions[bot] structured reviews)",
+  "pull_requests": [
+    {
+      "pr": 205,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.96,
+          "submitted_at": "2026-08-12T14:10:05Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.97,
+          "submitted_at": "2026-08-12T14:20:59Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.97,
+          "submitted_at": "2026-08-12T14:32:30Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.91,
+          "submitted_at": "2026-08-12T14:41:32Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.91,
+          "submitted_at": "2026-08-12T14:53:09Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.95,
+          "submitted_at": "2026-08-12T15:21:34Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.96,
+          "submitted_at": "2026-08-12T16:00:53Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.95,
+          "submitted_at": "2026-08-12T16:24:11Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.96,
+          "submitted_at": "2026-08-12T16:37:11Z"
+        }
+      ]
+    },
+    {
+      "pr": 206,
+      "rounds": [
+        {
+          "verdict": "patch is correct",
+          "confidence": 0.97,
+          "submitted_at": "2026-08-12T15:47:08Z"
+        }
+      ]
+    },
+    {
+      "pr": 207,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-12T16:51:01Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.94,
+          "submitted_at": "2026-08-12T16:58:29Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.96,
+          "submitted_at": "2026-08-12T17:06:12Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.97,
+          "submitted_at": "2026-08-12T17:14:03Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.97,
+          "submitted_at": "2026-08-12T17:22:43Z"
+        }
+      ]
+    },
+    {
+      "pr": 208,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-12T18:07:59Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.97,
+          "submitted_at": "2026-08-12T18:45:09Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.97,
+          "submitted_at": "2026-08-12T19:17:44Z"
+        },
+        {
+          "verdict": "patch is correct",
+          "confidence": 0.86,
+          "submitted_at": "2026-08-12T19:31:50Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-12T19:51:12Z"
+        }
+      ]
+    },
+    {
+      "pr": 209,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.99,
+          "submitted_at": "2026-08-12T20:24:33Z"
+        },
+        {
+          "verdict": "patch is correct",
+          "confidence": 0.88,
+          "submitted_at": "2026-08-12T20:38:52Z"
+        }
+      ]
+    },
+    {
+      "pr": 210,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.97,
+          "submitted_at": "2026-08-12T23:07:46Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-12T23:36:32Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-12T23:56:24Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-13T00:13:40Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-13T00:29:11Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-13T00:46:20Z"
+        }
+      ]
+    },
+    {
+      "pr": 211,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-13T07:31:58Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.99,
+          "submitted_at": "2026-08-13T07:42:42Z"
+        }
+      ]
+    },
+    {
+      "pr": 212,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.99,
+          "submitted_at": "2026-08-13T09:13:05Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.99,
+          "submitted_at": "2026-08-13T09:29:20Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-13T09:46:03Z"
+        }
+      ]
+    },
+    {
+      "pr": 213,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-13T11:06:55Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-13T11:19:55Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-13T11:44:01Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-13T11:57:38Z"
+        }
+      ]
+    },
+    {
+      "pr": 214,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-13T12:29:50Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-13T12:48:09Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-13T12:57:42Z"
+        }
+      ]
+    },
+    {
+      "pr": 215,
+      "rounds": [
+        {
+          "verdict": "patch is correct",
+          "confidence": 0.9,
+          "submitted_at": "2026-08-13T14:45:49Z"
+        }
+      ]
+    },
+    {
+      "pr": 216,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.99,
+          "submitted_at": "2026-08-14T02:01:39Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-14T02:20:10Z"
+        }
+      ]
+    },
+    {
+      "pr": 217,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.96,
+          "submitted_at": "2026-08-14T02:31:22Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.96,
+          "submitted_at": "2026-08-14T02:35:08Z"
+        }
+      ]
+    },
+    {
+      "pr": 218,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.94,
+          "submitted_at": "2026-08-14T09:42:29Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-14T10:02:53Z"
+        }
+      ]
+    },
+    {
+      "pr": 219,
+      "rounds": [
+        {
+          "verdict": "patch is correct",
+          "confidence": 0.91,
+          "submitted_at": "2026-08-15T03:02:47Z"
+        }
+      ]
+    },
+    {
+      "pr": 220,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.96,
+          "submitted_at": "2026-08-15T04:03:19Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.97,
+          "submitted_at": "2026-08-15T04:14:00Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.94,
+          "submitted_at": "2026-08-15T04:26:54Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-15T04:38:20Z"
+        }
+      ]
+    },
+    {
+      "pr": 221,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.97,
+          "submitted_at": "2026-08-15T14:12:59Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-15T14:35:29Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.94,
+          "submitted_at": "2026-08-15T14:51:43Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-15T15:00:53Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-15T17:16:15Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.93,
+          "submitted_at": "2026-08-15T17:48:12Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.97,
+          "submitted_at": "2026-08-15T18:03:00Z"
+        }
+      ]
+    },
+    {
+      "pr": 222,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-15T21:43:00Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-15T23:19:45Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-15T23:37:24Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-16T00:12:31Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-16T00:34:16Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-16T00:42:04Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.99,
+          "submitted_at": "2026-08-16T01:01:27Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-16T01:32:35Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.99,
+          "submitted_at": "2026-08-16T01:47:03Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.96,
+          "submitted_at": "2026-08-16T08:06:31Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.97,
+          "submitted_at": "2026-08-16T08:38:12Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.97,
+          "submitted_at": "2026-08-16T09:11:40Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-16T09:32:45Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.97,
+          "submitted_at": "2026-08-16T09:49:34Z"
+        }
+      ]
+    },
+    {
+      "pr": 223,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.92,
+          "submitted_at": "2026-08-16T13:43:11Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.99,
+          "submitted_at": "2026-08-16T13:55:57Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-16T16:19:30Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.97,
+          "submitted_at": "2026-08-16T16:52:23Z"
+        }
+      ]
+    },
+    {
+      "pr": 224,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-16T20:22:08Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.94,
+          "submitted_at": "2026-08-16T22:36:11Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.96,
+          "submitted_at": "2026-08-17T00:37:17Z"
+        }
+      ]
+    },
+    {
+      "pr": 225,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.99,
+          "submitted_at": "2026-08-17T05:28:04Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-17T06:20:04Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-17T06:31:46Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-17T06:42:01Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-17T06:50:21Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-17T07:08:29Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.97,
+          "submitted_at": "2026-08-17T07:19:22Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-17T07:39:34Z"
+        }
+      ]
+    },
+    {
+      "pr": 226,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.99,
+          "submitted_at": "2026-08-17T11:23:08Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.92,
+          "submitted_at": "2026-08-17T11:46:40Z"
+        }
+      ]
+    },
+    {
+      "pr": 227,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-17T16:21:28Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.96,
+          "submitted_at": "2026-08-17T16:41:52Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-17T17:06:38Z"
+        }
+      ]
+    },
+    {
+      "pr": 229,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.97,
+          "submitted_at": "2026-08-17T19:35:05Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.97,
+          "submitted_at": "2026-08-17T19:57:52Z"
+        }
+      ]
+    },
+    {
+      "pr": 230,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.99,
+          "submitted_at": "2026-08-17T21:13:47Z"
+        }
+      ]
+    },
+    {
+      "pr": 231,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.97,
+          "submitted_at": "2026-08-18T03:14:20Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-18T03:40:59Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-18T04:07:20Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-18T04:39:17Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-18T04:52:53Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-18T05:36:29Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.94,
+          "submitted_at": "2026-08-18T06:00:05Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.94,
+          "submitted_at": "2026-08-18T06:20:16Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.96,
+          "submitted_at": "2026-08-18T07:06:22Z"
+        }
+      ]
+    },
+    {
+      "pr": 232,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.95,
+          "submitted_at": "2026-08-19T04:32:15Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.94,
+          "submitted_at": "2026-08-19T05:27:23Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.97,
+          "submitted_at": "2026-08-19T06:23:18Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.96,
+          "submitted_at": "2026-08-19T07:17:05Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.99,
+          "submitted_at": "2026-08-19T08:17:01Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.91,
+          "submitted_at": "2026-08-19T08:57:41Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-19T09:05:16Z"
+        }
+      ]
+    },
+    {
+      "pr": 233,
+      "rounds": [
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-19T19:34:14Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-19T19:53:16Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.99,
+          "submitted_at": "2026-08-19T20:26:09Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.98,
+          "submitted_at": "2026-08-19T20:40:58Z"
+        },
+        {
+          "verdict": "patch is incorrect",
+          "confidence": 0.97,
+          "submitted_at": "2026-08-19T20:59:20Z"
+        }
+      ]
+    },
+    {
+      "pr": 234,
+      "rounds": [
+        {
+          "verdict": "patch is correct",
+          "confidence": 0.93,
+          "submitted_at": "2026-08-21T00:52:33Z"
+        }
+      ]
+    }
+  ],
+  "observed": {
+    "pull_requests_with_rounds": 29,
+    "max_rounds": 14,
+    "median_rounds": 3,
+    "final_round_converged": 5
+  }
+}
