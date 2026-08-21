@@ -57,9 +57,12 @@ Work on a branch, commit your change, then:
    `.github/reviews/<instance>.receipt.json`. Commit that file with the pull
    request. The receipt directory is excluded from the tree binding, so
    committing the receipt does not invalidate it.
-5. `boatstack-reviewer status`, `reopen --actor <name>` (human capability,
-   after escalation or to re-review a settled generation), and `recover
-   --actor <name>` (after an interrupted effect) complete the surface.
+5. `boatstack-reviewer show` prints a recorded review itself — the exact
+   archived findings of the latest round (`--round <n>` for earlier ones) and
+   any staged, not-yet-submitted candidate — without resolving or changing
+   anything. `status`, `reopen --actor <name>` (human capability, after
+   escalation or to re-review a settled generation), and `recover --actor
+   <name>` (after an interrupted effect) complete the surface.
 
 CI (`.github/workflows/review-verified.yml`) rebuilds the verifier and runs
 `boatstack-reviewer verify --dir .github/reviews --base <base> --head <head>`,

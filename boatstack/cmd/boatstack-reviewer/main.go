@@ -31,7 +31,7 @@ func main() {
 
 func run(arguments []string) error {
 	if len(arguments) == 0 {
-		return fmt.Errorf("usage: boatstack-reviewer <resolve|submit|status|seal|verify|reopen|recover|reset> [flags]")
+		return fmt.Errorf("usage: boatstack-reviewer <resolve|submit|status|show|seal|verify|reopen|recover|reset> [flags]")
 	}
 	command, rest := arguments[0], arguments[1:]
 	switch command {
@@ -41,6 +41,8 @@ func run(arguments []string) error {
 		return commandSubmit(rest)
 	case "status":
 		return commandStatus(rest)
+	case "show":
+		return commandShow(rest)
 	case "seal":
 		return commandSeal(rest)
 	case "verify":
@@ -334,6 +336,99 @@ func commandStatus(arguments []string) error {
 				return "the admitted policy or law changed since this state was committed; `boatstack-reviewer reset --confirm` archives it"
 			}
 			return submissionGuidance(state.Mode)
+		}(),
+	})
+}
+
+// commandShow prints a recorded review itself — the exact archived findings
+// bytes — without resolving or changing anything. By default it shows the
+// latest recorded round of the current generation; --round selects an earlier
+// one, and a staged, not-yet-submitted candidate is included when present.
+func commandShow(arguments []string) error {
+	set := flag.NewFlagSet("show", flag.ContinueOnError)
+	repoPath, delivery, baseRef, _ := commonFlags(set)
+	roundIndex := set.Int("round", 0, "round index to show (default: the latest recorded round)")
+	if err := set.Parse(arguments); err != nil {
+		return err
+	}
+	loop, err := newLoopContext(*repoPath, *delivery, *baseRef)
+	if err != nil {
+		return err
+	}
+	state, err := loop.store.Load(context.Background(), loop.instance)
+	if err != nil {
+		return err
+	}
+	journal, err := loop.store.loadJournal()
+	if err != nil {
+		return err
+	}
+	rounds := journal.currentRounds()
+
+	var selected *journalRound
+	if *roundIndex > 0 {
+		for index := range rounds {
+			if rounds[index].Index == *roundIndex {
+				selected = &rounds[index]
+				break
+			}
+		}
+		if selected == nil {
+			return fmt.Errorf("generation %d has no round %d (%d recorded)", journal.Generation, *roundIndex, len(rounds))
+		}
+	} else if len(rounds) > 0 {
+		selected = &rounds[len(rounds)-1]
+	}
+
+	var review json.RawMessage
+	if selected != nil {
+		archived, err := loop.store.roundBytes(selected.CandidateFingerprint)
+		if err != nil {
+			return fmt.Errorf("archived review is unavailable: %w", err)
+		}
+		review = json.RawMessage(archived)
+	}
+
+	var staged *struct {
+		Evaluation candidateSummary `json:"evaluation"`
+		Review     json.RawMessage  `json:"review"`
+	}
+	if candidateBytes, _, ok, err := loop.store.loadStagedCandidate(); err != nil {
+		return err
+	} else if ok {
+		observed, err := loop.domain.observeValue()
+		if err != nil {
+			return err
+		}
+		staged = &struct {
+			Evaluation candidateSummary `json:"evaluation"`
+			Review     json.RawMessage  `json:"review"`
+		}{Evaluation: *observed.Candidate, Review: json.RawMessage(candidateBytes)}
+	}
+
+	if selected == nil && staged == nil {
+		return fmt.Errorf("instance %s has no recorded rounds and no staged candidate; run `boatstack-reviewer resolve` for instructions", loop.instance)
+	}
+	return printJSON(struct {
+		Instance   string          `json:"instance"`
+		Mode       string          `json:"mode"`
+		Generation int             `json:"generation"`
+		Rounds     []journalRound  `json:"rounds"`
+		Round      *journalRound   `json:"round,omitempty"`
+		Review     json.RawMessage `json:"review,omitempty"`
+		Staged     any             `json:"staged_candidate,omitempty"`
+	}{
+		Instance:   loop.instance,
+		Mode:       state.Mode,
+		Generation: journal.Generation,
+		Rounds:     rounds,
+		Round:      selected,
+		Review:     review,
+		Staged: func() any {
+			if staged == nil {
+				return nil
+			}
+			return staged
 		}(),
 	})
 }

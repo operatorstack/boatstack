@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -646,6 +647,59 @@ func TestRecoveryClearsInterruptedEffect(t *testing.T) {
 	}
 	if _, _, staged, err := loop.store.loadStagedCandidate(); err != nil || staged {
 		t.Fatalf("recovery left staging behind (staged=%v, err=%v)", staged, err)
+	}
+}
+
+func TestShowDisplaysTheRecordedReviewWithoutResolving(t *testing.T) {
+	scratch := newScratchRepo(t)
+	policy := testPolicy(t, scratch)
+	loop := newTestLoop(t, scratch, policy)
+	if _, _, err := submit(t, loop, incorrectReview(finding("visible finding", 1, "subject.go", 3))); err != nil {
+		t.Fatal(err)
+	}
+
+	capture := func(arguments ...string) (string, error) {
+		t.Helper()
+		reader, writer, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		original := os.Stdout
+		os.Stdout = writer
+		runErr := run(append([]string{"show", "--repo", scratch.repo.Root, "--delivery", "feature"}, arguments...))
+		os.Stdout = original
+		writer.Close()
+		output, err := io.ReadAll(reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(output), runErr
+	}
+
+	output, err := capture()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shown struct {
+		Mode   string `json:"mode"`
+		Round  *journalRound
+		Review json.RawMessage `json:"review"`
+	}
+	if err := json.Unmarshal([]byte(output), &shown); err != nil {
+		t.Fatalf("show output does not decode: %v", err)
+	}
+	if shown.Mode != modeFindingsOpen {
+		t.Fatalf("show reports mode %q", shown.Mode)
+	}
+	if !strings.Contains(string(shown.Review), "visible finding") {
+		t.Fatal("show did not display the recorded review findings")
+	}
+	if candidateFingerprint(shown.Review) == "" {
+		t.Fatal("shown review is empty")
+	}
+
+	if _, err := capture("--round", "99"); err == nil {
+		t.Fatal("show accepted a round that was never recorded")
 	}
 }
 
