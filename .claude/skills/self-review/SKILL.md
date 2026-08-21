@@ -3,7 +3,7 @@ name: self-review
 description: "Run the Boatstack supervisory-control self-review for the current branch and report the verdict without changing code."
 ---
 
-<!-- generated-by: yskill; source: skills/self-review; digest: sha256:af1e55e2f98923141dbb4d9407110e8df8307c42e61821e8f68cb964a2e66fef; version: 0.1.38 -->
+<!-- generated-by: yskill; source: skills/self-review; digest: sha256:2d1b51f55e65418d692f21c3263f8ec1f11660937366ee5a141ce2e2fed79edb; version: 0.1.38 -->
 
 This adapter exposes the canonical Yield workflow at `skills/self-review`.
 Read its SKILL.md, then run from the repository root:

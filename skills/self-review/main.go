@@ -29,6 +29,12 @@ reviewer="$tmp/boatstack-reviewer"
 
 const actor = "yield-self-review"
 
+// reportOnlyContract is the skill's whole scope: it records the round and
+// reports the verdict. Sealing, committing, and pushing are separate
+// decisions that belong to the user (or the self-review-solve skill).
+const reportOnlyContract = "report this verdict in the conversation and stop; " +
+	"do not seal, commit, or push anything unless the user asks"
+
 type resolveOutput struct {
 	Instance string `json:"instance"`
 	State    struct {
@@ -118,7 +124,7 @@ func main() {
 					"instance": resolved.Instance,
 					"mode":     resolved.State.Mode,
 					"verdict":  "patch is correct",
-					"guidance": "already converged for this tree; run boatstack-reviewer seal, or reopen to re-review",
+					"action":   reportOnlyContract,
 				})
 			}
 			// The instance converged for an older tree; new commits need a
@@ -183,19 +189,20 @@ func main() {
 				"before": before.Stdout, "after": after.Stdout,
 			})
 
-		return ctx.Complete(map[string]any{
+		result := map[string]any{
 			"instance":      resolved.Instance,
 			"mode":          shown.Mode,
 			"round":         shown.Round.Index,
 			"verdict":       shown.Round.Verdict,
 			"measure":       shown.Round.Measure,
 			"finding_count": shown.Round.FindingCount,
-			"review":        json.RawMessage(shown.Review),
-			"guidance": map[string]string{
-				"converged":     "run boatstack-reviewer seal and commit the sealed receipt",
-				"findings-open": "fix the findings (or run the self-review-solve skill), commit, and review again",
-				"escalated":     "the loop escalated; a human must decide, then boatstack-reviewer reopen",
-			}[shown.Mode],
-		})
+			"action":        reportOnlyContract,
+		}
+		// The findings are the actionable content of an incorrect verdict;
+		// a correct verdict needs nothing beyond itself.
+		if shown.Round.Verdict != "patch is correct" {
+			result["review"] = json.RawMessage(shown.Review)
+		}
+		return ctx.Complete(result)
 	})
 }

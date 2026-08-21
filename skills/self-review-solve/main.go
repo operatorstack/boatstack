@@ -198,24 +198,25 @@ func main() {
 			return yield.Outcome{}, err
 		}
 
+		// The attestation is committed locally so it rides with the branch;
+		// pushing is the user's decision and never happens here.
 		commit := ctx.RunCommand("commit-receipt",
 			prelude+`if [ -n "$(git -C "$repo" status --porcelain .github/reviews)" ]; then
   git -C "$repo" add .github/reviews
-  git -C "$repo" commit -qm "Seal converged self-review receipt"
+  git -C "$repo" commit -qm "Seal converged self-review attestation"
   echo committed
 else
   echo unchanged
 fi`, 60)
-		ctx.Require(commit.ExitCode == 0, "the sealed receipt is committed with the change", commit)
+		ctx.Require(commit.ExitCode == 0, "the sealed attestation is committed with the change", commit)
 
 		return ctx.Complete(map[string]any{
 			"mode":          "converged",
 			"receipt":       sealed.Sealed,
 			"fingerprint":   sealed.Fingerprint,
 			"reviewed_tree": sealed.ReviewedTree,
-			"measures":      measures,
-			"receipt_state": commit.Stdout,
-			"guidance":      "push the branch; the review-verified CI job verifies the receipt deterministically",
+			"guidance": "the minimal attestation is committed locally and is NOT pushed; " +
+				"push whenever ready — the review-verified CI job verifies it deterministically",
 		})
 	})
 }
