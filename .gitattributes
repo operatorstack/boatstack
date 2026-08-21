@@ -2,3 +2,9 @@ docs/architecture/boatstack-*.md text eol=lf
 docs/architecture/boatstack-*.mmd text eol=lf
 docs/architecture/boatstack-*.json text eol=lf
 docs/architecture/boatstack-standard-flow.mmd text eol=lf
+# The review policy is admitted by exact bytes: the program fingerprint hashes
+# the worktree assets while verification re-admits them from the base
+# revision. A CRLF checkout (Windows autocrlf) would make the two disagree,
+# so the policy assets and sealed receipts always materialize with LF.
+.github/codex/** text eol=lf
+.github/reviews/*.receipt.json text eol=lf
