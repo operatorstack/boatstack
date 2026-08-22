@@ -16,6 +16,8 @@ Do not report:
 * architectural alternatives that are merely cleaner;
 * issues whose location or impact cannot be established from available evidence.
 
+If you discover an important pre-existing issue near the changed surface, record it as a carried note inside `overall_explanation`, clearly labeled as pre-existing. Never emit it as a finding, and never let it affect the verdict.
+
 The important review principle is:
 
 Local correctness does not imply control-system correctness.
@@ -276,6 +278,24 @@ Boatstack kernel
 
 A repository control program must not be able to reach around the declared program interface and mutate kernel semantics directly.
 
+## Durable-contract deltas
+
+Apply the deep checks in this section only when the diff itself changes a durable-contract surface:
+
+* a schema version, durable file format, or receipt/journal shape;
+* an authority, capability, or identity rule;
+* a recovery mapping or failure-to-transition routing;
+* an admission, freshness, or compare-and-swap boundary.
+
+When the diff touches such a surface, check the deployed-world cases, not just the code's internal consistency:
+
+* migration from the schema/format that is actually deployed, not only from empty state;
+* recovery reachability from states real deployments occupy, including states written by the previous version;
+* authority bound to the exact issuance and exact target it was granted for;
+* the window between resolve and apply under the changed freshness rule.
+
+When the diff does not touch such a surface, do not hunt these classes. A small change gets a small review scoped to what it changed.
+
 ## Review to closure before reporting findings
 
 Do not return as soon as you find the first valid counterexample.
@@ -388,13 +408,18 @@ Verdict:
   or
 * "patch is incorrect"
 
+The verdict is decided by the blocking boundary, not by the presence of findings:
+
+* "patch is incorrect" is reserved for reviews with at least one blocking finding (priority P0 or P1);
+* a review whose findings are all P2 or P3 returns "patch is correct" — those findings are residuals, recorded with the review but not blocking it.
+
 Then provide:
 
 * a concise explanation;
 * confidence from 0 to 1;
 * whether model-level verification is recommended before merge.
 
-"Patch is correct" means no actionable defect introduced by this change was established from the available evidence.
+"Patch is correct" means no blocking defect introduced by this change was established from the available evidence; residual P2/P3 findings may still be listed.
 
 It does not mean global liveness or formal correctness has been proven.
 

@@ -83,7 +83,12 @@ func newLoopContext(repoPath, delivery, baseRef string) (*loopContext, error) {
 	if err != nil {
 		return nil, err
 	}
-	policy, err := loadWorktreePolicy(repo.Root)
+	// The policy is admitted from the base revision — the same admission CI
+	// verification performs. A branch that changes the policy assets is
+	// therefore reviewed under the currently-admitted policy, and the
+	// changed policy governs only after it merges; otherwise the sealed
+	// attestation would carry a program fingerprint CI can never recompute.
+	policy, err := loadRevisionPolicy(repo, baseRef)
 	if err != nil {
 		return nil, err
 	}
@@ -152,6 +157,24 @@ type instructionsView struct {
 	SchemaPath    string `json:"output_schema_path"`
 	SchemaSHA256  string `json:"output_schema_sha256"`
 	SubmitCommand string `json:"submit_command"`
+	PolicyNote    string `json:"policy_note,omitempty"`
+}
+
+// worktreePolicyNote reports when the worktree policy assets differ from the
+// base-admitted ones, so a proposer reading the worktree files knows which
+// bytes govern the program identity and candidate validation.
+func worktreePolicyNote(repoRoot string, admitted Policy) string {
+	for _, asset := range []struct{ path, admittedHash string }{
+		{policyPromptPath, admitted.PromptSHA256},
+		{policySchemaPath, admitted.SchemaSHA256},
+	} {
+		contents, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(asset.path)))
+		if err != nil || sha256Hex(contents) != asset.admittedHash {
+			return "the worktree policy assets differ from the base-admitted policy; " +
+				"the admitted (base revision) assets govern the program identity and candidate validation"
+		}
+	}
+	return ""
 }
 
 func commandResolve(arguments []string) error {
@@ -215,6 +238,7 @@ func commandResolve(arguments []string) error {
 			SchemaPath:    policySchemaPath,
 			SchemaSHA256:  loop.policy.SchemaSHA256,
 			SubmitCommand: "boatstack-reviewer submit --findings <path> --actor <name>",
+			PolicyNote:    worktreePolicyNote(loop.repo.Root, loop.policy),
 		},
 	})
 }
@@ -302,9 +326,9 @@ func commandSubmit(arguments []string) error {
 func submissionGuidance(mode string) string {
 	switch mode {
 	case modeConverged:
-		return "review converged; run `boatstack-reviewer seal` and commit the sealed receipt"
+		return "review converged; run `boatstack-reviewer seal` and commit the sealed attestation"
 	case modeFindingsOpen:
-		return "findings are open; fix them, commit, and submit a fresh review of the new tree"
+		return "blocking findings are open; fix them, commit, and submit a fresh review of the new tree"
 	case modeEscalated:
 		return "the loop escalated; a human must decide, then `boatstack-reviewer reopen --actor <name>`"
 	default:

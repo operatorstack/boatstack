@@ -26,10 +26,14 @@ type observationValue struct {
 	Rounds           []journalRound    `json:"rounds"`
 }
 
-func (v observationValue) roundMeasures() []int {
+// roundBlockingMeasures projects the recorded rounds onto the convergence
+// law's driving quantity: the blocking measure. Round and stall bounds are
+// computed over this sequence, so residual (non-blocking) findings can
+// neither extend nor cut short a review generation.
+func (v observationValue) roundBlockingMeasures() []int {
 	measures := make([]int, 0, len(v.Rounds))
 	for _, round := range v.Rounds {
-		measures = append(measures, round.Measure)
+		measures = append(measures, round.BlockingMeasure)
 	}
 	return measures
 }
@@ -143,17 +147,35 @@ func submissionDisposition(policy Policy, observed observationValue) (string, st
 		}
 		return "", reasons
 	}
-	if candidate.Verdict == verdictCorrect {
-		return transitionConverge, "candidate verdict accepts the patch"
+	// Convergence is deterministic on the blocking boundary: zero open
+	// blocking findings converges regardless of the verdict wording, and
+	// any open blocking finding keeps the loop running regardless of it.
+	// The verdict and residual (non-blocking) findings are recorded data.
+	if candidate.BlockingMeasure == 0 {
+		if residuals := residualCount(policy, candidate.Priorities); residuals > 0 {
+			return transitionConverge, fmt.Sprintf("no blocking findings remain; %d residual non-blocking findings are recorded", residuals)
+		}
+		return transitionConverge, "no blocking findings remain"
 	}
-	rounds := observed.roundMeasures()
+	rounds := observed.roundBlockingMeasures()
 	if len(rounds) >= policy.MaxRounds {
 		return transitionEscalate, fmt.Sprintf("round bound %d is exhausted", policy.MaxRounds)
 	}
-	if stalled(policy, rounds, candidate.Measure) {
-		return transitionEscalate, fmt.Sprintf("measure has not decreased for %d consecutive submissions", policy.StallWindow)
+	if stalled(policy, rounds, candidate.BlockingMeasure) {
+		return transitionEscalate, fmt.Sprintf("blocking measure has not decreased for %d consecutive submissions", policy.StallWindow)
 	}
-	return transitionRecord, "candidate records open findings with a decreasing measure"
+	return transitionRecord, "candidate records open blocking findings with a decreasing blocking measure"
+}
+
+// residualCount counts findings in non-blocking priority classes.
+func residualCount(policy Policy, priorities [4]int) int {
+	count := 0
+	for priority, findings := range priorities {
+		if !policy.Blocking[priority] {
+			count += findings
+		}
+	}
+	return count
 }
 
 // reviewOperator applies the one admitted operation. It receives only
@@ -187,6 +209,7 @@ func (o reviewOperator) Execute(_ context.Context, operation kernel.Operation) (
 			MergeBase:            observed.MergeBase,
 			Verdict:              observed.Candidate.Verdict,
 			Measure:              observed.Candidate.Measure,
+			BlockingMeasure:      observed.Candidate.BlockingMeasure,
 			FindingCount:         observed.Candidate.FindingCount,
 			Priorities:           observed.Candidate.Priorities,
 			Transition:           operation.Transition.ID,
@@ -252,6 +275,7 @@ func (d *reviewDomain) Verify(_ context.Context, evaluation kernel.Evaluation, e
 			recorded.ReviewedTree != before.ReviewedTree ||
 			recorded.Verdict != before.Candidate.Verdict ||
 			recorded.Measure != before.Candidate.Measure ||
+			recorded.BlockingMeasure != before.Candidate.BlockingMeasure ||
 			recorded.Transition != evaluation.Transition.ID {
 			return fmt.Errorf("recorded round does not match the admitted candidate")
 		}

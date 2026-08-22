@@ -5,6 +5,9 @@ boatstack/boatstack-reviewer.exe
 .yield/
 skills/*/.yield-runs/
 skills/*/fixtures/tmp/
+skills/self-review/self-review
+skills/self-review-solve/self-review-solve
+skills/open-pr/open-pr
 dist/
 build/docs/
 node_modules/

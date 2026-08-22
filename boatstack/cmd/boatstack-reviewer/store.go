@@ -42,6 +42,7 @@ type journalRound struct {
 	MergeBase            string `json:"merge_base"`
 	Verdict              string `json:"verdict"`
 	Measure              int    `json:"measure"`
+	BlockingMeasure      int    `json:"blocking_measure"`
 	FindingCount         int    `json:"finding_count"`
 	Priorities           [4]int `json:"priorities"`
 	Transition           string `json:"transition"`

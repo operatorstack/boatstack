@@ -19,12 +19,18 @@ import (
 // skill directory as the working directory. When the test sentinel exists
 // (created by fixtures/setup.sh under yskill's fixture runner), commands
 // operate on the scratch repository so tests never touch real review state.
+//
+// The reviewer is rebuilt in every command, not once per run: the Go build
+// cache makes an unchanged rebuild subsecond, and a run whose commits change
+// the reviewer's own code (or the branch under review) always drives the
+// binary compiled from the current tree instead of a snapshot from run start.
 const prelude = `set -eu
 root="$(git rev-parse --show-toplevel)"
 if [ -f fixtures/tmp/active ]; then repo="$PWD/fixtures/tmp/repo"; base=main; else repo="$root"; base=origin/main; fi
 tmp="${TMPDIR:-/tmp}/boatstack-self-review"
 mkdir -p "$tmp"
 reviewer="$tmp/boatstack-reviewer"
+go build -C "$root/boatstack" -o "$reviewer" ./cmd/boatstack-reviewer
 `
 
 const actor = "yield-self-review"
@@ -60,12 +66,35 @@ type resolveOutput struct {
 type showOutput struct {
 	Mode  string `json:"mode"`
 	Round struct {
-		Index        int    `json:"index"`
-		Verdict      string `json:"verdict"`
-		Measure      int    `json:"measure"`
-		FindingCount int    `json:"finding_count"`
+		Index           int    `json:"index"`
+		Verdict         string `json:"verdict"`
+		Measure         int    `json:"measure"`
+		BlockingMeasure int    `json:"blocking_measure"`
+		FindingCount    int    `json:"finding_count"`
 	} `json:"round"`
 	Review json.RawMessage `json:"review"`
+}
+
+// residualTitles lists the non-blocking (P2/P3) finding titles of a review.
+// Blocking is P0/P1 under the admitted policy; residuals are recorded with
+// the round but never drive another round.
+func residualTitles(review json.RawMessage) []string {
+	var parsed struct {
+		Findings []struct {
+			Title    string `json:"title"`
+			Priority int    `json:"priority"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal(review, &parsed); err != nil {
+		return nil
+	}
+	var titles []string
+	for _, finding := range parsed.Findings {
+		if finding.Priority >= 2 {
+			titles = append(titles, fmt.Sprintf("P%d: %s", finding.Priority, finding.Title))
+		}
+	}
+	return titles
 }
 
 // writeCandidate stages the encoded candidate through bounded chunks so no
@@ -120,12 +149,24 @@ func main() {
 		if resolved.State.Mode == "converged" {
 			rounds := resolved.Observation.Rounds
 			if len(rounds) > 0 && rounds[len(rounds)-1].ReviewedTree == resolved.Instructions.ReviewedTree {
-				return ctx.Complete(map[string]any{
-					"instance": resolved.Instance,
-					"mode":     resolved.State.Mode,
-					"verdict":  "patch is correct",
-					"action":   reportOnlyContract,
-				})
+				converged := ctx.RunCommand("show-converged",
+					prelude+`"$reviewer" show --repo "$repo" --base "$base"`, 60)
+				ctx.Require(converged.ExitCode == 0, "the converged round is shown from the store", converged)
+				var shown showOutput
+				if err := json.Unmarshal([]byte(converged.Stdout), &shown); err != nil {
+					return yield.Outcome{}, err
+				}
+				result := map[string]any{
+					"instance":         resolved.Instance,
+					"mode":             resolved.State.Mode,
+					"verdict":          shown.Round.Verdict,
+					"blocking_measure": shown.Round.BlockingMeasure,
+					"action":           reportOnlyContract,
+				}
+				if residuals := residualTitles(shown.Review); len(residuals) > 0 {
+					result["residual_findings"] = residuals
+				}
+				return ctx.Complete(result)
 			}
 			// The instance converged for an older tree; new commits need a
 			// fresh generation before a round can be recorded.
@@ -190,17 +231,25 @@ func main() {
 			})
 
 		result := map[string]any{
-			"instance":      resolved.Instance,
-			"mode":          shown.Mode,
-			"round":         shown.Round.Index,
-			"verdict":       shown.Round.Verdict,
-			"measure":       shown.Round.Measure,
-			"finding_count": shown.Round.FindingCount,
-			"action":        reportOnlyContract,
+			"instance":         resolved.Instance,
+			"mode":             shown.Mode,
+			"round":            shown.Round.Index,
+			"verdict":          shown.Round.Verdict,
+			"measure":          shown.Round.Measure,
+			"blocking_measure": shown.Round.BlockingMeasure,
+			"finding_count":    shown.Round.FindingCount,
+			"action":           reportOnlyContract,
 		}
-		// The findings are the actionable content of an incorrect verdict;
-		// a correct verdict needs nothing beyond itself.
-		if shown.Round.Verdict != "patch is correct" {
+		if shown.Mode == "converged" {
+			// A converged round may still carry residual (P2/P3) findings;
+			// they are reported as titles for the user to weigh, not as
+			// work the loop demands.
+			if residuals := residualTitles(shown.Review); len(residuals) > 0 {
+				result["residual_findings"] = residuals
+			}
+		} else {
+			// Open blocking findings are the actionable content; the full
+			// review carries them.
 			result["review"] = json.RawMessage(shown.Review)
 		}
 		return ctx.Complete(result)

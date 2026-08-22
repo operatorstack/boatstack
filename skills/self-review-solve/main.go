@@ -20,12 +20,19 @@ import (
 // skill directory as the working directory. When the test sentinel exists
 // (created by fixtures/setup.sh under yskill's fixture runner), commands
 // operate on the scratch repository so tests never touch real review state.
+//
+// The reviewer is rebuilt in every command, not once per run: the Go build
+// cache makes an unchanged rebuild subsecond, and a fix commit that changes
+// the reviewer's own code (for example a policy or law repair demanded by
+// the review itself) takes effect for the very next resolve, submit, and
+// seal instead of leaving the run on a binary snapshot from run start.
 const prelude = `set -eu
 root="$(git rev-parse --show-toplevel)"
 if [ -f fixtures/tmp/active ]; then repo="$PWD/fixtures/tmp/repo"; base=main; else repo="$root"; base=origin/main; fi
 tmp="${TMPDIR:-/tmp}/boatstack-self-review-solve"
 mkdir -p "$tmp"
 reviewer="$tmp/boatstack-reviewer"
+go build -C "$root/boatstack" -o "$reviewer" ./cmd/boatstack-reviewer
 `
 
 const (
@@ -53,10 +60,11 @@ type statusOutput struct {
 		WorktreeDirty bool   `json:"worktree_dirty"`
 		ReviewedTree  string `json:"reviewed_tree"`
 		Rounds        []struct {
-			Index        int    `json:"index"`
-			Verdict      string `json:"verdict"`
-			Measure      int    `json:"measure"`
-			ReviewedTree string `json:"reviewed_tree"`
+			Index           int    `json:"index"`
+			Verdict         string `json:"verdict"`
+			Measure         int    `json:"measure"`
+			BlockingMeasure int    `json:"blocking_measure"`
+			ReviewedTree    string `json:"reviewed_tree"`
 		} `json:"rounds"`
 	} `json:"observation"`
 }
@@ -72,9 +80,10 @@ type resolveOutput struct {
 type showOutput struct {
 	Mode  string `json:"mode"`
 	Round struct {
-		Index   int    `json:"index"`
-		Verdict string `json:"verdict"`
-		Measure int    `json:"measure"`
+		Index           int    `json:"index"`
+		Verdict         string `json:"verdict"`
+		Measure         int    `json:"measure"`
+		BlockingMeasure int    `json:"blocking_measure"`
 	} `json:"round"`
 	Review json.RawMessage `json:"review"`
 }
@@ -100,7 +109,7 @@ func main() {
 		}
 		if mode == "escalated" {
 			answer := ctx.AskUser("reopen",
-				"The review loop escalated (the convergence measure stalled or the round bound was reached). Reopen a fresh review generation?",
+				"The review loop escalated (the blocking measure stalled or the round bound was reached). Reopen a fresh review generation?",
 				yield.Option{Value: "yes", Label: "Reopen and continue"},
 				yield.Option{Value: "no", Label: "Stop; a human will handle it"})
 			if answer != "yes" {
@@ -122,8 +131,10 @@ func main() {
 			if mode == "findings-open" && !observed.treeDrifted() {
 				shown := show(ctx, "open-findings"+tag)
 				fixRaw := ctx.AgentTask("fix"+tag,
-					"Fix every finding of this recorded review in the repository under review: edit the code, "+
-						"run the relevant tests, and commit the fixes with a clear message. Do not touch .github/reviews "+
+					"Fix only the BLOCKING findings (priority P0 or P1) of this recorded review in the repository under review: "+
+						"edit the code, run the relevant tests, and commit the fixes with a clear message. "+
+						"Leave P2/P3 findings alone — they are residuals the convergence law records but does not demand; "+
+						"the user decides about them separately. Do not touch .github/reviews "+
 						"and do not weaken tests to make findings disappear. Report what you changed.",
 					map[string]any{"round": shown.Round, "review": json.RawMessage(shown.Review)},
 					json.RawMessage(fixReportSchema))
@@ -182,9 +193,14 @@ func main() {
 
 		if mode != "converged" {
 			return yield.Outcome{}, ctx.Blocked(fmt.Sprintf(
-				"the review did not converge within %d attempts (measures %v); the remaining findings need a human decision",
+				"the review did not converge within %d attempts (blocking measures %v); the remaining blocking findings need a human decision",
 				maxAttempts, measures))
 		}
+
+		// The converged round may carry residual (P2/P3) findings; they are
+		// surfaced for the user to decide about, never fixed by this loop.
+		converged := show(ctx, "converged-round")
+		residuals := residualTitles(converged.Review)
 
 		seal := ctx.RunCommand("seal",
 			prelude+`"$reviewer" seal --repo "$repo" --base "$base"`, 120)
@@ -210,14 +226,21 @@ else
 fi`, 60)
 		ctx.Require(commit.ExitCode == 0, "the sealed attestation is committed with the change", commit)
 
-		return ctx.Complete(map[string]any{
-			"mode":          "converged",
-			"receipt":       sealed.Sealed,
-			"fingerprint":   sealed.Fingerprint,
-			"reviewed_tree": sealed.ReviewedTree,
+		result := map[string]any{
+			"mode":             "converged",
+			"receipt":          sealed.Sealed,
+			"fingerprint":      sealed.Fingerprint,
+			"reviewed_tree":    sealed.ReviewedTree,
+			"blocking_measure": converged.Round.BlockingMeasure,
 			"guidance": "the minimal attestation is committed locally and is NOT pushed; " +
 				"push whenever ready — the review-verified CI job verifies it deterministically",
-		})
+		}
+		if len(residuals) > 0 {
+			result["residual_findings"] = residuals
+			result["guidance"] = result["guidance"].(string) +
+				"; residual P2/P3 findings are listed for the user to decide — the loop does not fix them"
+		}
+		return ctx.Complete(result)
 	})
 }
 
@@ -243,12 +266,34 @@ func writeCandidate(ctx *yield.Context, idPrefix string, review []byte) {
 	}
 }
 
+// measures projects the recorded rounds onto the blocking measure — the
+// quantity the convergence law drives to zero.
 func (o statusOutput) measures() []int {
 	measures := make([]int, 0, len(o.Observation.Rounds))
 	for _, round := range o.Observation.Rounds {
-		measures = append(measures, round.Measure)
+		measures = append(measures, round.BlockingMeasure)
 	}
 	return measures
+}
+
+// residualTitles lists the non-blocking (P2/P3) finding titles of a review.
+func residualTitles(review json.RawMessage) []string {
+	var parsed struct {
+		Findings []struct {
+			Title    string `json:"title"`
+			Priority int    `json:"priority"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal(review, &parsed); err != nil {
+		return nil
+	}
+	var titles []string
+	for _, finding := range parsed.Findings {
+		if finding.Priority >= 2 {
+			titles = append(titles, fmt.Sprintf("P%d: %s", finding.Priority, finding.Title))
+		}
+	}
+	return titles
 }
 
 // treeDrifted reports whether the current reviewed tree moved past the last
