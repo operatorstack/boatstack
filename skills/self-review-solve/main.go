@@ -20,12 +20,19 @@ import (
 // skill directory as the working directory. When the test sentinel exists
 // (created by fixtures/setup.sh under yskill's fixture runner), commands
 // operate on the scratch repository so tests never touch real review state.
+//
+// The reviewer is rebuilt in every command, not once per run: the Go build
+// cache makes an unchanged rebuild subsecond, and a fix commit that changes
+// the reviewer's own code (for example a policy or law repair demanded by
+// the review itself) takes effect for the very next resolve, submit, and
+// seal instead of leaving the run on a binary snapshot from run start.
 const prelude = `set -eu
 root="$(git rev-parse --show-toplevel)"
 if [ -f fixtures/tmp/active ]; then repo="$PWD/fixtures/tmp/repo"; base=main; else repo="$root"; base=origin/main; fi
 tmp="${TMPDIR:-/tmp}/boatstack-self-review-solve"
 mkdir -p "$tmp"
 reviewer="$tmp/boatstack-reviewer"
+go build -C "$root/boatstack" -o "$reviewer" ./cmd/boatstack-reviewer
 `
 
 const (
