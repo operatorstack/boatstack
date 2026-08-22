@@ -1,0 +1,8 @@
+{
+  "draft": {
+    "title": "Add Value accessor to the subject package",
+    "boundary": "The scratch subject package gains its first public accessor, crossing the boundary between an empty placeholder and a consumed API surface.",
+    "transition": "Before, callers had no way to read a value from the subject package; after, Value() returns the fixed integer the fixture change introduces.",
+    "evidence": "The self-review converged with zero findings over the exact range, and the sealed attestation binds the reviewed tree deterministically."
+  }
+}

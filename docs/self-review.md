@@ -104,6 +104,13 @@ for Cursor, Codex, and Claude Code under their skill directories):
   the loop; they are listed in the completion payload for the user to
   decide about. It never pushes; pushing is the user's decision. An
   escalated loop asks the human before reopening.
+- `skills/open-pr` — opens the pull request for the current branch behind
+  the same gate CI enforces: it refuses unless the committed attestation
+  verifies for the exact head tree, so running it is the explicit decision
+  to push and open a PR for a converged, sealed head. The description
+  follows a fixed structure — agent-drafted Boundary, Transition, and
+  Evidence sections plus workflow-gathered facts: the commit list, the
+  attestation binding, and the converged review's residual findings.
 
 Run either with `.yield/bin/yskill run 'skills/<name>'` from the repository
 root. `yskill doctor 'skills/<name>' --test` exercises each workflow against
