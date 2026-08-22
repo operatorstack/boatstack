@@ -113,7 +113,7 @@ func newTestLoop(t *testing.T, scratch *scratchRepo, policy Policy) *loopContext
 
 func testPolicy(t *testing.T, scratch *scratchRepo) Policy {
 	t.Helper()
-	policy, err := loadWorktreePolicy(scratch.repo.Root)
+	policy, err := loadRevisionPolicy(scratch.repo, "main")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -796,6 +796,67 @@ func TestVerificationRejectsTamperingForgeryAndBypass(t *testing.T) {
 	}
 }
 
+func TestPolicyChangingBranchSealsAVerifiableAttestation(t *testing.T) {
+	// Regression for the policy-admission split: a branch that changes the
+	// admitted policy assets must still seal an attestation CI can verify.
+	// The loop admits the policy from the base revision — the same admission
+	// verification performs — so the changed prompt governs only after
+	// merge, and the sealed fingerprint recomputes identically from base.
+	scratch := newScratchRepo(t)
+	scratch.writeFile(policyPromptPath, "an entirely rewritten review policy for the next generation\n")
+	scratch.commitAll("change the review policy on the branch")
+
+	policy := testPolicy(t, scratch)
+	worktreePrompt, err := os.ReadFile(filepath.Join(scratch.repo.Root, filepath.FromSlash(policyPromptPath)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sha256Hex(worktreePrompt) == policy.PromptSHA256 {
+		t.Fatal("the fixture did not actually diverge the worktree prompt from the base-admitted prompt")
+	}
+	if note := worktreePolicyNote(scratch.repo.Root, policy); note == "" {
+		t.Fatal("the resolve instructions do not surface the policy drift")
+	}
+
+	loop := newTestLoop(t, scratch, policy)
+	if _, receipt, err := submit(t, loop, correctReview()); err != nil {
+		t.Fatal(err)
+	} else if receipt.TransitionID != transitionConverge {
+		t.Fatalf("the policy-changing branch committed %q", receipt.TransitionID)
+	}
+	sealed, err := buildSealedReceipt(scratch.repo, loop.store, policy, loop.program, "main", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report := verifyFullReceipt(scratch.repo, sealed, "", "main", "HEAD"); !report.Verified {
+		t.Fatalf("the full receipt did not verify at seal time: %v", report.Failures)
+	}
+	path := filepath.Join(scratch.repo.receiptDirectoryPath(), "feature.receipt.json")
+	if err := writeAttestation(path, attestationOf(sealed)); err != nil {
+		t.Fatal(err)
+	}
+	scratch.commitAll("sealed review attestation")
+	if report := verifyAttestation(scratch.repo, attestationOf(sealed), path, "main", "HEAD"); !report.Verified {
+		t.Fatalf("the attestation of a policy-changing branch did not verify against the base admission: %v", report.Failures)
+	}
+
+	// The inverse remains refused: an attestation fingerprinted under the
+	// worktree (changed) policy is not the base-admitted program.
+	worktreeSchema, err := os.ReadFile(filepath.Join(scratch.repo.Root, filepath.FromSlash(policySchemaPath)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	worktreeProgram, err := compileReviewProgram(newPolicy(worktreePrompt, worktreeSchema))
+	if err != nil {
+		t.Fatal(err)
+	}
+	forged := attestationOf(sealed)
+	forged.ProgramFingerprint = worktreeProgram.Fingerprint
+	if report := verifyAttestation(scratch.repo, forged, path, "main", "HEAD"); report.Verified {
+		t.Fatal("an attestation fingerprinted under the unadmitted worktree policy verified")
+	}
+}
+
 func TestVerificationRejectsReceiptDeclaredBoundsDrift(t *testing.T) {
 	// Regression for round 1, finding 1: a receipt sealed under weakened
 	// convergence bounds must not verify against the admitted policy —
@@ -960,7 +1021,7 @@ func TestShowDisplaysTheRecordedReviewWithoutResolving(t *testing.T) {
 		}
 		original := os.Stdout
 		os.Stdout = writer
-		runErr := run(append([]string{"show", "--repo", scratch.repo.Root, "--delivery", "feature"}, arguments...))
+		runErr := run(append([]string{"show", "--repo", scratch.repo.Root, "--delivery", "feature", "--base", "main"}, arguments...))
 		os.Stdout = original
 		writer.Close()
 		output, err := io.ReadAll(reader)

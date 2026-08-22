@@ -5,8 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 )
 
 // The admitted review policy is the pair of repository assets the previous
@@ -76,25 +74,12 @@ func newPolicy(promptBytes, schemaBytes []byte) Policy {
 	}
 }
 
-// loadWorktreePolicy reads the policy assets from the repository worktree.
-// The local loop always reviews under the policy present in the tree being
-// reviewed; CI verification separately re-admits the policy from the pull
-// request base revision.
-func loadWorktreePolicy(repoRoot string) (Policy, error) {
-	prompt, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(policyPromptPath)))
-	if err != nil {
-		return Policy{}, fmt.Errorf("review policy prompt is unavailable: %w", err)
-	}
-	schema, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(policySchemaPath)))
-	if err != nil {
-		return Policy{}, fmt.Errorf("review policy schema is unavailable: %w", err)
-	}
-	return newPolicy(prompt, schema), nil
-}
-
 // loadRevisionPolicy reads the policy assets from an exact committed
 // revision, mirroring the base-revision admission the retired CI reviewer
-// performed with `git show "$BASE_SHA:<asset>"`.
+// performed with `git show "$BASE_SHA:<asset>"`. Both the local loop and CI
+// verification admit from the base revision, so a branch that changes the
+// policy assets is reviewed under the currently-admitted policy and the
+// change takes effect after merge.
 func loadRevisionPolicy(repo *gitRepo, revision string) (Policy, error) {
 	prompt, err := repo.showFile(revision, policyPromptPath)
 	if err != nil {

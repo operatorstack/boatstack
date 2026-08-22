@@ -23,10 +23,15 @@ resolve/apply relation.
 - **Modes:** `unreviewed` → `findings-open` → `converged` (the only marked
   mode), with `escalated` for bounded non-convergence.
 - **Admitted policy:** `.github/codex/review-prompt.md` (review instructions)
-  and `.github/codex/review-output-schema.json` (output contract). Their exact
-  bytes, the round bound, the stall window, the priority weights, and the
-  blocking boundary are hashed into the program fingerprint; any change
-  stales every prior prescription and receipt.
+  and `.github/codex/review-output-schema.json` (output contract), admitted
+  from the pull request base revision — by the local loop and by CI alike.
+  A branch that changes the policy assets is therefore reviewed under the
+  currently-admitted policy, and the change governs only after merge;
+  `resolve` surfaces a policy note when the worktree assets have drifted
+  from the admitted ones. The exact admitted bytes, the round bound, the
+  stall window, the priority weights, and the blocking boundary are hashed
+  into the program fingerprint; any change stales every prior prescription
+  and receipt.
 - **Blocking boundary:** priorities P0 and P1 block; P2 and P3 are
   residuals. Convergence is deterministic on this boundary, not on the
   verdict wording: a candidate converges exactly when its blocking measure
