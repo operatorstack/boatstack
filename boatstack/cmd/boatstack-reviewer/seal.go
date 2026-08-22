@@ -99,8 +99,8 @@ func buildSealedReceipt(repo *gitRepo, store *fileStore, policy Policy, program 
 		return SealedReceipt{}, fmt.Errorf("converged instance has no recorded rounds")
 	}
 	final := rounds[len(rounds)-1]
-	if final.Verdict != verdictCorrect || final.Transition != transitionConverge {
-		return SealedReceipt{}, fmt.Errorf("last recorded round is not the converged round")
+	if final.Transition != transitionConverge || final.BlockingMeasure != 0 {
+		return SealedReceipt{}, fmt.Errorf("last recorded round is not a converged round with zero blocking findings")
 	}
 	head, err := repo.headCommit()
 	if err != nil {
@@ -333,12 +333,13 @@ func verifyFullReceipt(repo *gitRepo, receipt SealedReceipt, receiptPath, baseRe
 	admittedPolicy := basePolicy
 	if receipt.Policy.MaxRounds != admittedPolicy.MaxRounds ||
 		receipt.Policy.StallWindow != admittedPolicy.StallWindow ||
-		receipt.Policy.Weights != admittedPolicy.Weights {
-		fail("sealed receipt declares convergence bounds (rounds %d, stall %d, weights %v) that differ from the admitted policy (rounds %d, stall %d, weights %v)",
-			receipt.Policy.MaxRounds, receipt.Policy.StallWindow, receipt.Policy.Weights,
-			admittedPolicy.MaxRounds, admittedPolicy.StallWindow, admittedPolicy.Weights)
+		receipt.Policy.Weights != admittedPolicy.Weights ||
+		receipt.Policy.Blocking != admittedPolicy.Blocking {
+		fail("sealed receipt declares convergence bounds (rounds %d, stall %d, weights %v, blocking %v) that differ from the admitted policy (rounds %d, stall %d, weights %v, blocking %v)",
+			receipt.Policy.MaxRounds, receipt.Policy.StallWindow, receipt.Policy.Weights, receipt.Policy.Blocking,
+			admittedPolicy.MaxRounds, admittedPolicy.StallWindow, admittedPolicy.Weights, admittedPolicy.Blocking)
 	} else {
-		pass("convergence bounds and weights match the admitted policy")
+		pass("convergence bounds, weights, and blocking boundary match the admitted policy")
 	}
 	program, err := compileReviewProgram(admittedPolicy)
 	if err != nil {
@@ -441,8 +442,8 @@ func verifyFullReceipt(repo *gitRepo, receipt SealedReceipt, receiptPath, baseRe
 		return report
 	}
 	finalRound := receipt.Rounds[len(receipt.Rounds)-1]
-	if finalRound.Transition != transitionConverge || finalRound.Verdict != verdictCorrect {
-		fail("the final recorded round is not a convergence")
+	if finalRound.Transition != transitionConverge || finalRound.BlockingMeasure != 0 {
+		fail("the final recorded round is not a convergence with zero blocking findings")
 	}
 	if finalRound.ReviewedTree != receipt.ReviewedTree {
 		fail("the converged round bound tree %s, not the sealed tree %s", finalRound.ReviewedTree, receipt.ReviewedTree)
@@ -467,10 +468,10 @@ func verifyFullReceipt(repo *gitRepo, receipt SealedReceipt, receiptPath, baseRe
 		summary := evaluateCandidate(admittedPolicy, receipt.FinalReview, receipt.ReviewedTree, repo.Root, diff)
 		if !summary.Valid && diffErr == nil {
 			fail("final review does not revalidate against the admitted schema and diff: %s", strings.Join(summary.InvalidReasons, "; "))
-		} else if summary.Verdict != verdictCorrect {
-			fail("final review verdict is %q, not %q", summary.Verdict, verdictCorrect)
+		} else if summary.BlockingMeasure != 0 {
+			fail("final review leaves blocking findings open (blocking measure %d recomputed from the exact bytes)", summary.BlockingMeasure)
 		} else {
-			pass("final review bytes revalidate and accept the patch")
+			pass("final review bytes revalidate with zero blocking findings")
 		}
 	}
 

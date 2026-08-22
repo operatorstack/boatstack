@@ -302,9 +302,9 @@ func commandSubmit(arguments []string) error {
 func submissionGuidance(mode string) string {
 	switch mode {
 	case modeConverged:
-		return "review converged; run `boatstack-reviewer seal` and commit the sealed receipt"
+		return "review converged; run `boatstack-reviewer seal` and commit the sealed attestation"
 	case modeFindingsOpen:
-		return "findings are open; fix them, commit, and submit a fresh review of the new tree"
+		return "blocking findings are open; fix them, commit, and submit a fresh review of the new tree"
 	case modeEscalated:
 		return "the loop escalated; a human must decide, then `boatstack-reviewer reopen --actor <name>`"
 	default:

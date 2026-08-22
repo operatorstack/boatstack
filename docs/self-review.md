@@ -24,14 +24,23 @@ resolve/apply relation.
   mode), with `escalated` for bounded non-convergence.
 - **Admitted policy:** `.github/codex/review-prompt.md` (review instructions)
   and `.github/codex/review-output-schema.json` (output contract). Their exact
-  bytes, the round bound, the stall window, and the priority weights are
-  hashed into the program fingerprint; any change stales every prior
-  prescription and receipt.
+  bytes, the round bound, the stall window, the priority weights, and the
+  blocking boundary are hashed into the program fingerprint; any change
+  stales every prior prescription and receipt.
+- **Blocking boundary:** priorities P0 and P1 block; P2 and P3 are
+  residuals. Convergence is deterministic on this boundary, not on the
+  verdict wording: a candidate converges exactly when its blocking measure
+  is zero, and an open blocking finding keeps the loop running even under a
+  "patch is correct" verdict. Residual findings are recorded with the round
+  (and travel into the sealed receipt's round record) but never demand
+  another round. A "patch is incorrect" verdict with zero findings is an
+  invalid candidate.
 - **Convergence measure:** each finding weighs by priority (P0 1000, P1 100,
-  P2 10, P3 1). A submission that fails to decrease the measure extends a
-  stall run; the loop escalates on the third consecutive non-improving
-  submission or after sixteen rounds in one generation. The bounds are
-  calibrated against mined review history
+  P2 10, P3 1). The stall and round bounds run over the blocking measure
+  only, so residual churn can neither drive rounds nor trigger escalation:
+  the loop escalates on the third consecutive submission that fails to
+  decrease the blocking measure, or after sixteen rounds in one generation.
+  The bounds are calibrated against mined review history
   (`boatstack/cmd/boatstack-reviewer/testdata/review_rounds.json`).
 - **Freshness:** every submission binds the exact committed tree it reviewed.
   A dirty worktree, a new commit, or an edited candidate refuses admission
@@ -50,9 +59,10 @@ Work on a branch, commit your change, then:
    reviewer validates the candidate (schema, diff anchors, tree binding) and
    the kernel commits one transition: findings recorded, converged, or
    escalated. Refusals name their reason and record nothing.
-3. Fix the recorded findings, commit, and repeat. The measure must trend
-   down; convergence requires a fresh review of the fixed tree whose verdict
-   is `patch is correct`.
+3. Fix the recorded blocking findings, commit, and repeat. The blocking
+   measure must trend down; convergence requires a fresh review of the fixed
+   tree with no open P0/P1 finding. Residual P2/P3 findings do not need to
+   be fixed for convergence — they are recorded for the user to weigh.
 4. `boatstack-reviewer seal` — verifies the full receipt (round trajectory,
    kernel receipt chain, final review bytes) locally, archives it in the
    local store, and writes only a minimal attestation to
@@ -78,14 +88,17 @@ for Cursor, Codex, and Claude Code under their skill directories):
 - `skills/self-review` — report-only: builds the reviewer from the current
   tree, resolves the control state, has the agent review exactly the
   admitted range under the admitted schema, submits, and reports the
-  recorded verdict in the conversation. It changes no code, verifies
+  recorded verdict in the conversation — plus the titles of any residual
+  P2/P3 findings when the round converged. It changes no code, verifies
   afterwards that no tracked file changed, and never seals, commits, or
   pushes.
-- `skills/self-review-solve` — drives to convergence: fixes open findings in
-  code (committed by the agent), re-reviews the fixed tree, repeats within a
-  bounded attempt budget, then seals and commits the minimal attestation
-  locally. It never pushes; pushing is the user's decision. An escalated
-  loop asks the human before reopening.
+- `skills/self-review-solve` — drives to convergence: fixes open blocking
+  (P0/P1) findings in code (committed by the agent), re-reviews the fixed
+  tree, repeats within a bounded attempt budget, then seals and commits the
+  minimal attestation locally. Residual P2/P3 findings are never fixed by
+  the loop; they are listed in the completion payload for the user to
+  decide about. It never pushes; pushing is the user's decision. An
+  escalated loop asks the human before reopening.
 
 Run either with `.yield/bin/yskill run 'skills/<name>'` from the repository
 root. `yskill doctor 'skills/<name>' --test` exercises each workflow against
@@ -99,7 +112,14 @@ fingerprint, recomputes the receipt-excluded head tree, and checks that the
 committed attestation names exactly those two facts. Nothing else travels
 with the pull request: the attestation is deliberately minimal because the
 program fingerprint already hashes the prompt bytes, the schema bytes, the
-round bound, the stall window, and the priority weights.
+round bound, the stall window, the priority weights, and the blocking
+boundary.
+
+Changing any admitted policy asset or bound produces a new program
+fingerprint, so existing local review instances become stale. That is the
+expected one-time step after such a change: `boatstack-reviewer reset
+--confirm` archives the stale instance, and the next review starts fresh
+under the new program identity.
 
 ## What the attestation does and does not prove
 

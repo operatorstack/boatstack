@@ -34,14 +34,23 @@ const (
 // convergence measure V = sum(weight(priority)) over open findings.
 var defaultWeights = [4]int{1000, 100, 10, 1}
 
+// defaultBlocking marks which priorities block convergence. P0 and P1 —
+// control-law violations — must reach zero; P2 and P3 are recorded as
+// residuals and never drive another round. Mined history: two thirds of
+// past P1 findings were durable-contract defects (migration, recovery
+// reachability, authority binding, freshness) that must not ship, while
+// P2/P3 churn is exactly what caused long non-converging review loops.
+var defaultBlocking = [4]bool{true, true, false, false}
+
 type Policy struct {
-	PromptPath   string `json:"prompt_path"`
-	PromptSHA256 string `json:"prompt_sha256"`
-	SchemaPath   string `json:"schema_path"`
-	SchemaSHA256 string `json:"schema_sha256"`
-	MaxRounds    int    `json:"max_rounds"`
-	StallWindow  int    `json:"stall_window"`
-	Weights      [4]int `json:"weights"`
+	PromptPath   string  `json:"prompt_path"`
+	PromptSHA256 string  `json:"prompt_sha256"`
+	SchemaPath   string  `json:"schema_path"`
+	SchemaSHA256 string  `json:"schema_sha256"`
+	MaxRounds    int     `json:"max_rounds"`
+	StallWindow  int     `json:"stall_window"`
+	Weights      [4]int  `json:"weights"`
+	Blocking     [4]bool `json:"blocking"`
 
 	PromptBytes []byte `json:"-"`
 	SchemaBytes []byte `json:"-"`
@@ -61,6 +70,7 @@ func newPolicy(promptBytes, schemaBytes []byte) Policy {
 		MaxRounds:    defaultMaxRounds,
 		StallWindow:  defaultStallWindow,
 		Weights:      defaultWeights,
+		Blocking:     defaultBlocking,
 		PromptBytes:  promptBytes,
 		SchemaBytes:  schemaBytes,
 	}
@@ -103,14 +113,15 @@ func loadRevisionPolicy(repo *gitRepo, revision string) (Policy, error) {
 // by the kernel Program fingerprint.
 func (p Policy) contractFingerprint() (string, error) {
 	encoded, err := json.Marshal(struct {
-		PromptPath   string `json:"prompt_path"`
-		PromptSHA256 string `json:"prompt_sha256"`
-		SchemaPath   string `json:"schema_path"`
-		SchemaSHA256 string `json:"schema_sha256"`
-		MaxRounds    int    `json:"max_rounds"`
-		StallWindow  int    `json:"stall_window"`
-		Weights      [4]int `json:"weights"`
-	}{p.PromptPath, p.PromptSHA256, p.SchemaPath, p.SchemaSHA256, p.MaxRounds, p.StallWindow, p.Weights})
+		PromptPath   string  `json:"prompt_path"`
+		PromptSHA256 string  `json:"prompt_sha256"`
+		SchemaPath   string  `json:"schema_path"`
+		SchemaSHA256 string  `json:"schema_sha256"`
+		MaxRounds    int     `json:"max_rounds"`
+		StallWindow  int     `json:"stall_window"`
+		Weights      [4]int  `json:"weights"`
+		Blocking     [4]bool `json:"blocking"`
+	}{p.PromptPath, p.PromptSHA256, p.SchemaPath, p.SchemaSHA256, p.MaxRounds, p.StallWindow, p.Weights, p.Blocking})
 	if err != nil {
 		return "", err
 	}
@@ -131,6 +142,13 @@ func (p Policy) validate() error {
 		if weight < 1 {
 			return fmt.Errorf("review policy requires positive priority weights")
 		}
+	}
+	anyBlocking := false
+	for _, blocking := range p.Blocking {
+		anyBlocking = anyBlocking || blocking
+	}
+	if !anyBlocking {
+		return fmt.Errorf("review policy requires at least one blocking priority")
 	}
 	return nil
 }

@@ -51,14 +51,15 @@ type reviewAnchor struct {
 // observation from the exact staged bytes and the exact current diff; the
 // proposer's own claims are never trusted.
 type candidateSummary struct {
-	Fingerprint    string   `json:"fingerprint"`
-	ReviewedTree   string   `json:"reviewed_tree"`
-	Valid          bool     `json:"valid"`
-	InvalidReasons []string `json:"invalid_reasons,omitempty"`
-	Verdict        string   `json:"verdict,omitempty"`
-	Measure        int      `json:"measure"`
-	FindingCount   int      `json:"finding_count"`
-	Priorities     [4]int   `json:"priorities"`
+	Fingerprint     string   `json:"fingerprint"`
+	ReviewedTree    string   `json:"reviewed_tree"`
+	Valid           bool     `json:"valid"`
+	InvalidReasons  []string `json:"invalid_reasons,omitempty"`
+	Verdict         string   `json:"verdict,omitempty"`
+	Measure         int      `json:"measure"`
+	BlockingMeasure int      `json:"blocking_measure"`
+	FindingCount    int      `json:"finding_count"`
+	Priorities      [4]int   `json:"priorities"`
 }
 
 // candidateFingerprint identifies candidate review bytes by the sha256 of
@@ -119,10 +120,21 @@ func evaluateCandidate(policy Policy, candidateBytes []byte, stagedTree, repoRoo
 	summary.FindingCount = len(review.Findings)
 	allowed := changedLines(diff)
 	valid := true
+	// An incorrect verdict must be backed by at least one concrete finding;
+	// an empty assertion of incorrectness carries nothing the loop could
+	// act on and nothing the record could bind.
+	if review.OverallCorrectness == verdictIncorrect && len(review.Findings) == 0 {
+		valid = false
+		summary.InvalidReasons = append(summary.InvalidReasons,
+			"verdict rejects the patch but the review carries no findings")
+	}
 	for index, finding := range review.Findings {
 		if finding.Priority >= 0 && finding.Priority <= 3 {
 			summary.Priorities[finding.Priority]++
 			summary.Measure += policy.Weights[finding.Priority]
+			if policy.Blocking[finding.Priority] {
+				summary.BlockingMeasure += policy.Weights[finding.Priority]
+			}
 		}
 		if reason := anchorFailure(finding.CodeLocation, repoRoot, allowed); reason != "" {
 			valid = false
@@ -264,9 +276,12 @@ func mustInt(value string) int {
 
 // stalled reports whether recording this candidate would extend the trailing
 // run of submissions without measure improvement to the policy stall window.
-// The run length counts the submissions themselves: with a window of three,
-// a third consecutive submission that fails to decrease the measure below
-// its predecessor escalates instead of recording another round.
+// The measures compared are BLOCKING measures: only progress on blocking
+// findings counts, so residual P2/P3 churn can neither mask a stall nor
+// trigger one. The run length counts the submissions themselves: with a
+// window of three, a third consecutive submission that fails to decrease
+// the blocking measure below its predecessor escalates instead of
+// recording another round.
 func stalled(policy Policy, recorded []int, candidateMeasure int) bool {
 	if len(recorded) == 0 {
 		return false

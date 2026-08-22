@@ -120,22 +120,21 @@ func testPolicy(t *testing.T, scratch *scratchRepo) Policy {
 	return policy
 }
 
+func reviewWith(verdict string, findings ...string) string {
+	return fmt.Sprintf(`{
+  "findings": [%s],
+  "overall_correctness": %q,
+  "overall_explanation": "Explanation of the verdict.",
+  "overall_confidence_score": 0.9
+}`, strings.Join(findings, ","), verdict)
+}
+
 func correctReview() string {
-	return `{
-  "findings": [],
-  "overall_correctness": "patch is correct",
-  "overall_explanation": "No remaining actionable findings.",
-  "overall_confidence_score": 0.95
-}`
+	return reviewWith(verdictCorrect)
 }
 
 func incorrectReview(findings ...string) string {
-	return fmt.Sprintf(`{
-  "findings": [%s],
-  "overall_correctness": "patch is incorrect",
-  "overall_explanation": "Actionable findings remain.",
-  "overall_confidence_score": 0.9
-}`, strings.Join(findings, ","))
+	return reviewWith(verdictIncorrect, findings...)
 }
 
 func finding(title string, priority int, path string, line int) string {
@@ -226,6 +225,24 @@ func TestReviewProgramControlLaw(t *testing.T) {
 	}
 	if reprogram.Fingerprint == program.Fingerprint {
 		t.Fatal("changing the convergence bound did not change the program identity")
+	}
+	// The blocking boundary is part of the convergence law: moving it must
+	// also move the program identity.
+	reblocked := policy
+	reblocked.Blocking = [4]bool{true, true, true, false}
+	reblockedProgram, err := compileReviewProgram(reblocked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reblockedProgram.Fingerprint == program.Fingerprint {
+		t.Fatal("changing the blocking boundary did not change the program identity")
+	}
+	// A policy where nothing blocks would converge on any valid candidate;
+	// it must not validate.
+	unblocked := policy
+	unblocked.Blocking = [4]bool{}
+	if err := unblocked.validate(); err == nil {
+		t.Fatal("a policy with no blocking priority validated")
 	}
 }
 
@@ -338,6 +355,135 @@ func TestStallLaw(t *testing.T) {
 		if got := stalled(policy, testCase.recorded, testCase.next); got != testCase.stalled {
 			t.Errorf("%s: stalled=%v, want %v", testCase.name, got, testCase.stalled)
 		}
+	}
+}
+
+func TestConvergesWithResidualFindingsUnderEitherVerdict(t *testing.T) {
+	// The blocking boundary decides convergence, not the verdict wording:
+	// a review carrying only P2/P3 findings converges even when the
+	// proposer wrote "patch is incorrect", and the residuals are recorded
+	// with the round and travel into the sealed receipt.
+	scratch := newScratchRepo(t)
+	policy := testPolicy(t, scratch)
+	loop := newTestLoop(t, scratch, policy)
+
+	residuals := reviewWith(verdictIncorrect,
+		finding("residual P2", 2, "subject.go", 3),
+		finding("residual P3", 3, "subject.go", 3))
+	_, receipt, err := submit(t, loop, residuals)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.TransitionID != transitionConverge {
+		t.Fatalf("a residual-only review committed %q, not convergence", receipt.TransitionID)
+	}
+	if mode(t, loop) != modeConverged {
+		t.Fatalf("mode is %q after residual-only convergence", mode(t, loop))
+	}
+
+	sealed, err := buildSealedReceipt(scratch.repo, loop.store, policy, loop.program, "main", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report := verifyFullReceipt(scratch.repo, sealed, "", "main", "HEAD"); !report.Verified {
+		t.Fatalf("residual-only converged receipt did not verify at seal time: %v", report.Failures)
+	}
+	final := sealed.Rounds[len(sealed.Rounds)-1]
+	if final.BlockingMeasure != 0 {
+		t.Fatalf("converged round records blocking measure %d", final.BlockingMeasure)
+	}
+	if final.Priorities != [4]int{0, 0, 1, 1} {
+		t.Fatalf("residual priorities are not recorded in the sealed round: %v", final.Priorities)
+	}
+	if final.Measure != policy.Weights[2]+policy.Weights[3] {
+		t.Fatalf("total measure %d does not carry the residual weights", final.Measure)
+	}
+}
+
+func TestBlockingFindingRefusesConvergenceDespiteCorrectVerdict(t *testing.T) {
+	// The inverse of the residual case: an open P1 keeps the loop running
+	// even when the proposer wrote "patch is correct". The verdict wording
+	// cannot converge past a blocking finding.
+	scratch := newScratchRepo(t)
+	policy := testPolicy(t, scratch)
+	loop := newTestLoop(t, scratch, policy)
+
+	optimistic := reviewWith(verdictCorrect, finding("open P1", 1, "subject.go", 3))
+	_, receipt, err := submit(t, loop, optimistic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.TransitionID != transitionRecord {
+		t.Fatalf("a review with an open P1 committed %q, not a recorded round", receipt.TransitionID)
+	}
+	if mode(t, loop) != modeFindingsOpen {
+		t.Fatalf("mode is %q with a blocking finding open", mode(t, loop))
+	}
+}
+
+func TestIncorrectVerdictWithoutFindingsIsInvalid(t *testing.T) {
+	// An empty assertion of incorrectness carries nothing to act on and
+	// nothing to bind; it must not become a recorded round.
+	scratch := newScratchRepo(t)
+	policy := testPolicy(t, scratch)
+	loop := newTestLoop(t, scratch, policy)
+
+	head := scratch.git("rev-parse", "HEAD")
+	mergeBase := scratch.git("merge-base", "main", "HEAD")
+	diff, err := scratch.repo.pullRequestDiff(mergeBase, head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := scratch.repo.reviewedTree(head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary := evaluateCandidate(policy, []byte(incorrectReview()), tree, scratch.repo.Root, diff)
+	if summary.Valid {
+		t.Fatal("an incorrect verdict with zero findings was admitted")
+	}
+
+	if _, _, err := submit(t, loop, incorrectReview()); err == nil {
+		t.Fatal("an incorrect verdict with zero findings was prescribed")
+	}
+	if mode(t, loop) != modeUnreviewed {
+		t.Fatalf("a refused candidate moved the mode to %q", mode(t, loop))
+	}
+}
+
+func TestResidualChurnCannotMaskABlockingStall(t *testing.T) {
+	// The stall law runs over the blocking measure. Three submissions keep
+	// the same P1 open while the P2 count shrinks each round: the total
+	// measure decreases, but the blocking measure is flat, so the third
+	// submission escalates instead of recording another round.
+	scratch := newScratchRepo(t)
+	policy := testPolicy(t, scratch)
+	loop := newTestLoop(t, scratch, policy)
+
+	rounds := []string{
+		reviewWith(verdictIncorrect,
+			finding("stuck P1", 1, "subject.go", 3),
+			finding("nit one", 2, "subject.go", 3),
+			finding("nit two", 2, "subject.go", 3)),
+		reviewWith(verdictIncorrect,
+			finding("stuck P1", 1, "subject.go", 3),
+			finding("nit one", 2, "subject.go", 3)),
+		reviewWith(verdictIncorrect,
+			finding("stuck P1", 1, "subject.go", 3)),
+	}
+	var last *kernel.Receipt
+	for _, candidate := range rounds {
+		_, receipt, err := submit(t, loop, candidate)
+		if err != nil {
+			t.Fatal(err)
+		}
+		last = receipt
+	}
+	if last.TransitionID != transitionEscalate {
+		t.Fatalf("a flat blocking measure behind shrinking residuals committed %q, not escalation", last.TransitionID)
+	}
+	if mode(t, loop) != modeEscalated {
+		t.Fatalf("mode is %q after the blocking stall", mode(t, loop))
 	}
 }
 
